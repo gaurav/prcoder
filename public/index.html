@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>prcoder</title>
+<link rel="stylesheet" href="/vendor/xterm.css">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <main>
+    <section id="pr" class="pane">
+      <header><h1>Pull request</h1><button id="pr-refresh" title="reload from GitHub">⟳</button></header>
+      <div id="pr-body" class="scroll">Loading…</div>
+    </section>
+
+    <section id="term" class="pane">
+      <header><h1>Claude Code</h1></header>
+      <div id="term-host"></div>
+    </section>
+
+    <section id="queue" class="pane">
+      <header>
+        <h1>Queue</h1>
+        <input id="queue-input" placeholder="Add an item, Enter to save" autocomplete="off">
+      </header>
+      <div id="queue-body" class="scroll"></div>
+    </section>
+  </main>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>
