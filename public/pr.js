@@ -20,7 +20,7 @@ export function renderPr(pr, { onViewed }) {
     return;
   }
 
-  host.append(
+  append(host,
     h('a', { className: 'pr-link', href: pr.url, target: '_blank', rel: 'noopener' },
       `#${pr.number} on GitHub ↗`),
     h('h2', { className: 'pr-title' }, pr.title),
@@ -39,6 +39,9 @@ export function renderPr(pr, { onViewed }) {
     ...GROUPS.map(([key, label]) => fileGroup(label, pr.groups[key], onViewed)),
   );
 }
+
+/** Skips absent sections; DOM append() would render them as the text "null". */
+const append = (host, ...kids) => host.append(...kids.flat().filter((k) => k != null));
 
 const badge = (text, kind) => h('span', { className: `badge ${kind}` }, text);
 

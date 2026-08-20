@@ -1,14 +1,22 @@
 // Everything GitHub goes through the `gh` CLI, which is already authenticated.
 
 import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
 
-const run = promisify(execFile);
-
-async function gh(args, opts = {}) {
-  const { stdout } = await run('gh', args, { maxBuffer: 32 * 1024 * 1024, ...opts });
-  return stdout;
+/**
+ * `input` has to be written to the child's stdin by hand: execFile accepts the
+ * option only in its *Sync* form and silently ignores it otherwise, which makes
+ * a `--body-file -` call hang on a stdin that never closes.
+ */
+export function run(bin, args, { input, ...opts } = {}) {
+  return new Promise((resolve, reject) => {
+    const child = execFile(bin, args, { maxBuffer: 32 * 1024 * 1024, ...opts },
+      (err, stdout) => (err ? reject(err) : resolve(stdout)));
+    if (input !== undefined) child.stdin.end(input);
+    else child.stdin.end();
+  });
 }
+
+const gh = (args, opts) => run('gh', args, opts);
 
 const PR_FIELDS = [
   'number', 'title', 'body', 'url', 'state', 'isDraft', 'headRefName', 'baseRefName',

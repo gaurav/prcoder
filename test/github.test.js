@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { rollup, linkedIssues, parsePrUrl } from '../github.js';
+import { rollup, linkedIssues, parsePrUrl, run } from '../github.js';
 
 test('check states collapse into passed, failed and pending', () => {
   assert.deepEqual(rollup([
@@ -51,4 +51,18 @@ test('owner, repo and number come from the PR URL, not the local checkout', () =
   assert.deepEqual(parsePrUrl('https://github.com/cli/cli/pull/9000'),
     { owner: 'cli', repo: 'cli', number: 9000 });
   assert.throws(() => parsePrUrl('https://github.com/cli/cli/issues/1'), /not a pull request URL/);
+});
+
+// Regression: execFile accepts `input` only in its Sync form, so writing to the
+// child's stdin by hand is what stops `gh pr edit --body-file -` hanging.
+test('run() writes input to the child stdin instead of hanging', async () => {
+  assert.equal(await run('cat', [], { input: 'a body\n' }), 'a body\n');
+});
+
+test('run() closes stdin even with no input, so readers do not block', async () => {
+  assert.equal(await run('cat', []), '');
+});
+
+test('run() rejects on a non-zero exit rather than resolving empty', async () => {
+  await assert.rejects(() => run('false', []));
 });
