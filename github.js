@@ -97,7 +97,7 @@ export async function createIssue(cwd, prUrl, title) {
   return { url, number };
 }
 
-function rollup(checks) {
+export function rollup(checks) {
   const counts = { passed: 0, failed: 0, pending: 0 };
   for (const c of checks ?? []) {
     const s = c.conclusion || c.state || '';
@@ -109,7 +109,7 @@ function rollup(checks) {
 }
 
 /** Issues the PR closes, plus any bare #N mentioned in the body. */
-function linkedIssues(pr) {
+export function linkedIssues(pr) {
   const seen = new Map();
   for (const i of pr.closingIssuesReferences ?? []) {
     seen.set(i.number, { number: i.number, title: i.title, url: i.url, closes: true });
