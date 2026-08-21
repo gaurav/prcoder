@@ -15,7 +15,15 @@ import { parseFuture, renderFuture, renderPrBlock, syncFromPrBlock } from './que
 const root = path.dirname(fileURLToPath(import.meta.url));
 const repo = process.cwd();
 const port = Number(process.env.PRCODER_PORT) || 7420;
-const target = process.argv[2]; // optional PR number, URL or branch; defaults to the current branch
+// Args split at the first flag: everything before it is ours (an optional PR
+// number, URL or branch), everything from it on is handed to `claude` verbatim.
+// No table of Claude's flags to keep in sync, and no collisions to arbitrate.
+export function splitArgs(argv) {
+  const cut = argv.findIndex((a) => a.startsWith('-'));
+  return { target: cut === 0 ? undefined : argv[0], claudeArgs: cut === -1 ? [] : argv.slice(cut) };
+}
+
+const { target, claudeArgs } = splitArgs(process.argv.slice(2));
 const futureFile = path.join(repo, 'FUTURE.md');
 
 // The PR is fetched once and reused; the queue routes need its body and node id.
@@ -135,7 +143,7 @@ const server = http.createServer(async (req, res) => {
 // One PTY per WebSocket. Closing the tab kills the session; that is intentional
 // for a prototype — Claude Code's own --resume covers getting back in.
 new WebSocketServer({ server, path: '/pty' }).on('connection', (ws) => {
-  const term = ptySpawn(process.env.CLAUDE_BIN || 'claude', [], {
+  const term = ptySpawn(process.env.CLAUDE_BIN || 'claude', claudeArgs, {
     name: 'xterm-256color',
     cols: 80,
     rows: 24,
@@ -154,7 +162,7 @@ new WebSocketServer({ server, path: '/pty' }).on('connection', (ws) => {
   ws.on('close', () => term.kill());
 });
 
-server.listen(port, '127.0.0.1', async () => {
+if (import.meta.main) server.listen(port, '127.0.0.1', async () => {
   await refreshPr().catch((e) => console.error('pr:', e.stderr || e.message));
   console.log(`prcoder: ${repo}`);
   console.log(pr ? `PR #${pr.number}: ${pr.title}` : 'no pull request for this branch');

@@ -6,12 +6,26 @@ task queue that survives moving between machines.
 
 ```sh
 npm install
-node server.js            # the PR for the current branch
-node server.js 123        # a specific PR
-node server.js <pr-url>   # any PR, anywhere
+ln -s "$PWD/server.js" ~/bin/prcoder   # once, to run it from any repo
+
+prcoder                    # the PR for the current branch
+prcoder 123                # a specific PR
+prcoder <pr-url>           # any PR, anywhere
+prcoder --model opus       # ...with flags for the Claude session
 ```
 
 Then open <http://localhost:7420>.
+
+## Arguments
+
+The first argument, if it isn't a flag, is prcoder's: the PR to open. Everything
+from the first flag onward is handed to `claude` untouched, so
+`prcoder 123 --effort high --model opus` opens PR 123 with that session. There is
+no list of Claude's flags here to fall out of date, and nothing to arbitrate when
+Claude gains a flag prcoder also wants.
+
+prcoder's own settings are environment variables — `PRCODER_PORT`, `CLAUDE_BIN` —
+which cannot collide with a flag at all.
 
 ## The panes
 
