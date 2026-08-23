@@ -14,7 +14,7 @@ import { parseFuture, renderFuture, renderPrBlock, syncFromPrBlock } from './que
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const repo = process.cwd();
-const port = Number(process.env.PRCODER_PORT) || 7420;
+const port = Number(process.env.PRCODER_PORT) || 1618;
 // Args split at the first flag: everything before it is ours (an optional PR
 // number, URL or branch), everything from it on is handed to `claude` verbatim.
 // No table of Claude's flags to keep in sync, and no collisions to arbitrate.

@@ -14,7 +14,7 @@ prcoder <pr-url>           # any PR, anywhere
 prcoder --model opus       # ...with flags for the Claude session
 ```
 
-Then open <http://localhost:7420>.
+Then open <http://localhost:1618>.
 
 ## Arguments
 
