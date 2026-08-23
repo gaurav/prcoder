@@ -10,6 +10,9 @@ setup. npm blocks node-pty's own install script, which is what makes
 `prebuilds/*/spawn-helper` executable. Without it every PTY spawn fails with a
 bare `posix_spawnp failed` — no mention of permissions, and node-pty still
 imports fine, so it reads like a Node ABI problem when it isn't.
+`npm install-scripts approve node-pty` does *not* replace it — tested 2026-08-23,
+the approved script is `node-gyp rebuild` and the prebuilt helper still lands
+non-executable.
 
 **Run tests with bare `node --test`, not `node --test test/`.** On Node 26 a
 directory argument is resolved as a module and dies with `Cannot find module`.

@@ -6,7 +6,7 @@ task queue that survives moving between machines.
 
 ```sh
 npm install
-ln -s "$PWD/server.js" ~/bin/prcoder   # once, to run it from any repo
+npm link                   # once, to run it from any repo; edits here go live
 
 prcoder                    # the PR for the current branch
 prcoder 123                # a specific PR
