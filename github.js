@@ -22,7 +22,27 @@ const PR_FIELDS = [
   'number', 'title', 'body', 'url', 'state', 'isDraft', 'headRefName', 'baseRefName',
   'additions', 'deletions', 'changedFiles', 'files', 'statusCheckRollup',
   'closingIssuesReferences', 'reviewDecision', 'comments', 'reviews',
+  // headRefOid is GitHub's view of the branch head, which is what lets the sync
+  // light work without a fetch. updatedAt gates the expensive full reload.
+  'headRefOid', 'updatedAt', 'isCrossRepository',
 ].join(',');
+
+/** Just enough to know whether the PR moved, without the GraphQL viewed pass. */
+export async function prHeads(cwd, target) {
+  const args = ['pr', 'view', ...(target ? [target] : []), '--json', 'number,headRefOid,updatedAt,state'];
+  try {
+    return JSON.parse(await gh(args, { cwd }));
+  } catch (e) {
+    if (/no pull requests found|no default remote|not a git repo/i.test(e.stderr ?? '')) return null;
+    throw e;
+  }
+}
+
+/** Open PRs, for the switcher. */
+export async function listPrs(cwd) {
+  const args = ['pr', 'list', '--state', 'open', '--json', 'number,title,headRefName,isDraft'];
+  return JSON.parse(await gh(args, { cwd }));
+}
 
 /**
  * The PR for the current branch, or null if there isn't one. Per-file viewed
@@ -97,9 +117,8 @@ export async function setBody(cwd, prUrl, body) {
   await gh(['pr', 'edit', prUrl, '--body-file', '-'], { cwd, input: body });
 }
 
-export async function createIssue(cwd, prUrl, title) {
-  const { owner, repo } = parsePrUrl(prUrl);
-  const url = (await gh(['issue', 'create', '--repo', `${owner}/${repo}`,
+export async function createIssue(cwd, nameWithOwner, title) {
+  const url = (await gh(['issue', 'create', '--repo', nameWithOwner,
     '--title', title, '--body', ''], { cwd })).trim();
   const number = Number(url.match(/\/(\d+)$/)?.[1]);
   return { url, number };

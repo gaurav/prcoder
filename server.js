@@ -8,7 +8,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn as ptySpawn } from 'node-pty';
 import { WebSocketServer } from 'ws';
-import { loadPr, setViewed, setBody, createIssue } from './github.js';
+import { loadPr, prHeads, listPrs, setViewed, setBody, createIssue } from './github.js';
+import { snapshot, repoInfo, prScope, compareUrl, checkoutPr, pushBranch } from './git.js';
 import { groupFiles, fileUrl } from './files.js';
 import { parseFuture, renderFuture, renderPrBlock, syncFromPrBlock } from './queue.js';
 
@@ -23,20 +24,49 @@ export function splitArgs(argv) {
   return { target: cut === 0 ? undefined : argv[0], claudeArgs: cut === -1 ? [] : argv.slice(cut) };
 }
 
-const { target, claudeArgs } = splitArgs(process.argv.slice(2));
+let { target, claudeArgs } = splitArgs(process.argv.slice(2));
 const futureFile = path.join(repo, 'FUTURE.md');
 
 // The PR is fetched once and reused; the queue routes need its body and node id.
 let pr = null;
+let info = null;   // owner/repo and default branch: constant while we run
+
+/**
+ * Every gh/git call runs one at a time. `gh pr checkout` is a fetch, a checkout
+ * and a fast-forward, and a status poll landing between the last two reads a
+ * branch at the wrong commit. Serialising is also what stops a poll reloading
+ * `pr` in the middle of pushToPr's read-modify-write of the description.
+ *
+ * ponytail: one global lock; split per-route only if a slow gh call visibly
+ * stalls the UI.
+ */
+let chain = Promise.resolve();
+const serial = (fn) => {
+  const p = chain.then(fn, fn);
+  chain = p.catch(() => {});
+  return p;
+};
+
+const requirePr = () => {
+  if (!pr) throw new Error('no pull request for this branch');
+  return pr;
+};
 
 async function refreshPr() {
+  // gh pr view fails on a detached HEAD in a way loadPr does not recognise, so
+  // it would throw rather than report "no PR" — and 500 the poll every minute.
+  if (!target && (await snapshot(repo)).detached) { pr = null; return null; }
   pr = await loadPr(repo, target);
-  if (!pr) return null;
-  const groups = groupFiles(pr.files);
+  return pr && { ...pr, groups: withUrls(pr) };
+}
+
+/** Files bucketed for the pane, each linking into GitHub's diff viewer. */
+function withUrls(p) {
+  const groups = groupFiles(p.files);
   for (const list of Object.values(groups)) {
-    for (const f of list) f.url = fileUrl(pr.url, f.path);
+    for (const f of list) f.url = fileUrl(p.url, f.path);
   }
-  return { ...pr, groups };
+  return groups;
 }
 
 async function readQueue() {
@@ -61,18 +91,79 @@ function decorate(items) {
 
 /** Push the `inPr` items into the PR description. */
 async function pushToPr(items) {
-  if (!pr) throw new Error('no pull request for this branch');
+  requirePr();
   pr.body = renderPrBlock(items, pr.body ?? '');
   await setBody(repo, pr.url, pr.body);
   return items;
 }
 
+/**
+ * Where the repo is, plus the PR and queue that go with it. The client polls
+ * this; nothing is stored between calls, so an outside `git checkout` or an
+ * edit on github.com is picked up without prcoder having to be told.
+ */
+async function status({ full = false } = {}) {
+  info ??= await repoInfo(repo);
+
+  const detached = (await snapshot(repo)).detached;
+  // A pinned target keeps working on a detached HEAD; branch-following cannot.
+  const heads = detached && !target ? null : await prHeads(repo, target);
+
+  // The cheap call decides whether the expensive one is needed: loadPr also
+  // runs a paginated GraphQL pass, which is far too much for a 60s poll.
+  if (full || heads?.updatedAt !== pr?.updatedAt || heads?.number !== pr?.number) {
+    await refreshPr();
+  }
+
+  const snap = await snapshot(repo, pr?.headRefOid ?? heads?.headRefOid ?? null);
+  const scope = prScope(pr, { branch: snap.branch, nameWithOwner: info.nameWithOwner });
+
+  return {
+    ...snap,
+    ...info,
+    scope,
+    onDefaultBranch: snap.branch === info.defaultBranch,
+    // A PR we have not checked out can never be in sync with this working tree.
+    sync: scope === 'current' ? snap.sync : null,
+    pr: pr ? { ...pr, groups: withUrls(pr) } : null,
+    queue: await readQueue(),
+  };
+}
+
 const routes = {
   'GET /api/pr': () => refreshPr(),
 
+  'GET /api/status': () => status(),
+
+  'GET /api/prs': () => listPrs(repo),
+
+  'POST /api/pr/switch': async ({ number }) => {
+    await checkoutPr(repo, number);
+    // Clear rather than pin: the checkout put us on the branch, so following it
+    // gives the same answer and self-heals when Claude switches branches later.
+    target = undefined;
+    // The new branch has its own FUTURE.md, and status() reloads the PR first
+    // so the queue's issue links are decorated from the right repo.
+    return status({ full: true });
+  },
+
+  'POST /api/pr/create': async () => {
+    const snap = await snapshot(repo);
+    info ??= await repoInfo(repo);
+    if (snap.detached) throw new Error('detached HEAD — check out a branch first');
+    if (snap.branch === info.defaultBranch) throw new Error(`on ${snap.branch} — make a branch first`);
+
+    // GitHub's compare page only knows about branches it has seen.
+    const pushed = snap.sync === 'unpushed';
+    if (pushed) await pushBranch(repo);
+    return { url: compareUrl(info.nameWithOwner, info.defaultBranch, snap.branch), pushed };
+  },
+
   'POST /api/pr/viewed': async ({ path: p, viewed }) => {
-    await setViewed(repo, pr.nodeId, p, viewed);
-    pr.files.find((f) => f.path === p).viewed = viewed;
+    await setViewed(repo, requirePr().nodeId, p, viewed);
+    // Absent if the file list was refreshed out from under us.
+    const f = pr.files.find((x) => x.path === p);
+    if (f) f.viewed = viewed;
     return { ok: true };
   },
 
@@ -83,7 +174,8 @@ const routes = {
   'POST /api/queue/push': async (items) => writeQueue(await pushToPr(items)),
 
   'POST /api/queue/issue': async ({ items, index }) => {
-    const { number } = await createIssue(repo, pr.url, items[index].text);
+    info ??= await repoInfo(repo);
+    const { number } = await createIssue(repo, info.nameWithOwner, items[index].text);
     items[index].issue = number;
     if (items[index].inPr) await pushToPr(items);
     return writeQueue(items);
@@ -98,7 +190,7 @@ async function handleApi(req, res, key) {
     for await (const c of req) chunks.push(c);
     const body = chunks.length ? JSON.parse(Buffer.concat(chunks)) : undefined;
     res.writeHead(200, { 'content-type': 'application/json' });
-    res.end(JSON.stringify(await handler(body) ?? null));
+    res.end(JSON.stringify(await serial(() => handler(body)) ?? null));
   } catch (e) {
     console.error(key, e.stderr || e.message);
     res.writeHead(500, { 'content-type': 'application/json' });
