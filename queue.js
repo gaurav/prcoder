@@ -14,6 +14,14 @@ const OPEN = '<!-- prcoder:todo -->';
 const CLOSE = '<!-- /prcoder:todo -->';
 
 const ITEM = /^\s*[-*]\s*\[( |x|X)\]\s*(.*)$/;
+
+// Anchored, so the first token it cannot match ends the marker run and
+// everything from there -- including any later markers -- becomes visible task
+// text. It fails quietly rather than throwing, and it has caught two things:
+// a new marker has to be added to this alternation before it can be read, and
+// a malformed value like `@issue#NaN` does not match `@issue#\d+` and so turns
+// into part of the item's text. Anything written into a marker must be a value
+// this pattern accepts; see issueNumber() in github.js.
 const MARKERS = /^((?:@pr\b|@deleted\b|@issue#\d+\b|\s)*)/;
 
 function parseItem(line) {

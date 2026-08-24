@@ -162,3 +162,13 @@ test('a body line matches the mirrored twin, not the local-only one', () => {
     { text: 'same', done: true, inPr: true, issue: null, deleted: false },
   ]);
 });
+
+// The consequence that makes issueNumber() throw rather than pass NaN through.
+// MARKERS is anchored, so a value it cannot match ends the marker run: the
+// text is corrupted and @pr is lost with it, quietly and on the way back in.
+test('a malformed marker value degrades into the task text and drops the rest', () => {
+  const [item] = parseFuture('## Queue\n\n- [ ] @issue#NaN @pr Real text\n');
+  assert.equal(item.text, '@issue#NaN @pr Real text');
+  assert.equal(item.issue, null);
+  assert.equal(item.inPr, false);
+});
