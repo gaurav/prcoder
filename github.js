@@ -130,11 +130,24 @@ export async function setBody(cwd, prUrl, body) {
   await gh(['pr', 'edit', prUrl, '--body-file', '-'], { cwd, input: body });
 }
 
+/**
+ * The issue number out of what `gh issue create` prints. It can emit notices
+ * before the URL, so the last line is the one that matters.
+ *
+ * Failing here rather than returning NaN is the point: the number is written
+ * into FUTURE.md as `@issue#N`, and `@issue#NaN` does not match the marker
+ * pattern on the way back in, so it silently becomes part of the task text.
+ */
+export function issueNumber(out) {
+  const url = out.trim().split('\n').pop()?.trim() ?? '';
+  const n = Number(url.match(/\/(\d+)$/)?.[1]);
+  if (!Number.isInteger(n)) throw new Error(`issue created at ${url || '(no url printed)'}, but its number could not be read — link it by hand`);
+  return { url, number: n };
+}
+
 export async function createIssue(cwd, nameWithOwner, title) {
-  const url = (await gh(['issue', 'create', '--repo', nameWithOwner,
-    '--title', title, '--body', ''], { cwd })).trim();
-  const number = Number(url.match(/\/(\d+)$/)?.[1]);
-  return { url, number };
+  return issueNumber(await gh(['issue', 'create', '--repo', nameWithOwner,
+    '--title', title, '--body', ''], { cwd }));
 }
 
 export function rollup(checks) {

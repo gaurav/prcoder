@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { rollup, linkedIssues, parsePrUrl, run } from '../github.js';
+import { rollup, linkedIssues, parsePrUrl, run, issueNumber } from '../github.js';
 
 test('check states collapse into passed, failed and pending', () => {
   assert.deepEqual(rollup([
@@ -75,4 +75,21 @@ test('run() puts the child stderr on the error, where the callers look for it', 
   await assert.rejects(
     () => run('sh', ['-c', 'echo no pull requests found >&2; exit 1']),
     (e) => e.stderr.includes('no pull requests found'));
+});
+
+// The number goes into FUTURE.md as `@issue#N`. `@issue#NaN` does not match the
+// marker pattern coming back, so it silently becomes part of the task text --
+// which is why an unreadable number has to throw rather than pass through.
+test('the issue number is read from the last line gh prints', () => {
+  assert.deepEqual(issueNumber('https://github.com/o/r/issues/42\n'),
+    { url: 'https://github.com/o/r/issues/42', number: 42 });
+});
+
+test('a notice printed before the URL does not confuse the parse', () => {
+  assert.equal(issueNumber('Creating issue in o/r\n\nhttps://github.com/o/r/issues/7').number, 7);
+});
+
+test('output with no issue number throws instead of yielding NaN', () => {
+  assert.throws(() => issueNumber('something unexpected'), /could not be read/);
+  assert.throws(() => issueNumber(''), /no url printed/);
 });
