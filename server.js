@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { spawn as ptySpawn } from 'node-pty';
 import { WebSocketServer } from 'ws';
 import { loadPr, prHeads, listPrs, setViewed, setBody, createIssue } from './github.js';
-import { snapshot, repoInfo, prScope, compareUrl, checkoutPr, pushBranch } from './git.js';
+import { snapshot, repoInfo, prScope, compareUrl, checkoutPr, pushBranch, remoteBranchHead } from './git.js';
 import { groupFiles, fileUrl } from './files.js';
 import { parseFuture, renderFuture, renderPrBlock, syncFromPrBlock } from './queue.js';
 
@@ -115,7 +115,10 @@ async function status({ full = false } = {}) {
     await refreshPr();
   }
 
-  const snap = await snapshot(repo, pr?.headRefOid ?? heads?.headRefOid ?? null);
+  // With no PR there is no headRefOid to compare against, so ask origin.
+  const oid = pr?.headRefOid ?? heads?.headRefOid
+    ?? await remoteBranchHead(repo, (await snapshot(repo)).branch);
+  const snap = await snapshot(repo, oid);
   const scope = prScope(pr, { branch: snap.branch, nameWithOwner: info.nameWithOwner });
 
   return {
@@ -148,15 +151,16 @@ const routes = {
   },
 
   'POST /api/pr/create': async () => {
-    const snap = await snapshot(repo);
     info ??= await repoInfo(repo);
-    if (snap.detached) throw new Error('detached HEAD — check out a branch first');
-    if (snap.branch === info.defaultBranch) throw new Error(`on ${snap.branch} — make a branch first`);
+    const { branch, detached } = await snapshot(repo);
+    if (detached) throw new Error('detached HEAD — check out a branch first');
+    if (branch === info.defaultBranch) throw new Error(`on ${branch} — make a branch first`);
 
-    // GitHub's compare page only knows about branches it has seen.
-    const pushed = snap.sync === 'unpushed';
+    // GitHub's compare page only knows about branches it has seen. Ask origin
+    // rather than trusting a sync verdict computed without a remote head.
+    const pushed = !(await remoteBranchHead(repo, branch));
     if (pushed) await pushBranch(repo);
-    return { url: compareUrl(info.nameWithOwner, info.defaultBranch, snap.branch), pushed };
+    return { url: compareUrl(info.nameWithOwner, info.defaultBranch, branch), pushed };
   },
 
   'POST /api/pr/viewed': async ({ path: p, viewed }) => {
@@ -189,8 +193,12 @@ async function handleApi(req, res, key) {
     const chunks = [];
     for await (const c of req) chunks.push(c);
     const body = chunks.length ? JSON.parse(Buffer.concat(chunks)) : undefined;
+    // Serialised, and resolved *before* the header goes out: writing the 200
+    // first means a throwing handler hits writeHead twice, and the second one
+    // takes the whole process down with ERR_HTTP_HEADERS_SENT.
+    const payload = JSON.stringify(await serial(() => handler(body)) ?? null);
     res.writeHead(200, { 'content-type': 'application/json' });
-    res.end(JSON.stringify(await serial(() => handler(body)) ?? null));
+    res.end(payload);
   } catch (e) {
     console.error(key, e.stderr || e.message);
     res.writeHead(500, { 'content-type': 'application/json' });

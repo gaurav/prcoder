@@ -78,7 +78,7 @@ function paint(status) {
   renderHeader(status, prs, { onSwitch: switchPr, onCommit: askClaudeToCommit });
   if (status.pr) renderPr({ ...status.pr, note: NOTES[status.scope] }, { onViewed: setViewed });
   else renderNoPr(status, { onCreate: createPr });
-  if (status.queue) setItems(status.queue);
+  if (status.queue) setItems(status.queue, Boolean(status.pr));
 }
 
 /**

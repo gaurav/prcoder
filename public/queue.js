@@ -17,11 +17,16 @@ export const freeze = (on) => { frozen = on; };
  * text is contentEditable and only saves on blur, so a poll landing mid-typing
  * would throw the edit away.
  */
-export function setItems(next) {
+export function setItems(next, prAvailable) {
   if (document.getElementById('queue-body').contains(document.activeElement)) return;
   items = next;
+  hasPr = prAvailable;
   render();
 }
+
+// Mirroring into a PR description needs a PR. Creating an issue does not, so
+// that control stays live on a branch that has none.
+let hasPr = true;
 
 export async function initQueue(d) {
   deps = d;
@@ -40,15 +45,28 @@ const save = async (url = '/api/queue', method = 'PUT', body = items) => {
 
 function render() {
   const host = document.getElementById('queue-body');
-  const shown = items.filter((i) => (tab === 'done' ? i.done : !i.done));
+  const live = items.filter((i) => !i.deleted);
+  // Restoring the last tombstone hides the tab; without this you would be left
+  // looking at an empty list with no tab to click back to.
+  if (tab === 'deleted' && live.length === items.length) tab = 'active';
+  const shown = tab === 'deleted' ? items.filter((i) => i.deleted)
+    : live.filter((i) => (tab === 'done' ? i.done : !i.done));
 
   host.replaceChildren(
     h('div', { className: 'tabs' },
-      tabBtn('active', `Active (${items.filter((i) => !i.done).length})`),
-      tabBtn('done', `Completed (${items.filter((i) => i.done).length})`),
+      tabBtn('active', `Active (${live.filter((i) => !i.done).length})`),
+      tabBtn('done', `Completed (${live.filter((i) => i.done).length})`),
+      ...(items.some((i) => i.deleted) ? [tabBtn('deleted', `Deleted (${items.filter((i) => i.deleted).length})`)] : []),
       h('span', { className: 'spacer' }),
-      bulk('→ all to PR', () => { items.forEach((i) => { if (!i.done) i.inPr = true; }); save('/api/queue/push', 'POST'); }),
-      bulk('clear done', () => { items = items.filter((i) => !i.done); save(); }),
+      ...(tab === 'deleted'
+        // The only hard delete in the app, and it is behind the tab that shows
+        // you what you are about to lose.
+        ? [bulk('empty', () => { items = items.filter((i) => !i.deleted); save(); })]
+        : [
+          bulk('→ all to PR', () => { items.forEach((i) => { if (!i.done && !i.deleted) i.inPr = true; }); save('/api/queue/push', 'POST'); },
+            !hasPr && 'no pull request to push to'),
+          bulk('clear done', () => { items.forEach((i) => { if (i.done) i.deleted = true; }); save(); }),
+        ]),
     ),
     h('ul', { className: 'items' }, ...shown.map((i) => row(i))),
   );
@@ -63,8 +81,9 @@ const tabBtn = (name, label) => {
   return b;
 };
 
-const bulk = (label, fn) => {
-  const b = h('button', { className: 'bulk' }, label);
+const bulk = (label, fn, disabled = false) => {
+  const b = h('button', { className: 'bulk', disabled: !!disabled }, label);
+  if (typeof disabled === 'string') b.title = disabled;
   b.onclick = fn;
   return b;
 };
@@ -85,12 +104,15 @@ function row(item) {
     item.issue ? h('a', { className: 'tag issue', href: item.issueUrl ?? '#', target: '_blank', rel: 'noopener' }, `#${item.issue}`) : null,
     h('span', { className: 'actions' },
       act('▶', 'send to Claude', () => deps.sendToClaude(item.text)),
-      act(item.inPr ? '◆' : '◇', item.inPr ? 'in PR description' : 'add to PR description', () => {
-        item.inPr = !item.inPr;
-        save('/api/queue/push', 'POST');
-      }),
+      act(item.inPr ? '◆' : '◇',
+        hasPr ? (item.inPr ? 'in PR description' : 'add to PR description') : 'no pull request to push to',
+        () => { item.inPr = !item.inPr; save('/api/queue/push', 'POST'); },
+        !hasPr),
       item.issue ? null : act('◎', 'create an issue', () => save('/api/queue/issue', 'POST', { items, index: idx })),
-      act('✕', 'delete', () => { items.splice(idx, 1); save(); }),
+      item.deleted
+        ? act('↩', 'restore', () => { item.deleted = false; save(); })
+        // A tombstone, not a splice: the Deleted tab is where it goes.
+        : act('✕', 'delete', () => { item.deleted = true; item.inPr = false; save('/api/queue/push', 'POST'); }),
     ),
   );
 
@@ -108,15 +130,15 @@ function row(item) {
   return li;
 }
 
-const act = (glyph, title, fn) => {
-  const b = h('button', { title }, glyph);
+const act = (glyph, title, fn, disabled = false) => {
+  const b = h('button', { title, disabled }, glyph);
   b.onclick = fn;
   return b;
 };
 
 export function addItem(text) {
   if (!text.trim()) return;
-  items.unshift({ text: text.trim(), done: false, inPr: false, issue: null });
+  items.unshift({ text: text.trim(), done: false, inPr: false, issue: null, deleted: false });
   tab = 'active';
   save();
 }

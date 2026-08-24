@@ -1,18 +1,20 @@
 // The queue lives in FUTURE.md as a plain markdown checklist, so it stays
 // hand-editable and `git diff`-able. An item records where it lives:
 //
-//   { text, done, inPr, issue }
+//   { text, done, inPr, issue, deleted }
 //
 // `inPr` mirrors it into the PR description; `issue` links it to a GitHub
 // issue. An item can be both, in which case the PR line becomes a bare #N
 // reference — that is the "converting to an issue replaces the PR line" rule.
+// `deleted` is a tombstone: deleting an item here or on github.com keeps the
+// line, so nothing the user typed disappears without somewhere to get it back.
 
 const HEADING = '## Queue';
 const OPEN = '<!-- prcoder:todo -->';
 const CLOSE = '<!-- /prcoder:todo -->';
 
 const ITEM = /^\s*[-*]\s*\[( |x|X)\]\s*(.*)$/;
-const MARKERS = /^((?:@pr\b|@issue#\d+\b|\s)*)/;
+const MARKERS = /^((?:@pr\b|@deleted\b|@issue#\d+\b|\s)*)/;
 
 function parseItem(line) {
   const m = ITEM.exec(line);
@@ -26,15 +28,21 @@ function parseItem(line) {
 
   // A PR-body line for an item that became an issue is just "#42".
   const bare = /^#(\d+)$/.exec(text);
-  if (bare) return { text: '', done, inPr: true, issue: Number(bare[1]) };
+  if (bare) return { text: '', done, inPr: true, issue: Number(bare[1]), deleted: false };
 
-  return { text, done, inPr: /@pr\b/.test(markers), issue: issue ? Number(issue[1]) : null };
+  return {
+    text, done,
+    inPr: /@pr\b/.test(markers),
+    issue: issue ? Number(issue[1]) : null,
+    deleted: /@deleted\b/.test(markers),
+  };
 }
 
 function renderItem(item, { markers = true } = {}) {
   const box = item.done ? 'x' : ' ';
   if (!markers) return `- [${box}] ${item.issue ? `#${item.issue}` : item.text}`;
-  const tags = [item.inPr && '@pr', item.issue && `@issue#${item.issue}`].filter(Boolean);
+  const tags = [item.inPr && '@pr', item.deleted && '@deleted',
+    item.issue && `@issue#${item.issue}`].filter(Boolean);
   return `- [${box}] ${[...tags, item.text].join(' ')}`.trimEnd();
 }
 
@@ -73,7 +81,7 @@ export function renderFuture(items, existing = '') {
  * item that is also an issue renders as a bare `#N` so GitHub links it.
  */
 export function renderPrBlock(items, body = '') {
-  const mine = items.filter((i) => i.inPr);
+  const mine = items.filter((i) => i.inPr && !i.deleted);
   const block = mine.length
     ? [OPEN, '## TODO', '', ...mine.map((i) => renderItem(i, { markers: false })), CLOSE].join('\n')
     : '';
@@ -116,12 +124,17 @@ export function syncFromPrBlock(items, body = '') {
     const i = merged.findIndex((m, idx) => !matched.has(idx) &&
       (line.issue ? m.issue === line.issue : m.text === line.text));
     if (i === -1) merged.push({ ...line, inPr: true });
-    else { matched.add(i); merged[i].done = line.done; merged[i].inPr = true; }
+    // Re-adding a line on github.com is how an item comes back from the dead.
+    else { matched.add(i); merged[i].done = line.done; merged[i].inPr = true; merged[i].deleted = false; }
   }
 
-  // An item we put in the PR body that is no longer there was deleted on GitHub.
-  for (const [idx, m] of merged.entries()) {
-    if (m.inPr && !matched.has(idx) && idx < items.length) m.inPr = false;
+  // An item we put in the PR body that is no longer there was deleted on
+  // GitHub. An empty block means the whole section went, not that every item
+  // was struck out one by one, so it is not evidence of anything.
+  if (fromPr.length) {
+    for (const [idx, m] of merged.entries()) {
+      if (m.inPr && !matched.has(idx) && idx < items.length) { m.inPr = false; m.deleted = true; }
+    }
   }
   return merged;
 }

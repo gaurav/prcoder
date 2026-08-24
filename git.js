@@ -96,6 +96,17 @@ export async function snapshot(cwd, remoteHead = null) {
   return { branch, head, detached: !branch, dirty: dirty.length > 0, dirtyFiles: dirty, sync, ahead };
 }
 
+/**
+ * The remote head when no PR carries it — the only case is a branch with no
+ * pull request, where `ls-remote` is the whole answer. A fork PR would need
+ * headRefOid instead, since its branch is not on origin at all.
+ */
+export async function remoteBranchHead(cwd, branch) {
+  if (!branch) return null;
+  const out = await git(['ls-remote', '--heads', 'origin', branch], cwd).catch(() => '');
+  return out.trim().split(/\s/)[0] || null;
+}
+
 export const checkoutPr = (cwd, number) =>
   run('gh', ['pr', 'checkout', String(number)], { cwd, timeout: 120_000 });
 
