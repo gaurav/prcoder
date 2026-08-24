@@ -17,6 +17,21 @@ non-executable.
 **Run tests with bare `node --test`, not `node --test test/`.** On Node 26 a
 directory argument is resolved as a module and dies with `Cannot find module`.
 
+## Subprocess errors lie by omission
+
+Two failures this repo depends on are invisible rather than loud, so check the
+real behaviour before trusting either.
+
+`execFile` hands stderr to its callback and never puts it on the error object.
+`run` in `github.js` attaches it, and every `no pull requests found`-style guard
+reads it — without that they match against `undefined` and silently never fire.
+
+git's exit codes are per-command, and a non-zero one is often an answer rather
+than a failure. `rev-parse --verify --quiet` exits 1 for a missing object where
+`cat-file -e` exits 128; `merge-base --is-ancestor` exits 1 to mean "no" and 128
+to mean "bad object". `asks()` in `git.js` treats one specific code as the
+answer and rethrows the rest, so pick the command whose codes you can tell apart.
+
 ## Verifying against GitHub
 
 Prefer checking GitHub's real behaviour over trusting its docs — the diff-anchor

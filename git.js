@@ -43,6 +43,20 @@ export function syncState({ head, remoteHead, remoteKnownLocally, remoteIsAncest
   return remoteIsAncestor ? 'ahead' : 'diverged';
 }
 
+/**
+ * The changed files that are the user's problem, from `git status --porcelain`.
+ *
+ * FUTURE.md is excluded because it is prcoder's own queue file, rewritten
+ * within seconds of normal use — counting it would leave the branch switcher
+ * permanently disabled. Untracked files are excluded by the caller's
+ * --untracked-files=no, since they never block a checkout.
+ *
+ * Porcelain v1 lines are `XY path`, and the status letters are significant, so
+ * the prefix is sliced rather than trimmed.
+ */
+export const userDirt = (status) =>
+  status.split('\n').filter(Boolean).map((l) => l.slice(3)).filter((f) => f !== 'FUTURE.md');
+
 /** GitHub's "open a PR for this branch" page. */
 export const compareUrl = (nameWithOwner, base, branch) =>
   `https://github.com/${nameWithOwner}/compare/${base}...${branch}?expand=1`;
@@ -76,12 +90,8 @@ export async function snapshot(cwd, remoteHead = null) {
   const branch = await text(['symbolic-ref', '--quiet', '--short', 'HEAD'], cwd).catch(() => '');
   const head = await text(['rev-parse', 'HEAD'], cwd);
 
-  // FUTURE.md is prcoder's own scratch file and is dirty during normal use;
-  // untracked files never block a checkout. Neither is the user's work.
-  // Porcelain v1 is `XY path`, and the status letters matter, so no trimming.
   const status = await git(['status', '--porcelain', '--untracked-files=no'], cwd);
-  const dirty = status.split('\n').filter(Boolean).map((l) => l.slice(3))
-    .filter((f) => f !== 'FUTURE.md');
+  const dirty = userDirt(status);
 
   let sync = 'unpushed';
   let ahead = 0;
