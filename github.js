@@ -45,6 +45,12 @@ export async function prHeads(cwd, target) {
   }
 }
 
+/** The description as GitHub has it right now, for a read-modify-write. */
+export async function prBody(cwd, prUrl) {
+  const { body } = JSON.parse(await gh(['pr', 'view', prUrl, '--json', 'body'], { cwd }));
+  return body ?? '';
+}
+
 /** Open PRs, for the switcher. */
 export async function listPrs(cwd) {
   const args = ['pr', 'list', '--state', 'open', '--json', 'number,title,headRefName,isDraft'];

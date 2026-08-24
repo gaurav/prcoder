@@ -8,7 +8,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn as ptySpawn } from 'node-pty';
 import { WebSocketServer } from 'ws';
-import { loadPr, prHeads, listPrs, setViewed, setBody, createIssue } from './github.js';
+import { loadPr, prHeads, prBody, listPrs, setViewed, setBody, createIssue } from './github.js';
 import { snapshot, repoInfo, prScope, compareUrl, checkoutPr, pushBranch, remoteBranchHead } from './git.js';
 import { groupFiles, fileUrl } from './files.js';
 import { parseFuture, renderFuture, renderPrBlock, syncFromPrBlock } from './queue.js';
@@ -88,8 +88,12 @@ async function writeQueue(items) {
   await fs.writeFile(futureFile, renderFuture(items, existing));
 
   if (pr) {
-    const body = renderPrBlock(items, pr.body ?? '');
-    if (body !== pr.body) {
+    // Re-read rather than trusting the cached copy: someone may have edited the
+    // prose around our block on github.com since the last poll, and
+    // renderPrBlock only owns what is between the markers.
+    const current = await prBody(repo, pr.url).catch(() => pr.body ?? '');
+    const body = renderPrBlock(items, current);
+    if (body !== current) {
       await setBody(repo, pr.url, body);
       // Only once GitHub has it: an optimistic assignment survives the failure
       // and makes prcoder report items the PR has never seen.
