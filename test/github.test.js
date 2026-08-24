@@ -66,3 +66,13 @@ test('run() closes stdin even with no input, so readers do not block', async () 
 test('run() rejects on a non-zero exit rather than resolving empty', async () => {
   await assert.rejects(() => run('false', []));
 });
+
+// execFile reports stderr as the third callback argument and leaves the error
+// object without it, so loadPr's "no pull requests found" guard silently
+// matched against undefined and every no-PR repo threw instead of returning
+// null. Verified against gh 2.98.0 on 2026-08-23.
+test('run() puts the child stderr on the error, where the callers look for it', async () => {
+  await assert.rejects(
+    () => run('sh', ['-c', 'echo no pull requests found >&2; exit 1']),
+    (e) => e.stderr.includes('no pull requests found'));
+});

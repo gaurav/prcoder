@@ -10,7 +10,14 @@ import { execFile } from 'node:child_process';
 export function run(bin, args, { input, ...opts } = {}) {
   return new Promise((resolve, reject) => {
     const child = execFile(bin, args, { maxBuffer: 32 * 1024 * 1024, ...opts },
-      (err, stdout) => (err ? reject(err) : resolve(stdout)));
+      // execFile hands stderr to the callback and does not put it on the error,
+      // so every caller matching on gh's complaints — "no pull requests found"
+      // above, and the exit-code checks in git.js — was reading undefined.
+      (err, stdout, stderr) => {
+        if (!err) return resolve(stdout);
+        err.stderr = stderr;
+        reject(err);
+      });
     if (input !== undefined) child.stdin.end(input);
     else child.stdin.end();
   });
