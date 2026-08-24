@@ -45,7 +45,7 @@ export function renderHeader(status, prs, { onSwitch, onCommit }) {
 
   light.className = '';
   light.hidden = false;
-  if (status.error) { light.className = 'unknown'; light.textContent = 'offline'; }
+  if (status.error) { light.className = 'unknown'; light.textContent = 'unavailable'; }
   else if (status.scope === 'other-repo') light.textContent = 'another repo';
   else if (status.scope === 'other-branch') light.textContent = 'not checked out';
   else if (status.sync === 'ahead') { light.className = 'warn'; light.textContent = `${status.ahead} unpushed`; }
@@ -62,7 +62,7 @@ export function renderNoPr(status, { onCreate }) {
 
   if (status.error) {
     return host.replaceChildren(
-      h('p', { className: 'empty' }, 'Could not reach GitHub.'),
+      h('p', { className: 'empty' }, 'Could not read this repository.'),
       h('p', { className: 'pr-note' }, String(status.error)));
   }
 
