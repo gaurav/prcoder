@@ -120,9 +120,16 @@ export function syncFromPrBlock(items, body = '') {
   const merged = items.map((i) => ({ ...i }));
   const matched = new Set();
 
+  const same = (line) => (m) => (line.issue ? m.issue === line.issue : m.text === line.text);
+  const pick = (pred) => merged.findIndex((m, idx) => !matched.has(idx) && pred(m));
+
   for (const line of fromPr) {
-    const i = merged.findIndex((m, idx) => !matched.has(idx) &&
-      (line.issue ? m.issue === line.issue : m.text === line.text));
+    // A line in the body describes an item that is in the body, so an item
+    // already flagged inPr wins over a same-text one that is not — otherwise
+    // the local-only twin absorbs the match and the real item gets buried.
+    const is = same(line);
+    let i = pick((m) => is(m) && m.inPr);
+    if (i === -1) i = pick(is);
     if (i === -1) merged.push({ ...line, inPr: true });
     // Re-adding a line on github.com is how an item comes back from the dead.
     else { matched.add(i); merged[i].done = line.done; merged[i].inPr = true; merged[i].deleted = false; }

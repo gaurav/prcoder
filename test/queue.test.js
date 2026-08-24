@@ -148,3 +148,17 @@ test('an emptied block un-mirrors items without burying them', () => {
   const emptied = ['<!-- prcoder:todo -->', '## TODO', '', '<!-- /prcoder:todo -->'].join('\n');
   assert.deepEqual(syncFromPrBlock(items, emptied), items);
 });
+
+// Matching by text alone let a local-only twin absorb the body's line, which
+// left the real mirrored item unmatched and tombstoned it.
+test('a body line matches the mirrored twin, not the local-only one', () => {
+  const items = [
+    { text: 'same', done: false, inPr: false, issue: null, deleted: false },
+    { text: 'same', done: false, inPr: true, issue: null, deleted: false },
+  ];
+  const body = ['<!-- prcoder:todo -->', '## TODO', '', '- [x] same', '<!-- /prcoder:todo -->'].join('\n');
+  assert.deepEqual(syncFromPrBlock(items, body), [
+    { text: 'same', done: false, inPr: false, issue: null, deleted: false },
+    { text: 'same', done: true, inPr: true, issue: null, deleted: false },
+  ]);
+});

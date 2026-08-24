@@ -35,7 +35,7 @@ let info = null;   // owner/repo and default branch: constant while we run
  * Every gh/git call runs one at a time. `gh pr checkout` is a fetch, a checkout
  * and a fast-forward, and a status poll landing between the last two reads a
  * branch at the wrong commit. Serialising is also what stops a poll reloading
- * `pr` in the middle of pushToPr's read-modify-write of the description.
+ * `pr` in the middle of writeQueue's read-modify-write of the description.
  *
  * ponytail: one global lock; split per-route only if a slow gh call visibly
  * stalls the UI.
@@ -75,9 +75,27 @@ async function readQueue() {
   return decorate(syncFromPrBlock(parseFuture(text), pr?.body ?? ''));
 }
 
+/**
+ * FUTURE.md is the source of truth and the PR description is a projection of
+ * it, so they move together. Writing one alone leaves readQueue's merge running
+ * against a stale body, which then undoes the write that just happened: a tick
+ * reverts, and an item whose text was edited gets buried as deleted because its
+ * old line no longer matches anything. The network call only happens when the
+ * rendered block actually changes, so ticking a local-only item stays offline.
+ */
 async function writeQueue(items) {
   const existing = await fs.readFile(futureFile, 'utf8').catch(() => '');
   await fs.writeFile(futureFile, renderFuture(items, existing));
+
+  if (pr) {
+    const body = renderPrBlock(items, pr.body ?? '');
+    if (body !== pr.body) {
+      await setBody(repo, pr.url, body);
+      // Only once GitHub has it: an optimistic assignment survives the failure
+      // and makes prcoder report items the PR has never seen.
+      pr.body = body;
+    }
+  }
   return decorate(items);
 }
 
@@ -88,14 +106,6 @@ function decorate(items) {
     ...i,
     issueUrl: i.issue && repoUrl ? `${repoUrl}/issues/${i.issue}` : null,
   }));
-}
-
-/** Push the `inPr` items into the PR description. */
-async function pushToPr(items) {
-  requirePr();
-  pr.body = renderPrBlock(items, pr.body ?? '');
-  await setBody(repo, pr.url, pr.body);
-  return items;
 }
 
 /**
@@ -179,13 +189,10 @@ const routes = {
 
   'PUT /api/queue': (items) => writeQueue(items),
 
-  'POST /api/queue/push': async (items) => writeQueue(await pushToPr(items)),
-
   'POST /api/queue/issue': async ({ items, index }) => {
     info ??= await repoInfo(repo);
     const { number } = await createIssue(repo, info.nameWithOwner, items[index].text);
     items[index].issue = number;
-    if (items[index].inPr) await pushToPr(items);
     return writeQueue(items);
   },
 };

@@ -22,12 +22,19 @@ export function renderHeader(status, prs, { onSwitch, onCommit }) {
   const light = document.getElementById('pr-sync');
 
   // Rebuilt only when the set of PRs changes, so the open list survives a poll.
-  const keys = prs.map((p) => p.number).join(',');
+  // gh pr list is open PRs only, so a merged or closed one has no option of its
+  // own — without this the select falls to selectedIndex -1 and renders blank
+  // while the pane below it is showing that very PR.
+  const shown = status.pr && !prs.some((p) => p.number === status.pr.number)
+    ? [{ number: status.pr.number, title: status.pr.title, isDraft: false }, ...prs]
+    : prs;
+
+  const keys = shown.map((p) => p.number).join(',');
   if (sel.dataset.keys !== keys) {
     sel.dataset.keys = keys;
     sel.replaceChildren(
-      h('option', { value: '' }, prs.length ? 'no pull request' : 'no open pull requests'),
-      ...prs.map((p) => h('option', { value: String(p.number) },
+      h('option', { value: '' }, shown.length ? 'no pull request' : 'no open pull requests'),
+      ...shown.map((p) => h('option', { value: String(p.number) },
         `#${p.number} ${p.isDraft ? '(draft) ' : ''}${p.title}`)),
     );
     sel.onchange = () => sel.value && onSwitch(Number(sel.value));

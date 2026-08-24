@@ -63,7 +63,7 @@ function render() {
         // you what you are about to lose.
         ? [bulk('empty', () => { items = items.filter((i) => !i.deleted); save(); })]
         : [
-          bulk('→ all to PR', () => { items.forEach((i) => { if (!i.done && !i.deleted) i.inPr = true; }); save('/api/queue/push', 'POST'); },
+          bulk('→ all to PR', () => { items.forEach((i) => { if (!i.done && !i.deleted) i.inPr = true; }); save(); },
             !hasPr && 'no pull request to push to'),
           bulk('clear done', () => { items.forEach((i) => { if (i.done) i.deleted = true; }); save(); }),
         ]),
@@ -106,13 +106,13 @@ function row(item) {
       act('▶', 'send to Claude', () => deps.sendToClaude(item.text)),
       act(item.inPr ? '◆' : '◇',
         hasPr ? (item.inPr ? 'in PR description' : 'add to PR description') : 'no pull request to push to',
-        () => { item.inPr = !item.inPr; save('/api/queue/push', 'POST'); },
+        () => { item.inPr = !item.inPr; save(); },
         !hasPr),
       item.issue ? null : act('◎', 'create an issue', () => save('/api/queue/issue', 'POST', { items, index: idx })),
       item.deleted
         ? act('↩', 'restore', () => { item.deleted = false; save(); })
         // A tombstone, not a splice: the Deleted tab is where it goes.
-        : act('✕', 'delete', () => { item.deleted = true; item.inPr = false; save('/api/queue/push', 'POST'); }),
+        : act('✕', 'delete', () => { item.deleted = true; item.inPr = false; save(); }),
     ),
   );
 

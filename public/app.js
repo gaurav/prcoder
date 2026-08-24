@@ -66,7 +66,12 @@ const post = async (url, body) => {
 // The switcher only changes when PRs are opened or closed, so it is not worth a
 // call every minute — page load and opening the dropdown are enough.
 let prs = [];
-const loadPrs = () => fetch('/api/prs').then((r) => (r.ok ? r.json() : [])).then((l) => { prs = l; });
+let last = null;
+const loadPrs = () => fetch('/api/prs')
+  .then((r) => (r.ok ? r.json() : []))
+  // Repaint, or a PR opened since page load stays invisible until the next
+  // poll — the switcher only rebuilds its options when the set changes.
+  .then((l) => { prs = l; if (last) renderHeader(last, prs, handlers); });
 document.getElementById('pr-switch').addEventListener('mousedown', loadPrs);
 
 const NOTES = {
@@ -75,7 +80,8 @@ const NOTES = {
 };
 
 function paint(status) {
-  renderHeader(status, prs, { onSwitch: switchPr, onCommit: askClaudeToCommit });
+  last = status;
+  renderHeader(status, prs, handlers);
   if (status.pr) renderPr({ ...status.pr, note: NOTES[status.scope] }, { onViewed: setViewed });
   else renderNoPr(status, { onCreate: createPr });
   if (status.queue) setItems(status.queue, Boolean(status.pr));
@@ -92,8 +98,7 @@ async function loadStatus() {
     if (!res.ok || data?.error) throw new Error(data?.error ?? res.statusText);
     paint(data);
   } catch (e) {
-    renderHeader({ error: e.message, dirty: false, dirtyFiles: [], pr: null }, prs,
-      { onSwitch: switchPr, onCommit: askClaudeToCommit });
+    renderHeader({ error: e.message, dirty: false, dirtyFiles: [], pr: null }, prs, handlers);
   }
 }
 
@@ -130,6 +135,8 @@ async function createPr(btn) {
 
 const askClaudeToCommit = (files) =>
   sendToClaude(`Commit the current changes: ${files.join(', ')}`);
+
+const handlers = { onSwitch: switchPr, onCommit: askClaudeToCommit };
 
 document.getElementById('pr-refresh').onclick = loadStatus;
 
