@@ -52,10 +52,11 @@ const requirePr = () => {
   return pr;
 };
 
-async function refreshPr() {
+async function refreshPr(detached) {
   // gh pr view fails on a detached HEAD in a way loadPr does not recognise, so
   // it would throw rather than report "no PR" — and 500 the poll every minute.
-  if (!target && (await snapshot(repo)).detached) { pr = null; return null; }
+  detached ??= (await snapshot(repo)).detached;
+  if (!target && detached) { pr = null; return null; }
   pr = await loadPr(repo, target);
   return pr && { ...pr, groups: withUrls(pr) };
 }
@@ -105,19 +106,20 @@ async function pushToPr(items) {
 async function status({ full = false } = {}) {
   info ??= await repoInfo(repo);
 
-  const detached = (await snapshot(repo)).detached;
+  // Taken once and threaded through: the remote head is not known yet, and
+  // asking git the same four questions three times a minute is just noise.
+  const { branch, detached } = await snapshot(repo);
   // A pinned target keeps working on a detached HEAD; branch-following cannot.
   const heads = detached && !target ? null : await prHeads(repo, target);
 
   // The cheap call decides whether the expensive one is needed: loadPr also
   // runs a paginated GraphQL pass, which is far too much for a 60s poll.
   if (full || heads?.updatedAt !== pr?.updatedAt || heads?.number !== pr?.number) {
-    await refreshPr();
+    await refreshPr(detached);
   }
 
   // With no PR there is no headRefOid to compare against, so ask origin.
-  const oid = pr?.headRefOid ?? heads?.headRefOid
-    ?? await remoteBranchHead(repo, (await snapshot(repo)).branch);
+  const oid = pr?.headRefOid ?? heads?.headRefOid ?? await remoteBranchHead(repo, branch);
   const snap = await snapshot(repo, oid);
   const scope = prScope(pr, { branch: snap.branch, nameWithOwner: info.nameWithOwner });
 
@@ -126,8 +128,10 @@ async function status({ full = false } = {}) {
     ...info,
     scope,
     onDefaultBranch: snap.branch === info.defaultBranch,
-    // A PR we have not checked out can never be in sync with this working tree.
-    sync: scope === 'current' ? snap.sync : null,
+    // A PR we have not checked out can never be in sync with this working
+    // tree, so its verdict is meaningless. With no PR at all the branch still
+    // has one, and "not pushed yet" is what the create button needs to know.
+    sync: scope === 'current' || scope === 'none' ? snap.sync : null,
     pr: pr ? { ...pr, groups: withUrls(pr) } : null,
     queue: await readQueue(),
   };
