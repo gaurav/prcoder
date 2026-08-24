@@ -5,6 +5,23 @@ import { h } from './pr.js';
 let items = [];
 let tab = 'active';
 let deps = {};
+// Set while a branch switch is in flight. Every save() writes the whole array,
+// so one stray checkbox during the switch would overwrite the other branch's
+// FUTURE.md wholesale.
+let frozen = false;
+
+export const freeze = (on) => { frozen = on; };
+
+/**
+ * Replace the list from the server. Skipped while an item is being edited: the
+ * text is contentEditable and only saves on blur, so a poll landing mid-typing
+ * would throw the edit away.
+ */
+export function setItems(next) {
+  if (document.getElementById('queue-body').contains(document.activeElement)) return;
+  items = next;
+  render();
+}
 
 export async function initQueue(d) {
   deps = d;
@@ -13,6 +30,7 @@ export async function initQueue(d) {
 }
 
 const save = async (url = '/api/queue', method = 'PUT', body = items) => {
+  if (frozen) return;
   const res = await fetch(url, { method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
   const data = await res.json();
   if (data?.error) { alert(data.error); return; }

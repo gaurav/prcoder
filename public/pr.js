@@ -11,6 +11,81 @@ const GROUPS = [
   ['docs', 'Config & docs'],
 ];
 
+/**
+ * The header is the one part of this pane that is never blown away, so the
+ * switcher and the light live there — a poll landing mid-click would otherwise
+ * close an open dropdown.
+ */
+export function renderHeader(status, prs, { onSwitch, onCommit }) {
+  const sel = document.getElementById('pr-switch');
+  const commit = document.getElementById('pr-commit');
+  const light = document.getElementById('pr-sync');
+
+  // Rebuilt only when the set of PRs changes, so the open list survives a poll.
+  const keys = prs.map((p) => p.number).join(',');
+  if (sel.dataset.keys !== keys) {
+    sel.dataset.keys = keys;
+    sel.replaceChildren(
+      h('option', { value: '' }, prs.length ? 'no pull request' : 'no open pull requests'),
+      ...prs.map((p) => h('option', { value: String(p.number) },
+        `#${p.number} ${p.isDraft ? '(draft) ' : ''}${p.title}`)),
+    );
+    sel.onchange = () => sel.value && onSwitch(Number(sel.value));
+  }
+  // Always re-assert: a failed switch has to snap back to the real branch.
+  sel.value = status.pr ? String(status.pr.number) : '';
+
+  // Uncommitted work would make `gh pr checkout` fail, so offer the fix instead
+  // of the switch. Claude is right there in the next pane.
+  const blocked = status.dirty;
+  sel.hidden = blocked || status.scope === 'other-repo';
+  commit.hidden = !blocked;
+  commit.onclick = () => onCommit(status.dirtyFiles);
+  commit.textContent = `Commit ${status.dirtyFiles.length} file${status.dirtyFiles.length === 1 ? '' : 's'}…`;
+
+  light.className = '';
+  light.hidden = false;
+  if (status.error) { light.className = 'unknown'; light.textContent = 'offline'; }
+  else if (status.scope === 'other-repo') light.textContent = 'another repo';
+  else if (status.scope === 'other-branch') light.textContent = 'not checked out';
+  else if (status.sync === 'ahead') { light.className = 'warn'; light.textContent = `${status.ahead} unpushed`; }
+  else if (status.sync === 'behind') { light.className = 'warn'; light.textContent = 'pull needed'; }
+  else if (status.sync === 'diverged') { light.className = 'warn'; light.textContent = 'diverged'; }
+  else if (status.sync === 'unpushed') { light.className = 'warn'; light.textContent = 'not pushed'; }
+  else if (status.detached) light.textContent = 'detached HEAD';
+  else light.hidden = true;
+}
+
+/** The pane with no PR to show: why, and the one thing worth doing about it. */
+export function renderNoPr(status, { onCreate }) {
+  const host = document.getElementById('pr-body');
+
+  if (status.error) {
+    return host.replaceChildren(
+      h('p', { className: 'empty' }, 'Could not reach GitHub.'),
+      h('p', { className: 'pr-note' }, String(status.error)));
+  }
+
+  const why = status.detached ? 'HEAD is detached — no branch to open a pull request for.'
+    : status.onDefaultBranch ? `You are on ${status.branch}. Make a branch to start a pull request.`
+    : `No pull request for ${status.branch} yet.`;
+
+  // Comparing a branch with itself opens an empty diff, so on main there is
+  // nothing to offer — the fix is a branch, not a button.
+  const can = !status.detached && !status.onDefaultBranch;
+  const btn = h('button', { className: 'pr-create', disabled: !can }, 'Create a pull request');
+  if (can) btn.onclick = () => onCreate(btn);
+
+  host.replaceChildren();
+  append(host,
+    h('p', { className: 'empty' }, why),
+    status.sync === 'unpushed' && can
+      ? h('p', { className: 'pr-note' }, 'This branch is not on GitHub yet; it will be pushed first.')
+      : null,
+    btn,
+  );
+}
+
 export function renderPr(pr, { onViewed }) {
   const host = document.getElementById('pr-body');
   host.replaceChildren();
@@ -24,6 +99,7 @@ export function renderPr(pr, { onViewed }) {
     h('a', { className: 'pr-link', href: pr.url, target: '_blank', rel: 'noopener' },
       `#${pr.number} on GitHub ↗`),
     h('h2', { className: 'pr-title' }, pr.title),
+    pr.note ? h('p', { className: 'pr-note' }, pr.note) : null,
     h('div', { className: 'meta' },
       badge(pr.isDraft ? 'draft' : pr.state.toLowerCase(), pr.isDraft ? 'draft' : pr.state.toLowerCase()),
       h('span', {}, `${pr.headRefName} → ${pr.baseRefName}`),

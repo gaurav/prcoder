@@ -9,7 +9,13 @@
 <body>
   <main>
     <section id="pr" class="pane">
-      <header><h1>Pull request</h1><button id="pr-refresh" title="reload from GitHub">⟳</button></header>
+      <header>
+        <h1>Pull request</h1>
+        <select id="pr-switch" title="switch to another open pull request"></select>
+        <button id="pr-commit" class="commit" hidden title="uncommitted changes block a branch switch">Commit…</button>
+        <span id="pr-sync"></span>
+        <button id="pr-refresh" title="reload from GitHub">⟳</button>
+      </header>
       <div id="pr-body" class="scroll">Loading…</div>
     </section>
 
@@ -26,6 +32,7 @@
       <div id="queue-body" class="scroll"></div>
     </section>
   </main>
+  <div id="toast" hidden></div>
   <script type="module" src="/app.js"></script>
 </body>
 </html>

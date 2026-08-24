@@ -103,3 +103,49 @@ a { color: var(--accent); }
   font-size: 11px; padding: 0 3px; cursor: pointer; line-height: 1;
 }
 .actions button:hover { color: var(--accent); }
+
+/* --- PR pane header: switcher, sync light --- */
+.pane > header select {
+  max-width: 45%; padding: 2px 4px; font: inherit; font-size: 11px;
+  color: var(--dim); background: var(--bg);
+  border: 1px solid var(--line); border-radius: 4px;
+}
+.pane > header select:hover:not(:disabled) { color: var(--fg); }
+.pane > header select:disabled, .pane > header button:disabled {
+  opacity: .4; cursor: not-allowed;
+}
+.pane > header select[hidden], #pr-sync[hidden], .pane > header button[hidden] { display: none; }
+/* margin-left:auto belongs to the refresh glyph alone, not to every header button. */
+.pane > header button.commit {
+  margin-left: 0; font-size: 11px; padding: 2px 8px;
+  border: 1px solid var(--line); border-radius: 4px;
+}
+
+/* The dot carries the state; the text next to it says what to do about it. */
+#pr-sync { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--dim); }
+#pr-sync::before {
+  content: ''; width: 7px; height: 7px; border-radius: 50%;
+  background: var(--line); flex: none;
+}
+#pr-sync.warn { color: #f0dc9a; }
+#pr-sync.warn::before { background: #f0dc9a; }
+#pr-sync.unknown::before { background: transparent; box-shadow: inset 0 0 0 1px var(--dim); }
+
+/* Sits over the panes so it never reflows them. */
+#toast {
+  position: fixed; bottom: 14px; left: 50%; transform: translateX(-50%);
+  max-width: 60ch; padding: 7px 14px; border-radius: 6px; font-size: 12px;
+  background: var(--line); color: var(--fg); border: 1px solid var(--dim);
+  box-shadow: 0 3px 14px #0008; z-index: 10;
+}
+#toast[hidden] { display: none; }
+#toast.bad { background: #4d1f24; color: #f5a3a3; border-color: #f5a3a3; }
+
+.pr-note { color: var(--dim); font-size: 11px; margin: 0 0 8px; }
+.pr-create {
+  font: inherit; font-size: 12px; margin-top: 6px; padding: 4px 10px; cursor: pointer;
+  color: var(--fg); background: var(--bg);
+  border: 1px solid var(--line); border-radius: 4px;
+}
+.pr-create:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.pr-create:disabled { opacity: .4; cursor: not-allowed; }
