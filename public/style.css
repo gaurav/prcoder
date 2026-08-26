@@ -108,7 +108,9 @@ a { color: var(--accent); }
 
 /* --- PR pane header: switcher, sync light --- */
 .pane > header select {
-  max-width: 45%; padding: 2px 4px; font: inherit; font-size: 11px;
+  /* Takes the header's spare width; min-width:0 lets a long PR title ellipsize
+     instead of pushing the sync light and refresh glyph off the edge. */
+  flex: 1; min-width: 0; padding: 2px 4px; font: inherit; font-size: 11px;
   color: var(--dim); background: var(--bg);
   border: 1px solid var(--line); border-radius: 4px;
 }
