@@ -13,3 +13,7 @@
 - [ ] @pr Two browser tabs each spawn their own `claude` PTY and their own 60s poll, doubling gh traffic against one global lock
 - [ ] @pr A branch with no PR runs `git ls-remote` every poll to learn whether it is pushed; the PR case gets the same answer free from headRefOid
 - [ ] @pr `gh pr checkout` has a 120s timeout and sits behind the global serial lock, so a slow checkout stalls /api/status for the duration -- needs a decision about per-route locking
+- [ ] @pr Prefetch patches eagerly in refreshPr if first-click diff latency on big PRs annoys -- there's a ponytail comment at the cache in server.js
+- [ ] @pr Add line numbers to the diff pane, parsed from the @@ hunk headers, if hunk navigation proves painful
+- [ ] @pr Update issue #2: diff-on-select shipped as a right-column pane, so only the panel-rearrangement half of it is still open
+- [ ] @pr Refresh the PR description -- it still says the diff stays on GitHub and lists inline diffs as deliberately excluded, and the pane/line/test counts predate the diff pane
