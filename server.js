@@ -9,7 +9,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn as ptySpawn } from 'node-pty';
 import { WebSocketServer } from 'ws';
-import { loadPr, prHeads, prBody, listPrs, setViewed, setBody, createIssue } from './github.js';
+import { loadPr, prHeads, prBody, listPrs, setViewed, setBody, createIssue, fetchPatches } from './github.js';
 import { snapshot, repoInfo, prScope, compareUrl, checkoutPr, pushBranch, remoteBranchHead } from './git.js';
 import { groupFiles, fileUrl } from './files.js';
 import { parseFuture, renderFuture, renderPrBlock, syncFromPrBlock } from './queue.js';
@@ -33,6 +33,11 @@ const futureFile = path.join(repo, 'FUTURE.md');
 // The PR is fetched once and reused; the queue routes need its body and node id.
 let pr = null;
 let info = null;   // owner/repo and default branch: constant while we run
+
+// ponytail: patches fetched lazily on the first diff click, keyed by head oid
+// so a push or PR switch invalidates for free. Eager prefetch in refreshPr if
+// first-click latency annoys.
+let patches = { key: null, map: new Map() };
 
 /**
  * Every gh/git call runs one at a time. `gh pr checkout` is a fetch, a checkout
@@ -190,6 +195,13 @@ const routes = {
     const f = pr.files.find((x) => x.path === p);
     if (f) f.viewed = viewed;
     return { ok: true };
+  },
+
+  'POST /api/diff': async ({ path: p }) => {
+    const cur = requirePr();
+    const key = cur.url + cur.headRefOid;
+    if (patches.key !== key) patches = { key, map: await fetchPatches(repo, cur.url) };
+    return { path: p, patch: patches.map.get(p) ?? null };
   },
 
   'GET /api/queue': () => readQueue(),
