@@ -137,11 +137,18 @@ function checks({ passed, failed, pending }) {
   );
 }
 
+// Two rows, because the two kinds of link mean different things: one set closes
+// on merge, the other is only mentioned in the body. The row label says which,
+// so the chips stay bare numbers.
 function issues(list) {
-  if (!list.length) return null;
-  return h('div', { className: 'issues' },
-    ...list.map((i) => h('a', { href: i.url, target: '_blank', rel: 'noopener', title: i.title ?? '' },
-      `${i.closes ? 'closes ' : ''}#${i.number}`)));
+  return [['Closes:', true], ['Mentions:', false]].map(([label, closes]) => {
+    const kind = list.filter((i) => i.closes === closes);
+    if (!kind.length) return null;
+    return h('div', { className: 'issues' },
+      h('span', { className: 'issues-label' }, label),
+      ...kind.map((i) => h('a', { href: i.url, target: '_blank', rel: 'noopener', title: i.title ?? '' },
+        `#${i.number}`)));
+  });
 }
 
 function fileGroup(label, files, onViewed) {

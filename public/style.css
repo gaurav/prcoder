@@ -57,7 +57,8 @@ a { color: var(--accent); }
 .md p { margin: 0 0 6px; }
 .md code { background: var(--bg); padding: 0 4px; border-radius: 3px; font-size: 11px; }
 
-.issues { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; font-size: 11px; }
+.issues { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 6px; font-size: 11px; }
+.issues-label { color: var(--dim); }
 .issues a { padding: 1px 6px; border: 1px solid var(--line); border-radius: 9px; text-decoration: none; }
 
 .group { margin-bottom: 12px; }
