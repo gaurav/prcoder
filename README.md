@@ -57,8 +57,14 @@ left with just the URL on stdout.
 file grouped as *Tests* / *Code* / *Config & docs*, tests first, because tests
 are the fastest way to see what functionality actually changed. The checkbox on
 each file is GitHub's own "viewed" checkbox: tick it here and it's ticked on
-github.com. Clicking a file opens GitHub's diff viewer at that file — the diff
-itself stays on GitHub, which already does it better.
+github.com. Clicking a file opens its diff in the **Diff** pane;
+cmd/ctrl-clicking opens GitHub's diff viewer at that file instead.
+
+**Diff** — the selected file's patch, rendered plainly above the terminal so
+select → read → tick viewed → ask Claude never leaves the window. It shows the
+same hunks GitHub does (fetched once per push and cached), refreshes itself when
+the branch head moves, and links out to GitHub for anything the plain rendering
+can't do — syntax highlighting, comments, binary and oversized files.
 
 **Claude Code** — the real `claude` binary in a PTY, so Escape still interrupts,
 slash commands still work, permission prompts still appear, and typing while
@@ -97,7 +103,7 @@ through it, so there is no token to configure.
 
 ## Not here
 
-Inline diffs, review threads, multi-session management. This is a prototype for
+Syntax-highlighted diffs, review threads, multi-session management. This is a prototype for
 finding out whether a PR-shaped workspace beats a chat-shaped one; it's meant to
 be cheap to rewrite.
 

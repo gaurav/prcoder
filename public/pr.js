@@ -93,7 +93,7 @@ export function renderNoPr(status, { onCreate }) {
   );
 }
 
-export function renderPr(pr, { onViewed }) {
+export function renderPr(pr, handlers) {
   const host = document.getElementById('pr-body');
   host.replaceChildren();
 
@@ -119,7 +119,7 @@ export function renderPr(pr, { onViewed }) {
     h('div', { className: 'meta' },
       h('a', { href: `${pr.url}#issuecomment`, target: '_blank', rel: 'noopener' },
         `${pr.counts.comments} comments · ${pr.counts.reviews} reviews ↗`)),
-    ...GROUPS.map(([key, label]) => fileGroup(label, pr.groups[key], onViewed)),
+    ...GROUPS.map(([key, label]) => fileGroup(label, pr.groups[key], handlers)),
   );
 }
 
@@ -151,16 +151,16 @@ function issues(list) {
   });
 }
 
-function fileGroup(label, files, onViewed) {
+function fileGroup(label, files, handlers) {
   if (!files?.length) return null;
   const seen = files.filter((f) => f.viewed).length;
   return h('section', { className: 'group' },
     h('h3', {}, `${label} `, h('span', { className: 'count' }, `${seen}/${files.length}`)),
-    ...files.map((f) => fileRow(f, onViewed)),
+    ...files.map((f) => fileRow(f, handlers)),
   );
 }
 
-function fileRow(f, onViewed) {
+function fileRow(f, { onViewed, onOpen, selected }) {
   const box = h('input', { type: 'checkbox', checked: f.viewed, title: 'mark viewed on GitHub' });
   box.addEventListener('change', async () => {
     box.disabled = true;
@@ -168,14 +168,21 @@ function fileRow(f, onViewed) {
     box.disabled = false;
     row.classList.toggle('viewed', box.checked);
   });
-  const row = h('div', { className: `file${f.viewed ? ' viewed' : ''}` },
+  const link = h('a', { href: f.url, target: '_blank', rel: 'noopener', className: 'path', title: f.path },
+    f.path);
+  link.addEventListener('click', (e) => {
+    if (e.metaKey || e.ctrlKey) return;   // GitHub stays one modifier away
+    e.preventDefault();
+    onOpen(f);
+  });
+  const row = h('div', { className: `file${f.viewed ? ' viewed' : ''}${f.path === selected ? ' sel' : ''}` },
     box,
-    h('a', { href: f.url, target: '_blank', rel: 'noopener', className: 'path', title: f.path },
-      f.path),
+    link,
     h('span', { className: 'nums' },
       h('span', { className: 'add' }, `+${f.additions}`), ' ',
       h('span', { className: 'del' }, `−${f.deletions}`)),
   );
+  row.dataset.path = f.path;
   return row;
 }
 

@@ -2,6 +2,7 @@ import { Terminal } from '/vendor/xterm.mjs';
 import { FitAddon } from '/vendor/addon-fit.mjs';
 import { WebLinksAddon } from '/vendor/addon-web-links.mjs';
 import { renderPr, renderNoPr, renderHeader } from './pr.js';
+import { openDiff, closeDiff, selectedPath } from './diff.js';
 import { initQueue, addItem, setItems, freeze } from './queue.js';
 
 const term = new Terminal({
@@ -79,12 +80,29 @@ const NOTES = {
   'other-repo': 'This pull request is in another repository.',
 };
 
+const fileHandlers = {
+  onViewed: setViewed,
+  onOpen: (f) => openDiff(f, { onViewed: setViewed }),
+};
+
 function paint(status) {
+  const moved = last?.pr?.headRefOid !== status.pr?.headRefOid;
   last = status;
   renderHeader(status, prs, handlers);
-  if (status.pr) renderPr({ ...status.pr, note: NOTES[status.scope] }, { onViewed: setViewed });
-  else renderNoPr(status, { onCreate: createPr });
+  if (status.pr) {
+    renderPr({ ...status.pr, note: NOTES[status.scope] },
+      { ...fileHandlers, selected: selectedPath() });
+  } else renderNoPr(status, { onCreate: createPr });
   if (status.queue) setItems(status.queue, Boolean(status.pr));
+
+  // Keep an open diff honest: close it if its file left the PR (or the PR
+  // switched away), refresh it if the branch moved — the server cache is
+  // keyed by head oid, so a re-open shows the freshly pushed version.
+  const open = selectedPath();
+  if (!open) return;
+  const f = status.pr?.files.find((x) => x.path === open);
+  if (!f) closeDiff();
+  else if (moved) openDiff(f, { onViewed: setViewed });
 }
 
 /**

@@ -19,6 +19,17 @@
       <div id="pr-body" class="scroll">Loading…</div>
     </section>
 
+    <section id="diff" class="pane" hidden>
+      <header>
+        <h1>Diff</h1>
+        <span id="diff-path"></span>
+        <label id="diff-viewed-label"><input id="diff-viewed" type="checkbox" title="mark viewed on GitHub"> viewed</label>
+        <a id="diff-gh" target="_blank" rel="noopener" title="open this diff on GitHub">GitHub ↗</a>
+        <button id="diff-close" title="close diff">✕</button>
+      </header>
+      <div id="diff-body" class="scroll"></div>
+    </section>
+
     <section id="term" class="pane">
       <header><h1>Claude Code</h1></header>
       <div id="term-host"></div>

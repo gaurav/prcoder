@@ -16,6 +16,12 @@ main {
   grid-template-areas: "pr term" "pr queue";
 }
 #pr { grid-area: pr; } #term { grid-area: term; } #queue { grid-area: queue; }
+main.diff-open {
+  grid-template-rows: minmax(140px, 40%) 1fr minmax(180px, 25%);
+  grid-template-areas: "pr diff" "pr term" "pr queue";
+}
+#diff { grid-area: diff; }
+#diff[hidden] { display: none; }
 
 .pane { background: var(--panel); display: flex; flex-direction: column; min-height: 0; min-width: 0; }
 .pane > header {
@@ -73,6 +79,21 @@ a { color: var(--accent); }
 }
 .file .path:hover { text-decoration: underline; }
 .file .nums { font-size: 10px; white-space: nowrap; }
+
+/* --- Diff pane --- */
+#diff-path {
+  flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; direction: rtl; text-align: left; font-size: 11px; color: var(--dim);
+}
+#diff-viewed-label { font-size: 11px; color: var(--dim); white-space: nowrap; }
+#diff-gh { font-size: 11px; white-space: nowrap; text-decoration: none; }
+#diff-gh:hover { text-decoration: underline; }
+#diff-body { font: 11px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; padding: 6px 0; }
+.dl { white-space: pre; padding: 0 10px; }
+.dl.add { color: #9ae6b4; background: #1f4d2e33; }
+.dl.del { color: #f5a3a3; background: #4d1f2433; }
+.dl.hunk { color: var(--accent); margin-top: 4px; }
+.file.sel { background: var(--bg); border-radius: 4px; }
 
 /* --- Queue pane --- */
 .tabs { display: flex; gap: 4px; align-items: center; margin-bottom: 8px; }
