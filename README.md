@@ -43,8 +43,13 @@ from the first flag onward is handed to `claude` untouched, so
 no list of Claude's flags here to fall out of date, and nothing to arbitrate when
 Claude gains a flag prcoder also wants.
 
-prcoder's own settings are environment variables — `PRCODER_PORT`, `CLAUDE_BIN` —
-which cannot collide with a flag at all.
+prcoder's own settings are environment variables — `PRCODER_PORT`, `PRCODER_NO_OPEN`,
+`CLAUDE_BIN` — which cannot collide with a flag at all.
+
+By default prcoder takes whatever port the OS has free and opens your browser on
+it, so several sessions can run at once and none of them needs a number you have
+to remember. Set `PRCODER_PORT` to pin one anyway, or `PRCODER_NO_OPEN=1` to be
+left with just the URL on stdout.
 
 ## The panes
 

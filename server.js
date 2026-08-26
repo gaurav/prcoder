@@ -3,6 +3,7 @@
 // Serves a three-pane UI at localhost and pipes a real `claude` PTY to the browser.
 
 import http from 'node:http';
+import { spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -15,7 +16,9 @@ import { parseFuture, renderFuture, renderPrBlock, syncFromPrBlock } from './que
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const repo = process.cwd();
-const port = Number(process.env.PRCODER_PORT) || 1618;
+// 0 means "any free port": two prcoder sessions never collide, and the browser
+// is opened for us, so nobody has to know the number.
+const port = Number(process.env.PRCODER_PORT) || 0;
 // Args split at the first flag: everything before it is ours (an optional PR
 // number, URL or branch), everything from it on is handed to `claude` verbatim.
 // No table of Claude's flags to keep in sync, and no collisions to arbitrate.
@@ -278,8 +281,16 @@ new WebSocketServer({ server, path: '/pty' }).on('connection', (ws) => {
 });
 
 if (import.meta.main) server.listen(port, '127.0.0.1', async () => {
+  const url = `http://localhost:${server.address().port}`;
   await refreshPr().catch((e) => console.error('pr:', e.stderr || e.message));
   console.log(`prcoder: ${repo}`);
   console.log(pr ? `PR #${pr.number}: ${pr.title}` : 'no pull request for this branch');
-  console.log(`http://localhost:${port}`);
+  console.log(url);
+  // ponytail: the platform's own opener, not a dependency. PRCODER_NO_OPEN=1 to skip.
+  if (!process.env.PRCODER_NO_OPEN) {
+    const opener = { darwin: 'open', win32: 'start' }[process.platform] || 'xdg-open';
+    spawn(opener, [url], { detached: true, stdio: 'ignore', shell: process.platform === 'win32' })
+      .on('error', (e) => console.error(`could not open a browser (${e.message}) — visit ${url}`))
+      .unref();
+  }
 });
