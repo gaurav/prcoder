@@ -241,16 +241,7 @@ function markdown(text, onTask) {
   // without this the pane shows a literal `<!-- prcoder:todo -->` above the
   // TODO list it delimits. Non-greedy, and across lines, because a comment is
   // allowed to span them.
-  const body = (text ?? '')
-    .replace(/<!--[\s\S]*?-->/g, '')
-    // <details> is the one raw-HTML construct a PR description reliably uses,
-    // and everything here is escaped, so without this the pane shows a literal
-    // `</details>`. The disclosure itself is not reproduced -- the pane already
-    // scrolls, and a description's collapsed half is usually its history --
-    // but the summary is the heading of what follows, so it becomes one.
-    .replace(/<\/?details[^>]*>/g, '')
-    .replace(/<summary[^>]*>([\s\S]*?)<\/summary>/g,
-      (_, t) => `#### ${t.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim()}`);
+  const body = withoutHtml(text);
 
   for (const para of body.split(/\n{2,}/).filter(Boolean)) {
     let prose = [];
@@ -281,6 +272,23 @@ function markdown(text, onTask) {
   }
   return out;
 }
+
+/**
+ * The three pieces of raw HTML a PR description actually contains, dealt with
+ * before anything is escaped. Everything else stays escaped and shows as text:
+ * this is an allowlist of three, not the beginning of an HTML renderer.
+ *
+ * Comments go because GitHub hides them and prcoder's own block markers are
+ * comments -- without this the pane shows a literal marker above the list it
+ * delimits. `<details>` is unwrapped rather than reproduced: the pane already
+ * scrolls, and a description's collapsed half is usually its history. Its
+ * summary is the heading of what follows, so it becomes one.
+ */
+export const withoutHtml = (text) => (text ?? '')
+  .replace(/<!--[\s\S]*?-->/g, '')
+  .replace(/<\/?details[^>]*>/g, '')
+  .replace(/<summary[^>]*>([\s\S]*?)<\/summary>/g,
+    (_, t) => `#### ${t.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim()}`);
 
 /**
  * A checkbox that writes through to the description on GitHub. The browser has

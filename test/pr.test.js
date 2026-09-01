@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { pageTitle } from '../public/pr.js';
+import { pageTitle, withoutHtml, TASK } from '../public/pr.js';
 
 const status = (over = {}) => ({
   nameWithOwner: 'ggvaidya/prcoder',
@@ -44,4 +44,67 @@ test('with no pull request the branch names the tab', () => {
 test('a first load that failed has nothing to name the tab with', () => {
   assert.equal(pageTitle({ error: 'gh: not logged in' }), 'prcoder');
   assert.equal(pageTitle(null), 'prcoder');
+});
+
+// --- the raw HTML a description actually contains ---
+
+// The pane escapes everything, which is right for safety and wrong for the
+// three constructs a real description uses. All three shipped visible: `## Why`
+// as a literal `## Why`, prcoder's own markers sitting above the list they
+// delimit, and a stray `</details>` mid-pane.
+test("prcoder's own block markers do not show up in the pane", () => {
+  const body = ['Prose above.', '', '<!-- prcoder:todo -->', '## TODO', '',
+    '- [ ] an item', '<!-- /prcoder:todo -->', '', 'Prose below.'].join('\n');
+  const out = withoutHtml(body);
+  assert.doesNotMatch(out, /<!--/);
+  assert.doesNotMatch(out, /prcoder:todo/);
+  // The block's contents survive -- only the markers go.
+  assert.match(out, /## TODO/);
+  assert.match(out, /- \[ \] an item/);
+  assert.match(out, /Prose above[\s\S]*Prose below/);
+});
+
+test('a comment spanning lines goes entirely, not just its first line', () => {
+  assert.equal(withoutHtml('a\n<!-- one\ntwo\nthree -->\nb').trim(), 'a\n\nb'.trim());
+});
+
+// A <details> block is how this repo's own PR keeps its history out of the way.
+// Unwrapped rather than reproduced: the pane scrolls, and the summary is the
+// heading of whatever it was hiding.
+test('a details block is unwrapped and its summary becomes a heading', () => {
+  const out = withoutHtml('<details>\n<summary><b>History</b> — why this looks like this</summary>\n\nThe story.\n\n</details>');
+  assert.doesNotMatch(out, /<\/?(details|summary|b)>/);
+  assert.match(out, /^#### History — why this looks like this$/m);
+  assert.match(out, /The story\./);
+});
+
+test('a summary broken across lines still yields one heading line', () => {
+  const out = withoutHtml('<details>\n<summary>\n  A summary\n  over three lines\n</summary>\nbody\n</details>');
+  assert.match(out, /^#### A summary over three lines$/m);
+});
+
+// Everything else stays escaped and shows as text: an allowlist of three, not
+// the start of an HTML renderer.
+test('other HTML is left alone for the escaper to deal with', () => {
+  assert.equal(withoutHtml('<script>alert(1)</script>'), '<script>alert(1)</script>');
+  assert.equal(withoutHtml('<b>bold</b> and <img src=x>'), '<b>bold</b> and <img src=x>');
+});
+
+test('nothing to strip leaves the text untouched', () => {
+  assert.equal(withoutHtml('## Why\n\nPlain prose.'), '## Why\n\nPlain prose.');
+  assert.equal(withoutHtml(null), '');
+  assert.equal(withoutHtml(undefined), '');
+});
+
+// A checklist line and a heading are told apart by the same pass, and `#hashtag`
+// with no space is neither -- it is prose, and rendering it as a heading would
+// eat the line.
+test('a heading needs its space, and a task is not one', () => {
+  const heading = /^(#{1,6})\s+(.*)$/;
+  assert.equal(heading.exec('## TODO')[1].length, 2);
+  assert.equal(heading.exec('###### deep')[1].length, 6);
+  assert.equal(heading.exec('#hashtag'), null);
+  assert.equal(heading.exec('####### seven'), null);
+  assert.equal(heading.exec('- [ ] an item'), null);
+  assert.ok(TASK.exec('- [ ] an item'));
 });

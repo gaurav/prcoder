@@ -16,6 +16,9 @@ non-executable.
 
 **Run tests with bare `node --test`, not `node --test test/`.** On Node 26 a
 directory argument is resolved as a module and dies with `Cannot find module`.
+Bare discovery treats *everything* under `test/` as a test file, which is why
+`tools/shot.mjs` lives in `tools/` — a driver script there would run on every
+`npm test`.
 
 ## Subprocess errors lie by omission
 
@@ -31,6 +34,20 @@ than a failure. `rev-parse --verify --quiet` exits 1 for a missing object where
 `cat-file -e` exits 128; `merge-base --is-ancestor` exits 1 to mean "no" and 128
 to mean "bad object". `asks()` in `git.js` treats one specific code as the
 answer and rethrows the rest, so pick the command whose codes you can tell apart.
+
+## Never write the queue's markers in prose
+
+`splitPrBlock` in `queue.js` finds prcoder's block with `body.indexOf(OPEN)` —
+the *first* occurrence. Write `<!-- prcoder:todo -->` literally into a PR
+description's prose, as a sentence about how prcoder works, and the next queue
+write treats that sentence as the start of the block and replaces everything
+from it to the real closing marker. Half the description, gone, on a poll.
+
+This repo describes prcoder in its own PRs, so the trap is live here rather
+than theoretical — it was caught in review on 2026-09-01, one edit before
+being pushed. Say "prcoder's own HTML-comment markers" instead, and if you must
+show the literal string, check that the body still contains exactly one of each
+marker before writing it.
 
 ## Verifying against GitHub
 

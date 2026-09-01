@@ -123,6 +123,14 @@ export function toggleTask(body, index, done, expected) {
   };
 }
 
+/**
+ * indexOf, so the *first* marker wins. That makes a literal `<!-- prcoder:todo
+ * -->` written into the description's prose — a sentence about how prcoder
+ * works — read as the start of the block, and the next write replaces
+ * everything from there to the real closing marker. See CLAUDE.md; anchoring
+ * these to their own line would close it, at the cost of a migration for every
+ * body already written with the markers where they are.
+ */
 function splitPrBlock(body = '') {
   const start = body.indexOf(OPEN);
   if (start === -1) return { before: body, after: '', found: false };
