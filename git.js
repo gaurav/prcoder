@@ -30,6 +30,16 @@ async function asks(args, cwd, ok = 1) {
 const text = async (args, cwd) => (await git(args, cwd)).trim();
 
 /**
+ * Empty on a detached HEAD, which happens mid-rebase and mid-bisect. `gh pr
+ * view` fails there in a way loadPr does not recognise, so callers skip it.
+ *
+ * Its own function because the queue needs the branch on routes that have no
+ * reason to take a whole snapshot — the store is keyed by it.
+ */
+export const currentBranch = (cwd) =>
+  text(['symbolic-ref', '--quiet', '--short', 'HEAD'], cwd).catch(() => '');
+
+/**
  * Ahead or behind without a fetch: `remoteHead` is GitHub's view of the branch,
  * which the PR metadata already carries.
  *
@@ -46,16 +56,19 @@ export function syncState({ head, remoteHead, remoteKnownLocally, remoteIsAncest
 /**
  * The changed files that are the user's problem, from `git status --porcelain`.
  *
- * FUTURE.md is excluded because it is prcoder's own queue file, rewritten
- * within seconds of normal use — counting it would leave the branch switcher
- * permanently disabled. Untracked files are excluded by the caller's
- * --untracked-files=no, since they never block a checkout.
+ * There is no longer an exception for FUTURE.md. It was here because prcoder
+ * rewrote that file within seconds of normal use, so counting it left the
+ * branch switcher permanently disabled — the queue now lives in an ignored
+ * .prcoder/, prcoder writes nothing tracked, and an edit to FUTURE.md is
+ * ordinary work that *should* block a checkout. The store never reaches this
+ * function at all: it is ignored, and untracked files are excluded by the
+ * caller's --untracked-files=no since they never block a checkout.
  *
  * Porcelain v1 lines are `XY path`, and the status letters are significant, so
  * the prefix is sliced rather than trimmed.
  */
 export const userDirt = (status) =>
-  status.split('\n').filter(Boolean).map((l) => l.slice(3)).filter((f) => f !== 'FUTURE.md');
+  status.split('\n').filter(Boolean).map((l) => l.slice(3));
 
 /** GitHub's "open a PR for this branch" page. */
 export const compareUrl = (nameWithOwner, base, branch) =>
@@ -85,9 +98,7 @@ export async function repoInfo(cwd) {
  * fork it is not on origin at all, so `git ls-remote origin` would miss it.
  */
 export async function snapshot(cwd, remoteHead = null) {
-  // Empty on a detached HEAD, which happens mid-rebase and mid-bisect. `gh pr
-  // view` fails there in a way loadPr does not recognise, so callers skip it.
-  const branch = await text(['symbolic-ref', '--quiet', '--short', 'HEAD'], cwd).catch(() => '');
+  const branch = await currentBranch(cwd);
   const head = await text(['rev-parse', 'HEAD'], cwd);
 
   const status = await git(['status', '--porcelain', '--untracked-files=no'], cwd);

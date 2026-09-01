@@ -1,13 +1,16 @@
-// The queue lives in FUTURE.md as a plain markdown checklist, so it stays
-// hand-editable and `git diff`-able. An item records where it lives:
+// The PR description's half of the queue: the `<!-- prcoder:todo -->` block,
+// and the markdown checklist grammar it shares with FUTURE.md.
 //
-//   { text, done, inPr, issue, deleted }
+// The queue itself lives in .prcoder/queue.json (see store.js) and an item is
+// { text, done, inPr, issue, deleted, branch }. `inPr` mirrors it into the PR
+// description; `issue` links it to a GitHub issue. An item can be both, in
+// which case the PR line becomes a bare #N reference — that is the "converting
+// to an issue replaces the PR line" rule. `deleted` is a tombstone: deleting an
+// item here or on github.com keeps the record, so nothing the user typed
+// disappears without somewhere to get it back.
 //
-// `inPr` mirrors it into the PR description; `issue` links it to a GitHub
-// issue. An item can be both, in which case the PR line becomes a bare #N
-// reference — that is the "converting to an issue replaces the PR line" rule.
-// `deleted` is a tombstone: deleting an item here or on github.com keeps the
-// line, so nothing the user typed disappears without somewhere to get it back.
+// parseFuture is the one thing here that still reads FUTURE.md, for the
+// one-time import in server.js. Nothing writes that file.
 
 const HEADING = '## Queue';
 const OPEN = '<!-- prcoder:todo -->';
@@ -46,15 +49,19 @@ function parseItem(line) {
   };
 }
 
-function renderItem(item, { markers = true } = {}) {
-  const box = item.done ? 'x' : ' ';
-  if (!markers) return `- [${box}] ${item.issue ? `#${item.issue}` : item.text}`;
-  const tags = [item.inPr && '@pr', item.deleted && '@deleted',
-    item.issue && `@issue#${item.issue}`].filter(Boolean);
-  return `- [${box}] ${[...tags, item.text].join(' ')}`.trimEnd();
+/**
+ * One line of the PR description's block. Markers (`@pr`, `@issue#42`) are only
+ * ever read now, never written: they were how FUTURE.md encoded the fields the
+ * store keeps as fields, and the block itself has never carried them.
+ */
+function renderItem(item) {
+  return `- [${item.done ? 'x' : ' '}] ${item.issue ? `#${item.issue}` : item.text}`;
 }
 
-/** Items from FUTURE.md. Anything outside the `## Queue` section is ignored here. */
+/**
+ * Items out of FUTURE.md, for the one-time import into the store. Anything
+ * outside the `## Queue` section is ignored, and the file is never written.
+ */
 export function parseFuture(text) {
   const items = [];
   let inSection = false;
@@ -68,30 +75,13 @@ export function parseFuture(text) {
 }
 
 /**
- * Write items back into FUTURE.md, preserving every other section — the file
- * is often already in use for longhand notes.
- */
-export function renderFuture(items, existing = '') {
-  const section = [HEADING, '', ...items.map((i) => renderItem(i)), ''].join('\n');
-  const lines = (existing ?? '').split('\n');
-  const start = lines.findIndex((l) => l.trim() === HEADING);
-  if (start === -1) {
-    const head = (existing ?? '').trim();
-    return (head ? `${head}\n\n` : '') + section;
-  }
-  let end = start + 1;
-  while (end < lines.length && !/^##\s/.test(lines[end])) end++;
-  return [...lines.slice(0, start), ...section.split('\n'), ...lines.slice(end)].join('\n');
-}
-
-/**
  * Replace the prcoder block in a PR body. Items live there when `inPr`; an
  * item that is also an issue renders as a bare `#N` so GitHub links it.
  */
 export function renderPrBlock(items, body = '') {
   const mine = items.filter((i) => i.inPr && !i.deleted);
   const block = mine.length
-    ? [OPEN, '## TODO', '', ...mine.map((i) => renderItem(i, { markers: false })), CLOSE].join('\n')
+    ? [OPEN, '## TODO', '', ...mine.map((i) => renderItem(i)), CLOSE].join('\n')
     : '';
 
   const { before, after, found } = splitPrBlock(body);

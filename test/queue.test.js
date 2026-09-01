@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseFuture, renderFuture, renderPrBlock, syncFromPrBlock, toggleTask } from '../queue.js';
+import { parseFuture, renderPrBlock, syncFromPrBlock, toggleTask } from '../queue.js';
 import { TASK } from '../public/pr.js';
 
 const FUTURE = `# Notes
@@ -19,27 +19,16 @@ Some longhand thinking that must survive.
 Keep me too.
 `;
 
-test('parses every item state out of FUTURE.md', () => {
+// parseFuture outlived the format it was written for: FUTURE.md is no longer
+// the queue, and these markers are read exactly once, by the import in
+// server.js that moves an old queue into .prcoder/queue.json.
+test('parses every item state out of FUTURE.md, for the one-time import', () => {
   assert.deepEqual(parseFuture(FUTURE), [
     { text: 'Add retry to the fetch path', done: false, inPr: false, issue: null, deleted: false },
     { text: 'Docs for the new flag', done: false, inPr: true, issue: null, deleted: false },
     { text: 'Refactor the parser', done: false, inPr: true, issue: 42, deleted: false },
     { text: 'Fix the flaky worktree test', done: true, inPr: false, issue: null, deleted: false },
   ]);
-});
-
-test('round-trips without losing items or surrounding prose', () => {
-  const items = parseFuture(FUTURE);
-  const out = renderFuture(items, FUTURE);
-  assert.deepEqual(parseFuture(out), items);
-  assert.match(out, /Some longhand thinking that must survive/);
-  assert.match(out, /## Ideas\n\nKeep me too/);
-});
-
-test('creates the section when FUTURE.md has no queue yet', () => {
-  const out = renderFuture([{ text: 'first', done: false, inPr: false, issue: null, deleted: false }], '# Notes\n');
-  assert.match(out, /# Notes/);
-  assert.deepEqual(parseFuture(out), [{ text: 'first', done: false, inPr: false, issue: null, deleted: false }]);
 });
 
 test('checklist lines outside the queue section are left alone', () => {
@@ -114,10 +103,12 @@ test('malformed lines are skipped rather than dropping the rest', () => {
 // `@deleted` had to join the marker alternation, not just be tested for. The
 // regex is anchored, so an unknown marker matches zero characters and every
 // other marker on the line silently becomes part of the visible text.
-test('the @deleted marker survives a FUTURE.md round-trip alongside the others', () => {
-  const items = parseFuture('## Queue\n\n- [ ] @pr @deleted @issue#7 buried\n');
-  assert.deepEqual(items, [{ text: 'buried', done: false, inPr: true, issue: 7, deleted: true }]);
-  assert.deepEqual(parseFuture(renderFuture(items, '')), items);
+// An item can be tombstoned and mirrored and an issue at once, and the import
+// has to bring all three across -- a dropped @deleted resurrects something the
+// user threw away.
+test('every marker on one line survives the import', () => {
+  assert.deepEqual(parseFuture('## Queue\n\n- [ ] @pr @deleted @issue#7 buried\n'),
+    [{ text: 'buried', done: false, inPr: true, issue: 7, deleted: true }]);
 });
 
 test('a deleted item never goes back into the PR body', () => {

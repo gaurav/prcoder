@@ -6,8 +6,10 @@ let items = [];
 let tab = 'active';
 let deps = {};
 // Set while a branch switch is in flight. Every save() writes the whole array,
-// so one stray checkbox during the switch would overwrite the other branch's
-// FUTURE.md wholesale.
+// and the server stamps it with whatever branch is checked out by the time it
+// lands, so one stray checkbox during the switch would file this branch's items
+// under the next one. The server refuses a payload carrying a stale branch;
+// this stops us sending one in the first place.
 let frozen = false;
 
 export const freeze = (on) => { frozen = on; };
@@ -91,7 +93,7 @@ function render() {
         ? [bulk('empty', () => { items = items.filter((i) => !i.deleted); save(); })]
         : [
           bulk('→ all to PR', () => { items.forEach((i) => { if (!i.done && !i.deleted) i.inPr = true; }); save(); },
-            !hasPr && 'no pull request to push to'),
+            !hasPr && 'no pull request on this branch to push to'),
           bulk('clear done', () => { items.forEach((i) => { if (i.done) i.deleted = true; }); save(); }),
         ]),
     ),
@@ -147,7 +149,8 @@ function row(item) {
     h('span', { className: 'actions' },
       act('▶', 'send to Claude', () => deps.sendToClaude(item.text)),
       act(item.inPr ? '◆' : '◇',
-        hasPr ? (item.inPr ? 'in PR description' : 'add to PR description') : 'no pull request to push to',
+        hasPr ? (item.inPr ? 'in PR description' : 'add to PR description')
+          : 'no pull request on this branch to push to',
         () => { item.inPr = !item.inPr; save(); },
         !hasPr),
       item.issue ? null : act('◎', 'create an issue', () => save('/api/queue/issue', 'POST', { items, index: idx })),

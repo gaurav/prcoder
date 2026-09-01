@@ -71,19 +71,15 @@ const STATUS = [
 ].join('\n');
 
 test('the status prefix is sliced, not trimmed, so the first path survives', () => {
-  assert.deepEqual(userDirt(STATUS), ['server.js', 'staged.js', 'both.js']);
+  assert.deepEqual(userDirt(STATUS), ['server.js', 'staged.js', 'both.js', 'FUTURE.md']);
 });
 
-// The switcher disables itself on a dirty tree. FUTURE.md is rewritten by the
-// queue within seconds of normal use, so counting it would disable the switcher
-// permanently -- which is the whole reason this function is not just a
-// non-empty check on the raw output.
-test('prcoder\'s own queue file is not the user\'s uncommitted work', () => {
-  assert.deepEqual(userDirt(' M FUTURE.md'), []);
+// FUTURE.md used to be exempt here, because prcoder rewrote it within seconds
+// of normal use and counting it left the branch switcher permanently disabled.
+// The queue lives in an ignored .prcoder/ now, so prcoder writes nothing
+// tracked and an edit to FUTURE.md is the user's work like any other -- it
+// should block a checkout, because a checkout would overwrite it.
+test('the old queue file is ordinary uncommitted work now', () => {
+  assert.deepEqual(userDirt(' M FUTURE.md'), ['FUTURE.md']);
   assert.deepEqual(userDirt(''), []);
-});
-
-test('a file merely named like the queue file still counts', () => {
-  assert.deepEqual(userDirt(' M docs/FUTURE.md\n M FUTURE.md.bak'),
-    ['docs/FUTURE.md', 'FUTURE.md.bak']);
 });
