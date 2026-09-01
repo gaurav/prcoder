@@ -83,6 +83,13 @@ sent to Claude, mirrored into the PR description, or turned into a GitHub issue.
 An item that is in the PR description *and* becomes an issue has its PR line
 replaced by a link to the issue.
 
+New items go to the bottom, so typing them in builds a list in the order you
+mean to work through it. The arrow next to the input flips that to the top for
+the other way of using a queue -- the thing you must not forget to do next --
+and stays flipped, as far as the browser will remember it. (prcoder takes a
+random port unless you pin `PRCODER_PORT`, and the browser files that memory
+under the port, so across sessions it is a convenience rather than a promise.)
+
 ## Where the queue lives
 
 `FUTURE.md` in the repo root, as a plain markdown checklist. Commit it to carry

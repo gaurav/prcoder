@@ -146,11 +146,21 @@ a { color: var(--accent); }
   opacity: .4; cursor: not-allowed;
 }
 .pane > header select[hidden], #pr-sync[hidden], .pane > header button[hidden] { display: none; }
-/* margin-left:auto belongs to the refresh glyph alone, not to every header button. */
+/* margin-left:auto belongs to the refresh glyph alone, not to every header
+   button -- these two are the ones that have had to say so. */
 .pane > header button.commit {
   margin-left: 0; font-size: 12px; padding: 2px 8px;
   border: 1px solid var(--line); border-radius: 4px;
 }
+/* Which end the queue input adds to. The arrow is the whole indicator, so it
+   is a box you can read at a glance rather than a bare glyph. */
+.pane > header button.where {
+  margin-left: 0; flex: none; font-size: 13px; line-height: 1.35; padding: 3px 8px;
+  color: var(--fg); background: var(--bg);
+  border: 1px solid var(--line); border-radius: 4px;
+}
+.pane > header button.where:hover { color: var(--accent); border-color: var(--accent); }
+.pane > header button.where.top { color: var(--accent); border-color: var(--accent); }
 
 /* The dot carries the state; the text next to it says what to do about it. */
 #pr-sync { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--dim); }

@@ -28,8 +28,35 @@ export function setItems(next, prAvailable) {
 // that control stays live on a branch that has none.
 let hasPr = true;
 
+// Which end the input adds to. The queue is two things at once -- a backlog in
+// the order you mean to work through it, and somewhere to put the thing you
+// must not forget to do next -- so the end is the user's to choose, and the
+// arrow on the button says which one is live without being clicked.
+//
+// The app's only stored preference, and a best-effort one: reading storage
+// throws outright where it is disabled, and prcoder takes a random port unless
+// PRCODER_PORT is pinned, so the origin -- and the value with it -- usually
+// changes between sessions. Losing it costs a click.
+const ADD_TO_KEY = 'prcoder:add-to';
+let addTo = 'bottom';
+const readAddTo = () => {
+  try { return localStorage.getItem(ADD_TO_KEY) === 'top' ? 'top' : 'bottom'; } catch { return 'bottom'; }
+};
+
 export async function initQueue(d) {
   deps = d;
+  // Read here rather than at module scope: initQueue only ever runs in a
+  // browser, so the module stays importable by a node test that has no
+  // localStorage to touch.
+  addTo = readAddTo();
+  document.getElementById('queue-where').onclick = () => {
+    addTo = addTo === 'bottom' ? 'top' : 'bottom';
+    try { localStorage.setItem(ADD_TO_KEY, addTo); } catch { /* honoured for this session anyway */ }
+    paintWhere();
+  };
+  // Before the fetch, so a remembered ↑ is not shown as the markup's ↓ for as
+  // long as /api/queue takes to answer.
+  paintWhere();
   items = await fetch('/api/queue').then((r) => r.json());
   render();
 }
@@ -73,6 +100,21 @@ function render() {
 
   document.getElementById('queue-input').placeholder =
     tab === 'done' ? 'Add an item…' : 'Add an item, Enter to save';
+}
+
+// The button is static markup in the pane header, which render()'s
+// replaceChildren never reaches, so only the two things that change addTo have
+// to repaint it. The title says both where items go now and what a click does;
+// the accent is there because ↑ is the choice you made, not the default.
+function paintWhere() {
+  const b = document.getElementById('queue-where');
+  const title = addTo === 'bottom'
+    ? 'new items go to the bottom — click to add to the top'
+    : 'new items go to the top — click to add to the bottom';
+  b.textContent = addTo === 'bottom' ? '↓' : '↑';
+  b.title = title;
+  b.setAttribute('aria-label', title);
+  b.classList.toggle('top', addTo === 'top');
 }
 
 const tabBtn = (name, label) => {
@@ -136,9 +178,21 @@ const act = (glyph, title, fn, disabled = false) => {
   return b;
 };
 
-export function addItem(text) {
+export async function addItem(text) {
   if (!text.trim()) return;
-  items.unshift({ text: text.trim(), done: false, inPr: false, issue: null, deleted: false });
+  const item = { text: text.trim(), done: false, inPr: false, issue: null, deleted: false };
+  // The end of the whole array, past any done or deleted rows: the Active tab
+  // filters without reordering, so it still shows last there, and FUTURE.md
+  // reads newest-last.
+  if (addTo === 'top') items.unshift(item); else items.push(item);
   tab = 'active';
-  save();
+  await save();
+  // Either end can be off-screen in a list taller than the pane, and an item
+  // you cannot see reads as a save that did not happen. Not scrollIntoView:
+  // save() has already repainted from the server's echo, so the object above no
+  // longer exists as a row -- but the end it went to is known, and that is all
+  // this needs. It stays out of save() itself, which every checkbox and drag
+  // also calls; the viewport should not jump for those.
+  const host = document.getElementById('queue-body');
+  host.scrollTop = addTo === 'top' ? 0 : host.scrollHeight;
 }
