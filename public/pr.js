@@ -237,17 +237,45 @@ export const TASK = /^\s*[-*]\s*\[( |x|X)\]\s*(.*)$/;
 function markdown(text, onTask) {
   const out = [];
   let index = 0;
-  for (const para of (text ?? '').split(/\n{2,}/).filter(Boolean)) {
+  // GitHub hides HTML comments; prcoder's own block markers are comments, so
+  // without this the pane shows a literal `<!-- prcoder:todo -->` above the
+  // TODO list it delimits. Non-greedy, and across lines, because a comment is
+  // allowed to span them.
+  const body = (text ?? '')
+    .replace(/<!--[\s\S]*?-->/g, '')
+    // <details> is the one raw-HTML construct a PR description reliably uses,
+    // and everything here is escaped, so without this the pane shows a literal
+    // `</details>`. The disclosure itself is not reproduced -- the pane already
+    // scrolls, and a description's collapsed half is usually its history --
+    // but the summary is the heading of what follows, so it becomes one.
+    .replace(/<\/?details[^>]*>/g, '')
+    .replace(/<summary[^>]*>([\s\S]*?)<\/summary>/g,
+      (_, t) => `#### ${t.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim()}`);
+
+  for (const para of body.split(/\n{2,}/).filter(Boolean)) {
     let prose = [];
     const flush = () => {
       if (prose.length) out.push(h('p', { innerHTML: inline(prose.join('\n')) }));
       prose = [];
     };
     for (const line of para.split('\n')) {
-      const m = TASK.exec(line);
-      if (!m) { prose.push(line); continue; }
-      flush();
-      out.push(taskRow(m[1].toLowerCase() === 'x', m[2], index++, onTask));
+      const task = TASK.exec(line);
+      if (task) {
+        flush();
+        out.push(taskRow(task[1].toLowerCase() === 'x', task[2], index++, onTask));
+        continue;
+      }
+      // A heading is one line, so it is handled here rather than per paragraph:
+      // one can open a paragraph that then runs straight on into prose.
+      const head = /^(#{1,6})\s+(.*)$/.exec(line);
+      if (head) {
+        flush();
+        // Offset by two: the pane's own <h1> names it and the PR title is the
+        // <h2>, so a description's top-level heading sits under both.
+        out.push(h(`h${Math.min(head[1].length + 2, 6)}`, { innerHTML: inline(head[2]) }));
+        continue;
+      }
+      prose.push(line);
     }
     flush();
   }

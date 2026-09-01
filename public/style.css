@@ -66,6 +66,13 @@ a { color: var(--accent); }
 .md .task.done > span { color: var(--dim); text-decoration: line-through; }
 .md .task input:disabled { opacity: .5; cursor: wait; }
 .md p { margin: 0 0 6px; }
+/* The description's own headings. Sized by weight and colour rather than by
+   scale: at this width a 1.5em h3 reads as another pane's title. */
+.md h3, .md h4, .md h5, .md h6 {
+  margin: 10px 0 4px; font-size: 13px; font-weight: 600; color: var(--fg);
+}
+.md h3 { font-size: 14px; }
+.md > :first-child { margin-top: 0; }
 .md code { background: var(--bg); padding: 0 4px; border-radius: 3px; font-size: 12px; }
 
 .issues { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 6px; font-size: 12px; }
