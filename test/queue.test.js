@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseFuture, renderPrBlock, syncFromPrBlock, toggleTask } from '../queue.js';
-import { TASK } from '../public/pr.js';
+import { TASK, fences } from '../public/pr.js';
 
 const FUTURE = `# Notes
 
@@ -205,13 +205,50 @@ test('a checkbox whose line has changed underneath is refused, not ticked', () =
     /no longer in the description/);
 });
 
-// The client sends a position in this list; if the two patterns ever disagree
-// on which lines count, every index past the first difference ticks the wrong
-// line. Walking the same body through both is what keeps them in step.
+// The client sends a position in this list; if the two sides ever disagree on
+// which lines count, every index past the first difference ticks the wrong
+// line. Walking one body through both is what keeps them in step.
+const paneTasks = (body) => fences(body)
+  .filter((c) => c.text !== undefined)
+  .flatMap((c) => c.text.split('\n').map((l) => TASK.exec(l)).filter(Boolean).map((m) => m[2]));
+
 test('the PR pane and queue.js pick out the same checklist lines', () => {
-  const seen = BODY.split('\n').map((l) => TASK.exec(l)).filter(Boolean).map((m) => m[2]);
+  const seen = paneTasks(BODY);
   assert.deepEqual(seen, ['first task', 'second task, already done', 'a queue item']);
   for (const [index, text] of seen.entries()) {
     assert.doesNotThrow(() => toggleTask(BODY, index, true, text), `index ${index} (${text})`);
   }
+});
+
+// A checklist inside a fence is a sample of markdown, not a task -- this repo's
+// own README and PR description both contain one. The pane renders it as code,
+// so if toggleTask still counted it, every index after the fence would be off
+// by one and tick a neighbour.
+const FENCED = [
+  '- [ ] before the fence',
+  '',
+  '```markdown',
+  '## Queue',
+  '',
+  '- [ ] not a task, an example',
+  '- [x] nor this one',
+  '```',
+  '',
+  '- [ ] after the fence',
+].join('\n');
+
+test('a checklist inside a fence is code to both sides, not a checkbox', () => {
+  const seen = paneTasks(FENCED);
+  assert.deepEqual(seen, ['before the fence', 'after the fence']);
+  for (const [index, text] of seen.entries()) {
+    assert.doesNotThrow(() => toggleTask(FENCED, index, true, text), `index ${index} (${text})`);
+  }
+  // Index 1 is the line after the fence, not the first line inside it.
+  assert.match(toggleTask(FENCED, 1, true, 'after the fence').body, /- \[x\] after the fence/);
+  assert.match(toggleTask(FENCED, 1, true, 'after the fence').body, /- \[ \] not a task, an example/);
+});
+
+test('the fenced sample survives a tick untouched', () => {
+  const { body } = toggleTask(FENCED, 0, true, 'before the fence');
+  assert.match(body, /```markdown\n## Queue\n\n- \[ \] not a task, an example\n- \[x\] nor this one\n```/);
 });

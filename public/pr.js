@@ -237,39 +237,70 @@ export const TASK = /^\s*[-*]\s*\[( |x|X)\]\s*(.*)$/;
 function markdown(text, onTask) {
   const out = [];
   let index = 0;
-  // GitHub hides HTML comments; prcoder's own block markers are comments, so
-  // without this the pane shows a literal `<!-- prcoder:todo -->` above the
-  // TODO list it delimits. Non-greedy, and across lines, because a comment is
-  // allowed to span them.
-  const body = withoutHtml(text);
 
-  for (const para of body.split(/\n{2,}/).filter(Boolean)) {
-    let prose = [];
-    const flush = () => {
-      if (prose.length) out.push(h('p', { innerHTML: inline(prose.join('\n')) }));
-      prose = [];
-    };
-    for (const line of para.split('\n')) {
-      const task = TASK.exec(line);
-      if (task) {
-        flush();
-        out.push(taskRow(task[1].toLowerCase() === 'x', task[2], index++, onTask));
-        continue;
-      }
-      // A heading is one line, so it is handled here rather than per paragraph:
-      // one can open a paragraph that then runs straight on into prose.
-      const head = /^(#{1,6})\s+(.*)$/.exec(line);
-      if (head) {
-        flush();
-        // Offset by two: the pane's own <h1> names it and the PR title is the
-        // <h2>, so a description's top-level heading sits under both.
-        out.push(h(`h${Math.min(head[1].length + 2, 6)}`, { innerHTML: inline(head[2]) }));
-        continue;
-      }
-      prose.push(line);
+  for (const chunk of fences(withoutHtml(text))) {
+    // textContent, not inline(): the point of a fence is that what is inside it
+    // is not markdown.
+    if (chunk.code !== undefined) {
+      out.push(h('pre', {}, h('code', { textContent: chunk.code })));
+      continue;
     }
-    flush();
+    for (const para of chunk.text.split(/\n{2,}/).filter(Boolean)) {
+      let prose = [];
+      const flush = () => {
+        if (prose.length) out.push(h('p', { innerHTML: inline(prose.join('\n')) }));
+        prose = [];
+      };
+      for (const line of para.split('\n')) {
+        const task = TASK.exec(line);
+        if (task) {
+          flush();
+          out.push(taskRow(task[1].toLowerCase() === 'x', task[2], index++, onTask));
+          continue;
+        }
+        // A heading is one line, so it is handled here rather than per
+        // paragraph: one can open a paragraph that runs straight on into prose.
+        const head = HEADING.exec(line);
+        if (head) {
+          flush();
+          // Offset by two: the pane's own <h1> names it and the PR title is the
+          // <h2>, so a description's top-level heading sits under both.
+          out.push(h(`h${Math.min(head[1].length + 2, 6)}`, { innerHTML: inline(head[2]) }));
+          continue;
+        }
+        prose.push(line);
+      }
+      flush();
+    }
   }
+  return out;
+}
+
+// A heading needs its space: `#hashtag` is prose, and rendering it as a heading
+// would swallow the line.
+export const HEADING = /^(#{1,6})\s+(.*)$/;
+
+/**
+ * The body cut into fenced blocks and the text between them, in order. Fences
+ * come out before paragraphs are split on blank lines, because a fence is
+ * allowed to contain them.
+ *
+ * A checklist line inside a fence is code, not a checkbox -- and toggleTask in
+ * queue.js skips fenced lines for the same reason. A tick is sent as a position
+ * in the list of checklist lines, so the two counts have to agree; that they do
+ * is pinned in test/queue.test.js.
+ */
+export function fences(body) {
+  const out = [];
+  const re = /^[ \t]*```[^\n]*\n([\s\S]*?)^[ \t]*```[ \t]*$/gm;
+  let last = 0;
+  let m;
+  while ((m = re.exec(body)) !== null) {
+    if (m.index > last) out.push({ text: body.slice(last, m.index) });
+    out.push({ code: m[1].replace(/\n$/, '') });
+    last = re.lastIndex;
+  }
+  if (last < body.length) out.push({ text: body.slice(last) });
   return out;
 }
 
@@ -310,11 +341,28 @@ function taskRow(done, text, index, onTask) {
   return row;
 }
 
-const inline = (s) => escape(s)
-  .replace(/`([^`]+)`/g, '<code>$1</code>')
-  .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-  .replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
-  .replace(/(^|[\s(])(https?:\/\/[^\s)]+)/g, '$1<a href="$2" target="_blank" rel="noopener">$2</a>')
-  .replace(/\n/g, '<br>');
+/**
+ * Code spans are lifted out before anything else runs and put back last, so no
+ * other rule can reach inside one. Without that `PRCODER_NO_OPEN` italicises
+ * its own middle, and a URL in backticks becomes a link inside a <code>.
+ *
+ * Emphasis comes after bold, so `**x**` is already <strong> by the time the
+ * single-asterisk rule looks. The underscore form needs a non-word character
+ * either side or it eats snake_case; the asterisk form needs no such guard,
+ * because a bare `*` mid-word is vanishingly rare in prose and common only in
+ * globs, which live in code spans and are already out of reach.
+ */
+export const inline = (s) => {
+  const code = [];
+  return escape(s)
+    .replace(/`([^`]+)`/g, (_, c) => `\u0000${code.push(c) - 1}\u0000`)
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*([^*\n]+)\*/g, '<em>$1</em>')
+    .replace(/(?<![A-Za-z0-9_])_([^_\n]+)_(?![A-Za-z0-9_])/g, '<em>$1</em>')
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
+    .replace(/(^|[\s(])(https?:\/\/[^\s)]+)/g, '$1<a href="$2" target="_blank" rel="noopener">$2</a>')
+    .replace(/\n/g, '<br>')
+    .replace(/\u0000(\d+)\u0000/g, (_, i) => `<code>${code[i]}</code>`);
+};
 
 const escape = (s) => s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));

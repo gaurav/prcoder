@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { pageTitle, withoutHtml, TASK } from '../public/pr.js';
+import { pageTitle, withoutHtml, inline, fences, TASK, HEADING } from '../public/pr.js';
 
 const status = (over = {}) => ({
   nameWithOwner: 'ggvaidya/prcoder',
@@ -100,11 +100,64 @@ test('nothing to strip leaves the text untouched', () => {
 // with no space is neither -- it is prose, and rendering it as a heading would
 // eat the line.
 test('a heading needs its space, and a task is not one', () => {
-  const heading = /^(#{1,6})\s+(.*)$/;
-  assert.equal(heading.exec('## TODO')[1].length, 2);
-  assert.equal(heading.exec('###### deep')[1].length, 6);
-  assert.equal(heading.exec('#hashtag'), null);
-  assert.equal(heading.exec('####### seven'), null);
-  assert.equal(heading.exec('- [ ] an item'), null);
+  assert.equal(HEADING.exec('## TODO')[1].length, 2);
+  assert.equal(HEADING.exec('###### deep')[1].length, 6);
+  assert.equal(HEADING.exec('#hashtag'), null);
+  assert.equal(HEADING.exec('####### seven'), null);
+  assert.equal(HEADING.exec('- [ ] an item'), null);
   assert.ok(TASK.exec('- [ ] an item'));
+});
+
+// --- emphasis, and what it must not reach into ---
+
+// The reason code spans are lifted out first: this repo's own prose is full of
+// `PRCODER_NO_OPEN` and `--body-file`, and an underscore rule that ran over a
+// code span would italicise the middle of an environment variable.
+test('a code span is never reached into by another rule', () => {
+  assert.equal(inline('`PRCODER_NO_OPEN` and `CLAUDE_BIN`'),
+    '<code>PRCODER_NO_OPEN</code> and <code>CLAUDE_BIN</code>');
+  assert.equal(inline('`**not bold**`'), '<code>**not bold**</code>');
+  assert.equal(inline('`https://example.com`'), '<code>https://example.com</code>');
+});
+
+test('emphasis renders in both spellings, bold before italic', () => {
+  assert.equal(inline('**bold** and *italic* and _also italic_'),
+    '<strong>bold</strong> and <em>italic</em> and <em>also italic</em>');
+  // Prettier rewrites *x* to _x_ when it touches a PR body, so both spellings
+  // turn up in the same description.
+  assert.equal(inline('review _for_ you'), 'review <em>for</em> you');
+});
+
+test('an underscore inside a word is not emphasis', () => {
+  assert.equal(inline('some_var_name stays whole'), 'some_var_name stays whole');
+  assert.equal(inline('PRCODER_NO_OPEN=1'), 'PRCODER_NO_OPEN=1');
+});
+
+test('escaping still happens, and happens first', () => {
+  assert.equal(inline('<script>'), '&lt;script&gt;');
+  assert.equal(inline('`<b>`'), '<code>&lt;b&gt;</code>');
+});
+
+// --- fenced blocks ---
+
+// A fence contains blank lines, so it has to be lifted out before paragraphs
+// are split on them -- otherwise the block arrives in pieces.
+test('a fence is one chunk, blank lines and all', () => {
+  const out = fences('before\n\n```sh\nnpm install\n\nnpm link\n```\n\nafter');
+  assert.deepEqual(out.map((c) => (c.code !== undefined ? 'code' : 'text')), ['text', 'code', 'text']);
+  assert.equal(out[1].code, 'npm install\n\nnpm link');
+  assert.match(out[0].text, /before/);
+  assert.match(out[2].text, /after/);
+});
+
+test('a body with no fence is one chunk of text', () => {
+  assert.deepEqual(fences('just prose'), [{ text: 'just prose' }]);
+  assert.deepEqual(fences(''), []);
+});
+
+// An unterminated fence must not swallow the rest of the description.
+test('a fence that is never closed is left as text', () => {
+  const out = fences('text\n\n```sh\nnpm install\n\nstill prose');
+  assert.deepEqual(out.map((c) => (c.code !== undefined ? 'code' : 'text')), ['text']);
+  assert.match(out[0].text, /still prose/);
 });

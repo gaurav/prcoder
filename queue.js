@@ -91,13 +91,29 @@ export function renderPrBlock(items, body = '') {
 }
 
 /**
+ * Which lines are checkboxes: the checklist lines that are not inside a fenced
+ * code block. A `- [ ]` in a fence is a sample, not a task, and the pane renders
+ * it as code -- so counting it here would offset every index after it and tick
+ * the wrong line. The two sides are walked over one body in test/queue.test.js
+ * to keep them agreeing.
+ */
+function taskLines(lines) {
+  const out = [];
+  let fenced = false;
+  for (const [i, line] of lines.entries()) {
+    if (/^[ \t]*```/.test(line)) { fenced = !fenced; continue; }
+    if (!fenced && ITEM.test(line)) out.push(i);
+  }
+  return out;
+}
+
+/**
  * Flip one checkbox in a PR description, so the boxes rendered in the PR pane
  * are the real ones. The line is found by its position among the body's
  * checklist lines and then checked against the text the client saw: the client
  * counts those lines with its own copy of this pattern, so a body that moved
  * on -- or a renderer that has drifted from this one -- fails loudly instead of
- * ticking the line next door. (A `- [ ]` inside a fenced code block counts as a
- * checkbox to both of them, which is wrong in the same way on both sides.)
+ * ticking the line next door.
  *
  * `inBlock` says whether the line is one of ours: those are a projection of
  * FUTURE.md and the tick has to be folded back into it, and the caller is the
@@ -105,7 +121,7 @@ export function renderPrBlock(items, body = '') {
  */
 export function toggleTask(body, index, done, expected) {
   const lines = (body ?? '').split('\n');
-  const at = lines.reduce((acc, l, i) => (ITEM.test(l) ? [...acc, i] : acc), [])[index];
+  const at = taskLines(lines)[index];
   if (at === undefined) throw new Error('that checkbox is no longer in the description -- refresh');
 
   const text = ITEM.exec(lines[at])[2].trim();
