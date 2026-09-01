@@ -7,7 +7,7 @@ import { initQueue, addItem, setItems, freeze } from './queue.js';
 
 const term = new Terminal({
   fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-  fontSize: 13,
+  fontSize: 14,   // one step up from the default, matching the panes' 14px body
   cursorBlink: true,
   theme: { background: '#1c1f26', foreground: '#d5d9e0' },
 });
