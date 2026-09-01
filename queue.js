@@ -100,6 +100,39 @@ export function renderPrBlock(items, body = '') {
   return (block ? joined : `${before.trimEnd()}\n${after.trimStart()}`).trim() + '\n';
 }
 
+/**
+ * Flip one checkbox in a PR description, so the boxes rendered in the PR pane
+ * are the real ones. The line is found by its position among the body's
+ * checklist lines and then checked against the text the client saw: the client
+ * counts those lines with its own copy of this pattern, so a body that moved
+ * on -- or a renderer that has drifted from this one -- fails loudly instead of
+ * ticking the line next door. (A `- [ ]` inside a fenced code block counts as a
+ * checkbox to both of them, which is wrong in the same way on both sides.)
+ *
+ * `inBlock` says whether the line is one of ours: those are a projection of
+ * FUTURE.md and the tick has to be folded back into it, and the caller is the
+ * only one that can write files.
+ */
+export function toggleTask(body, index, done, expected) {
+  const lines = (body ?? '').split('\n');
+  const at = lines.reduce((acc, l, i) => (ITEM.test(l) ? [...acc, i] : acc), [])[index];
+  if (at === undefined) throw new Error('that checkbox is no longer in the description -- refresh');
+
+  const text = ITEM.exec(lines[at])[2].trim();
+  if (text !== (expected ?? '').trim()) {
+    throw new Error(`the description changed under that checkbox (now "${text}") -- refresh`);
+  }
+  // ITEM anchors the box at the start of the line, so the first [ ] is it.
+  lines[at] = lines[at].replace(/\[( |x|X)\]/, done ? '[x]' : '[ ]');
+
+  const open = lines.findIndex((l) => l.includes(OPEN));
+  const close = lines.findIndex((l) => l.includes(CLOSE));
+  return {
+    body: lines.join('\n'),
+    inBlock: open !== -1 && at > open && (close === -1 || at < close),
+  };
+}
+
 function splitPrBlock(body = '') {
   const start = body.indexOf(OPEN);
   if (start === -1) return { before: body, after: '', found: false };

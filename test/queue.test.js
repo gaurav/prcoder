@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseFuture, renderFuture, renderPrBlock, syncFromPrBlock } from '../queue.js';
+import { parseFuture, renderFuture, renderPrBlock, syncFromPrBlock, toggleTask } from '../queue.js';
+import { TASK } from '../public/pr.js';
 
 const FUTURE = `# Notes
 
@@ -171,4 +172,55 @@ test('a malformed marker value degrades into the task text and drops the rest', 
   assert.equal(item.text, '@issue#NaN @pr Real text');
   assert.equal(item.issue, null);
   assert.equal(item.inPr, false);
+});
+
+// --- checkboxes in the description ---
+
+const BODY = [
+  'Prose first, with a list that is not a checklist:',
+  '',
+  '- plain bullet',
+  '- [ ] first task',
+  '- [x] second task, already done',
+  '',
+  '<!-- prcoder:todo -->',
+  '## TODO',
+  '',
+  '- [ ] a queue item',
+  '<!-- /prcoder:todo -->',
+].join('\n');
+
+test('ticking a description checkbox flips that line and nothing else', () => {
+  const { body, inBlock } = toggleTask(BODY, 0, true, 'first task');
+  assert.equal(inBlock, false);
+  assert.equal(body.split('\n')[3], '- [x] first task');
+  assert.deepEqual(body.split('\n').filter((_, i) => i !== 3), BODY.split('\n').filter((_, i) => i !== 3));
+  assert.equal(toggleTask(BODY, 1, false, 'second task, already done').body.split('\n')[4],
+    '- [ ] second task, already done');
+});
+
+test('a line inside the prcoder block is reported so the queue can follow it', () => {
+  const { body, inBlock } = toggleTask(BODY, 2, true, 'a queue item');
+  assert.equal(inBlock, true);
+  assert.match(body, /- \[x\] a queue item/);
+});
+
+// The index comes from a renderer that counts checklist lines with its own
+// copy of the pattern, so the text is the thing that catches a body that moved.
+test('a checkbox whose line has changed underneath is refused, not ticked', () => {
+  assert.throws(() => toggleTask(BODY, 0, true, 'a task that was edited on github.com'),
+    /description changed under that checkbox/);
+  assert.throws(() => toggleTask(BODY, 9, true, 'first task'),
+    /no longer in the description/);
+});
+
+// The client sends a position in this list; if the two patterns ever disagree
+// on which lines count, every index past the first difference ticks the wrong
+// line. Walking the same body through both is what keeps them in step.
+test('the PR pane and queue.js pick out the same checklist lines', () => {
+  const seen = BODY.split('\n').map((l) => TASK.exec(l)).filter(Boolean).map((m) => m[2]);
+  assert.deepEqual(seen, ['first task', 'second task, already done', 'a queue item']);
+  for (const [index, text] of seen.entries()) {
+    assert.doesNotThrow(() => toggleTask(BODY, index, true, text), `index ${index} (${text})`);
+  }
 });

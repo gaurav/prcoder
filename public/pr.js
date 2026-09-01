@@ -149,7 +149,7 @@ export function renderPr(pr, handlers) {
       h('span', { className: 'del' }, `−${pr.deletions}`),
     ),
     checks(pr.checks),
-    h('div', { className: 'body md' }, ...markdown(pr.body)),
+    h('div', { className: 'body md' }, ...markdown(pr.body, handlers.onTask)),
     issues(pr.issues),
     h('div', { className: 'meta' },
       h('a', { href: `${pr.url}#issuecomment`, target: '_blank', rel: 'noopener' },
@@ -221,18 +221,64 @@ function fileRow(f, { onViewed, onOpen, selected }) {
   return row;
 }
 
-/** Just enough markdown for a PR description: links, code, headings, lists. */
-function markdown(text) {
-  return (text ?? '').split(/\n{2,}/).filter(Boolean).map((para) => {
-    const p = h('p');
-    p.innerHTML = escape(para)
-      .replace(/`([^`]+)`/g, '<code>$1</code>')
-      .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-      .replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
-      .replace(/(^|[\s(])(https?:\/\/[^\s)]+)/g, '$1<a href="$2" target="_blank" rel="noopener">$2</a>')
-      .replace(/\n/g, '<br>');
-    return p;
-  });
+// The same checklist line GitHub renders as a checkbox, and the same one
+// queue.js parses server-side. The two patterns have to agree on which lines
+// are checkboxes, because a tick is sent as a position in that list --
+// test/queue.test.js walks a body through both to keep them honest.
+export const TASK = /^\s*[-*]\s*\[( |x|X)\]\s*(.*)$/;
+
+/**
+ * Just enough markdown for a PR description: links, code, headings, lists --
+ * and checklists as real checkboxes, which are the point of reading a
+ * description in a pane rather than on github.com. `index` counts every
+ * checklist line in the body, in order, which is how the server finds the line
+ * again; prose either side of a run of them stays in its own paragraph.
+ */
+function markdown(text, onTask) {
+  const out = [];
+  let index = 0;
+  for (const para of (text ?? '').split(/\n{2,}/).filter(Boolean)) {
+    let prose = [];
+    const flush = () => {
+      if (prose.length) out.push(h('p', { innerHTML: inline(prose.join('\n')) }));
+      prose = [];
+    };
+    for (const line of para.split('\n')) {
+      const m = TASK.exec(line);
+      if (!m) { prose.push(line); continue; }
+      flush();
+      out.push(taskRow(m[1].toLowerCase() === 'x', m[2], index++, onTask));
+    }
+    flush();
+  }
+  return out;
 }
+
+/**
+ * A checkbox that writes through to the description on GitHub. The browser has
+ * already flipped it by the time we hear about it, so a failure puts it back
+ * rather than repainting -- the poll would take up to a minute to disagree.
+ */
+function taskRow(done, text, index, onTask) {
+  const box = h('input', { type: 'checkbox', checked: done, title: 'tick this on GitHub' });
+  const row = h('label', { className: `task${done ? ' done' : ''}` },
+    box, h('span', { innerHTML: inline(text) }));
+  box.addEventListener('change', async () => {
+    box.disabled = true;
+    try {
+      await onTask({ index, done: box.checked, text });
+      row.classList.toggle('done', box.checked);
+    } catch { box.checked = !box.checked; }
+    box.disabled = false;
+  });
+  return row;
+}
+
+const inline = (s) => escape(s)
+  .replace(/`([^`]+)`/g, '<code>$1</code>')
+  .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+  .replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
+  .replace(/(^|[\s(])(https?:\/\/[^\s)]+)/g, '$1<a href="$2" target="_blank" rel="noopener">$2</a>')
+  .replace(/\n/g, '<br>');
 
 const escape = (s) => s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));

@@ -61,8 +61,11 @@ row of prcoder tabs stays readable at tab width.
 file grouped as *Tests* / *Code* / *Config & docs*, tests first, because tests
 are the fastest way to see what functionality actually changed. The checkbox on
 each file is GitHub's own "viewed" checkbox: tick it here and it's ticked on
-github.com. Clicking a file opens its diff in the **Diff** pane;
-cmd/ctrl-clicking opens GitHub's diff viewer at that file instead.
+github.com. Checklists in the description are real checkboxes too, and they
+write straight back to the description -- ticking one inside prcoder's own TODO
+block ticks the queue item it came from. Clicking a file opens its diff in the
+**Diff** pane; cmd/ctrl-clicking opens GitHub's diff viewer at that file
+instead.
 
 **Diff** — the selected file's patch, rendered plainly above the terminal so
 select → read → tick viewed → ask Claude never leaves the window. It shows the

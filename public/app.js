@@ -80,9 +80,28 @@ const NOTES = {
   'other-repo': 'This pull request is in another repository.',
 };
 
+/**
+ * A checkbox in the description, ticked through to GitHub. Rethrown so the box
+ * snaps back, and the status reload is for the one error that matters: the
+ * description moved under us, and the pane is now showing a stale copy of it.
+ */
+async function toggleTask(task) {
+  try {
+    const { queue } = await post('/api/pr/task', task);
+    // Only when the line was one of the queue's own, so the two panes agree
+    // without waiting for the poll.
+    if (queue) setItems(queue, true);
+  } catch (e) {
+    toast(e.message, true);
+    loadStatus();
+    throw e;
+  }
+}
+
 const fileHandlers = {
   onViewed: setViewed,
   onOpen: (f) => openDiff(f, { onViewed: setViewed }),
+  onTask: toggleTask,
 };
 
 function paint(status) {

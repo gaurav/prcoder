@@ -12,7 +12,7 @@ import { WebSocketServer } from 'ws';
 import { loadPr, prHeads, prBody, listPrs, setViewed, setBody, createIssue, fetchPatches } from './github.js';
 import { snapshot, repoInfo, prScope, compareUrl, checkoutPr, pushBranch, remoteBranchHead } from './git.js';
 import { groupFiles, fileUrl } from './files.js';
-import { parseFuture, renderFuture, renderPrBlock, syncFromPrBlock } from './queue.js';
+import { parseFuture, renderFuture, renderPrBlock, syncFromPrBlock, toggleTask } from './queue.js';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const repo = process.cwd();
@@ -195,6 +195,28 @@ const routes = {
     const f = pr.files.find((x) => x.path === p);
     if (f) f.viewed = viewed;
     return { ok: true };
+  },
+
+  /**
+   * One checkbox in the description, ticked from the PR pane. The body is
+   * re-read rather than taken from the cached PR for the same reason
+   * writeQueue does it: prose edited on github.com since the last poll would
+   * otherwise be written back out of date.
+   */
+  'POST /api/pr/task': async ({ index, done, text }) => {
+    const cur = requirePr();
+    const current = await prBody(repo, cur.url).catch(() => cur.body ?? '');
+    const { body, inBlock } = toggleTask(current, index, done, text);
+    await setBody(repo, cur.url, body);
+    pr.body = body;
+
+    // Our own block is a projection of FUTURE.md, so a tick there has to reach
+    // the file too: readQueue folds the new body back into the items and
+    // writeQueue persists them. It re-renders the block from those items and
+    // finds it unchanged, so this costs a read and no second write. A tick
+    // anywhere else in the description is nothing to do with the queue -- and
+    // running this for one would create a FUTURE.md that was never asked for.
+    return { queue: inBlock ? await writeQueue(await readQueue()) : null };
   },
 
   'POST /api/diff': async ({ path: p }) => {
