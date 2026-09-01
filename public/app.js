@@ -116,7 +116,10 @@ function paint(status) {
     renderPr({ ...status.pr, note: NOTES[status.scope] },
       { ...fileHandlers, selected: selectedPath() });
   } else renderNoPr(status, { onCreate: createPr });
-  if (status.queue) setItems(status.queue, Boolean(status.pr));
+  // Mirroring needs the PR to be *this* branch's: prcoder will not write our
+  // items into a PR we are only looking at, so the controls that would ask it
+  // to must disable themselves rather than silently do nothing.
+  if (status.queue) setItems(status.queue, status.scope === 'current');
 
   // Keep an open diff honest: close it if its file left the PR (or the PR
   // switched away), refresh it if the branch moved — the server cache is

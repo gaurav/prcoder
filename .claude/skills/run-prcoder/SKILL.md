@@ -61,10 +61,11 @@ Two things it has to do, and any browser script after it:
 - **`CLAUDE_BIN=/bin/cat`.** Every page load opens a websocket and spawns
   `CLAUDE_BIN` in a PTY. Without the stub, each run starts a real Claude
   session and leaves it running.
-- **No writes you do not undo.** The UI's buttons hit the live PR: ticking a
-  description checkbox edits the description on GitHub, and adding a queue item
-  rewrites `FUTURE.md`. `git checkout -- FUTURE.md` after, and prefer read-only
-  interactions.
+- **No writes you do not undo.** The queue is safe now -- it writes only
+  `.prcoder/`, which is gitignored and needs no cleanup. The PR is not: ticking
+  a description checkbox edits the description on GitHub, and so does mirroring
+  a queue item with ◆. Snapshot the body with `gh pr view <n> --json body -q
+  .body` before, and diff after.
 
 For a look with the user's own eyes, leave the server running and hand them the
 URL (`http://localhost:7433`), or run `open http://localhost:7433`.

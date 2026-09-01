@@ -2,7 +2,7 @@
 
 A PR-focused shell around Claude Code. Run it in a repo, get three panes in your
 browser: the pull request you're working on, a live Claude Code session, and a
-task queue that survives moving between machines.
+task queue that stays out of your files.
 
 ```sh
 npm install
@@ -92,23 +92,37 @@ under the port, so across sessions it is a convenience rather than a promise.)
 
 ## Where the queue lives
 
-`FUTURE.md` in the repo root, as a plain markdown checklist. Commit it to carry
-ideas between PRs, or gitignore it for scratch notes — that decision is yours
-and needs no configuration.
+`.prcoder/queue.json`, in a directory that ignores itself -- it holds a
+`.gitignore` of one line, `*`, so nothing is added to your own and nothing
+shows up in `git status`. **prcoder does not write anything you own unless you
+ask it to.**
 
-```markdown
-## Queue
-
-- [ ] Add retry to the fetch path
-- [ ] @pr Docs for the new flag
-- [ ] @pr @issue#42 Refactor the parser
-- [x] Fix the flaky worktree test
+```json
+{
+  "version": 1,
+  "items": [
+    { "text": "Add retry to the fetch path", "branch": "add-retries",
+      "done": false, "inPr": false, "issue": null, "deleted": false }
+  ]
+}
 ```
 
-`@pr` mirrors the item into a `<!-- prcoder:todo -->` block in the PR
-description. Edits you make to that block on github.com — ticking a box, adding
-a line from your phone, deleting one — are folded back in on refresh. Any other
-section of `FUTURE.md` is left untouched.
+Items are tagged with the branch you added them on and the pane shows the
+branch you have checked out, so switching PRs swaps the list and nothing from
+one lands in another. Items for a branch you have deleted stay in the file:
+out of view, but not gone.
+
+The queue is machine-local, which is the trade for not writing your files.
+The way to carry an item elsewhere is the ◆ button, which mirrors it into a
+`<!-- prcoder:todo -->` block in the PR description. Edits you make to that
+block on github.com — ticking a box, adding a line from your phone, deleting
+one — are folded back in on refresh. prcoder only mirrors into the pull request
+for the branch you have checked out: a PR you are merely looking at is never
+written to. Separate worktrees keep separate queues, since each has its own
+`.prcoder/`.
+
+If you have a `FUTURE.md` from an earlier version, its `## Queue` section is
+imported once, on the first run, and the file is never read or written again.
 
 ## Requirements
 
@@ -121,5 +135,5 @@ Syntax-highlighted diffs, review threads, multi-session management. This is a pr
 finding out whether a PR-shaped workspace beats a chat-shaped one; it's meant to
 be cheap to rewrite.
 
-`npm test` covers the parts worth pinning down: file grouping, GitHub's diff
-anchors, and every `FUTURE.md` ↔ PR-description transition.
+`npm test` covers the parts worth pinning down: the queue store, file grouping, GitHub's diff
+anchors, and every queue ↔ PR-description transition.
