@@ -9,7 +9,7 @@
 - [ ] Allow the user to edit the GitHub PR title and description automatically
 - [ ] @pr Look at the switcher, sync light and Deleted tab in a real browser -- they were built without a working browser connection, so only the CSS has been read
 - [ ] @pr Figure out where there's a `null` before and after the PR description
-- [ ] @pr Add browser-level tests for the pane rendering (needs jsdom as a dev dependency)
+- [ ] @pr Add browser-level tests for the pane rendering -- playwright and chromium are dev dependencies now, and tools/shot.mjs is the starting point
 - [ ] @pr Two browser tabs each spawn their own `claude` PTY and their own 60s poll, doubling gh traffic against one global lock
 - [ ] @pr A branch with no PR runs `git ls-remote` every poll to learn whether it is pushed; the PR case gets the same answer free from headRefOid
 - [ ] @pr `gh pr checkout` has a 120s timeout and sits behind the global serial lock, so a slow checkout stalls /api/status for the duration -- needs a decision about per-route locking

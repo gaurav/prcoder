@@ -38,18 +38,36 @@ delays the rest, that's expected.
 
 ## Client-side changes
 
-No browser automation is installed here (no Playwright, no chromium-cli, no
-Chrome extension). Verify what you can without a browser:
-
 ```bash
 node --check public/app.js public/pr.js public/diff.js public/queue.js
 node --test          # bare, never `node --test test/` (Node 26 breaks)
 curl -s localhost:7433/app.js | head -3   # the file actually serves
 ```
 
-For the visual check, leave the server running and hand the user the URL
-(`http://localhost:7433`), or run `open http://localhost:7433` if they asked to
-see it.
+Then look at it. `playwright` is a dev dependency and Chromium is installed, so
+a client-side change can be seen rather than reasoned about:
+
+```bash
+node tools/shot.mjs /tmp/shots   # boots its own server, writes PNGs, kills it
+```
+
+Read the PNGs back — a screenshot is the only thing that answers "does this
+look right", and three changes shipped on CSS-reading alone before this existed.
+`tools/shot.mjs` is a scratch driver, not a test: edit it for whatever you are
+looking at, and keep the edits if they are worth having.
+
+Two things it has to do, and any browser script after it:
+
+- **`CLAUDE_BIN=/bin/cat`.** Every page load opens a websocket and spawns
+  `CLAUDE_BIN` in a PTY. Without the stub, each run starts a real Claude
+  session and leaves it running.
+- **No writes you do not undo.** The UI's buttons hit the live PR: ticking a
+  description checkbox edits the description on GitHub, and adding a queue item
+  rewrites `FUTURE.md`. `git checkout -- FUTURE.md` after, and prefer read-only
+  interactions.
+
+For a look with the user's own eyes, leave the server running and hand them the
+URL (`http://localhost:7433`), or run `open http://localhost:7433`.
 
 ## Teardown and traps
 
