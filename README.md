@@ -51,6 +51,10 @@ it, so several sessions can run at once and none of them needs a number you have
 to remember. Set `PRCODER_PORT` to pin one anyway, or `PRCODER_NO_OPEN=1` to be
 left with just the URL on stdout.
 
+Each tab names itself `owner/repo#N · pull request title` -- the branch and
+`(no PR)` when there isn't one -- and re-names itself as the branch moves, so a
+row of prcoder tabs stays readable at tab width.
+
 ## The panes
 
 **Pull request** — title, description, checks, linked issues, and every changed

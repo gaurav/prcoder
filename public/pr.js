@@ -12,6 +12,41 @@ const GROUPS = [
 ];
 
 /**
+ * The browser tab title. A row of tabs shows only the first few characters, so
+ * the short URL — the one string that identifies this session against every
+ * other prcoder tab, and against github.com's own tabs — comes first, and the
+ * PR title is trimmed to whatever is left of a tab's width.
+ *
+ * The repository comes from the PR's own URL, not from the checkout: a PR from
+ * a fork, or one opened with `prcoder <url>`, lives somewhere else entirely.
+ */
+const TITLE_MAX = 72;
+
+const prRepo = (url) => url?.match(/github\.com\/([^/]+\/[^/]+)\/pull\/\d+/)?.[1] ?? null;
+
+export function pageTitle(status) {
+  // A failed poll keeps the last good title (paint() is not reached), so this
+  // is only the very first load, where there is nothing to name the tab with.
+  if (!status || status.error) return 'prcoder';
+
+  if (status.pr) {
+    const repo = prRepo(status.pr.url) ?? status.nameWithOwner ?? 'prcoder';
+    return clamp(`${repo}#${status.pr.number}`, status.pr.title);
+  }
+
+  const where = status.detached ? 'detached HEAD' : status.branch;
+  return clamp(status.nameWithOwner ?? 'prcoder', where ? `${where} (no PR)` : 'no PR');
+}
+
+/** `head · tail`, with the tail cut to fit. The head is never truncated. */
+function clamp(head, tail) {
+  if (!tail) return head;
+  const room = TITLE_MAX - head.length - 3;
+  if (room < 8) return head;
+  return `${head} · ${tail.length > room ? `${tail.slice(0, room - 1).trimEnd()}…` : tail}`;
+}
+
+/**
  * The header is the one part of this pane that is never blown away, so the
  * switcher and the light live there — a poll landing mid-click would otherwise
  * close an open dropdown.

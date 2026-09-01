@@ -1,7 +1,7 @@
 import { Terminal } from '/vendor/xterm.mjs';
 import { FitAddon } from '/vendor/addon-fit.mjs';
 import { WebLinksAddon } from '/vendor/addon-web-links.mjs';
-import { renderPr, renderNoPr, renderHeader } from './pr.js';
+import { renderPr, renderNoPr, renderHeader, pageTitle } from './pr.js';
 import { openDiff, closeDiff, selectedPath } from './diff.js';
 import { initQueue, addItem, setItems, freeze } from './queue.js';
 
@@ -88,6 +88,10 @@ const fileHandlers = {
 function paint(status) {
   const moved = last?.pr?.headRefOid !== status.pr?.headRefOid;
   last = status;
+  // Named for the tab strip, not the page: which PR, in which repo. A poll
+  // that fails leaves the last good name up rather than reverting to
+  // "prcoder", which is why this is here and not in loadStatus's catch.
+  document.title = pageTitle(status);
   renderHeader(status, prs, handlers);
   if (status.pr) {
     renderPr({ ...status.pr, note: NOTES[status.scope] },
