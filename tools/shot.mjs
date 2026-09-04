@@ -48,6 +48,31 @@ for (const pane of ['pr', 'queue']) {
   await page.locator(`#${pane}`).screenshot({ path: path.join(out, `${pane}.png`) });
 }
 
+// The gutters, which are only ever right or wrong on screen. Each drag moves
+// one line to a known coordinate, so the variables it writes are arithmetic on
+// the 1440x900 viewport -- and the reload says whether they survived.
+const drag = async (sel, x, y) => {
+  const b = await page.locator(sel).boundingBox();
+  await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(x, y, { steps: 8 });
+  await page.mouse.up();
+};
+await page.locator('.file .path').first().click();   // opens the diff pane
+await page.waitForSelector('main.diff-open');
+await drag('#gut-pr', 520, 450);
+await drag('#gut-diff', 720, 300);
+await drag('#gut-queue', 720, 640);
+await page.waitForTimeout(300);
+await page.screenshot({ path: path.join(out, 'dragged.png') });
+const dragged = await page.evaluate(() => document.querySelector('main').style.cssText);
+await page.reload();
+await page.waitForSelector('.file');
+const restored = await page.evaluate(() => document.querySelector('main').style.cssText);
+
+console.log('dragged: ', dragged, '  (want --w-pr 520, --h-diff 300, --h-queue 260)');
+console.log('restored:', restored, restored === dragged ? '' : '  <-- did not persist');
+
 console.log('title: ', await page.title());
 console.log('panes: ', await page.evaluate(() => getComputedStyle(document.querySelector('main')).gridTemplateColumns));
 console.log('shots: ', out);
