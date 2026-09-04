@@ -17,8 +17,9 @@ non-executable.
 **Run tests with bare `node --test`, not `node --test test/`.** On Node 26 a
 directory argument is resolved as a module and dies with `Cannot find module`.
 Bare discovery treats *everything* under `test/` as a test file, which is why
-`tools/shot.mjs` lives in `tools/` — a driver script there would run on every
-`npm test`.
+the drivers live in `tools/` — `shot.mjs` for the browser, `cli.mjs` for the
+terminal. Either one under `test/` would run on every `npm test`, spawn a
+server and drive a browser or a PTY.
 
 ## Subprocess errors lie by omission
 
