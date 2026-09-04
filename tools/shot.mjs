@@ -2,9 +2,17 @@
 // reading the CSS, which is how three of them shipped unseen.
 //
 //   node tools/shot.mjs [outdir]        # default: ./shots (gitignored)
+//   PRCODER_BROWSER=firefox node tools/shot.mjs
+//
+// Firefox is a separate download: `npx playwright install firefox` once.
 //
 // Scratch driver, not a test: add clicks and locators for whatever you are
 // looking at. Two rules for anything you add.
+//
+// PRCODER_BROWSER=firefox drives Firefox instead. Worth having rather than
+// trusting one engine: the caret in a queue item landed at the start in Firefox
+// and nowhere else, because a mousedown inside a draggable element goes to the
+// drag machinery there, and every screenshot before that had been Chromium.
 //
 // CLAUDE_BIN is stubbed because every page load opens a websocket and spawns
 // it in a PTY -- unstubbed, each run starts a real Claude session and leaves it
@@ -17,7 +25,7 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { chromium } from 'playwright';
+import { chromium, firefox } from 'playwright';
 
 const repo = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const out = path.resolve(process.argv[2] ?? path.join(repo, 'shots'));
@@ -30,7 +38,8 @@ const server = spawn('node', ['server.js'], {
   stdio: 'ignore',
 });
 
-const browser = await chromium.launch();
+const engine = process.env.PRCODER_BROWSER === 'firefox' ? firefox : chromium;
+const browser = await engine.launch();
 // 1440 is where the PR pane's 26% and its 375px floor cross, so this is the
 // width at which the column is doing what it was sized to do.
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
@@ -73,6 +82,17 @@ const restored = await page.evaluate(() => document.querySelector('main').style.
 console.log('dragged: ', dragged, '  (want --w-pr 520, --h-diff 300, --h-queue 260)');
 console.log('restored:', restored, restored === dragged ? '' : '  <-- did not persist');
 
+// The bug above, pinned: a click in the middle of an item's text has to land
+// in the middle of it. Silent in Chromium either way, so this only earns its
+// keep under PRCODER_BROWSER=firefox.
+const text = page.locator('.item .text').first();
+const tb = await text.boundingBox();
+await page.mouse.click(tb.x + tb.width / 2, tb.y + tb.height / 2);
+await page.waitForTimeout(200);
+const caret = await page.evaluate(() => window.getSelection().anchorOffset);
+console.log('caret:  ', caret, caret > 0 ? '' : '  <-- click landed at the start');
+
+console.log('engine: ', engine === firefox ? 'firefox' : 'chromium');
 console.log('title: ', await page.title());
 console.log('panes: ', await page.evaluate(() => getComputedStyle(document.querySelector('main')).gridTemplateColumns));
 console.log('shots: ', out);
