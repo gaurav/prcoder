@@ -65,6 +65,24 @@ being pushed. Say "prcoder's own HTML-comment markers" instead, and if you must
 show the literal string, check that the body still contains exactly one of each
 marker before writing it.
 
+## One engine is not "a real browser"
+
+`tools/shot.mjs` ran Chromium only, and a Firefox-only bug survived every
+screenshot it ever took: in Firefox a mousedown inside a `draggable` element
+goes to the drag machinery rather than to the caret, so clicking into a
+`contentEditable` child lands at offset 0 instead of where you clicked. Chromium
+places the caret correctly with the same markup, so there was nothing to see.
+
+prcoder is used in Firefox. For anything touching selection, focus or drag,
+`PRCODER_BROWSER=firefox node tools/shot.mjs` is the run that counts --
+`npx playwright install firefox` first, it is a separate download.
+
+Three fixes for that bug do not work, so they are not worth retrying:
+`draggable="false"` on the child, `-moz-user-select` on the child, and leaving
+it to the browser. All three leave the caret at 0. The row has to stop being
+draggable for as long as the pointer is on its text, which is why the queue
+rows have a grip.
+
 ## Verifying against GitHub
 
 Prefer checking GitHub's real behaviour over trusting its docs — the diff-anchor
