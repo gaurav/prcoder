@@ -4,6 +4,7 @@ import { WebLinksAddon } from '/vendor/addon-web-links.mjs';
 import { renderPr, renderNoPr, renderHeader, pageTitle } from './pr.js';
 import { openDiff, closeDiff, selectedPath } from './diff.js';
 import { initQueue, addItem, setItems, freeze } from './queue.js';
+import './panes.js';   // draggable pane gutters; nothing here calls into it
 
 const term = new Terminal({
   fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
@@ -17,9 +18,22 @@ term.loadAddon(new WebLinksAddon((_e, uri) => window.open(uri, '_blank', 'noopen
 term.open(document.getElementById('term-host'));
 
 const ws = new WebSocket(`ws://${location.host}/pty`);
-const send = (msg) => ws.readyState === WebSocket.OPEN && ws.send(JSON.stringify(msg));
+const send = (msg) => {
+  if (ws.readyState !== WebSocket.OPEN) return false;
+  ws.send(JSON.stringify(msg));
+  return true;
+};
 
-const sync = () => { fit.fit(); send({ type: 'resize', cols: term.cols, rows: term.rows }); };
+// A splitter drag resizes #term-host on every frame, but the PTY only cares
+// when the character grid changes — which is every few pixels at most. `sent`
+// records what the *server* was told, so a resize dropped while the socket was
+// still opening is re-sent by the sync() in ws.onopen rather than skipped.
+let sent = '';
+const sync = () => {
+  fit.fit();
+  const dims = `${term.cols}x${term.rows}`;
+  if (dims !== sent && send({ type: 'resize', cols: term.cols, rows: term.rows })) sent = dims;
+};
 
 ws.onmessage = (e) => term.write(e.data);
 ws.onopen = () => { sync(); term.focus(); };

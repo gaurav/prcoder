@@ -60,6 +60,10 @@ row of prcoder tabs stays readable at tab width.
 
 ## The panes
 
+Every line between the panes is a splitter: drag it to resize, double-click it
+to drop back to the default. The sizes are remembered per browser, so the
+layout you settle on is the one the next `prcoder` opens with.
+
 **Pull request** — title, description, checks, linked issues, and every changed
 file grouped as *Tests* / *Code* / *Config & docs*, tests first, because tests
 are the fastest way to see what functionality actually changed. The checkbox on

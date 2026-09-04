@@ -9,19 +9,44 @@ body {
   background: var(--bg); color: var(--fg);
   font: 14px/1.5 ui-sans-serif, system-ui, sans-serif;
 }
+/* The 1px gutter tracks are the lines between the panes — there is no `gap`,
+   because every line in this layout is draggable. Each gutter writes one length
+   back onto <main> as a variable (see panes.js); the clamps are what keep a
+   drag from squeezing a pane to nothing, so the maxima must leave #term room
+   even when both row gutters are pushed as far as they go. */
 main {
-  height: 100%; display: grid; gap: 1px; background: var(--line);
-  grid-template-columns: minmax(375px, 26%) 1fr;
-  grid-template-rows: 1fr minmax(180px, 32%);
-  grid-template-areas: "pr term" "pr queue";
+  height: 100%; display: grid; background: var(--line);
+  grid-template-columns: clamp(375px, var(--w-pr, 26%), 60%) 1px 1fr;
+  grid-template-rows: 1fr 1px clamp(120px, var(--h-queue, 32%), 40%);
+  grid-template-areas:
+    "pr gpr term"
+    "pr gpr gqueue"
+    "pr gpr queue";
 }
 #pr { grid-area: pr; } #term { grid-area: term; } #queue { grid-area: queue; }
 main.diff-open {
-  grid-template-rows: minmax(140px, 40%) 1fr minmax(180px, 25%);
-  grid-template-areas: "pr diff" "pr term" "pr queue";
+  grid-template-rows:
+    clamp(140px, var(--h-diff, 40%), 50%) 1px 1fr 1px clamp(120px, var(--h-queue, 25%), 40%);
+  grid-template-areas:
+    "pr gpr diff"
+    "pr gpr gdiff"
+    "pr gpr term"
+    "pr gpr gqueue"
+    "pr gpr queue";
 }
 #diff { grid-area: diff; }
 #diff[hidden] { display: none; }
+
+#gut-pr { grid-area: gpr; } #gut-queue { grid-area: gqueue; } #gut-diff { grid-area: gdiff; }
+/* Only the diff-open template has a slot for it; left displayed it would
+   auto-place itself into a row of its own and shove the layout sideways. */
+#gut-diff { display: none; }
+main.diff-open #gut-diff { display: block; }
+/* 1px of line, ±3px of grab, above the panes so the cursor changes over it. */
+.gut { position: relative; z-index: 3; touch-action: none; }
+.gut::after { content: ''; position: absolute; }
+.gut.col::after { inset: 0 -3px; cursor: col-resize; }
+.gut.row::after { inset: -3px 0; cursor: row-resize; }
 
 .pane { background: var(--panel); display: flex; flex-direction: column; min-height: 0; min-width: 0; }
 .pane > header {
