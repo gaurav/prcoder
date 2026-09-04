@@ -596,18 +596,27 @@ async function ready() {
       (process.env.PRCODER_PORT ? 'not the port you asked for' : 'not the usual URL for this repo'),
   };
 
-  info ??= await repoInfo(repo).catch((e) => {
-    console.error('repo:', e.stderr || e.message);
-    return null;
+  // Through the serial chain, so a request arriving before this finishes waits
+  // rather than running against a half-loaded process. `mirrors()` fails closed
+  // on a null `pr` or `info`, so a queue write landing in that window is stored
+  // and never mirrored -- and because syncFromPrBlock takes `done` from the
+  // body, the next poll reads the block prcoder never updated and reverts the
+  // very tick that was just made. `listening` fires before any connection is
+  // handled, so this is always first in the chain.
+  await serial(async () => {
+    info ??= await repoInfo(repo).catch((e) => {
+      console.error('repo:', e.stderr || e.message);
+      return null;
+    });
+    await refreshPr().catch((e) => console.error('pr:', e.stderr || e.message));
+    await importFuture().catch((e) => console.error('import:', e.message));
+    await status().catch((e) => console.error('status:', e.stderr || e.message));
   });
-  await refreshPr().catch((e) => console.error('pr:', e.stderr || e.message));
-  await importFuture().catch((e) => console.error('import:', e.message));
   console.log(`prcoder: ${repo}`);
   console.log(pr ? `PR #${pr.number}: ${pr.title}` : 'no pull request for this branch');
   if (pr) console.log(pr.url);
   console.log(url);
   if (urls.moved) console.error(urls.moved);
-  await status().catch((e) => console.error('status:', e.stderr || e.message));
   if (!process.env.PRCODER_NO_OPEN) openBrowser();
 }
 
