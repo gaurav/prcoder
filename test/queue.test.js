@@ -90,6 +90,27 @@ test('edits made on github.com come back: new line, ticked box, deleted line', (
   ]);
 });
 
+/**
+ * The other direction, and the dangerous one. The body wins on `done`, so a
+ * local tick that never reached GitHub is reverted by the next merge — which
+ * is correct (unticking on github.com has to work) and is exactly why the
+ * store may never move without the body moving with it. A startup race let a
+ * write land before the PR was loaded, so the mirror was skipped and this
+ * undid it a minute later; the load runs on the serial chain now.
+ */
+test('a tick the description never received is reverted by it', () => {
+  const items = [{ text: 'ticked here only', done: true, inPr: true, issue: null, deleted: false }];
+  const behind = [
+    'Desc.', '', '<!-- prcoder:todo -->', '## TODO', '',
+    '- [ ] ticked here only',
+    '<!-- /prcoder:todo -->',
+  ].join('\n');
+
+  assert.deepEqual(syncFromPrBlock(items, behind), [
+    { text: 'ticked here only', done: false, inPr: true, issue: null, deleted: false },
+  ]);
+});
+
 test('a PR body with no block leaves the queue untouched', () => {
   const items = [{ text: 'a', done: false, inPr: true, issue: null, deleted: false }];
   assert.deepEqual(syncFromPrBlock(items, 'Just a description.'), items);
