@@ -35,6 +35,21 @@ than a failure. `rev-parse --verify --quiet` exits 1 for a missing object where
 to mean "bad object". `asks()` in `git.js` treats one specific code as the
 answer and rethrows the rest, so pick the command whose codes you can tell apart.
 
+## Raw mode swallows SIGINT
+
+`term.js` puts stdin in raw mode so a keypress can be read, and raw mode turns
+ISIG off: Ctrl-C then arrives as byte 3 on stdin and **no SIGINT is delivered
+at all**. The keypress handler is the only Ctrl-C there is, so a bug in it is a
+process you cannot interrupt. That is why a second Ctrl-C at the confirm prompt
+exits unconditionally, and why `kill -TERM` is wired separately -- a signal
+with a default action never runs `exit` handlers, so the cursor and the raw
+mode would never be restored.
+
+None of it exists without a tty. `process.stdout.isTTY` gates the block and
+`process.stdin.isTTY` gates the keys, so a piped run behaves as it always did
+-- which is what `tools/shot.mjs` (`stdio: 'ignore'`) is standing proof of.
+`tools/cli.mjs` drives the other half, in a real PTY.
+
 ## Never write the queue's markers in prose
 
 `splitPrBlock` in `queue.js` finds prcoder's block with `body.indexOf(OPEN)` —

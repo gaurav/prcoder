@@ -44,7 +44,7 @@ no list of Claude's flags here to fall out of date, and nothing to arbitrate whe
 Claude gains a flag prcoder also wants.
 
 prcoder's own settings are environment variables — `PRCODER_PORT`, `PRCODER_NO_OPEN`,
-`CLAUDE_BIN` — which cannot collide with a flag at all.
+`PRCODER_VERBOSE`, `CLAUDE_BIN` — which cannot collide with a flag at all.
 
 The port is derived from the repo's path, so a repo gets the same URL every
 run -- one you can bookmark, add to the Dock or point an IDE pane at (see
@@ -128,6 +128,51 @@ written to. Separate worktrees keep separate queues, since each has its own
 
 If you have a `FUTURE.md` from an earlier version, its `## Queue` section is
 imported once, on the first run, and the file is never read or written again.
+
+Next to the pane's title is the queue's own light: whether the items you have
+mirrored are actually on GitHub. It reads `in the PR` when they are, and
+`not saved to the PR` when a write failed — prcoder keeps the change locally
+and stops trusting the description it can see until a write succeeds, so the
+light is how you know to stay open a moment longer.
+
+## The terminal you started it from
+
+The window prcoder was launched in is not finished once it has printed a URL.
+It keeps a status block pinned under a scrolling log:
+
+```
+prcoder  gaurav/prcoder   initial-implementation → main   2 unpushed · 8 uncommitted
+PR #1    A browser workspace around a live Claude Code session
+         https://github.com/gaurav/prcoder/pull/1
+queue    19 active · 1 done · 10 in the PR · 1 issue   queue mirrored
+serving  http://localhost:7455   1 tab   q quit · v verbose · o open
+```
+
+All of it is what the browser's poll worked out anyway, so it costs no extra
+`git` or `gh` calls; it moves when the browser does, and stands still when no
+tab is open. The block is redrawn in place and the log scrolls above it, so
+what happened stays in the scrollback.
+
+**Keys.** `v` cycles quiet → verbose → debug. Verbose narrates the things that
+change something you care about — an item queued, ticked, mirrored into the
+description, filed as an issue, a PR checked out. Debug adds every `git` and
+`gh` subprocess with its timing, the per-poll count of them, route timings, and
+a line when the PR has moved upstream. `PRCODER_VERBOSE=1` or `=2` starts at a
+level, which is the only way to see startup itself. `o` reopens the browser.
+
+**Quitting.** Ctrl-C asks first, because quitting kills the PTY and with it the
+Claude session in the browser. It says what that costs — tabs open, unpushed
+commits, uncommitted files, and a queue change GitHub never received. A second
+Ctrl-C at the prompt goes immediately; nothing here can make prcoder unkillable.
+
+None of this happens when stdout is not a terminal. Piped or redirected, you
+get plain lines and errors on stderr, which is what a script wants.
+
+If the port was busy, the block keeps saying so for the whole session, with the
+URL prcoder *wanted* — the one your bookmark and Dock icon point at. It asks
+whoever holds it who they are, so the line tells you whether the window you are
+looking for is another prcoder on this repo, another worktree, or nothing to do
+with prcoder at all.
 
 ## Requirements
 
