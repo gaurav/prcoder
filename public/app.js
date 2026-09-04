@@ -1,7 +1,7 @@
 import { Terminal } from '/vendor/xterm.mjs';
 import { FitAddon } from '/vendor/addon-fit.mjs';
 import { WebLinksAddon } from '/vendor/addon-web-links.mjs';
-import { renderPr, renderNoPr, renderHeader, pageTitle } from './pr.js';
+import { renderPr, renderNoPr, renderHeader, renderQueueSync, pageTitle } from './pr.js';
 import { openDiff, closeDiff, selectedPath } from './diff.js';
 import { initQueue, addItem, setItems, freeze } from './queue.js';
 import './panes.js';   // draggable pane gutters; nothing here calls into it
@@ -126,6 +126,7 @@ function paint(status) {
   // "prcoder", which is why this is here and not in loadStatus's catch.
   document.title = pageTitle(status);
   renderHeader(status, prs, handlers);
+  renderQueueSync(status);
   if (status.pr) {
     renderPr({ ...status.pr, note: NOTES[status.scope] },
       { ...fileHandlers, selected: selectedPath() });
@@ -156,7 +157,9 @@ async function loadStatus() {
     if (!res.ok || data?.error) throw new Error(data?.error ?? res.statusText);
     paint(data);
   } catch (e) {
-    renderHeader({ error: e.message, dirty: false, dirtyFiles: [], pr: null }, prs, handlers);
+    const failed = { error: e.message, dirty: false, dirtyFiles: [], pr: null };
+    renderHeader(failed, prs, handlers);
+    renderQueueSync(failed);
   }
 }
 

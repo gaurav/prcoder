@@ -14,7 +14,7 @@
         <h1>Pull request</h1>
         <select id="pr-switch" title="switch to another open pull request"></select>
         <button id="pr-commit" class="commit" hidden title="uncommitted changes block a branch switch">Commit…</button>
-        <span id="pr-sync"></span>
+        <span id="pr-sync" class="light"></span>
         <button id="pr-refresh" title="reload from GitHub">⟳</button>
       </header>
       <div id="pr-body" class="scroll">Loading…</div>
@@ -45,6 +45,7 @@
     <section id="queue" class="pane">
       <header>
         <h1>Queue</h1>
+        <span id="queue-sync" class="light"></span>
         <input id="queue-input" placeholder="Add an item, Enter to save" autocomplete="off">
         <button id="queue-where" class="where" title="new items go to the bottom — click for the top">↓</button>
       </header>

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { pageTitle, withoutHtml, inline, fences, TASK, HEADING } from '../public/pr.js';
+import { pageTitle, withoutHtml, inline, fences, queueSync, TASK, HEADING } from '../public/pr.js';
 
 const status = (over = {}) => ({
   nameWithOwner: 'ggvaidya/prcoder',
@@ -160,4 +160,17 @@ test('a fence that is never closed is left as text', () => {
   const out = fences('text\n\n```sh\nnpm install\n\nstill prose');
   assert.deepEqual(out.map((c) => (c.code !== undefined ? 'code' : 'text')), ['text']);
   assert.match(out[0].text, /still prose/);
+});
+
+// The queue pane's light. "Nothing to mirror" and "GitHub has it" are both
+// fine, and only one of them earns a dot.
+test('the queue light shows only what is worth acting on', () => {
+  const q = [{ text: 'a', inPr: true }];
+  assert.equal(queueSync({ queue: [{ text: 'a', inPr: false }], scope: 'current' }), null);
+  assert.equal(queueSync({ queue: q, scope: 'current' }).text, 'in the PR');
+  // A tombstoned item is not evidence of anything still mirrored.
+  assert.equal(queueSync({ queue: [{ text: 'a', inPr: true, deleted: true }], scope: 'current' }), null);
+  // The one that matters: the store took it, GitHub did not.
+  assert.match(queueSync({ queue: q, scope: 'current', mirrorFailed: true }).className, /bad/);
+  assert.equal(queueSync({ queue: q, scope: 'other-branch' }).text, 'not mirroring');
 });

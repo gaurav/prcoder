@@ -89,17 +89,44 @@ export function renderHeader(status, prs, { onSwitch, onCommit }) {
   commit.onclick = () => onCommit(status.dirtyFiles);
   commit.textContent = `Commit ${status.dirtyFiles.length} file${status.dirtyFiles.length === 1 ? '' : 's'}…`;
 
-  light.className = '';
+  light.className = 'light';
   light.hidden = false;
   if (status.error) { light.className = 'unknown'; light.textContent = 'unavailable'; }
   else if (status.scope === 'other-repo') light.textContent = 'another repo';
   else if (status.scope === 'other-branch') light.textContent = 'not checked out';
-  else if (status.sync === 'ahead') { light.className = 'warn'; light.textContent = `${status.ahead} unpushed`; }
-  else if (status.sync === 'behind') { light.className = 'warn'; light.textContent = 'pull needed'; }
-  else if (status.sync === 'diverged') { light.className = 'warn'; light.textContent = 'diverged'; }
-  else if (status.sync === 'unpushed') { light.className = 'warn'; light.textContent = 'not pushed'; }
+  else if (status.sync === 'ahead') { light.className = 'light warn'; light.textContent = `${status.ahead} unpushed`; }
+  else if (status.sync === 'behind') { light.className = 'light warn'; light.textContent = 'pull needed'; }
+  else if (status.sync === 'diverged') { light.className = 'light warn'; light.textContent = 'diverged'; }
+  else if (status.sync === 'unpushed') { light.className = 'light warn'; light.textContent = 'not pushed'; }
   else if (status.detached) light.textContent = 'detached HEAD';
   else light.hidden = true;
+}
+
+/**
+ * Pure: the status -> the queue pane's light. Named states rather than a
+ * boolean, because "nothing to mirror" and "GitHub has it" are both fine and
+ * only one of them is worth a dot.
+ *
+ * `mirrorFailed` is the state this exists for. The store took the change and
+ * GitHub did not, so prcoder has stopped trusting the description it can see --
+ * and until now the only sign of that was a line on the server's stderr.
+ */
+export function queueSync(status) {
+  if (status.error) return { className: 'light unknown', text: 'unavailable' };
+  if (status.mirrorFailed) return { className: 'light bad', text: 'not saved to the PR' };
+  if (!status.queue?.some((i) => i.inPr && !i.deleted)) return null;
+  if (status.scope !== 'current') return { className: 'light unknown', text: 'not mirroring' };
+  return { className: 'light ok', text: 'in the PR' };
+}
+
+/** The light itself. The queue pane's header, like the PR pane's, survives polls. */
+export function renderQueueSync(status) {
+  const light = document.getElementById('queue-sync');
+  const state = queueSync(status);
+  light.hidden = !state;
+  if (!state) return;
+  light.className = state.className;
+  light.textContent = state.text;
 }
 
 /** The pane with no PR to show: why, and the one thing worth doing about it. */
