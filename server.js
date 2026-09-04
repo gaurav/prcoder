@@ -7,6 +7,7 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createHash } from 'node:crypto';
 import { spawn as ptySpawn } from 'node-pty';
 import { WebSocketServer } from 'ws';
 import { loadPr, prHeads, prBody, listPrs, setViewed, setBody, createIssue, fetchPatches } from './github.js';
@@ -17,9 +18,16 @@ import { readStore, writeStore, forBranch, replaceBranch, branchKey, staleBranch
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const repo = process.cwd();
-// 0 means "any free port": two prcoder sessions never collide, and the browser
-// is opened for us, so nobody has to know the number.
-const port = Number(process.env.PRCODER_PORT) || 0;
+/**
+ * The port is a function of the repo's path, so a repo's URL is the same every
+ * run. That is what makes the URL worth keeping: bookmark it, add it to the
+ * Dock, embed it in an IDE. A busy port falls back to a free one (see ready()).
+ * Worktrees have their own paths, and so their own ports, like their queues.
+ */
+export function portFor(repo, env = process.env) {
+  if (Number(env.PRCODER_PORT)) return Number(env.PRCODER_PORT);
+  return 1618 + createHash('sha1').update(repo).digest().readUInt16BE(0) % 1000;
+}
 // Args split at the first flag: everything before it is ours (an optional PR
 // number, URL or branch), everything from it on is handed to `claude` verbatim.
 // No table of Claude's flags to keep in sync, and no collisions to arbitrate.
@@ -359,7 +367,10 @@ const server = http.createServer(async (req, res) => {
 
 // One PTY per WebSocket. Closing the tab kills the session; that is intentional
 // for a prototype — Claude Code's own --resume covers getting back in.
-new WebSocketServer({ server, path: '/pty' }).on('connection', (ws) => {
+// A WebSocketServer re-emits its http server's errors, and an unhandled one is
+// fatal -- the busy-port fallback below never gets its turn. The http server's
+// own handler reports it, so nothing to do here but not die.
+new WebSocketServer({ server, path: '/pty' }).on('error', () => {}).on('connection', (ws) => {
   const term = ptySpawn(process.env.CLAUDE_BIN || 'claude', claudeArgs, {
     name: 'xterm-256color',
     cols: 80,
@@ -409,7 +420,7 @@ async function importFuture() {
   console.log('prcoder no longer reads or writes FUTURE.md; your copy is untouched');
 }
 
-if (import.meta.main) server.listen(port, '127.0.0.1', async () => {
+async function ready() {
   const url = `http://localhost:${server.address().port}`;
   info ??= await repoInfo(repo).catch((e) => {
     console.error('repo:', e.stderr || e.message);
@@ -420,11 +431,25 @@ if (import.meta.main) server.listen(port, '127.0.0.1', async () => {
   console.log(`prcoder: ${repo}`);
   console.log(pr ? `PR #${pr.number}: ${pr.title}` : 'no pull request for this branch');
   console.log(url);
-  // ponytail: the platform's own opener, not a dependency. PRCODER_NO_OPEN=1 to skip.
+  // ponytail: the platform's own opener, not a dependency. PRCODER_NO_OPEN=1 to
+  // skip; PRCODER_OPEN to run your own command with the URL appended, which is
+  // how a browser is told "a new window, not a tab".
   if (!process.env.PRCODER_NO_OPEN) {
     const opener = { darwin: 'open', win32: 'start' }[process.platform] || 'xdg-open';
-    spawn(opener, [url], { detached: true, stdio: 'ignore', shell: process.platform === 'win32' })
-      .on('error', (e) => console.error(`could not open a browser (${e.message}) — visit ${url}`))
-      .unref();
+    const custom = process.env.PRCODER_OPEN;
+    const child = custom
+      ? spawn(`${custom} ${url}`, { detached: true, stdio: 'ignore', shell: true })
+      : spawn(opener, [url], { detached: true, stdio: 'ignore', shell: process.platform === 'win32' });
+    child.on('error', (e) => console.error(`could not open a browser (${e.message}) — visit ${url}`)).unref();
   }
-});
+}
+
+if (import.meta.main) {
+  const port = portFor(repo);
+  server.once('error', (e) => {
+    if (e.code !== 'EADDRINUSE') throw e;
+    console.error(`port ${port} is busy (another prcoder in this repo?) — taking a free one`);
+    server.listen(0, '127.0.0.1', ready);
+  });
+  server.listen(port, '127.0.0.1', ready);
+}
