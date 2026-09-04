@@ -143,6 +143,7 @@ function row(item) {
   text.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); text.blur(); } };
 
   const li = h('li', { className: 'item', draggable: true },
+    h('span', { className: 'grip', title: 'drag to reorder' }, '⠿'),
     box,
     text,
     item.issue ? h('a', { className: 'tag issue', href: item.issueUrl ?? '#', target: '_blank', rel: 'noopener' }, `#${item.issue}`) : null,
@@ -161,6 +162,14 @@ function row(item) {
     ),
   );
 
+  // Firefox hands a mousedown inside a draggable element to its drag machinery
+  // instead of to the caret, so a click in the middle of an item's text landed
+  // at the start of it. Confirmed in Firefox and *not* in Chromium, which is
+  // why it survived being looked at. Nothing else fixes it — draggable=false on
+  // the span, and -moz-user-select, both leave the caret at 0 — so the row
+  // gives up being draggable for exactly as long as the pointer is on its text,
+  // and the grip above is the handle that always drags.
+  li.addEventListener('pointerdown', (e) => { li.draggable = !text.contains(e.target); });
   li.addEventListener('dragstart', (e) => { e.dataTransfer.setData('text/plain', idx); li.classList.add('dragging'); });
   li.addEventListener('dragend', () => li.classList.remove('dragging'));
   li.addEventListener('dragover', (e) => e.preventDefault());

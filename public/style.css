@@ -65,9 +65,14 @@ a { color: var(--accent); }
 }
 .pane > header button { cursor: pointer; margin-left: auto; }
 .pane > header button:hover { color: var(--fg); }
+/* A textarea rather than an input so a long item can be read while it is being
+   typed; app.js grows it to fit. `font: inherit` is spelled out because the
+   header's `input` rule no longer reaches it, and browsers give textareas a
+   monospace default. */
 #queue-input {
-  flex: 1; margin-left: 8px; padding: 3px 6px; color: var(--fg);
+  flex: 1; margin-left: 8px; padding: 3px 6px; color: var(--fg); font: inherit;
   background: var(--bg); border: 1px solid var(--line); border-radius: 4px;
+  resize: none; overflow-y: auto; line-height: 1.4;
 }
 #queue-input:focus { outline: 1px solid var(--accent); }
 
@@ -163,8 +168,13 @@ a { color: var(--accent); }
 .item input[type=checkbox]:checked ~ .text { color: var(--dim); text-decoration: line-through; }
 .item .tag { font-size: 11px; text-decoration: none; padding: 0 5px; border: 1px solid var(--line); border-radius: 8px; }
 
+/* The row's only reliable drag handle: the text gives up draggable while it is
+   being clicked, so the caret can land where you aimed. Hidden like .actions,
+   and it holds its space either way so nothing shifts on hover. */
+.item .grip { flex: none; cursor: grab; color: var(--dim); font-size: 11px; opacity: 0; }
+.item .grip:active { cursor: grabbing; }
 .actions { display: flex; gap: 2px; opacity: 0; }
-.item:hover .actions, .item:focus-within .actions { opacity: 1; }
+.item:hover .grip, .item:hover .actions, .item:focus-within .actions { opacity: 1; }
 .actions button {
   background: none; border: 0; color: var(--dim);
   font-size: 12px; padding: 0 3px; cursor: pointer; line-height: 1;
