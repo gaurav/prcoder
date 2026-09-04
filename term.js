@@ -30,12 +30,17 @@ let footer = [];
 let painted = 0;     // rows the block occupies right now
 let prompt = null;   // { text, onYes } while a confirm is up
 
-/** Tests point the module at a fake stream; nothing else calls this. */
+/**
+ * Tests point the module at a fake stream; nothing else calls this. The
+ * verbosity goes back to quiet too, or `npm test` run in a shell that exports
+ * PRCODER_VERBOSE fails on assertions about what is printed.
+ */
 export function sink(stream) {
   out = stream;
   footer = [];
   painted = 0;
   prompt = null;
+  level = QUIET;
 }
 
 const live = () => Boolean(out.isTTY) && process.env.TERM !== 'dumb';
