@@ -87,21 +87,26 @@ const quote = (t) => `'${t.length > 48 ? `${t.slice(0, 47)}…` : t}'`;
  * only identity an item has -- so an edit reads as a delete and an add, which
  * is honest: nothing here can tell those apart either (see the ponytail note on
  * writeQueue).
+ *
+ * Returns the lines rather than printing them, which is the only reason the
+ * five transitions below can be checked without a terminal.
  */
-function logQueue(was, now) {
+export function queueChanges(was, now) {
   const before = new Map(was.map((i) => [i.text, i]));
+  const lines = [];
   for (const i of now) {
     const p = before.get(i.text);
-    if (!p) term.verbose(`queued ${quote(i.text)}`);
-    else if (p.done !== i.done) term.verbose(`${i.done ? 'ticked' : 'unticked'} ${quote(i.text)}`);
-    else if (p.deleted !== i.deleted) term.verbose(`${i.deleted ? 'deleted' : 'restored'} ${quote(i.text)}`);
+    if (!p) lines.push(`queued ${quote(i.text)}`);
+    else if (p.done !== i.done) lines.push(`${i.done ? 'ticked' : 'unticked'} ${quote(i.text)}`);
+    else if (p.deleted !== i.deleted) lines.push(`${i.deleted ? 'deleted' : 'restored'} ${quote(i.text)}`);
     else if (p.inPr !== i.inPr) {
-      term.verbose(`${i.inPr ? 'added' : 'removed'} ${quote(i.text)} ${i.inPr ? 'to' : 'from'} the PR description`);
+      lines.push(`${i.inPr ? 'added' : 'removed'} ${quote(i.text)} ${i.inPr ? 'to' : 'from'} the PR description`);
     }
   }
   for (const i of was) {
-    if (!now.some((n) => n.text === i.text)) term.verbose(`dropped ${quote(i.text)}`);
+    if (!now.some((n) => n.text === i.text)) lines.push(`dropped ${quote(i.text)}`);
   }
+  return lines;
 }
 
 const requirePr = () => {
@@ -177,7 +182,7 @@ async function writeQueue(items, branch) {
   }
 
   const { store, stale: staleBytes } = await readStore(repo);
-  logQueue(forBranch(store, branch), items);
+  for (const line of queueChanges(forBranch(store, branch), items)) term.verbose(line);
   await writeStore(repo, replaceBranch(store, branch, items), { stale: staleBytes });
 
   if (mirrors(branch)) {

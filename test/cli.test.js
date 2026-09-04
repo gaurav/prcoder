@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { splitArgs, portFor, statusLines } from '../server.js';
+import { splitArgs, portFor, statusLines, queueChanges } from '../server.js';
 
 test('a leading positional is our PR target, the rest is Claude\'s', () => {
   assert.deepEqual(splitArgs([]), { target: undefined, claudeArgs: [] });
@@ -58,4 +58,33 @@ test('with no PR there is no PR line to print', () => {
   const out = block({ pr: null, scope: 'none', queue: [] });
   assert.match(out, /none for this branch/);
   assert.doesNotMatch(out, /github\.com/);
+});
+
+// What the verbose log says happened. Every branch, because the whole value of
+// the line is that it names the right change.
+test('each way an item can change gets its own line', () => {
+  const was = [{ text: 'a' }, { text: 'b', done: true }, { text: 'c', inPr: true }];
+  const one = (now) => queueChanges(was, now);
+
+  assert.deepEqual(one([...was, { text: 'd' }]), ["queued 'd'"]);
+  assert.deepEqual(one([{ text: 'a', done: true }, was[1], was[2]]), ["ticked 'a'"]);
+  assert.deepEqual(one([was[0], { text: 'b' }, was[2]]), ["unticked 'b'"]);
+  assert.deepEqual(one([was[0], was[1], { text: 'c' }]),
+    ["removed 'c' from the PR description"]);
+  assert.deepEqual(one([{ text: 'a', deleted: true }, was[1], was[2]]), ["deleted 'a'"]);
+  assert.deepEqual(one([was[1], was[2]]), ["dropped 'a'"]);
+  assert.deepEqual(one(was), []);
+});
+
+// Text is the only identity an item has, so an edit cannot read as an edit --
+// and saying so out loud is better than a line that quietly names the wrong item.
+test('editing an item reads as a drop and a queue, not an edit', () => {
+  assert.deepEqual(queueChanges([{ text: 'old' }], [{ text: 'new' }]),
+    ["queued 'new'", "dropped 'old'"]);
+});
+
+// A reorder is not a change worth a line; it would fire on every drag.
+test('reordering says nothing', () => {
+  const items = [{ text: 'a' }, { text: 'b' }];
+  assert.deepEqual(queueChanges(items, [items[1], items[0]]), []);
 });
