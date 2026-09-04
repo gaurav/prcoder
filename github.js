@@ -1,6 +1,13 @@
 // Everything GitHub goes through the `gh` CLI, which is already authenticated.
 
 import { execFile } from 'node:child_process';
+import { debug } from './term.js';
+
+// Every gh call and every git call comes through run(), so this is the whole
+// count. What it is for: two browser tabs each poll on their own timer against
+// one serial lock, and this is how you see that happening.
+let calls = 0;
+export const runCount = () => calls;
 
 /**
  * `input` has to be written to the child's stdin by hand: execFile accepts the
@@ -8,12 +15,19 @@ import { execFile } from 'node:child_process';
  * a `--body-file -` call hang on a stdin that never closes.
  */
 export function run(bin, args, { input, ...opts } = {}) {
+  calls++;
+  const started = Date.now();
   return new Promise((resolve, reject) => {
     const child = execFile(bin, args, { maxBuffer: 32 * 1024 * 1024, ...opts },
       // execFile hands stderr to the callback and does not put it on the error,
       // so every caller matching on gh's complaints — "no pull requests found"
       // above, and the exit-code checks in git.js — was reading undefined.
       (err, stdout, stderr) => {
+        // An issue title arrives as an argument, so the line is cut rather than
+        // trusted to be short.
+        const line = `${bin} ${args.join(' ')}`;
+        debug(`${line.length > 110 ? `${line.slice(0, 109)}…` : line}` +
+          `  ${err ? `exit ${err.code}` : 'ok'} ${Date.now() - started}ms`);
         if (!err) return resolve(stdout);
         err.stderr = stderr;
         reject(err);
