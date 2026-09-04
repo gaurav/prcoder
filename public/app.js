@@ -47,8 +47,10 @@ ws.onopen = () => {
   term.focus();
   try {
     if (sessionStorage.getItem(PTY_SEEN)) {
+      // Not the error style: the session did end, but on a deliberate reload
+      // that is the answer to what you just did, not something that went wrong.
       toast('Claude was restarted — this tab\'s previous session ended when it disconnected. '
-        + '/resume picks it back up, or start prcoder with --continue.', true);
+        + '/resume picks it back up, or start prcoder with --continue.');
     }
     sessionStorage.setItem(PTY_SEEN, '1');
   } catch { /* private mode: no memory, so no claim about a previous session */ }

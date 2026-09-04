@@ -184,6 +184,12 @@ with prcoder at all.
 The [`gh` CLI](https://cli.github.com/), authenticated. All GitHub access goes
 through it, so there is no token to configure.
 
+`npm install` brings Playwright and Chromium for `tools/shot.mjs`. Firefox is a
+separate download -- `npx playwright install firefox` -- and is worth having:
+`PRCODER_BROWSER=firefox` is the run that catches anything to do with selection,
+focus or dragging, which Chromium is happy to render correctly and Firefox is
+not.
+
 ## Finding it again
 
 One prcoder per repo, each a browser tab, soon lost among the pull requests and

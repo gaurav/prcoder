@@ -169,12 +169,14 @@ a { color: var(--accent); }
 .item .tag { font-size: 11px; text-decoration: none; padding: 0 5px; border: 1px solid var(--line); border-radius: 8px; }
 
 /* The row's only reliable drag handle: the text gives up draggable while it is
-   being clicked, so the caret can land where you aimed. Hidden like .actions,
-   and it holds its space either way so nothing shifts on hover. */
-.item .grip { flex: none; cursor: grab; color: var(--dim); font-size: 11px; opacity: 0; }
+   being clicked, so the caret can land where you aimed. Unlike .actions it does
+   not start invisible — those repeat what the row already offers, this is the
+   only way to reorder, and a control nobody can find is one that is not there. */
+.item .grip { flex: none; cursor: grab; color: var(--dim); font-size: 11px; opacity: .25; }
 .item .grip:active { cursor: grabbing; }
 .actions { display: flex; gap: 2px; opacity: 0; }
 .item:hover .grip, .item:hover .actions, .item:focus-within .actions { opacity: 1; }
+.item .grip:hover { color: var(--accent); }
 .actions button {
   background: none; border: 0; color: var(--dim);
   font-size: 12px; padding: 0 3px; cursor: pointer; line-height: 1;
