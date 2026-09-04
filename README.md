@@ -46,10 +46,13 @@ Claude gains a flag prcoder also wants.
 prcoder's own settings are environment variables — `PRCODER_PORT`, `PRCODER_NO_OPEN`,
 `CLAUDE_BIN` — which cannot collide with a flag at all.
 
-By default prcoder takes whatever port the OS has free and opens your browser on
-it, so several sessions can run at once and none of them needs a number you have
-to remember. Set `PRCODER_PORT` to pin one anyway, or `PRCODER_NO_OPEN=1` to be
-left with just the URL on stdout.
+The port is derived from the repo's path, so a repo gets the same URL every
+run -- one you can bookmark, add to the Dock or point an IDE pane at (see
+*Finding it again*). Different repos, and different worktrees, get different
+ports, so several sessions run at once. A busy port falls back to a free one
+with a note on stderr. Set `PRCODER_PORT` to pin one instead, `PRCODER_NO_OPEN=1`
+to be left with just the URL on stdout, or `PRCODER_OPEN` to a command of your
+own that gets the URL appended.
 
 Each tab names itself `owner/repo#N · pull request title` -- the branch and
 `(no PR)` when there isn't one -- and re-names itself as the branch moves, so a
@@ -86,9 +89,7 @@ replaced by a link to the issue.
 New items go to the bottom, so typing them in builds a list in the order you
 mean to work through it. The arrow next to the input flips that to the top for
 the other way of using a queue -- the thing you must not forget to do next --
-and stays flipped, as far as the browser will remember it. (prcoder takes a
-random port unless you pin `PRCODER_PORT`, and the browser files that memory
-under the port, so across sessions it is a convenience rather than a promise.)
+and stays flipped.
 
 ## Where the queue lives
 
@@ -128,6 +129,41 @@ imported once, on the first run, and the file is never read or written again.
 
 The [`gh` CLI](https://cli.github.com/), authenticated. All GitHub access goes
 through it, so there is no token to configure.
+
+## Finding it again
+
+One prcoder per repo, each a browser tab, soon lost among the pull requests and
+diffs you opened while working. Cheapest first:
+
+**In the tabs.** The favicon is a green *PR* square, and every title ends in
+`· prcoder`, so in Firefox typing `% prcoder` in the address bar lists every
+instance and nothing from github.com.
+
+**A window per repo.** `PRCODER_OPEN` replaces the platform opener with your
+own command, URL appended. Firefox hands the arguments to the running copy, so
+
+```sh
+export PRCODER_OPEN='/Applications/Firefox.app/Contents/MacOS/firefox -new-window'
+```
+
+gives each prcoder its own window, listed by title in the Window menu and
+Mission Control.
+
+**A Dock icon per repo.** In Safari, open the URL and choose *File → Add to
+Dock*. The app it makes keeps the page title as its window title, so it reads
+`owner/repo#N · …` in Cmd-Tab. Start prcoder with `PRCODER_NO_OPEN=1` and click
+the icon; the URL is the same every run, so it always lands on the right one.
+
+**Inside IntelliJ.** A stable URL is all an embedded browser needs. There is no
+built-in tool window for one, but a JCEF browser plugin such as
+[intellij-webbrowser](https://github.com/dervism/intellij-webbrowser) will show
+it in a pane. Untested; the terminal's key handling inside JCEF is where to
+expect trouble.
+
+There is no single instance with a repo switcher. The server is one repo per
+process all the way down, and the Claude session dies with its tab, so a
+switcher would mean keeping sessions alive out of view -- the multi-session
+management listed below, deliberately not built yet.
 
 ## Not here
 

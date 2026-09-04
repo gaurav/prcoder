@@ -19,6 +19,10 @@ const GROUPS = [
  *
  * The repository comes from the PR's own URL, not from the checkout: a PR from
  * a fork, or one opened with `prcoder <url>`, lives somewhere else entirely.
+ *
+ * `· prcoder` goes last, past what a tab shows, for the places that search
+ * titles instead — Firefox's `%` tab search, the Window menu — so one string
+ * finds every instance among the github.com tabs named the same way.
  */
 const TITLE_MAX = 72;
 
@@ -31,11 +35,11 @@ export function pageTitle(status) {
 
   if (status.pr) {
     const repo = prRepo(status.pr.url) ?? status.nameWithOwner ?? 'prcoder';
-    return clamp(`${repo}#${status.pr.number}`, status.pr.title);
+    return `${clamp(`${repo}#${status.pr.number}`, status.pr.title)} · prcoder`;
   }
 
   const where = status.detached ? 'detached HEAD' : status.branch;
-  return clamp(status.nameWithOwner ?? 'prcoder', where ? `${where} (no PR)` : 'no PR');
+  return `${clamp(status.nameWithOwner ?? 'prcoder', where ? `${where} (no PR)` : 'no PR')} · prcoder`;
 }
 
 /** `head · tail`, with the tail cut to fit. The head is never truncated. */

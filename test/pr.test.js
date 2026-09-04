@@ -19,7 +19,7 @@ const pr = (over = {}) => ({
 
 test('the tab is named for the pull request, short URL first', () => {
   assert.equal(pageTitle(status({ pr: pr() })),
-    'ggvaidya/prcoder#12 · Name the tab after the pull request');
+    'ggvaidya/prcoder#12 · Name the tab after the pull request · prcoder');
 });
 
 test('the short URL comes from the pull request, not the checkout', () => {
@@ -30,15 +30,15 @@ test('the short URL comes from the pull request, not the checkout', () => {
 test('a long pull request title is cut to a tab-sized name', () => {
   const long = pr({ title: 'Fetch each file’s patch from GitHub and serve it from POST /api/diff, with a cache' });
   const title = pageTitle(status({ pr: long }));
-  assert.ok(title.length <= 72, `${title.length} chars: ${title}`);
+  assert.ok(title.length <= 72 + ' · prcoder'.length, `${title.length} chars: ${title}`);
   assert.ok(title.startsWith('ggvaidya/prcoder#12 · Fetch each file'));
-  assert.ok(title.endsWith('…'));
+  assert.ok(title.endsWith('… · prcoder'));
 });
 
 test('with no pull request the branch names the tab', () => {
-  assert.equal(pageTitle(status()), 'ggvaidya/prcoder · initial-implementation (no PR)');
+  assert.equal(pageTitle(status()), 'ggvaidya/prcoder · initial-implementation (no PR) · prcoder');
   assert.equal(pageTitle(status({ detached: true, branch: '' })),
-    'ggvaidya/prcoder · detached HEAD (no PR)');
+    'ggvaidya/prcoder · detached HEAD (no PR) · prcoder');
 });
 
 test('a first load that failed has nothing to name the tab with', () => {
