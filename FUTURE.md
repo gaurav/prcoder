@@ -1,7 +1,7 @@
 ## Queue
 
 - [ ] Let Claude Code tell prcoder "I've changed the PR, reload it" -- the 60s poll should be the fallback, not the only signal
-- [ ] Add a visual sign that the queue is synced -- so I feel safe closing the app without anything being dropped
+- [x] Add a visual sign that the queue is synced -- so I feel safe closing the app without anything being dropped
 - [ ] The queue should have ways of entering options in the text itself, e.g. ># to send to GitHub issue >[] to make it an item in the description, etc.
 - [x] The queue should default to adding to the bottom
 - [ ] When editing queued text, the text caret doesn't go where you click -- it goes to the start
