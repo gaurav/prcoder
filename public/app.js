@@ -17,6 +17,7 @@ term.loadAddon(fit);
 term.loadAddon(new WebLinksAddon((_e, uri) => window.open(uri, '_blank', 'noopener')));
 term.open(document.getElementById('term-host'));
 
+const PTY_SEEN = 'prcoder:pty';
 const ws = new WebSocket(`ws://${location.host}/pty`);
 const send = (msg) => {
   if (ws.readyState !== WebSocket.OPEN) return false;
@@ -36,7 +37,22 @@ const sync = () => {
 };
 
 ws.onmessage = (e) => term.write(e.data);
-ws.onopen = () => { sync(); term.focus(); };
+// A tab the browser unloaded in the background comes back as a fresh page, and
+// the socket it closed on the way out has already killed the PTY — so this is a
+// new Claude session nobody asked for. sessionStorage is per-tab and survives
+// the restore, which is exactly what tells that apart from a first open. A
+// deliberate reload lands here too, and the message is just as true there.
+ws.onopen = () => {
+  sync();
+  term.focus();
+  try {
+    if (sessionStorage.getItem(PTY_SEEN)) {
+      toast('Claude was restarted — this tab\'s previous session ended when it disconnected. '
+        + '/resume picks it back up, or start prcoder with --continue.', true);
+    }
+    sessionStorage.setItem(PTY_SEEN, '1');
+  } catch { /* private mode: no memory, so no claim about a previous session */ }
+};
 ws.onclose = () => term.write('\r\n\x1b[31m[claude exited — reload to restart]\x1b[0m\r\n');
 
 term.onData((d) => send({ type: 'input', data: d }));
@@ -209,10 +225,20 @@ document.addEventListener('visibilitychange', () => {
 
 const input = document.getElementById('queue-input');
 input.addEventListener('keydown', (e) => {
-  if (e.key !== 'Enter') return;
+  // Shift-Enter is the newline; plain Enter still saves, which is the whole
+  // reason this is a textarea with a key handler rather than a form.
+  if (e.key !== 'Enter' || e.shiftKey) return;
+  e.preventDefault();
   addItem(input.value);
   input.value = '';
+  grow();
 });
+/** One line until it needs more, then up to a third of the pane. */
+const grow = () => {
+  input.style.height = 'auto';
+  input.style.height = `${Math.min(input.scrollHeight, 120)}px`;
+};
+input.addEventListener('input', grow);
 
 await loadPrs();
 await initQueue({ sendToClaude });
