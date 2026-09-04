@@ -57,7 +57,14 @@ first.show('after v v — quiet, verbose, debug');
 const ws = new WebSocket(`ws://localhost:${port}/pty`);
 await wait(1500);
 console.log('with a tab: ', first.line('tab'));
+
+// `r` polls without the browser, which is the point of it: the block otherwise
+// only moves when a *visible* tab asks for a status.
 first.buf = '';
+first.write('r');
+await wait(4000);
+console.log('after r:    ', first.line('refreshing') ?? 'NO refresh line');
+console.log('  polled:   ', first.line('poll:') ?? 'NO poll line');
 
 // A second prcoder in the same repo: the case the port note is for.
 const second = start('second');

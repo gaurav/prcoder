@@ -65,9 +65,17 @@ export function paint() {
   painted = lines.length;
 }
 
-/** The status block. Lines only; paint() owns the rule and the truncation. */
+/**
+ * The status block. Lines only; paint() owns the rule and the truncation.
+ *
+ * Identical lines are dropped rather than redrawn, which is what lets the
+ * caller repaint on a timer to keep an age honest without writing escape
+ * sequences at an idle terminal every thirty seconds.
+ */
 export function status(lines) {
-  footer = lines.filter((l) => l != null);
+  const next = lines.filter((l) => l != null);
+  if (next.length === footer.length && next.every((l, i) => l === footer[i])) return;
+  footer = next;
   paint();
 }
 

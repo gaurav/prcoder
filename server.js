@@ -57,8 +57,9 @@ let patches = { key: null, map: new Map() };
 // The last thing status() worked out, so the block under the log and the quit
 // prompt can answer without asking git again on a keypress. Stale by up to a
 // poll, which is the right trade: a keypress that shells out is a keypress that
-// can hang.
+// can hang. `checkedAt` is what stops that trade being a silent one.
 let last = null;
+let checkedAt = 0;
 // The URL, and whether it is the one this repo is supposed to have. Both are
 // only known once the server is listening.
 let urls = { local: '', moved: null };
@@ -230,6 +231,17 @@ function decorate(items, branch) {
   }));
 }
 
+/**
+ * How long ago the block was last true. Nothing under two minutes, because a
+ * poll runs every sixty seconds and an age that is always on screen is an age
+ * nobody reads.
+ */
+export const ago = (ms) => {
+  if (!(ms >= 120_000)) return null;
+  const mins = Math.round(ms / 60_000);
+  return mins < 60 ? `checked ${mins}m ago` : `checked ${Math.round(mins / 60)}h ago`;
+};
+
 // The same words the pane's sync light uses (public/pr.js). The browser cannot
 // import this file, so the two lists are kept in step by hand -- a terminal and
 // a pane disagreeing about the same branch is worse than the duplication.
@@ -269,8 +281,12 @@ export function statusLines(s, u = {}) {
     row('queue', `${n((i) => !i.done)} active · ${n((i) => i.done)} done · ` +
       `${n((i) => i.inPr)} in the PR · ${n((i) => i.issue)} issue${n((i) => i.issue) === 1 ? '' : 's'}`,
       mirrorPhrase(s)),
+    // The age belongs next to the tab count because the tab is the cause: the
+    // browser polls only while its tab is visible, so backgrounding it stops
+    // the clock on every number above while the socket stays open and the count
+    // keeps cheerfully saying `1 tab`.
     row('serving', u.local, u.tabs ? `${u.tabs} tab${u.tabs > 1 ? 's' : ''}` : 'no tab open',
-      'q quit · v verbose · o open'),
+      ago(u.age), 'q quit · r refresh · v verbose · o open'),
     u.moved && row('', u.moved),
   ].filter(Boolean);
 }
@@ -316,13 +332,16 @@ async function status({ full = false } = {}) {
     pr: pr ? { ...pr, groups: withUrls(pr) } : null,
     queue: await readQueue(snap.branch),
   };
+  checkedAt = Date.now();
   repaint();
   term.debug(`poll: ${runCount() - calls} subprocess calls`);
   return last;
 }
 
 /** The block, from whatever status() last worked out. Safe before the first poll. */
-const repaint = () => term.status(last ? statusLines(last, { ...urls, tabs: wss.clients.size }) : []);
+const repaint = () => term.status(last
+  ? statusLines(last, { ...urls, tabs: wss.clients.size, age: Date.now() - checkedAt })
+  : []);
 
 const routes = {
   'GET /api/pr': () => refreshPr(),
@@ -570,9 +589,11 @@ async function ready() {
     // Kept in the block for the whole session, not just said once at startup:
     // a moved port is exactly what breaks the bookmark and the Dock icon, and
     // that is discovered later, by clicking one of them.
-    moved: port === wanted
-      ? null
-      : `http://localhost:${wanted} is taken by ${await whoHasPort(wanted)} — this is not the usual URL for this repo`,
+    // PRCODER_PORT means the port was named, not derived, so "the usual URL for
+    // this repo" is not the true sentence -- there is no bookmark to have
+    // broken, only an instruction that could not be followed.
+    moved: port === wanted ? null : `http://localhost:${wanted} is taken by ${await whoHasPort(wanted)} — ` +
+      (process.env.PRCODER_PORT ? 'not the port you asked for' : 'not the usual URL for this repo'),
   };
 
   info ??= await repoInfo(repo).catch((e) => {
@@ -614,7 +635,9 @@ function openBrowser() {
  */
 function askToQuit() {
   const risk = [
-    wss.clients.size && `${wss.clients.size} browser tab${wss.clients.size > 1 ? 's' : ''} — the Claude session ends`,
+    wss.clients.size && (wss.clients.size > 1
+      ? `${wss.clients.size} browser tabs — their Claude sessions end`
+      : '1 browser tab — the Claude session ends'),
     mirrorFailed && 'the PR description never got the last change',
     last?.ahead && `${last.ahead} unpushed commit${last.ahead > 1 ? 's' : ''}`,
     last?.dirtyFiles?.length && `${last.dirtyFiles.length} uncommitted file${last.dirtyFiles.length > 1 ? 's' : ''}`,
@@ -639,8 +662,19 @@ if (import.meta.main) {
     key: (ch) => {
       if (ch === 'v') term.cycleVerbosity();
       else if (ch === 'o') openBrowser();
+      // Serialised like any route: a poll is git and gh calls, and a keypress
+      // is no reason to run them alongside a checkout.
+      else if (ch === 'r') {
+        term.verbose('refreshing…');
+        serial(() => status({ full: true })).catch((e) => console.error('refresh:', e.stderr || e.message));
+      }
     },
   });
+  // The block is repainted by the browser's poll, which stops when its tab is
+  // hidden. This does not refresh anything -- it redraws what is already known
+  // so the age above stays honest, and term.status() writes nothing at all
+  // while the rendered lines are unchanged.
+  setInterval(repaint, 30_000).unref();
 
   // `listening` rather than a listen() callback: a callback passed to the first
   // listen() survives the EADDRINUSE, so passing one to the retry as well ran

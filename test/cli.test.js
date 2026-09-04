@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { splitArgs, portFor, statusLines, queueChanges } from '../server.js';
+import { splitArgs, portFor, statusLines, queueChanges, ago } from '../server.js';
 
 test('a leading positional is our PR target, the rest is Claude\'s', () => {
   assert.deepEqual(splitArgs([]), { target: undefined, claudeArgs: [] });
@@ -87,4 +87,19 @@ test('editing an item reads as a drop and a queue, not an edit', () => {
 test('reordering says nothing', () => {
   const items = [{ text: 'a' }, { text: 'b' }];
   assert.deepEqual(queueChanges(items, [items[1], items[0]]), []);
+});
+
+// The block is only as true as the last poll, and the browser stops polling the
+// moment its tab is hidden — so an age that never appears is a block that lies.
+test('the block says how old it is, once that is worth saying', () => {
+  assert.equal(ago(0), null);
+  assert.equal(ago(119_000), null, 'a 60s poll must not label itself stale');
+  assert.equal(ago(180_000), 'checked 3m ago');
+  assert.equal(ago(3_600_000), 'checked 1h ago');
+  // undefined is what a caller with no timestamp yet passes; it is not "old".
+  assert.equal(ago(undefined), null);
+
+  assert.match(statusLines(STATUS, { local: 'x', tabs: 1, age: 600_000 }).join('\n'),
+    /1 tab   checked 10m ago/);
+  assert.doesNotMatch(statusLines(STATUS, { local: 'x', tabs: 1, age: 0 }).join('\n'), /checked/);
 });

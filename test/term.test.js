@@ -86,3 +86,15 @@ test('a confirm adds to the block rather than being written past it', () => {
   log('x');
   assert.match(out.text, /\x1b\[4F\x1b\[0Jx\n/);
 });
+
+// The timer that keeps the age honest repaints every 30s. If an unchanged block
+// were redrawn each time, an idle terminal would take escape sequences forever.
+test('an unchanged block is not redrawn', () => {
+  const out = fake(true);
+  status(['a']);
+  out.text = '';
+  status(['a']);
+  assert.equal(out.text, '');
+  status(['b']);
+  assert.match(out.text, /b/);
+});
