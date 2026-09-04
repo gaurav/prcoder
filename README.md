@@ -149,10 +149,13 @@ export PRCODER_OPEN='/Applications/Firefox.app/Contents/MacOS/firefox -new-windo
 gives each prcoder its own window, listed by title in the Window menu and
 Mission Control.
 
-**A Dock icon per repo.** In Safari, open the URL and choose *File → Add to
-Dock*. The app it makes keeps the page title as its window title, so it reads
-`owner/repo#N · …` in Cmd-Tab. Start prcoder with `PRCODER_NO_OPEN=1` and click
-the icon; the URL is the same every run, so it always lands on the right one.
+**A Dock icon per repo.** This works because the port is fixed: it is a hash
+of the repo's path, so a repo listens on the same port every run (`prcoder`
+prints it). In Safari, open that URL and choose *File → Add to Dock*. The app
+it makes keeps the page title as its window title, so it reads `owner/repo#N ·
+…` in Cmd-Tab. From then on start prcoder with `PRCODER_NO_OPEN=1` and click
+the icon. The one time the port moves is when a second prcoder is already
+running in the same repo; that one says so on stderr and takes a free port.
 
 **Inside IntelliJ.** A stable URL is all an embedded browser needs. There is no
 built-in tool window for one, but a JCEF browser plugin such as
