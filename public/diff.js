@@ -2,7 +2,7 @@
 // iframed, so the pane draws the raw patch itself and keeps a link out for
 // the fancy view.
 
-import { h } from './pr.js';
+import { h, api, writeThrough } from './pr.js';
 
 // Lives outside the render because the 60s poll rebuilds #pr-body from
 // scratch; #diff itself is never repainted by the poll (queue.js does the
@@ -36,17 +36,12 @@ export async function openDiff(f, { onViewed }) {
   // row so the two boxes never disagree without a repaint.
   const box = el('diff-viewed');
   box.checked = f.viewed;
-  box.onchange = async () => {
-    box.disabled = true;
-    try {
-      await onViewed(f.path, box.checked);
-      const row = document.querySelector(`.file[data-path="${CSS.escape(f.path)}"]`);
-      row?.classList.toggle('viewed', box.checked);
-      const rowBox = row?.querySelector('input[type=checkbox]');
-      if (rowBox) rowBox.checked = box.checked;
-    } catch { box.checked = !box.checked; }
-    box.disabled = false;
-  };
+  writeThrough(box, (v) => onViewed(f.path, v), (v) => {
+    const row = document.querySelector(`.file[data-path="${CSS.escape(f.path)}"]`);
+    row?.classList.toggle('viewed', v);
+    const rowBox = row?.querySelector('input[type=checkbox]');
+    if (rowBox) rowBox.checked = v;
+  });
 
   el('diff-close').onclick = closeDiff;
 
@@ -54,14 +49,7 @@ export async function openDiff(f, { onViewed }) {
   body.replaceChildren(h('div', { className: 'empty' }, 'Loading…'));
   let patch;
   try {
-    const res = await fetch('/api/diff', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ path: f.path }),
-    });
-    const data = await res.json();
-    if (!res.ok || data?.error) throw new Error(data?.error ?? res.statusText);
-    patch = data.patch;
+    ({ patch } = await api('/api/diff', { path: f.path }));
   } catch (e) {
     patch = undefined;
     console.error('diff', e);

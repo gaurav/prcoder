@@ -1,8 +1,75 @@
+// Skips absent sections; DOM append() would render them as the text "null".
+const kids = (list) => list.flat().filter((k) => k != null);
+
 // Small helper: build an element and append children.
-export function h(tag, props = {}, ...kids) {
+export function h(tag, props = {}, ...children) {
   const node = Object.assign(document.createElement(tag), props);
-  for (const k of kids.flat()) if (k != null) node.append(k);
+  node.append(...kids(children));
   return node;
+}
+
+/**
+ * JSON in, JSON out, an error thrown either way it can fail -- a bad status or
+ * an `error` in the payload. No body means no body at all, not `{}`: fetch
+ * refuses to send one on a GET, and handleApi already reads a missing one as
+ * undefined.
+ */
+export const api = async (url, body, method = 'POST') => {
+  const res = await fetch(url, body === undefined ? { method } : {
+    method,
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json();
+  if (!res.ok || data?.error) throw new Error(data?.error ?? res.statusText);
+  return data;
+};
+
+/**
+ * A line over the panes: the app's one notification surface.
+ *
+ * `sticky` is for a notice that stays true until you act on it, rather than one
+ * that reports something already finished -- it waits to be clicked instead of
+ * timing out. Every toast is click-to-dismiss; only a sticky one says so, with
+ * the ✕ its CSS adds.
+ */
+let toastTimer;
+export function toast(msg, bad = false, sticky = false) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = `${bad ? 'bad' : ''} ${sticky ? 'sticky' : ''}`.trim();
+  el.hidden = false;
+  // One slot, so a later toast replaces whatever is up -- including a sticky
+  // one, which is the other way it goes away.
+  el.onclick = () => { el.hidden = true; };
+  clearTimeout(toastTimer);
+  if (!sticky) toastTimer = setTimeout(() => { el.hidden = true; }, bad ? 8000 : 4000);
+}
+
+/**
+ * A checkbox that writes through to GitHub. The browser has already flipped it
+ * by the time we hear about it, so a failure puts it back rather than
+ * repainting -- the poll would take up to a minute to disagree. `settle` runs
+ * either way, against whatever the box ended up saying.
+ */
+export function writeThrough(box, run, settle = () => {}) {
+  // Assigned, not added: the diff pane's box is static markup and openDiff
+  // rewires it on every file, where a listener per open would stack up.
+  box.onchange = async () => {
+    box.disabled = true;
+    try { await run(box.checked); } catch { box.checked = !box.checked; }
+    box.disabled = false;
+    settle(box.checked);
+  };
+}
+
+/** The light itself, for the two pane headers that survive a poll. */
+function paintLight(id, state) {
+  const light = document.getElementById(id);
+  light.hidden = !state;
+  if (!state) return;
+  light.className = state.className;
+  light.textContent = state.text;
 }
 
 const GROUPS = [
@@ -58,7 +125,6 @@ function clamp(head, tail) {
 export function renderHeader(status, prs, { onSwitch, onCommit }) {
   const sel = document.getElementById('pr-switch');
   const commit = document.getElementById('pr-commit');
-  const light = document.getElementById('pr-sync');
 
   // Rebuilt only when the set of PRs changes, so the open list survives a poll.
   // gh pr list is open PRs only, so a merged or closed one has no option of its
@@ -83,23 +149,28 @@ export function renderHeader(status, prs, { onSwitch, onCommit }) {
 
   // Uncommitted work would make `gh pr checkout` fail, so offer the fix instead
   // of the switch. Claude is right there in the next pane.
-  const blocked = status.dirty;
+  const blocked = status.dirtyFiles.length > 0;
   sel.hidden = blocked || status.scope === 'other-repo';
   commit.hidden = !blocked;
   commit.onclick = () => onCommit(status.dirtyFiles);
   commit.textContent = `Commit ${status.dirtyFiles.length} file${status.dirtyFiles.length === 1 ? '' : 's'}…`;
 
-  light.className = 'light';
-  light.hidden = false;
-  if (status.error) { light.className = 'unknown'; light.textContent = 'unavailable'; }
-  else if (status.scope === 'other-repo') light.textContent = 'another repo';
-  else if (status.scope === 'other-branch') light.textContent = 'not checked out';
-  else if (status.sync === 'ahead') { light.className = 'light warn'; light.textContent = `${status.ahead} unpushed`; }
-  else if (status.sync === 'behind') { light.className = 'light warn'; light.textContent = 'pull needed'; }
-  else if (status.sync === 'diverged') { light.className = 'light warn'; light.textContent = 'diverged'; }
-  else if (status.sync === 'unpushed') { light.className = 'light warn'; light.textContent = 'not pushed'; }
-  else if (status.detached) light.textContent = 'detached HEAD';
-  else light.hidden = true;
+  paintLight('pr-sync', headerSync(status));
+}
+
+// The same words the terminal's status block uses (SYNC in server.js). `ahead`
+// is not in the table because it counts.
+const SYNC = { behind: 'pull needed', diverged: 'diverged', unpushed: 'not pushed' };
+
+/** Pure: the status -> the PR pane's light, or null for nothing worth saying. */
+export function headerSync(status) {
+  if (status.error) return { className: 'light unknown', text: 'unavailable' };
+  if (status.scope === 'other-repo') return { className: 'light', text: 'another repo' };
+  if (status.scope === 'other-branch') return { className: 'light', text: 'not checked out' };
+  const out = status.sync === 'ahead' ? `${status.ahead} unpushed` : SYNC[status.sync];
+  if (out) return { className: 'light warn', text: out };
+  if (status.detached) return { className: 'light', text: 'detached HEAD' };
+  return null;
 }
 
 /**
@@ -119,56 +190,37 @@ export function queueSync(status) {
   return { className: 'light ok', text: 'in the PR' };
 }
 
-/** The light itself. The queue pane's header, like the PR pane's, survives polls. */
-export function renderQueueSync(status) {
-  const light = document.getElementById('queue-sync');
-  const state = queueSync(status);
-  light.hidden = !state;
-  if (!state) return;
-  light.className = state.className;
-  light.textContent = state.text;
-}
+/** The queue pane's header, like the PR pane's, survives polls. */
+export const renderQueueSync = (status) => paintLight('queue-sync', queueSync(status));
 
 /** The pane with no PR to show: why, and the one thing worth doing about it. */
 export function renderNoPr(status, { onCreate }) {
   const host = document.getElementById('pr-body');
-
-  if (status.error) {
-    return host.replaceChildren(
-      h('p', { className: 'empty' }, 'Could not read this repository.'),
-      h('p', { className: 'pr-note' }, String(status.error)));
-  }
+  const onDefault = status.branch === status.defaultBranch;
 
   const why = status.detached ? 'HEAD is detached — no branch to open a pull request for.'
-    : status.onDefaultBranch ? `You are on ${status.branch}. Make a branch to start a pull request.`
+    : onDefault ? `You are on ${status.branch}. Make a branch to start a pull request.`
     : `No pull request for ${status.branch} yet.`;
 
   // Comparing a branch with itself opens an empty diff, so on main there is
   // nothing to offer — the fix is a branch, not a button.
-  const can = !status.detached && !status.onDefaultBranch;
+  const can = !status.detached && !onDefault;
   const btn = h('button', { className: 'pr-create', disabled: !can }, 'Create a pull request');
   if (can) btn.onclick = () => onCreate(btn);
 
-  host.replaceChildren();
-  append(host,
+  host.replaceChildren(...kids([
     h('p', { className: 'empty' }, why),
     status.sync === 'unpushed' && can
       ? h('p', { className: 'pr-note' }, 'This branch is not on GitHub yet; it will be pushed first.')
       : null,
     btn,
-  );
+  ]));
 }
 
 export function renderPr(pr, handlers) {
   const host = document.getElementById('pr-body');
-  host.replaceChildren();
 
-  if (!pr) {
-    host.append(h('p', { className: 'empty' }, 'No pull request for this branch.'));
-    return;
-  }
-
-  append(host,
+  host.replaceChildren(...kids([
     h('a', { className: 'pr-link', href: pr.url, target: '_blank', rel: 'noopener' },
       `#${pr.number} on GitHub ↗`),
     h('h2', { className: 'pr-title' }, pr.title),
@@ -186,11 +238,8 @@ export function renderPr(pr, handlers) {
       h('a', { href: `${pr.url}#issuecomment`, target: '_blank', rel: 'noopener' },
         `${pr.counts.comments} comments · ${pr.counts.reviews} reviews ↗`)),
     ...GROUPS.map(([key, label]) => fileGroup(label, pr.groups[key], handlers)),
-  );
+  ]));
 }
-
-/** Skips absent sections; DOM append() would render them as the text "null". */
-const append = (host, ...kids) => host.append(...kids.flat().filter((k) => k != null));
 
 const badge = (text, kind) => h('span', { className: `badge ${kind}` }, text);
 
@@ -228,12 +277,7 @@ function fileGroup(label, files, handlers) {
 
 function fileRow(f, { onViewed, onOpen, selected }) {
   const box = h('input', { type: 'checkbox', checked: f.viewed, title: 'mark viewed on GitHub' });
-  box.addEventListener('change', async () => {
-    box.disabled = true;
-    try { await onViewed(f.path, box.checked); } catch { box.checked = !box.checked; }
-    box.disabled = false;
-    row.classList.toggle('viewed', box.checked);
-  });
+  writeThrough(box, (v) => onViewed(f.path, v), (v) => row.classList.toggle('viewed', v));
   const link = h('a', { href: f.url, target: '_blank', rel: 'noopener', className: 'path', title: f.path },
     f.path);
   link.addEventListener('click', (e) => {
@@ -352,23 +396,13 @@ export const withoutHtml = (text) => (text ?? '')
   .replace(/<summary[^>]*>([\s\S]*?)<\/summary>/g,
     (_, t) => `#### ${t.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim()}`);
 
-/**
- * A checkbox that writes through to the description on GitHub. The browser has
- * already flipped it by the time we hear about it, so a failure puts it back
- * rather than repainting -- the poll would take up to a minute to disagree.
- */
+/** A checkbox in the description, ticked through to GitHub. */
 function taskRow(done, text, index, onTask) {
   const box = h('input', { type: 'checkbox', checked: done, title: 'tick this on GitHub' });
   const row = h('label', { className: `task${done ? ' done' : ''}` },
     box, h('span', { innerHTML: inline(text) }));
-  box.addEventListener('change', async () => {
-    box.disabled = true;
-    try {
-      await onTask({ index, done: box.checked, text });
-      row.classList.toggle('done', box.checked);
-    } catch { box.checked = !box.checked; }
-    box.disabled = false;
-  });
+  writeThrough(box, (v) => onTask({ index, done: v, text }),
+    (v) => row.classList.toggle('done', v));
   return row;
 }
 

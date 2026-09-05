@@ -1,4 +1,4 @@
-import { h } from './pr.js';
+import { h, api, toast } from './pr.js';
 
 // The client owns the list; every change persists the whole array. Single user,
 // single repo — no ids, no diffing.
@@ -18,9 +18,13 @@ export const freeze = (on) => { frozen = on; };
  * Replace the list from the server. Skipped while an item is being edited: the
  * text is contentEditable and only saves on blur, so a poll landing mid-typing
  * would throw the edit away.
+ *
+ * Only that edit is at risk, so only that holds the list back. Anything else in
+ * the pane can keep focus indefinitely -- a clicked tab does, in Chromium -- and
+ * freezing on it leaves the queue stale with nothing to unstick it.
  */
 export function setItems(next, prAvailable) {
-  if (document.getElementById('queue-body').contains(document.activeElement)) return;
+  if (document.activeElement?.closest?.('#queue-body .text[contenteditable]')) return;
   items = next;
   hasPr = prAvailable;
   render();
@@ -29,6 +33,7 @@ export function setItems(next, prAvailable) {
 // Mirroring into a PR description needs a PR. Creating an issue does not, so
 // that control stays live on a branch that has none.
 let hasPr = true;
+const NO_PR = 'no pull request on this branch to push to';
 
 // Which end the input adds to. The queue is two things at once -- a backlog in
 // the order you mean to work through it, and somewhere to put the thing you
@@ -65,9 +70,8 @@ export async function initQueue(d) {
 
 const save = async (url = '/api/queue', method = 'PUT', body = items) => {
   if (frozen) return;
-  const res = await fetch(url, { method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
-  const data = await res.json();
-  if (data?.error) { alert(data.error); return; }
+  let data;
+  try { data = await api(url, body, method); } catch (e) { toast(e.message, true); return; }
   if (Array.isArray(data)) items = data;
   render();
 };
@@ -93,7 +97,7 @@ function render() {
         ? [bulk('empty', () => { items = items.filter((i) => !i.deleted); save(); })]
         : [
           bulk('→ all to PR', () => { items.forEach((i) => { if (!i.done && !i.deleted) i.inPr = true; }); save(); },
-            !hasPr && 'no pull request on this branch to push to'),
+            { disabled: !hasPr, title: hasPr ? '' : NO_PR }),
           bulk('clear done', () => { items.forEach((i) => { if (i.done) i.deleted = true; }); save(); }),
         ]),
     ),
@@ -119,18 +123,16 @@ function paintWhere() {
   b.classList.toggle('top', addTo === 'top');
 }
 
-const tabBtn = (name, label) => {
-  const b = h('button', { className: tab === name ? 'tab on' : 'tab' }, label);
-  b.onclick = () => { tab = name; render(); };
-  return b;
-};
-
-const bulk = (label, fn, disabled = false) => {
-  const b = h('button', { className: 'bulk', disabled: !!disabled }, label);
-  if (typeof disabled === 'string') b.title = disabled;
+const btn = (label, fn, props = {}) => {
+  const b = h('button', props, label);
   b.onclick = fn;
   return b;
 };
+
+const tabBtn = (name, label) =>
+  btn(label, () => { tab = name; render(); }, { className: tab === name ? 'tab on' : 'tab' });
+
+const bulk = (label, fn, props = {}) => btn(label, fn, { className: 'bulk', ...props });
 
 function row(item) {
   const idx = items.indexOf(item);
@@ -148,17 +150,17 @@ function row(item) {
     text,
     item.issue ? h('a', { className: 'tag issue', href: item.issueUrl ?? '#', target: '_blank', rel: 'noopener' }, `#${item.issue}`) : null,
     h('span', { className: 'actions' },
-      act('▶', 'send to Claude', () => deps.sendToClaude(item.text)),
-      act(item.inPr ? '◆' : '◇',
-        hasPr ? (item.inPr ? 'in PR description' : 'add to PR description')
-          : 'no pull request on this branch to push to',
-        () => { item.inPr = !item.inPr; save(); },
-        !hasPr),
-      item.issue ? null : act('◎', 'create an issue', () => save('/api/queue/issue', 'POST', { items, index: idx })),
+      btn('▶', () => deps.sendToClaude(item.text), { title: 'send to Claude' }),
+      btn(item.inPr ? '◆' : '◇', () => { item.inPr = !item.inPr; save(); }, {
+        title: hasPr ? (item.inPr ? 'in PR description' : 'add to PR description') : NO_PR,
+        disabled: !hasPr,
+      }),
+      item.issue ? null : btn('◎', () => save('/api/queue/issue', 'POST', { items, index: idx }),
+        { title: 'create an issue' }),
       item.deleted
-        ? act('↩', 'restore', () => { item.deleted = false; save(); })
+        ? btn('↩', () => { item.deleted = false; save(); }, { title: 'restore' })
         // A tombstone, not a splice: the Deleted tab is where it goes.
-        : act('✕', 'delete', () => { item.deleted = true; item.inPr = false; save(); }),
+        : btn('✕', () => { item.deleted = true; item.inPr = false; save(); }, { title: 'delete' }),
     ),
   );
 
@@ -183,12 +185,6 @@ function row(item) {
 
   return li;
 }
-
-const act = (glyph, title, fn, disabled = false) => {
-  const b = h('button', { title, disabled }, glyph);
-  b.onclick = fn;
-  return b;
-};
 
 export async function addItem(text) {
   if (!text.trim()) return;

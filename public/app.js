@@ -1,7 +1,7 @@
 import { Terminal } from '/vendor/xterm.mjs';
 import { FitAddon } from '/vendor/addon-fit.mjs';
 import { WebLinksAddon } from '/vendor/addon-web-links.mjs';
-import { renderPr, renderNoPr, renderHeader, renderQueueSync, pageTitle } from './pr.js';
+import { renderPr, renderNoPr, renderHeader, renderQueueSync, pageTitle, api, toast } from './pr.js';
 import { openDiff, closeDiff, selectedPath } from './diff.js';
 import { initQueue, addItem, setItems, freeze } from './queue.js';
 import './panes.js';   // draggable pane gutters; nothing here calls into it
@@ -67,51 +67,14 @@ function sendToClaude(text) {
   term.focus();
 }
 
-const setViewed = (path, viewed) =>
-  fetch('/api/pr/viewed', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ path, viewed }),
-  }).then((r) => r.json()).then((d) => { if (d.error) throw new Error(d.error); });
-
-/**
- * A line over the panes. The only other error surface is alert().
- *
- * `sticky` is for a notice that stays true until you act on it, rather than one
- * that reports something already finished -- it waits to be clicked instead of
- * timing out. Every toast is click-to-dismiss; only a sticky one says so, with
- * the ✕ its CSS adds.
- */
-let toastTimer;
-function toast(msg, bad = false, sticky = false) {
-  const el = document.getElementById('toast');
-  el.textContent = msg;
-  el.className = `${bad ? 'bad' : ''} ${sticky ? 'sticky' : ''}`.trim();
-  el.hidden = false;
-  clearTimeout(toastTimer);
-  if (!sticky) toastTimer = setTimeout(() => { el.hidden = true; }, bad ? 8000 : 4000);
-}
-// One slot, so a later toast replaces whatever is up -- including a sticky one,
-// which is the other way it goes away.
-document.getElementById('toast').onclick = (e) => { e.currentTarget.hidden = true; };
-
-const post = async (url, body) => {
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(body ?? {}),
-  });
-  const data = await res.json();
-  if (!res.ok || data?.error) throw new Error(data?.error ?? res.statusText);
-  return data;
-};
+const setViewed = (path, viewed) => api('/api/pr/viewed', { path, viewed });
 
 // The switcher only changes when PRs are opened or closed, so it is not worth a
 // call every minute — page load and opening the dropdown are enough.
 let prs = [];
 let last = null;
-const loadPrs = () => fetch('/api/prs')
-  .then((r) => (r.ok ? r.json() : []))
+const loadPrs = () => api('/api/prs', undefined, 'GET')
+  .catch(() => [])   // the switcher is a convenience; a failure is not a banner
   // Repaint, or a PR opened since page load stays invisible until the next
   // poll — the switcher only rebuilds its options when the set changes.
   .then((l) => { prs = l; if (last) renderHeader(last, prs, handlers); });
@@ -129,7 +92,7 @@ const NOTES = {
  */
 async function toggleTask(task) {
   try {
-    const { queue } = await post('/api/pr/task', task);
+    const { queue } = await api('/api/pr/task', task);
     // Only when the line was one of the queue's own, so the two panes agree
     // without waiting for the poll.
     if (queue) setItems(queue, true);
@@ -178,14 +141,13 @@ function paint(status) {
  * A failed fetch must not read as "no pull request" — that is a real state with
  * its own UI, and a laptop on a train would hit it every minute.
  */
+let polledAt = 0;
 async function loadStatus() {
+  polledAt = Date.now();
   try {
-    const res = await fetch('/api/status');
-    const data = await res.json();
-    if (!res.ok || data?.error) throw new Error(data?.error ?? res.statusText);
-    paint(data);
+    paint(await api('/api/status', undefined, 'GET'));
   } catch (e) {
-    const failed = { error: e.message, dirty: false, dirtyFiles: [], pr: null };
+    const failed = { error: e.message, dirtyFiles: [], pr: null };
     renderHeader(failed, prs, handlers);
     renderQueueSync(failed);
   }
@@ -194,7 +156,7 @@ async function loadStatus() {
 async function switchPr(number) {
   freeze(true);
   try {
-    const status = await post('/api/pr/switch', { number });
+    const status = await api('/api/pr/switch', { number });
     paint(status);
     // Claude's cwd survives a checkout, but its idea of the files does not, and
     // nothing tells it: prcoder has no channel into the session that isn't a
@@ -216,7 +178,7 @@ async function createPr(btn) {
   const win = window.open('', '_blank');
   btn.disabled = true;
   try {
-    const { url, pushed } = await post('/api/pr/create');
+    const { url, pushed } = await api('/api/pr/create');
     win.location = url;
     if (pushed) toast('Pushed this branch to origin first.');
   } catch (e) {
@@ -235,8 +197,11 @@ document.getElementById('pr-refresh').onclick = loadStatus;
 
 // Polling is the client's job: no server timer, and a hidden tab costs nothing.
 setInterval(() => { if (document.visibilityState === 'visible') loadStatus(); }, 60_000);
+// Coming back to the tab polls too, but not one that just ran: a poll is a gh
+// call plus half a dozen git spawns behind the server's serial lock, and
+// alt-tabbing to Claude and back is a thing you do every few seconds.
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible') loadStatus();
+  if (document.visibilityState === 'visible' && Date.now() - polledAt > 10_000) loadStatus();
 });
 
 const input = document.getElementById('queue-input');
@@ -256,6 +221,9 @@ const grow = () => {
 };
 input.addEventListener('input', grow);
 
-await loadPrs();
+// Not awaited: the switcher's list is a whole `gh pr list` and nothing below
+// needs it — renderHeader synthesises an option for the current PR until it
+// lands, and loadPrs repaints the header itself when it does.
+loadPrs();
 await initQueue({ sendToClaude });
 loadStatus();
