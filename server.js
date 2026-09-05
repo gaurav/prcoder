@@ -409,8 +409,9 @@ const routes = {
 
     // Our own block is a projection of the queue, so a tick there has to reach
     // the store: readQueue folds the new body back into the items and
-    // writeQueue persists them. It re-renders the block from those items and
-    // finds it unchanged, so this costs a read and no second write.
+    // writeQueue persists them. It re-renders the block from those items
+    // against the body we just wrote, finds it unchanged, and so makes no
+    // second call of its own.
     //
     // Only when the block is this branch's own projection, though. A tick
     // elsewhere in the description, or anywhere in a PR we are merely looking
