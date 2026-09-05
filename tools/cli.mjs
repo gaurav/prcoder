@@ -16,6 +16,7 @@
 // rows below it, the erase is eating scrollback or leaving a smear.
 
 import { execSync } from 'node:child_process';
+import { setTimeout as wait } from 'node:timers/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node-pty';
@@ -23,7 +24,6 @@ import { WebSocket } from 'ws';
 
 const repo = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const port = Number(process.env.PRCODER_PORT) || 7455;
-const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
 function start(label) {
   const p = spawn('node', ['server.js'], {
