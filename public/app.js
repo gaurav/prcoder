@@ -74,16 +74,26 @@ const setViewed = (path, viewed) =>
     body: JSON.stringify({ path, viewed }),
   }).then((r) => r.json()).then((d) => { if (d.error) throw new Error(d.error); });
 
-/** A transient line over the panes. The only other error surface is alert(). */
+/**
+ * A line over the panes. The only other error surface is alert().
+ *
+ * `sticky` is for a notice that stays true until you act on it, rather than one
+ * that reports something already finished -- it waits to be clicked instead of
+ * timing out. Every toast is click-to-dismiss; only a sticky one says so, with
+ * the ✕ its CSS adds.
+ */
 let toastTimer;
-function toast(msg, bad = false) {
+function toast(msg, bad = false, sticky = false) {
   const el = document.getElementById('toast');
   el.textContent = msg;
-  el.className = bad ? 'bad' : '';
+  el.className = `${bad ? 'bad' : ''} ${sticky ? 'sticky' : ''}`.trim();
   el.hidden = false;
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { el.hidden = true; }, bad ? 8000 : 4000);
+  if (!sticky) toastTimer = setTimeout(() => { el.hidden = true; }, bad ? 8000 : 4000);
 }
+// One slot, so a later toast replaces whatever is up -- including a sticky one,
+// which is the other way it goes away.
+document.getElementById('toast').onclick = (e) => { e.currentTarget.hidden = true; };
 
 const post = async (url, body) => {
   const res = await fetch(url, {
@@ -186,9 +196,13 @@ async function switchPr(number) {
   try {
     const status = await post('/api/pr/switch', { number });
     paint(status);
-    // Claude's cwd survives a checkout, but its idea of the files does not.
-    term.write(`\r\n\x1b[33m[prcoder: switched to ${status.branch} (#${number})` +
-      ' — re-read any open files]\x1b[0m\r\n');
+    // Claude's cwd survives a checkout, but its idea of the files does not, and
+    // nothing tells it: prcoder has no channel into the session that isn't a
+    // typed user turn (issue #21). So this is addressed to you, not to Claude,
+    // and it is sticky because it stays true until you have said something.
+    toast(`Switched to ${status.branch} (#${number}). Claude still has the old`
+      + " branch's files in mind — tell it to re-read anything it had open.",
+    false, true);
   } catch (e) {
     toast(e.message, true);
     await loadStatus();   // re-derive: the checkout may have half-succeeded

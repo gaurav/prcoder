@@ -82,6 +82,39 @@ const restored = await page.evaluate(() => document.querySelector('main').style.
 console.log('dragged: ', dragged, '  (want --w-pr 520, --h-diff 300, --h-queue 260)');
 console.log('restored:', restored, restored === dragged ? '' : '  <-- did not persist');
 
+// The two toasts. The reload above is a real trigger for the first one:
+// sessionStorage survives it, so ws.onopen decides the session was restarted
+// and calls toast() for itself -- which is what says the plain path still
+// works. Four seconds and it is gone, hence the screenshot before anything
+// else. The sticky one has no read-only trigger (switching PRs would check out
+// a branch in this repo), so its class is set the way toast() sets it: the CSS
+// and the click-to-dismiss handler are real, the call is not.
+const toastText = () => page.evaluate(() => {
+  const el = document.getElementById('toast');
+  return el.hidden ? null : el.textContent;
+});
+console.log('toast:  ', JSON.stringify(await toastText()), '  (want the restart notice)');
+await page.locator('#toast').screenshot({ path: path.join(out, 'toast.png') }).catch(() => {});
+await page.waitForTimeout(4500);
+console.log('faded:  ', JSON.stringify(await toastText()), '  (want null -- the 4s timeout)');
+
+// Only now, or the timeout still pending from that one hides this one. toast()
+// clears it; setting the class by hand here cannot.
+await page.evaluate(() => {
+  const el = document.getElementById('toast');
+  el.textContent = 'Switched to add-retries (#123). Claude still has the old'
+    + " branch's files in mind — tell it to re-read anything it had open.";
+  el.className = 'sticky';
+  el.hidden = false;
+});
+await page.waitForTimeout(100);
+await page.locator('#toast').screenshot({ path: path.join(out, 'toast-sticky.png') });
+await page.screenshot({ path: path.join(out, 'full-toast.png') });   // and what it sits over
+await page.waitForTimeout(4500);   // past the 4s a plain toast would have died at
+console.log('sticky: ', JSON.stringify(await toastText()), '  (want it still up)');
+await page.locator('#toast').click();
+console.log('clicked:', JSON.stringify(await toastText()), '  (want null)');
+
 // The bug above, pinned: a click in the middle of an item's text has to land
 // in the middle of it. Silent in Chromium either way, so this only earns its
 // keep under PRCODER_BROWSER=firefox.
