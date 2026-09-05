@@ -65,6 +65,29 @@ being pushed. Say "prcoder's own HTML-comment markers" instead, and if you must
 show the literal string, check that the body still contains exactly one of each
 marker before writing it.
 
+## The Claude pane is not prcoder's to draw on
+
+`term.write()` in `public/app.js` puts bytes into xterm's buffer without them
+ever reaching the PTY, which makes it look like the way to tell the user
+something in the middle pane. It is not, for two reasons.
+
+Claude never sees it. The only path to the session is `{type:'input'}` ->
+`pty.write` (`server.js`), which is what `sendToClaude` uses. So a notice
+written this way that is *addressed* to Claude -- "re-read any open files" was
+one, until 2026-09-05 -- is read by nobody. prcoder has no way to put anything
+into Claude's context that is not a typed user turn; issue #21 is where the
+options are written down.
+
+And Claude Code owns that viewport. With `"tui": "fullscreen"` it is on the
+alternate screen, repainting frames over whatever is there; anything prcoder
+writes survives until the next one. The exception is `ws.onclose`, which writes
+`[claude exited]` precisely because the PTY is dead and nothing will repaint.
+
+Notices for the human go to `toast()`, which sits over the panes and is nothing
+to do with the terminal. Pass `sticky` for one that stays true until acted on
+rather than reporting something already finished -- it waits for a click instead
+of timing out.
+
 ## One engine is not "a real browser"
 
 `tools/shot.mjs` ran Chromium only, and a Firefox-only bug survived every
