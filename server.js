@@ -645,6 +645,9 @@ function openBrowser() {
  * starting prcoder again; that one means GitHub is holding a description the
  * queue has already moved past, and quitting leaves it that way.
  */
+/** What never got carried out to the PR or to an issue. Cached, so no subprocess. */
+const localOnly = () => counts(last?.queue ?? []).local;
+
 function askToQuit() {
   const risk = [
     wss.clients.size && (wss.clients.size > 1
@@ -653,6 +656,10 @@ function askToQuit() {
     mirrorFailed && 'the PR description never got the last change',
     last?.ahead && `${last.ahead} unpushed commit${last.ahead > 1 ? 's' : ''}`,
     last?.dirtyFiles?.length && `${last.dirtyFiles.length} uncommitted file${last.dirtyFiles.length > 1 ? 's' : ''}`,
+    // The queue is what you meant to finish this time round, so an item still
+    // only on the local list is one that reached neither the PR nor an issue,
+    // and that nobody but this machine will ever see.
+    localOnly() && `${localOnly()} queue item${localOnly() > 1 ? 's' : ''} still only local`,
   ].filter(Boolean);
   term.confirm(`quit? ${risk.length ? risk.join('; ') : 'nothing in flight'}  [y/N] `, () => {
     // Killed here rather than left to the close handlers: process.exit does not
