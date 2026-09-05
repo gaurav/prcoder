@@ -12,11 +12,12 @@
 // parseFuture is the one thing here that still reads FUTURE.md, for the
 // one-time import in server.js. Nothing writes that file.
 
+import { TASK, taskLines } from './public/tasks.js';
+
 const HEADING = '## Queue';
 const OPEN = '<!-- prcoder:todo -->';
 const CLOSE = '<!-- /prcoder:todo -->';
 
-const ITEM = /^\s*[-*]\s*\[( |x|X)\]\s*(.*)$/;
 
 // Anchored, so the first token it cannot match ends the marker run and
 // everything from there -- including any later markers -- becomes visible task
@@ -28,7 +29,7 @@ const ITEM = /^\s*[-*]\s*\[( |x|X)\]\s*(.*)$/;
 const MARKERS = /^((?:@pr\b|@deleted\b|@issue#\d+\b|\s)*)/;
 
 function parseItem(line) {
-  const m = ITEM.exec(line);
+  const m = TASK.exec(line);
   if (!m) return null;
   const done = m[1].toLowerCase() === 'x';
   const rest = m[2].trim();
@@ -91,29 +92,11 @@ export function renderPrBlock(items, body = '') {
 }
 
 /**
- * Which lines are checkboxes: the checklist lines that are not inside a fenced
- * code block. A `- [ ]` in a fence is a sample, not a task, and the pane renders
- * it as code -- so counting it here would offset every index after it and tick
- * the wrong line. The two sides are walked over one body in test/queue.test.js
- * to keep them agreeing.
- */
-function taskLines(lines) {
-  const out = [];
-  let fenced = false;
-  for (const [i, line] of lines.entries()) {
-    if (/^[ \t]*```/.test(line)) { fenced = !fenced; continue; }
-    if (!fenced && ITEM.test(line)) out.push(i);
-  }
-  return out;
-}
-
-/**
  * Flip one checkbox in a PR description, so the boxes rendered in the PR pane
  * are the real ones. The line is found by its position among the body's
- * checklist lines and then checked against the text the client saw: the client
- * counts those lines with its own copy of this pattern, so a body that moved
- * on -- or a renderer that has drifted from this one -- fails loudly instead of
- * ticking the line next door.
+ * checklist lines -- counted by the same taskLines() the pane counts with --
+ * and then checked against the text the client saw, so a body that moved on
+ * fails loudly instead of ticking the line next door.
  *
  * `inBlock` says whether the line is one of ours: those are a projection of
  * FUTURE.md and the tick has to be folded back into it, and the caller is the
@@ -121,14 +104,14 @@ function taskLines(lines) {
  */
 export function toggleTask(body, index, done, expected) {
   const lines = (body ?? '').split('\n');
-  const at = taskLines(lines)[index];
+  const at = taskLines(body ?? '')[index];
   if (at === undefined) throw new Error('that checkbox is no longer in the description -- refresh');
 
-  const text = ITEM.exec(lines[at])[2].trim();
+  const text = TASK.exec(lines[at])[2].trim();
   if (text !== (expected ?? '').trim()) {
     throw new Error(`the description changed under that checkbox (now "${text}") -- refresh`);
   }
-  // ITEM anchors the box at the start of the line, so the first [ ] is it.
+  // TASK anchors the box at the start of the line, so the first [ ] is it.
   lines[at] = lines[at].replace(/\[( |x|X)\]/, done ? '[x]' : '[ ]');
 
   const open = lines.findIndex((l) => l.includes(OPEN));

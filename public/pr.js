@@ -1,3 +1,5 @@
+import { TASK, fences } from './tasks.js';
+
 // Skips absent sections; DOM append() would render them as the text "null".
 const kids = (list) => list.flat().filter((k) => k != null);
 
@@ -296,12 +298,6 @@ function fileRow(f, { onViewed, onOpen, selected }) {
   return row;
 }
 
-// The same checklist line GitHub renders as a checkbox, and the same one
-// queue.js parses server-side. The two patterns have to agree on which lines
-// are checkboxes, because a tick is sent as a position in that list --
-// test/queue.test.js walks a body through both to keep them honest.
-export const TASK = /^\s*[-*]\s*\[( |x|X)\]\s*(.*)$/;
-
 /**
  * Just enough markdown for a PR description: links, code, headings, lists --
  * and checklists as real checkboxes, which are the point of reading a
@@ -354,30 +350,6 @@ function markdown(text, onTask) {
 // A heading needs its space: `#hashtag` is prose, and rendering it as a heading
 // would swallow the line.
 export const HEADING = /^(#{1,6})\s+(.*)$/;
-
-/**
- * The body cut into fenced blocks and the text between them, in order. Fences
- * come out before paragraphs are split on blank lines, because a fence is
- * allowed to contain them.
- *
- * A checklist line inside a fence is code, not a checkbox -- and toggleTask in
- * queue.js skips fenced lines for the same reason. A tick is sent as a position
- * in the list of checklist lines, so the two counts have to agree; that they do
- * is pinned in test/queue.test.js.
- */
-export function fences(body) {
-  const out = [];
-  const re = /^[ \t]*```[^\n]*\n([\s\S]*?)^[ \t]*```[ \t]*$/gm;
-  let last = 0;
-  let m;
-  while ((m = re.exec(body)) !== null) {
-    if (m.index > last) out.push({ text: body.slice(last, m.index) });
-    out.push({ code: m[1].replace(/\n$/, '') });
-    last = re.lastIndex;
-  }
-  if (last < body.length) out.push({ text: body.slice(last) });
-  return out;
-}
 
 /**
  * The three pieces of raw HTML a PR description actually contains, dealt with

@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { pageTitle, withoutHtml, inline, fences, queueSync, TASK, HEADING } from '../public/pr.js';
+import { pageTitle, withoutHtml, inline, queueSync, HEADING } from '../public/pr.js';
+import { fences, TASK } from '../public/tasks.js';
 
 const status = (over = {}) => ({
   nameWithOwner: 'ggvaidya/prcoder',

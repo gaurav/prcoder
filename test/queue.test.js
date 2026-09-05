@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseFuture, renderPrBlock, syncFromPrBlock, toggleTask } from '../queue.js';
-import { TASK, fences } from '../public/pr.js';
+import { TASK, fences, taskLines } from '../public/tasks.js';
 
 const FUTURE = `# Notes
 
@@ -267,6 +267,30 @@ test('a checklist inside a fence is code to both sides, not a checkbox', () => {
   // Index 1 is the line after the fence, not the first line inside it.
   assert.match(toggleTask(FENCED, 1, true, 'after the fence').body, /- \[x\] after the fence/);
   assert.match(toggleTask(FENCED, 1, true, 'after the fence').body, /- \[ \] not a task, an example/);
+});
+
+// A fence someone is still typing. The pane deliberately does not let an
+// unterminated one swallow the rest of the description, and for as long as
+// toggleTask walked the body with a rule of its own -- toggling on every ``` --
+// it counted everything after the opener as code. The pane then rendered a
+// checkbox the server refused, with "no longer in the description" on a line
+// that was plainly still there and a refresh that could never help.
+const UNCLOSED = [
+  '- [ ] before the fence',
+  '',
+  '```sh',
+  'npm install',
+  '',
+  '- [ ] after the opener',
+].join('\n');
+
+test('an unterminated fence leaves both sides counting the same lines', () => {
+  const seen = paneTasks(UNCLOSED);
+  assert.deepEqual(seen, ['before the fence', 'after the opener']);
+  assert.deepEqual(taskLines(UNCLOSED), [0, 5]);
+  for (const [index, text] of seen.entries()) {
+    assert.doesNotThrow(() => toggleTask(UNCLOSED, index, true, text), `index ${index} (${text})`);
+  }
 });
 
 test('the fenced sample survives a tick untouched', () => {
