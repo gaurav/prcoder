@@ -72,6 +72,9 @@ for (let i = 0; i < 60; i++) {
 }
 const FIXTURE = [
   { t: 'a local item, still only on this machine' },
+  // Two locals, because the promotion check below carries one out and the
+  // caret check further down still needs a row on Local to click into.
+  { t: 'a second local item, to click into' },
   { t: 'carried out to the pull request', inPr: true },
   { t: 'filed as an issue', issue: 20 },
   { t: 'ticked off', done: true },
@@ -112,6 +115,19 @@ for (const name of ['Local', 'PR', 'Issues', 'Completed', 'Deleted']) {
   console.log(`  ${name.padEnd(9)} ${JSON.stringify(rows)}${grips ? '  [draggable]' : ''}`);
   await page.locator('#queue').screenshot({ path: path.join(out, `queue-${name.toLowerCase()}.png`) });
 }
+// The claim the tab set is built on: carrying an item out with the row's own ◆
+// takes it out of Local. Seeding an already-mirrored item proves the filter;
+// only clicking the button proves the transition.
+await page.locator('#queue-body .tab', { hasText: 'Local' }).click();
+await page.waitForTimeout(150);
+await page.locator('.item', { hasText: 'a local item' }).locator('button[title*="PR description"]').click();
+// Waited for rather than slept past: mirroring is a real read-modify-write
+// against the description on GitHub, so the row does not move for a second or
+// two and any fixed timeout is either flaky or slower than it needs to be.
+await page.locator('#queue-body .tab', { hasText: 'Local (1)' }).waitFor({ timeout: 30_000 });
+console.log('promoted:', (await page.locator('#queue-body .tab').allTextContents()).join(' | '));
+console.log('  Local now', JSON.stringify(await page.locator('.item .text').allTextContents()));
+
 // The confirm is the only thing between one click and every completed item, so
 // check it is load-bearing rather than decorative: dismissing it has to leave
 // the counts alone, and only accepting moves them.
