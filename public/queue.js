@@ -1,9 +1,10 @@
 import { h, api, toast } from './pr.js';
+import { TABS } from './items.js';
 
 // The client owns the list; every change persists the whole array. Single user,
 // single repo — no ids, no diffing.
 let items = [];
-let tab = 'active';
+let tab = 'local';
 let deps = {};
 // Set while a branch switch is in flight. Every save() writes the whole array,
 // and the server stamps it with whatever branch is checked out by the time it
@@ -76,36 +77,74 @@ const save = async (url = '/api/queue', method = 'PUT', body = items) => {
   render();
 };
 
+const LABELS = { local: 'Local', pr: 'PR', issues: 'Issues', done: 'Completed', deleted: 'Deleted' };
+
+// Local is always there because an *empty* Local is the thing worth seeing --
+// it is how a tidy session ends. Completed is always there because it is where
+// the delete-all lives. The rest hide when they hold nothing, the way Deleted
+// always did.
+const ALWAYS = ['local', 'done'];
+
 function render() {
   const host = document.getElementById('queue-body');
-  const live = items.filter((i) => !i.deleted);
-  // Restoring the last tombstone hides the tab; without this you would be left
-  // looking at an empty list with no tab to click back to.
-  if (tab === 'deleted' && live.length === items.length) tab = 'active';
-  const shown = tab === 'deleted' ? items.filter((i) => i.deleted)
-    : live.filter((i) => (tab === 'done' ? i.done : !i.done));
+  const count = (name) => items.filter(TABS[name]).length;
+  const strip = Object.keys(TABS).filter((n) => ALWAYS.includes(n) || count(n));
+  // The tab you were on can empty and vanish from the strip -- restoring the
+  // last tombstone does it -- leaving nothing highlighted and a list with no
+  // tab to click back to. Local is never left this way: it is in ALWAYS.
+  if (!strip.includes(tab)) tab = 'local';
 
   host.replaceChildren(
     h('div', { className: 'tabs' },
-      tabBtn('active', `Active (${live.filter((i) => !i.done).length})`),
-      tabBtn('done', `Completed (${live.filter((i) => i.done).length})`),
-      ...(items.some((i) => i.deleted) ? [tabBtn('deleted', `Deleted (${items.filter((i) => i.deleted).length})`)] : []),
+      ...strip.map((n) => tabBtn(n, `${LABELS[n]} (${count(n)})`)),
       h('span', { className: 'spacer' }),
-      ...(tab === 'deleted'
-        // The only hard delete in the app, and it is behind the tab that shows
-        // you what you are about to lose.
-        ? [bulk('empty', () => { items = items.filter((i) => !i.deleted); save(); })]
-        : [
-          bulk('→ all to PR', () => { items.forEach((i) => { if (!i.done && !i.deleted) i.inPr = true; }); save(); },
-            { disabled: !hasPr, title: hasPr ? '' : NO_PR }),
-          bulk('clear done', () => { items.forEach((i) => { if (i.done) i.deleted = true; }); save(); }),
-        ]),
+      ...bulks(),
     ),
-    h('ul', { className: 'items' }, ...shown.map((i) => row(i))),
+    h('ul', { className: 'items' }, ...items.filter(TABS[tab]).map((i) => row(i))),
   );
 
+  // Adding always lands in Local, so say so where that is not what you are
+  // looking at.
   document.getElementById('queue-input').placeholder =
-    tab === 'done' ? 'Add an item…' : 'Add an item, Enter to save';
+    tab === 'local' ? 'Add an item, Enter to save' : 'Add an item…';
+}
+
+/**
+ * The bulk actions, which belong to one tab each: you act on the list in front
+ * of you. Both destructive ones confirm and say what they are about to take,
+ * because a bulk delete has no single row to have thought twice about.
+ */
+function bulks() {
+  const of = (name) => items.filter(TABS[name]);
+  const many = (n) => `${n} item${n === 1 ? '' : 's'}`;
+
+  if (tab === 'local') {
+    return [bulk('→ all to PR', () => { of('local').forEach((i) => { i.inPr = true; }); save(); },
+      { disabled: !hasPr, title: hasPr ? '' : NO_PR })];
+  }
+  if (tab === 'done') {
+    return [bulk('delete all', () => {
+      const done = of('done');
+      // A tombstone, like the row's own ✕: these land in Deleted, and the
+      // confirm says so rather than implying they are gone.
+      if (!done.length || !confirm(`Delete ${many(done.length)} from Completed?\n\nThey move to the Deleted tab, where they can be restored.`)) return;
+      done.forEach((i) => { i.deleted = true; i.inPr = false; });
+      save();
+    })];
+  }
+  if (tab === 'deleted') {
+    // The only hard delete in the app, and it is behind the tab that shows you
+    // what you are about to lose.
+    return [bulk('delete forever', () => {
+      const gone = of('deleted');
+      if (!gone.length || !confirm(`Permanently delete ${many(gone.length)}?\n\nThis cannot be undone.`)) return;
+      items = items.filter((i) => !i.deleted);
+      save();
+    })];
+  }
+  // PR and Issues are reference lists: what to do with those items is on the
+  // row, or on GitHub.
+  return [];
 }
 
 // The button is static markup in the pane header, which render()'s
@@ -136,6 +175,10 @@ const bulk = (label, fn, props = {}) => btn(label, fn, { className: 'bulk', ...p
 
 function row(item) {
   const idx = items.indexOf(item);
+  // Order is the backlog's meaning, and only Local is a backlog -- the other
+  // tabs are filtered views where a drop would splice the item to a position
+  // in the full array that nobody on this tab can see.
+  const ordered = tab === 'local';
 
   const box = h('input', { type: 'checkbox', checked: item.done });
   box.onchange = () => { item.done = box.checked; save(); };
@@ -144,8 +187,8 @@ function row(item) {
   text.onblur = () => { if (text.textContent.trim() !== item.text) { item.text = text.textContent.trim(); save(); } };
   text.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); text.blur(); } };
 
-  const li = h('li', { className: 'item', draggable: true },
-    h('span', { className: 'grip', title: 'drag to reorder' }, '⠿'),
+  const li = h('li', { className: 'item', draggable: ordered },
+    ordered ? h('span', { className: 'grip', title: 'drag to reorder' }, '⠿') : null,
     box,
     text,
     item.issue ? h('a', { className: 'tag issue', href: item.issueUrl ?? '#', target: '_blank', rel: 'noopener' }, `#${item.issue}`) : null,
@@ -171,7 +214,7 @@ function row(item) {
   // the span, and -moz-user-select, both leave the caret at 0 — so the row
   // gives up being draggable for exactly as long as the pointer is on its text,
   // and the grip above is the handle that always drags.
-  li.addEventListener('pointerdown', (e) => { li.draggable = !text.contains(e.target); });
+  li.addEventListener('pointerdown', (e) => { li.draggable = ordered && !text.contains(e.target); });
   li.addEventListener('dragstart', (e) => { e.dataTransfer.setData('text/plain', idx); li.classList.add('dragging'); });
   li.addEventListener('dragend', () => li.classList.remove('dragging'));
   li.addEventListener('dragover', (e) => e.preventDefault());
@@ -189,11 +232,11 @@ function row(item) {
 export async function addItem(text) {
   if (!text.trim()) return;
   const item = { text: text.trim(), done: false, inPr: false, issue: null, deleted: false };
-  // The end of the whole array, past any done or deleted rows: the Active tab
-  // filters without reordering, so it still shows last there, and FUTURE.md
-  // reads newest-last.
+  // The end of the whole array, past any promoted or done rows: Local filters
+  // without reordering, so a new item still shows last there.
   if (addTo === 'top') items.unshift(item); else items.push(item);
-  tab = 'active';
+  // A brand-new item is local by definition, so this is the tab it is on.
+  tab = 'local';
   await save();
   // Either end can be off-screen in a list taller than the pane, and an item
   // you cannot see reads as a save that did not happen. Not scrollIntoView:

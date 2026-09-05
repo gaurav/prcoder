@@ -15,6 +15,7 @@ import { snapshot, currentBranch, repoInfo, prScope, compareUrl, checkoutPr, pus
 import { groupFiles, fileUrl } from './files.js';
 import { parseFuture, renderPrBlock, syncFromPrBlock, toggleTask } from './queue.js';
 import { readStore, writeStore, forBranch, replaceBranch, branchKey, staleBranch } from './store.js';
+import { counts } from './public/items.js';
 import * as term from './term.js';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
@@ -271,8 +272,9 @@ function mirrorPhrase(s) {
  */
 export function statusLines(s, u = {}) {
   const row = (label, ...rest) => `${`${label}        `.slice(0, 8)} ${rest.filter(Boolean).join('   ')}`;
-  const live = (s.queue ?? []).filter((i) => !i.deleted);
-  const n = (k) => live.filter(k).length;
+  // The same predicates the pane's tabs use, so the block and the tab strip
+  // cannot report the branch's queue differently.
+  const q = counts(s.queue ?? []);
 
   return [
     row('prcoder', s.nameWithOwner,
@@ -281,8 +283,8 @@ export function statusLines(s, u = {}) {
         .filter(Boolean).join(' · ')),
     s.pr ? row(`PR #${s.pr.number}`, s.pr.title) : row('PR', 'none for this branch'),
     s.pr && row('', s.pr.url),
-    row('queue', `${n((i) => !i.done)} active · ${n((i) => i.done)} done · ` +
-      `${n((i) => i.inPr)} in the PR · ${n((i) => i.issue)} issue${n((i) => i.issue) === 1 ? '' : 's'}`,
+    row('queue', `${q.local} local · ${q.done} done · ` +
+      `${q.pr} in the PR · ${q.issues} issue${q.issues === 1 ? '' : 's'}`,
       mirrorPhrase(s)),
     // The age belongs next to the tab count because the tab is the cause: the
     // browser polls only while its tab is visible, so backgrounding it stops
