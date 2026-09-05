@@ -16,10 +16,15 @@
 //
 // CLAUDE_BIN is stubbed because every page load opens a websocket and spawns
 // it in a PTY -- unstubbed, each run starts a real Claude session and leaves it
-// running. And the UI's controls hit the live PR: ticking a description
-// checkbox edits the description on GitHub, adding a queue item rewrites
-// FUTURE.md. Undo what you write (`git checkout -- FUTURE.md`), or stay
-// read-only as this does.
+// running.
+//
+// This is not read-only, and what it writes goes to GitHub. The queue is
+// per-branch, so a fresh branch has nothing to photograph; the run seeds five
+// items -- one per tab -- and puts the branch's own queue back at the end,
+// which also takes the block it mirrored back out of the PR description. A run
+// that dies in between leaves both behind, and the next run drops the fixture
+// rather than restoring it. Anything you add here that writes needs the same
+// treatment, and needs to run against a repo you own.
 
 import { spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
@@ -45,6 +50,43 @@ const browser = await engine.launch();
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
 page.on('pageerror', (e) => console.log('PAGE EXCEPTION:', e.message));
 
+// The queue is per-branch, so a fresh branch has an empty one and there is no
+// row to click into or tab to count. Seed one item per tab through the API the
+// pane itself uses -- before the first page load, so the pane paints the
+// fixture rather than an empty list it would not refetch for another minute.
+//
+// `inPr` on one of them is a real write to this repo's own PR description --
+// that is the feature, and putting the old queue back at the end takes the
+// block out again. `issue` is a bare number, so it links to an existing issue
+// rather than filing a new one.
+const queue = (body, method = 'PUT') =>
+  fetch(`http://localhost:${port}/api/queue`, {
+    method,
+    headers: { 'content-type': 'application/json' },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  }).then((r) => r.json());
+
+let had = [];
+for (let i = 0; i < 60; i++) {
+  try { had = await queue(undefined, 'GET'); break; } catch { await new Promise((r) => setTimeout(r, 500)); }
+}
+const FIXTURE = [
+  { t: 'a local item, still only on this machine' },
+  { t: 'carried out to the pull request', inPr: true },
+  { t: 'filed as an issue', issue: 20 },
+  { t: 'ticked off', done: true },
+  { t: 'thrown away', deleted: true },
+];
+const seed = (over) => ({ text: over.t, done: false, inPr: false, issue: null, deleted: false, ...over });
+// A run that dies before the restore leaves its fixture in the store, and with
+// it a block in the PR description. Dropping anything that looks like the
+// fixture from what we are going to put back makes the next run clean up after
+// the last one, rather than restoring the mess and adding to it.
+const mine = new Set(FIXTURE.map((f) => f.t));
+had = had.filter((i) => !mine.has(i.text));
+const seeded = await queue(FIXTURE.map(seed));
+console.log('seeded: ', Array.isArray(seeded) ? `${seeded.length} items` : JSON.stringify(seeded));
+
 for (let i = 0; i < 30; i++) {
   try { await page.goto(`http://localhost:${port}/`); break; } catch { await page.waitForTimeout(500); }
 }
@@ -56,6 +98,37 @@ await page.screenshot({ path: path.join(out, 'full.png') });
 for (const pane of ['pr', 'queue']) {
   await page.locator(`#${pane}`).screenshot({ path: path.join(out, `${pane}.png`) });
 }
+
+// Every tab, and what each shows. Local draining as items are carried out is
+// the whole point of the set, so the counts are read rather than eyeballed --
+// and the strip is shot at the pane's own width to see whether five tabs wrap.
+const strip = () => page.locator('#queue-body .tab').allTextContents();
+console.log('tabs:   ', (await strip()).join(' | '));
+for (const name of ['Local', 'PR', 'Issues', 'Completed', 'Deleted']) {
+  await page.locator('#queue-body .tab', { hasText: name }).click();
+  await page.waitForTimeout(150);
+  const rows = await page.locator('.item .text').allTextContents();
+  const grips = await page.locator('.item .grip').count();
+  console.log(`  ${name.padEnd(9)} ${JSON.stringify(rows)}${grips ? '  [draggable]' : ''}`);
+  await page.locator('#queue').screenshot({ path: path.join(out, `queue-${name.toLowerCase()}.png`) });
+}
+// The confirm is the only thing between one click and every completed item, so
+// check it is load-bearing rather than decorative: dismissing it has to leave
+// the counts alone, and only accepting moves them.
+const tabs = async () => (await page.locator('#queue-body .tab').allTextContents()).join(' | ');
+await page.locator('#queue-body .tab', { hasText: 'Completed' }).click();
+await page.waitForTimeout(150);
+page.once('dialog', (d) => { console.log('confirm:', JSON.stringify(d.message().split('\n')[0])); d.dismiss(); });
+await page.locator('.bulk', { hasText: 'delete all' }).click();
+await page.waitForTimeout(500);
+console.log('  dismissed', await tabs());
+page.once('dialog', (d) => d.accept());
+await page.locator('.bulk', { hasText: 'delete all' }).click();
+await page.waitForTimeout(800);
+console.log('  accepted ', await tabs());
+
+await page.locator('#queue-body .tab', { hasText: 'Local' }).click();
+await page.waitForTimeout(150);
 
 // The gutters, which are only ever right or wrong on screen. Each drag moves
 // one line to a known coordinate, so the variables it writes are arithmetic on
@@ -124,6 +197,10 @@ await page.mouse.click(tb.x + tb.width / 2, tb.y + tb.height / 2);
 await page.waitForTimeout(200);
 const caret = await page.evaluate(() => window.getSelection().anchorOffset);
 console.log('caret:  ', caret, caret > 0 ? '' : '  <-- click landed at the start');
+
+// Back to whatever the branch had, which also takes our block back out of the
+// PR description on the way past.
+console.log('restored:', (await queue(had)).length, 'items (was', had.length + ')');
 
 console.log('engine: ', engine === firefox ? 'firefox' : 'chromium');
 console.log('title: ', await page.title());
