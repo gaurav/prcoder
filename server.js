@@ -118,10 +118,8 @@ const requirePr = () => {
 async function refreshPr(detached) {
   // gh pr view fails on a detached HEAD in a way loadPr does not recognise, so
   // it would throw rather than report "no PR" — and 500 the poll every minute.
-  detached ??= (await snapshot(repo)).detached;
-  if (!target && detached) { pr = null; return null; }
-  pr = await loadPr(repo, target);
-  return pr && { ...pr, groups: withUrls(pr) };
+  detached ??= !(await currentBranch(repo));
+  pr = !target && detached ? null : await loadPr(repo, target);
 }
 
 /** Files bucketed for the pane, each linking into GitHub's diff viewer. */
@@ -186,11 +184,16 @@ async function writeQueue(items, branch) {
   for (const line of queueChanges(forBranch(store, branch), items)) term.verbose(line);
   await writeStore(repo, replaceBranch(store, branch, items), { stale: staleBytes });
 
-  if (mirrors(branch)) {
-    // Re-read rather than trusting the cached copy: someone may have edited the
-    // prose around our block on github.com since the last poll, and
-    // renderPrBlock only owns what is between the markers.
-    const current = await prBody(repo, pr.url).catch(() => pr.body ?? '');
+  // The block rendered against the body we last saw. If that is already what it
+  // says, this change touched nothing the PR shows -- a local-only item ticked,
+  // reordered or deleted, which is most of what the queue does -- so there is
+  // nothing to send, and no `gh pr view` spent finding that out.
+  const cached = pr?.body ?? '';
+  if (mirrors(branch) && renderPrBlock(items, cached) !== cached) {
+    // Re-read rather than trusting that copy: someone may have edited the prose
+    // around our block on github.com since the last poll, and renderPrBlock
+    // only owns what is between the markers.
+    const current = await prBody(repo, pr.url).catch(() => cached);
     const body = renderPrBlock(items, current);
     if (body !== current) {
       try {
@@ -302,7 +305,8 @@ async function status({ full = false } = {}) {
 
   // Taken once and threaded through: the remote head is not known yet, and
   // asking git the same four questions three times a minute is just noise.
-  const { branch, detached } = await snapshot(repo);
+  const branch = await currentBranch(repo);
+  const detached = !branch;
   // A pinned target keeps working on a detached HEAD; branch-following cannot.
   const heads = detached && !target ? null : await prHeads(repo, target);
 
@@ -322,7 +326,6 @@ async function status({ full = false } = {}) {
     ...snap,
     ...info,
     scope,
-    onDefaultBranch: snap.branch === info.defaultBranch,
     // A PR we have not checked out can never be in sync with this working
     // tree, so its verdict is meaningless. With no PR at all the branch still
     // has one, and "not pushed yet" is what the create button needs to know.
@@ -344,8 +347,6 @@ const repaint = () => term.status(last
   : []);
 
 const routes = {
-  'GET /api/pr': () => refreshPr(),
-
   'GET /api/status': () => status(),
 
   /**
@@ -372,8 +373,8 @@ const routes = {
 
   'POST /api/pr/create': async () => {
     info ??= await repoInfo(repo);
-    const { branch, detached } = await snapshot(repo);
-    if (detached) throw new Error('detached HEAD — check out a branch first');
+    const branch = await currentBranch(repo);
+    if (!branch) throw new Error('detached HEAD — check out a branch first');
     if (branch === info.defaultBranch) throw new Error(`on ${branch} — make a branch first`);
 
     // GitHub's compare page only knows about branches it has seen. Ask origin
@@ -432,10 +433,9 @@ const routes = {
 
   'POST /api/queue/issue': async ({ items, index }) => {
     info ??= await repoInfo(repo);
-    const { number } = await createIssue(repo, info.nameWithOwner, items[index].text);
+    const { url, number } = await createIssue(repo, info.nameWithOwner, items[index].text);
     items[index].issue = number;
-    term.verbose(`filed ${quote(items[index].text)} as ` +
-      `https://github.com/${info.nameWithOwner}/issues/${number}`);
+    term.verbose(`filed ${quote(items[index].text)} as ${url}`);
     return writeQueue(items);
   },
 };

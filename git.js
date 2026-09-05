@@ -114,7 +114,7 @@ export async function snapshot(cwd, remoteHead = null) {
     if (sync === 'ahead') ahead = Number(await text(['rev-list', '--count', `${remoteHead}..HEAD`], cwd));
   }
 
-  return { branch, head, detached: !branch, dirty: dirty.length > 0, dirtyFiles: dirty, sync, ahead };
+  return { branch, head, detached: !branch, dirtyFiles: dirty, sync, ahead };
 }
 
 /**
