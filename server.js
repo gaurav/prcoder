@@ -483,7 +483,10 @@ async function serveFile(res, file) {
   }
 }
 
-const server = http.createServer(async (req, res) => {
+// Exported so test/api.test.js can listen on a free port in-process. Everything
+// that starts a listener is under `import.meta.main` below, so importing this
+// module still starts nothing.
+export const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost');
 
   if (url.pathname.startsWith('/api/')) return handleApi(req, res, `${req.method} ${url.pathname}`);

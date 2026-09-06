@@ -235,4 +235,4 @@ finding out whether a PR-shaped workspace beats a chat-shaped one; it's meant to
 be cheap to rewrite.
 
 `npm test` covers the parts worth pinning down: the queue store, file grouping, GitHub's diff
-anchors, and every queue ↔ PR-description transition.
+anchors, every queue ↔ PR-description transition, and the routes that answer without `gh`.
