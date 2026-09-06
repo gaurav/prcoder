@@ -1,0 +1,22 @@
+name: test
+
+# Pushes to main and pull requests: a PR branch would otherwise run twice.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 26
+          cache: npm
+      # ponytail: --omit=dev skips playwright, whose install downloads browsers.
+      # Nothing under test/ imports it; tools/shot.mjs is its only user, and that
+      # is a driver you run by hand. Drop the flag when a test needs a browser.
+      - run: npm ci --omit=dev
+      - run: npm test
