@@ -23,6 +23,7 @@
 // which is gitignored. Undo what you write, or stay read-only as this does.
 
 import { spawn } from 'node:child_process';
+import { createServer } from 'node:net';
 import fs from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
@@ -32,6 +33,20 @@ import { chromium, firefox } from 'playwright';
 const repo = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const out = path.resolve(process.argv[2] ?? path.join(repo, 'shots'));
 const port = Number(process.env.PRCODER_PORT) || 7434;
+
+// server.js falls back to a free port when the one it is given is taken, and
+// says so only on a stdout this spawns with `ignore` -- so a driver whose port
+// is already held would sail past it and drive whatever *is* on that port. That
+// was not hypothetical: a leaked server from an earlier run held this one, and
+// the next run screenshotted yesterday's state. Fail here instead, where the
+// message can say which port and why.
+const free = (p) => new Promise((res, rej) => {
+  const probe = createServer();
+  probe.once('error', () => rej(new Error(`port ${p} is taken -- something else would be driven instead of this run's server. Stop it, or set PRCODER_PORT.`)));
+  probe.once('listening', () => probe.close(res));
+  probe.listen(p, '127.0.0.1');
+});
+await free(port);
 
 await fs.mkdir(out, { recursive: true });
 const server = spawn('node', ['server.js'], {
@@ -134,6 +149,21 @@ console.log('sticky: ', JSON.stringify(await toastText()), '  (want it still up)
 await page.locator('#toast').click();
 console.log('clicked:', JSON.stringify(await toastText()), '  (want null)');
 
+// The caret check needs a row on the Local tab to click into, and this repo's
+// queue is legitimately empty the moment the last item has been finished or
+// filed -- which it was, on 2026-09-06, and the driver then failed on a missing
+// locator rather than on the bug it exists to catch. So seed one and put the
+// queue back exactly as it was. A local-only item leaves the rendered block
+// unchanged, and writeQueue calls setBody only when the block differs, so this
+// writes `.prcoder/` and never GitHub.
+const queue = await page.evaluate(() => fetch('/api/queue').then((r) => r.json()));
+const putQueue = (items) => page.evaluate((i) => fetch('/api/queue', {
+  method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(i),
+}).then((r) => r.json()), items);
+await putQueue([...queue, { text: 'driver scratch item, put back at the end of the run' }]);
+await page.reload();
+await page.waitForSelector('.item .text');
+
 // The bug above, pinned: a click in the middle of an item's text has to land
 // in the middle of it. Silent in Chromium either way, so this only earns its
 // keep under PRCODER_BROWSER=firefox.
@@ -143,6 +173,8 @@ await page.mouse.click(tb.x + tb.width / 2, tb.y + tb.height / 2);
 await page.waitForTimeout(200);
 const caret = await page.evaluate(() => window.getSelection().anchorOffset);
 console.log('caret:  ', caret, caret > 0 ? '' : '  <-- click landed at the start');
+await putQueue(queue);
+console.log('queue:  ', (await page.evaluate(() => fetch('/api/queue').then((r) => r.json()))).length, 'items  (want', queue.length + ')');
 
 console.log('title: ', await page.title());
 console.log('panes: ', await page.evaluate(() => getComputedStyle(document.querySelector('main')).gridTemplateColumns));

@@ -19,6 +19,7 @@ import { execSync } from 'node:child_process';
 import { setTimeout as wait } from 'node:timers/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createServer } from 'node:net';
 import { spawn } from 'node-pty';
 import { WebSocket } from 'ws';
 
@@ -28,6 +29,20 @@ for (const sig of ['SIGTERM', 'SIGHUP', 'SIGINT']) process.on(sig, () => process
 
 const repo = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const port = Number(process.env.PRCODER_PORT) || 7455;
+
+// server.js falls back to a free port when the one it is given is taken --
+// which is the whole point of `second` below. `first` finding it taken is a
+// different thing entirely: it would drive whatever already holds the port, and
+// then report that stranger's status block as its own. A leaked server from an
+// earlier run did exactly this to the browser driver. Fail here instead, where
+// the message can say which port and why.
+const free = (p) => new Promise((res, rej) => {
+  const probe = createServer();
+  probe.once('error', () => rej(new Error(`port ${p} is taken -- something else would be driven instead of this run's server. Stop it, or set PRCODER_PORT.`)));
+  probe.once('listening', () => probe.close(res));
+  probe.listen(p, '127.0.0.1');
+});
+await free(port);   // before `first` only: `second` is meant to find it taken
 
 function start(label) {
   const p = spawn('node', ['server.js'], {

@@ -43,8 +43,11 @@ node --test                # bare, never `node --test test/` (Node 26 breaks)
 node --check public/*.js   # the client files the tests do not import
 ```
 
-Then look at it. Both drivers boot their own server and kill it after, and they
-are where the env stubs are actually written down — copy from
+Then look at it. Both drivers boot their own server and kill it after — and
+refuse to start at all if their port (7434, 7455) is already held, because
+`server.js` quietly falls back to a free one and the driver would otherwise
+drive whatever is on that port rather than its own server. They are where the
+env stubs are actually written down — copy from
 the `spawn` block near the top of `tools/browser.mjs`, not from here (line
 numbers go stale; the block does not).
 
