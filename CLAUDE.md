@@ -71,6 +71,22 @@ being pushed. Say "prcoder's own HTML-comment markers" instead, and if you must
 show the literal string, check that the body still contains exactly one of each
 marker before writing it.
 
+A running prcoder rewrites that block from its store on every poll of a visible
+tab, so a `gh pr edit` against this repo's own PR can be silently reverted within
+a minute -- it happened on 2026-09-06, mid-edit, and the two versions disagreed
+about which items were ticked. Check the repo's port (`portFor`, 2602 here)
+before hand-editing the block, and re-read the body afterwards rather than
+assuming the write stuck.
+
+Inside the block, `done` is the only field the description owns: a `- [ ]` to
+`- [x]` is exactly what the pane writes, so it is safe. Nothing else is.
+`syncFromPrBlock` matches a line to an item by issue number when the line has
+one and by exact text otherwise, then tombstones every `inPr` item whose line
+has gone -- so editing an item's text or dropping a line buries the item. To
+change anything else, edit `.prcoder/queue.json` and regenerate the block with
+`renderPrBlock`, then check the round trip: `syncFromPrBlock(items, newBody)`
+should give back the items you started with.
+
 ## The Claude pane is not prcoder's to draw on
 
 `term.write()` in `public/app.js` puts bytes into xterm's buffer without them
