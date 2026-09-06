@@ -45,15 +45,15 @@ node --check public/*.js   # the client files the tests do not import
 
 Then look at it. Both drivers boot their own server and kill it after, and they
 are where the env stubs are actually written down — copy from
-`tools/shot.mjs:35-39`, not from here.
+`tools/browser.mjs:36-40`, not from here.
 
 ```bash
-node tools/shot.mjs /tmp/shots                 # the browser: writes PNGs
-PRCODER_BROWSER=firefox node tools/shot.mjs    # the run that counts for selection,
-                                               # focus and drag. Separate download:
-                                               # npx playwright install firefox
-node tools/cli.mjs                             # the other half, in a real PTY: the
-                                               # status block, the keys, the quit prompt
+node tools/browser.mjs /tmp/shots                 # the browser: writes PNGs
+PRCODER_BROWSER=firefox node tools/browser.mjs    # the run that counts for selection,
+                                                  # focus and drag. Separate download:
+                                                  # npx playwright install firefox
+node tools/cli.mjs                                # the other half, in a real PTY: the
+                                                  # status block, the keys, the quit prompt
 ```
 
 Read the PNGs back — a screenshot is the only thing that answers "does this look

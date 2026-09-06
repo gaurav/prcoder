@@ -17,7 +17,7 @@ non-executable.
 **Run tests with bare `node --test`, not `node --test test/`.** On Node 26 a
 directory argument is resolved as a module and dies with `Cannot find module`.
 Bare discovery treats *everything* under `test/` as a test file, which is why
-the drivers live in `tools/` — `shot.mjs` for the browser, `cli.mjs` for the
+the drivers live in `tools/` — `browser.mjs` for the UI, `cli.mjs` for the
 terminal. Either one under `test/` would run on every `npm test`, spawn a
 server and drive a browser or a PTY.
 
@@ -54,7 +54,7 @@ mode would never be restored.
 
 None of it exists without a tty. `process.stdout.isTTY` gates the block and
 `process.stdin.isTTY` gates the keys, so a piped run behaves as it always did
--- which is what `tools/shot.mjs` (`stdio: 'ignore'`) is standing proof of.
+-- which is what `tools/browser.mjs` (`stdio: 'ignore'`) is standing proof of.
 `tools/cli.mjs` drives the other half, in a real PTY.
 
 ## Never write the queue's markers in prose
@@ -96,14 +96,14 @@ of timing out.
 
 ## One engine is not "a real browser"
 
-`tools/shot.mjs` ran Chromium only, and a Firefox-only bug survived every
+`tools/browser.mjs` ran Chromium only, and a Firefox-only bug survived every
 screenshot it ever took: in Firefox a mousedown inside a `draggable` element
 goes to the drag machinery rather than to the caret, so clicking into a
 `contentEditable` child lands at offset 0 instead of where you clicked. Chromium
 places the caret correctly with the same markup, so there was nothing to see.
 
 prcoder is used in Firefox. For anything touching selection, focus or drag,
-`PRCODER_BROWSER=firefox node tools/shot.mjs` is the run that counts --
+`PRCODER_BROWSER=firefox node tools/browser.mjs` is the run that counts --
 `npx playwright install firefox` first, it is a separate download.
 
 Three fixes for that bug do not work, so they are not worth retrying:

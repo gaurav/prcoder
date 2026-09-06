@@ -1,8 +1,9 @@
-// Screenshot the running UI. A client-side change is otherwise verified by
-// reading the CSS, which is how three of them shipped unseen.
+// Drive the running UI in a real browser, and screenshot it. A client-side
+// change is otherwise verified by reading the CSS, which is how three of them
+// shipped unseen.
 //
-//   node tools/shot.mjs [outdir]        # default: ./shots (gitignored)
-//   PRCODER_BROWSER=firefox node tools/shot.mjs
+//   node tools/browser.mjs [outdir]        # default: ./shots (gitignored)
+//   PRCODER_BROWSER=firefox node tools/browser.mjs
 //
 // Firefox is a separate download: `npx playwright install firefox` once.
 //

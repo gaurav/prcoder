@@ -1,4 +1,4 @@
-// Drive the running CLI. tools/shot.mjs is this for the browser; the terminal
+// Drive the running CLI. tools/browser.mjs is the other half; the terminal
 // needs its own because none of it exists without a tty -- the block, the keys
 // and the quit prompt are all switched off the moment stdout is a pipe, which
 // is exactly what a plain `node server.js` from a script gets.
@@ -6,7 +6,7 @@
 //   node tools/cli.mjs
 //
 // Scratch driver, not a test: add keystrokes for whatever you are looking at.
-// The rules from shot.mjs hold. CLAUDE_BIN is stubbed, because every websocket
+// The rules from browser.mjs hold. CLAUDE_BIN is stubbed, because every websocket
 // spawns it in a PTY and an unstubbed run leaves a real Claude session behind;
 // and this stays read-only, because the queue and the description it would
 // write to are this repo's live ones.
