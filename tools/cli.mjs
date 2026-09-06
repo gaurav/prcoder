@@ -22,6 +22,10 @@ import { fileURLToPath } from 'node:url';
 import { spawn } from 'node-pty';
 import { WebSocket } from 'ws';
 
+// The pty kills below are what let this exit; these are the backstop for a run
+// that throws or is killed first. Same three signals as term.js.
+for (const sig of ['SIGTERM', 'SIGHUP', 'SIGINT']) process.on(sig, () => process.exit(130));
+
 const repo = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const port = Number(process.env.PRCODER_PORT) || 7455;
 
@@ -33,6 +37,10 @@ function start(label) {
     cwd: repo,
     env: { ...process.env, PRCODER_PORT: String(port), PRCODER_NO_OPEN: '1', CLAUDE_BIN: '/bin/cat' },
   });
+  // See the note in browser.mjs: a throw past this point would otherwise leave
+  // the server running. Killing an already-killed pty throws, and the deliberate
+  // kills below are the normal path, so this is a best-effort backstop.
+  process.on('exit', () => { try { p.kill(); } catch { /* already gone */ } });
   p.buf = '';
   p.onData((d) => { p.buf += d; });
   p.show = (what) => {

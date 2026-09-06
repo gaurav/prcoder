@@ -184,11 +184,12 @@ with prcoder at all.
 The [`gh` CLI](https://cli.github.com/), authenticated. All GitHub access goes
 through it, so there is no token to configure.
 
-`npm install` brings Playwright and Chromium for `tools/browser.mjs`. Firefox is a
-separate download -- `npx playwright install firefox` -- and is worth having:
-`PRCODER_BROWSER=firefox` is the run that catches anything to do with selection,
-focus or dragging, which Chromium is happy to render correctly and Firefox is
-not.
+`npm install` brings Playwright for `tools/browser.mjs`; the engines themselves
+are a separate download -- `npx playwright install firefox chromium`. The driver
+prefers Firefox and falls back to Chromium, because Firefox is what catches
+anything to do with selection, focus or dragging, which Chromium is happy to
+render correctly and Firefox is not. `PRCODER_BROWSER=chromium|firefox` forces
+one.
 
 ## Finding it again
 

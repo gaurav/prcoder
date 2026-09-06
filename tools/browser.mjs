@@ -24,6 +24,7 @@
 
 import { spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium, firefox } from 'playwright';
@@ -38,8 +39,25 @@ const server = spawn('node', ['server.js'], {
   env: { ...process.env, PRCODER_PORT: String(port), PRCODER_NO_OPEN: '1', CLAUDE_BIN: '/bin/cat' },
   stdio: 'ignore',
 });
+// The kill at the end of the file is load-bearing twice over: a live child
+// handle keeps the event loop open, so without it this never exits on its own.
+// It only runs if the file reaches the end, though. A throw in between -- a
+// missing browser download is the easy one -- left the server up polling gh
+// every 60s, and a kill of a run that hung left another; eight accumulated in
+// one afternoon. `exit` covers the throw, and the signals are wired to exit
+// because their default action would skip the handler. Same three as term.js.
+process.on('exit', () => server.kill());
+for (const sig of ['SIGTERM', 'SIGHUP', 'SIGINT']) process.on(sig, () => process.exit(130));
 
-const engine = process.env.PRCODER_BROWSER === 'firefox' ? firefox : chromium;
+// Firefox by default, because that is what prcoder is used in and it is where
+// the selection and drag bugs live. Playwright drives its own patched build,
+// never the Firefox in /Applications, so this asks whether
+// `npx playwright install firefox` has been run -- not whether the machine has
+// Firefox. Chromium is the fallback, and PRCODER_BROWSER=chromium|firefox is
+// the override; which one ran matters for reading the output, so it is logged.
+const engine = { chromium, firefox }[process.env.PRCODER_BROWSER]
+  ?? (existsSync(firefox.executablePath()) ? firefox : chromium);
+console.log('engine: ', engine.name());
 const browser = await engine.launch();
 // 1440 is where the PR pane's 26% and its 375px floor cross, so this is the
 // width at which the column is doing what it was sized to do.
@@ -126,7 +144,6 @@ await page.waitForTimeout(200);
 const caret = await page.evaluate(() => window.getSelection().anchorOffset);
 console.log('caret:  ', caret, caret > 0 ? '' : '  <-- click landed at the start');
 
-console.log('engine: ', engine === firefox ? 'firefox' : 'chromium');
 console.log('title: ', await page.title());
 console.log('panes: ', await page.evaluate(() => getComputedStyle(document.querySelector('main')).gridTemplateColumns));
 console.log('shots: ', out);

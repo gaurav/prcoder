@@ -102,9 +102,14 @@ goes to the drag machinery rather than to the caret, so clicking into a
 `contentEditable` child lands at offset 0 instead of where you clicked. Chromium
 places the caret correctly with the same markup, so there was nothing to see.
 
-prcoder is used in Firefox. For anything touching selection, focus or drag,
-`PRCODER_BROWSER=firefox node tools/browser.mjs` is the run that counts --
-`npx playwright install firefox` first, it is a separate download.
+prcoder is used in Firefox, so `tools/browser.mjs` now defaults to it and falls
+back to Chromium only when it is not installed; `PRCODER_BROWSER=chromium|firefox`
+forces one. That is Playwright's own patched Firefox, not the one in
+/Applications -- Playwright cannot drive a stock build, so the check is
+`existsSync(firefox.executablePath())` and the fix for a miss is
+`npx playwright install firefox`. Running both is worth the second minute: the
+caret offset the driver prints is 65 in Firefox and 66 in Chromium, and only one
+of them was ever wrong.
 
 Three fixes for that bug do not work, so they are not worth retrying:
 `draggable="false"` on the child, `-moz-user-select` on the child, and leaving
