@@ -21,6 +21,12 @@ the drivers live in `tools/` — `shot.mjs` for the browser, `cli.mjs` for the
 terminal. Either one under `test/` would run on every `npm test`, spawn a
 server and drive a browser or a PTY.
 
+`node:test` is a preference, not a constraint. If it ever gets in the way —
+maintainability, a matcher you keep hand-rolling, watch mode, anything — the
+owner is fine with swapping in a real test framework (stated 2026-09-05). The
+rule above is about the CLI's directory argument, not about staying on the
+built-in runner.
+
 ## Subprocess errors lie by omission
 
 Two failures this repo depends on are invisible rather than loud, so check the
