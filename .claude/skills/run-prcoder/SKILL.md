@@ -6,79 +6,72 @@ description: Launch the prcoder server and verify it (or a change to it) against
 # Running prcoder
 
 prcoder serves the repo it is started in: it reads the current branch's PR via
-`gh` and spawns a real `claude` PTY per websocket connection. Verified working
-2026-08-26 on this machine.
+`gh` and spawns a real `claude` PTY per websocket connection. Run it from a
+branch with an open PR — most routes answer `no pull request for this branch`
+otherwise. This repo's own PRs are fine to test against (CLAUDE.md: never
+someone else's repo).
 
-## Launch (background, for verification)
+## Launch
+
+For handing the user a URL, or poking at it by hand:
 
 ```bash
 PRCODER_NO_OPEN=1 PRCODER_PORT=7433 node server.js > /tmp/prcoder.log 2>&1 &
 sleep 2
+curl -s localhost:7433/api/status | head -c 200   # pr, files, queue
+lsof -ti :7433 | xargs kill                       # `kill %1` does not survive a Bash call
 ```
 
-- `PRCODER_NO_OPEN=1` stops it opening the user's browser.
-- `PRCODER_PORT` pins the port; without it the server takes any free port and
-  prints the URL on stdout (read the log to find it).
-- Run it from the repo root of a branch that has an open PR — most routes
-  answer `no pull request for this branch` otherwise. This repo's own PRs are
-  fine to test against (CLAUDE.md: never someone else's repo).
+`/api/status` is the check worth making by hand, because it is the one that
+needs a live `gh` and a real PR. Everything that does not — the 404 and 500
+shapes, static serving, `/api/whoami`, the vendored xterm paths — is
+`test/api.test.js`, so `node --test` already covers it.
 
-## Smoke checks
+`PRCODER_NO_OPEN=1` stops it opening the user's browser; without `PRCODER_PORT`
+it takes the port derived from the repo's path, or any free one, and prints the
+URL on stdout. For a look with the user's own eyes, leave it running and hand
+them `http://localhost:7433`, or `open` it.
 
-```bash
-curl -s localhost:7433/api/status | head -c 200        # pr, files, queue
-curl -s -X POST localhost:7433/api/diff -H 'content-type: application/json' \
-  -d '{"path":"files.js"}' | head -c 200               # a real patch, or null
-curl -s localhost:7433/ | grep -c '<main>'             # static serving
-```
-
-API shape: route table in `server.js` (`routes`), keyed `"METHOD /path"`, JSON
+API shape: the `routes` table in `server.js`, keyed `"METHOD /path"`, JSON
 in/out, errors as 500 `{error}`. All handlers are serialised — one slow call
 delays the rest, that's expected.
 
-## Client-side changes
+## Verifying a change
 
 ```bash
-node --check public/app.js public/pr.js public/diff.js public/queue.js
-node --test          # bare, never `node --test test/` (Node 26 breaks)
-curl -s localhost:7433/app.js | head -3   # the file actually serves
+node --test                # bare, never `node --test test/` (Node 26 breaks)
+node --check public/*.js   # the client files the tests do not import
 ```
 
-Then look at it. `playwright` is a dev dependency and Chromium is installed, so
-a client-side change can be seen rather than reasoned about:
+Then look at it. Both drivers boot their own server and kill it after, and they
+are where the env stubs are actually written down — copy from
+`tools/shot.mjs:35-39`, not from here.
 
 ```bash
-node tools/shot.mjs /tmp/shots   # boots its own server, writes PNGs, kills it
+node tools/shot.mjs /tmp/shots                 # the browser: writes PNGs
+PRCODER_BROWSER=firefox node tools/shot.mjs    # the run that counts for selection,
+                                               # focus and drag. Separate download:
+                                               # npx playwright install firefox
+node tools/cli.mjs                             # the other half, in a real PTY: the
+                                               # status block, the keys, the quit prompt
 ```
 
-Read the PNGs back — a screenshot is the only thing that answers "does this
-look right", and three changes shipped on CSS-reading alone before this existed.
-`tools/shot.mjs` is a scratch driver, not a test: edit it for whatever you are
-looking at, and keep the edits if they are worth having.
+Read the PNGs back — a screenshot is the only thing that answers "does this look
+right", and three changes shipped on CSS-reading alone before this existed. Both
+are scratch drivers, not tests: they assert nothing and print `want …` lines for
+a human. Edit them for whatever you are looking at, and keep the edits if they
+are worth having.
 
-Two things it has to do, and any browser script after it:
+Two rules for them, and for any script after them:
 
 - **`CLAUDE_BIN=/bin/cat`.** Every page load opens a websocket and spawns
-  `CLAUDE_BIN` in a PTY. Without the stub, each run starts a real Claude
-  session and leaves it running.
-- **No writes you do not undo.** The queue is safe now -- it writes only
-  `.prcoder/`, which is gitignored and needs no cleanup. The PR is not: ticking
-  a description checkbox edits the description on GitHub, and so does mirroring
-  a queue item with ◆. Snapshot the body with `gh pr view <n> --json body -q
+  `CLAUDE_BIN` in a PTY — one per tab, killed when the tab closes. Without the
+  stub, each run starts a real Claude session and leaves it running.
+- **No writes you do not undo.** The queue is safe: it writes only `.prcoder/`,
+  which is gitignored and needs no cleanup. The PR is not — ticking a
+  description checkbox edits the description on GitHub, and so does mirroring a
+  queue item with ◆. Snapshot the body with `gh pr view <n> --json body -q
   .body` before, and diff after.
 
-For a look with the user's own eyes, leave the server running and hand them the
-URL (`http://localhost:7433`), or run `open http://localhost:7433`.
-
-## Teardown and traps
-
-```bash
-lsof -ti :7433 | xargs kill
-```
-
-(`kill %1` is unreliable across Bash tool calls — jobs don't persist.)
-
-- If every PTY spawn dies with bare `posix_spawnp failed`: the `postinstall`
-  chmod in package.json was skipped. `npm install` again; see CLAUDE.md.
-- Each browser tab opens its own websocket = its own `claude` process; closing
-  the tab kills it.
+If every PTY spawn dies with a bare `posix_spawnp failed`, the `postinstall`
+chmod was skipped: `npm install` again, and see CLAUDE.md for why.

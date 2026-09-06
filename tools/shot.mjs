@@ -17,9 +17,9 @@
 // CLAUDE_BIN is stubbed because every page load opens a websocket and spawns
 // it in a PTY -- unstubbed, each run starts a real Claude session and leaves it
 // running. And the UI's controls hit the live PR: ticking a description
-// checkbox edits the description on GitHub, adding a queue item rewrites
-// FUTURE.md. Undo what you write (`git checkout -- FUTURE.md`), or stay
-// read-only as this does.
+// checkbox edits the description on GitHub, and so does mirroring a queue item
+// with the diamond. The queue itself is safe -- it writes only `.prcoder/`,
+// which is gitignored. Undo what you write, or stay read-only as this does.
 
 import { spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
