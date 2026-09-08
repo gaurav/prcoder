@@ -17,6 +17,7 @@ import path from 'node:path';
 
 const DIR = '.prcoder';
 const FILE = 'queue.json';
+const PORT_FILE = 'port.json';
 
 // Bump only when an existing field changes meaning. Adding a field does not
 // need one: reads fill in what is missing, so an older prcoder skips a field it
@@ -25,6 +26,7 @@ export const VERSION = 1;
 
 const dir = (repo) => path.join(repo, DIR);
 const file = (repo) => path.join(dir(repo), FILE);
+const portFile = (repo) => path.join(dir(repo), PORT_FILE);
 
 const EMPTY = { version: VERSION, items: [] };
 
@@ -107,6 +109,48 @@ export async function writeStore(repo, store, { stale = false } = {}) {
 async function writeIgnore(repo) {
   await fs.writeFile(path.join(dir(repo), '.gitignore'), '*\n', { flag: 'wx' })
     .catch((e) => { if (e.code !== 'EEXIST') throw e; });
+}
+
+/**
+ * `.prcoder/port.json`: the port this working copy listens on.
+ *
+ * The seed is a hash of the path (`portFor` in server.js), but the answer lives
+ * here, so the URL is a property of the directory rather than a sum anyone
+ * wanting it has to recompute. Renaming the directory keeps the bookmark;
+ * editing this file pins a port for good, where PRCODER_PORT pins one run.
+ *
+ * The path is deliberately not recorded alongside it. Copying a working copy
+ * wholesale carries this file, and both copies then want one port -- but such a
+ * copy carries queue.json too, which is the larger surprise, and the collision
+ * announces itself on the block. Recording the path would trade that for losing
+ * the port on the rename this file exists to survive.
+ */
+const PORT_MIN = 1024;
+const PORT_MAX = 65535;
+
+/**
+ * The recorded port, or null. Anything else on disk -- missing, truncated, a
+ * hand-edit that is not a port -- reads as null and the caller derives one, the
+ * same way normalise() reads damaged bytes as an empty queue rather than
+ * throwing at startup.
+ */
+export async function readPort(repo) {
+  const raw = await fs.readFile(portFile(repo), 'utf8').catch(() => '');
+  let port;
+  try { port = JSON.parse(raw)?.port; } catch { return null; }
+  if (!Number.isInteger(port) || port < PORT_MIN || port > PORT_MAX) return null;
+  return port;
+}
+
+/** Written like the queue: temp file, then a rename, which is atomic in one directory. */
+export async function writePort(repo, port) {
+  await fs.mkdir(dir(repo), { recursive: true });
+  await writeIgnore(repo);
+
+  const target = portFile(repo);
+  const tmp = `${target}.${process.pid}.tmp`;
+  await fs.writeFile(tmp, `${JSON.stringify({ version: VERSION, port }, null, 2)}\n`);
+  await fs.rename(tmp, target);
 }
 
 /** '@{' is invalid in a ref name, so the detached bucket cannot collide. */
