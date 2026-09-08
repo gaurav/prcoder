@@ -734,6 +734,9 @@ async function listenOnRepoPort() {
  * `mirrorFailed` is the one that matters. The others are recoverable by
  * starting prcoder again; that one means GitHub is holding a description the
  * queue has already moved past, and quitting leaves it that way.
+ *
+ * An empty list is not a question worth asking, so it is not asked: no tab open,
+ * nothing unmirrored, nothing in the working tree that quitting could lose.
  */
 function askToQuit() {
   const risk = [
@@ -744,15 +747,17 @@ function askToQuit() {
     last?.ahead && `${last.ahead} unpushed commit${last.ahead > 1 ? 's' : ''}`,
     last?.dirtyFiles?.length && `${last.dirtyFiles.length} uncommitted file${last.dirtyFiles.length > 1 ? 's' : ''}`,
   ].filter(Boolean);
-  term.confirm(`quit? ${risk.length ? risk.join('; ') : 'nothing in flight'}  [y/N] `, () => {
-    // Killed here rather than left to the close handlers: process.exit does not
-    // wait for them, and an orphaned `claude` outlives the terminal it was
-    // started from.
+  // Killed here rather than left to the close handlers: process.exit does not
+  // wait for them, and an orphaned `claude` outlives the terminal it was
+  // started from.
+  const quit = () => {
     for (const pty of ptys) pty.kill();
     wss.close();
     server.close();
     process.exit(0);
-  });
+  };
+  if (!risk.length) return quit();
+  term.confirm(`quit? ${risk.join('; ')}  [y/N] `, quit);
 }
 
 if (import.meta.main) {
