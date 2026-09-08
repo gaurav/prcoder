@@ -93,6 +93,14 @@ console.log('  polled:   ', first.line('poll:') ?? 'NO poll line');
 const second = start('second');
 await wait(8000);
 console.log('port taken: ', second.line('is taken'));
+
+// ...and, having no tab of its own, the case where quitting costs nothing and
+// is not worth a question. Only true with the repo clean and pushed, which is
+// what `first` says in its own block above.
+second.buf = '';
+second.write('\x03');
+await wait(600);
+console.log('no prompt:  ', second.line('quit?') ?? 'exited without asking');
 second.kill();
 
 // Quitting has to say what it costs, and take the PTYs with it.
