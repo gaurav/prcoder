@@ -74,7 +74,7 @@ marker before writing it.
 A running prcoder rewrites that block from its store on every poll of a visible
 tab, so a `gh pr edit` against this repo's own PR can be silently reverted within
 a minute -- it happened on 2026-09-06, mid-edit, and the two versions disagreed
-about which items were ticked. Check the repo's port (`portFor`, 2602 here)
+about which items were ticked. Check the repo's port (`.prcoder/port.json`)
 before hand-editing the block, and re-read the body afterwards rather than
 assuming the write stuck.
 

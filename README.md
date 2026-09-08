@@ -46,13 +46,23 @@ Claude gains a flag prcoder also wants.
 prcoder's own settings are environment variables — `PRCODER_PORT`, `PRCODER_NO_OPEN`,
 `PRCODER_VERBOSE`, `CLAUDE_BIN` — which cannot collide with a flag at all.
 
-The port is derived from the repo's path, so a repo gets the same URL every
-run -- one you can bookmark, add to the Dock or point an IDE pane at (see
-*Finding it again*). Different repos, and different worktrees, get different
-ports, so several sessions run at once. A busy port falls back to a free one
-with a note on stderr. Set `PRCODER_PORT` to pin one instead, `PRCODER_NO_OPEN=1`
-to be left with just the URL on stdout, or `PRCODER_OPEN` to a command of your
-own that gets the URL appended.
+The first run in a repo picks a port -- seeded from a hash of the path, and
+stepped along if that one is busy -- and records it in `.prcoder/port.json`.
+Every run after that reads the file, so a repo gets the same URL forever: one
+you can bookmark, add to the Dock or point an IDE pane at (see *Finding it
+again*), and one that survives renaming the directory. Different repos, and
+different worktrees, get different ports, so several sessions run at once. A
+busy port falls back to a free one with a note on stderr.
+
+Ports come from 10240-14335 because browsers refuse a list of well-known ones
+outright -- Firefox answers *"This address is restricted"*, with nothing on
+screen to connect it to prcoder. The list is the
+[WHATWG fetch standard's](https://fetch.spec.whatwg.org/#port-blocking) and
+10080 is its highest entry, so nothing derived here can land on one. Edit
+`port.json` to pin a port permanently (avoid that list), or set `PRCODER_PORT`
+to pin one for a single run; `PRCODER_NO_OPEN=1` to be left with just the URL
+on stdout, or `PRCODER_OPEN` to a command of your own that gets the URL
+appended.
 
 Each tab names itself `owner/repo#N · pull request title` -- the branch and
 `(no PR)` when there isn't one -- and re-names itself as the branch moves, so a
@@ -100,7 +110,8 @@ and stays flipped.
 `.prcoder/queue.json`, in a directory that ignores itself -- it holds a
 `.gitignore` of one line, `*`, so nothing is added to your own and nothing
 shows up in `git status`. **prcoder does not write anything you own unless you
-ask it to.**
+ask it to.** The only other file there is `port.json`, which is one line and
+the port this working copy listens on.
 
 ```json
 {
@@ -145,7 +156,7 @@ prcoder  gaurav/prcoder   initial-implementation → main   2 unpushed · 8 unco
 PR #1    A browser workspace around a live Claude Code session
          https://github.com/gaurav/prcoder/pull/1
 queue    19 active · 1 done · 10 in the PR · 1 issue   queue mirrored
-serving  http://localhost:7455   1 tab   q quit · r refresh · v verbose · o open
+serving  http://localhost:17455   1 tab   q quit · r refresh · v verbose · o open
 ```
 
 All of it is what the browser's poll worked out anyway, so it costs no extra
@@ -210,9 +221,9 @@ export PRCODER_OPEN='/Applications/Firefox.app/Contents/MacOS/firefox -new-windo
 gives each prcoder its own window, listed by title in the Window menu and
 Mission Control.
 
-**A Dock icon per repo.** This works because the port is fixed: it is a hash
-of the repo's path, so a repo listens on the same port every run (`prcoder`
-prints it). In Safari, open that URL and choose *File → Add to Dock*. The app
+**A Dock icon per repo.** This works because the port is fixed: a repo records
+its port in `.prcoder/port.json` on the first run and listens on it every run
+after (`prcoder` prints it). In Safari, open that URL and choose *File → Add to Dock*. The app
 it makes keeps the page title as its window title, so it reads `owner/repo#N ·
 …` in Cmd-Tab. From then on start prcoder with `PRCODER_NO_OPEN=1` and click
 the icon. The one time the port moves is when a second prcoder is already

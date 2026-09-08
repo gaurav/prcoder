@@ -16,10 +16,10 @@ someone else's repo).
 For handing the user a URL, or poking at it by hand:
 
 ```bash
-PRCODER_NO_OPEN=1 PRCODER_PORT=7433 node server.js > /tmp/prcoder.log 2>&1 &
+PRCODER_NO_OPEN=1 PRCODER_PORT=17433 node server.js > /tmp/prcoder.log 2>&1 &
 sleep 2
-curl -s localhost:7433/api/status | head -c 200   # pr, files, queue
-lsof -ti :7433 | xargs kill                       # `kill %1` does not survive a Bash call
+curl -s localhost:17433/api/status | head -c 200   # pr, files, queue
+lsof -ti :17433 | xargs kill                       # `kill %1` does not survive a Bash call
 ```
 
 `/api/status` is the check worth making by hand, because it is the one that
@@ -28,9 +28,9 @@ shapes, static serving, `/api/whoami`, the vendored xterm paths — is
 `test/api.test.js`, so `node --test` already covers it.
 
 `PRCODER_NO_OPEN=1` stops it opening the user's browser; without `PRCODER_PORT`
-it takes the port derived from the repo's path, or any free one, and prints the
-URL on stdout. For a look with the user's own eyes, leave it running and hand
-them `http://localhost:7433`, or `open` it.
+it takes the port recorded in `.prcoder/port.json`, writing one on the first run,
+and prints the URL on stdout. For a look with the user's own eyes, leave it running and hand
+them `http://localhost:17433`, or `open` it.
 
 API shape: the `routes` table in `server.js`, keyed `"METHOD /path"`, JSON
 in/out, errors as 500 `{error}`. All handlers are serialised — one slow call
@@ -44,7 +44,7 @@ node --check public/*.js   # the client files the tests do not import
 ```
 
 Then look at it. Both drivers boot their own server and kill it after — and
-refuse to start at all if their port (7434, 7455) is already held, because
+refuse to start at all if their port (17434, 17455) is already held, because
 `server.js` quietly falls back to a free one and the driver would otherwise
 drive whatever is on that port rather than its own server. They are where the
 env stubs are actually written down — copy from

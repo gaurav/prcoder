@@ -41,9 +41,9 @@ const NO_PR = 'no pull request on this branch to push to';
 // arrow on the button says which one is live without being clicked.
 //
 // The app's only stored preference, and a best-effort one: reading storage
-// throws outright where it is disabled, and prcoder takes a random port unless
-// PRCODER_PORT is pinned, so the origin -- and the value with it -- usually
-// changes between sessions. Losing it costs a click.
+// throws outright where it is disabled, and the origin is a port -- so a repo
+// whose port moves, or one opened through PRCODER_PORT, is a different origin
+// and starts again from the default. Losing it costs a click.
 const ADD_TO_KEY = 'prcoder:add-to';
 let addTo = 'bottom';
 const readAddTo = () => {

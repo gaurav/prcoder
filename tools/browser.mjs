@@ -32,7 +32,7 @@ import { chromium, firefox } from 'playwright';
 
 const repo = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const out = path.resolve(process.argv[2] ?? path.join(repo, 'shots'));
-const port = Number(process.env.PRCODER_PORT) || 7434;
+const port = Number(process.env.PRCODER_PORT) || 17434;
 
 // server.js falls back to a free port when the one it is given is taken, and
 // says so only on a stdout this spawns with `ignore` -- so a driver whose port

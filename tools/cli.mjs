@@ -28,7 +28,7 @@ import { WebSocket } from 'ws';
 for (const sig of ['SIGTERM', 'SIGHUP', 'SIGINT']) process.on(sig, () => process.exit(130));
 
 const repo = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-const port = Number(process.env.PRCODER_PORT) || 7455;
+const port = Number(process.env.PRCODER_PORT) || 17455;
 
 // server.js falls back to a free port when the one it is given is taken --
 // which is the whole point of `second` below. `first` finding it taken is a
