@@ -14,7 +14,7 @@ import { loadPr, prHeads, prBody, listPrs, setViewed, setBody, createIssue, fetc
 import { snapshot, currentBranch, repoInfo, prScope, compareUrl, checkoutPr, pushBranch, remoteBranchHead } from './git.js';
 import { groupFiles, fileUrl } from './files.js';
 import { parseFuture, renderPrBlock, syncFromPrBlock, toggleTask } from './queue.js';
-import { readStore, writeStore, forBranch, replaceBranch, branchKey, staleBranch } from './store.js';
+import { readStore, writeStore, readPort, writePort, forBranch, replaceBranch, branchKey, staleBranch } from './store.js';
 import * as term from './term.js';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
@@ -83,6 +83,10 @@ let checkedAt = 0;
 // The URL, and whether it is the one this repo is supposed to have. Both are
 // only known once the server is listening.
 let urls = { local: '', moved: null };
+// The port this repo is meant to be on -- recorded, pinned or freshly chosen.
+// ready() reports against this, not against the seed: once a port is recorded
+// it *is* the usual URL, even where it is not the one the hash suggests.
+let wanted = 0;
 
 /**
  * Every gh/git call runs one at a time. `gh pr checkout` is a fetch, a checkout
@@ -605,7 +609,6 @@ async function whoHasPort(wanted) {
 }
 
 async function ready() {
-  const wanted = portFor(repo);
   const port = server.address().port;
   const url = `http://localhost:${port}`;
   urls = {
@@ -655,6 +658,72 @@ function openBrowser() {
     ? spawn(`${custom} ${url}`, { detached: true, stdio: 'ignore', shell: true })
     : spawn(opener, [url], { detached: true, stdio: 'ignore', shell: process.platform === 'win32' });
   child.on('error', (e) => console.error(`could not open a browser (${e.message}) — visit ${url}`)).unref();
+}
+
+/**
+ * Binds the first of `ports` that is free, and answers with it; 0 means the
+ * kernel picks, and always binds. Each attempt re-registers both handlers,
+ * because a callback passed to listen() survives the EADDRINUSE it was
+ * registered for -- one passed to the first attempt as well as the retry ran
+ * ready() twice, two banners and two port probes. Anything that is not a busy
+ * port is still thrown.
+ */
+function bind(ports) {
+  return new Promise((resolve, reject) => {
+    const attempt = (i) => {
+      const onError = (e) => {
+        server.off('listening', onListening);
+        if (e.code !== 'EADDRINUSE') return reject(e);
+        if (i + 1 >= ports.length) return reject(e);
+        attempt(i + 1);
+      };
+      const onListening = () => {
+        server.off('error', onError);
+        resolve(server.address().port);
+      };
+      server.once('error', onError);
+      server.once('listening', onListening);
+      server.listen(ports[i], '127.0.0.1');
+    };
+    attempt(0);
+  });
+}
+
+/**
+ * Bind the port this repo should be on, and answer with the one it *wanted* --
+ * which ready() compares against what it got.
+ *
+ * A port that has been recorded, or named in PRCODER_PORT, gets one attempt and
+ * then a kernel-chosen one, so a second prcoder in this directory moves aside
+ * with a note rather than silently opening a different URL from the bookmark.
+ *
+ * A first run has no such promise to keep, so it walks the range from the seed
+ * and records whatever binds. That is what makes a collision between two repos
+ * heal: without it the loser took a fresh random port every run forever.
+ */
+async function listenOnRepoPort() {
+  if (Number(process.env.PRCODER_PORT)) {
+    const pinned = Number(process.env.PRCODER_PORT);
+    await bind([pinned, 0]);
+    return pinned;                       // never recorded: a pin is for one run
+  }
+
+  const recorded = await readPort(repo);
+  if (recorded) {
+    await bind([recorded, 0]);
+    return recorded;
+  }
+
+  // The trailing 0 is for a machine with all 4096 busy, which is not one
+  // prcoder can pick a favourite on -- but is still no reason not to start.
+  // Nothing is recorded in that case, so the next run tries the range again.
+  const range = portCandidates(repo);
+  const port = await bind([...range, 0]);
+  if (!range.includes(port)) return port;
+  // A repo we cannot write to still runs; it just derives its port again next
+  // time, which is what every run did before this file existed.
+  await writePort(repo, port).catch((e) => console.error('port:', e.message));
+  return port;
 }
 
 /**
@@ -709,13 +778,8 @@ if (import.meta.main) {
   // while the rendered lines are unchanged.
   setInterval(repaint, 30_000).unref();
 
-  // `listening` rather than a listen() callback: a callback passed to the first
-  // listen() survives the EADDRINUSE, so passing one to the retry as well ran
-  // ready() twice — two banners, two port probes, two opening polls.
-  server.once('listening', ready);
-  server.once('error', (e) => {
-    if (e.code !== 'EADDRINUSE') throw e;
-    server.listen(0, '127.0.0.1');   // ready() says who has the port we wanted
-  });
-  server.listen(portFor(repo), '127.0.0.1');
+  // ready() needs the port we meant to be on, so it is settled before the
+  // socket is up rather than recomputed from the path afterwards.
+  wanted = await listenOnRepoPort();
+  await ready();
 }
