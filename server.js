@@ -20,14 +20,34 @@ import * as term from './term.js';
 const root = path.dirname(fileURLToPath(import.meta.url));
 const repo = process.cwd();
 /**
- * The port is a function of the repo's path, so a repo's URL is the same every
- * run. That is what makes the URL worth keeping: bookmark it, add it to the
- * Dock, embed it in an IDE. A busy port falls back to a free one (see ready()).
- * Worktrees have their own paths, and so their own ports, like their queues.
+ * Where a repo's port starts from: a hash of its path, so the first run in a
+ * clone picks a port of its own without asking anyone. What the repo then
+ * *uses* is `.prcoder/port.json` -- see resolvePort(). This stays pure so the
+ * seed can be checked without a disk.
+ *
+ * The range is above 10080 on purpose. Browsers refuse a fixed list of
+ * well-known ports outright, and Firefox says only "This address is
+ * restricted" -- nothing on screen connects that to prcoder, and the old
+ * 1618-2617 range held four of them (1719, 1720, 1723, 2049). The list is the
+ * WHATWG fetch standard's, shared by Firefox, Chrome and Safari, and 10080 is
+ * its highest entry. macOS hands out ephemeral ports from 49152, so 10240-14335
+ * is clear at both ends.
  */
+export const PORT_BASE = 10240;
+export const PORT_SPAN = 4096;
+
 export function portFor(repo, env = process.env) {
   if (Number(env.PRCODER_PORT)) return Number(env.PRCODER_PORT);
-  return 1618 + createHash('sha1').update(repo).digest().readUInt16BE(0) % 1000;
+  return PORT_BASE + createHash('sha1').update(repo).digest().readUInt16BE(0) % PORT_SPAN;
+}
+
+/**
+ * Every port in the range, starting at this repo's seed and wrapping. Only a
+ * first run walks past the first entry, and only until something binds.
+ */
+export function portCandidates(repo) {
+  const first = portFor(repo, {}) - PORT_BASE;   // the seed, never a PRCODER_PORT pin
+  return Array.from({ length: PORT_SPAN }, (_, n) => PORT_BASE + (first + n) % PORT_SPAN);
 }
 // Args split at the first flag: everything before it is ours (an optional PR
 // number, URL or branch), everything from it on is handed to `claude` verbatim.
