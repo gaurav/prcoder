@@ -248,6 +248,7 @@ export function renderNoPr(status, { onCreate }) {
 let tab = 'detail';
 let shownFor = null;
 const scrolled = { detail: 0, files: 0 };
+const openSections = new Set();
 
 /**
  * The pull request pane, in two roots.
@@ -265,6 +266,7 @@ export function renderPr(pr, handlers) {
     shownFor = pr.number;
     scrolled.detail = 0;
     scrolled.files = 0;
+    openSections.clear();
   }
   renderPrHead(pr, handlers);
   renderPrTab(pr, handlers);
@@ -317,6 +319,11 @@ function renderPrTab(pr, handlers) {
   // Read before the replace. Afterwards the old height is gone and the browser
   // has already clamped scrollTop against whatever went in.
   scrolled[tab] = host.scrollTop;
+  // A <summary> is a keyboard control, and a poll landing a second after you
+  // tabbed onto one would otherwise drop focus on the floor. queue.js decided
+  // not to freeze a whole pane over focus and that still holds -- this restores
+  // it instead.
+  const focused = document.activeElement?.closest?.('.md-section')?.dataset.key;
 
   host.replaceChildren(...kids(tab === 'files' ? [
     ...GROUPS.map(([key, label]) => fileGroup(label, pr.groups[key], handlers)),
@@ -325,7 +332,7 @@ function renderPrTab(pr, handlers) {
         `${pr.counts.comments} comments · ${pr.counts.reviews} reviews ↗`)),
   ] : [
     issueRow(pr.issues, true, 'Closes:'),
-    h('div', { className: 'body md' }, ...markdown(pr.body, handlers.onTask)),
+    h('div', { className: 'body md' }, ...description(pr.body, handlers.onTask)),
     issueRow(pr.issues, false, 'Mentions:'),
   ]));
 
@@ -334,6 +341,7 @@ function renderPrTab(pr, handlers) {
   // serif stack is all system faces, deliberately, because a webfont arriving
   // late would move every line under a scroll position already restored.
   host.scrollTop = scrolled[tab];
+  if (focused) host.querySelector(`.md-section[data-key="${CSS.escape(focused)}"] > summary`)?.focus();
 }
 
 const badge = (text, kind) => h('span', { className: `badge ${kind}` }, text);
@@ -514,8 +522,95 @@ const blockNode = (b, onTask) => ({
     ...b.items.map((t) => h('li', { innerHTML: inline(t) }))),
 }[b.kind]());
 
-/** The description, rendered. Just enough markdown for a PR body. */
-const markdown = (text, onTask) => blocks(text).map((b) => blockNode(b, onTask));
+/**
+ * The description as an outline: everything before the first heading, then one
+ * section per heading at the *shallowest* level the body actually uses.
+ *
+ * Deriving that level from the body rather than fixing one here is what lets a
+ * description written with `#` and one written with `##` each fold at their own
+ * top level -- prcoder's own mirrored block writes `## TODO`, and a description
+ * someone typed may well start at `#`. Anything deeper stays a plain heading
+ * inside the section it belongs to.
+ *
+ * Regrouping only. Every block comes out exactly once, in the order it went in,
+ * carrying the `index` it went in with -- see blocks() for why that is the whole
+ * safety argument for folding at all.
+ */
+export function sectionize(list) {
+  const levels = list.filter((b) => b.kind === 'heading').map((b) => b.level);
+  const top = Math.min(...levels);   // Infinity for a body with no headings
+  if (!Number.isFinite(top)) return { lead: list, sections: [] };
+
+  const lead = [];
+  const sections = [];
+  const seen = new Map();
+  for (const b of list) {
+    if (b.kind === 'heading' && b.level === top) {
+      // Keyed by its own text, so the key survives the poll rebuilding this
+      // list and survives a section being added above it -- an index would not.
+      // A description with two `## Why` gets `Why` and `Why#2`: duplicates are
+      // rare, and an ordinal is cheaper than pretending they cannot happen.
+      const n = (seen.get(b.text) ?? 0) + 1;
+      seen.set(b.text, n);
+      sections.push({ title: b.text, key: n === 1 ? b.text : `${b.text}#${n}`, nodes: [] });
+    } else (sections.at(-1)?.nodes ?? lead).push(b);
+  }
+  return { lead, sections };
+}
+
+/**
+ * One section, collapsed behind its heading.
+ *
+ * A native <details> rather than a toggle of our own, for one reason above the
+ * free keyboard operation and disclosure semantics: a closed <details> keeps its
+ * subtree in the DOM. The obvious hand-rolled version builds a section's body
+ * when it is first opened, and that is exactly the thing that would break the
+ * checklist index -- an unopened section's task lines would never be counted,
+ * and every tick after it would address the line above. Native removes the
+ * temptation.
+ *
+ * Not `name=`, which would make these an accordion. The decision was that each
+ * section folds, not that only one may be open: closing what someone is reading
+ * because they opened the next one is worse than either.
+ */
+function sectionNode(s, onTask) {
+  const tasks = s.nodes.filter((b) => b.kind === 'task');
+  const d = h('details', { className: 'md-section', open: openSections.has(s.key) },
+    h('summary', {},
+      h('h3', {}, s.title),
+      // So a fold never hides work without saying so.
+      tasks.length
+        ? h('span', { className: 'count' }, `${tasks.filter((b) => b.done).length}/${tasks.length}`)
+        : null),
+    h('div', { className: 'sec-body' }, ...s.nodes.map((b) => blockNode(b, onTask))));
+  // Assigned after: `dataset` is a readonly accessor, so h()'s Object.assign
+  // cannot reach it. fileRow does the same.
+  d.dataset.key = s.key;
+  // Fires for a click and for the `open` above, which re-adds a key already in
+  // the set -- idempotent either way.
+  d.addEventListener('toggle', () => {
+    if (d.open) openSections.add(s.key); else openSections.delete(s.key);
+  });
+  return d;
+}
+
+/**
+ * The description: the lead as it is, everything after the first heading folded.
+ *
+ * Collapsed by default, and the open set is deliberately not persisted -- a
+ * description you finished reading yesterday reopening itself today is how the
+ * pane becomes what this was written to fix.
+ */
+function description(body, onTask) {
+  const { lead, sections } = sectionize(blocks(body));
+  // A description that is one heading and nothing else would fold to a single
+  // line showing nothing at all.
+  if (!lead.length && sections.length === 1) openSections.add(sections[0].key);
+  return [
+    ...lead.map((b) => blockNode(b, onTask)),
+    ...sections.map((sec) => sectionNode(sec, onTask)),
+  ];
+}
 
 // A heading needs its space: `#hashtag` is prose, and rendering it as a heading
 // would swallow the line.
@@ -528,9 +623,18 @@ export const HEADING = /^(#{1,6})\s+(.*)$/;
  *
  * Comments go because GitHub hides them and prcoder's own block markers are
  * comments -- without this the pane shows a literal marker above the list it
- * delimits. `<details>` is unwrapped rather than reproduced: the pane already
- * scrolls, and a description's collapsed half is usually its history. Its
- * summary is the heading of what follows, so it becomes one.
+ * delimits.
+ *
+ * `<details>` is unwrapped rather than reproduced. It used to be because the
+ * pane merely scrolled and a collapsed half was usually history; now it is the
+ * better reason: the pane folds its own sections, so an author's fold and
+ * prcoder's are the same idea twice. Unwrapping it and promoting its summary to
+ * a heading feeds it into that machinery instead of nesting inside it.
+ *
+ * Every substitution here must leave the body's *lines* where they are.
+ * blocks() runs on the output and taskLines() runs on the raw body, and the two
+ * counts of checklist lines have to match -- so anything added here that could
+ * delete or merge a line containing a `- [ ]` breaks the tick, silently.
  */
 export const withoutHtml = (text) => (text ?? '')
   .replace(/<!--[\s\S]*?-->/g, '')

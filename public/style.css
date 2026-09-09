@@ -163,6 +163,34 @@ a { color: var(--accent); }
 .md pre code { background: none; padding: 0; font-size: 11px; line-height: 1.45; }
 /* The marker sits in the padding, so a wrapped item hangs under its own text
    rather than under the bullet. */
+/* A section of the description, folded. The summary is the one place the
+   structure lives now, so it is sized and weighted to be scanned down: ten of
+   these is the outline of a description you have not read yet. */
+.md-section { border-top: 1px solid var(--line); }
+.md-section > summary {
+  display: flex; align-items: baseline; gap: 7px;
+  padding: 8px 2px; cursor: pointer; list-style: none;
+  font: 600 15px/1.35 ui-sans-serif, system-ui, sans-serif; color: var(--fg);
+}
+.md-section > summary::-webkit-details-marker { display: none; }
+/* Our own triangle rather than ::marker, whose support on a summary is patchy
+   across exactly the two engines this has to work in. */
+.md-section > summary::before {
+  content: '▶'; flex: none; color: var(--dim); font-size: 9px;
+  /* A fixed box so the glyph turns about its own middle rather than drifting,
+     and so every summary's text starts at the same x whichever way it points. */
+  width: 10px; text-align: center;
+  transition: transform .12s ease; transform-origin: 50% 50%;
+}
+.md-section[open] > summary::before { transform: rotate(90deg); }
+.md-section > summary:hover, .md-section > summary:hover::before { color: var(--accent); }
+.md-section > summary:focus-visible { outline: 1px solid var(--accent); border-radius: 3px; }
+.md-section > summary h3 { display: inline; margin: 0; font: inherit; flex: 1; min-width: 0; }
+/* How much of this section is still open, so a fold never hides work silently. */
+.md-section > summary .count { flex: none; font-size: 12px; font-weight: 400; color: var(--dim); }
+/* Indented under the title, not under the triangle. */
+.md-section > .sec-body { padding: 2px 0 12px 18px; }
+
 .md ul, .md ol { margin: 6px 0; padding-left: 1.35em; }
 .md li { margin: 3px 0; }
 .md li::marker { color: var(--dim); }

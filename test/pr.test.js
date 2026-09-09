@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { pageTitle, withoutHtml, inline, queueSync, HEADING, blocks } from '../public/pr.js';
+import { pageTitle, withoutHtml, inline, queueSync, HEADING, blocks, sectionize } from '../public/pr.js';
 import { fences, TASK } from '../public/tasks.js';
 
 const status = (over = {}) => ({
@@ -233,4 +233,57 @@ test('prose above a list stays its own paragraph', () => {
 
 test('a bullet inside a fence is a sample, not a list', () => {
   assert.deepEqual(kinds('```sh\n- not a bullet\n- [ ] not a task\n```'), ['code']);
+});
+
+// --- sectioning ---
+//
+// A description is folded by section so that ten sections of agent-written
+// prose do not bury the rest of the pane. The fold level comes from the body
+// rather than being fixed here, because prcoder's own mirrored block writes
+// `## TODO` while a description someone typed may well start at `#`.
+
+const fold = (body) => sectionize(blocks(body));
+const titles = (body) => fold(body).sections.map((s) => s.title);
+
+test('a description folds at the shallowest heading level it uses', () => {
+  assert.deepEqual(titles('# One\n\ntext\n\n# Two'), ['One', 'Two']);
+  assert.deepEqual(titles('## One\n\ntext\n\n## Two'), ['One', 'Two']);
+});
+
+test('a heading deeper than the fold level stays inside its section', () => {
+  const { sections } = fold('## One\n\n#### Inner\n\ntext\n\n## Two');
+  assert.deepEqual(sections.map((s) => s.title), ['One', 'Two']);
+  assert.deepEqual(sections[0].nodes.map((b) => b.kind), ['heading', 'p']);
+  assert.equal(sections[0].nodes[0].level, 4);
+});
+
+test('everything before the first heading is the lead', () => {
+  // The shape of this repo's own description: prose, then the install fence,
+  // then the first section.
+  const { lead, sections } = fold('Run prcoder.\n\n```sh\nnpm install\n```\n\n## Why\n\nbecause');
+  assert.deepEqual(lead.map((b) => b.kind), ['p', 'code']);
+  assert.equal(sections.length, 1);
+});
+
+test('a description with no headings is all lead and no sections', () => {
+  const { lead, sections } = fold('Just a sentence.');
+  assert.deepEqual(lead.map((b) => b.kind), ['p']);
+  assert.deepEqual(sections, []);
+});
+
+test('a heading inside a fence opens no section', () => {
+  // This repo's README and its description each show a fenced `## Queue`.
+  assert.deepEqual(titles('```markdown\n## Queue\n```\n\n## Real'), ['Real']);
+});
+
+test('two sections with the same title get keys that tell them apart', () => {
+  assert.deepEqual(fold('## Why\n\na\n\n## Why\n\nb').sections.map((s) => s.key),
+    ['Why', 'Why#2']);
+});
+
+test('sectioning loses nothing', () => {
+  const body = 'lead\n\n## One\n\n- a\n- b\n\n### Deep\n\n## Two\n\n- [ ] t';
+  const { lead, sections } = fold(body);
+  const total = lead.length + sections.reduce((n, s) => n + s.nodes.length, 0) + sections.length;
+  assert.equal(total, blocks(body).length);
 });
