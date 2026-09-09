@@ -122,6 +122,13 @@ mean to work through it. The arrow next to the input flips that to the top for
 the other way of using a queue -- the thing you must not forget to do next --
 and stays flipped.
 
+## Scratch space
+
+`data/` is gitignored and is where throwaway output goes -- driver screenshots,
+a snapshot of a PR body taken before a write, anything you want next to the code
+without committing it. Nothing reads it; it exists so that neither you nor an
+agent working in this repo has to reach for `/tmp`.
+
 ## Where the queue lives
 
 `.prcoder/queue.json`, in a directory that ignores itself -- it holds a

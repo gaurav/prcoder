@@ -7,6 +7,11 @@
      a scroll position renderPrTab had already restored. */
   --serif: ui-serif, Charter, "Bitstream Charter", "Iowan Old Style",
            "Source Serif 4", Georgia, "Liberation Serif", "Times New Roman", serif;
+  /* `1ch` is the width of `0`, which in a serif is narrower than average
+     lowercase -- so this measures nearer 75 rendered characters than 68, which
+     is where it was wanted. Checked at a 900px pane: 568px of prose in Firefox,
+     567px in Chromium. If a future face throws that off, `34em` is the
+     font-size-relative alternative (two alphabets, ~66 characters). */
   --measure: 68ch;
 }
 * { box-sizing: border-box; }
@@ -177,33 +182,44 @@ a { color: var(--accent); }
 .md pre code { background: none; padding: 0; font-size: 11px; line-height: 1.45; }
 /* The marker sits in the padding, so a wrapped item hangs under its own text
    rather than under the bullet. */
-/* A section of the description, folded. The summary is the one place the
-   structure lives now, so it is sized and weighted to be scanned down: ten of
-   these is the outline of a description you have not read yet. */
-.md-section { border-top: 1px solid var(--line); }
-.md-section > summary {
+/* --- Folds ---
+   Two things fold, for opposite reasons and so with opposite defaults. A
+   description's sections start closed, because ten sections of prose is what
+   buries everything under it. A file group starts open, because the Files tab
+   is the working surface and a list you have to open is a list in the way.
+   Everything they share is here; only the defaults and the type differ. */
+.fold > summary {
   display: flex; align-items: baseline; gap: 7px;
-  padding: 8px 2px; cursor: pointer; list-style: none;
-  font: 600 15px/1.35 ui-sans-serif, system-ui, sans-serif; color: var(--fg);
+  cursor: pointer; list-style: none;
 }
-.md-section > summary::-webkit-details-marker { display: none; }
+.fold > summary::-webkit-details-marker { display: none; }
 /* Our own triangle rather than ::marker, whose support on a summary is patchy
    across exactly the two engines this has to work in. */
-.md-section > summary::before {
+.fold > summary::before {
   content: '▶'; flex: none; color: var(--dim); font-size: 9px;
   /* A fixed box so the glyph turns about its own middle rather than drifting,
      and so every summary's text starts at the same x whichever way it points. */
   width: 10px; text-align: center;
   transition: transform .12s ease; transform-origin: 50% 50%;
 }
-.md-section[open] > summary::before { transform: rotate(90deg); }
-.md-section > summary:hover, .md-section > summary:hover::before { color: var(--accent); }
-.md-section > summary:focus-visible { outline: 1px solid var(--accent); border-radius: 3px; }
-.md-section > summary h3 { display: inline; margin: 0; font: inherit; flex: 1; min-width: 0; }
-/* How much of this section is still open, so a fold never hides work silently. */
-.md-section > summary .count { flex: none; font-size: 12px; font-weight: 400; color: var(--dim); }
+.fold[open] > summary::before { transform: rotate(90deg); }
+.fold > summary:hover, .fold > summary:hover::before { color: var(--accent); }
+.fold > summary:focus-visible { outline: 1px solid var(--accent); border-radius: 3px; }
+.fold > summary h3 { display: inline; margin: 0; font: inherit; flex: 1; min-width: 0; }
+/* What is still outstanding inside, so a fold never hides work silently. */
+.fold > summary .count { flex: none; font-weight: 400; color: var(--dim); }
 /* Indented under the title, not under the triangle. */
-.md-section > .sec-body { padding: 2px 0 12px 18px; }
+.fold > .sec-body { padding: 2px 0 12px 18px; }
+
+/* A section of the description. The summary is the one place its structure
+   lives now, so it is sized and weighted to be scanned down: ten of these is
+   the outline of a description you have not read yet. */
+.md-section { border-top: 1px solid var(--line); }
+.md-section > summary {
+  padding: 8px 2px;
+  font: 600 15px/1.35 ui-sans-serif, system-ui, sans-serif; color: var(--fg);
+}
+.md-section > summary .count { font-size: 12px; }
 
 .md ul, .md ol { margin: 6px 0; padding-left: 1.35em; }
 .md li { margin: 3px 0; }
@@ -213,9 +229,17 @@ a { color: var(--accent); }
 .issues-label { color: var(--dim); }
 .issues a { padding: 1px 6px; border: 1px solid var(--line); border-radius: 9px; text-decoration: none; }
 
-.group { margin-bottom: 12px; }
-.group h3 { margin: 0 0 4px; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--dim); }
-.group .count { font-weight: 400; opacity: .7; }
+.group { margin-bottom: 10px; }
+.group > summary {
+  padding: 2px 0;
+  font: 600 12px/1.5 ui-sans-serif, system-ui, sans-serif;
+  text-transform: uppercase; letter-spacing: .06em; color: var(--dim);
+}
+.group > summary:hover { color: var(--fg); }
+.group > summary .count { font-size: 12px; letter-spacing: 0; opacity: .7; }
+/* Less than a description's sections: a file path is already short, and the
+   rows have to stay wide enough to ellipsize from the left. */
+.group > .sec-body { padding: 2px 0 0 10px; }
 
 .file { display: flex; align-items: center; gap: 6px; padding: 2px 0; font-size: 13px; }
 .file.viewed .path { opacity: .45; text-decoration: line-through; }

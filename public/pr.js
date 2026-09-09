@@ -3,9 +3,17 @@ import { TASK, fences } from './tasks.js';
 // Skips absent sections; DOM append() would render them as the text "null".
 const kids = (list) => list.flat().filter((k) => k != null);
 
-// Small helper: build an element and append children.
-export function h(tag, props = {}, ...children) {
+/**
+ * Small helper: build an element and append children.
+ *
+ * `dataset` is pulled out and merged rather than assigned, because it is a
+ * readonly accessor -- Object.assign would drop it on the floor without
+ * complaining, and the caller gets an element with no data attributes and no
+ * error to explain why. Two call sites used to work around that by hand.
+ */
+export function h(tag, { dataset, ...props } = {}, ...children) {
   const node = Object.assign(document.createElement(tag), props);
+  if (dataset) Object.assign(node.dataset, dataset);
   node.append(...kids(children));
   return node;
 }
@@ -249,6 +257,10 @@ let tab = 'detail';
 let shownFor = null;
 const scrolled = { detail: 0, files: 0 };
 const openSections = new Set();
+// Groups record which are *closed*, the inverse of sections, because their
+// default is open -- so a group nobody has touched needs no entry, and a group
+// that appears for the first time arrives open rather than missing.
+const closedGroups = new Set();
 
 /**
  * The pull request pane, in two roots.
@@ -302,9 +314,18 @@ function renderPrHead(pr, handlers) {
 /**
  * The count each tab carries is what it can tell you while you are on the other
  * one: how many description checkboxes are still open, how many files are still
- * unviewed. `(3/10)` is done over total, the same way the file groups read.
+ * unviewed. Three states, because a fraction that has run out says the wrong
+ * thing -- `Detail (10/10)` reads as a proportion you would want to be larger,
+ * when what it means is that there is nothing left to do.
+ *
+ *   Detail          nothing to count
+ *   Detail (3/10)   seven outstanding, done over total as the file groups read
+ *   Detail ✓        there were things, and they are all done
  */
-export const tabLabel = (name, count) => (count.total ? `${name} (${count.done}/${count.total})` : name);
+export const tabLabel = (name, { done, total }) => {
+  if (!total) return name;
+  return done === total ? `${name} ✓` : `${name} (${done}/${total})`;
+};
 
 export const taskCount = (body) => {
   const tasks = blocks(body).filter((b) => b.kind === 'task');
@@ -376,13 +397,29 @@ function issueRow(list, closes, label) {
       `#${i.number}`)));
 }
 
+/**
+ * One group of changed files, folded.
+ *
+ * Open by default, which is the opposite of a description's sections and for
+ * the opposite reason: this tab is the working surface, and a file list you
+ * have to open is a file list in the way. The fold is here so a group you have
+ * finished with can be got out of the way -- thirty-five files across three
+ * groups is a smaller version of the problem the tabs were for.
+ */
 function fileGroup(label, files, handlers) {
   if (!files?.length) return null;
   const seen = files.filter((f) => f.viewed).length;
-  return h('section', { className: 'group' },
-    h('h3', {}, `${label} `, h('span', { className: 'count' }, `${seen}/${files.length}`)),
-    ...files.map((f) => fileRow(f, handlers)),
-  );
+  const d = h('details', {
+    className: 'fold group', open: !closedGroups.has(label), dataset: { group: label },
+  },
+  h('summary', {},
+    h('h3', {}, label),
+    h('span', { className: 'count' }, `${seen}/${files.length}`)),
+  h('div', { className: 'sec-body' }, ...files.map((f) => fileRow(f, handlers))));
+  d.addEventListener('toggle', () => {
+    if (d.open) closedGroups.delete(label); else closedGroups.add(label);
+  });
+  return d;
 }
 
 function fileRow(f, { onViewed, onOpen, selected }) {
@@ -395,14 +432,16 @@ function fileRow(f, { onViewed, onOpen, selected }) {
     e.preventDefault();
     onOpen(f);
   });
-  const row = h('div', { className: `file${f.viewed ? ' viewed' : ''}${f.path === selected ? ' sel' : ''}` },
+  const row = h('div', {
+    className: `file${f.viewed ? ' viewed' : ''}${f.path === selected ? ' sel' : ''}`,
+    dataset: { path: f.path },
+  },
     box,
     link,
     h('span', { className: 'nums' },
       h('span', { className: 'add' }, `+${f.additions}`), ' ',
       h('span', { className: 'del' }, `−${f.deletions}`)),
   );
-  row.dataset.path = f.path;
   return row;
 }
 
@@ -575,7 +614,9 @@ export function sectionize(list) {
  */
 function sectionNode(s, onTask) {
   const tasks = s.nodes.filter((b) => b.kind === 'task');
-  const d = h('details', { className: 'md-section', open: openSections.has(s.key) },
+  const d = h('details', {
+    className: 'fold md-section', open: openSections.has(s.key), dataset: { key: s.key },
+  },
     h('summary', {},
       h('h3', {}, s.title),
       // So a fold never hides work without saying so.
@@ -583,9 +624,6 @@ function sectionNode(s, onTask) {
         ? h('span', { className: 'count' }, `${tasks.filter((b) => b.done).length}/${tasks.length}`)
         : null),
     h('div', { className: 'sec-body' }, ...s.nodes.map((b) => blockNode(b, onTask))));
-  // Assigned after: `dataset` is a readonly accessor, so h()'s Object.assign
-  // cannot reach it. fileRow does the same.
-  d.dataset.key = s.key;
   // Fires for a click and for the `open` above, which re-adds a key already in
   // the set -- idempotent either way.
   d.addEventListener('toggle', () => {

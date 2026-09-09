@@ -142,6 +142,17 @@ await filesTab.click();
 await page.waitForSelector('.file');
 await page.locator('#pr').screenshot({ path: path.join(out, 'pr-files.png') });
 
+// The file groups fold too, open by default -- the opposite of a description's
+// sections, and the opposite default for the opposite reason.
+console.log('groups open on arrival:', await page.locator('.group[open]').count(),
+  'of', await page.locator('.group').count(), ' (want all of them)');
+await page.locator('.group > summary').first().click();
+await page.waitForTimeout(200);
+console.log('after collapsing one:', await page.locator('.group[open]').count(), 'open');
+await page.locator('#pr').screenshot({ path: path.join(out, 'pr-files-collapsed.png') });
+await page.locator('.group > summary').first().click();
+await page.waitForTimeout(200);
+
 await page.locator('.file .path').first().click();   // opens the diff pane (Files tab)
 await page.waitForSelector('main.diff-open');
 await drag('#gut-pr', 520, 450);

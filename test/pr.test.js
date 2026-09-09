@@ -302,6 +302,16 @@ test('a tab with nothing to count is named, not numbered', () => {
   assert.equal(tabLabel('Files', { done: 0, total: 0 }), 'Files');
 });
 
+// A fraction that has run out says the wrong thing: `(10/10)` reads as a
+// proportion you would want to be larger, when it means there is nothing left.
+test('a tab whose count has run out says so rather than showing 10/10', () => {
+  assert.equal(tabLabel('Detail', { done: 10, total: 10 }), 'Detail ✓');
+  assert.equal(tabLabel('Files', { done: 1, total: 1 }), 'Files ✓');
+  // Distinct from the nothing-to-count case, which is the bare name -- so a
+  // description with no checklist never claims to have finished one.
+  assert.equal(tabLabel('Detail', { done: 0, total: 0 }), 'Detail');
+});
+
 test('a tab with something to count carries done over total', () => {
   assert.equal(tabLabel('Detail', { done: 3, total: 10 }), 'Detail (3/10)');
   // Nothing done yet still counts: `(0/4)` is four things waiting, and reads
