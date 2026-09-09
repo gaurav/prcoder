@@ -631,6 +631,13 @@ export const HEADING = /^(#{1,6})\s+(.*)$/;
  * prcoder's are the same idea twice. Unwrapping it and promoting its summary to
  * a heading feeds it into that machinery instead of nesting inside it.
  *
+ * One consequence, live in this repo: a <details> in a description shows up in
+ * the pane as its summary promoted to a level-4 heading, which is deeper than
+ * the level sections fold at -- so it renders *inside* whichever fold precedes
+ * it rather than as one of its own. That is the intended trade (the alternative
+ * is two kinds of fold competing), but it is why a collapsed block in this
+ * repo's own pull request description reads differently here and on github.com.
+ *
  * Every substitution here must leave the body's *lines* where they are.
  * blocks() runs on the output and taskLines() runs on the raw body, and the two
  * counts of checklist lines have to match -- so anything added here that could

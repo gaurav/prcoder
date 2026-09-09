@@ -97,10 +97,24 @@ a { color: var(--accent); }
 #queue-input:focus { outline: 1px solid var(--accent); }
 
 /* Which pull request you are in, above whichever half of it you are reading.
-   It does not scroll: the tab row is the fix for a description long enough to
-   bury the file list, so a tab row that scrolls away with the description would
-   be no fix at all. `flex: none` because the pane is a flex column and would
-   otherwise shrink the head before the body. */
+   `flex: none` because the pane is a flex column and would otherwise shrink the
+   head before the body.
+
+   Two shorter-looking versions of this were tried and are not worth retrying.
+
+   The tabs in `.pane > header`, beside the switcher: `.pane > header button`
+   sets `margin-left: auto`, shared by all four panes, so a tab button lands
+   hard against the right edge -- that rule already carries two exceptions
+   (`.commit`, `.where`) and this would be the third. And at the pane's 375px
+   floor the header holds an <h1>, a flex:1 <select>, the light and the refresh
+   glyph, so two more buttons squeeze the select to nothing.
+
+   A sticky tab row as the first child of #pr-body, keeping one scroller: this
+   is the one that looks right and is not. Two views in one scroller share one
+   scrollTop. Read to the bottom of a 7,000-word description, switch to Files,
+   and the browser clamps you to the bottom of a short list -- with nothing on
+   screen to say you were moved. A separate head is what gives each tab an
+   offset of its own to be restored to (see renderPrTab). */
 #pr-head { flex: none; padding: 10px 10px 8px; border-bottom: 1px solid var(--line); }
 #pr-head:empty { display: none; }
 #pr-head .tabs { margin-bottom: 0; }
