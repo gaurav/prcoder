@@ -14,7 +14,9 @@ prcoder <pr-url>           # any PR, anywhere
 prcoder --model opus       # ...with flags for the Claude session
 ```
 
-Then open <http://localhost:1618>.
+It prints the URL to open, and opens it for you unless `PRCODER_NO_OPEN` is
+set. The port is per-repo and stays the same across runs -- see *A URL that
+stays put* below.
 
 ## Where the repo is
 
@@ -74,15 +76,30 @@ Every line between the panes is a splitter: drag it to resize, double-click it
 to drop back to the default. The sizes are remembered per browser, so the
 layout you settle on is the one the next `prcoder` opens with.
 
-**Pull request** — title, description, checks, linked issues, and every changed
-file grouped as *Tests* / *Code* / *Config & docs*, tests first, because tests
-are the fastest way to see what functionality actually changed. The checkbox on
-each file is GitHub's own "viewed" checkbox: tick it here and it's ticked on
-github.com. Checklists in the description are real checkboxes too, and they
-write straight back to the description -- ticking one inside prcoder's own TODO
-block ticks the queue item it came from. Clicking a file opens its diff in the
-**Diff** pane; cmd/ctrl-clicking opens GitHub's diff viewer at that file
+**Pull request** — which pull request you are in stays at the top: the title,
+the state, the branch it targets, the checks. Below that are two tabs, because
+reading the argument and working the files are two different things and each
+wants the whole pane.
+
+*Detail* is the description. It opens as the lead paragraph and then one folded
+line per section, so a long one is an outline you scan rather than a wall you
+scroll; a section that contains checklist items says how many are still open.
+The prose is set in serif at a reading size and capped to a comfortable line
+length, because it is the one thing in the window that is read rather than
+operated. Checklists in it are real checkboxes and write straight back to the
+description -- ticking one inside prcoder's own TODO block ticks the queue item
+it came from.
+
+*Files* is every changed file grouped as *Tests* / *Code* / *Config & docs*,
+tests first, because tests are the fastest way to see what functionality
+actually changed. The checkbox on each file is GitHub's own "viewed" checkbox:
+tick it here and it's ticked on github.com. Clicking a file opens its diff in
+the **Diff** pane; cmd/ctrl-clicking opens GitHub's diff viewer at that file
 instead.
+
+Each tab carries the count the other one cannot show you — how many description
+boxes are still unticked, how many files are still unviewed — so neither hides
+from you while you are in the other.
 
 **Diff** — the selected file's patch, rendered plainly above the terminal so
 select → read → tick viewed → ask Claude never leaves the window. It shows the
