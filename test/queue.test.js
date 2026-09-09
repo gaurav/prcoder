@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseFuture, renderPrBlock, syncFromPrBlock, toggleTask } from '../queue.js';
-import { TASK, fences, taskLines } from '../public/tasks.js';
+import { taskLines } from '../public/tasks.js';
+import { blocks } from '../public/pr.js';
 
 const FUTURE = `# Notes
 
@@ -229,9 +230,14 @@ test('a checkbox whose line has changed underneath is refused, not ticked', () =
 // The client sends a position in this list; if the two sides ever disagree on
 // which lines count, every index past the first difference ticks the wrong
 // line. Walking one body through both is what keeps them in step.
-const paneTasks = (body) => fences(body)
-  .filter((c) => c.text !== undefined)
-  .flatMap((c) => c.text.split('\n').map((l) => TASK.exec(l)).filter(Boolean).map((m) => m[2]));
+//
+// This calls the pane's real renderer rather than a walk written here. It used
+// to be a third copy of the pattern -- which meant the one file whose whole
+// subject is "these two walks must not diverge" was comparing the server
+// against something neither side ships. public/pr.js only touches `document`
+// inside function bodies, so importing it here is safe.
+
+const paneTasks = (body) => blocks(body).filter((b) => b.kind === 'task').map((b) => b.text);
 
 test('the PR pane and queue.js pick out the same checklist lines', () => {
   const seen = paneTasks(BODY);
