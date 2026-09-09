@@ -10,6 +10,13 @@ export function h(tag, props = {}, ...children) {
   return node;
 }
 
+/** A button with its handler, the one shape every pane's chrome is built from. */
+export const btn = (label, fn, props = {}) => {
+  const b = h('button', props, label);
+  b.onclick = fn;
+  return b;
+};
+
 /**
  * JSON in, JSON out, an error thrown either way it can fail -- a bad status or
  * an `error` in the payload. No body means no body at all, not `{}`: fetch
@@ -198,6 +205,12 @@ export const renderQueueSync = (status) => paintLight('queue-sync', queueSync(st
 /** The pane with no PR to show: why, and the one thing worth doing about it. */
 export function renderNoPr(status, { onCreate }) {
   const host = document.getElementById('pr-body');
+  // The head is a whole pull request's worth of identity -- title, badges,
+  // tabs -- and nothing else clears it, so without this the last PR's heading
+  // sits above "No pull request for main yet."
+  document.getElementById('pr-head').replaceChildren();
+  tab = 'detail';
+  shownFor = null;
   const onDefault = status.branch === status.defaultBranch;
 
   const why = status.detached ? 'HEAD is detached — no branch to open a pull request for.'
@@ -219,10 +232,54 @@ export function renderNoPr(status, { onCreate }) {
   ]));
 }
 
-export function renderPr(pr, handlers) {
-  const host = document.getElementById('pr-body');
+/**
+ * Which half of the pane is showing, where each half was scrolled to, and which
+ * pull request that was all decided about.
+ *
+ * It lives out here because renderPr runs on every 60s poll and replaces both
+ * roots wholesale, so anything the reader chose about the *view* is gone the
+ * moment it does. diff.js and queue.js keep their state in module scope for the
+ * same reason.
+ *
+ * Not localStorage. The tab is a per-pull-request fact, and a browser-wide one
+ * would carry a decision about a description you have finished reading onto a
+ * description you have not opened yet.
+ */
+let tab = 'detail';
+let shownFor = null;
+const scrolled = { detail: 0, files: 0 };
 
-  host.replaceChildren(...kids([
+/**
+ * The pull request pane, in two roots.
+ *
+ * #pr-head is the identity -- which pull request, on what branch, passing or
+ * not -- and does not scroll. #pr-body is one of two views of it: the argument
+ * (Detail) or the work (Files). They are tabs rather than one column because
+ * they are two different things to be doing, they each want the whole pane, and
+ * an agent-written description is long enough to bury a file list entirely.
+ */
+export function renderPr(pr, handlers) {
+  // A different pull request is a different set of sections and a different
+  // amount of scroll; none of the old numbers mean anything against it.
+  if (shownFor !== pr.number) {
+    shownFor = pr.number;
+    scrolled.detail = 0;
+    scrolled.files = 0;
+  }
+  renderPrHead(pr, handlers);
+  renderPrTab(pr, handlers);
+}
+
+function renderPrHead(pr, handlers) {
+  const switchTo = (name) => {
+    tab = name;
+    renderPrHead(pr, handlers);
+    renderPrTab(pr, handlers);
+  };
+  const tabBtn = (name, label) =>
+    btn(label, () => switchTo(name), { className: tab === name ? 'tab on' : 'tab' });
+
+  document.getElementById('pr-head').replaceChildren(...kids([
     h('a', { className: 'pr-link', href: pr.url, target: '_blank', rel: 'noopener' },
       `#${pr.number} on GitHub ↗`),
     h('h2', { className: 'pr-title' }, pr.title),
@@ -234,13 +291,49 @@ export function renderPr(pr, handlers) {
       h('span', { className: 'del' }, `−${pr.deletions}`),
     ),
     checks(pr.checks),
-    h('div', { className: 'body md' }, ...markdown(pr.body, handlers.onTask)),
-    issues(pr.issues),
+    h('div', { className: 'tabs' },
+      tabBtn('detail', tabLabel('Detail', taskCount(pr.body))),
+      tabBtn('files', tabLabel('Files', viewedCount(pr.files)))),
+  ]));
+}
+
+/**
+ * The count each tab carries is what it can tell you while you are on the other
+ * one: how many description checkboxes are still open, how many files are still
+ * unviewed. `(3/10)` is done over total, the same way the file groups read.
+ */
+const tabLabel = (name, count) => (count.total ? `${name} (${count.done}/${count.total})` : name);
+
+const taskCount = (body) => {
+  const tasks = blocks(body).filter((b) => b.kind === 'task');
+  return { done: tasks.filter((b) => b.done).length, total: tasks.length };
+};
+
+const viewedCount = (files = []) =>
+  ({ done: files.filter((f) => f.viewed).length, total: files.length });
+
+function renderPrTab(pr, handlers) {
+  const host = document.getElementById('pr-body');
+  // Read before the replace. Afterwards the old height is gone and the browser
+  // has already clamped scrollTop against whatever went in.
+  scrolled[tab] = host.scrollTop;
+
+  host.replaceChildren(...kids(tab === 'files' ? [
+    ...GROUPS.map(([key, label]) => fileGroup(label, pr.groups[key], handlers)),
     h('div', { className: 'meta' },
       h('a', { href: `${pr.url}#issuecomment`, target: '_blank', rel: 'noopener' },
         `${pr.counts.comments} comments · ${pr.counts.reviews} reviews ↗`)),
-    ...GROUPS.map(([key, label]) => fileGroup(label, pr.groups[key], handlers)),
+  ] : [
+    issueRow(pr.issues, true, 'Closes:'),
+    h('div', { className: 'body md' }, ...markdown(pr.body, handlers.onTask)),
+    issueRow(pr.issues, false, 'Mentions:'),
   ]));
+
+  // Assigning forces layout, so this lands against the new content rather than
+  // the old. Nothing reflows underneath it afterwards -- the description's
+  // serif stack is all system faces, deliberately, because a webfont arriving
+  // late would move every line under a scroll position already restored.
+  host.scrollTop = scrolled[tab];
 }
 
 const badge = (text, kind) => h('span', { className: `badge ${kind}` }, text);
@@ -254,18 +347,25 @@ function checks({ passed, failed, pending }) {
   );
 }
 
-// Two rows, because the two kinds of link mean different things: one set closes
-// on merge, the other is only mentioned in the body. The row label says which,
-// so the chips stay bare numbers.
-function issues(list) {
-  return [['Closes:', true], ['Mentions:', false]].map(([label, closes]) => {
-    const kind = list.filter((i) => i.closes === closes);
-    if (!kind.length) return null;
-    return h('div', { className: 'issues' },
-      h('span', { className: 'issues-label' }, label),
-      ...kind.map((i) => h('a', { href: i.url, target: '_blank', rel: 'noopener', title: i.title ?? '' },
-        `#${i.number}`)));
-  });
+/**
+ * One row of issue chips. The row label says which kind, so the chips stay bare
+ * numbers.
+ *
+ * The two kinds mean different things and are placed differently because of it.
+ * `Closes:` is a handful of issues this pull request answers, and it belongs
+ * above the description as part of what the pull request *is*. `Mentions:` is
+ * every bare `#N` linkedIssues() could find in the body, which on a description
+ * that discusses its own backlog is dozens -- six rows of chips between the
+ * title and the first sentence, which is the burial this pane is being fixed
+ * for. It goes underneath.
+ */
+function issueRow(list, closes, label) {
+  const kind = list.filter((i) => i.closes === closes);
+  if (!kind.length) return null;
+  return h('div', { className: 'issues' },
+    h('span', { className: 'issues-label' }, label),
+    ...kind.map((i) => h('a', { href: i.url, target: '_blank', rel: 'noopener', title: i.title ?? '' },
+      `#${i.number}`)));
 }
 
 function fileGroup(label, files, handlers) {

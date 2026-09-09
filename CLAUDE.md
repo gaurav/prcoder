@@ -3,6 +3,13 @@
 A local server + browser UI wrapping a real `claude` PTY. See README.md for what
 it does and how to run it.
 
+## Scratch work goes in `data/`
+
+`data/` is gitignored and is where anything temporary belongs -- driver
+screenshots, snapshots of a PR body taken before a write, intermediate output.
+Not `/tmp`: reads outside this working directory are blocked, so a screenshot
+written to `/tmp` is one nobody in this session can look at.
+
 ## Two traps
 
 **Don't delete the `postinstall` chmod in package.json.** It looks like dead

@@ -1,4 +1,4 @@
-import { h, api, toast } from './pr.js';
+import { h, btn, api, toast } from './pr.js';
 
 // The client owns the list; every change persists the whole array. Single user,
 // single repo — no ids, no diffing.
@@ -122,12 +122,6 @@ function paintWhere() {
   b.setAttribute('aria-label', title);
   b.classList.toggle('top', addTo === 'top');
 }
-
-const btn = (label, fn, props = {}) => {
-  const b = h('button', props, label);
-  b.onclick = fn;
-  return b;
-};
 
 const tabBtn = (name, label) =>
   btn(label, () => { tab = name; render(); }, { className: tab === name ? 'tab on' : 'tab' });

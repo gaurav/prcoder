@@ -83,13 +83,26 @@ for (let i = 0; i < 30; i++) {
   try { await page.goto(`http://localhost:${port}/`); break; } catch { await page.waitForTimeout(500); }
 }
 // The panes fill in from gh, so there is a second or two of "Loading…" first.
-await page.waitForSelector('.file', { timeout: 30_000 });
+// Wait on the head rather than on a file row: the pane opens on Detail now, and
+// `.file` only exists once the Files tab has been clicked.
+await page.waitForSelector('#pr-head .pr-title', { timeout: 30_000 });
 await page.waitForTimeout(500);
 
 await page.screenshot({ path: path.join(out, 'full.png') });
 for (const pane of ['pr', 'queue']) {
   await page.locator(`#${pane}`).screenshot({ path: path.join(out, `${pane}.png`) });
 }
+
+// The two tabs, and what each says about the other. `Detail (3/10)` /
+// `Files (7/23)` is the whole reason the counts are on the labels -- they are
+// what you can see while you are looking at the other half.
+const tabs = await page.locator('#pr-head .tab').allInnerTexts();
+console.log('tabs:    ', tabs.join('  |  '), '  (want a count on each)');
+
+const filesTab = page.getByRole('button', { name: /^Files/ });
+await filesTab.click();
+await page.waitForSelector('.file');
+await page.locator('#pr').screenshot({ path: path.join(out, 'pr-files.png') });
 
 // The gutters, which are only ever right or wrong on screen. Each drag moves
 // one line to a known coordinate, so the variables it writes are arithmetic on
@@ -101,7 +114,7 @@ const drag = async (sel, x, y) => {
   await page.mouse.move(x, y, { steps: 8 });
   await page.mouse.up();
 };
-await page.locator('.file .path').first().click();   // opens the diff pane
+await page.locator('.file .path').first().click();   // opens the diff pane (Files tab)
 await page.waitForSelector('main.diff-open');
 await drag('#gut-pr', 520, 450);
 await drag('#gut-diff', 720, 300);
@@ -110,8 +123,12 @@ await page.waitForTimeout(300);
 await page.screenshot({ path: path.join(out, 'dragged.png') });
 const dragged = await page.evaluate(() => document.querySelector('main').style.cssText);
 await page.reload();
-await page.waitForSelector('.file');
+// Detail is the expected tab after a reload: the choice is module state, not
+// localStorage, on purpose -- see the comment on `tab` in public/pr.js.
+await page.waitForSelector('#pr-head .pr-title');
+const onTab = await page.locator('#pr-head .tab.on').innerText();
 const restored = await page.evaluate(() => document.querySelector('main').style.cssText);
+console.log('after reload, tab is', JSON.stringify(onTab), ' (want Detail)');
 
 console.log('dragged: ', dragged, '  (want --w-pr 520, --h-diff 300, --h-queue 260)');
 console.log('restored:', restored, restored === dragged ? '' : '  <-- did not persist');

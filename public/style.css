@@ -90,6 +90,16 @@ a { color: var(--accent); }
 }
 #queue-input:focus { outline: 1px solid var(--accent); }
 
+/* Which pull request you are in, above whichever half of it you are reading.
+   It does not scroll: the tab row is the fix for a description long enough to
+   bury the file list, so a tab row that scrolls away with the description would
+   be no fix at all. `flex: none` because the pane is a flex column and would
+   otherwise shrink the head before the body. */
+#pr-head { flex: none; padding: 10px 10px 8px; border-bottom: 1px solid var(--line); }
+#pr-head:empty { display: none; }
+#pr-head .tabs { margin-bottom: 0; }
+#pr-head > :last-child { margin-bottom: 0; }
+
 .empty { color: var(--dim); }
 .pr-link { display: block; font-size: 12px; margin-bottom: 4px; }
 .pr-title { margin: 0 0 6px; font-size: 16px; line-height: 1.35; }
