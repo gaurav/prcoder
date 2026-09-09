@@ -299,34 +299,53 @@ function fileRow(f, { onViewed, onOpen, selected }) {
 }
 
 /**
- * Just enough markdown for a PR description: links, code, headings, lists --
- * and checklists as real checkboxes, which are the point of reading a
- * description in a pane rather than on github.com. `index` counts every
- * checklist line in the body, in order, which is how the server finds the line
- * again; prose either side of a run of them stays in its own paragraph.
+ * A PR description as blocks, in body order: `code`, `p`, `heading`, `task` and
+ * `list`. No DOM -- blockNode() below turns one of these into an element, and
+ * sectionize() regroups them into folds. Splitting it this way is what lets the
+ * whole renderer be tested without a browser.
+ *
+ * `index` counts every checklist line as it goes, because a tick is sent as a
+ * *position* in that list and taskLines() in tasks.js recounts it the same way
+ * on the server -- the two walks have to agree line for line (tasks.js says
+ * what happens when they do not, and test/queue.test.js pins it).
+ *
+ * The numbering happens here, once, before anything downstream groups or hides
+ * anything. So sectionize() may regroup these blocks and the pane may fold them
+ * without renumbering a thing. Anything that wants to change *which lines
+ * count* belongs in tasks.js, where both sides read it.
  */
-function markdown(text, onTask) {
+export function blocks(text) {
   const out = [];
   let index = 0;
 
   for (const chunk of fences(withoutHtml(text))) {
-    // textContent, not inline(): the point of a fence is that what is inside it
-    // is not markdown.
+    // A fence is not markdown, so nothing inside it is a heading, a task or a
+    // list -- which is why this repo's own description can show a `## Queue`
+    // sample without growing a fold, and a `- [ ]` sample without growing a
+    // checkbox the server would refuse.
     if (chunk.code !== undefined) {
-      out.push(h('pre', {}, h('code', { textContent: chunk.code })));
+      out.push({ kind: 'code', code: chunk.code });
       continue;
     }
     for (const para of chunk.text.split(/\n{2,}/).filter(Boolean)) {
       let prose = [];
+      let list = null;
+      // Prose and a list are the two things that can be open, never both: every
+      // branch that opens one closes the other, which is what keeps the output
+      // in body order.
       const flush = () => {
-        if (prose.length) out.push(h('p', { innerHTML: inline(prose.join('\n')) }));
+        if (prose.length) out.push({ kind: 'p', text: prose.join('\n') });
+        if (list) out.push(list);
         prose = [];
+        list = null;
       };
       for (const line of para.split('\n')) {
         const task = TASK.exec(line);
         if (task) {
           flush();
-          out.push(taskRow(task[1].toLowerCase() === 'x', task[2], index++, onTask));
+          out.push({
+            kind: 'task', done: task[1].toLowerCase() === 'x', text: task[2], index: index++,
+          });
           continue;
         }
         // A heading is one line, so it is handled here rather than per
@@ -334,9 +353,25 @@ function markdown(text, onTask) {
         const head = HEADING.exec(line);
         if (head) {
           flush();
-          // Offset by two: the pane's own <h1> names it and the PR title is the
-          // <h2>, so a description's top-level heading sits under both.
-          out.push(h(`h${Math.min(head[1].length + 2, 6)}`, { innerHTML: inline(head[2]) }));
+          out.push({ kind: 'heading', level: head[1].length, text: head[2] });
+          continue;
+        }
+
+        const num = ORDERED.exec(line);
+        const bul = num ? null : BULLET.exec(line);
+        if (num || bul) {
+          // A change of marker starts a new list, the way GitHub renders it.
+          if (list && list.ordered !== Boolean(num)) flush();
+          if (prose.length) flush();
+          list ??= { kind: 'list', ordered: Boolean(num), start: num ? Number(num[1]) : 1, items: [] };
+          list.items.push(num ? num[2] : bul[1]);
+          continue;
+        }
+        // A plain line under a list item is that item wrapping, not new prose.
+        // Descriptions arrive from an editor with no hard wrap, and this repo's
+        // own bullets run to four hundred characters.
+        if (list) {
+          list.items[list.items.length - 1] += `\n${line.trim()}`;
           continue;
         }
         prose.push(line);
@@ -346,6 +381,41 @@ function markdown(text, onTask) {
   }
   return out;
 }
+
+/**
+ * A bullet needs its space, the way a heading does: `-flag` and `--body-file`
+ * are prose, and this repo's own description is full of both.
+ *
+ * Both are matched *after* TASK, which matches `- [ ] x` as well. A checklist
+ * line rendered as a bullet is a line that never gets an index, and every tick
+ * after it in the body would then address the line above -- so the order of
+ * those two tests in blocks() is load-bearing, and test/pr.test.js pins it.
+ *
+ * One level only. Leading whitespace is allowed but not counted, so an indented
+ * sub-bullet becomes a sibling rather than being lost or mis-parsed: at 375px
+ * there is nothing to indent into, and a real indent stack would need a notion
+ * of a line that tasks.js does not have.
+ */
+export const BULLET = /^[ \t]*[-*+][ \t]+(.*)$/;
+/** `1.` and `1)`, the two GitHub renders. The author's start number is kept. */
+export const ORDERED = /^[ \t]*(\d{1,9})[.)][ \t]+(.*)$/;
+
+/** One block as an element. The DOM half of blocks(); everything above is pure. */
+const blockNode = (b, onTask) => ({
+  // textContent, not inline(): the point of a fence is that what is inside it
+  // is not markdown.
+  code: () => h('pre', {}, h('code', { textContent: b.code })),
+  p: () => h('p', { innerHTML: inline(b.text) }),
+  // Offset by two: the pane's own <h1> names it and the PR title is the <h2>,
+  // so a description's top-level heading sits under both.
+  heading: () => h(`h${Math.min(b.level + 2, 6)}`, { innerHTML: inline(b.text) }),
+  task: () => taskRow(b, onTask),
+  list: () => h(b.ordered ? 'ol' : 'ul', b.start > 1 ? { start: b.start } : {},
+    ...b.items.map((t) => h('li', { innerHTML: inline(t) }))),
+}[b.kind]());
+
+/** The description, rendered. Just enough markdown for a PR body. */
+const markdown = (text, onTask) => blocks(text).map((b) => blockNode(b, onTask));
 
 // A heading needs its space: `#hashtag` is prose, and rendering it as a heading
 // would swallow the line.
@@ -369,7 +439,7 @@ export const withoutHtml = (text) => (text ?? '')
     (_, t) => `#### ${t.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim()}`);
 
 /** A checkbox in the description, ticked through to GitHub. */
-function taskRow(done, text, index, onTask) {
+function taskRow({ done, text, index }, onTask) {
   const box = h('input', { type: 'checkbox', checked: done, title: 'tick this on GitHub' });
   const row = h('label', { className: `task${done ? ' done' : ''}` },
     box, h('span', { innerHTML: inline(text) }));

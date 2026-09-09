@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { pageTitle, withoutHtml, inline, queueSync, HEADING } from '../public/pr.js';
+import { pageTitle, withoutHtml, inline, queueSync, HEADING, blocks } from '../public/pr.js';
 import { fences, TASK } from '../public/tasks.js';
 
 const status = (over = {}) => ({
@@ -174,4 +174,63 @@ test('the queue light shows only what is worth acting on', () => {
   // The one that matters: the store took it, GitHub did not.
   assert.match(queueSync({ queue: q, scope: 'current', mirrorFailed: true }).className, /bad/);
   assert.equal(queueSync({ queue: q, scope: 'other-branch' }).text, 'not mirroring');
+});
+
+// --- lists ---
+//
+// The renderer had no list rule at all until this: every `- item` line fell
+// through into the prose accumulator and came out as a literal hyphen inside a
+// <p> joined by <br>, with no hanging indent. This repo's own description has
+// two sections that are nothing but long bullets.
+
+const kinds = (body) => blocks(body).map((b) => b.kind);
+const only = (body, kind) => blocks(body).filter((b) => b.kind === kind);
+
+test('a bullet list is a list, not a paragraph starting with a hyphen', () => {
+  const [list] = only('- one\n- two', 'list');
+  assert.equal(list.ordered, false);
+  assert.deepEqual(list.items, ['one', 'two']);
+});
+
+// The load-bearing one. TASK matches a subset of BULLET, so if the list rule
+// ran first a checklist line would never be given an index -- and every tick
+// after it in the body would then address the line above, silently.
+test('a checklist line is a task, never a bullet', () => {
+  assert.deepEqual(kinds('- [ ] a\n- b\n- [x] c'), ['task', 'list', 'task']);
+  assert.deepEqual(only('- [ ] a\n- b\n- [x] c', 'task').map((b) => b.index), [0, 1]);
+  assert.deepEqual(only('- [ ] a\n- b\n- [x] c', 'list')[0].items, ['b']);
+});
+
+test('an ordered list keeps the number the author started at', () => {
+  const [list] = only('3. c\n4. d', 'list');
+  assert.equal(list.ordered, true);
+  assert.equal(list.start, 3);
+  assert.deepEqual(list.items, ['c', 'd']);
+});
+
+test('a marker with no space after it is prose', () => {
+  for (const line of ['-flag', '--body-file -', '*emphasis* alone', '1.5 seconds']) {
+    assert.deepEqual(kinds(line), ['p'], line);
+  }
+});
+
+test('a nested list flattens to one level rather than being mis-parsed', () => {
+  assert.deepEqual(only('- a\n  - b\n- c', 'list')[0].items, ['a', 'b', 'c']);
+});
+
+test('a wrapped bullet stays one item', () => {
+  assert.deepEqual(only('- a line that\n  kept going\n- next', 'list')[0].items,
+    ['a line that\nkept going', 'next']);
+});
+
+test('a change of marker starts a new list', () => {
+  assert.deepEqual(kinds('- a\n1. b'), ['list', 'list']);
+});
+
+test('prose above a list stays its own paragraph', () => {
+  assert.deepEqual(kinds('Some prose:\n- a\n- b'), ['p', 'list']);
+});
+
+test('a bullet inside a fence is a sample, not a list', () => {
+  assert.deepEqual(kinds('```sh\n- not a bullet\n- [ ] not a task\n```'), ['code']);
 });
