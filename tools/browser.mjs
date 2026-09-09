@@ -93,17 +93,6 @@ for (const pane of ['pr', 'queue']) {
   await page.locator(`#${pane}`).screenshot({ path: path.join(out, `${pane}.png`) });
 }
 
-// The two tabs, and what each says about the other. `Detail (3/10)` /
-// `Files (7/23)` is the whole reason the counts are on the labels -- they are
-// what you can see while you are looking at the other half.
-const tabs = await page.locator('#pr-head .tab').allInnerTexts();
-console.log('tabs:    ', tabs.join('  |  '), '  (want a count on each)');
-
-const filesTab = page.getByRole('button', { name: /^Files/ });
-await filesTab.click();
-await page.waitForSelector('.file');
-await page.locator('#pr').screenshot({ path: path.join(out, 'pr-files.png') });
-
 // The gutters, which are only ever right or wrong on screen. Each drag moves
 // one line to a known coordinate, so the variables it writes are arithmetic on
 // the 1440x900 viewport -- and the reload says whether they survived.
@@ -114,6 +103,45 @@ const drag = async (sel, x, y) => {
   await page.mouse.move(x, y, { steps: 8 });
   await page.mouse.up();
 };
+
+// The two tabs, and what each says about the other. `Detail (3/10)` /
+// `Files (7/23)` is the whole reason the counts are on the labels -- they are
+// what you can see while you are looking at the other half.
+const tabs = await page.locator('#pr-head .tab').allInnerTexts();
+console.log('tabs:    ', tabs.join('  |  '), '  (want a count on each)');
+
+// The folds. A description this long is ten collapsed lines until you open
+// one, which is the point -- and the open one has to survive the poll, because
+// renderPr replaces the whole pane every 60 seconds and the open set is the
+// only thing outside it that remembers.
+console.log('sections:', await page.locator('.md-section').count(), ' (want one per ## in the body)');
+await page.locator('.md-section > summary').nth(1).click();
+await page.waitForTimeout(200);
+await page.locator('#pr').screenshot({ path: path.join(out, 'pr-open.png') });
+await page.locator('#pr-refresh').click();
+await page.waitForTimeout(2500);
+console.log('still open after a refresh:',
+  JSON.stringify(await page.locator('.md-section[open] > summary h3').allInnerTexts()),
+  ' (want the one clicked above)');
+
+// The measure, which is inert at the pane's 375px floor and is the whole reason
+// for the cap at the other end of its range.
+await drag('#gut-pr', 900, 450);
+await page.waitForTimeout(300);
+await page.locator('#pr').screenshot({ path: path.join(out, 'pr-wide.png') });
+console.log('measure:', await page.evaluate(() => {
+  const p = document.querySelector('.md p');
+  const face = getComputedStyle(p).fontFamily.split(',')[0];
+  return `${Math.round(p.getBoundingClientRect().width)}px of ${Math.round(
+    document.getElementById('pr-body').getBoundingClientRect().width)}px, in ${face}`;
+}), ' (want the prose capped well under the pane)');
+await drag('#gut-pr', 375, 450);
+
+const filesTab = page.getByRole('button', { name: /^Files/ });
+await filesTab.click();
+await page.waitForSelector('.file');
+await page.locator('#pr').screenshot({ path: path.join(out, 'pr-files.png') });
+
 await page.locator('.file .path').first().click();   // opens the diff pane (Files tab)
 await page.waitForSelector('main.diff-open');
 await drag('#gut-pr', 520, 450);
