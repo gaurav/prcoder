@@ -2,6 +2,12 @@
   --bg: #14161a; --panel: #1c1f26; --line: #2c313c;
   --fg: #d5d9e0; --dim: #8c93a1; --accent: #7aa2f7;
   color-scheme: dark;
+  /* The description, and only the description. Every face here ships with an OS
+     -- no webfont, deliberately: one arriving late would move every line under
+     a scroll position renderPrTab had already restored. */
+  --serif: ui-serif, Charter, "Bitstream Charter", "Iowan Old Style",
+           "Source Serif 4", Georgia, "Liberation Serif", "Times New Roman", serif;
+  --measure: 68ch;
 }
 * { box-sizing: border-box; }
 body {
@@ -113,21 +119,40 @@ a { color: var(--accent); }
 .badge.pass { background: #1f4d2e; color: #9ae6b4; }
 .badge.pend { background: #4d411f; color: #f0dc9a; }
 
-.md { font-size: 13px; color: #b9bfcb; margin-bottom: 8px; }
+/* A pull request description is prose, and it is the one thing in this window
+   that is read rather than operated. It gets a reading face, a reading size and
+   a measure; everything around it -- headings, code, the file rows, the tabs --
+   stays sans, so the difference between structure and argument is visible
+   without reading either.
+
+   The measure is not decoration. #pr goes to 60% of the window (see `main`), and
+   an unbroken 15px serif line 900px wide is worse than the 13px it replaces.
+   Left-aligned rather than centred: a centred column with a wide right gutter
+   reads as a broken layout where a left one reads as a measure. */
+.md {
+  font-family: var(--serif);
+  font-size: 15px; line-height: 1.6; color: var(--fg);
+  max-width: var(--measure);
+  margin-bottom: 8px;
+}
 /* A checklist line in the description, as the checkbox GitHub renders. */
 .md .task { display: flex; align-items: baseline; gap: 7px; padding: 1px 0; }
 .md .task input { flex: none; margin: 0; accent-color: var(--accent); cursor: pointer; }
 .md .task.done > span { color: var(--dim); text-decoration: line-through; }
 .md .task input:disabled { opacity: .5; cursor: wait; }
-.md p { margin: 0 0 6px; }
-/* The description's own headings. Sized by weight and colour rather than by
-   scale: at this width a 1.5em h3 reads as another pane's title. */
+.md p { margin: 0 0 10px; }
+/* The description's own headings, which are sans over a serif body -- that
+   contrast is the whole hierarchy, so they need no scale of their own. They used
+   to be sized by weight and colour for a different reason: the body was 13px
+   sans too, and at 375px a 1.5em heading read as another pane's title. Against
+   serif prose there is nothing left to confuse them with. */
 .md h3, .md h4, .md h5, .md h6 {
-  margin: 10px 0 4px; font-size: 13px; font-weight: 600; color: var(--fg);
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  margin: 16px 0 6px; font-size: 14px; font-weight: 600; color: var(--fg);
 }
-.md h3 { font-size: 14px; }
 .md > :first-child { margin-top: 0; }
-.md code { background: var(--bg); padding: 0 4px; border-radius: 3px; font-size: 12px; }
+/* Up one step, to sit level with 15px serif rather than under it. */
+.md code { background: var(--bg); padding: 0 4px; border-radius: 3px; font-size: 13px; }
 .md em { font-style: italic; color: var(--fg); }
 /* A fence scrolls on its own rather than widening the pane, which at 375px it
    would do at the first long command line. */
