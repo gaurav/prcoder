@@ -1,6 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { pageTitle, withoutHtml, inline, queueSync, HEADING, blocks, sectionize } from '../public/pr.js';
+import {
+  pageTitle, withoutHtml, inline, queueSync, HEADING, blocks, sectionize,
+  tabLabel, taskCount, viewedCount,
+} from '../public/pr.js';
 import { fences, TASK } from '../public/tasks.js';
 
 const status = (over = {}) => ({
@@ -286,4 +289,38 @@ test('sectioning loses nothing', () => {
   const { lead, sections } = fold(body);
   const total = lead.length + sections.reduce((n, s) => n + s.nodes.length, 0) + sections.length;
   assert.equal(total, blocks(body).length);
+});
+
+// --- the tab labels ---
+//
+// The count on each tab is the one thing it can tell you while you are looking
+// at the other one, which is the whole reason the pane can afford to show only
+// half of itself at a time.
+
+test('a tab with nothing to count is named, not numbered', () => {
+  assert.equal(tabLabel('Detail', { done: 0, total: 0 }), 'Detail');
+  assert.equal(tabLabel('Files', { done: 0, total: 0 }), 'Files');
+});
+
+test('a tab with something to count carries done over total', () => {
+  assert.equal(tabLabel('Detail', { done: 3, total: 10 }), 'Detail (3/10)');
+  // Nothing done yet still counts: `(0/4)` is four things waiting, and reads
+  // very differently from a bare `Files`.
+  assert.equal(tabLabel('Files', { done: 0, total: 4 }), 'Files (0/4)');
+});
+
+test('the description count walks the body, fences and all', () => {
+  assert.deepEqual(taskCount('- [x] a\n- [ ] b\n- [x] c'), { done: 2, total: 3 });
+  // The same rule the tick uses: a checklist line inside a fence is a sample.
+  assert.deepEqual(taskCount('```\n- [ ] sample\n```\n\n- [x] real'), { done: 1, total: 1 });
+  assert.deepEqual(taskCount('Just prose.'), { done: 0, total: 0 });
+});
+
+test('the file count is files viewed on GitHub, over files changed', () => {
+  assert.deepEqual(viewedCount([{ viewed: true }, { viewed: false }, { viewed: true }]),
+    { done: 2, total: 3 });
+  // A pull request whose files have not loaded yet must name the tab rather
+  // than throw at it -- renderPrHead runs on the first paint either way.
+  assert.deepEqual(viewedCount(), { done: 0, total: 0 });
+  assert.deepEqual(viewedCount([]), { done: 0, total: 0 });
 });

@@ -134,6 +134,15 @@ forces one. That is Playwright's own patched Firefox, not the one in
 caret offset the driver prints is 65 in Firefox and 66 in Chromium, and only one
 of them was ever wrong.
 
+What the driver waits on encodes an assumption about what the pane shows first.
+It waited on `.file` to decide the panes had finished loading, which was true
+until the pull request pane grew tabs and opened on the description instead --
+after which `.file` does not exist until something clicks Files. The failure is
+a 30-second `waitForSelector` timeout that reads as a hung server, not as a
+stale selector. It waits on `#pr-head .pr-title` now; if you change which tab
+opens by default, check every `waitForSelector` in `tools/browser.mjs` in the
+same commit rather than the next one.
+
 Three fixes for that bug do not work, so they are not worth retrying:
 `draggable="false"` on the child, `-moz-user-select` on the child, and leaving
 it to the browser. All three leave the caret at 0. The row has to stop being

@@ -304,14 +304,14 @@ function renderPrHead(pr, handlers) {
  * one: how many description checkboxes are still open, how many files are still
  * unviewed. `(3/10)` is done over total, the same way the file groups read.
  */
-const tabLabel = (name, count) => (count.total ? `${name} (${count.done}/${count.total})` : name);
+export const tabLabel = (name, count) => (count.total ? `${name} (${count.done}/${count.total})` : name);
 
-const taskCount = (body) => {
+export const taskCount = (body) => {
   const tasks = blocks(body).filter((b) => b.kind === 'task');
   return { done: tasks.filter((b) => b.done).length, total: tasks.length };
 };
 
-const viewedCount = (files = []) =>
+export const viewedCount = (files = []) =>
   ({ done: files.filter((f) => f.viewed).length, total: files.length });
 
 function renderPrTab(pr, handlers) {
