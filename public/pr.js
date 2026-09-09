@@ -425,8 +425,18 @@ function fileGroup(label, files, handlers) {
 function fileRow(f, { onViewed, onOpen, selected }) {
   const box = h('input', { type: 'checkbox', checked: f.viewed, title: 'mark viewed on GitHub' });
   writeThrough(box, (v) => onViewed(f.path, v), (v) => row.classList.toggle('viewed', v));
+  // The path goes inside a <bdi>. Its container is `direction: rtl` so that a
+  // long path is cut at the *head* and the filename survives -- but that also
+  // makes a leading `.` a neutral character at the start of an RTL run, which
+  // the bidi algorithm moves to the visual end: `.gitignore` rendered as
+  // `gitignore.` and `.github/workflows/test.yml` as `github/...test.yml.`.
+  // A bdi isolates the path and resolves it by its own first strong character,
+  // which for any real path is a Latin letter, so it lays out left to right
+  // inside a box that still overflows from the left. Checked in both engines
+  // on 2026-09-09; `unicode-bidi: plaintext` on the link fixes the order too,
+  // but moves the cut to the tail, which is the thing the rtl was for.
   const link = h('a', { href: f.url, target: '_blank', rel: 'noopener', className: 'path', title: f.path },
-    f.path);
+    h('bdi', {}, f.path));
   link.addEventListener('click', (e) => {
     if (e.metaKey || e.ctrlKey) return;   // GitHub stays one modifier away
     e.preventDefault();

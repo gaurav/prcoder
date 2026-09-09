@@ -243,10 +243,18 @@ a { color: var(--accent); }
 
 .file { display: flex; align-items: center; gap: 6px; padding: 2px 0; font-size: 13px; }
 .file.viewed .path { opacity: .45; text-decoration: line-through; }
+/* `direction: rtl` puts the ellipsis at the *head*, so a path too long for the
+   column loses its directories rather than its filename. The <bdi> the markup
+   puts inside is what stops that reordering the path itself -- see fileRow in
+   pr.js. Both are load-bearing; neither works alone. */
 .file .path {
   flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis;
   white-space: nowrap; direction: rtl; text-align: left; text-decoration: none;
 }
+/* The UA stylesheet says this already. Spelled out because it is the whole
+   reason the element is there, and a bdi that lost it would look like a
+   pointless wrapper worth deleting. */
+.file .path bdi, #diff-path bdi { unicode-bidi: isolate; }
 .file .path:hover { text-decoration: underline; }
 .file .nums { font-size: 11px; white-space: nowrap; }
 

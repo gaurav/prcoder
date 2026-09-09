@@ -149,6 +149,22 @@ console.log('groups open on arrival:', await page.locator('.group[open]').count(
 await page.locator('.group > summary').first().click();
 await page.waitForTimeout(200);
 console.log('after collapsing one:', await page.locator('.group[open]').count(), 'open');
+
+// A dotfile's leading dot, which `direction: rtl` moves to the other end
+// unless the <bdi> inside is doing its job -- `.gitignore` drawn as
+// `gitignore.`. Measured rather than eyeballed: the dot is invisible at this
+// size and reads as a full stop either way.
+console.log('dotfile paths draw in order:', await page.evaluate(() => {
+  const dots = [...document.querySelectorAll('.file .path')]
+    .filter((a) => a.title.startsWith('.'));
+  if (!dots.length) return 'no dotfile in this PR to check';
+  const bad = dots.filter((a) => {
+    const t = document.createTreeWalker(a, NodeFilter.SHOW_TEXT).nextNode();
+    const r = (i, j) => { const x = document.createRange(); x.setStart(t, i); x.setEnd(t, j); return x.getBoundingClientRect(); };
+    return r(0, 1).left >= r(1, 2).left;   // the dot is not left of what follows
+  });
+  return bad.length ? `BAD: ${bad.map((a) => a.title).join(', ')}` : `${dots.length} checked, all leading-dot-first`;
+}));
 await page.locator('#pr').screenshot({ path: path.join(out, 'pr-files-collapsed.png') });
 await page.locator('.group > summary').first().click();
 await page.waitForTimeout(200);

@@ -24,7 +24,10 @@ const el = (id) => document.getElementById(id);
 
 export async function openDiff(f, { onViewed }) {
   openPath = f.path;
-  el('diff-path').textContent = f.path;
+  // A <bdi>, for the reason spelled out at fileRow in pr.js: this element is
+  // `direction: rtl` so a long path is cut at the head, and that alone would
+  // move a leading dot to the other end.
+  el('diff-path').replaceChildren(h('bdi', {}, f.path));
   el('diff-path').title = f.path;
   el('diff-gh').href = f.url;
   el('diff').hidden = false;
