@@ -18,7 +18,9 @@
  * exclusive `stage` field, which costs the bare-#N rule for an item that is
  * mirrored *and* filed, leaves restore with no stage to restore to, and changes
  * what existing fields mean -- the one thing store.js says to bump VERSION for.
- * See issue #20.
+ * See issue #43, which is where that trade-off is written down. (#20 asked a
+ * different question -- what the pane should do with a filed item at all -- and
+ * the tabs below are the answer to it.)
  */
 export const TABS = {
   local: (i) => !i.deleted && !i.done && !i.inPr && !i.issue,
