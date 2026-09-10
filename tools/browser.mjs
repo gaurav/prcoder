@@ -327,12 +327,28 @@ await page.waitForSelector('.item .text');
 // The bug above, pinned: a click in the middle of an item's text has to land
 // in the middle of it. Silent in Chromium either way, so this only earns its
 // keep under PRCODER_BROWSER=firefox.
-const text = page.locator('.item .text').first();
-const tb = await text.boundingBox();
-await page.mouse.click(tb.x + tb.width / 2, tb.y + tb.height / 2);
+//
+// Aimed at the glyphs and not at the box. `.item .text` is `flex: 1`, so its
+// box runs to the end of the row and the middle of *that* is well past the end
+// of the sentence -- clicking there put the caret at the end of the text, and
+// `caret > 0` called it a pass. It read as a real offset for as long as nobody
+// compared it to the length: 34 of 34. So measure the text node and aim inside
+// it, and fail a caret that has snapped to either end rather than only to the
+// start.
+const span = await page.locator('.item .text').first().evaluate((el) => {
+  const t = document.createTreeWalker(el, NodeFilter.SHOW_TEXT).nextNode();
+  const r = document.createRange();
+  r.selectNodeContents(t);
+  const { x, y, width, height } = r.getBoundingClientRect();
+  return { x, y, width, height, len: t.data.length };
+});
+await page.mouse.click(span.x + span.width * 0.4, span.y + span.height / 2);
 await page.waitForTimeout(200);
 const caret = await page.evaluate(() => window.getSelection().anchorOffset);
-console.log('caret:  ', caret, caret > 0 ? '' : '  <-- click landed at the start');
+console.log('caret:  ', `${caret} of ${span.len}`,
+  caret > 0 && caret < span.len ? ''
+    : caret === 0 ? '  <-- click landed at the start of the text'
+      : '  <-- click landed at the end of the text');
 
 // Back to whatever the branch had, which also takes our block back out of the
 // PR description on the way past.

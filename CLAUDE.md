@@ -131,10 +131,20 @@ forces one. That is Playwright's own patched Firefox, not the one in
 /Applications -- Playwright cannot drive a stock build, so the check is
 `existsSync(firefox.executablePath())` and the fix for a miss is
 `npx playwright install firefox`. Running both is worth the second minute: the
-two engines land the caret a character apart on the same row, and only one of
-them was ever wrong. Read the number against the row being clicked rather than
-against a remembered value -- it is an offset into that item's text, so it moves
-whenever the driver's fixture does; `caret: 0` is the bug, anything else is not.
+caret bug is invisible in Chromium and fatal in Firefox, and it is the one thing
+here that only one engine can tell you about.
+
+The caret check prints `caret: 12 of 34` -- an offset into that row's text, and
+the length of it. Both are needed, and reading only the first is how the check
+sat half-broken. `.item .text` is `flex: 1`, so its box runs to the end of the
+row and the middle of the box is past the end of the sentence; clicking there
+sent the caret to the end of the text, and `caret > 0` passed. That is all the
+old `65` and `66` in this file ever were -- the length of whatever row came
+first, one apart because the two engines round a click past the end
+differently. The driver measures the text node and aims inside it now, so the
+engines agree and the number means what it says. `0 of n` is the Firefox drag
+bug; `n of n` means the click missed the glyphs and the check is not checking
+anything.
 
 What the driver waits on encodes an assumption about what the pane shows first.
 It waited on `.file` to decide the panes had finished loading, which was true
