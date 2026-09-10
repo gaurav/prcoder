@@ -1,6 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { pageTitle, withoutHtml, inline, queueSync, HEADING } from '../public/pr.js';
+import {
+  pageTitle, withoutHtml, inline, queueSync, HEADING, blocks, sectionize,
+  tabLabel, taskCount, viewedCount,
+} from '../public/pr.js';
 import { fences, TASK } from '../public/tasks.js';
 
 const status = (over = {}) => ({
@@ -174,4 +177,160 @@ test('the queue light shows only what is worth acting on', () => {
   // The one that matters: the store took it, GitHub did not.
   assert.match(queueSync({ queue: q, scope: 'current', mirrorFailed: true }).className, /bad/);
   assert.equal(queueSync({ queue: q, scope: 'other-branch' }).text, 'not mirroring');
+});
+
+// --- lists ---
+//
+// The renderer had no list rule at all until this: every `- item` line fell
+// through into the prose accumulator and came out as a literal hyphen inside a
+// <p> joined by <br>, with no hanging indent. This repo's own description has
+// two sections that are nothing but long bullets.
+
+const kinds = (body) => blocks(body).map((b) => b.kind);
+const only = (body, kind) => blocks(body).filter((b) => b.kind === kind);
+
+test('a bullet list is a list, not a paragraph starting with a hyphen', () => {
+  const [list] = only('- one\n- two', 'list');
+  assert.equal(list.ordered, false);
+  assert.deepEqual(list.items, ['one', 'two']);
+});
+
+// The load-bearing one. TASK matches a subset of BULLET, so if the list rule
+// ran first a checklist line would never be given an index -- and every tick
+// after it in the body would then address the line above, silently.
+test('a checklist line is a task, never a bullet', () => {
+  assert.deepEqual(kinds('- [ ] a\n- b\n- [x] c'), ['task', 'list', 'task']);
+  assert.deepEqual(only('- [ ] a\n- b\n- [x] c', 'task').map((b) => b.index), [0, 1]);
+  assert.deepEqual(only('- [ ] a\n- b\n- [x] c', 'list')[0].items, ['b']);
+});
+
+test('an ordered list keeps the number the author started at', () => {
+  const [list] = only('3. c\n4. d', 'list');
+  assert.equal(list.ordered, true);
+  assert.equal(list.start, 3);
+  assert.deepEqual(list.items, ['c', 'd']);
+});
+
+test('a marker with no space after it is prose', () => {
+  for (const line of ['-flag', '--body-file -', '*emphasis* alone', '1.5 seconds']) {
+    assert.deepEqual(kinds(line), ['p'], line);
+  }
+});
+
+test('a nested list flattens to one level rather than being mis-parsed', () => {
+  assert.deepEqual(only('- a\n  - b\n- c', 'list')[0].items, ['a', 'b', 'c']);
+});
+
+test('a wrapped bullet stays one item', () => {
+  assert.deepEqual(only('- a line that\n  kept going\n- next', 'list')[0].items,
+    ['a line that\nkept going', 'next']);
+});
+
+test('a change of marker starts a new list', () => {
+  assert.deepEqual(kinds('- a\n1. b'), ['list', 'list']);
+});
+
+test('prose above a list stays its own paragraph', () => {
+  assert.deepEqual(kinds('Some prose:\n- a\n- b'), ['p', 'list']);
+});
+
+test('a bullet inside a fence is a sample, not a list', () => {
+  assert.deepEqual(kinds('```sh\n- not a bullet\n- [ ] not a task\n```'), ['code']);
+});
+
+// --- sectioning ---
+//
+// A description is folded by section so that ten sections of agent-written
+// prose do not bury the rest of the pane. The fold level comes from the body
+// rather than being fixed here, because prcoder's own mirrored block writes
+// `## TODO` while a description someone typed may well start at `#`.
+
+const fold = (body) => sectionize(blocks(body));
+const titles = (body) => fold(body).sections.map((s) => s.title);
+
+test('a description folds at the shallowest heading level it uses', () => {
+  assert.deepEqual(titles('# One\n\ntext\n\n# Two'), ['One', 'Two']);
+  assert.deepEqual(titles('## One\n\ntext\n\n## Two'), ['One', 'Two']);
+});
+
+test('a heading deeper than the fold level stays inside its section', () => {
+  const { sections } = fold('## One\n\n#### Inner\n\ntext\n\n## Two');
+  assert.deepEqual(sections.map((s) => s.title), ['One', 'Two']);
+  assert.deepEqual(sections[0].nodes.map((b) => b.kind), ['heading', 'p']);
+  assert.equal(sections[0].nodes[0].level, 4);
+});
+
+test('everything before the first heading is the lead', () => {
+  // The shape of this repo's own description: prose, then the install fence,
+  // then the first section.
+  const { lead, sections } = fold('Run prcoder.\n\n```sh\nnpm install\n```\n\n## Why\n\nbecause');
+  assert.deepEqual(lead.map((b) => b.kind), ['p', 'code']);
+  assert.equal(sections.length, 1);
+});
+
+test('a description with no headings is all lead and no sections', () => {
+  const { lead, sections } = fold('Just a sentence.');
+  assert.deepEqual(lead.map((b) => b.kind), ['p']);
+  assert.deepEqual(sections, []);
+});
+
+test('a heading inside a fence opens no section', () => {
+  // This repo's README and its description each show a fenced `## Queue`.
+  assert.deepEqual(titles('```markdown\n## Queue\n```\n\n## Real'), ['Real']);
+});
+
+test('two sections with the same title get keys that tell them apart', () => {
+  assert.deepEqual(fold('## Why\n\na\n\n## Why\n\nb').sections.map((s) => s.key),
+    ['Why', 'Why#2']);
+});
+
+test('sectioning loses nothing', () => {
+  const body = 'lead\n\n## One\n\n- a\n- b\n\n### Deep\n\n## Two\n\n- [ ] t';
+  const { lead, sections } = fold(body);
+  const total = lead.length + sections.reduce((n, s) => n + s.nodes.length, 0) + sections.length;
+  assert.equal(total, blocks(body).length);
+});
+
+// --- the tab labels ---
+//
+// The count on each tab is the one thing it can tell you while you are looking
+// at the other one, which is the whole reason the pane can afford to show only
+// half of itself at a time.
+
+test('a tab with nothing to count is named, not numbered', () => {
+  assert.equal(tabLabel('Detail', { done: 0, total: 0 }), 'Detail');
+  assert.equal(tabLabel('Files', { done: 0, total: 0 }), 'Files');
+});
+
+// A fraction that has run out says the wrong thing: `(10/10)` reads as a
+// proportion you would want to be larger, when it means there is nothing left.
+test('a tab whose count has run out says so rather than showing 10/10', () => {
+  assert.equal(tabLabel('Detail', { done: 10, total: 10 }), 'Detail ✓');
+  assert.equal(tabLabel('Files', { done: 1, total: 1 }), 'Files ✓');
+  // Distinct from the nothing-to-count case, which is the bare name -- so a
+  // description with no checklist never claims to have finished one.
+  assert.equal(tabLabel('Detail', { done: 0, total: 0 }), 'Detail');
+});
+
+test('a tab with something to count carries done over total', () => {
+  assert.equal(tabLabel('Detail', { done: 3, total: 10 }), 'Detail (3/10)');
+  // Nothing done yet still counts: `(0/4)` is four things waiting, and reads
+  // very differently from a bare `Files`.
+  assert.equal(tabLabel('Files', { done: 0, total: 4 }), 'Files (0/4)');
+});
+
+test('the description count walks the body, fences and all', () => {
+  assert.deepEqual(taskCount('- [x] a\n- [ ] b\n- [x] c'), { done: 2, total: 3 });
+  // The same rule the tick uses: a checklist line inside a fence is a sample.
+  assert.deepEqual(taskCount('```\n- [ ] sample\n```\n\n- [x] real'), { done: 1, total: 1 });
+  assert.deepEqual(taskCount('Just prose.'), { done: 0, total: 0 });
+});
+
+test('the file count is files viewed on GitHub, over files changed', () => {
+  assert.deepEqual(viewedCount([{ viewed: true }, { viewed: false }, { viewed: true }]),
+    { done: 2, total: 3 });
+  // A pull request whose files have not loaded yet must name the tab rather
+  // than throw at it -- renderPrHead runs on the first paint either way.
+  assert.deepEqual(viewedCount(), { done: 0, total: 0 });
+  assert.deepEqual(viewedCount([]), { done: 0, total: 0 });
 });

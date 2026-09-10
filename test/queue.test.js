@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseFuture, renderPrBlock, syncFromPrBlock, toggleTask } from '../queue.js';
-import { TASK, fences, taskLines } from '../public/tasks.js';
+import { taskLines } from '../public/tasks.js';
+import { blocks, sectionize } from '../public/pr.js';
 
 const FUTURE = `# Notes
 
@@ -229,9 +230,14 @@ test('a checkbox whose line has changed underneath is refused, not ticked', () =
 // The client sends a position in this list; if the two sides ever disagree on
 // which lines count, every index past the first difference ticks the wrong
 // line. Walking one body through both is what keeps them in step.
-const paneTasks = (body) => fences(body)
-  .filter((c) => c.text !== undefined)
-  .flatMap((c) => c.text.split('\n').map((l) => TASK.exec(l)).filter(Boolean).map((m) => m[2]));
+//
+// This calls the pane's real renderer rather than a walk written here. It used
+// to be a third copy of the pattern -- which meant the one file whose whole
+// subject is "these two walks must not diverge" was comparing the server
+// against something neither side ships. public/pr.js only touches `document`
+// inside function bodies, so importing it here is safe.
+
+const paneTasks = (body) => blocks(body).filter((b) => b.kind === 'task').map((b) => b.text);
 
 test('the PR pane and queue.js pick out the same checklist lines', () => {
   const seen = paneTasks(BODY);
@@ -296,4 +302,55 @@ test('an unterminated fence leaves both sides counting the same lines', () => {
 test('the fenced sample survives a tick untouched', () => {
   const { body } = toggleTask(FENCED, 0, true, 'before the fence');
   assert.match(body, /```markdown\n## Queue\n\n- \[ \] not a task, an example\n- \[x\] nor this one\n```/);
+});
+
+// The pane folds a description into its sections, so the blocks the renderer
+// walks are regrouped between blocks() and the DOM. That regrouping must be
+// exactly that: every task keeps the index it was given by the one left-to-right
+// walk of the body, whichever section it lands in.
+//
+// If it ever stopped being so -- a section body built lazily on first open, a
+// filter that drops prcoder's own block because the queue pane already shows it
+// -- every tick past the first missing line would address the line above, and
+// nothing on screen would say so.
+const FOLDED = [
+  'A lead paragraph.',
+  '',
+  '- [ ] first task, in the lead',
+  '',
+  '## One',
+  '',
+  '- a bullet',
+  '- [x] second task',
+  '',
+  '### Deeper',
+  '',
+  '```markdown',
+  '- [ ] fenced, not a task',
+  '## fenced, not a section',
+  '```',
+  '',
+  '## Two',
+  '',
+  '- [ ] third task',
+].join('\n');
+
+test('folding a description into sections does not renumber its checkboxes', () => {
+  const flat = blocks(FOLDED).filter((b) => b.kind === 'task');
+  const { lead, sections } = sectionize(blocks(FOLDED));
+  const folded = [...lead, ...sections.flatMap((s) => s.nodes)].filter((b) => b.kind === 'task');
+
+  assert.deepEqual(folded.map((b) => [b.index, b.text]), flat.map((b) => [b.index, b.text]));
+  assert.deepEqual(flat.map((b) => b.index), flat.map((_, i) => i));
+  // The fenced checklist line counts for neither side.
+  assert.equal(taskLines(FOLDED).length, flat.length);
+  assert.deepEqual(flat.map((b) => b.text),
+    ['first task, in the lead', 'second task', 'third task']);
+  // One task in the lead, one in each section: the split is real, not a no-op.
+  assert.equal(lead.filter((b) => b.kind === 'task').length, 1);
+  assert.deepEqual(sections.map((s) => s.nodes.filter((b) => b.kind === 'task').length), [1, 1]);
+
+  for (const b of folded) {
+    assert.doesNotThrow(() => toggleTask(FOLDED, b.index, true, b.text), `${b.index} (${b.text})`);
+  }
 });

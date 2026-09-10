@@ -14,7 +14,9 @@ prcoder <pr-url>           # any PR, anywhere
 prcoder --model opus       # ...with flags for the Claude session
 ```
 
-Then open <http://localhost:1618>.
+It prints the URL to open, and opens it for you unless `PRCODER_NO_OPEN` is
+set. The port is per-repo and stays the same across runs -- see *A URL that
+stays put* below.
 
 ## Where the repo is
 
@@ -46,13 +48,23 @@ Claude gains a flag prcoder also wants.
 prcoder's own settings are environment variables — `PRCODER_PORT`, `PRCODER_NO_OPEN`,
 `PRCODER_VERBOSE`, `CLAUDE_BIN` — which cannot collide with a flag at all.
 
-The port is derived from the repo's path, so a repo gets the same URL every
-run -- one you can bookmark, add to the Dock or point an IDE pane at (see
-*Finding it again*). Different repos, and different worktrees, get different
-ports, so several sessions run at once. A busy port falls back to a free one
-with a note on stderr. Set `PRCODER_PORT` to pin one instead, `PRCODER_NO_OPEN=1`
-to be left with just the URL on stdout, or `PRCODER_OPEN` to a command of your
-own that gets the URL appended.
+The first run in a repo picks a port -- seeded from a hash of the path, and
+stepped along if that one is busy -- and records it in `.prcoder/port.json`.
+Every run after that reads the file, so a repo gets the same URL forever: one
+you can bookmark, add to the Dock or point an IDE pane at (see *Finding it
+again*), and one that survives renaming the directory. Different repos, and
+different worktrees, get different ports, so several sessions run at once. A
+busy port falls back to a free one with a note on stderr.
+
+Ports come from 10240-14335 because browsers refuse a list of well-known ones
+outright -- Firefox answers *"This address is restricted"*, with nothing on
+screen to connect it to prcoder. The list is the
+[WHATWG fetch standard's](https://fetch.spec.whatwg.org/#port-blocking) and
+10080 is its highest entry, so nothing derived here can land on one. Edit
+`port.json` to pin a port permanently (avoid that list), or set `PRCODER_PORT`
+to pin one for a single run; `PRCODER_NO_OPEN=1` to be left with just the URL
+on stdout, or `PRCODER_OPEN` to a command of your own that gets the URL
+appended.
 
 Each tab names itself `owner/repo#N · pull request title` -- the branch and
 `(no PR)` when there isn't one -- and re-names itself as the branch moves, so a
@@ -64,15 +76,30 @@ Every line between the panes is a splitter: drag it to resize, double-click it
 to drop back to the default. The sizes are remembered per browser, so the
 layout you settle on is the one the next `prcoder` opens with.
 
-**Pull request** — title, description, checks, linked issues, and every changed
-file grouped as *Tests* / *Code* / *Config & docs*, tests first, because tests
-are the fastest way to see what functionality actually changed. The checkbox on
-each file is GitHub's own "viewed" checkbox: tick it here and it's ticked on
-github.com. Checklists in the description are real checkboxes too, and they
-write straight back to the description -- ticking one inside prcoder's own TODO
-block ticks the queue item it came from. Clicking a file opens its diff in the
-**Diff** pane; cmd/ctrl-clicking opens GitHub's diff viewer at that file
+**Pull request** — which pull request you are in stays at the top: the title,
+the state, the branch it targets, the checks. Below that are two tabs, because
+reading the argument and working the files are two different things and each
+wants the whole pane.
+
+*Detail* is the description. It opens as the lead paragraph and then one folded
+line per section, so a long one is an outline you scan rather than a wall you
+scroll; a section that contains checklist items says how many are still open.
+The prose is set in serif at a reading size and capped to a comfortable line
+length, because it is the one thing in the window that is read rather than
+operated. Checklists in it are real checkboxes and write straight back to the
+description -- ticking one inside prcoder's own TODO block ticks the queue item
+it came from.
+
+*Files* is every changed file grouped as *Tests* / *Code* / *Config & docs*,
+tests first, because tests are the fastest way to see what functionality
+actually changed. The checkbox on each file is GitHub's own "viewed" checkbox:
+tick it here and it's ticked on github.com. Clicking a file opens its diff in
+the **Diff** pane; cmd/ctrl-clicking opens GitHub's diff viewer at that file
 instead.
+
+Each tab carries the count the other one cannot show you — how many description
+boxes are still unticked, how many files are still unviewed — so neither hides
+from you while you are in the other.
 
 **Diff** — the selected file's patch, rendered plainly above the terminal so
 select → read → tick viewed → ask Claude never leaves the window. It shows the
@@ -105,12 +132,20 @@ mean to work through it. The arrow next to the input flips that to the top for
 the other way of using a queue -- the thing you must not forget to do next --
 and stays flipped.
 
+## Scratch space
+
+`data/` is gitignored and is where throwaway output goes -- driver screenshots,
+a snapshot of a PR body taken before a write, anything you want next to the code
+without committing it. Nothing reads it; it exists so that neither you nor an
+agent working in this repo has to reach for `/tmp`.
+
 ## Where the queue lives
 
 `.prcoder/queue.json`, in a directory that ignores itself -- it holds a
 `.gitignore` of one line, `*`, so nothing is added to your own and nothing
 shows up in `git status`. **prcoder does not write anything you own unless you
-ask it to.**
+ask it to.** The only other file there is `port.json`, which is one line and
+the port this working copy listens on.
 
 ```json
 {
@@ -155,7 +190,7 @@ prcoder  gaurav/prcoder   initial-implementation → main   2 unpushed · 8 unco
 PR #1    A browser workspace around a live Claude Code session
          https://github.com/gaurav/prcoder/pull/1
 queue    4 local · 1 done · 10 in the PR · 1 issue   queue mirrored
-serving  http://localhost:7455   1 tab   q quit · r refresh · v verbose · o open
+serving  http://localhost:17455   1 tab   q quit · r refresh · v verbose · o open
 ```
 
 All of it is what the browser's poll worked out anyway, so it costs no extra
@@ -194,11 +229,12 @@ with prcoder at all.
 The [`gh` CLI](https://cli.github.com/), authenticated. All GitHub access goes
 through it, so there is no token to configure.
 
-`npm install` brings Playwright and Chromium for `tools/shot.mjs`. Firefox is a
-separate download -- `npx playwright install firefox` -- and is worth having:
-`PRCODER_BROWSER=firefox` is the run that catches anything to do with selection,
-focus or dragging, which Chromium is happy to render correctly and Firefox is
-not.
+`npm install` brings Playwright for `tools/browser.mjs`; the engines themselves
+are a separate download -- `npx playwright install firefox chromium`. The driver
+prefers Firefox and falls back to Chromium, because Firefox is what catches
+anything to do with selection, focus or dragging, which Chromium is happy to
+render correctly and Firefox is not. `PRCODER_BROWSER=chromium|firefox` forces
+one.
 
 ## Finding it again
 
@@ -219,9 +255,9 @@ export PRCODER_OPEN='/Applications/Firefox.app/Contents/MacOS/firefox -new-windo
 gives each prcoder its own window, listed by title in the Window menu and
 Mission Control.
 
-**A Dock icon per repo.** This works because the port is fixed: it is a hash
-of the repo's path, so a repo listens on the same port every run (`prcoder`
-prints it). In Safari, open that URL and choose *File → Add to Dock*. The app
+**A Dock icon per repo.** This works because the port is fixed: a repo records
+its port in `.prcoder/port.json` on the first run and listens on it every run
+after (`prcoder` prints it). In Safari, open that URL and choose *File → Add to Dock*. The app
 it makes keeps the page title as its window title, so it reads `owner/repo#N ·
 …` in Cmd-Tab. From then on start prcoder with `PRCODER_NO_OPEN=1` and click
 the icon. The one time the port moves is when a second prcoder is already
@@ -245,4 +281,4 @@ finding out whether a PR-shaped workspace beats a chat-shaped one; it's meant to
 be cheap to rewrite.
 
 `npm test` covers the parts worth pinning down: the queue store, file grouping, GitHub's diff
-anchors, and every queue ↔ PR-description transition.
+anchors, every queue ↔ PR-description transition, and the routes that answer without `gh`.

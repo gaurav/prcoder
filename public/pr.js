@@ -3,12 +3,27 @@ import { TASK, fences } from './tasks.js';
 // Skips absent sections; DOM append() would render them as the text "null".
 const kids = (list) => list.flat().filter((k) => k != null);
 
-// Small helper: build an element and append children.
-export function h(tag, props = {}, ...children) {
+/**
+ * Small helper: build an element and append children.
+ *
+ * `dataset` is pulled out and merged rather than assigned, because it is a
+ * readonly accessor -- Object.assign would drop it on the floor without
+ * complaining, and the caller gets an element with no data attributes and no
+ * error to explain why. Two call sites used to work around that by hand.
+ */
+export function h(tag, { dataset, ...props } = {}, ...children) {
   const node = Object.assign(document.createElement(tag), props);
+  if (dataset) Object.assign(node.dataset, dataset);
   node.append(...kids(children));
   return node;
 }
+
+/** A button with its handler, the one shape every pane's chrome is built from. */
+export const btn = (label, fn, props = {}) => {
+  const b = h('button', props, label);
+  b.onclick = fn;
+  return b;
+};
 
 /**
  * JSON in, JSON out, an error thrown either way it can fail -- a bad status or
@@ -198,6 +213,12 @@ export const renderQueueSync = (status) => paintLight('queue-sync', queueSync(st
 /** The pane with no PR to show: why, and the one thing worth doing about it. */
 export function renderNoPr(status, { onCreate }) {
   const host = document.getElementById('pr-body');
+  // The head is a whole pull request's worth of identity -- title, badges,
+  // tabs -- and nothing else clears it, so without this the last PR's heading
+  // sits above "No pull request for main yet."
+  document.getElementById('pr-head').replaceChildren();
+  tab = 'detail';
+  shownFor = null;
   const onDefault = status.branch === status.defaultBranch;
 
   const why = status.detached ? 'HEAD is detached — no branch to open a pull request for.'
@@ -219,10 +240,60 @@ export function renderNoPr(status, { onCreate }) {
   ]));
 }
 
-export function renderPr(pr, handlers) {
-  const host = document.getElementById('pr-body');
+/**
+ * Which half of the pane is showing, where each half was scrolled to, and which
+ * pull request that was all decided about.
+ *
+ * It lives out here because renderPr runs on every 60s poll and replaces both
+ * roots wholesale, so anything the reader chose about the *view* is gone the
+ * moment it does. diff.js and queue.js keep their state in module scope for the
+ * same reason.
+ *
+ * Not localStorage. The tab is a per-pull-request fact, and a browser-wide one
+ * would carry a decision about a description you have finished reading onto a
+ * description you have not opened yet.
+ */
+let tab = 'detail';
+let shownFor = null;
+const scrolled = { detail: 0, files: 0 };
+const openSections = new Set();
+// Groups record which are *closed*, the inverse of sections, because their
+// default is open -- so a group nobody has touched needs no entry, and a group
+// that appears for the first time arrives open rather than missing.
+const closedGroups = new Set();
 
-  host.replaceChildren(...kids([
+/**
+ * The pull request pane, in two roots.
+ *
+ * #pr-head is the identity -- which pull request, on what branch, passing or
+ * not -- and does not scroll. #pr-body is one of two views of it: the argument
+ * (Detail) or the work (Files). They are tabs rather than one column because
+ * they are two different things to be doing, they each want the whole pane, and
+ * an agent-written description is long enough to bury a file list entirely.
+ */
+export function renderPr(pr, handlers) {
+  // A different pull request is a different set of sections and a different
+  // amount of scroll; none of the old numbers mean anything against it.
+  if (shownFor !== pr.number) {
+    shownFor = pr.number;
+    scrolled.detail = 0;
+    scrolled.files = 0;
+    openSections.clear();
+  }
+  renderPrHead(pr, handlers);
+  renderPrTab(pr, handlers);
+}
+
+function renderPrHead(pr, handlers) {
+  const switchTo = (name) => {
+    tab = name;
+    renderPrHead(pr, handlers);
+    renderPrTab(pr, handlers);
+  };
+  const tabBtn = (name, label) =>
+    btn(label, () => switchTo(name), { className: tab === name ? 'tab on' : 'tab' });
+
+  document.getElementById('pr-head').replaceChildren(...kids([
     h('a', { className: 'pr-link', href: pr.url, target: '_blank', rel: 'noopener' },
       `#${pr.number} on GitHub ↗`),
     h('h2', { className: 'pr-title' }, pr.title),
@@ -234,13 +305,64 @@ export function renderPr(pr, handlers) {
       h('span', { className: 'del' }, `−${pr.deletions}`),
     ),
     checks(pr.checks),
-    h('div', { className: 'body md' }, ...markdown(pr.body, handlers.onTask)),
-    issues(pr.issues),
+    h('div', { className: 'tabs' },
+      tabBtn('detail', tabLabel('Detail', taskCount(pr.body))),
+      tabBtn('files', tabLabel('Files', viewedCount(pr.files)))),
+  ]));
+}
+
+/**
+ * The count each tab carries is what it can tell you while you are on the other
+ * one: how many description checkboxes are still open, how many files are still
+ * unviewed. Three states, because a fraction that has run out says the wrong
+ * thing -- `Detail (10/10)` reads as a proportion you would want to be larger,
+ * when what it means is that there is nothing left to do.
+ *
+ *   Detail          nothing to count
+ *   Detail (3/10)   seven outstanding, done over total as the file groups read
+ *   Detail ✓        there were things, and they are all done
+ */
+export const tabLabel = (name, { done, total }) => {
+  if (!total) return name;
+  return done === total ? `${name} ✓` : `${name} (${done}/${total})`;
+};
+
+export const taskCount = (body) => {
+  const tasks = blocks(body).filter((b) => b.kind === 'task');
+  return { done: tasks.filter((b) => b.done).length, total: tasks.length };
+};
+
+export const viewedCount = (files = []) =>
+  ({ done: files.filter((f) => f.viewed).length, total: files.length });
+
+function renderPrTab(pr, handlers) {
+  const host = document.getElementById('pr-body');
+  // Read before the replace. Afterwards the old height is gone and the browser
+  // has already clamped scrollTop against whatever went in.
+  scrolled[tab] = host.scrollTop;
+  // A <summary> is a keyboard control, and a poll landing a second after you
+  // tabbed onto one would otherwise drop focus on the floor. queue.js decided
+  // not to freeze a whole pane over focus and that still holds -- this restores
+  // it instead.
+  const focused = document.activeElement?.closest?.('.md-section')?.dataset.key;
+
+  host.replaceChildren(...kids(tab === 'files' ? [
+    ...GROUPS.map(([key, label]) => fileGroup(label, pr.groups[key], handlers)),
     h('div', { className: 'meta' },
       h('a', { href: `${pr.url}#issuecomment`, target: '_blank', rel: 'noopener' },
         `${pr.counts.comments} comments · ${pr.counts.reviews} reviews ↗`)),
-    ...GROUPS.map(([key, label]) => fileGroup(label, pr.groups[key], handlers)),
+  ] : [
+    issueRow(pr.issues, true, 'Closes:'),
+    h('div', { className: 'body md' }, ...description(pr.body, handlers.onTask)),
+    issueRow(pr.issues, false, 'Mentions:'),
   ]));
+
+  // Assigning forces layout, so this lands against the new content rather than
+  // the old. Nothing reflows underneath it afterwards -- the description's
+  // serif stack is all system faces, deliberately, because a webfont arriving
+  // late would move every line under a scroll position already restored.
+  host.scrollTop = scrolled[tab];
+  if (focused) host.querySelector(`.md-section[data-key="${CSS.escape(focused)}"] > summary`)?.focus();
 }
 
 const badge = (text, kind) => h('span', { className: `badge ${kind}` }, text);
@@ -254,79 +376,133 @@ function checks({ passed, failed, pending }) {
   );
 }
 
-// Two rows, because the two kinds of link mean different things: one set closes
-// on merge, the other is only mentioned in the body. The row label says which,
-// so the chips stay bare numbers.
-function issues(list) {
-  return [['Closes:', true], ['Mentions:', false]].map(([label, closes]) => {
-    const kind = list.filter((i) => i.closes === closes);
-    if (!kind.length) return null;
-    return h('div', { className: 'issues' },
-      h('span', { className: 'issues-label' }, label),
-      ...kind.map((i) => h('a', { href: i.url, target: '_blank', rel: 'noopener', title: i.title ?? '' },
-        `#${i.number}`)));
-  });
+/**
+ * One row of issue chips. The row label says which kind, so the chips stay bare
+ * numbers.
+ *
+ * The two kinds mean different things and are placed differently because of it.
+ * `Closes:` is a handful of issues this pull request answers, and it belongs
+ * above the description as part of what the pull request *is*. `Mentions:` is
+ * every bare `#N` linkedIssues() could find in the body, which on a description
+ * that discusses its own backlog is dozens -- six rows of chips between the
+ * title and the first sentence, which is the burial this pane is being fixed
+ * for. It goes underneath.
+ */
+function issueRow(list, closes, label) {
+  const kind = list.filter((i) => i.closes === closes);
+  if (!kind.length) return null;
+  return h('div', { className: 'issues' },
+    h('span', { className: 'issues-label' }, label),
+    ...kind.map((i) => h('a', { href: i.url, target: '_blank', rel: 'noopener', title: i.title ?? '' },
+      `#${i.number}`)));
 }
 
+/**
+ * One group of changed files, folded.
+ *
+ * Open by default, which is the opposite of a description's sections and for
+ * the opposite reason: this tab is the working surface, and a file list you
+ * have to open is a file list in the way. The fold is here so a group you have
+ * finished with can be got out of the way -- thirty-five files across three
+ * groups is a smaller version of the problem the tabs were for.
+ */
 function fileGroup(label, files, handlers) {
   if (!files?.length) return null;
   const seen = files.filter((f) => f.viewed).length;
-  return h('section', { className: 'group' },
-    h('h3', {}, `${label} `, h('span', { className: 'count' }, `${seen}/${files.length}`)),
-    ...files.map((f) => fileRow(f, handlers)),
-  );
+  const d = h('details', {
+    className: 'fold group', open: !closedGroups.has(label), dataset: { group: label },
+  },
+  h('summary', {},
+    h('h3', {}, label),
+    h('span', { className: 'count' }, `${seen}/${files.length}`)),
+  h('div', { className: 'sec-body' }, ...files.map((f) => fileRow(f, handlers))));
+  d.addEventListener('toggle', () => {
+    if (d.open) closedGroups.delete(label); else closedGroups.add(label);
+  });
+  return d;
 }
 
 function fileRow(f, { onViewed, onOpen, selected }) {
   const box = h('input', { type: 'checkbox', checked: f.viewed, title: 'mark viewed on GitHub' });
   writeThrough(box, (v) => onViewed(f.path, v), (v) => row.classList.toggle('viewed', v));
+  // The path goes inside a <bdi>. Its container is `direction: rtl` so that a
+  // long path is cut at the *head* and the filename survives -- but that also
+  // makes a leading `.` a neutral character at the start of an RTL run, which
+  // the bidi algorithm moves to the visual end: `.gitignore` rendered as
+  // `gitignore.` and `.github/workflows/test.yml` as `github/...test.yml.`.
+  // A bdi isolates the path and resolves it by its own first strong character,
+  // which for any real path is a Latin letter, so it lays out left to right
+  // inside a box that still overflows from the left. Checked in both engines
+  // on 2026-09-09; `unicode-bidi: plaintext` on the link fixes the order too,
+  // but moves the cut to the tail, which is the thing the rtl was for.
   const link = h('a', { href: f.url, target: '_blank', rel: 'noopener', className: 'path', title: f.path },
-    f.path);
+    h('bdi', {}, f.path));
   link.addEventListener('click', (e) => {
     if (e.metaKey || e.ctrlKey) return;   // GitHub stays one modifier away
     e.preventDefault();
     onOpen(f);
   });
-  const row = h('div', { className: `file${f.viewed ? ' viewed' : ''}${f.path === selected ? ' sel' : ''}` },
+  const row = h('div', {
+    className: `file${f.viewed ? ' viewed' : ''}${f.path === selected ? ' sel' : ''}`,
+    dataset: { path: f.path },
+  },
     box,
     link,
     h('span', { className: 'nums' },
       h('span', { className: 'add' }, `+${f.additions}`), ' ',
       h('span', { className: 'del' }, `−${f.deletions}`)),
   );
-  row.dataset.path = f.path;
   return row;
 }
 
 /**
- * Just enough markdown for a PR description: links, code, headings, lists --
- * and checklists as real checkboxes, which are the point of reading a
- * description in a pane rather than on github.com. `index` counts every
- * checklist line in the body, in order, which is how the server finds the line
- * again; prose either side of a run of them stays in its own paragraph.
+ * A PR description as blocks, in body order: `code`, `p`, `heading`, `task` and
+ * `list`. No DOM -- blockNode() below turns one of these into an element, and
+ * sectionize() regroups them into folds. Splitting it this way is what lets the
+ * whole renderer be tested without a browser.
+ *
+ * `index` counts every checklist line as it goes, because a tick is sent as a
+ * *position* in that list and taskLines() in tasks.js recounts it the same way
+ * on the server -- the two walks have to agree line for line (tasks.js says
+ * what happens when they do not, and test/queue.test.js pins it).
+ *
+ * The numbering happens here, once, before anything downstream groups or hides
+ * anything. So sectionize() may regroup these blocks and the pane may fold them
+ * without renumbering a thing. Anything that wants to change *which lines
+ * count* belongs in tasks.js, where both sides read it.
  */
-function markdown(text, onTask) {
+export function blocks(text) {
   const out = [];
   let index = 0;
 
   for (const chunk of fences(withoutHtml(text))) {
-    // textContent, not inline(): the point of a fence is that what is inside it
-    // is not markdown.
+    // A fence is not markdown, so nothing inside it is a heading, a task or a
+    // list -- which is why this repo's own description can show a `## Queue`
+    // sample without growing a fold, and a `- [ ]` sample without growing a
+    // checkbox the server would refuse.
     if (chunk.code !== undefined) {
-      out.push(h('pre', {}, h('code', { textContent: chunk.code })));
+      out.push({ kind: 'code', code: chunk.code });
       continue;
     }
     for (const para of chunk.text.split(/\n{2,}/).filter(Boolean)) {
       let prose = [];
+      let list = null;
+      // Prose and a list are the two things that can be open, never both: every
+      // branch that opens one closes the other, which is what keeps the output
+      // in body order.
       const flush = () => {
-        if (prose.length) out.push(h('p', { innerHTML: inline(prose.join('\n')) }));
+        if (prose.length) out.push({ kind: 'p', text: prose.join('\n') });
+        if (list) out.push(list);
         prose = [];
+        list = null;
       };
       for (const line of para.split('\n')) {
         const task = TASK.exec(line);
         if (task) {
           flush();
-          out.push(taskRow(task[1].toLowerCase() === 'x', task[2], index++, onTask));
+          out.push({
+            kind: 'task', done: task[1].toLowerCase() === 'x', text: task[2], index: index++,
+          });
           continue;
         }
         // A heading is one line, so it is handled here rather than per
@@ -334,9 +510,25 @@ function markdown(text, onTask) {
         const head = HEADING.exec(line);
         if (head) {
           flush();
-          // Offset by two: the pane's own <h1> names it and the PR title is the
-          // <h2>, so a description's top-level heading sits under both.
-          out.push(h(`h${Math.min(head[1].length + 2, 6)}`, { innerHTML: inline(head[2]) }));
+          out.push({ kind: 'heading', level: head[1].length, text: head[2] });
+          continue;
+        }
+
+        const num = ORDERED.exec(line);
+        const bul = num ? null : BULLET.exec(line);
+        if (num || bul) {
+          // A change of marker starts a new list, the way GitHub renders it.
+          if (list && list.ordered !== Boolean(num)) flush();
+          if (prose.length) flush();
+          list ??= { kind: 'list', ordered: Boolean(num), start: num ? Number(num[1]) : 1, items: [] };
+          list.items.push(num ? num[2] : bul[1]);
+          continue;
+        }
+        // A plain line under a list item is that item wrapping, not new prose.
+        // Descriptions arrive from an editor with no hard wrap, and this repo's
+        // own bullets run to four hundred characters.
+        if (list) {
+          list.items[list.items.length - 1] += `\n${line.trim()}`;
           continue;
         }
         prose.push(line);
@@ -345,6 +537,127 @@ function markdown(text, onTask) {
     }
   }
   return out;
+}
+
+/**
+ * A bullet needs its space, the way a heading does: `-flag` and `--body-file`
+ * are prose, and this repo's own description is full of both.
+ *
+ * Both are matched *after* TASK, which matches `- [ ] x` as well. A checklist
+ * line rendered as a bullet is a line that never gets an index, and every tick
+ * after it in the body would then address the line above -- so the order of
+ * those two tests in blocks() is load-bearing, and test/pr.test.js pins it.
+ *
+ * One level only. Leading whitespace is allowed but not counted, so an indented
+ * sub-bullet becomes a sibling rather than being lost or mis-parsed: at 375px
+ * there is nothing to indent into, and a real indent stack would need a notion
+ * of a line that tasks.js does not have.
+ */
+export const BULLET = /^[ \t]*[-*+][ \t]+(.*)$/;
+/** `1.` and `1)`, the two GitHub renders. The author's start number is kept. */
+export const ORDERED = /^[ \t]*(\d{1,9})[.)][ \t]+(.*)$/;
+
+/** One block as an element. The DOM half of blocks(); everything above is pure. */
+const blockNode = (b, onTask) => ({
+  // textContent, not inline(): the point of a fence is that what is inside it
+  // is not markdown.
+  code: () => h('pre', {}, h('code', { textContent: b.code })),
+  p: () => h('p', { innerHTML: inline(b.text) }),
+  // Offset by two: the pane's own <h1> names it and the PR title is the <h2>,
+  // so a description's top-level heading sits under both.
+  heading: () => h(`h${Math.min(b.level + 2, 6)}`, { innerHTML: inline(b.text) }),
+  task: () => taskRow(b, onTask),
+  list: () => h(b.ordered ? 'ol' : 'ul', b.start > 1 ? { start: b.start } : {},
+    ...b.items.map((t) => h('li', { innerHTML: inline(t) }))),
+}[b.kind]());
+
+/**
+ * The description as an outline: everything before the first heading, then one
+ * section per heading at the *shallowest* level the body actually uses.
+ *
+ * Deriving that level from the body rather than fixing one here is what lets a
+ * description written with `#` and one written with `##` each fold at their own
+ * top level -- prcoder's own mirrored block writes `## TODO`, and a description
+ * someone typed may well start at `#`. Anything deeper stays a plain heading
+ * inside the section it belongs to.
+ *
+ * Regrouping only. Every block comes out exactly once, in the order it went in,
+ * carrying the `index` it went in with -- see blocks() for why that is the whole
+ * safety argument for folding at all.
+ */
+export function sectionize(list) {
+  const levels = list.filter((b) => b.kind === 'heading').map((b) => b.level);
+  const top = Math.min(...levels);   // Infinity for a body with no headings
+  if (!Number.isFinite(top)) return { lead: list, sections: [] };
+
+  const lead = [];
+  const sections = [];
+  const seen = new Map();
+  for (const b of list) {
+    if (b.kind === 'heading' && b.level === top) {
+      // Keyed by its own text, so the key survives the poll rebuilding this
+      // list and survives a section being added above it -- an index would not.
+      // A description with two `## Why` gets `Why` and `Why#2`: duplicates are
+      // rare, and an ordinal is cheaper than pretending they cannot happen.
+      const n = (seen.get(b.text) ?? 0) + 1;
+      seen.set(b.text, n);
+      sections.push({ title: b.text, key: n === 1 ? b.text : `${b.text}#${n}`, nodes: [] });
+    } else (sections.at(-1)?.nodes ?? lead).push(b);
+  }
+  return { lead, sections };
+}
+
+/**
+ * One section, collapsed behind its heading.
+ *
+ * A native <details> rather than a toggle of our own, for one reason above the
+ * free keyboard operation and disclosure semantics: a closed <details> keeps its
+ * subtree in the DOM. The obvious hand-rolled version builds a section's body
+ * when it is first opened, and that is exactly the thing that would break the
+ * checklist index -- an unopened section's task lines would never be counted,
+ * and every tick after it would address the line above. Native removes the
+ * temptation.
+ *
+ * Not `name=`, which would make these an accordion. The decision was that each
+ * section folds, not that only one may be open: closing what someone is reading
+ * because they opened the next one is worse than either.
+ */
+function sectionNode(s, onTask) {
+  const tasks = s.nodes.filter((b) => b.kind === 'task');
+  const d = h('details', {
+    className: 'fold md-section', open: openSections.has(s.key), dataset: { key: s.key },
+  },
+    h('summary', {},
+      h('h3', {}, s.title),
+      // So a fold never hides work without saying so.
+      tasks.length
+        ? h('span', { className: 'count' }, `${tasks.filter((b) => b.done).length}/${tasks.length}`)
+        : null),
+    h('div', { className: 'sec-body' }, ...s.nodes.map((b) => blockNode(b, onTask))));
+  // Fires for a click and for the `open` above, which re-adds a key already in
+  // the set -- idempotent either way.
+  d.addEventListener('toggle', () => {
+    if (d.open) openSections.add(s.key); else openSections.delete(s.key);
+  });
+  return d;
+}
+
+/**
+ * The description: the lead as it is, everything after the first heading folded.
+ *
+ * Collapsed by default, and the open set is deliberately not persisted -- a
+ * description you finished reading yesterday reopening itself today is how the
+ * pane becomes what this was written to fix.
+ */
+function description(body, onTask) {
+  const { lead, sections } = sectionize(blocks(body));
+  // A description that is one heading and nothing else would fold to a single
+  // line showing nothing at all.
+  if (!lead.length && sections.length === 1) openSections.add(sections[0].key);
+  return [
+    ...lead.map((b) => blockNode(b, onTask)),
+    ...sections.map((sec) => sectionNode(sec, onTask)),
+  ];
 }
 
 // A heading needs its space: `#hashtag` is prose, and rendering it as a heading
@@ -358,9 +671,25 @@ export const HEADING = /^(#{1,6})\s+(.*)$/;
  *
  * Comments go because GitHub hides them and prcoder's own block markers are
  * comments -- without this the pane shows a literal marker above the list it
- * delimits. `<details>` is unwrapped rather than reproduced: the pane already
- * scrolls, and a description's collapsed half is usually its history. Its
- * summary is the heading of what follows, so it becomes one.
+ * delimits.
+ *
+ * `<details>` is unwrapped rather than reproduced. It used to be because the
+ * pane merely scrolled and a collapsed half was usually history; now it is the
+ * better reason: the pane folds its own sections, so an author's fold and
+ * prcoder's are the same idea twice. Unwrapping it and promoting its summary to
+ * a heading feeds it into that machinery instead of nesting inside it.
+ *
+ * One consequence, live in this repo: a <details> in a description shows up in
+ * the pane as its summary promoted to a level-4 heading, which is deeper than
+ * the level sections fold at -- so it renders *inside* whichever fold precedes
+ * it rather than as one of its own. That is the intended trade (the alternative
+ * is two kinds of fold competing), but it is why a collapsed block in this
+ * repo's own pull request description reads differently here and on github.com.
+ *
+ * Every substitution here must leave the body's *lines* where they are.
+ * blocks() runs on the output and taskLines() runs on the raw body, and the two
+ * counts of checklist lines have to match -- so anything added here that could
+ * delete or merge a line containing a `- [ ]` breaks the tick, silently.
  */
 export const withoutHtml = (text) => (text ?? '')
   .replace(/<!--[\s\S]*?-->/g, '')
@@ -369,7 +698,7 @@ export const withoutHtml = (text) => (text ?? '')
     (_, t) => `#### ${t.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim()}`);
 
 /** A checkbox in the description, ticked through to GitHub. */
-function taskRow(done, text, index, onTask) {
+function taskRow({ done, text, index }, onTask) {
   const box = h('input', { type: 'checkbox', checked: done, title: 'tick this on GitHub' });
   const row = h('label', { className: `task${done ? ' done' : ''}` },
     box, h('span', { innerHTML: inline(text) }));

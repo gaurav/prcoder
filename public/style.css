@@ -2,6 +2,17 @@
   --bg: #14161a; --panel: #1c1f26; --line: #2c313c;
   --fg: #d5d9e0; --dim: #8c93a1; --accent: #7aa2f7;
   color-scheme: dark;
+  /* The description, and only the description. Every face here ships with an OS
+     -- no webfont, deliberately: one arriving late would move every line under
+     a scroll position renderPrTab had already restored. */
+  --serif: ui-serif, Charter, "Bitstream Charter", "Iowan Old Style",
+           "Source Serif 4", Georgia, "Liberation Serif", "Times New Roman", serif;
+  /* `1ch` is the width of `0`, which in a serif is narrower than average
+     lowercase -- so this measures nearer 75 rendered characters than 68, which
+     is where it was wanted. Checked at a 900px pane: 568px of prose in Firefox,
+     567px in Chromium. If a future face throws that off, `34em` is the
+     font-size-relative alternative (two alphabets, ~66 characters). */
+  --measure: 68ch;
 }
 * { box-sizing: border-box; }
 body {
@@ -59,6 +70,20 @@ main.diff-open #gut-diff { display: block; }
 #term-host { flex: 1; min-height: 0; padding: 4px 0 0 8px; }
 a { color: var(--accent); }
 
+/* --- Tabs and the small buttons beside them ---
+   Two panes have tabs now: the queue's Active/Completed, and the pull request's
+   Detail/Files. These moved up out of the queue pane's own section when the
+   second pane grew a row of them; nothing here changed but where it sits. */
+.tabs { display: flex; gap: 4px; align-items: center; margin-bottom: 8px; }
+.tab, .bulk {
+  background: none; border: 1px solid transparent; color: var(--dim);
+  font: inherit; font-size: 12px; padding: 2px 8px; border-radius: 4px; cursor: pointer;
+}
+.tab.on { color: var(--fg); border-color: var(--line); background: var(--bg); }
+.tab:hover, .bulk:hover { color: var(--fg); }
+.bulk { border-color: var(--line); }
+.spacer { flex: 1; }
+
 /* --- PR pane --- */
 .pane > header button, .pane > header input {
   background: none; border: 0; color: var(--dim); font: inherit;
@@ -76,6 +101,30 @@ a { color: var(--accent); }
 }
 #queue-input:focus { outline: 1px solid var(--accent); }
 
+/* Which pull request you are in, above whichever half of it you are reading.
+   `flex: none` because the pane is a flex column and would otherwise shrink the
+   head before the body.
+
+   Two shorter-looking versions of this were tried and are not worth retrying.
+
+   The tabs in `.pane > header`, beside the switcher: `.pane > header button`
+   sets `margin-left: auto`, shared by all four panes, so a tab button lands
+   hard against the right edge -- that rule already carries two exceptions
+   (`.commit`, `.where`) and this would be the third. And at the pane's 375px
+   floor the header holds an <h1>, a flex:1 <select>, the light and the refresh
+   glyph, so two more buttons squeeze the select to nothing.
+
+   A sticky tab row as the first child of #pr-body, keeping one scroller: this
+   is the one that looks right and is not. Two views in one scroller share one
+   scrollTop. Read to the bottom of a 7,000-word description, switch to Files,
+   and the browser clamps you to the bottom of a short list -- with nothing on
+   screen to say you were moved. A separate head is what gives each tab an
+   offset of its own to be restored to (see renderPrTab). */
+#pr-head { flex: none; padding: 10px 10px 8px; border-bottom: 1px solid var(--line); }
+#pr-head:empty { display: none; }
+#pr-head .tabs { margin-bottom: 0; }
+#pr-head > :last-child { margin-bottom: 0; }
+
 .empty { color: var(--dim); }
 .pr-link { display: block; font-size: 12px; margin-bottom: 4px; }
 .pr-title { margin: 0 0 6px; font-size: 16px; line-height: 1.35; }
@@ -89,21 +138,40 @@ a { color: var(--accent); }
 .badge.pass { background: #1f4d2e; color: #9ae6b4; }
 .badge.pend { background: #4d411f; color: #f0dc9a; }
 
-.md { font-size: 13px; color: #b9bfcb; margin-bottom: 8px; }
+/* A pull request description is prose, and it is the one thing in this window
+   that is read rather than operated. It gets a reading face, a reading size and
+   a measure; everything around it -- headings, code, the file rows, the tabs --
+   stays sans, so the difference between structure and argument is visible
+   without reading either.
+
+   The measure is not decoration. #pr goes to 60% of the window (see `main`), and
+   an unbroken 15px serif line 900px wide is worse than the 13px it replaces.
+   Left-aligned rather than centred: a centred column with a wide right gutter
+   reads as a broken layout where a left one reads as a measure. */
+.md {
+  font-family: var(--serif);
+  font-size: 15px; line-height: 1.6; color: var(--fg);
+  max-width: var(--measure);
+  margin-bottom: 8px;
+}
 /* A checklist line in the description, as the checkbox GitHub renders. */
 .md .task { display: flex; align-items: baseline; gap: 7px; padding: 1px 0; }
 .md .task input { flex: none; margin: 0; accent-color: var(--accent); cursor: pointer; }
 .md .task.done > span { color: var(--dim); text-decoration: line-through; }
 .md .task input:disabled { opacity: .5; cursor: wait; }
-.md p { margin: 0 0 6px; }
-/* The description's own headings. Sized by weight and colour rather than by
-   scale: at this width a 1.5em h3 reads as another pane's title. */
+.md p { margin: 0 0 10px; }
+/* The description's own headings, which are sans over a serif body -- that
+   contrast is the whole hierarchy, so they need no scale of their own. They used
+   to be sized by weight and colour for a different reason: the body was 13px
+   sans too, and at 375px a 1.5em heading read as another pane's title. Against
+   serif prose there is nothing left to confuse them with. */
 .md h3, .md h4, .md h5, .md h6 {
-  margin: 10px 0 4px; font-size: 13px; font-weight: 600; color: var(--fg);
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  margin: 16px 0 6px; font-size: 14px; font-weight: 600; color: var(--fg);
 }
-.md h3 { font-size: 14px; }
 .md > :first-child { margin-top: 0; }
-.md code { background: var(--bg); padding: 0 4px; border-radius: 3px; font-size: 12px; }
+/* Up one step, to sit level with 15px serif rather than under it. */
+.md code { background: var(--bg); padding: 0 4px; border-radius: 3px; font-size: 13px; }
 .md em { font-style: italic; color: var(--fg); }
 /* A fence scrolls on its own rather than widening the pane, which at 375px it
    would do at the first long command line. */
@@ -112,21 +180,81 @@ a { color: var(--accent); }
   background: var(--bg); border: 1px solid var(--line); border-radius: 4px;
 }
 .md pre code { background: none; padding: 0; font-size: 11px; line-height: 1.45; }
+/* The marker sits in the padding, so a wrapped item hangs under its own text
+   rather than under the bullet. */
+/* --- Folds ---
+   Two things fold, for opposite reasons and so with opposite defaults. A
+   description's sections start closed, because ten sections of prose is what
+   buries everything under it. A file group starts open, because the Files tab
+   is the working surface and a list you have to open is a list in the way.
+   Everything they share is here; only the defaults and the type differ. */
+.fold > summary {
+  display: flex; align-items: baseline; gap: 7px;
+  cursor: pointer; list-style: none;
+}
+.fold > summary::-webkit-details-marker { display: none; }
+/* Our own triangle rather than ::marker, whose support on a summary is patchy
+   across exactly the two engines this has to work in. */
+.fold > summary::before {
+  content: '▶'; flex: none; color: var(--dim); font-size: 9px;
+  /* A fixed box so the glyph turns about its own middle rather than drifting,
+     and so every summary's text starts at the same x whichever way it points. */
+  width: 10px; text-align: center;
+  transition: transform .12s ease; transform-origin: 50% 50%;
+}
+.fold[open] > summary::before { transform: rotate(90deg); }
+.fold > summary:hover, .fold > summary:hover::before { color: var(--accent); }
+.fold > summary:focus-visible { outline: 1px solid var(--accent); border-radius: 3px; }
+.fold > summary h3 { display: inline; margin: 0; font: inherit; flex: 1; min-width: 0; }
+/* What is still outstanding inside, so a fold never hides work silently. */
+.fold > summary .count { flex: none; font-weight: 400; color: var(--dim); }
+/* Indented under the title, not under the triangle. */
+.fold > .sec-body { padding: 2px 0 12px 18px; }
+
+/* A section of the description. The summary is the one place its structure
+   lives now, so it is sized and weighted to be scanned down: ten of these is
+   the outline of a description you have not read yet. */
+.md-section { border-top: 1px solid var(--line); }
+.md-section > summary {
+  padding: 8px 2px;
+  font: 600 15px/1.35 ui-sans-serif, system-ui, sans-serif; color: var(--fg);
+}
+.md-section > summary .count { font-size: 12px; }
+
+.md ul, .md ol { margin: 6px 0; padding-left: 1.35em; }
+.md li { margin: 3px 0; }
+.md li::marker { color: var(--dim); }
 
 .issues { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 6px; font-size: 12px; }
 .issues-label { color: var(--dim); }
 .issues a { padding: 1px 6px; border: 1px solid var(--line); border-radius: 9px; text-decoration: none; }
 
-.group { margin-bottom: 12px; }
-.group h3 { margin: 0 0 4px; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--dim); }
-.group .count { font-weight: 400; opacity: .7; }
+.group { margin-bottom: 10px; }
+.group > summary {
+  padding: 2px 0;
+  font: 600 12px/1.5 ui-sans-serif, system-ui, sans-serif;
+  text-transform: uppercase; letter-spacing: .06em; color: var(--dim);
+}
+.group > summary:hover { color: var(--fg); }
+.group > summary .count { font-size: 12px; letter-spacing: 0; opacity: .7; }
+/* Less than a description's sections: a file path is already short, and the
+   rows have to stay wide enough to ellipsize from the left. */
+.group > .sec-body { padding: 2px 0 0 10px; }
 
 .file { display: flex; align-items: center; gap: 6px; padding: 2px 0; font-size: 13px; }
 .file.viewed .path { opacity: .45; text-decoration: line-through; }
+/* `direction: rtl` puts the ellipsis at the *head*, so a path too long for the
+   column loses its directories rather than its filename. The <bdi> the markup
+   puts inside is what stops that reordering the path itself -- see fileRow in
+   pr.js. Both are load-bearing; neither works alone. */
 .file .path {
   flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis;
   white-space: nowrap; direction: rtl; text-align: left; text-decoration: none;
 }
+/* The UA stylesheet says this already. Spelled out because it is the whole
+   reason the element is there, and a bdi that lost it would look like a
+   pointless wrapper worth deleting. */
+.file .path bdi, #diff-path bdi { unicode-bidi: isolate; }
 .file .path:hover { text-decoration: underline; }
 .file .nums { font-size: 11px; white-space: nowrap; }
 
@@ -146,15 +274,6 @@ a { color: var(--accent); }
 .file.sel { background: var(--bg); border-radius: 4px; }
 
 /* --- Queue pane --- */
-.tabs { display: flex; gap: 4px; align-items: center; margin-bottom: 8px; }
-.tab, .bulk {
-  background: none; border: 1px solid transparent; color: var(--dim);
-  font: inherit; font-size: 12px; padding: 2px 8px; border-radius: 4px; cursor: pointer;
-}
-.tab.on { color: var(--fg); border-color: var(--line); background: var(--bg); }
-.tab:hover, .bulk:hover { color: var(--fg); }
-.bulk { border-color: var(--line); }
-.spacer { flex: 1; }
 
 .items { list-style: none; margin: 0; padding: 0; }
 .item {

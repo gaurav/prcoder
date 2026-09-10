@@ -3,6 +3,13 @@
 A local server + browser UI wrapping a real `claude` PTY. See README.md for what
 it does and how to run it.
 
+## Scratch work goes in `data/`
+
+`data/` is gitignored and is where anything temporary belongs -- driver
+screenshots, snapshots of a PR body taken before a write, intermediate output.
+Not `/tmp`: reads outside this working directory are blocked, so a screenshot
+written to `/tmp` is one nobody in this session can look at.
+
 ## Two traps
 
 **Don't delete the `postinstall` chmod in package.json.** It looks like dead
@@ -17,9 +24,15 @@ non-executable.
 **Run tests with bare `node --test`, not `node --test test/`.** On Node 26 a
 directory argument is resolved as a module and dies with `Cannot find module`.
 Bare discovery treats *everything* under `test/` as a test file, which is why
-the drivers live in `tools/` — `shot.mjs` for the browser, `cli.mjs` for the
+the drivers live in `tools/` — `browser.mjs` for the UI, `cli.mjs` for the
 terminal. Either one under `test/` would run on every `npm test`, spawn a
 server and drive a browser or a PTY.
+
+`node:test` is a preference, not a constraint. If it ever gets in the way —
+maintainability, a matcher you keep hand-rolling, watch mode, anything — the
+owner is fine with swapping in a real test framework (stated 2026-09-05). The
+rule above is about the CLI's directory argument, not about staying on the
+built-in runner.
 
 ## Subprocess errors lie by omission
 
@@ -48,7 +61,7 @@ mode would never be restored.
 
 None of it exists without a tty. `process.stdout.isTTY` gates the block and
 `process.stdin.isTTY` gates the keys, so a piped run behaves as it always did
--- which is what `tools/shot.mjs` (`stdio: 'ignore'`) is standing proof of.
+-- which is what `tools/browser.mjs` (`stdio: 'ignore'`) is standing proof of.
 `tools/cli.mjs` drives the other half, in a real PTY.
 
 ## Never write the queue's markers in prose
@@ -64,6 +77,22 @@ than theoretical — it was caught in review on 2026-09-01, one edit before
 being pushed. Say "prcoder's own HTML-comment markers" instead, and if you must
 show the literal string, check that the body still contains exactly one of each
 marker before writing it.
+
+A running prcoder rewrites that block from its store on every poll of a visible
+tab, so a `gh pr edit` against this repo's own PR can be silently reverted within
+a minute -- it happened on 2026-09-06, mid-edit, and the two versions disagreed
+about which items were ticked. Check the repo's port (`.prcoder/port.json`)
+before hand-editing the block, and re-read the body afterwards rather than
+assuming the write stuck.
+
+Inside the block, `done` is the only field the description owns: a `- [ ]` to
+`- [x]` is exactly what the pane writes, so it is safe. Nothing else is.
+`syncFromPrBlock` matches a line to an item by issue number when the line has
+one and by exact text otherwise, then tombstones every `inPr` item whose line
+has gone -- so editing an item's text or dropping a line buries the item. To
+change anything else, edit `.prcoder/queue.json` and regenerate the block with
+`renderPrBlock`, then check the round trip: `syncFromPrBlock(items, newBody)`
+should give back the items you started with.
 
 ## The Claude pane is not prcoder's to draw on
 
@@ -90,15 +119,31 @@ of timing out.
 
 ## One engine is not "a real browser"
 
-`tools/shot.mjs` ran Chromium only, and a Firefox-only bug survived every
+`tools/browser.mjs` ran Chromium only, and a Firefox-only bug survived every
 screenshot it ever took: in Firefox a mousedown inside a `draggable` element
 goes to the drag machinery rather than to the caret, so clicking into a
 `contentEditable` child lands at offset 0 instead of where you clicked. Chromium
 places the caret correctly with the same markup, so there was nothing to see.
 
-prcoder is used in Firefox. For anything touching selection, focus or drag,
-`PRCODER_BROWSER=firefox node tools/shot.mjs` is the run that counts --
-`npx playwright install firefox` first, it is a separate download.
+prcoder is used in Firefox, so `tools/browser.mjs` now defaults to it and falls
+back to Chromium only when it is not installed; `PRCODER_BROWSER=chromium|firefox`
+forces one. That is Playwright's own patched Firefox, not the one in
+/Applications -- Playwright cannot drive a stock build, so the check is
+`existsSync(firefox.executablePath())` and the fix for a miss is
+`npx playwright install firefox`. Running both is worth the second minute: the
+two engines land the caret a character apart on the same row, and only one of
+them was ever wrong. Read the number against the row being clicked rather than
+against a remembered value -- it is an offset into that item's text, so it moves
+whenever the driver's fixture does; `caret: 0` is the bug, anything else is not.
+
+What the driver waits on encodes an assumption about what the pane shows first.
+It waited on `.file` to decide the panes had finished loading, which was true
+until the pull request pane grew tabs and opened on the description instead --
+after which `.file` does not exist until something clicks Files. The failure is
+a 30-second `waitForSelector` timeout that reads as a hung server, not as a
+stale selector. It waits on `#pr-head .pr-title` now; if you change which tab
+opens by default, check every `waitForSelector` in `tools/browser.mjs` in the
+same commit rather than the next one.
 
 Three fixes for that bug do not work, so they are not worth retrying:
 `draggable="false"` on the child, `-moz-user-select` on the child, and leaving

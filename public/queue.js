@@ -1,4 +1,4 @@
-import { h, api, toast } from './pr.js';
+import { h, btn, api, toast } from './pr.js';
 import { TABS } from './items.js';
 
 // The client owns the list; every change persists the whole array. Single user,
@@ -42,9 +42,9 @@ const NO_PR = 'no pull request on this branch to push to';
 // arrow on the button says which one is live without being clicked.
 //
 // The app's only stored preference, and a best-effort one: reading storage
-// throws outright where it is disabled, and prcoder takes a random port unless
-// PRCODER_PORT is pinned, so the origin -- and the value with it -- usually
-// changes between sessions. Losing it costs a click.
+// throws outright where it is disabled, and the origin is a port -- so a repo
+// whose port moves, or one opened through PRCODER_PORT, is a different origin
+// and starts again from the default. Losing it costs a click.
 const ADD_TO_KEY = 'prcoder:add-to';
 let addTo = 'bottom';
 const readAddTo = () => {
@@ -161,12 +161,6 @@ function paintWhere() {
   b.setAttribute('aria-label', title);
   b.classList.toggle('top', addTo === 'top');
 }
-
-const btn = (label, fn, props = {}) => {
-  const b = h('button', props, label);
-  b.onclick = fn;
-  return b;
-};
 
 const tabBtn = (name, label) =>
   btn(label, () => { tab = name; render(); }, { className: tab === name ? 'tab on' : 'tab' });

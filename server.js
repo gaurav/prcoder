@@ -14,21 +14,41 @@ import { loadPr, prHeads, prBody, listPrs, setViewed, setBody, createIssue, fetc
 import { snapshot, currentBranch, repoInfo, prScope, compareUrl, checkoutPr, pushBranch, remoteBranchHead } from './git.js';
 import { groupFiles, fileUrl } from './files.js';
 import { parseFuture, renderPrBlock, syncFromPrBlock, toggleTask } from './queue.js';
-import { readStore, writeStore, forBranch, replaceBranch, branchKey, staleBranch } from './store.js';
+import { readStore, writeStore, readPort, writePort, forBranch, replaceBranch, branchKey, staleBranch } from './store.js';
 import { counts } from './public/items.js';
 import * as term from './term.js';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const repo = process.cwd();
 /**
- * The port is a function of the repo's path, so a repo's URL is the same every
- * run. That is what makes the URL worth keeping: bookmark it, add it to the
- * Dock, embed it in an IDE. A busy port falls back to a free one (see ready()).
- * Worktrees have their own paths, and so their own ports, like their queues.
+ * Where a repo's port starts from: a hash of its path, so the first run in a
+ * clone picks a port of its own without asking anyone. What the repo then
+ * *uses* is `.prcoder/port.json` -- see resolvePort(). This stays pure so the
+ * seed can be checked without a disk.
+ *
+ * The range is above 10080 on purpose. Browsers refuse a fixed list of
+ * well-known ports outright, and Firefox says only "This address is
+ * restricted" -- nothing on screen connects that to prcoder, and the old
+ * 1618-2617 range held four of them (1719, 1720, 1723, 2049). The list is the
+ * WHATWG fetch standard's, shared by Firefox, Chrome and Safari, and 10080 is
+ * its highest entry. macOS hands out ephemeral ports from 49152, so 10240-14335
+ * is clear at both ends.
  */
+export const PORT_BASE = 10240;
+export const PORT_SPAN = 4096;
+
 export function portFor(repo, env = process.env) {
   if (Number(env.PRCODER_PORT)) return Number(env.PRCODER_PORT);
-  return 1618 + createHash('sha1').update(repo).digest().readUInt16BE(0) % 1000;
+  return PORT_BASE + createHash('sha1').update(repo).digest().readUInt16BE(0) % PORT_SPAN;
+}
+
+/**
+ * Every port in the range, starting at this repo's seed and wrapping. Only a
+ * first run walks past the first entry, and only until something binds.
+ */
+export function portCandidates(repo) {
+  const first = portFor(repo, {}) - PORT_BASE;   // the seed, never a PRCODER_PORT pin
+  return Array.from({ length: PORT_SPAN }, (_, n) => PORT_BASE + (first + n) % PORT_SPAN);
 }
 // Args split at the first flag: everything before it is ours (an optional PR
 // number, URL or branch), everything from it on is handed to `claude` verbatim.
@@ -64,6 +84,10 @@ let checkedAt = 0;
 // The URL, and whether it is the one this repo is supposed to have. Both are
 // only known once the server is listening.
 let urls = { local: '', moved: null };
+// The port this repo is meant to be on -- recorded, pinned or freshly chosen.
+// ready() reports against this, not against the seed: once a port is recorded
+// it *is* the usual URL, even where it is not the one the hash suggests.
+let wanted = 0;
 
 /**
  * Every gh/git call runs one at a time. `gh pr checkout` is a fetch, a checkout
@@ -485,7 +509,10 @@ async function serveFile(res, file) {
   }
 }
 
-const server = http.createServer(async (req, res) => {
+// Exported so test/api.test.js can listen on a free port in-process. Everything
+// that starts a listener is under `import.meta.main` below, so importing this
+// module still starts nothing.
+export const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost');
 
   if (url.pathname.startsWith('/api/')) return handleApi(req, res, `${req.method} ${url.pathname}`);
@@ -584,7 +611,6 @@ async function whoHasPort(wanted) {
 }
 
 async function ready() {
-  const wanted = portFor(repo);
   const port = server.address().port;
   const url = `http://localhost:${port}`;
   urls = {
@@ -637,6 +663,72 @@ function openBrowser() {
 }
 
 /**
+ * Binds the first of `ports` that is free, and answers with it; 0 means the
+ * kernel picks, and always binds. Each attempt re-registers both handlers,
+ * because a callback passed to listen() survives the EADDRINUSE it was
+ * registered for -- one passed to the first attempt as well as the retry ran
+ * ready() twice, two banners and two port probes. Anything that is not a busy
+ * port is still thrown.
+ */
+function bind(ports) {
+  return new Promise((resolve, reject) => {
+    const attempt = (i) => {
+      const onError = (e) => {
+        server.off('listening', onListening);
+        if (e.code !== 'EADDRINUSE') return reject(e);
+        if (i + 1 >= ports.length) return reject(e);
+        attempt(i + 1);
+      };
+      const onListening = () => {
+        server.off('error', onError);
+        resolve(server.address().port);
+      };
+      server.once('error', onError);
+      server.once('listening', onListening);
+      server.listen(ports[i], '127.0.0.1');
+    };
+    attempt(0);
+  });
+}
+
+/**
+ * Bind the port this repo should be on, and answer with the one it *wanted* --
+ * which ready() compares against what it got.
+ *
+ * A port that has been recorded, or named in PRCODER_PORT, gets one attempt and
+ * then a kernel-chosen one, so a second prcoder in this directory moves aside
+ * with a note rather than silently opening a different URL from the bookmark.
+ *
+ * A first run has no such promise to keep, so it walks the range from the seed
+ * and records whatever binds. That is what makes a collision between two repos
+ * heal: without it the loser took a fresh random port every run forever.
+ */
+async function listenOnRepoPort() {
+  if (Number(process.env.PRCODER_PORT)) {
+    const pinned = Number(process.env.PRCODER_PORT);
+    await bind([pinned, 0]);
+    return pinned;                       // never recorded: a pin is for one run
+  }
+
+  const recorded = await readPort(repo);
+  if (recorded) {
+    await bind([recorded, 0]);
+    return recorded;
+  }
+
+  // The trailing 0 is for a machine with all 4096 busy, which is not one
+  // prcoder can pick a favourite on -- but is still no reason not to start.
+  // Nothing is recorded in that case, so the next run tries the range again.
+  const range = portCandidates(repo);
+  const port = await bind([...range, 0]);
+  if (!range.includes(port)) return port;
+  // A repo we cannot write to still runs; it just derives its port again next
+  // time, which is what every run did before this file existed.
+  await writePort(repo, port).catch((e) => console.error('port:', e.message));
+  return port;
+}
+
+/**
  * What quitting costs, so the answer is an informed one. Every number here is
  * already in hand; none of it shells out, because a keypress that waits on git
  * is a keypress that can hang.
@@ -644,6 +736,9 @@ function openBrowser() {
  * `mirrorFailed` is the one that matters. The others are recoverable by
  * starting prcoder again; that one means GitHub is holding a description the
  * queue has already moved past, and quitting leaves it that way.
+ *
+ * An empty list is not a question worth asking, so it is not asked: no tab open,
+ * nothing unmirrored, nothing in the working tree that quitting could lose.
  */
 /** What never got carried out to the PR or to an issue. Cached, so no subprocess. */
 const localOnly = () => counts(last?.queue ?? []).local;
@@ -661,15 +756,17 @@ function askToQuit() {
     // and that nobody but this machine will ever see.
     localOnly() && `${localOnly()} queue item${localOnly() > 1 ? 's' : ''} still only local`,
   ].filter(Boolean);
-  term.confirm(`quit? ${risk.length ? risk.join('; ') : 'nothing in flight'}  [y/N] `, () => {
-    // Killed here rather than left to the close handlers: process.exit does not
-    // wait for them, and an orphaned `claude` outlives the terminal it was
-    // started from.
+  // Killed here rather than left to the close handlers: process.exit does not
+  // wait for them, and an orphaned `claude` outlives the terminal it was
+  // started from.
+  const quit = () => {
     for (const pty of ptys) pty.kill();
     wss.close();
     server.close();
     process.exit(0);
-  });
+  };
+  if (!risk.length) return quit();
+  term.confirm(`quit? ${risk.join('; ')}  [y/N] `, quit);
 }
 
 if (import.meta.main) {
@@ -695,13 +792,8 @@ if (import.meta.main) {
   // while the rendered lines are unchanged.
   setInterval(repaint, 30_000).unref();
 
-  // `listening` rather than a listen() callback: a callback passed to the first
-  // listen() survives the EADDRINUSE, so passing one to the retry as well ran
-  // ready() twice — two banners, two port probes, two opening polls.
-  server.once('listening', ready);
-  server.once('error', (e) => {
-    if (e.code !== 'EADDRINUSE') throw e;
-    server.listen(0, '127.0.0.1');   // ready() says who has the port we wanted
-  });
-  server.listen(portFor(repo), '127.0.0.1');
+  // ready() needs the port we meant to be on, so it is settled before the
+  // socket is up rather than recomputed from the path afterwards.
+  wanted = await listenOnRepoPort();
+  await ready();
 }

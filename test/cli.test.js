@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { splitArgs, portFor, statusLines, queueChanges, ago } from '../server.js';
+import { splitArgs, portFor, portCandidates, PORT_BASE, PORT_SPAN, statusLines, queueChanges, ago } from '../server.js';
 
 test('a leading positional is our PR target, the rest is Claude\'s', () => {
   assert.deepEqual(splitArgs([]), { target: undefined, claudeArgs: [] });
@@ -20,9 +20,39 @@ test('flag values are never read as a PR target', () => {
 test('the port is a fixed function of the repo path', () => {
   const a = portFor('/Users/x/code/prcoder', {});
   assert.equal(a, portFor('/Users/x/code/prcoder', {}));
-  assert.ok(a >= 1618 && a < 2618, `${a} out of range`);
+  assert.ok(a >= PORT_BASE && a < PORT_BASE + PORT_SPAN, `${a} out of range`);
   assert.notEqual(a, portFor('/Users/x/code/other', {}));
   assert.equal(portFor('/anything', { PRCODER_PORT: '4000' }), 4000);
+});
+
+// The one that made this range move. Browsers refuse a list of well-known
+// ports outright -- Firefox with "This address is restricted" and nothing that
+// names prcoder -- and the old 1618-2617 range contained four of them. 10080 is
+// the highest entry in the list, so the whole class is gone if nothing derives
+// below it. A path is not a bookmark: this has to hold for any of them.
+test('no derived port is one a browser refuses to load', () => {
+  for (let i = 0; i < 5000; i++) {
+    const p = portFor(`/Users/x/code/repo-${i}`, {});
+    assert.ok(p > 10080, `${p} is in the browsers' blocked range`);
+  }
+});
+
+// A first run walks these until one binds. Wrapping rather than climbing keeps
+// every candidate inside the range checked above.
+test('the candidates are the whole range, starting at the seed', () => {
+  const seed = portFor('/Users/x/code/prcoder', {});
+  const c = portCandidates('/Users/x/code/prcoder');
+  assert.equal(c[0], seed);
+  assert.equal(c.length, PORT_SPAN);
+  assert.equal(new Set(c).size, PORT_SPAN, 'a candidate is offered twice');
+  assert.ok(c.every((p) => p >= PORT_BASE && p < PORT_BASE + PORT_SPAN));
+
+  // A pinned port is not a seed to walk from -- it is the whole answer, and
+  // resolvePort never gets here with one set. Below the range it would also
+  // start the walk at a negative offset.
+  process.env.PRCODER_PORT = '4000';
+  try { assert.deepEqual(portCandidates('/Users/x/code/prcoder'), c); }
+  finally { delete process.env.PRCODER_PORT; }
 });
 
 // The block under the log. Pure, so the wording is checked without a terminal.
