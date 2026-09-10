@@ -142,6 +142,18 @@ for (const pane of ['pr', 'queue']) {
   await page.locator(`#${pane}`).screenshot({ path: path.join(out, `${pane}.png`) });
 }
 
+// The gutters, which are only ever right or wrong on screen. Each drag moves
+// one line to a known coordinate, so the variables it writes are arithmetic on
+// the 1440x900 viewport -- and the reload says whether they survived.
+const drag = async (sel, x, y) => {
+  const b = await page.locator(sel).boundingBox();
+  await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(x, y, { steps: 8 });
+  await page.mouse.up();
+};
+
+
 // Every queue tab, and what each shows. Local draining as items are carried out
 // is the whole point of the set, so the counts are read rather than eyeballed
 // -- and the strip is shot at the pane's own width to see whether five tabs
@@ -157,6 +169,25 @@ for (const name of ['Local', 'PR', 'Issues', 'Completed', 'Deleted']) {
   console.log(`  ${name.padEnd(9)} ${JSON.stringify(rows)}${grips ? '  [draggable]' : ''}`);
   await page.locator('#queue').screenshot({ path: path.join(out, `queue-${name.toLowerCase()}.png`) });
 }
+// Five tabs is as many as this strip will ever hold, and 1440px is the only
+// width it had been looked at -- where they fit easily. The pane the queue
+// actually lives in is whatever is left after the PR column, so drag that wide
+// and ask the tabs themselves whether they are still on one row: same offsetTop
+// for the first and the last is the only version of "does not wrap" that does
+// not depend on reading a screenshot.
+await drag('#gut-pr', 980, 450);
+await page.waitForTimeout(300);
+const wrap = await page.evaluate(() => {
+  const t = [...document.querySelectorAll('#queue-body .tab')];
+  const pane = document.getElementById('queue').getBoundingClientRect().width;
+  return { rows: new Set(t.map((b) => b.offsetTop)).size, n: t.length, pane: Math.round(pane) };
+});
+console.log('narrow: ', `${wrap.n} tabs on ${wrap.rows} row(s) in a ${wrap.pane}px pane`,
+  wrap.rows === 1 ? '' : '  <-- the strip wrapped');
+await page.locator('#queue').screenshot({ path: path.join(out, 'queue-narrow.png') });
+await drag('#gut-pr', 375, 450);
+await page.waitForTimeout(300);
+
 // The claim the tab set is built on: carrying an item out with the row's own ◆
 // takes it out of Local. Seeding an already-mirrored item proves the filter;
 // only clicking the button proves the transition.
@@ -187,16 +218,22 @@ console.log('  accepted ', (await queueStrip()).join(' | '));
 await page.locator('#queue-body .tab', { hasText: 'Local' }).click();
 await page.waitForTimeout(150);
 
-// The gutters, which are only ever right or wrong on screen. Each drag moves
-// one line to a known coordinate, so the variables it writes are arithmetic on
-// the 1440x900 viewport -- and the reload says whether they survived.
-const drag = async (sel, x, y) => {
-  const b = await page.locator(sel).boundingBox();
-  await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(x, y, { steps: 8 });
-  await page.mouse.up();
-};
+// The single-row path into Deleted and back out again. The bulk button above
+// covers the same tombstone rule, but not the ✕ and ↩ on the row itself, and
+// they are the only way to delete one item rather than a tabful. Round-tripped
+// rather than left deleted: the caret check below still needs this row on
+// Local, and a restore that puts it back is the half worth proving anyway.
+const local = () => page.locator('#queue-body .tab', { hasText: /^Local/ }).innerText();
+await page.locator('.item', { hasText: 'a second local item' }).locator('button[title="delete"]').click();
+await page.locator('#queue-body .tab', { hasText: 'Local (0)' }).waitFor({ timeout: 10_000 });
+console.log('row ✕:  ', await local(), '+', await page.locator('#queue-body .tab', { hasText: /^Deleted/ }).innerText());
+await page.locator('#queue-body .tab', { hasText: 'Deleted' }).click();
+await page.waitForTimeout(150);
+await page.locator('.item', { hasText: 'a second local item' }).locator('button[title="restore"]').click();
+await page.locator('#queue-body .tab', { hasText: 'Local (1)' }).waitFor({ timeout: 10_000 });
+await page.locator('#queue-body .tab', { hasText: 'Local' }).click();
+await page.waitForTimeout(150);
+console.log('row ↩:  ', await local(), JSON.stringify(await page.locator('.item .text').allTextContents()));
 
 // The two tabs, and what each says about the other. `Detail (3/10)` /
 // `Files (7/23)` is the whole reason the counts are on the labels -- they are
