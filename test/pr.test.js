@@ -4,7 +4,7 @@ import {
   pageTitle, withoutHtml, inline, queueSync, HEADING, blocks, sectionize,
   tabLabel, taskCount, viewedCount,
 } from '../public/pr.js';
-import { fences, TASK } from '../public/tasks.js';
+import { fences, TASK, taskLines } from '../public/tasks.js';
 
 const status = (over = {}) => ({
   nameWithOwner: 'ggvaidya/prcoder',
@@ -232,6 +232,47 @@ test('a change of marker starts a new list', () => {
 
 test('prose above a list stays its own paragraph', () => {
   assert.deepEqual(kinds('Some prose:\n- a\n- b'), ['p', 'list']);
+});
+
+test('a quoted line is a quote, not prose starting with a chevron', () => {
+  assert.deepEqual(only('> quoted', 'quote'), [{ kind: 'quote', text: 'quoted' }]);
+});
+
+// No space needed after the `>`, unlike a bullet: `>text` is a quote on GitHub.
+test('a quote needs no space after its marker, and gives up only one', () => {
+  assert.deepEqual(only('>tight', 'quote')[0].text, 'tight');
+  assert.deepEqual(only('>   padded', 'quote')[0].text, '  padded');
+});
+
+test('consecutive quoted lines are one quote', () => {
+  assert.deepEqual(only('> one\n> two', 'quote'), [{ kind: 'quote', text: 'one\ntwo' }]);
+});
+
+test('an unmarked line under a quote is still the quote', () => {
+  assert.deepEqual(only('> one\nstill quoted', 'quote')[0].text, 'one\nstill quoted');
+});
+
+// A blank line ends a paragraph, so two quoted stanzas are two quotes -- which
+// is what GitHub renders, and what lets a description quote two people.
+test('a blank line between quoted stanzas gives two quotes', () => {
+  assert.deepEqual(kinds('> one\n\n> two'), ['quote', 'quote']);
+});
+
+test('prose and a list around a quote each stay their own block', () => {
+  assert.deepEqual(kinds('lead\n> quoted\n- a'), ['p', 'quote', 'list']);
+  assert.deepEqual(kinds('> quoted\ntail\n# head'), ['quote', 'heading']);
+});
+
+// The indexing argument, pinned: TASK in tasks.js does not match a quoted
+// checklist line either, so neither side counts it and the tick stays in step.
+test('a quoted checklist line counts on neither side', () => {
+  assert.deepEqual(kinds('- [ ] a\n\n> - [ ] b\n\n- [ ] c'), ['task', 'quote', 'task']);
+  assert.deepEqual(only('- [ ] a\n\n> - [ ] b\n\n- [ ] c', 'task').map((b) => b.index), [0, 1]);
+  assert.deepEqual(taskLines('- [ ] a\n\n> - [ ] b\n\n- [ ] c'), [0, 4]);
+});
+
+test('a quote inside a fence is a sample, not a quote', () => {
+  assert.deepEqual(kinds('```sh\n> not a quote\n```'), ['code']);
 });
 
 test('a bullet inside a fence is a sample, not a list', () => {

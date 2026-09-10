@@ -456,8 +456,8 @@ function fileRow(f, { onViewed, onOpen, selected }) {
 }
 
 /**
- * A PR description as blocks, in body order: `code`, `p`, `heading`, `task` and
- * `list`. No DOM -- blockNode() below turns one of these into an element, and
+ * A PR description as blocks, in body order: `code`, `p`, `heading`, `task`,
+ * `list` and `quote`. No DOM -- blockNode() below turns one of these into an element, and
  * sectionize() regroups them into folds. Splitting it this way is what lets the
  * whole renderer be tested without a browser.
  *
@@ -487,14 +487,17 @@ export function blocks(text) {
     for (const para of chunk.text.split(/\n{2,}/).filter(Boolean)) {
       let prose = [];
       let list = null;
-      // Prose and a list are the two things that can be open, never both: every
-      // branch that opens one closes the other, which is what keeps the output
-      // in body order.
+      let quote = null;
+      // Prose, a list and a quote are the three things that can be open, never
+      // two at once: every branch that opens one closes the others, which is
+      // what keeps the output in body order.
       const flush = () => {
         if (prose.length) out.push({ kind: 'p', text: prose.join('\n') });
         if (list) out.push(list);
+        if (quote) out.push(quote);
         prose = [];
         list = null;
+        quote = null;
       };
       for (const line of para.split('\n')) {
         const task = TASK.exec(line);
@@ -514,12 +517,24 @@ export function blocks(text) {
           continue;
         }
 
+        const quoted = QUOTE.exec(line);
+        if (quoted) {
+          if (prose.length || list) flush();
+          quote ??= { kind: 'quote', text: null };
+          quote.text = quote.text === null ? quoted[1] : `${quote.text}\n${quoted[1]}`;
+          continue;
+        }
+
         const num = ORDERED.exec(line);
         const bul = num ? null : BULLET.exec(line);
         if (num || bul) {
           // A change of marker starts a new list, the way GitHub renders it.
           if (list && list.ordered !== Boolean(num)) flush();
-          if (prose.length) flush();
+          // Conditional, unlike the branches above, because flush() would close
+          // the very list this line is appending to. Anything else that can be
+          // open has to be named here or it comes out after the list instead of
+          // before it.
+          if (prose.length || quote) flush();
           list ??= { kind: 'list', ordered: Boolean(num), start: num ? Number(num[1]) : 1, items: [] };
           list.items.push(num ? num[2] : bul[1]);
           continue;
@@ -529,6 +544,14 @@ export function blocks(text) {
         // own bullets run to four hundred characters.
         if (list) {
           list.items[list.items.length - 1] += `\n${line.trim()}`;
+          continue;
+        }
+        // Lazy continuation: an unmarked line under a quote is still the quote,
+        // the way GitHub reads it and the way the list above reads its own. A
+        // marked line is not -- every branch over this one flushes first, so a
+        // heading or a list after a quote ends it rather than joining it.
+        if (quote !== null) {
+          quote.text += `\n${line.trim()}`;
           continue;
         }
         prose.push(line);
@@ -557,6 +580,22 @@ export const BULLET = /^[ \t]*[-*+][ \t]+(.*)$/;
 /** `1.` and `1)`, the two GitHub renders. The author's start number is kept. */
 export const ORDERED = /^[ \t]*(\d{1,9})[.)][ \t]+(.*)$/;
 
+/**
+ * A quote needs no space after its `>`, unlike a bullet: `>text` is a quote on
+ * GitHub, and there is no `>flag` the way there is a `-flag` for it to eat.
+ * Exactly one space is eaten if there is one, so an indent inside a quote is
+ * the author's and survives.
+ *
+ * ponytail: a quote's content is one prose paragraph, whatever it contains --
+ * a bullet, a heading, a fence or a nested `> >` inside one shows as its own
+ * text. Give the quote its own blocks() pass when a description needs it. A
+ * checklist line is the one that cannot wait quietly: `> - [ ]` is a checkbox
+ * on GitHub and prose here, but TASK in tasks.js does not match it either, so
+ * both sides skip it and the tick indices stay in step. Anything that starts
+ * counting quoted lines has to change both.
+ */
+export const QUOTE = /^[ \t]*>[ \t]?(.*)$/;
+
 /** One block as an element. The DOM half of blocks(); everything above is pure. */
 const blockNode = (b, onTask) => ({
   // textContent, not inline(): the point of a fence is that what is inside it
@@ -566,6 +605,7 @@ const blockNode = (b, onTask) => ({
   // Offset by two: the pane's own <h1> names it and the PR title is the <h2>,
   // so a description's top-level heading sits under both.
   heading: () => h(`h${Math.min(b.level + 2, 6)}`, { innerHTML: inline(b.text) }),
+  quote: () => h('blockquote', { innerHTML: inline(b.text) }),
   task: () => taskRow(b, onTask),
   list: () => h(b.ordered ? 'ol' : 'ul', b.start > 1 ? { start: b.start } : {},
     ...b.items.map((t) => h('li', { innerHTML: inline(t) }))),

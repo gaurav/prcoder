@@ -221,6 +221,13 @@ a { color: var(--accent); }
 }
 .md-section > summary .count { font-size: 12px; }
 
+/* A quote is marked by a rule and a colour, not by an indent: at 375px the pane
+   has no width to give away, and the rule alone is what GitHub uses too. */
+.md blockquote {
+  margin: 10px 0; padding-left: 12px;
+  border-left: 3px solid var(--line); color: var(--dim);
+}
+
 .md ul, .md ol { margin: 6px 0; padding-left: 1.35em; }
 .md li { margin: 3px 0; }
 .md li::marker { color: var(--dim); }
