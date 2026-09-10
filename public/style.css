@@ -131,10 +131,24 @@ a { color: var(--accent); }
 /* Serif, like the description under it: the title is the first sentence of the
    argument, not a label on the pane. Everything else in this header -- the
    branch names, the badges, the tabs -- stays sans, so the split is the same
-   one the description makes between structure and prose. A step larger than
-   the 16px it replaced, because a serif at a given size reads smaller than the
-   system sans and the title has to stay the biggest thing in the header. */
-.pr-title { margin: 0 0 6px; font-family: var(--serif); font-size: 17px; line-height: 1.35; }
+   one the description makes between structure and prose.
+
+   21px is about 16pt, and is a display size rather than a bumped body size: a
+   serif reads smaller than the system sans at the same pixels, and the pane is
+   26% of the window, so the title is read at a glance across a screen it only
+   occupies a quarter of. The line-height comes down as the size goes up, the
+   way it does for any heading.
+
+   `text-wrap: balance` is what makes it quick to read rather than merely big.
+   The pane's floor is 375px, where a real title runs to three lines, and the
+   default greedy wrap leaves the last one holding a word or two -- the ragged
+   edge is what a glance lands on, so an orphan costs more here than the same
+   orphan would in prose. Balancing evens the lines instead. It is a no-op at a
+   wide pane, where the title fits on one, and a browser without it wraps
+   greedily, which is where this started. No `font-weight`: the <h2> is bold
+   already, and 600 against 700 was indistinguishable in this stack when both
+   were photographed. */
+.pr-title { margin: 0 0 8px; font-family: var(--serif); font-size: 21px; line-height: 1.25; text-wrap: balance; }
 .meta { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; color: var(--dim); font-size: 12px; margin-bottom: 8px; }
 .add { color: #7fd88f; } .del { color: #f08b8b; }
 
