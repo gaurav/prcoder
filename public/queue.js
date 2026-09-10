@@ -85,14 +85,30 @@ const LABELS = { local: 'Local', pr: 'PR', issues: 'Issues', done: 'Completed', 
 // always did.
 const ALWAYS = ['local', 'done'];
 
+/**
+ * Which tabs the strip draws, and which of them is active. Pure, and exported
+ * only so it can be checked without a DOM -- render() is the sole caller and
+ * decides neither for itself.
+ *
+ * The tab you were on can empty and vanish from the strip -- restoring the last
+ * tombstone does it -- leaving nothing highlighted and a list with no tab to
+ * click back to. Local is never left this way: it is in ALWAYS.
+ *
+ * tools/browser.mjs leans on the hiding rule from the other side: it seeds an
+ * item per tab precisely because a tab with nothing in it is not there to be
+ * clicked, and a driver that clicks one that is missing hangs for 30s rather
+ * than failing.
+ */
+export function stripFor(list, active) {
+  const strip = Object.keys(TABS).filter((n) => ALWAYS.includes(n) || list.some(TABS[n]));
+  return { strip, tab: strip.includes(active) ? active : 'local' };
+}
+
 function render() {
   const host = document.getElementById('queue-body');
   const count = (name) => items.filter(TABS[name]).length;
-  const strip = Object.keys(TABS).filter((n) => ALWAYS.includes(n) || count(n));
-  // The tab you were on can empty and vanish from the strip -- restoring the
-  // last tombstone does it -- leaving nothing highlighted and a list with no
-  // tab to click back to. Local is never left this way: it is in ALWAYS.
-  if (!strip.includes(tab)) tab = 'local';
+  const { strip, tab: active } = stripFor(items, tab);
+  tab = active;
 
   host.replaceChildren(
     h('div', { className: 'tabs' },

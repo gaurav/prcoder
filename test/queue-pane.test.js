@@ -4,6 +4,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { TABS, counts } from '../public/items.js';
+import { stripFor } from '../public/queue.js';
 
 const item = (over = {}) => ({ text: 't', done: false, inPr: false, issue: null, deleted: false, ...over });
 
@@ -72,4 +73,41 @@ test('every predicate answers a boolean, whatever the item carries', () => {
   // issue 0 is not an issue number GitHub ever gives out, and `null` is the
   // stored default -- neither should land the row in Issues.
   assert.deepEqual(on('issues', [item({ issue: 0 }), item({ issue: null })]), []);
+});
+
+// The strip itself: which tabs are drawn at all. Hiding an empty tab is what
+// keeps a fresh queue down to two, and it is also the rule tools/browser.mjs
+// seeds a fixture against -- a tab that is not drawn is not clickable, and the
+// driver waits 30s on the missing locator rather than failing.
+test('a tab holding nothing is not drawn, except the two that always are', () => {
+  assert.deepEqual(stripFor([], 'local').strip, ['local', 'done']);
+  assert.deepEqual(stripFor([LOCAL], 'local').strip, ['local', 'done']);
+  // One item per tab is the fixture the browser driver seeds, and the whole
+  // strip is what it expects back.
+  assert.deepEqual(stripFor([LOCAL, MIRRORED, FILED, DONE, GONE], 'local').strip,
+    ['local', 'pr', 'issues', 'done', 'deleted']);
+});
+
+test('a tab appears as soon as one item lands in it', () => {
+  assert.ok(!stripFor([LOCAL], 'local').strip.includes('deleted'));
+  assert.ok(stripFor([LOCAL, GONE], 'local').strip.includes('deleted'));
+});
+
+// Restoring the last tombstone empties Deleted while you are standing on it.
+// Without the fallback the pane keeps a `tab` no button matches: nothing is
+// highlighted and the list below is empty with no way back.
+test('emptying the tab you are on falls back to Local', () => {
+  assert.equal(stripFor([GONE], 'deleted').tab, 'deleted');
+  assert.equal(stripFor([LOCAL], 'deleted').tab, 'local');
+  // The two in ALWAYS are never the ones you get dropped from, however empty.
+  assert.equal(stripFor([], 'done').tab, 'done');
+  assert.equal(stripFor([], 'local').tab, 'local');
+});
+
+// The strip is drawn in this order whichever tabs survive, so the pane does not
+// reshuffle its buttons under the pointer as items move between tabs.
+test('the tabs keep their order as ones in the middle come and go', () => {
+  const order = stripFor([LOCAL, MIRRORED, FILED, DONE, GONE], 'local').strip;
+  assert.deepEqual(order, Object.keys(TABS));
+  assert.deepEqual(stripFor([FILED], 'local').strip, ['local', 'issues', 'done']);
 });
