@@ -188,6 +188,31 @@ console.log('after reload, tab is', JSON.stringify(onTab), ' (want Detail)');
 console.log('dragged: ', dragged, '  (want --w-pr 520, --h-diff 300, --h-queue 260)');
 console.log('restored:', restored, restored === dragged ? '' : '  <-- did not persist');
 
+// The other way to move a gutter, which has no cursor to watch: tab to it and
+// press a key. Right by 10, then shift-Right by 50, then Home back to the
+// stylesheet's own default -- so the three numbers say that focus lands, that
+// the step sizes differ, and that the reset is reachable without a mouse.
+const wPr = () => page.evaluate(() =>
+  Math.round(document.querySelector('#pr').getBoundingClientRect().width));
+await page.locator('#gut-pr').focus();
+const focused = await page.evaluate(() => document.activeElement?.id);
+const before = await wPr();
+await page.keyboard.press('ArrowRight');
+await page.waitForTimeout(50);
+const nudged = await wPr();
+await page.keyboard.press('Shift+ArrowRight');
+await page.waitForTimeout(50);
+const shoved = await wPr();
+await page.keyboard.press('Home');
+await page.waitForTimeout(50);
+const homed = await page.evaluate(() =>
+  document.querySelector('main').style.getPropertyValue('--w-pr'));
+console.log('keys:    ', `focus ${focused}, ${before} -> ${nudged} -> ${shoved}`,
+  `  (want gut-pr, +10 then +50)`);
+console.log('home:    ', JSON.stringify(homed), '  (want "" -- back to the template)');
+console.log('valuenow:', await page.locator('#gut-pr').getAttribute('aria-valuenow'),
+  ' (want a percentage of <main>, not null)');
+
 // The two toasts. The reload above is a real trigger for the first one:
 // sessionStorage survives it, so ws.onopen decides the session was restarted
 // and calls toast() for itself -- which is what says the plain path still

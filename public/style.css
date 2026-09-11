@@ -59,6 +59,11 @@ main.diff-open #gut-diff { display: block; }
 .gut::after { content: ''; position: absolute; }
 .gut.col::after { inset: 0 -3px; cursor: col-resize; }
 .gut.row::after { inset: -3px 0; cursor: row-resize; }
+/* The line is 1px, so the ring goes on the grab area -- there is nowhere else
+   to put it. focus-visible, because a gutter you have just dragged should not
+   keep one. */
+.gut:focus { outline: none; }
+.gut:focus-visible::after { outline: 2px solid var(--accent); }
 
 .pane { background: var(--panel); display: flex; flex-direction: column; min-height: 0; min-width: 0; }
 .pane > header {
