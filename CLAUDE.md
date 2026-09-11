@@ -167,3 +167,14 @@ scheme in `files.js` was confirmed by grepping the rendered HTML of a public PR,
 and that assertion is pinned in `test/files.test.js` with the date.
 
 Test writes against this repo's own PRs. Never against a repo you don't own.
+
+## Green is not evidence that a rebuilt history is intact
+
+Splitting work into a commit per finding means rebuilding files by hand, and
+both `npm test` and the drivers run against the *working tree* — so they stay
+green while a commit is missing half of what its message claims. It happened
+here: the server half of one change was staged out of its own commit and
+nothing went red.
+
+The only check that sees it is `git diff <the tree you drove> HEAD` coming back
+empty. Take that diff before trusting a reassembled series, not the test run.
