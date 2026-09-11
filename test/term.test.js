@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { sink, status, log, paint, verbose, debug, cycleVerbosity, confirm } from '../term.js';
+import { sink, status, log, paint, verbose, debug, cycleVerbosity, setVerbosity, confirm } from '../term.js';
 
 /** A stand-in for process.stdout, so the tty path can be exercised anywhere. */
 function fake(isTTY, columns = 40, rows = 24) {
@@ -72,6 +72,15 @@ test('verbosity gates what is printed, and v cycles it', () => {
   cycleVerbosity();   // back round to quiet
   verbose('v4');
   assert.equal(out.text, 'verbosity: quiet\n');
+
+  // -vv on the command line: the level, set silently, and clamped.
+  out.text = '';
+  setVerbosity(5);
+  debug('d5');
+  assert.equal(out.text, 'd5\n');
+  setVerbosity(0);
+  debug('d6');
+  assert.equal(out.text, 'd5\n');
 });
 
 // The prompt is part of the block, which is what stops a poll landing mid-question
