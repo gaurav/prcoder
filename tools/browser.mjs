@@ -288,15 +288,11 @@ console.log('clicked:', JSON.stringify(await toastText()), '  (want null)');
 // unchanged, and writeQueue calls setBody only when the block differs, so this
 // writes `.prcoder/` and never GitHub.
 const queue = await page.evaluate(() => fetch('/api/queue').then((r) => r.json()));
-// The route takes `{items, branch}`: the branch the writer believes it is
-// looking at, checked against the checkout. Read from the pane's own status so
-// the driver states whatever this repo is actually on.
-const putQueue = async (items) => {
-  const { branch } = await page.evaluate(() => fetch('/api/status').then((r) => r.json()));
-  return page.evaluate((body) => fetch('/api/queue', {
-    method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
-  }).then((r) => r.json()), { items, branch });
-};
+// The route takes `{items}` and replaces the list wholesale -- one queue for the
+// repo, whatever is checked out.
+const putQueue = (items) => page.evaluate((body) => fetch('/api/queue', {
+  method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+}).then((r) => r.json()), { items });
 await putQueue([...queue, { text: 'driver scratch item, put back at the end of the run' }]);
 // finally, because everything between here and the restore drives a browser: a
 // reload that hangs or a locator that times out would otherwise leave the

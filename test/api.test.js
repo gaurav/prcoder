@@ -102,11 +102,11 @@ test('a malformed origin is refused rather than parsed into a pass', async () =>
   assert.equal(res.status, 403);
 });
 
-// The payload shape is part of this route's contract, and it changed once: it
-// took a bare array before it took `{items, branch}`. A client that missed the
-// change used to reach staleBranch with `undefined` and get a TypeError about
-// reading 'find', which tells nobody what to send. None of these reaches a
-// store write, so the queue on disk is untouched either way.
+// The payload shape is part of this route's contract, and it has changed twice:
+// a bare array, then `{items, branch}`, and now `{items}` again. A client that
+// missed a change used to send something the route then indexed into, and the
+// TypeError told nobody what to send. None of these reaches a store write, so
+// the queue on disk is untouched either way.
 test('a queue write of the wrong shape says so, rather than throwing from inside', async () => {
   const put = async (body) => {
     const res = await fetch(`${base}/api/queue`, {
@@ -116,8 +116,8 @@ test('a queue write of the wrong shape says so, rather than throwing from inside
     });
     return [res.status, (await res.json()).error];
   };
-  const want = 'the queue must be sent as {items, branch}';
-  // The old wire format, which is the one somebody actually still has open.
+  const want = 'the queue must be sent as {items}';
+  // Both old wire formats, either of which somebody may still have open.
   assert.deepEqual(await put([]), [500, want]);
   assert.deepEqual(await put([{ text: 'a task' }]), [500, want]);
   assert.deepEqual(await put({ branch: 'work' }), [500, want]);

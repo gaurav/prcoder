@@ -14,7 +14,7 @@ import { loadPr, prHeads, prBody, listPrs, setViewed, setBody, createIssue, fetc
 import { snapshot, currentBranch, repoInfo, prScope, compareUrl, checkoutPr, pushBranch, remoteBranchHead } from './git.js';
 import { groupFiles, fileUrl } from './files.js';
 import { parseFuture, renderPrBlock, syncFromPrBlock, toggleTask } from './queue.js';
-import { readStore, writeStore, readPort, writePort, forBranch, replaceBranch, branchKey, staleBranch } from './store.js';
+import { readStore, writeStore, readPort, writePort, replaceItems } from './store.js';
 import * as term from './term.js';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
@@ -174,10 +174,12 @@ const ours = (branch) => Boolean(pr)
 const mirrors = (branch) => ours(branch) && !mirrorFailed;
 
 async function readQueue(branch) {
+  // Still the checkout's branch, and only for mirrors(): which PR we are
+  // allowed to merge against is a fact about the branch. Which items exist is
+  // not -- the queue is one list whatever is checked out.
   branch ??= await currentBranch(repo);
   const { store } = await readStore(repo);
-  const mine = forBranch(store, branch);
-  return decorate(mirrors(branch) ? syncFromPrBlock(mine, pr.body ?? '') : mine, branch);
+  return decorate(mirrors(branch) ? syncFromPrBlock(store.items, pr.body ?? '') : store.items);
 }
 
 /**
@@ -188,39 +190,27 @@ async function readQueue(branch) {
  * old line no longer matches anything. The network call only happens when the
  * rendered block actually changes, so ticking a local-only item stays offline.
  *
- * ponytail: last write wins on a branch's slice. The store is re-read on every
- * poll so an outside edit is picked up, but two tabs racing means the slower
- * one loses what it never saw. Fixing that needs item identity — text is not
- * it, since an edit is indistinguishable from a delete plus an add — so if a
- * lost item is ever actually observed, give pick() a crypto.randomUUID() and
- * union by id.
+ * ponytail: last write wins. The store is re-read on every poll so an outside
+ * edit is picked up, but two tabs racing means the slower one loses what it
+ * never saw. Fixing that needs item identity — text is not it, since an edit is
+ * indistinguishable from a delete plus an add — so if a lost item is ever
+ * actually observed, give pick() a crypto.randomUUID() and union by id.
  */
-function requireCurrentBranch(items, branch, shown) {
-  // A write from a tab that has not noticed a checkout would file this branch's
-  // items under the next one. Refusing is visible; the alternative is silent.
-  if (staleBranch(items, branch, shown)) {
-    throw new Error(`the branch changed to ${branchKey(branch)} under the queue — refresh`);
-  }
-}
-
-async function writeQueue(items, branch, shown) {
-  // The shape is the contract, and it changed once: the route took a bare array
-  // before it took `{items, branch}`. A client that missed that -- an old tab, a
-  // curl copied from somewhere -- reached staleBranch with `undefined` and got
-  // `Cannot read properties of undefined (reading 'find')`, which says nothing
+async function writeQueue(items, branch) {
+  // The shape is the contract, and it has changed twice: the route took a bare
+  // array, then `{items, branch}`, and now `{items}` again. A client that
+  // missed a change -- an old tab, a curl copied from somewhere -- used to send
+  // something this function then indexed into, and the TypeError said nothing
   // about what to send instead. Checked here rather than at the route, because
   // every write goes through this function.
   if (!Array.isArray(items)) {
-    throw new Error('the queue must be sent as {items, branch}');
+    throw new Error('the queue must be sent as {items}');
   }
   branch ??= await currentBranch(repo);
-  const key = branchKey(branch);
-
-  requireCurrentBranch(items, branch, shown);
 
   const { store, stale: staleBytes } = await readStore(repo);
-  for (const line of queueChanges(forBranch(store, branch), items)) term.verbose(line);
-  await writeStore(repo, replaceBranch(store, branch, items), { stale: staleBytes });
+  for (const line of queueChanges(store.items, items)) term.verbose(line);
+  await writeStore(repo, replaceItems(store, items), { stale: staleBytes });
 
   // The block rendered against the body we last saw. If that is already what it
   // says, this change touched nothing the PR shows -- a local-only item ticked,
@@ -267,7 +257,7 @@ async function writeQueue(items, branch, shown) {
       console.error('pr body not updated:', e.stderr || e.message);
     }
   }
-  return decorate(items, branch);
+  return decorate(items);
 }
 
 /**
@@ -275,15 +265,10 @@ async function writeQueue(items, branch, shown) {
  * nameWithOwner rather than the PR's URL, because that is the repo createIssue
  * actually files into — with a pinned foreign PR the two differ — and because
  * a queue that now works with no PR loaded would otherwise render dead links.
- *
- * `branch` is stamped on the way out so the client hands it back on the next
- * write, which is what lets writeQueue notice a checkout it has missed.
  */
-function decorate(items, branch) {
-  const key = branchKey(branch);
+function decorate(items) {
   return items.map((i) => ({
     ...i,
-    branch: key,
     issueUrl: i.issue && info ? `https://github.com/${info.nameWithOwner}/issues/${i.issue}` : null,
   }));
 }
@@ -498,22 +483,15 @@ const routes = {
 
   'GET /api/queue': () => readQueue(),
 
-  'PUT /api/queue': ({ items, branch }) => writeQueue(items, null, branch),
+  'PUT /api/queue': ({ items }) => writeQueue(items),
 
-  'POST /api/queue/issue': async ({ items, index, branch: shown }) => {
+  'POST /api/queue/issue': async ({ items, index }) => {
     info ??= await repoInfo(repo);
-    // Checked before the side effect, not after. An issue filed and *then*
-    // refused by writeQueue is an issue whose number never reaches the queue,
-    // and the only obvious thing to do next -- press the button again -- files
-    // a second one against the same item.
-    const branch = await currentBranch(repo);
-    requireCurrentBranch(items, branch, shown);
-
     const { url, number } = await createIssue(repo, info.nameWithOwner, items[index].text);
     items[index].issue = number;
     term.verbose(`filed ${quote(items[index].text)} as ${url}`);
     try {
-      return await writeQueue(items, branch, shown);
+      return await writeQueue(items);
     } catch (e) {
       // The issue exists on GitHub whatever happened here, so the error has to
       // name it: "failed" without a number is what makes someone file another.
@@ -686,8 +664,7 @@ async function importFuture() {
   const items = parseFuture(text);
   if (!items.length) return;
 
-  const branch = await currentBranch(repo);
-  await writeStore(repo, replaceBranch(store, branch, items));
+  await writeStore(repo, replaceItems(store, items));
   console.log(`imported ${items.length} items from FUTURE.md into .prcoder/queue.json`);
   console.log('prcoder no longer reads or writes FUTURE.md; your copy is untouched');
 }

@@ -7,10 +7,12 @@
 // the branch switcher disabling itself permanently. This is the fix for that
 // whole class of problem.
 //
-// One file holds every branch's items in one flat array, each tagged with the
-// branch it belongs to. The queue reads as per-branch because a checkout used
-// to swap FUTURE.md; an ignored directory does not swap, so the scoping has to
-// be written down.
+// One file, one flat array, every item visible whatever is checked out. It was
+// scoped per branch for a while, because a checkout used to swap FUTURE.md and
+// an ignored directory does not swap. That turned out to hide items rather than
+// organise them: moving to an unrelated branch mid-task took the list away, and
+// merging a branch put its unfinished items permanently out of reach. Issue #48
+// is where a better answer would go if one is wanted.
 
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -32,17 +34,16 @@ const EMPTY = { version: VERSION, items: [] };
 
 /**
  * Every field, coerced. The client PUTs back the array it was handed, which
- * decorate() has added a derived `issueUrl` to and which carries a `branch`
- * that may be a checkout out of date — so this constructs rather than spreads.
+ * decorate() has added a derived `issueUrl` to — so this constructs rather than
+ * spreads, and a `branch` left on an item by an older prcoder is dropped here.
  * The markdown writer dropped unknown fields for free; JSON would keep them.
  */
-export const pick = (branch) => (i) => ({
+export const pick = (i) => ({
   text: String(i?.text ?? ''),
   done: !!i?.done,
   inPr: !!i?.inPr,
   issue: Number.isInteger(i?.issue) ? i.issue : null,
   deleted: !!i?.deleted,
-  branch,
 });
 
 /**
@@ -69,7 +70,7 @@ export function normalise(raw) {
   if (Number(parsed.version) > VERSION) return { store: EMPTY, stale: true };
 
   return {
-    store: { version: VERSION, items: parsed.items.map((i) => pick(String(i?.branch ?? ''))(i)) },
+    store: { version: VERSION, items: parsed.items.map(pick) },
     stale: false,
   };
 }
@@ -153,42 +154,5 @@ export async function writePort(repo, port) {
   await fs.rename(tmp, target);
 }
 
-/** '@{' is invalid in a ref name, so the detached bucket cannot collide. */
-export const branchKey = (branch) => branch || '@{detached}';
-
-export const forBranch = (store, branch) =>
-  store.items.filter((i) => i.branch === branchKey(branch));
-
-/**
- * The first item that belongs to a branch other than this one, if any.
- *
- * A tab can be up to a poll out of date, and Claude switches branches in the
- * terminal pane constantly. Without this, that tab's next write stamps the old
- * branch's items with the new branch and overwrites the new branch's slice
- * wholesale. Items typed since the last load carry no branch at all, so adding
- * to the queue still works while the tab catches up.
- *
- * Which is the hole the items alone cannot close: a payload of nothing but
- * newly typed items -- or an empty one -- carries no branch to disagree with,
- * so an add onto an empty queue during a checkout passed this guard and was
- * filed under the branch it had just left. `shown` is the branch the tab says
- * it is displaying, sent with the write, and it is stated whether or not the
- * items are. A tab too old to send one falls back to the scan.
- *
- * Both sides go through branchKey before they meet. snapshot reports a detached
- * HEAD as '', which is what the tab sends straight back, and comparing that raw
- * made the whole clause falsy -- leaving the payload the clause exists for to
- * the scan that cannot see it.
- */
-export const staleBranch = (items, branch, shown) =>
-  (shown != null && branchKey(shown) !== branchKey(branch) && branchKey(shown))
-  || items.find((i) => i.branch && i.branch !== branchKey(branch));
-
-/** This branch's items replaced, every other branch's left exactly as they were. */
-export const replaceBranch = (store, branch, items) => ({
-  ...store,
-  items: [
-    ...store.items.filter((i) => i.branch !== branchKey(branch)),
-    ...items.map(pick(branchKey(branch))),
-  ],
-});
+/** The whole list replaced, coerced on the way in. */
+export const replaceItems = (store, items) => ({ ...store, items: items.map(pick) });
