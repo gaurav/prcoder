@@ -174,6 +174,11 @@ export const forBranch = (store, branch) =>
  * filed under the branch it had just left. `shown` is the branch the tab says
  * it is displaying, sent with the write, and it is stated whether or not the
  * items are. A tab too old to send one falls back to the scan.
+ *
+ * Both sides go through branchKey before they meet. snapshot reports a detached
+ * HEAD as '', which is what the tab sends straight back, and comparing that raw
+ * made the whole clause falsy -- leaving the payload the clause exists for to
+ * the scan that cannot see it.
  */
 export const staleBranch = (items, branch, shown) =>
   (shown != null && branchKey(shown) !== branchKey(branch) && branchKey(shown))
