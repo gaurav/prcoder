@@ -624,7 +624,16 @@ const wss = new WebSocketServer({ server, path: '/pty' }).on('error', () => {}).
       term.debug(`ignored a bad websocket frame: ${e.message}`);
     }
   });
-  ws.on('close', () => { ptys.delete(pty); pty.kill(); repaint(); });
+  ws.on('close', () => {
+    ptys.delete(pty);
+    // node-pty throws killing a pty that has already gone, and the normal end
+    // of a claude session arrives here exactly that way: onExit above closes
+    // the socket, which lands us here with nothing left to kill. Thrown from a
+    // 'close' listener that would be an uncaught exception, so quitting claude
+    // in one tab took the server and every other tab's session with it.
+    try { pty.kill(); } catch { /* it exited first, which is why we are here */ }
+    repaint();
+  });
 });
 
 /**
