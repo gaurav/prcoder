@@ -131,7 +131,10 @@ function render() {
         : [
           bulk('→ all to PR', () => { items.forEach((i) => { if (!i.done && !i.deleted) i.inPr = true; }); save(); },
             { disabled: !hasPr, title: hasPr ? '' : NO_PR }),
-          bulk('clear done', () => { items.forEach((i) => { if (i.done) i.deleted = true; }); save(); }),
+          // Same tombstone the row's own delete writes, inPr and all: an item
+          // restored from the Deleted tab must not walk back into the PR
+          // description just because it was cleared in bulk.
+          bulk('clear done', () => { items.forEach((i) => { if (i.done) { i.deleted = true; i.inPr = false; } }); save(); }),
         ]),
     ),
     h('ul', { className: 'items' }, ...shown.map((i) => row(i))),
