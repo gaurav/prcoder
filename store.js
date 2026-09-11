@@ -167,9 +167,17 @@ export const forBranch = (store, branch) =>
  * branch's items with the new branch and overwrites the new branch's slice
  * wholesale. Items typed since the last load carry no branch at all, so adding
  * to the queue still works while the tab catches up.
+ *
+ * Which is the hole the items alone cannot close: a payload of nothing but
+ * newly typed items -- or an empty one -- carries no branch to disagree with,
+ * so an add onto an empty queue during a checkout passed this guard and was
+ * filed under the branch it had just left. `shown` is the branch the tab says
+ * it is displaying, sent with the write, and it is stated whether or not the
+ * items are. A tab too old to send one falls back to the scan.
  */
-export const staleBranch = (items, branch) =>
-  items.find((i) => i.branch && i.branch !== branchKey(branch));
+export const staleBranch = (items, branch, shown) =>
+  (shown != null && shown !== branchKey(branch) && shown)
+  || items.find((i) => i.branch && i.branch !== branchKey(branch));
 
 /** This branch's items replaced, every other branch's left exactly as they were. */
 export const replaceBranch = (store, branch, items) => ({

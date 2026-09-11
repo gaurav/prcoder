@@ -171,3 +171,23 @@ test('a write carrying a branch we have left is caught, not applied', () => {
   assert.equal(staleBranch([{ text: 'just typed' }], 'work'), undefined);
   assert.equal(staleBranch([item({ branch: '@{detached}' })], ''), undefined);
 });
+
+// The hole the items alone leave: nothing in an empty payload, or in one of
+// freshly typed items, carries a branch to disagree with -- so the write the
+// guard exists to stop is exactly the one it could not see. The tab states the
+// branch it is showing instead.
+test('a write from a tab showing another branch is caught even with nothing to inspect', () => {
+  assert.equal(staleBranch([], 'work', 'old'), 'old');
+  assert.equal(staleBranch([{ text: 'just typed' }], 'work', 'old'), 'old');
+  assert.equal(staleBranch([], 'work', 'work'), undefined);
+  assert.equal(staleBranch([{ text: 'just typed' }], 'work', 'work'), undefined);
+  // Detached at both ends, which is a bucket name rather than a branch.
+  assert.equal(staleBranch([], '', '@{detached}'), undefined);
+});
+
+// A tab loaded before the branch was known sends nothing, and the scan is all
+// there is. Not a refusal: the first poll is seconds away.
+test('a tab that states no branch is judged on its items alone', () => {
+  assert.equal(staleBranch([], 'work', undefined), undefined);
+  assert.equal(staleBranch([item({ branch: 'old' })], 'work', undefined).text, 'a task');
+});

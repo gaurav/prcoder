@@ -195,15 +195,19 @@ async function readQueue(branch) {
  * lost item is ever actually observed, give pick() a crypto.randomUUID() and
  * union by id.
  */
-async function writeQueue(items, branch) {
+function requireCurrentBranch(items, branch, shown) {
+  // A write from a tab that has not noticed a checkout would file this branch's
+  // items under the next one. Refusing is visible; the alternative is silent.
+  if (staleBranch(items, branch, shown)) {
+    throw new Error(`the branch changed to ${branchKey(branch)} under the queue — refresh`);
+  }
+}
+
+async function writeQueue(items, branch, shown) {
   branch ??= await currentBranch(repo);
   const key = branchKey(branch);
 
-  // A write from a tab that has not noticed a checkout would file this branch's
-  // items under the next one. Refusing is visible; the alternative is silent.
-  if (staleBranch(items, branch)) {
-    throw new Error(`the branch changed to ${key} under the queue — refresh`);
-  }
+  requireCurrentBranch(items, branch, shown);
 
   const { store, stale: staleBytes } = await readStore(repo);
   for (const line of queueChanges(forBranch(store, branch), items)) term.verbose(line);
@@ -485,14 +489,27 @@ const routes = {
 
   'GET /api/queue': () => readQueue(),
 
-  'PUT /api/queue': (items) => writeQueue(items),
+  'PUT /api/queue': ({ items, branch }) => writeQueue(items, null, branch),
 
-  'POST /api/queue/issue': async ({ items, index }) => {
+  'POST /api/queue/issue': async ({ items, index, branch: shown }) => {
     info ??= await repoInfo(repo);
+    // Checked before the side effect, not after. An issue filed and *then*
+    // refused by writeQueue is an issue whose number never reaches the queue,
+    // and the only obvious thing to do next -- press the button again -- files
+    // a second one against the same item.
+    const branch = await currentBranch(repo);
+    requireCurrentBranch(items, branch, shown);
+
     const { url, number } = await createIssue(repo, info.nameWithOwner, items[index].text);
     items[index].issue = number;
     term.verbose(`filed ${quote(items[index].text)} as ${url}`);
-    return writeQueue(items);
+    try {
+      return await writeQueue(items, branch, shown);
+    } catch (e) {
+      // The issue exists on GitHub whatever happened here, so the error has to
+      // name it: "failed" without a number is what makes someone file another.
+      throw new Error(`filed ${url}, but the queue did not record it: ${e.message}`);
+    }
   },
 };
 

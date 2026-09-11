@@ -229,9 +229,15 @@ console.log('clicked:', JSON.stringify(await toastText()), '  (want null)');
 // unchanged, and writeQueue calls setBody only when the block differs, so this
 // writes `.prcoder/` and never GitHub.
 const queue = await page.evaluate(() => fetch('/api/queue').then((r) => r.json()));
-const putQueue = (items) => page.evaluate((i) => fetch('/api/queue', {
-  method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(i),
-}).then((r) => r.json()), items);
+// The route takes `{items, branch}`: the branch the writer believes it is
+// looking at, checked against the checkout. Read from the pane's own status so
+// the driver states whatever this repo is actually on.
+const putQueue = async (items) => {
+  const { branch } = await page.evaluate(() => fetch('/api/status').then((r) => r.json()));
+  return page.evaluate((body) => fetch('/api/queue', {
+    method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+  }).then((r) => r.json()), { items, branch });
+};
 await putQueue([...queue, { text: 'driver scratch item, put back at the end of the run' }]);
 await page.reload();
 await page.waitForSelector('.item .text');

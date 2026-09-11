@@ -3,6 +3,13 @@ import { h, btn, api, toast } from './pr.js';
 // The client owns the list; every change persists the whole array. Single user,
 // single repo — no ids, no diffing.
 let items = [];
+// The branch this pane believes it is showing, sent with every write so the
+// server can refuse one from a tab that has missed a checkout. The items carry
+// their own branch, but an empty list and a list of freshly typed items both
+// carry none -- which is the case the guard most needs to catch, because
+// nothing on screen would look wrong. Undefined until the first poll, which is
+// the one window where the items are still the only evidence there is.
+let shown;
 let tab = 'active';
 let deps = {};
 // Set while a branch switch is in flight. Every save() writes the whole array,
@@ -27,10 +34,13 @@ export const freeze = (on) => { frozen = on; render(); };
  * the pane can keep focus indefinitely -- a clicked tab does, in Chromium -- and
  * freezing on it leaves the queue stale with nothing to unstick it.
  */
-export function setItems(next, prAvailable) {
+export function setItems(next, prAvailable, branch) {
   if (document.activeElement?.closest?.('#queue-body .text[contenteditable]')) return;
   items = next;
   hasPr = prAvailable;
+  // Only when the caller knows it. A tick folded back from the description
+  // route answers with items and no branch, and the branch has not moved.
+  if (branch !== undefined) shown = branch;
   render();
 }
 
@@ -72,7 +82,7 @@ export async function initQueue(d) {
   render();
 }
 
-const save = async (url = '/api/queue', method = 'PUT', body = items) => {
+const save = async (url = '/api/queue', method = 'PUT', body = { items, branch: shown }) => {
   // The backstop behind inert -- a blur fired *by* the freeze still lands here.
   // Loud, because the local array has already moved and the next poll is about
   // to move it back.
@@ -175,7 +185,7 @@ function row(item) {
         title: hasPr ? (item.inPr ? 'in PR description' : 'add to PR description') : NO_PR,
         disabled: !hasPr,
       }),
-      item.issue ? null : btn('◎', () => save('/api/queue/issue', 'POST', { items, index: idx }),
+      item.issue ? null : btn('◎', () => save('/api/queue/issue', 'POST', { items, index: idx, branch: shown }),
         { title: 'create an issue' }),
       item.deleted
         ? btn('↩', () => { item.deleted = false; save(); }, { title: 'restore' })
