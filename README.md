@@ -11,11 +11,12 @@ npm link                   # once, to run it from any repo; edits here go live
 prcoder                    # the PR for the current branch
 prcoder 123                # a specific PR
 prcoder <pr-url>           # any PR, anywhere
-prcoder --model opus       # ...with flags for the Claude session
+prcoder -- --model opus    # ...with flags for the Claude session, after --
+prcoder --help             # prcoder's own flags
 ```
 
-It prints the URL to open, and opens it for you unless `PRCODER_NO_OPEN` is
-set. The port is per-repo and stays the same across runs -- see *A URL that
+It prints the URL to open, and opens it for you unless `--no-open` (or
+`PRCODER_NO_OPEN`) is set. The port is per-repo and stays the same across runs -- see *A URL that
 stays put* below.
 
 ## Where the repo is
@@ -40,13 +41,19 @@ as the last poll.
 ## Arguments
 
 The first argument, if it isn't a flag, is prcoder's: the PR to open. Everything
-from the first flag onward is handed to `claude` untouched, so
-`prcoder 123 --effort high --model opus` opens PR 123 with that session. There is
-no list of Claude's flags here to fall out of date, and nothing to arbitrate when
-Claude gains a flag prcoder also wants.
+after `--` is handed to `claude` untouched, so
+`prcoder 123 -- --effort high --model opus` opens PR 123 with that session. There
+is no list of Claude's flags here to fall out of date, and nothing to arbitrate
+when Claude gains a flag prcoder also has: before `--` it is prcoder's, after it
+Claude's. A flag before `--` that prcoder does not know is an error that says
+so, rather than a guess at which of the two it was for.
 
-prcoder's own settings are environment variables — `PRCODER_PORT`, `PRCODER_NO_OPEN`,
-`PRCODER_VERBOSE`, `CLAUDE_BIN` — which cannot collide with a flag at all.
+prcoder's own flags are `--port <n>`, `--no-open`, `-v` (`-vv` for debug) and
+`--agent <name>` -- only `claude` today, and `CLAUDE_BIN` still names the
+executable. `prcoder --help` lists them. Each mirrors an environment variable of
+the same meaning -- `PRCODER_PORT`, `PRCODER_NO_OPEN`, `PRCODER_VERBOSE` -- and
+the flag wins when both are given; `PRCODER_OPEN` and `CLAUDE_BIN` are
+environment-only.
 
 The first run in a repo picks a port -- seeded from a hash of the path, and
 stepped along if that one is busy -- and records it in `.prcoder/port.json`.
@@ -61,8 +68,8 @@ outright -- Firefox answers *"This address is restricted"*, with nothing on
 screen to connect it to prcoder. The list is the
 [WHATWG fetch standard's](https://fetch.spec.whatwg.org/#port-blocking) and
 10080 is its highest entry, so nothing derived here can land on one. Edit
-`port.json` to pin a port permanently (avoid that list), or set `PRCODER_PORT`
-to pin one for a single run; `PRCODER_NO_OPEN=1` to be left with just the URL
+`port.json` to pin a port permanently (avoid that list), or pass `--port` (or
+set `PRCODER_PORT`) to pin one for a single run; `PRCODER_NO_OPEN=1` to be left with just the URL
 on stdout, or `PRCODER_OPEN` to a command of your own that gets the URL
 appended.
 
@@ -196,8 +203,8 @@ to the browser. `v` cycles quiet → verbose → debug. Verbose narrates the thi
 that change something you care about — an item queued, ticked, mirrored into
 the description, filed as an issue, a PR checked out. Debug adds every `git` and
 `gh` subprocess with its timing, the per-poll count of them, route timings, and
-a line when the PR has moved upstream. `PRCODER_VERBOSE=1` or `=2` starts at a
-level, which is the only way to see startup itself. `o` reopens the browser.
+a line when the PR has moved upstream. `-v` or `-vv` (or `PRCODER_VERBOSE=1`
+or `=2`) starts at a level, which is the only way to see startup itself. `o` reopens the browser.
 
 **Quitting.** Ctrl-C asks first, because quitting kills the PTY and with it the
 Claude session in the browser. It says what that costs — tabs open, unpushed
