@@ -182,3 +182,28 @@ test('the block says how old it is, once that is worth saying', () => {
     /1 tab   checked 10m ago/);
   assert.doesNotMatch(statusLines(STATUS, { local: 'x', tabs: 1, age: 0 }).join('\n'), /checked/);
 });
+
+// The entry point itself, for the paths that exit before a server starts:
+// help and version on stdout with exit 0, a parse error on stderr with exit 2
+// and the synopsis under it. Cheap, because none of them get as far as
+// term.init() or a port.
+test('prcoder --help, --version and a bad flag exit before anything starts', async () => {
+  const { execFile } = await import('node:child_process');
+  const { promisify } = await import('node:util');
+  const run = (...args) => promisify(execFile)('node', ['server.js', ...args], { cwd: new URL('..', import.meta.url) })
+    .then((r) => ({ code: 0, ...r }), (e) => ({ code: e.code, stdout: e.stdout, stderr: e.stderr }));
+
+  const help = await run('--help');
+  assert.equal(help.code, 0);
+  assert.equal(help.stdout.trim(), usage());
+
+  const version = await run('-V');
+  assert.equal(version.code, 0);
+  assert.equal(version.stdout.trim(), VERSION);
+
+  const bad = await run('42', '--effort', 'high');
+  assert.equal(bad.code, 2);
+  assert.equal(bad.stdout, '');
+  assert.match(bad.stderr, /^prcoder: unknown option --effort; flags for the agent go after --/);
+  assert.match(bad.stderr, /\nusage: prcoder /);
+});
