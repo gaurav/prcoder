@@ -124,7 +124,11 @@ export async function snapshot(cwd, remoteHead = null) {
  */
 export async function remoteBranchHead(cwd, branch) {
   if (!branch) return null;
-  const out = await git(['ls-remote', '--heads', 'origin', branch], cwd).catch(() => '');
+  // The full ref path, because ls-remote's argument is a pattern matched
+  // against the *tail* of a ref on slash boundaries: a bare `topic` matches
+  // origin's `refs/heads/feature/topic` and reports a stranger's head for a
+  // branch that was never pushed. `refs/heads/topic` matches only itself.
+  const out = await git(['ls-remote', '--heads', 'origin', `refs/heads/${branch}`], cwd).catch(() => '');
   return out.trim().split(/\s/)[0] || null;
 }
 

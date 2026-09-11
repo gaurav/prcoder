@@ -1,7 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { syncState, compareUrl, prScope, userDirt } from '../git.js';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { syncState, compareUrl, prScope, userDirt, remoteBranchHead } from '../git.js';
 
 // The four inputs come from `git rev-parse --verify` and `git merge-base
 // --is-ancestor`; the exit codes those return are checked in git.js, not here.
@@ -82,4 +87,32 @@ test('the status prefix is sliced, not trimmed, so the first path survives', () 
 test('the old queue file is ordinary uncommitted work now', () => {
   assert.deepEqual(userDirt(' M FUTURE.md'), ['FUTURE.md']);
   assert.deepEqual(userDirt(''), []);
+});
+
+// ls-remote's argument is a pattern matched against the *tail* of a ref on
+// slash boundaries, not a ref name -- so a bare `topic` answers for origin's
+// `refs/heads/feature/topic`. Verified against real git, 2026-09-11: reported
+// a head for a branch that was never pushed, which told /api/pr/create the
+// branch was already on origin and sent the sync light comparing against a
+// stranger. Real repos rather than a stub, because the whole bug was a belief
+// about what git does with that argument.
+test('a branch name that is the tail of another branch is not mistaken for it', async () => {
+  const git = promisify(execFile);
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'prcoder-lsremote-'));
+  const bare = path.join(dir, 'origin.git');
+  const work = path.join(dir, 'work');
+  const run = (cwd, ...args) => git('git', args, { cwd });
+  try {
+    await git('git', ['init', '-q', '--bare', bare]);
+    await git('git', ['init', '-q', work]);
+    await run(work, 'commit', '-q', '--allow-empty', '-m', 'x');
+    await run(work, 'branch', '-M', 'feature/topic');
+    await run(work, 'remote', 'add', 'origin', bare);
+    await run(work, 'push', '-q', 'origin', 'feature/topic');
+
+    assert.match(await remoteBranchHead(work, 'feature/topic'), /^[0-9a-f]{40}$/);
+    assert.equal(await remoteBranchHead(work, 'topic'), null);
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
 });
