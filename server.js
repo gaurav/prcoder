@@ -294,7 +294,9 @@ function mirrorPhrase(s) {
  * wording is testable without a tty.
  */
 export function statusLines(s, u = {}) {
-  const row = (label, ...rest) => `${`${label}        `.slice(0, 8)} ${rest.filter(Boolean).join('   ')}`;
+  // padEnd, not a slice: a label longer than the column has to push the row out
+  // rather than lose its tail, or `PR #10000` prints as a real-looking `PR #1000`.
+  const row = (label, ...rest) => `${label.padEnd(8)} ${rest.filter(Boolean).join('   ')}`;
   const live = (s.queue ?? []).filter((i) => !i.deleted);
   const n = (k) => live.filter(k).length;
 
@@ -354,6 +356,11 @@ async function status({ full = false } = {}) {
     // tree, so its verdict is meaningless. With no PR at all the branch still
     // has one, and "not pushed yet" is what the create button needs to know.
     sync: scope === 'current' || scope === 'none' ? snap.sync : null,
+    // `ahead` is derived from the same remote head, so it is meaningless in
+    // exactly the same cases -- and it outlives the pane: askToQuit reads it to
+    // say "N unpushed commits", which for a pinned PR on another branch was a
+    // count against a branch you are not on.
+    ahead: scope === 'current' || scope === 'none' ? snap.ahead : null,
     // The queue's own light, in the pane as well as in the terminal.
     mirrorFailed,
     pr: pr ? { ...pr, groups: withUrls(pr) } : null,

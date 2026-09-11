@@ -133,3 +133,11 @@ test('the block says how old it is, once that is worth saying', () => {
     /1 tab   checked 10m ago/);
   assert.doesNotMatch(statusLines(STATUS, { local: 'x', tabs: 1, age: 0 }).join('\n'), /checked/);
 });
+
+// The label column padded, not cut. Sliced to eight, `PR #10000` printed as
+// `PR #1000` -- a wrong number that looks like a right one, in the block the
+// terminal stares at all session.
+test('a PR number too wide for the label column widens the row, it does not lose a digit', () => {
+  assert.match(block({ pr: { ...STATUS.pr, number: 10000 } }), /PR #10000\b/);
+  assert.doesNotMatch(block({ pr: { ...STATUS.pr, number: 10000 } }), /PR #1000\s/);
+});
