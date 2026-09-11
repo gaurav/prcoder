@@ -1,18 +1,67 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { splitArgs, portFor, portCandidates, PORT_BASE, PORT_SPAN, statusLines, queueChanges, ago } from '../server.js';
+import { createRequire } from 'node:module';
+import { parseCli, usage, AGENTS, VERSION } from '../cli.js';
+import { portFor, portCandidates, PORT_BASE, PORT_SPAN, statusLines, queueChanges, ago } from '../server.js';
 
-test('a leading positional is our PR target, the rest is Claude\'s', () => {
-  assert.deepEqual(splitArgs([]), { target: undefined, claudeArgs: [] });
-  assert.deepEqual(splitArgs(['123']), { target: '123', claudeArgs: [] });
-  assert.deepEqual(splitArgs(['123', '--model', 'opus']), { target: '123', claudeArgs: ['--model', 'opus'] });
+test('a leading positional is our PR target, everything after -- is the agent\'s', () => {
+  const none = parseCli([]);
+  assert.equal(none.target, undefined);
+  assert.deepEqual(none.agentArgs, []);
+  assert.equal(none.agent, 'claude');
+  assert.equal(none.verbose, 0);
+  assert.equal(parseCli(['123']).target, '123');
+  const both = parseCli(['123', '--', '--model', 'opus']);
+  assert.equal(both.target, '123');
+  assert.deepEqual(both.agentArgs, ['--model', 'opus']);
+  assert.deepEqual(parseCli(['42', '--']).agentArgs, []);
+  assert.deepEqual(parseCli(['--', '-r']).agentArgs, ['-r']);
+  // Only the first -- is ours; a second one is the agent's to interpret.
+  assert.deepEqual(parseCli(['--', 'a', '--', 'b']).agentArgs, ['a', '--', 'b']);
 });
 
 // The one that matters: a flag's value must not be mistaken for a PR target.
 test('flag values are never read as a PR target', () => {
-  assert.deepEqual(splitArgs(['--effort', 'high', '--model', 'opus']),
-    { target: undefined, claudeArgs: ['--effort', 'high', '--model', 'opus'] });
-  assert.deepEqual(splitArgs(['-r']), { target: undefined, claudeArgs: ['-r'] });
+  const agent = parseCli(['--', '--effort', 'high', '--model', 'opus']);
+  assert.equal(agent.target, undefined);
+  assert.deepEqual(agent.agentArgs, ['--effort', 'high', '--model', 'opus']);
+  const ours = parseCli(['--port', '4000', '--agent', 'claude', '--', '--effort', 'high']);
+  assert.equal(ours.target, undefined);
+  assert.equal(ours.port, 4000);
+  assert.deepEqual(ours.agentArgs, ['--effort', 'high']);
+  // An agent flag before -- is refused rather than guessed at, and the
+  // message says where it goes.
+  assert.throws(() => parseCli(['--effort', 'high']), /after --/);
+  assert.throws(() => parseCli(['42', '--effort', 'high']), /after --/);
+  assert.throws(() => parseCli(['-r']), /after --/);
+});
+
+test('prcoder\'s own flags', () => {
+  assert.equal(parseCli(['-v']).verbose, 1);
+  assert.equal(parseCli(['-vv']).verbose, 2);
+  assert.equal(parseCli(['--verbose', '--verbose']).verbose, 2);
+  assert.equal(parseCli(['--no-open']).noOpen, true);
+  assert.equal(parseCli(['-h']).help, true);
+  assert.equal(parseCli(['--version']).version, true);
+  assert.equal(parseCli(['-V']).version, true);
+});
+
+test('bad input is an error that names the problem', () => {
+  assert.throws(() => parseCli(['--port']), /argument missing/);
+  assert.throws(() => parseCli(['--port', 'abc']), /--port/);
+  assert.throws(() => parseCli(['--agent', 'gpt']), /supported: claude/);
+  assert.throws(() => parseCli(['123', '456']), /456/);
+});
+
+// --help is meant to replace reading the README, so every flag and every
+// environment variable has to be in it.
+test('the help names every flag, env var and agent', () => {
+  const text = usage();
+  for (const s of ['--port', '--no-open', '--verbose', '--agent', '--help', '--version', '-- ',
+    'PRCODER_PORT', 'PRCODER_NO_OPEN', 'PRCODER_VERBOSE', 'PRCODER_OPEN', 'CLAUDE_BIN', ...AGENTS]) {
+    assert.ok(text.includes(s), `help mentions ${s}`);
+  }
+  assert.equal(VERSION, createRequire(import.meta.url)('../package.json').version);
 });
 
 // The URL has to be the same every run for a bookmark, a Dock app or an IDE
