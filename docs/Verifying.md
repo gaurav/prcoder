@@ -108,7 +108,10 @@ focus lands, an arrow moves the line by ten and shift-arrow by fifty, `Home` res
 `aria-valuenow` reports the position as a percentage of the window; the switcher, both sync-light
 states, the Deleted tab (which needed a tombstone put in through the API before it would render at
 all), the queue's synced light, the description's checkboxes and the disabled states; and both
-toasts, the four-second one watched to fade and the sticky one clicked away; the description's two
+toasts, the four-second one watched to fade and the sticky one clicked away; the head's row of links out, whose right
+alignment is measured against the head's own content edge with the title's left edge as the control,
+because `justify-content` on a row that is also `.meta` is an agreement between two rules that only
+the browser settles; the description's two
 repository-relative link kinds, a relative path and a bare `#N`, read back as resolved hrefs off
 this repo's own description rather than as the source they used to show; and the tab icon going
 amber while the PTY prints and back to green two seconds after it stops, typed at the `/bin/cat`

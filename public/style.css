@@ -132,7 +132,19 @@ a { color: var(--accent); }
 #pr-head > :last-child { margin-bottom: 0; }
 
 .empty { color: var(--dim); }
-.pr-link { display: block; font-size: 12px; margin-bottom: 4px; }
+/* The head's way out: this pull request on GitHub, the repo, and the lists you
+   leave for. Right-aligned because it is a way *out* of the pane rather than
+   part of what the pane says -- the title, the badges and the tabs all start at
+   the left margin, and this line started there too, where it was looked for to
+   the right of the title or under the badges and never found at the top.
+
+   `justify-content` rather than `text-align`: at the pane's 375px floor the row
+   wraps, and this is what keeps the wrapped half against the right edge too. It
+   reuses `.meta` for the flex, the wrap, the gap and the 12px dim type, so the
+   only thing said twice would be the alignment. */
+.pr-links { justify-content: flex-end; }
+.pr-links a:not(:first-child)::before { content: "· "; color: var(--dim); }
+
 /* Serif, like the description under it: the title is the first sentence of the
    argument, not a label on the pane. Everything else in this header -- the
    branch names, the badges, the tabs -- stays sans, so the split is the same

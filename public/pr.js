@@ -287,6 +287,30 @@ const linkBase = (pr) => ({
 });
 
 /**
+ * The head's way out of the pane: this pull request on GitHub, then the repo it
+ * is in and the three lists people leave for -- issues, pull requests,
+ * milestones.
+ *
+ * Built from the PR's own URL rather than from the `nameWithOwner` the status
+ * carries, which says nothing about the host. That keeps a GitHub Enterprise
+ * install working, and points a fork's pull request at the repository it was
+ * opened *against*, which is where its issues are. `git.js`'s compare URL is
+ * the one place that hardcodes github.com, and it is not a thing to copy.
+ *
+ * The arrow is on the first link only. That is the one that means "what you are
+ * looking at, on GitHub"; the rest read as a menu, and five arrows in a row
+ * read as decoration.
+ */
+export const headLinks = (pr) => {
+  const { repo } = linkBase(pr);
+  return [
+    { text: `PR #${pr.number} ↗`, href: pr.url },
+    { text: repo.replace(/^https?:\/\/[^/]+\//, ''), href: repo },
+    ...['issues', 'pulls', 'milestones'].map((p) => ({ text: p, href: `${repo}/${p}` })),
+  ];
+};
+
+/**
  * The pull request pane, in two roots.
  *
  * #pr-head is the identity -- which pull request, on what branch, passing or
@@ -320,8 +344,6 @@ function renderPrHead(pr, handlers) {
     btn(label, () => switchTo(name), { className: tab === name ? 'tab on' : 'tab' });
 
   document.getElementById('pr-head').replaceChildren(...kids([
-    h('a', { className: 'pr-link', href: pr.url, target: '_blank', rel: 'noopener' },
-      `#${pr.number} on GitHub ↗`),
     h('h2', { className: 'pr-title' }, pr.title),
     pr.note ? h('p', { className: 'pr-note' }, pr.note) : null,
     h('div', { className: 'meta' },
@@ -331,6 +353,9 @@ function renderPrHead(pr, handlers) {
       h('span', { className: 'del' }, `−${pr.deletions}`),
     ),
     checks(pr.checks),
+    h('div', { className: 'meta pr-links' },
+      ...headLinks(pr).map((l) =>
+        h('a', { href: l.href, target: '_blank', rel: 'noopener' }, l.text))),
     h('div', { className: 'tabs' },
       tabBtn('detail', tabLabel('Detail', taskCount(pr.body))),
       tabBtn('files', tabLabel('Files', viewedCount(pr.files)))),

@@ -78,9 +78,10 @@ to drop back to the default. The sizes are remembered per browser, so the
 layout you settle on is the one the next `prcoder` opens with.
 
 **Pull request** — which pull request you are in stays at the top: the title,
-the state, the branch it targets, the checks. Below that are two tabs, because
-reading the argument and working the files are two different things and each
-wants the whole pane.
+the state, the branch it targets, the checks. Under those, right-aligned, is the
+way out of the window: this pull request on GitHub, the repo, and its issues,
+pulls and milestones. Below that are two tabs, because reading the argument and
+working the files are two different things and each wants the whole pane.
 
 *Detail* is the description. It opens as the lead paragraph and then one folded
 line per section, so a long one is an outline you scan rather than a wall you

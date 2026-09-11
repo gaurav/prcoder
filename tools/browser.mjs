@@ -126,6 +126,23 @@ console.log('still open after a refresh:',
   JSON.stringify(await page.locator('.md-section[open] > summary h3').allInnerTexts()),
   ' (want the one clicked above)');
 
+// The head's way out of the pane, which is only right-aligned on screen: the
+// stylesheet says `justify-content: flex-end` on a row that is `.meta` as well,
+// and whether those two agree is a fact about the browser. Measured against the
+// head's own content box, with the title's left edge as the control -- the row
+// moved, the rest of the head did not.
+console.log('head:   ', await page.evaluate(() => {
+  const row = document.querySelector('#pr-head .pr-links');
+  const head = document.getElementById('pr-head');
+  const pad = parseFloat(getComputedStyle(head).paddingRight);
+  const edge = Math.round(head.getBoundingClientRect().right - pad);
+  const title = document.querySelector('#pr-head .pr-title').getBoundingClientRect();
+  return `${[...row.querySelectorAll('a')].map((a) => a.textContent).join(' ')} | row right ${
+    Math.round(row.getBoundingClientRect().right)} of ${edge}, title left ${Math.round(title.left)}`;
+}), ' (want the row flush with the head edge, the title still at the margin)');
+console.log('out:    ', await page.evaluate(() =>
+  [...document.querySelectorAll('#pr-head .pr-links a')].map((a) => a.href).join(' ')));
+
 // The two link kinds that only mean something against a repository: a relative
 // path, which GitHub leaves for the page to resolve and prcoder resolves to a
 // blob URL on the head branch, and a bare #N. Both showed as their own source

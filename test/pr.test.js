@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  pageTitle, withoutHtml, inline, queueSync, HEADING, blocks, sectionize,
+  pageTitle, withoutHtml, inline, headLinks, queueSync, HEADING, blocks, sectionize,
   tabLabel, taskCount, viewedCount,
 } from '../public/pr.js';
 import { fences, TASK, taskLines } from '../public/tasks.js';
@@ -194,6 +194,31 @@ test('a bare #N becomes a link to the issue of that number', () => {
   // colour in prose, neither of which starts a word.
   assert.equal(href(inline('[x](y.md#3)', where)), 'https://github.test/o/r/blob/topic/y.md#3');
   assert.equal(inline('#ffcc00 is the colour', where), '#ffcc00 is the colour');
+});
+
+// The row under the badges. Derived from the PR's own URL rather than from the
+// status's nameWithOwner, which carries no host -- so this is also the test that
+// a GitHub Enterprise install is not quietly sent to github.com.
+test('the head links point at the repository the pull request is in', () => {
+  const pr = { number: 7, url: 'https://github.test/o/r/pull/7', headRefName: 'topic', baseRefName: 'main' };
+  assert.deepEqual(headLinks(pr).map((l) => [l.text, l.href]), [
+    ['PR #7 ↗', 'https://github.test/o/r/pull/7'],
+    ['o/r', 'https://github.test/o/r'],
+    ['issues', 'https://github.test/o/r/issues'],
+    ['pulls', 'https://github.test/o/r/pulls'],
+    ['milestones', 'https://github.test/o/r/milestones'],
+  ]);
+});
+
+// A fork's pull request is opened *against* this repository, and its issues and
+// milestones are here rather than in the fork. The URL is the base repo's
+// either way, which is the whole reason these are derived from it.
+test('a pull request from a fork links to the repository it was opened against', () => {
+  const fork = {
+    number: 9, url: 'https://github.test/o/r/pull/9', isCrossRepository: true,
+    headRefName: 'contributor:patch', baseRefName: 'main',
+  };
+  for (const l of headLinks(fork)) assert.match(l.href, /^https:\/\/github\.test\/o\/r(\/|$)/);
 });
 
 test('without a repository to resolve against, neither becomes a link', () => {
