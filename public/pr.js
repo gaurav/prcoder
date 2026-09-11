@@ -257,6 +257,8 @@ let tab = 'detail';
 let shownFor = null;
 const scrolled = { detail: 0, files: 0 };
 const openSections = new Set();
+// Whether the single-section description below is still allowed to open itself.
+let autoOpen = true;
 // Groups record which are *closed*, the inverse of sections, because their
 // default is open -- so a group nobody has touched needs no entry, and a group
 // that appears for the first time arrives open rather than missing.
@@ -279,6 +281,7 @@ export function renderPr(pr, handlers) {
     scrolled.detail = 0;
     scrolled.files = 0;
     openSections.clear();
+    autoOpen = true;
   }
   renderPrHead(pr, handlers);
   renderPrTab(pr, handlers);
@@ -697,7 +700,11 @@ function description(body, onTask) {
   const { lead, sections } = sectionize(blocks(body));
   // A description that is one heading and nothing else would fold to a single
   // line showing nothing at all.
-  if (!lead.length && sections.length === 1) openSections.add(sections[0].key);
+  // Once per pull request, not once per poll. renderPr runs every 60s, and
+  // without the flag a reader who collapses that one section watches it reopen
+  // a minute later, every minute.
+  if (autoOpen && !lead.length && sections.length === 1) openSections.add(sections[0].key);
+  autoOpen = false;
   return [
     ...lead.map((b) => blockNode(b, onTask)),
     ...sections.map((sec) => sectionNode(sec, onTask)),
