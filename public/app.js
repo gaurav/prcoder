@@ -209,14 +209,19 @@ document.addEventListener('visibilitychange', () => {
 });
 
 const input = document.getElementById('queue-input');
-input.addEventListener('keydown', (e) => {
+input.addEventListener('keydown', async (e) => {
   // Shift-Enter is the newline; plain Enter still saves, which is the whole
   // reason this is a textarea with a key handler rather than a form.
   if (e.key !== 'Enter' || e.shiftKey) return;
   e.preventDefault();
-  addItem(input.value);
-  input.value = '';
-  grow();
+  // Cleared only once the server has the item. addItem is async and save()
+  // reports a refusal with a toast rather than a throw, so clearing on the way
+  // past threw the text away on a stale-branch refusal, on any API failure, and
+  // on an Enter pressed during a branch switch.
+  if (await addItem(input.value)) {
+    input.value = '';
+    grow();
+  }
 });
 /** One line until it needs more, then up to a third of the pane. */
 const grow = () => {

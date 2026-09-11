@@ -82,15 +82,20 @@ export async function initQueue(d) {
   render();
 }
 
+/** Whether the change reached the server, for the one caller that has to undo. */
 const save = async (url = '/api/queue', method = 'PUT', body = { items, branch: shown }) => {
   // The backstop behind inert -- a blur fired *by* the freeze still lands here.
   // Loud, because the local array has already moved and the next poll is about
   // to move it back.
-  if (frozen) return void toast('busy switching branches — that change was not saved', true);
+  if (frozen) {
+    toast('busy switching branches — that change was not saved', true);
+    return false;
+  }
   let data;
-  try { data = await api(url, body, method); } catch (e) { toast(e.message, true); return; }
+  try { data = await api(url, body, method); } catch (e) { toast(e.message, true); return false; }
   if (Array.isArray(data)) items = data;
   render();
+  return true;
 };
 
 function render() {
@@ -216,15 +221,23 @@ function row(item) {
   return li;
 }
 
+/** True once the server has it, so the caller knows whether to clear the input. */
 export async function addItem(text) {
-  if (!text.trim()) return;
+  if (!text.trim()) return false;
   const item = { text: text.trim(), done: false, inPr: false, issue: null, deleted: false };
   // The end of the whole array, past any done or deleted rows: the Active tab
   // filters without reordering, so it still shows last there, and FUTURE.md
   // reads newest-last.
   if (addTo === 'top') items.unshift(item); else items.push(item);
   tab = 'active';
-  await save();
+  if (!await save()) {
+    // Taken back out. save() has already said what went wrong, and a row left
+    // sitting there is one the next poll is about to delete without comment --
+    // while the text it came from has gone from the input.
+    items = items.filter((i) => i !== item);
+    render();
+    return false;
+  }
   // Either end can be off-screen in a list taller than the pane, and an item
   // you cannot see reads as a save that did not happen. Not scrollIntoView:
   // save() has already repainted from the server's echo, so the object above no
@@ -233,4 +246,5 @@ export async function addItem(text) {
   // also calls; the viewport should not jump for those.
   const host = document.getElementById('queue-body');
   host.scrollTop = addTo === 'top' ? 0 : host.scrollHeight;
+  return true;
 }
