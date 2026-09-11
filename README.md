@@ -142,16 +142,17 @@ the port this working copy listens on.
 {
   "version": 1,
   "items": [
-    { "text": "Add retry to the fetch path", "branch": "add-retries",
+    { "text": "Add retry to the fetch path",
       "done": false, "inPr": false, "issue": null, "deleted": false }
   ]
 }
 ```
 
-Items are tagged with the branch you added them on and the pane shows the
-branch you have checked out, so switching PRs swaps the list and nothing from
-one lands in another. Items for a branch you have deleted stay in the file:
-out of view, but not gone.
+One list for the repo, whatever is checked out. Items were scoped to the branch
+you added them on for a while; that hid them rather than organising them --
+moving to an unrelated branch mid-task took the list away, and merging a branch
+put its unfinished items out of reach for good. An older file's `branch` fields
+are dropped on the next write and those items come back.
 
 The queue is machine-local, which is the trade for not writing your files.
 The way to carry an item elsewhere is the ◆ button, which mirrors it into a

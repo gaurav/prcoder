@@ -18,7 +18,7 @@ deliberately cheap to throw away.
 ## Three guards, because the obvious version loses work
 
 The queue lives in `.prcoder/queue.json` and the PR description is a *projection* of it, never the
-other way round. Three guards keep that one-directional, and each closes a path where an item
+other way round. Two guards keep that one-directional, and each closes a path where an item
 disappears with nobody noticing. Each is a few lines; each is argued at its own function.
 
 **Mirror only the checked-out branch's PR** — `ours()` in [`server.js`](../server.js).
@@ -35,12 +35,11 @@ only the merge, because the only thing that can clear it is a successful write �
 stopped writing would be one nothing could open. Neither side of that write falls back to a body it
 failed to read: a read that did not happen says nothing about what the description holds now.
 
-**Refuse a write from a branch we have left** — `staleBranch()` in [`store.js`](../store.js).
-Claude switches branches in the terminal pane constantly and a tab can be a poll behind. The pane
-states the branch it believes it is showing and the server checks that first, rather than inferring
-it from the items: items typed since the last load deliberately carry no branch, and an empty queue
-carries none at all, so reading the payload alone left the guard blind to precisely the write it
-exists to stop.
+There was a third — a per-branch queue, and a guard refusing a write from a branch the tab had
+left. It is gone, and [#48](https://github.com/gaurav/prcoder/issues/48) holds what replaced it and
+why: scoping the list to the checkout hid items rather than organising them. Moving to an unrelated
+branch mid-task took the list away, and merging a branch put its unfinished items out of reach for
+good. One list for the repo is the behaviour to beat.
 
 ## What a localhost server is exposed to
 
@@ -76,8 +75,8 @@ argument for settling it rather than for continuing.
 
 **The queue is machine-local**, which is the trade for not writing your files. Mirroring an item
 into the PR description is how you carry it to another machine, and separate worktrees keep separate
-queues. There is no conflict detection between two tabs racing on one branch — last write wins on
-that branch's slice. A write-side guard was written and cut: it misses the case that actually
+queues. There is no conflict detection between two tabs racing on one repo — last write wins on the
+whole list. A write-side guard was written and cut: it misses the case that actually
 happens (two tabs on one server, where the mtime matches because the same process wrote it), and
 merging on conflict needs item identity, which text is not. The upgrade, if a lost item is ever
 actually observed, is an id per item and a union by id.
