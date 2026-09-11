@@ -108,7 +108,9 @@ focus lands, an arrow moves the line by ten and shift-arrow by fifty, `Home` res
 `aria-valuenow` reports the position as a percentage of the window; the switcher, both sync-light
 states, the Deleted tab (which needed a tombstone put in through the API before it would render at
 all), the queue's synced light, the description's checkboxes and the disabled states; and both
-toasts, the four-second one watched to fade and the sticky one clicked away.
+toasts, the four-second one watched to fade and the sticky one clicked away; and the tab icon going
+amber while the PTY prints and back to green two seconds after it stops, typed at the `/bin/cat`
+stub, whose echo is the same burst of output a Claude turn is made of.
 
 Driven in the PTY: the tab count, `r` forcing a poll, the busy-port line finding the other instance
 and naming its repo, the quit prompt naming what it costs, a second instance with no tab quitting on

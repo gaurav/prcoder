@@ -36,7 +36,37 @@ const sync = () => {
   if (dims !== sent && send({ type: 'resize', cols: term.cols, rows: term.rows })) sent = dims;
 };
 
-ws.onmessage = (e) => term.write(e.data);
+// The tab icon, amber while Claude is working, so a session left in a
+// background tab says whether it is still going without switching to it.
+// The PTY carries no "thinking" signal, but it doesn't need one: Claude
+// repaints its spinner every few hundred ms mid-turn and prints nothing at all
+// while it waits for you. Measured 2026-09-11 against a turn with a 12s tool
+// call in it: no gap over 750ms until the turn ended, then silence. So the
+// bytes *are* the signal, and 2s of quiet is the end of a turn.
+const link = document.querySelector('link[rel=icon]');
+// Derived, not written out a second time -- so the icon in index.html stays the
+// one definition of it. Change its colour there and change this to match.
+const IDLE = link.href;
+const BUSY = IDLE.replace('%23238636', '%23d29922');
+// Re-inserted rather than mutated in place: browsers disagree about whether an
+// href changed on a live <link rel=icon> is noticed at all.
+// Tracked here rather than read back off the element: `link.href` returns the
+// URL re-resolved, and a compare against that is a compare against something
+// the browser wrote, not something this did.
+let shown = IDLE;
+const icon = (href) => {
+  if (shown === href) return;
+  shown = link.href = href;
+  link.remove();
+  document.head.append(link);
+};
+let quiet;
+ws.onmessage = (e) => {
+  term.write(e.data);
+  icon(BUSY);
+  clearTimeout(quiet);
+  quiet = setTimeout(() => icon(IDLE), 2000);
+};
 // A tab the browser unloaded in the background comes back as a fresh page, and
 // the socket it closed on the way out has already killed the PTY — so this is a
 // new Claude session nobody asked for. sessionStorage is per-tab and survives
@@ -55,7 +85,11 @@ ws.onopen = () => {
     sessionStorage.setItem(PTY_SEEN, '1');
   } catch { /* private mode: no memory, so no claim about a previous session */ }
 };
-ws.onclose = () => term.write('\r\n\x1b[31m[claude exited — reload to restart]\x1b[0m\r\n');
+ws.onclose = () => {
+  clearTimeout(quiet);
+  icon(IDLE);
+  term.write('\r\n\x1b[31m[claude exited — reload to restart]\x1b[0m\r\n');
+};
 
 term.onData((d) => send({ type: 'input', data: d }));
 new ResizeObserver(sync).observe(document.getElementById('term-host'));

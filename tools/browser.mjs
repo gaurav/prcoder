@@ -316,6 +316,20 @@ try {
 }
 console.log('queue:  ', (await page.evaluate(() => fetch('/api/queue').then((r) => r.json()))).length, 'items  (want', queue.length + ')');
 
+// The tab icon, which goes amber while the PTY is printing and back to green
+// two seconds after it stops -- prcoder's only reading of "Claude is working".
+// The stub is /bin/cat, and a PTY echoes what is typed at it, so a keystroke
+// here is the same burst of output a Claude turn is made of.
+const iconFill = () => page.evaluate(() =>
+  document.querySelector('link[rel=icon]').href.match(/%23(\w{6})/)[1]);
+await page.locator('#term-host').click();
+await page.keyboard.type('hello');
+await page.waitForTimeout(200);
+const busy = await iconFill();
+await page.waitForTimeout(2500);
+console.log('icon:   ', `${busy} while printing, ${await iconFill()} after 2.5s quiet`,
+  '  (want d29922 then 238636)');
+
 console.log('title: ', await page.title());
 console.log('panes: ', await page.evaluate(() => getComputedStyle(document.querySelector('main')).gridTemplateColumns));
 console.log('shots: ', out);
