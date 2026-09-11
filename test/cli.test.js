@@ -60,7 +60,8 @@ const STATUS = {
   nameWithOwner: 'gaurav/prcoder', defaultBranch: 'main', branch: 'initial-implementation',
   sync: 'ahead', ahead: 2, dirtyFiles: ['a.js', 'b.js'], scope: 'current', mirrorFailed: false,
   pr: { number: 1, title: 'Drag the panes', url: 'https://github.com/gaurav/prcoder/pull/1', baseRefName: 'main' },
-  queue: [{ text: 'a', inPr: true }, { text: 'b', done: true }, { text: 'c', deleted: true }],
+  queue: [{ text: 'a', inPr: true }, { text: 'b', done: true }, { text: 'c', deleted: true },
+    { text: 'd' }],
 };
 const block = (over = {}) =>
   statusLines({ ...STATUS, ...over }, { local: 'http://localhost:1618' }).join('\n');
@@ -73,8 +74,11 @@ test('the block says where the branch, the PR and the queue stand', () => {
   assert.match(out, /2 uncommitted/);
   // The PR's URL, which the CLI never used to print at all.
   assert.match(out, /https:\/\/github\.com\/gaurav\/prcoder\/pull\/1/);
-  // Tombstoned items count as neither active nor done.
-  assert.match(out, /1 active · 1 done · 1 in the PR · 0 issues/);
+  // The pane's tabs, counted with the pane's own predicates: 'a' has been
+  // carried to the PR so it is no longer local, 'c' is a tombstone and counts
+  // as nothing, and only 'd' is still local. The counts do not sum to the list
+  // for the same reason the tabs do not -- see public/items.js.
+  assert.match(out, /1 local · 1 done · 1 in the PR · 0 issues/);
   assert.match(out, /queue mirrored/);
 });
 

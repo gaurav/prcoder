@@ -15,6 +15,7 @@ import { snapshot, currentBranch, repoInfo, prScope, compareUrl, checkoutPr, pus
 import { groupFiles, fileUrl } from './files.js';
 import { parseFuture, renderPrBlock, syncFromPrBlock, toggleTask } from './queue.js';
 import { readStore, writeStore, readPort, writePort, forBranch, replaceBranch, branchKey, staleBranch } from './store.js';
+import { counts } from './public/items.js';
 import * as term from './term.js';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
@@ -295,8 +296,9 @@ function mirrorPhrase(s) {
  */
 export function statusLines(s, u = {}) {
   const row = (label, ...rest) => `${`${label}        `.slice(0, 8)} ${rest.filter(Boolean).join('   ')}`;
-  const live = (s.queue ?? []).filter((i) => !i.deleted);
-  const n = (k) => live.filter(k).length;
+  // The same predicates the pane's tabs use, so the block and the tab strip
+  // cannot report the branch's queue differently.
+  const q = counts(s.queue ?? []);
 
   return [
     row('prcoder', s.nameWithOwner,
@@ -305,8 +307,8 @@ export function statusLines(s, u = {}) {
         .filter(Boolean).join(' · ')),
     s.pr ? row(`PR #${s.pr.number}`, s.pr.title) : row('PR', 'none for this branch'),
     s.pr && row('', s.pr.url),
-    row('queue', `${n((i) => !i.done)} active · ${n((i) => i.done)} done · ` +
-      `${n((i) => i.inPr)} in the PR · ${n((i) => i.issue)} issue${n((i) => i.issue) === 1 ? '' : 's'}`,
+    row('queue', `${q.local} local · ${q.done} done · ` +
+      `${q.pr} in the PR · ${q.issues} issue${q.issues === 1 ? '' : 's'}`,
       mirrorPhrase(s)),
     // The age belongs next to the tab count because the tab is the cause: the
     // browser polls only while its tab is visible, so backgrounding it stops
@@ -738,6 +740,9 @@ async function listenOnRepoPort() {
  * An empty list is not a question worth asking, so it is not asked: no tab open,
  * nothing unmirrored, nothing in the working tree that quitting could lose.
  */
+/** What never got carried out to the PR or to an issue. Cached, so no subprocess. */
+const localOnly = () => counts(last?.queue ?? []).local;
+
 function askToQuit() {
   const risk = [
     wss.clients.size && (wss.clients.size > 1
@@ -746,6 +751,10 @@ function askToQuit() {
     mirrorFailed && 'the PR description never got the last change',
     last?.ahead && `${last.ahead} unpushed commit${last.ahead > 1 ? 's' : ''}`,
     last?.dirtyFiles?.length && `${last.dirtyFiles.length} uncommitted file${last.dirtyFiles.length > 1 ? 's' : ''}`,
+    // The queue is what you meant to finish this time round, so an item still
+    // only on the local list is one that reached neither the PR nor an issue,
+    // and that nobody but this machine will ever see.
+    localOnly() && `${localOnly()} queue item${localOnly() > 1 ? 's' : ''} still only local`,
   ].filter(Boolean);
   // Killed here rather than left to the close handlers: process.exit does not
   // wait for them, and an orphaned `claude` outlives the terminal it was

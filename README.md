@@ -117,6 +117,16 @@ sent to Claude, mirrored into the PR description, or turned into a GitHub issue.
 An item that is in the PR description *and* becomes an issue has its PR line
 replaced by a link to the issue.
 
+The tabs are where an item has got to. **Local** is the working list: items that
+are only on this machine. Carrying one out to the PR with ◆ or filing it with ◎
+moves it to **PR** or **Issues**, so Local drains as you deal with things and a
+session you finished tidily ends with it empty. **Completed** is what you ticked
+off, with a delete-all for clearing it out, and **Deleted** holds tombstones
+until you empty it — nothing you typed disappears without somewhere to get it
+back. The tabs with nothing in them hide, except Local, whose emptiness is the
+thing worth seeing. An item can be in two at once — done *and* still in the PR is
+both true — so the counts do not add up to the list, on purpose.
+
 New items go to the bottom, so typing them in builds a list in the order you
 mean to work through it. The arrow next to the input flips that to the top for
 the other way of using a queue -- the thing you must not forget to do next --
@@ -179,7 +189,7 @@ It keeps a status block pinned under a scrolling log:
 prcoder  gaurav/prcoder   initial-implementation → main   2 unpushed · 8 uncommitted
 PR #1    A browser workspace around a live Claude Code session
          https://github.com/gaurav/prcoder/pull/1
-queue    19 active · 1 done · 10 in the PR · 1 issue   queue mirrored
+queue    4 local · 1 done · 10 in the PR · 1 issue   queue mirrored
 serving  http://localhost:17455   1 tab   q quit · r refresh · v verbose · o open
 ```
 
