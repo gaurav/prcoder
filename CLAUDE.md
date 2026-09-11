@@ -1,7 +1,9 @@
 # prcoder
 
 A local server + browser UI wrapping a real `claude` PTY. See README.md for what
-it does and how to run it.
+it does and how to run it, `docs/Design.md` for why it works the way it does --
+the guards, the threat model, the non-goals -- and `docs/Verifying.md` for what
+this repo checks and how. Keep those two true when you change what they describe.
 
 ## Scratch work goes in `data/`
 
