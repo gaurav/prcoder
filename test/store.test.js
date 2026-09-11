@@ -183,6 +183,12 @@ test('a write from a tab showing another branch is caught even with nothing to i
   assert.equal(staleBranch([{ text: 'just typed' }], 'work', 'work'), undefined);
   // Detached at both ends, which is a bucket name rather than a branch.
   assert.equal(staleBranch([], '', '@{detached}'), undefined);
+  // And a tab that sends the raw branch it was given: snapshot reports a
+  // detached HEAD as '', which used to make the whole `shown` clause falsy and
+  // leave the empty-payload write with nothing but the scan it defeats.
+  assert.equal(staleBranch([], 'work', ''), '@{detached}');
+  assert.equal(staleBranch([{ text: 'just typed' }], 'work', ''), '@{detached}');
+  assert.equal(staleBranch([], '', ''), undefined);
 });
 
 // A tab loaded before the branch was known sends nothing, and the scan is all

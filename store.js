@@ -176,7 +176,7 @@ export const forBranch = (store, branch) =>
  * items are. A tab too old to send one falls back to the scan.
  */
 export const staleBranch = (items, branch, shown) =>
-  (shown != null && shown !== branchKey(branch) && shown)
+  (shown != null && branchKey(shown) !== branchKey(branch) && branchKey(shown))
   || items.find((i) => i.branch && i.branch !== branchKey(branch));
 
 /** This branch's items replaced, every other branch's left exactly as they were. */
