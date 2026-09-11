@@ -133,8 +133,15 @@ forces one. That is Playwright's own patched Firefox, not the one in
 /Applications -- Playwright cannot drive a stock build, so the check is
 `existsSync(firefox.executablePath())` and the fix for a miss is
 `npx playwright install firefox`. Running both is worth the second minute: the
-caret offset the driver prints is 65 in Firefox and 66 in Chromium, and only one
-of them was ever wrong.
+caret bug is invisible in Chromium and fatal in Firefox, and it is the one thing
+here that only one engine can tell you about.
+
+Don't read the offset the driver prints as evidence. The assertion is `caret > 0`
+and nothing finer: `.item .text` is `flex: 1`, so the middle of its box is past
+the end of the sentence and the click sends the caret to the end of the text.
+The number is therefore the length of whichever row comes first, and it moves
+when the queue does -- it has been 65, 66 and 51 at different times, all of them
+passing and none of them meaning anything. docs/Verifying.md has the rest.
 
 What the driver waits on encodes an assumption about what the pane shows first.
 It waited on `.file` to decide the panes had finished loading, which was true
