@@ -269,7 +269,10 @@ management listed below, deliberately not built yet.
 
 Syntax-highlighted diffs, review threads, multi-session management. This is a prototype for
 finding out whether a PR-shaped workspace beats a chat-shaped one; it's meant to
-be cheap to rewrite.
+be cheap to rewrite. [docs/Design.md](docs/Design.md) has the full list and the reasoning behind
+it, along with why prcoder exists at all and what a localhost server is exposed to.
 
 `npm test` covers the parts worth pinning down: the queue store, file grouping, GitHub's diff
-anchors, every queue ↔ PR-description transition, and the routes that answer without `gh`.
+anchors, every queue ↔ PR-description transition, and the routes that answer without `gh`. What
+cannot be unit-tested is driven in a real browser and a real PTY —
+[docs/Verifying.md](docs/Verifying.md).

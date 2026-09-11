@@ -39,6 +39,9 @@ delays the rest, that's expected.
 
 ## Verifying a change
 
+`docs/Verifying.md` is the standing account of what this repo checks and how -- read it before
+adding a check, and update it when you add one that outlives the session.
+
 ```bash
 node --test                # bare, never `node --test test/` (Node 26 breaks)
 node --check public/*.js   # the client files the tests do not import
