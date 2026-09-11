@@ -554,10 +554,18 @@ const wss = new WebSocketServer({ server, path: '/pty' }).on('error', () => {}).
   pty.onData((d) => ws.readyState === ws.OPEN && ws.send(d));
   pty.onExit(() => ws.close());
 
+  // A throw in a 'message' listener reaches the emitter, and an uncaught
+  // exception there takes the process down -- with it every *other* tab's
+  // claude session. One malformed frame, or a resize node-pty rejects, is
+  // enough, so the frame is dropped and the server stays up.
   ws.on('message', (raw) => {
-    const msg = JSON.parse(raw);
-    if (msg.type === 'input') pty.write(msg.data);
-    else if (msg.type === 'resize') pty.resize(msg.cols, msg.rows);
+    try {
+      const msg = JSON.parse(raw);
+      if (msg.type === 'input') pty.write(msg.data);
+      else if (msg.type === 'resize') pty.resize(msg.cols, msg.rows);
+    } catch (e) {
+      term.debug(`ignored a bad websocket frame: ${e.message}`);
+    }
   });
   ws.on('close', () => { ptys.delete(pty); pty.kill(); repaint(); });
 });
