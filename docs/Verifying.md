@@ -54,7 +54,7 @@ them; it does now.
 A poll costs **seven subprocess calls**, clean tree and dirty alike. `PRCODER_VERBOSE=2` prints the
 count on every poll, so a change that adds a call is visible rather than inferred.
 
-Every figure here was measured on `53d90ba`.
+Every figure here was measured on `5f7d6cc`, in both engines.
 
 ## What gets checked, and where
 
@@ -100,7 +100,8 @@ Some things can only be checked against the real thing, so they are:
   13px a misplaced leading dot reads as a full stop and is invisible either way.
 
 And some only on screen. Driven in the browser: the two tabs and the folded description, including a
-forced poll to prove a fold survives `renderPr` replacing the whole pane; quoted sections, spliced
+forced poll to prove a fold survives `renderPr` replacing the whole pane, and each tab's scroll
+position crossed to the other tab and back, because the switch is what used to lose it; quoted sections, spliced
 into the `/api/status` response because neither of this repo's own descriptions contains a `>`; the
 splitters dragged to known coordinates and the page reloaded, and moved again from the keyboard —
 focus lands, an arrow moves the line by ten and shift-arrow by fifty, `Home` resets, and
@@ -123,7 +124,6 @@ The offset it prints is not a constant and is not evidence. `.item .text` is `fl
 runs to the end of the row and the middle of the box is past the end of the sentence — the click
 lands after the last glyph and the caret goes to the end of the text. So the number printed is the
 length of whichever row happens to come first, which is why it moves when the queue's contents
-move. At the time of writing it is 51 in both engines, which is the length of the driver's own
-scratch item. A check that would catch a click landing on the *wrong* character has to aim at the
+move. A check that would catch a click landing on the *wrong* character has to aim at the
 text node rather than at the box; that is a two-line fix, and it is on the branch stacked on this
 one rather than cherry-picked back here.
