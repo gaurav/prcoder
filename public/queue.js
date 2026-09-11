@@ -78,7 +78,15 @@ export async function initQueue(d) {
   // Before the fetch, so a remembered ↑ is not shown as the markup's ↓ for as
   // long as /api/queue takes to answer.
   paintWhere();
-  items = await fetch('/api/queue').then((r) => r.json());
+  // api(), not a bare fetch: a 500 answers `{error}` with a 200-shaped body, and
+  // assigning that object to `items` made the very next render() throw on
+  // items.filter -- a server-side error taking the whole pane down rather than
+  // showing itself.
+  try {
+    items = await api('/api/queue', undefined, 'GET');
+  } catch (e) {
+    toast(e.message, true);
+  }
   render();
 }
 
