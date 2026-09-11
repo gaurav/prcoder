@@ -204,6 +204,15 @@ function requireCurrentBranch(items, branch, shown) {
 }
 
 async function writeQueue(items, branch, shown) {
+  // The shape is the contract, and it changed once: the route took a bare array
+  // before it took `{items, branch}`. A client that missed that -- an old tab, a
+  // curl copied from somewhere -- reached staleBranch with `undefined` and got
+  // `Cannot read properties of undefined (reading 'find')`, which says nothing
+  // about what to send instead. Checked here rather than at the route, because
+  // every write goes through this function.
+  if (!Array.isArray(items)) {
+    throw new Error('the queue must be sent as {items, branch}');
+  }
   branch ??= await currentBranch(repo);
   const key = branchKey(branch);
 
