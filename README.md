@@ -1,8 +1,9 @@
 # prcoder
 
-A PR-focused shell around Claude Code. Run it in a repo, get three panes in your
-browser: the pull request you're working on, a live Claude Code session, and a
-task queue that stays out of your files.
+A PR-focused shell around Claude Code. Run it in a repo, get four panes in your
+browser: the pull request you're working on, the diff of whichever file you
+clicked, a live Claude Code session, and a task queue that stays out of your
+files.
 
 ```sh
 npm install
