@@ -98,3 +98,23 @@ test('an unchanged block is not redrawn', () => {
   status(['b']);
   assert.match(out.text, /b/);
 });
+
+// The question is asked with a keypress handler already listening, so a prompt
+// that paint() cut off the bottom is a question answered blind. Status rows are
+// what give way instead.
+test('the confirmation survives a terminal too short for the whole block', () => {
+  const out = fake(true, 40, 4);
+  status(['a', 'b', 'c', 'd', 'e']);
+  out.text = '';
+  confirm('quit? 1 browser tab  [y/N] ', () => {});
+  assert.match(out.text, /quit\? 1 browser tab {2}\[y\/N\]/);
+});
+
+// Down to the floor: even with no room at all the prompt is the line kept.
+test('a two-row terminal still shows the question', () => {
+  const out = fake(true, 40, 2);
+  status(['a', 'b', 'c']);
+  out.text = '';
+  confirm('quit? [y/N] ', () => {});
+  assert.match(out.text, /quit\? \[y\/N\]/);
+});

@@ -54,13 +54,20 @@ const ERASE = (n) => (n ? `\x1b[${n}F\x1b[0J` : '');
 
 export function paint() {
   if (!live()) return;
-  const body = [...footer, ...(prompt ? ['', prompt.text] : [])].map((l) => l.slice(0, cols()));
+  const fit = (l) => l.slice(0, cols());
+  const body = footer.map(fit);
+  // The question goes last but is cut first from nothing. A terminal short
+  // enough that the rule and the status rows already fill it used to drop the
+  // `quit? ... [y/N]` line while `prompt` stayed set -- so the next keypress
+  // answered a question nobody was shown. Status rows are what give way.
+  const ask = prompt ? ['', fit(prompt.text)] : [];
   // Nothing to say, nothing drawn -- otherwise every line logged before the
   // first status() trails a rule under itself with no block beneath it.
-  if (!body.length) return void (out.write(ERASE(painted)), painted = 0);
+  if (!body.length && !ask.length) return void (out.write(ERASE(painted)), painted = 0);
   // Truncated before the rule is styled, so slice() stays a width measure: SGR
   // is zero-width, and cutting through an escape sequence would print garbage.
-  const lines = [`\x1b[2m${'─'.repeat(cols())}\x1b[0m`, ...body].slice(0, Math.max(1, rows() - 1));
+  const room = Math.max(1, rows() - 1 - ask.length);
+  const lines = [...[`\x1b[2m${'─'.repeat(cols())}\x1b[0m`, ...body].slice(0, room), ...ask];
   out.write(`${ERASE(painted)}\x1b[?25l${lines.map((l) => `${l}\n`).join('')}\x1b[?25h`);
   painted = lines.length;
 }
