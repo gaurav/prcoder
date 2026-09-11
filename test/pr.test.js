@@ -142,6 +142,28 @@ test('escaping still happens, and happens first', () => {
   assert.equal(inline('`<b>`'), '<code>&lt;b&gt;</code>');
 });
 
+// A quote is as dangerous as an angle bracket here, because inline() is the
+// only thing between a PR body and an href="..." set with innerHTML -- and an
+// event-handler attribute smuggled in that way does fire. The pane shares a
+// page with the /pty socket, so it would be a typed turn into the running
+// claude session, from a description anyone opening a PR can write.
+test('a quote in a link cannot break out of the attribute it is written into', () => {
+  // An attribute the renderer never writes, opening its own quoted value: the
+  // shape of the escape, rather than the word, which survives harmlessly inside
+  // the href as text.
+  const broke = /\son\w+=["']/;
+  assert.doesNotMatch(inline('[docs](https://x.test/a" onmouseover="alert(1))'), broke);
+  assert.match(inline('[docs](https://x.test/a" x)'), /&quot;/);
+  // Same for a bare URL, which is linkified by the other rule.
+  assert.doesNotMatch(inline('https://x.test/a" onmouseover="alert(1)'), broke);
+  // And for single-quoted attributes, which are as valid as double-quoted ones.
+  assert.doesNotMatch(inline("[d](https://x.test/a' onmouseover='alert(1))"), broke);
+});
+
+test('a quote in ordinary prose still reads as a quote', () => {
+  assert.equal(inline('he said "no"'), 'he said &quot;no&quot;');
+});
+
 // --- fenced blocks ---
 
 // A fence contains blank lines, so it has to be lifted out before paragraphs

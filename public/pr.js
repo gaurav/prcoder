@@ -771,4 +771,12 @@ export const inline = (s) => {
     .replace(/\u0000(\d+)\u0000/g, (_, i) => `<code>${code[i]}</code>`);
 };
 
-const escape = (s) => s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+// Quotes as well as angle brackets. inline() interpolates a link's URL into an
+// href="..." attribute and blockNode() sets the result with innerHTML, so a `"`
+// left raw closes the attribute and whatever follows is parsed as another one --
+// including an inline event handler, which innerHTML does fire. The page holding
+// this pane is the page holding the /pty socket, so that is a typed turn into
+// the running claude session, from a description anyone can write.
+const escape = (s) => s.replace(/[&<>"']/g, (c) => ({
+  '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+}[c]));
