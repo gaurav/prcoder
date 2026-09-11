@@ -472,9 +472,38 @@ const routes = {
   },
 };
 
+/**
+ * Whether a request states an origin, and whether it is ours.
+ *
+ * localhost is where the same-origin policy stops helping, in two ways this
+ * server is exposed by. Any page on the web can send a simple cross-origin POST
+ * to a predictable port: it cannot read the answer, but switching branches,
+ * rewriting the PR description and filing issues all happen on the way out.
+ * And WebSockets are not subject to the policy at all -- that same page can
+ * open /pty, get a `claude` PTY in this repo, read what it prints and type at
+ * it, approvals included.
+ *
+ * Absent is allowed, wrong is not. A browser always states an origin on a
+ * WebSocket upgrade and on any request a page makes with fetch, so nothing that
+ * has an origin to give is being waved through; curl, the drivers and prcoder's
+ * own whoami probe send none, and the run-prcoder skill's curls keep working.
+ * Compared against Host rather than a computed URL so a port fallback, an
+ * ::1-vs-127.0.0.1 answer and a renamed loopback alias all take care of
+ * themselves.
+ */
+const sameOrigin = (req) => {
+  const { origin } = req.headers;
+  if (!origin) return true;
+  try { return new URL(origin).host === req.headers.host; } catch { return false; }
+};
+
 async function handleApi(req, res, key) {
   const handler = routes[key];
   if (!handler) return res.writeHead(404).end('no such route');
+  if (!sameOrigin(req)) {
+    return res.writeHead(403, { 'content-type': 'application/json' })
+      .end(JSON.stringify({ error: 'cross-origin request refused' }));
+  }
   try {
     const chunks = [];
     for await (const c of req) chunks.push(c);
@@ -540,7 +569,11 @@ export const server = http.createServer(async (req, res) => {
 // prompt know whether anyone is looking, and `ptys` is how a deliberate quit
 // takes the Claude sessions with it instead of orphaning them.
 const ptys = new Set();
-const wss = new WebSocketServer({ server, path: '/pty' }).on('error', () => {}).on('connection', (ws) => {
+const wss = new WebSocketServer({ server, path: '/pty' }).on('error', () => {}).on('connection', (ws, req) => {
+  // Before the spawn, not after: the PTY is the thing being protected, and one
+  // that has already started has already read the repo.
+  if (!sameOrigin(req)) return ws.close(1008, 'cross-origin connection refused');
+
   const pty = ptySpawn(process.env.CLAUDE_BIN || 'claude', claudeArgs, {
     name: 'xterm-256color',
     cols: 80,

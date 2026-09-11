@@ -67,3 +67,37 @@ test('the vendored xterm files are where the map says', async () => {
     assert.equal((await fetch(base + p)).status, 200, p);
   }
 });
+
+// A page on the web cannot read this server's answers, but every mutating route
+// takes effect on the way out -- and the /pty socket is not covered by the
+// same-origin policy at all. An origin that is not ours is refused; one that is
+// absent is not a browser, which is what keeps curl and the drivers working.
+test('a request from another origin is refused before it reaches a handler', async () => {
+  const res = await fetch(`${base}/api/diff`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', origin: 'https://evil.test' },
+    body: JSON.stringify({ path: 'files.js' }),
+  });
+  assert.equal(res.status, 403);
+  assert.deepEqual(await res.json(), { error: 'cross-origin request refused' });
+});
+
+test('our own origin is not refused, and neither is a request without one', async () => {
+  const post = (headers) => fetch(`${base}/api/diff`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', ...headers },
+    body: JSON.stringify({ path: 'files.js' }),
+  });
+  // 500 is the no-PR error every route gives here: past the guard, into the handler.
+  assert.equal((await post({ origin: base })).status, 500);
+  assert.equal((await post({})).status, 500);
+});
+
+test('a malformed origin is refused rather than parsed into a pass', async () => {
+  const res = await fetch(`${base}/api/diff`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', origin: 'not a url' },
+    body: JSON.stringify({ path: 'files.js' }),
+  });
+  assert.equal(res.status, 403);
+});
