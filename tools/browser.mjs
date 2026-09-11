@@ -215,6 +215,19 @@ console.log('home:    ', JSON.stringify(homed), '  (want "" -- back to the templ
 console.log('valuenow:', await page.locator('#gut-pr').getAttribute('aria-valuenow'),
   ' (want a percentage of <main>, not null)');
 
+// Home just put the pane back on its 375px floor, which is the one width where
+// the balanced wrap does anything: a real title runs to three lines there, and
+// a greedy wrap leaves the last of them holding a word or two. Range rectangles
+// rather than a screenshot -- the claim is about how wide the lines come out,
+// and `text-wrap: balance` is a property no stylesheet can be read for.
+const wrap = await page.evaluate(() => {
+  const r = document.createRange();
+  r.selectNodeContents(document.querySelector('#pr-head .pr-title'));
+  return [...r.getClientRects()].map((b) => Math.round(b.width));
+});
+console.log('wrap:    ', `${await page.locator('#pr').evaluate((e) => Math.round(e.getBoundingClientRect().width))}px pane,`,
+  `lines ${wrap.join(', ')}`, ' (want three of similar width, not two full and a stub)');
+
 // The two toasts. The reload above is a real trigger for the first one:
 // sessionStorage survives it, so ws.onopen decides the session was restarted
 // and calls toast() for itself -- which is what says the plain path still
