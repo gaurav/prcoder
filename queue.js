@@ -132,11 +132,17 @@ export function toggleTask(body, index, done, expected) {
  */
 function splitPrBlock(body = '') {
   const start = body.indexOf(OPEN);
-  if (start === -1) return { before: body, after: '', found: false };
-  const end = body.indexOf(CLOSE, start);
+  const end = start === -1 ? -1 : body.indexOf(CLOSE, start);
+  // Both markers or none. A half-open block used to report found with an empty
+  // `after`, so the next write closed it where the body happened to end and
+  // took everything past the last item with it -- one hand-edit on github.com
+  // that drops the closing comment, and the bottom of the description is gone
+  // on the next poll. Unfound means the block is appended afresh instead, which
+  // leaves the stray marker in the prose where someone can see it.
+  if (start === -1 || end === -1) return { before: body, after: '', found: false };
   return {
     before: body.slice(0, start),
-    after: end === -1 ? '' : body.slice(end + CLOSE.length),
+    after: body.slice(end + CLOSE.length),
     found: true,
   };
 }

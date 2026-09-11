@@ -12,7 +12,11 @@ let deps = {};
 // this stops us sending one in the first place.
 let frozen = false;
 
-export const freeze = (on) => { frozen = on; };
+// Repaints, because render() is what marks the list inert. The guard in save()
+// used to be the only one, by which point the click had already flipped a box
+// or pushed an item into the local array -- the write was dropped and the UI
+// went on showing it as saved until a poll silently took it back.
+export const freeze = (on) => { frozen = on; render(); };
 
 /**
  * Replace the list from the server. Skipped while an item is being edited: the
@@ -69,7 +73,10 @@ export async function initQueue(d) {
 }
 
 const save = async (url = '/api/queue', method = 'PUT', body = items) => {
-  if (frozen) return;
+  // The backstop behind inert -- a blur fired *by* the freeze still lands here.
+  // Loud, because the local array has already moved and the next poll is about
+  // to move it back.
+  if (frozen) return void toast('busy switching branches — that change was not saved', true);
   let data;
   try { data = await api(url, body, method); } catch (e) { toast(e.message, true); return; }
   if (Array.isArray(data)) items = data;
@@ -78,6 +85,9 @@ const save = async (url = '/api/queue', method = 'PUT', body = items) => {
 
 function render() {
   const host = document.getElementById('queue-body');
+  // Native, and it covers what a per-control `disabled` would miss: the
+  // contentEditable text, the drag handles, focus.
+  host.inert = frozen;
   const live = items.filter((i) => !i.deleted);
   // Restoring the last tombstone hides the tab; without this you would be left
   // looking at an empty list with no tab to click back to.
@@ -121,6 +131,22 @@ function paintWhere() {
   b.title = title;
   b.setAttribute('aria-label', title);
   b.classList.toggle('top', addTo === 'top');
+}
+
+/**
+ * Drop `from` where `to` currently sits, in place.
+ *
+ * The correction is the whole of it: the row is removed first, which shifts
+ * every index above it down by one, so an unadjusted `to` puts a downward drag
+ * *past* the row it was dropped on while an upward one lands before it -- the
+ * same gesture meaning two different things depending on direction. Out here
+ * rather than inline in the drop handler because it is the one part of a drag
+ * that can be checked without a browser.
+ */
+export function reorder(list, from, to) {
+  const [moved] = list.splice(from, 1);
+  list.splice(from < to ? to - 1 : to, 0, moved);
+  return list;
 }
 
 const tabBtn = (name, label) =>
@@ -173,7 +199,7 @@ function row(item) {
     e.preventDefault();
     const from = Number(e.dataTransfer.getData('text/plain'));
     if (from === idx) return;
-    items.splice(idx, 0, items.splice(from, 1)[0]);
+    reorder(items, from, idx);
     save();
   });
 

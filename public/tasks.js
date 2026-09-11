@@ -42,16 +42,25 @@ export function fences(body) {
  * separately -- a second walk toggling on every ``` counts the lines after an
  * unterminated one as code, where the pane counts them as prose, and the two
  * lists then disagree from that point on.
+ *
+ * Lines inside an HTML comment are skipped for the same reason and in the same
+ * order: the pane's withoutHtml() deletes comments before fences() ever sees
+ * the body, so a commented-out task -- a GitHub PR template's, or an example --
+ * is no task there. Counting it here made every pane index one low, and since
+ * toggleTask checks the text it found against the text the pane sent, the tick
+ * did not go to the wrong line: no box in that description could be ticked at
+ * all. Blanked rather than removed, so the indices still address the raw body.
  */
 export function taskLines(body = '') {
+  const visible = body.replace(/<!--[\s\S]*?-->/g, (c) => c.replace(/[^\n]/g, ' '));
   const fenced = new Set();
-  const lineAt = (index) => body.slice(0, index).split('\n').length - 1;
+  const lineAt = (index) => visible.slice(0, index).split('\n').length - 1;
   // The same expression fences() matches with, so the two agree by
   // construction rather than by being read side by side.
   const re = /^[ \t]*```[^\n]*\n([\s\S]*?)^[ \t]*```[ \t]*$/gm;
   let m;
-  while ((m = re.exec(body)) !== null) {
+  while ((m = re.exec(visible)) !== null) {
     for (let i = lineAt(m.index); i <= lineAt(re.lastIndex - 1); i++) fenced.add(i);
   }
-  return body.split('\n').flatMap((line, i) => (!fenced.has(i) && TASK.test(line) ? [i] : []));
+  return visible.split('\n').flatMap((line, i) => (!fenced.has(i) && TASK.test(line) ? [i] : []));
 }

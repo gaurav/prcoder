@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseFuture, renderPrBlock, syncFromPrBlock, toggleTask } from '../queue.js';
 import { taskLines } from '../public/tasks.js';
+import { reorder } from '../public/queue.js';
 import { blocks, sectionize } from '../public/pr.js';
 
 const FUTURE = `# Notes
@@ -353,4 +354,75 @@ test('folding a description into sections does not renumber its checkboxes', () 
   for (const b of folded) {
     assert.doesNotThrow(() => toggleTask(FOLDED, b.index, true, b.text), `${b.index} (${b.text})`);
   }
+});
+
+// Half a block: an open marker whose closer someone deleted while hand-editing
+// the description on github.com. It used to report `found` with an empty
+// `after`, so the next poll wrote a fresh closing marker wherever the body
+// happened to end and everything past the last item went with it.
+const HALF_OPEN = [
+  'Why this change.',
+  '',
+  '<!-- prcoder:todo -->',
+  '## TODO',
+  '',
+  '- [ ] one',
+  '',
+  'Prose that must not be eaten.',
+].join('\n');
+
+test('an open marker with no closing one does not swallow the rest of the body', () => {
+  const out = renderPrBlock([{ text: 'one', done: false, inPr: true, issue: null, deleted: false }], HALF_OPEN);
+  assert.match(out, /Prose that must not be eaten\./);
+  assert.match(out, /Why this change\./);
+});
+
+test('a half-open block is not read as a queue, so nothing is tombstoned from it', () => {
+  const mine = [{ text: 'one', done: false, inPr: true, issue: null, deleted: false }];
+  assert.deepEqual(syncFromPrBlock(mine, HALF_OPEN), mine);
+});
+
+// A description whose template comments out an example task. The pane's
+// withoutHtml() deletes the comment before it counts anything, so if taskLines
+// still counted the line inside it every pane index would be one low -- and
+// toggleTask's text check would then refuse every box on the page.
+const COMMENTED = [
+  '- [ ] a real task',
+  '',
+  '<!--',
+  '- [ ] an example nobody ticks',
+  '-->',
+  '',
+  '- [ ] another real task',
+].join('\n');
+
+test('a checklist line inside an HTML comment counts for neither side', () => {
+  const seen = paneTasks(COMMENTED);
+  assert.deepEqual(seen, ['a real task', 'another real task']);
+  assert.deepEqual(taskLines(COMMENTED), [0, 6]);
+  for (const [index, text] of seen.entries()) {
+    assert.doesNotThrow(() => toggleTask(COMMENTED, index, true, text), `index ${index} (${text})`);
+  }
+  // Index 1 is the line below the comment, not the one inside it.
+  assert.match(toggleTask(COMMENTED, 1, true, 'another real task').body, /- \[x\] another real task/);
+  assert.match(toggleTask(COMMENTED, 1, true, 'another real task').body, /- \[ \] an example nobody ticks/);
+});
+
+// Same order as the pane, which strips comments before it looks for fences: a
+// ``` inside a comment opens a fence on neither side.
+test('a fence marker inside a comment opens no fence', () => {
+  const body = '<!-- ```sh -->\n- [ ] still a task';
+  assert.deepEqual(taskLines(body), [1]);
+  assert.deepEqual(paneTasks(body), ['still a task']);
+});
+
+// A drop means the same thing whichever way the row was dragged: the row lands
+// where the row it was dropped on is now. Unadjusted, the removal shifted the
+// target out from under the insert and a downward drag overshot it by one.
+test('a dragged row lands in the same place in both directions', () => {
+  assert.deepEqual(reorder(['a', 'b', 'c', 'd'], 0, 2), ['b', 'a', 'c', 'd']);
+  assert.deepEqual(reorder(['a', 'b', 'c', 'd'], 2, 0), ['c', 'a', 'b', 'd']);
+  // The two ends, where an off-by-one falls off the array instead of misplacing.
+  assert.deepEqual(reorder(['a', 'b', 'c'], 0, 2), ['b', 'a', 'c']);
+  assert.deepEqual(reorder(['a', 'b', 'c'], 2, 0), ['c', 'a', 'b']);
 });
