@@ -16,7 +16,8 @@ someone else's repo).
 For handing the user a URL, or poking at it by hand:
 
 ```bash
-PRCODER_NO_OPEN=1 PRCODER_PORT=17433 node server.js > /tmp/prcoder.log 2>&1 &
+mkdir -p data
+PRCODER_NO_OPEN=1 PRCODER_PORT=17433 node server.js > data/prcoder.log 2>&1 &
 sleep 2
 curl -s localhost:17433/api/status | head -c 200   # pr, files, queue
 lsof -ti :17433 | xargs kill                       # `kill %1` does not survive a Bash call
@@ -52,9 +53,9 @@ the `spawn` block near the top of `tools/browser.mjs`, not from here (line
 numbers go stale; the block does not).
 
 ```bash
-node tools/browser.mjs /tmp/shots                 # the browser: writes PNGs. Firefox
-                                                  # by default, which is the engine that
-                                                  # catches selection, focus and drag
+node tools/browser.mjs                            # the browser: writes PNGs to data/shots.
+                                                  # Firefox by default, which is the engine
+                                                  # that catches selection, focus and drag
 PRCODER_BROWSER=chromium node tools/browser.mjs   # the second engine, when a rendering
                                                   # difference is the question
 node tools/cli.mjs                                # the other half, in a real PTY: the

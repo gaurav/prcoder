@@ -2,7 +2,7 @@
 // change is otherwise verified by reading the CSS, which is how three of them
 // shipped unseen.
 //
-//   node tools/browser.mjs [outdir]        # default: ./shots (gitignored)
+//   node tools/browser.mjs [outdir]        # default: ./data/shots (gitignored)
 //   PRCODER_BROWSER=firefox node tools/browser.mjs
 //
 // Firefox is a separate download: `npx playwright install firefox` once.
@@ -31,7 +31,9 @@ import { fileURLToPath } from 'node:url';
 import { chromium, firefox } from 'playwright';
 
 const repo = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-const out = path.resolve(process.argv[2] ?? path.join(repo, 'shots'));
+// data/, not a new top-level shots/: this repo's scratch space is data/, and it
+// is gitignored precisely so driver output has somewhere to live.
+const out = path.resolve(process.argv[2] ?? path.join(repo, 'data', 'shots'));
 const port = Number(process.env.PRCODER_PORT) || 17434;
 
 // server.js falls back to a free port when the one it is given is taken, and
