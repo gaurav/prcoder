@@ -264,19 +264,26 @@ const putQueue = async (items) => {
   }).then((r) => r.json()), { items, branch });
 };
 await putQueue([...queue, { text: 'driver scratch item, put back at the end of the run' }]);
-await page.reload();
-await page.waitForSelector('.item .text');
+// finally, because everything between here and the restore drives a browser: a
+// reload that hangs or a locator that times out would otherwise leave the
+// scratch item sitting in the live .prcoder/queue.json, and this driver is run
+// against a queue somebody is using.
+try {
+  await page.reload();
+  await page.waitForSelector('.item .text');
 
-// The bug above, pinned: a click in the middle of an item's text has to land
-// in the middle of it. Silent in Chromium either way, so this only earns its
-// keep under PRCODER_BROWSER=firefox.
-const text = page.locator('.item .text').first();
-const tb = await text.boundingBox();
-await page.mouse.click(tb.x + tb.width / 2, tb.y + tb.height / 2);
-await page.waitForTimeout(200);
-const caret = await page.evaluate(() => window.getSelection().anchorOffset);
-console.log('caret:  ', caret, caret > 0 ? '' : '  <-- click landed at the start');
-await putQueue(queue);
+  // The bug above, pinned: a click in the middle of an item's text has to land
+  // in the middle of it. Silent in Chromium either way, so this only earns its
+  // keep under PRCODER_BROWSER=firefox.
+  const text = page.locator('.item .text').first();
+  const tb = await text.boundingBox();
+  await page.mouse.click(tb.x + tb.width / 2, tb.y + tb.height / 2);
+  await page.waitForTimeout(200);
+  const caret = await page.evaluate(() => window.getSelection().anchorOffset);
+  console.log('caret:  ', caret, caret > 0 ? '' : '  <-- click landed at the start');
+} finally {
+  await putQueue(queue);
+}
 console.log('queue:  ', (await page.evaluate(() => fetch('/api/queue').then((r) => r.json()))).length, 'items  (want', queue.length + ')');
 
 console.log('title: ', await page.title());
