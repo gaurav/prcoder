@@ -174,15 +174,19 @@ async function switchPr(number) {
 }
 
 async function createPr(btn) {
-  // Opened before the await, or the popup blocker eats it.
+  // Opened before the await, or the popup blocker eats it. Blocked outright and
+  // this is null -- which used to throw on `win.location`, throw again on
+  // `win.close()` inside the catch, and leave the button disabled for good with
+  // nothing said. The request is still worth making; only the tab is lost.
   const win = window.open('', '_blank');
   btn.disabled = true;
   try {
     const { url, pushed } = await api('/api/pr/create');
-    win.location = url;
+    if (win) win.location = url;
+    else toast(`Popup blocked — the compare page is at ${url}`, true, true);
     if (pushed) toast('Pushed this branch to origin first.');
   } catch (e) {
-    win.close();
+    win?.close();
     toast(e.message, true);
   }
   btn.disabled = false;
