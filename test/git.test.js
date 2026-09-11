@@ -101,7 +101,11 @@ test('a branch name that is the tail of another branch is not mistaken for it', 
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'prcoder-lsremote-'));
   const bare = path.join(dir, 'origin.git');
   const work = path.join(dir, 'work');
-  const run = (cwd, ...args) => git('git', args, { cwd });
+  // The identity goes on the command, not into a config: a CI runner has none
+  // set, and `git commit` there is a hard failure rather than a warning.
+  const run = (cwd, ...args) => git('git', [
+    '-c', 'user.name=prcoder tests', '-c', 'user.email=tests@prcoder.invalid', ...args,
+  ], { cwd });
   try {
     await git('git', ['init', '-q', '--bare', bare]);
     await git('git', ['init', '-q', work]);
