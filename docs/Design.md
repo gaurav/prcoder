@@ -58,11 +58,14 @@ against `Host` rather than a computed URL.
 ## What it deliberately does not do
 
 Review comment threads (counts and a link only), syntax highlighting in the diff pane,
-multi-session and worktree management, and any agent-writable queue API. No auto-pull, and no
-attempt to detect whether Claude is idle — that would mean parsing the terminal.
+multi-session and worktree management, and any agent-writable queue API. No auto-pull, and nothing
+parses the terminal. The tab icon does read whether Claude is working, but from the *timing* of the
+PTY's output rather than its content — amber while frames are arriving, green two seconds after they
+stop — and that is the whole of prcoder's idea of what the session is doing.
 
 **The description renderer is an allowlist and stays one.** It handles headings, fences, inline
-code, emphasis, links, checklists, lists and quoted sections; everything it does not know — tables,
+code, emphasis, links — including the two kinds that mean nothing without a repository behind them,
+a relative path and a bare `#N` — checklists, lists and quoted sections; everything it does not know — tables,
 nested lists, images, strikethrough, reference-style links, horizontal rules — stays escaped and
 shows as its own source. Quotes were the one construct added rather than deferred, and the reason is
 the test for the next one: `>` was the last block-level marker that arrived as its own punctuation

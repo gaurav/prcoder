@@ -264,6 +264,28 @@ let autoOpen = true;
 // that appears for the first time arrives open rather than missing.
 const closedGroups = new Set();
 
+// What a relative link and a bare #N in the description are written against.
+// Set by renderPr rather than threaded through description(), blockNode(),
+// sectionNode() and taskRow(), none of which has any other use for it; inline()
+// takes it as an argument so it can still be tested without a pull request.
+let links = null;
+
+/**
+ * The two things `[README](README.md)` and `#28` need to become links: the
+ * repository they are relative to, and the ref a path in it should be read at.
+ *
+ * The head branch, because a description points at the files the pull request
+ * adds as often as at ones that were already there -- except from a fork, where
+ * the head branch is in a repository this URL is not. GitHub leaves these hrefs
+ * relative and lets the browser resolve them against the page, which on a pull
+ * request page is `/owner/repo/pull/` and a 404; prcoder is not on that page,
+ * so it has to resolve them itself and may as well resolve them usefully.
+ */
+const linkBase = (pr) => ({
+  repo: pr.url.replace(/\/pull\/\d+$/, ''),
+  ref: pr.isCrossRepository ? pr.baseRefName : pr.headRefName,
+});
+
 /**
  * The pull request pane, in two roots.
  *
@@ -274,6 +296,7 @@ const closedGroups = new Set();
  * an agent-written description is long enough to bury a file list entirely.
  */
 export function renderPr(pr, handlers) {
+  links = linkBase(pr);
   // A different pull request is a different set of sections and a different
   // amount of scroll; none of the old numbers mean anything against it.
   if (shownFor !== pr.number) {
@@ -769,17 +792,44 @@ function taskRow({ done, text, index }, onTask) {
  * because a bare `*` mid-word is vanishingly rare in prose and common only in
  * globs, which live in code spans and are already out of reach.
  */
-export const inline = (s) => {
+export const inline = (s, where = links) => {
   const code = [];
+  const a = (href, text) => `<a href="${href}" target="_blank" rel="noopener">${text}</a>`;
   return escape(s)
     .replace(/`([^`]+)`/g, (_, c) => `\u0000${code.push(c) - 1}\u0000`)
     .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
     .replace(/\*([^*\n]+)\*/g, '<em>$1</em>')
     .replace(/(?<![A-Za-z0-9_])_([^_\n]+)_(?![A-Za-z0-9_])/g, '<em>$1</em>')
-    .replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
-    .replace(/(^|[\s(])(https?:\/\/[^\s)]+)/g, '$1<a href="$2" target="_blank" rel="noopener">$2</a>')
+    .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (m, text, href) => {
+      const url = target(href, where);
+      return url ? a(url, text) : m;
+    })
+    .replace(/(^|[\s(])(https?:\/\/[^\s)]+)/g, (_, pre, url) => pre + a(url, url))
+    // After the two link rules, so a `#` inside an href this just built is not
+    // a mention: those are preceded by a path character, and a mention has to
+    // start a word. Same match as linkedIssues() in github.js, which is what
+    // puts the same numbers in the Mentions row.
+    .replace(/(^|[\s(])#(\d+)\b/g, (m, pre, n) =>
+      (where ? `${pre}${a(`${where.repo}/issues/${n}`, `#${n}`)}` : m))
     .replace(/\n/g, '<br>')
     .replace(/\u0000(\d+)\u0000/g, (_, i) => `<code>${code[i]}</code>`);
+};
+
+/**
+ * Where a link in a description actually points, or null for one this pane will
+ * not open -- which stays as its own source, the way everything else it does
+ * not know does.
+ *
+ * The null is the guard as much as the fallback: this href is interpolated into
+ * an `href="..."` and set with innerHTML, so `javascript:` and `data:` targets
+ * are a typed turn into the running claude session away (see escape() below).
+ * Only http(s) and repository-relative paths get through; a bare `#anchor` is a
+ * position on a page prcoder is not, so it is left alone too.
+ */
+const target = (href, where) => {
+  if (/^https?:\/\//.test(href)) return href;
+  if (/^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith('#')) return null;
+  return where ? `${where.repo}/blob/${where.ref}/${href.replace(/^\.?\//, '')}` : null;
 };
 
 // Quotes as well as angle brackets. inline() interpolates a link's URL into an

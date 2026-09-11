@@ -126,6 +126,16 @@ console.log('still open after a refresh:',
   JSON.stringify(await page.locator('.md-section[open] > summary h3').allInnerTexts()),
   ' (want the one clicked above)');
 
+// The two link kinds that only mean something against a repository: a relative
+// path, which GitHub leaves for the page to resolve and prcoder resolves to a
+// blob URL on the head branch, and a bare #N. Both showed as their own source
+// until they were rendered; this repo's own description carries one of each.
+console.log('links:  ', await page.evaluate(() => {
+  const find = (re) => [...document.querySelectorAll('#pr-body .md a')]
+    .find((a) => re.test(a.textContent));
+  return `${find(/^README$/)?.href} | ${find(/^#\d+$/)?.href}`;
+}), ' (want a /blob/<head>/README.md URL, and an /issues/N one)');
+
 // Where each tab was left. The two offsets are kept apart in module state, and
 // the switch is what used to lose them: renderPrTab read scrollTop *after*
 // switchTo had already moved `tab`, so Detail's offset was filed under Files

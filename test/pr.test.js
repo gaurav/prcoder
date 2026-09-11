@@ -164,6 +164,57 @@ test('a quote in ordinary prose still reads as a quote', () => {
   assert.equal(inline('he said "no"'), 'he said &quot;no&quot;');
 });
 
+// --- links that only mean something against a repository ---
+
+// GitHub leaves both of these to the page they are rendered on: a relative href
+// stays relative, and a bare #N is linked by the repository the body belongs
+// to. This pane is not that page, so inline() is handed the repository and the
+// ref instead -- and without one, both stay as their own source rather than
+// becoming a link to nowhere.
+const where = { repo: 'https://github.test/o/r', ref: 'topic' };
+const href = (s) => s.match(/href="([^"]*)"/)?.[1];
+
+test('a relative link resolves against the head branch of the repository', () => {
+  assert.equal(href(inline('[README](README.md)', where)),
+    'https://github.test/o/r/blob/topic/README.md');
+  assert.equal(href(inline('[why](docs/Design.md#guards)', where)),
+    'https://github.test/o/r/blob/topic/docs/Design.md#guards');
+  // A leading ./ or / is written as often as a bare path and means the same
+  // thing here -- both are the repository root.
+  assert.equal(href(inline('[a](./x.md)', where)), 'https://github.test/o/r/blob/topic/x.md');
+  assert.equal(href(inline('[a](/x.md)', where)), 'https://github.test/o/r/blob/topic/x.md');
+  // An absolute link is nobody's relative path and is left exactly as it was.
+  assert.equal(href(inline('[docs](https://x.test/a)', where)), 'https://x.test/a');
+});
+
+test('a bare #N becomes a link to the issue of that number', () => {
+  assert.equal(href(inline('Closes #28.', where)), 'https://github.test/o/r/issues/28');
+  assert.equal(inline('(#28)', where).includes('>#28</a>)'), true);
+  // Not a mention: a fragment inside a link this same call just built, and a
+  // colour in prose, neither of which starts a word.
+  assert.equal(href(inline('[x](y.md#3)', where)), 'https://github.test/o/r/blob/topic/y.md#3');
+  assert.equal(inline('#ffcc00 is the colour', where), '#ffcc00 is the colour');
+});
+
+test('without a repository to resolve against, neither becomes a link', () => {
+  assert.equal(inline('[README](README.md) and #28', null),
+    '[README](README.md) and #28');
+});
+
+// The href is interpolated into an attribute and set with innerHTML, so a
+// target this pane will not open has to stay text rather than become an <a>.
+// The relative rule is what makes this a live question: before it, anything
+// that was not http(s) simply did not match.
+test('a link to a scheme that is not http(s) is left as its own source', () => {
+  for (const s of ['[x](javascript:alert(1))', '[x](data:text/html,<b>)', '[x](vbscript:x)']) {
+    assert.doesNotMatch(inline(s, where), /<a /);
+  }
+  // A same-page anchor is a position on a page prcoder is not, so it is left
+  // alone too -- and a mailto: is a link this pane has no business opening.
+  assert.doesNotMatch(inline('[top](#intro)', where), /<a /);
+  assert.doesNotMatch(inline('[mail](mailto:a@b.test)', where), /<a /);
+});
+
 // --- fenced blocks ---
 
 // A fence contains blank lines, so it has to be lifted out before paragraphs
