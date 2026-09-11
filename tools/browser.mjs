@@ -394,25 +394,30 @@ try {
 }
 console.log('queue:  ', (await page.evaluate(() => fetch('/api/queue').then((r) => r.json()))).length, 'items  (want', queue.length + ')');
 
-// The tab icon, which goes blue while the PTY is printing and back to green two
-// seconds after it stops -- prcoder's only reading of "Claude is working". A
-// PTY echoes what is typed at it, so a keystroke here is the same burst of
-// output a Claude turn is made of.
+// The tab icon, which goes blue while a turn is running and back to green two
+// seconds after its output stops -- prcoder's only reading of "Claude is
+// working". A PTY echoes what is typed at it, which is what the first half
+// turns on: the echo of a keystroke is output, and the icon has to stay green
+// through it or it reports busy while Claude is waiting on the operator. Enter
+// starts the turn; the stub's echo of the line is then what holds it open.
 //
-// The green half is the one that matters: the stub keeps sending the
-// cursor-position probe throughout, five times a second, exactly as a real
-// session does between turns. Green here means those are being skipped. Before
-// they were, the icon stayed busy from the first paint until the tab closed,
-// and every check on a /bin/cat stub passed, because cat never asks.
+// The last reading is the other bug: the stub keeps sending the cursor-position
+// probe throughout, five times a second, exactly as a real session does. Green
+// after 2.5s means those are being skipped rather than holding the turn open.
+// Before they were, the icon stayed busy from the first paint until the tab
+// closed, and every check on a /bin/cat stub passed, because cat never asks.
 const iconFill = () => page.evaluate(() =>
   document.querySelector('link[rel=icon]').href.match(/%23(\w{6})/)[1]);
 await page.locator('#term-host').click();
 await page.keyboard.type('hello');
 await page.waitForTimeout(200);
+const typing = await iconFill();
+await page.keyboard.press('Enter');
+await page.waitForTimeout(200);
 const busy = await iconFill();
 await page.waitForTimeout(2500);
-console.log('icon:   ', `${busy} while printing, ${await iconFill()} after 2.5s of probes only`,
-  '  (want 1f6feb then 238636)');
+console.log('icon:   ', `${typing} while typing, ${busy} after Enter, ${await iconFill()} after 2.5s of probes only`,
+  '  (want 238636, 1f6feb, 238636)');
 
 console.log('title: ', await page.title());
 console.log('panes: ', await page.evaluate(() => getComputedStyle(document.querySelector('main')).gridTemplateColumns));

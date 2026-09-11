@@ -121,12 +121,13 @@ the browser settles, and whose separators are hit-tested at their own centres --
 on one followed the link to its right, and that a separator is now its own element says nothing
 about where a click lands; the description's two
 repository-relative link kinds, a relative path and a bare `#N`, read back as resolved hrefs off
-this repo's own description rather than as the source they used to show; and the tab icon going
-blue while the PTY prints and back to green two seconds after it stops, typed at the
-`tools/claude-stub.mjs` stub, whose echo is the same burst of output a Claude turn is made of and
-whose cursor-position probe, every 200ms throughout, is what a real session sends between turns. The
-green half is the assertion: it was a `cat` stub that never probed, so the icon stuck busy from the
-first paint in every real session and no check could see it. And a queue row dragged by its grip onto
+this repo's own description rather than as the source they used to show; and the tab icon, staying
+green while a line is typed at the `tools/claude-stub.mjs` stub -- an echo is output too, and the
+icon reporting busy while Claude waits on you is the bug that reading is for -- then going blue on
+the Enter that starts the turn, and back to green two seconds later even though the stub's
+cursor-position probe, every 200ms throughout, is still arriving. That last one is its own
+assertion: it was a `cat` stub that never probed, so the icon stuck busy from the first paint in
+every real session and no check could see it. And a queue row dragged by its grip onto
 the row above, then a synthetic `drop` carrying only `text/plain` -- a link or a selection -- on the
 same row, which must leave the queue exactly as the real drag did. Row drags carried `text/plain`
 too, until that drop read as a drag from row `NaN` and moved the first item; run against the old
