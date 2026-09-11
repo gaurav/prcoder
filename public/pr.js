@@ -337,9 +337,13 @@ export const viewedCount = (files = []) =>
 
 function renderPrTab(pr, handlers) {
   const host = document.getElementById('pr-body');
-  // Read before the replace. Afterwards the old height is gone and the browser
-  // has already clamped scrollTop against whatever went in.
-  scrolled[tab] = host.scrollTop;
+  // Recorded as it happens rather than read before the replace: a tab switch
+  // sets `tab` to the tab being switched *to* before it re-renders, so reading
+  // scrollTop here filed the outgoing tab's offset under the incoming one and
+  // restored it four lines later. The listener only ever fires while the DOM
+  // and `tab` agree, and reassigning the one handler every render is
+  // idempotent -- there is never a second one to remove.
+  host.onscroll = () => { scrolled[tab] = host.scrollTop; };
   // A <summary> is a keyboard control, and a poll landing a second after you
   // tabbed onto one would otherwise drop focus on the floor. queue.js decided
   // not to freeze a whole pane over focus and that still holds -- this restores

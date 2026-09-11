@@ -126,6 +126,25 @@ console.log('still open after a refresh:',
   JSON.stringify(await page.locator('.md-section[open] > summary h3').allInnerTexts()),
   ' (want the one clicked above)');
 
+// Where each tab was left. The two offsets are kept apart in module state, and
+// the switch is what used to lose them: renderPrTab read scrollTop *after*
+// switchTo had already moved `tab`, so Detail's offset was filed under Files
+// and handed straight back. Scroll one, cross to the other and back.
+const scrollTo = (px) => page.$eval('#pr-body', (el, n) => {
+  el.scrollTop = n;
+  return el.scrollTop;
+}, px);
+const scrollNow = () => page.$eval('#pr-body', (el) => el.scrollTop);
+const onDetail = await scrollTo(300);
+await page.waitForTimeout(100);
+await page.locator('#pr-head .tab').nth(1).click();
+const filesFresh = await scrollNow();
+await scrollTo(150);
+await page.waitForTimeout(100);
+await page.locator('#pr-head .tab').nth(0).click();
+console.log('scroll:  ', `Files opened at ${filesFresh}, Detail came back to ${await scrollNow()}`,
+  `  (want 0, then ${onDetail})`);
+
 // The measure, which is inert at the pane's 375px floor and is the whole reason
 // for the cap at the other end of its range.
 await drag('#gut-pr', 900, 450);
