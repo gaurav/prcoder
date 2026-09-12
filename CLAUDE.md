@@ -160,6 +160,38 @@ it to the browser. All three leave the caret at 0. The row has to stop being
 draggable for as long as the pointer is on its text, which is why the queue
 rows have a grip.
 
+## A stub that only echoes is not a session
+
+`CLAUDE_BIN=/bin/cat` was the drivers' stand-in for `claude` because an echo is
+the same burst of output a turn is made of. It is not the same *session*. A real
+one asks the terminal where the cursor is (`ESC [ ? 6 n`) every ~200ms forever,
+and xterm answers every one -- so the PTY is never quiet, and the tab icon's "2
+seconds of quiet means idle" never fired in a real browser. cat never asks, so
+the driver's icon check passed for as long as the bug existed.
+
+It is a request/response loop, which is why a bare PTY test misses it too: with
+nothing answering, Claude asks once and gives up. `tools/claude-stub.mjs` echoes
+*and* probes. It needs raw mode and has to swallow the `ESC [ ? ... R` answers
+rather than echo them -- a stub that prints its own answers back is output, which
+is the state the check is trying to tell apart.
+
+Anything else that reads the PTY's timing has the same blind spot: drive it
+against the stub that probes, not against cat.
+
+## Don't wrap `window.WebSocket` in a Playwright init script
+
+`send` in `public/app.js` tests `ws.readyState !== WebSocket.OPEN`. A wrapper
+function does not carry the statics, so `WebSocket.OPEN` becomes `undefined`,
+every send returns false, and the page silently stops talking to the PTY --
+no error, no closed socket. Three runs of a driver investigating an
+always-busy tab icon came back green because the instrumentation had switched
+off the traffic causing it. Copy `CONNECTING`/`OPEN`/`CLOSING`/`CLOSED` onto
+the wrapper, or listen without wrapping.
+
+Same shape in reverse: a `MutationObserver` in `addInitScript` has no
+`document.head` to observe yet, and the throw takes the rest of the init script
+with it. Install observers after `goto`.
+
 ## Verifying against GitHub
 
 Prefer checking GitHub's real behaviour over trusting its docs — the diff-anchor
