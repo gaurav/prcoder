@@ -46,6 +46,18 @@ const sync = () => {
 //
 // Amber is deliberately not used: it is held for the third state, "stopped to
 // ask you something", which prcoder cannot see yet -- issue #51.
+//
+// One sequence has to come out of the signal first, because it is a question
+// rather than output. Claude asks the terminal where the cursor is (DSR,
+// `ESC [ ? 6 n`) every ~200ms for as long as the session is up, and xterm
+// answers every one, so the stream is never quiet for two seconds and the icon
+// stuck busy from the first paint onwards. It only happens against a terminal
+// that answers: measured 2026-09-12 against a bare PTY with nothing replying,
+// Claude asks once and never again, which is why a driver on a `cat` stub saw
+// nothing wrong. Dropping a frame that is nothing but probes is not parsing the
+// TUI -- it is a question for the terminal, answered by the terminal, and this
+// never looks at anything Claude drew.
+const PROBE = /^(?:\x1b\[\?6n)+$/;
 const link = document.querySelector('link[rel=icon]');
 // Derived, not written out a second time -- so the icon in index.html stays the
 // one definition of it. Change its colour there and change this to match.
@@ -66,6 +78,7 @@ const icon = (href) => {
 let quiet;
 ws.onmessage = (e) => {
   term.write(e.data);
+  if (PROBE.test(e.data)) return;
   icon(BUSY);
   clearTimeout(quiet);
   quiet = setTimeout(() => icon(IDLE), 2000);

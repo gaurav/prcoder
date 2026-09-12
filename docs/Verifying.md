@@ -32,7 +32,9 @@ five underneath it is visible rather than a mystery smear.
 Both refuse to start if their port (17434, 17455) is already held, because `server.js` quietly falls
 back to a free one and a driver would otherwise drive whatever *is* on that port. Both stub
 `CLAUDE_BIN`: every page load spawns it in a PTY, and an unstubbed run starts a real Claude session
-per screenshot. The UI's controls hit the live PR, so a stray click edits a description on GitHub —
+per screenshot. `tools/cli.mjs` stubs it with `/bin/cat`, which is all the terminal half needs;
+`tools/browser.mjs` uses `tools/claude-stub.mjs`, which also sends the probe a real session sends,
+because a stub that only echoes cannot fail the icon check. The UI's controls hit the live PR, so a stray click edits a description on GitHub —
 undo what you write, or stay read-only.
 
 ## The measured figures
@@ -114,8 +116,11 @@ because `justify-content` on a row that is also `.meta` is an agreement between 
 the browser settles; the description's two
 repository-relative link kinds, a relative path and a bare `#N`, read back as resolved hrefs off
 this repo's own description rather than as the source they used to show; and the tab icon going
-blue while the PTY prints and back to green two seconds after it stops, typed at the `/bin/cat`
-stub, whose echo is the same burst of output a Claude turn is made of.
+blue while the PTY prints and back to green two seconds after it stops, typed at the
+`tools/claude-stub.mjs` stub, whose echo is the same burst of output a Claude turn is made of and
+whose cursor-position probe, every 200ms throughout, is what a real session sends between turns. The
+green half is the assertion: it was a `cat` stub that never probed, so the icon stuck busy from the
+first paint in every real session and no check could see it.
 
 Driven in the PTY: the tab count, `r` forcing a poll, the busy-port line finding the other instance
 and naming its repo, the quit prompt naming what it costs, a second instance with no tab quitting on

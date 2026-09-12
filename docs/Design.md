@@ -63,6 +63,15 @@ parses the terminal. The tab icon does read whether Claude is working, but from 
 PTY's output rather than its content — blue while frames are arriving, green two seconds after they
 stop — and that is the whole of prcoder's idea of what the session is doing.
 
+One sequence is taken out of that stream before the timing is read, and it is the exception that
+shows where the line is. Claude asks the terminal where the cursor is (`ESC [ ? 6 n`) five times a
+second for as long as the session is up, and xterm answers every one, so the PTY is never quiet and
+the icon sat busy from the first paint until the tab closed. A frame that is nothing but that probe
+is skipped. It is still not reading the TUI: it is a question addressed to the terminal, which the
+terminal answers by itself, and nothing Claude drew is looked at. Anything that *is* drawn stays
+off limits — which is why the third state, "stopped to ask you something", is issue #51 and not a
+match against the prompt box.
+
 **The description renderer is an allowlist and stays one.** It handles headings, fences, inline
 code, emphasis, links — including the two kinds that mean nothing without a repository behind them,
 a relative path and a bare `#N` — checklists, lists and quoted sections; everything it does not know — tables,

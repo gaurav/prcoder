@@ -17,7 +17,9 @@
 //
 // CLAUDE_BIN is stubbed because every page load opens a websocket and spawns
 // it in a PTY -- unstubbed, each run starts a real Claude session and leaves it
-// running. And the UI's controls hit the live PR: ticking a description
+// running. The stub is `tools/claude-stub.mjs` rather than /bin/cat: it echoes
+// as cat does, and it also sends the cursor-position probe a real session sends
+// between turns, which is the half the icon check needs. And the UI's controls hit the live PR: ticking a description
 // checkbox edits the description on GitHub, and so does mirroring a queue item
 // with the diamond. The queue itself is safe -- it writes only `.prcoder/`,
 // which is gitignored. Undo what you write, or stay read-only as this does.
@@ -53,7 +55,7 @@ await free(port);
 await fs.mkdir(out, { recursive: true });
 const server = spawn('node', ['server.js'], {
   cwd: repo,
-  env: { ...process.env, PRCODER_PORT: String(port), PRCODER_NO_OPEN: '1', CLAUDE_BIN: '/bin/cat' },
+  env: { ...process.env, PRCODER_PORT: String(port), PRCODER_NO_OPEN: '1', CLAUDE_BIN: path.join(repo, 'tools', 'claude-stub.mjs') },
   stdio: 'ignore',
 });
 // The kill at the end of the file is load-bearing twice over: a live child
@@ -343,10 +345,16 @@ try {
 }
 console.log('queue:  ', (await page.evaluate(() => fetch('/api/queue').then((r) => r.json()))).length, 'items  (want', queue.length + ')');
 
-// The tab icon, which goes blue while the PTY is printing and back to green
-// two seconds after it stops -- prcoder's only reading of "Claude is working".
-// The stub is /bin/cat, and a PTY echoes what is typed at it, so a keystroke
-// here is the same burst of output a Claude turn is made of.
+// The tab icon, which goes blue while the PTY is printing and back to green two
+// seconds after it stops -- prcoder's only reading of "Claude is working". A
+// PTY echoes what is typed at it, so a keystroke here is the same burst of
+// output a Claude turn is made of.
+//
+// The green half is the one that matters: the stub keeps sending the
+// cursor-position probe throughout, five times a second, exactly as a real
+// session does between turns. Green here means those are being skipped. Before
+// they were, the icon stayed busy from the first paint until the tab closed,
+// and every check on a /bin/cat stub passed, because cat never asks.
 const iconFill = () => page.evaluate(() =>
   document.querySelector('link[rel=icon]').href.match(/%23(\w{6})/)[1]);
 await page.locator('#term-host').click();
@@ -354,7 +362,7 @@ await page.keyboard.type('hello');
 await page.waitForTimeout(200);
 const busy = await iconFill();
 await page.waitForTimeout(2500);
-console.log('icon:   ', `${busy} while printing, ${await iconFill()} after 2.5s quiet`,
+console.log('icon:   ', `${busy} while printing, ${await iconFill()} after 2.5s of probes only`,
   '  (want 1f6feb then 238636)');
 
 console.log('title: ', await page.title());
