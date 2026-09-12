@@ -113,7 +113,10 @@ all), the queue's synced light, the description's checkboxes and the disabled st
 toasts, the four-second one watched to fade and the sticky one clicked away; the head's row of links out, whose right
 alignment is measured against the head's own content edge with the title's left edge as the control,
 because `justify-content` on a row that is also `.meta` is an agreement between two rules that only
-the browser settles; the description's two
+the browser settles, and whose separators are hit-tested at their own centres -- they were an
+`a::before`, which lives inside the link's box, so each dot was underlined with its link and a press
+on one followed the link to its right, and that a separator is now its own element says nothing
+about where a click lands; the description's two
 repository-relative link kinds, a relative path and a bare `#N`, read back as resolved hrefs off
 this repo's own description rather than as the source they used to show; and the tab icon going
 blue while the PTY prints and back to green two seconds after it stops, typed at the
