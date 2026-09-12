@@ -144,6 +144,15 @@ console.log('head:   ', await page.evaluate(() => {
 }), ' (want the row flush with the head edge, the title still at the margin)');
 console.log('out:    ', await page.evaluate(() =>
   [...document.querySelectorAll('#pr-head .pr-links a')].map((a) => a.href).join(' ')));
+// The dots between them are delimiters, and were an `a::before` -- which is
+// inside the link's box, so they were underlined with it and a press on one
+// followed the link to its right. Hit-tested rather than read off the DOM: that
+// a separator is its own element says nothing about where a click lands.
+console.log('dots:   ', await page.evaluate(() =>
+  [...document.querySelectorAll('#pr-head .pr-links span')].map((sep) => {
+    const b = sep.getBoundingClientRect();
+    return document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2)?.tagName;
+  }).join(' ')), ' (want SPAN each, never A)');
 
 // The two link kinds that only mean something against a repository: a relative
 // path, which GitHub leaves for the page to resolve and prcoder resolves to a

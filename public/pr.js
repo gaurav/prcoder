@@ -354,8 +354,15 @@ function renderPrHead(pr, handlers) {
     ),
     checks(pr.checks),
     h('div', { className: 'meta pr-links' },
-      ...headLinks(pr).map((l) =>
-        h('a', { href: l.href, target: '_blank', rel: 'noopener' }, l.text))),
+      // The dots are their own elements rather than an `a::before`, which is
+      // what they were: a pseudo-element lives inside the link's box, so the
+      // separator was underlined with it and a click on the gap followed the
+      // link to its right. `pointer-events: none` does not help -- the point is
+      // still over the <a> itself once the pseudo-element declines it.
+      ...kids(headLinks(pr).map((l, i) => [
+        i ? h('span', { className: 'sep' }, '\u00b7') : null,
+        h('a', { href: l.href, target: '_blank', rel: 'noopener' }, l.text),
+      ]))),
     h('div', { className: 'tabs' },
       tabBtn('detail', tabLabel('Detail', taskCount(pr.body))),
       tabBtn('files', tabLabel('Files', viewedCount(pr.files)))),

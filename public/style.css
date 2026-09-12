@@ -143,7 +143,6 @@ a { color: var(--accent); }
    reuses `.meta` for the flex, the wrap, the gap and the 12px dim type, so the
    only thing said twice would be the alignment. */
 .pr-links { justify-content: flex-end; }
-.pr-links a:not(:first-child)::before { content: "· "; color: var(--dim); }
 
 /* Serif, like the description under it: the title is the first sentence of the
    argument, not a label on the pane. Everything else in this header -- the
