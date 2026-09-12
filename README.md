@@ -234,10 +234,12 @@ one.
 One prcoder per repo, each a browser tab, soon lost among the pull requests and
 diffs you opened while working. Cheapest first:
 
-**In the tabs.** The favicon is a green *PR* square -- amber while that tab's
+**In the tabs.** The favicon is a green *PR* square -- blue while that tab's
 Claude is working, so a turn you walked away from says whether it is still
 going -- and every title ends in `· prcoder`, so in Firefox typing `% prcoder`
-in the address bar lists every instance and nothing from github.com.
+in the address bar lists every instance and nothing from github.com. Amber is
+free on purpose, held for a third state prcoder cannot see yet: Claude stopped
+to ask you something.
 
 **A window per repo.** `PRCODER_OPEN` replaces the platform opener with your
 own command, URL appended. Firefox hands the arguments to the running copy, so

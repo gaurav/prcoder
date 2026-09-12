@@ -36,18 +36,21 @@ const sync = () => {
   if (dims !== sent && send({ type: 'resize', cols: term.cols, rows: term.rows })) sent = dims;
 };
 
-// The tab icon, amber while Claude is working, so a session left in a
+// The tab icon, blue while Claude is working, so a session left in a
 // background tab says whether it is still going without switching to it.
 // The PTY carries no "thinking" signal, but it doesn't need one: Claude
 // repaints its spinner every few hundred ms mid-turn and prints nothing at all
 // while it waits for you. Measured 2026-09-11 against a turn with a 12s tool
 // call in it: no gap over 750ms until the turn ended, then silence. So the
 // bytes *are* the signal, and 2s of quiet is the end of a turn.
+//
+// Amber is deliberately not used: it is held for the third state, "stopped to
+// ask you something", which prcoder cannot see yet -- issue #51.
 const link = document.querySelector('link[rel=icon]');
 // Derived, not written out a second time -- so the icon in index.html stays the
 // one definition of it. Change its colour there and change this to match.
 const IDLE = link.href;
-const BUSY = IDLE.replace('%23238636', '%23d29922');
+const BUSY = IDLE.replace('%23238636', '%231f6feb');
 // Re-inserted rather than mutated in place: browsers disagree about whether an
 // href changed on a live <link rel=icon> is noticed at all.
 // Tracked here rather than read back off the element: `link.href` returns the

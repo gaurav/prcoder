@@ -114,7 +114,7 @@ because `justify-content` on a row that is also `.meta` is an agreement between 
 the browser settles; the description's two
 repository-relative link kinds, a relative path and a bare `#N`, read back as resolved hrefs off
 this repo's own description rather than as the source they used to show; and the tab icon going
-amber while the PTY prints and back to green two seconds after it stops, typed at the `/bin/cat`
+blue while the PTY prints and back to green two seconds after it stops, typed at the `/bin/cat`
 stub, whose echo is the same burst of output a Claude turn is made of.
 
 Driven in the PTY: the tab count, `r` forcing a poll, the busy-port line finding the other instance
