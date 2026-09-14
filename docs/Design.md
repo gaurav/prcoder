@@ -1,7 +1,7 @@
 # Why prcoder looks like this
 
 What the panes do is in [the README](../README.md). This file is the *why*: the argument for
-building it at all, the three guards that shape the queue, what the localhost server is exposed to,
+building it at all, the two guards that shape the queue, what the localhost server is exposed to,
 and what it deliberately does not do. Where a decision is a property of one function, the docstring
 at that function argues it in full and this file only says which one to read.
 
@@ -24,7 +24,11 @@ The direction, decided 2026-09-14 and carried by [#27](https://github.com/gaurav
 (`queue-tabs`):
 
 - **The queue is yours.** Local, done and deleted items, stored in `.prcoder/queue.json` and nowhere
-  else.
+  else. It is one list for the repo, not scoped to the checked-out branch: a per-branch queue was
+  built and reverted, because switching branches mid-task took the list away and merging a branch
+  put its unfinished items out of reach for good. Whatever organises it has to keep nothing hidden
+  that you have not asked to hide, and nothing unreachable because a ref was deleted
+  ([#48](https://github.com/gaurav/prcoder/issues/48)).
 - **Each permanent source gets a tab of its own**, read straight from the source: the PR
   description's checklist, issues (grouped by milestone), and later FUTURE.md. The question a tab
   answers is "what does this PR's description still need?", and pulling an item from it adds it to
@@ -41,7 +45,7 @@ turns its flag-filtered PR and Issues tabs into views of the sources. FUTURE.md 
 interactive quit prompt and a milestone filter are follow-ups of their own. Until #27 merges, the
 mirror in this branch is correct but frozen: fix it if it loses work, and otherwise leave it.
 
-## Three guards, because the obvious version loses work
+## Two guards, because the obvious version loses work
 
 The queue lives in `.prcoder/queue.json` and the PR description is a *projection* of it, never the
 other way round. Two guards keep that one-directional, and each closes a path where an item
@@ -67,12 +71,6 @@ to *that* description is evidence that it caught up: one flag for all of them wa
 to another PR, and the description still behind was trusted again. Neither side of that write falls
 back to a body it failed to read: a read that did not happen says nothing about what the description
 holds now.
-
-There was a third — a per-branch queue, and a guard refusing a write from a branch the tab had
-left. It is gone, and [#48](https://github.com/gaurav/prcoder/issues/48) holds what replaced it and
-why: scoping the list to the checkout hid items rather than organising them. Moving to an unrelated
-branch mid-task took the list away, and merging a branch put its unfinished items out of reach for
-good. One list for the repo is the behaviour to beat.
 
 ## What a localhost server is exposed to
 
