@@ -113,15 +113,13 @@ const GROUPS = [
  */
 const TITLE_MAX = 72;
 
-const prRepo = (url) => url?.match(/github\.com\/([^/]+\/[^/]+)\/pull\/\d+/)?.[1] ?? null;
-
 export function pageTitle(status) {
   // A failed poll keeps the last good title (paint() is not reached), so this
   // is only the very first load, where there is nothing to name the tab with.
   if (!status || status.error) return 'prcoder';
 
   if (status.pr) {
-    const repo = prRepo(status.pr.url) ?? status.nameWithOwner ?? 'prcoder';
+    const repo = repoName(linkBase(status.pr).repo);
     return `${clamp(`${repo}#${status.pr.number}`, status.pr.title)} · prcoder`;
   }
 
@@ -291,6 +289,9 @@ const linkBase = (pr) => ({
   ref: pr.isCrossRepository ? pr.baseRefName : pr.headRefName,
 });
 
+/** `owner/repo`, from a repository URL on any host. */
+const repoName = (repoUrl) => repoUrl.replace(/^https?:\/\/[^/]+\//, '');
+
 /**
  * The head's way out of the pane: this pull request on GitHub, then the repo it
  * is in and the three lists people leave for -- issues, pull requests,
@@ -310,7 +311,7 @@ export const headLinks = (pr) => {
   const { repo } = linkBase(pr);
   return [
     { text: `PR #${pr.number} ↗`, href: pr.url },
-    { text: repo.replace(/^https?:\/\/[^/]+\//, ''), href: repo },
+    { text: repoName(repo), href: repo },
     ...['issues', 'pulls', 'milestones'].map((p) => ({ text: p, href: `${repo}/${p}` })),
   ];
 };
