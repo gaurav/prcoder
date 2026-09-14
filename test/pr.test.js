@@ -1,10 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  pageTitle, withoutHtml, inline, queueSync, HEADING, blocks, sectionize,
+  pageTitle, withoutHtml, inline, headLinks, queueSync, HEADING, blocks, sectionize,
   tabLabel, taskCount, viewedCount,
 } from '../public/pr.js';
-import { fences, TASK } from '../public/tasks.js';
+import { fences, TASK, taskLines } from '../public/tasks.js';
 
 const status = (over = {}) => ({
   nameWithOwner: 'ggvaidya/prcoder',
@@ -68,8 +68,11 @@ test("prcoder's own block markers do not show up in the pane", () => {
   assert.match(out, /Prose above[\s\S]*Prose below/);
 });
 
+// Its lines stay, though, empty: taskLines numbers the raw body's lines, and a
+// comment that took its newlines with it put every line after it on a
+// different number here than there.
 test('a comment spanning lines goes entirely, not just its first line', () => {
-  assert.equal(withoutHtml('a\n<!-- one\ntwo\nthree -->\nb').trim(), 'a\n\nb'.trim());
+  assert.equal(withoutHtml('a\n<!-- one\ntwo\nthree -->\nb'), 'a\n\n\n\nb');
 });
 
 // A <details> block is how this repo's own PR keeps its history out of the way.
@@ -140,6 +143,104 @@ test('an underscore inside a word is not emphasis', () => {
 test('escaping still happens, and happens first', () => {
   assert.equal(inline('<script>'), '&lt;script&gt;');
   assert.equal(inline('`<b>`'), '<code>&lt;b&gt;</code>');
+});
+
+// A quote is as dangerous as an angle bracket here, because inline() is the
+// only thing between a PR body and an href="..." set with innerHTML -- and an
+// event-handler attribute smuggled in that way does fire. The pane shares a
+// page with the /pty socket, so it would be a typed turn into the running
+// claude session, from a description anyone opening a PR can write.
+test('a quote in a link cannot break out of the attribute it is written into', () => {
+  // An attribute the renderer never writes, opening its own quoted value: the
+  // shape of the escape, rather than the word, which survives harmlessly inside
+  // the href as text.
+  const broke = /\son\w+=["']/;
+  assert.doesNotMatch(inline('[docs](https://x.test/a" onmouseover="alert(1))'), broke);
+  assert.match(inline('[docs](https://x.test/a" x)'), /&quot;/);
+  // Same for a bare URL, which is linkified by the other rule.
+  assert.doesNotMatch(inline('https://x.test/a" onmouseover="alert(1)'), broke);
+  // And for single-quoted attributes, which are as valid as double-quoted ones.
+  assert.doesNotMatch(inline("[d](https://x.test/a' onmouseover='alert(1))"), broke);
+});
+
+test('a quote in ordinary prose still reads as a quote', () => {
+  assert.equal(inline('he said "no"'), 'he said &quot;no&quot;');
+});
+
+// --- links that only mean something against a repository ---
+
+// GitHub leaves both of these to the page they are rendered on: a relative href
+// stays relative, and a bare #N is linked by the repository the body belongs
+// to. This pane is not that page, so inline() is handed the repository and the
+// ref instead -- and without one, both stay as their own source rather than
+// becoming a link to nowhere.
+const where = { repo: 'https://github.test/o/r', ref: 'topic' };
+const href = (s) => s.match(/href="([^"]*)"/)?.[1];
+
+test('a relative link resolves against the head branch of the repository', () => {
+  assert.equal(href(inline('[README](README.md)', where)),
+    'https://github.test/o/r/blob/topic/README.md');
+  assert.equal(href(inline('[why](docs/Design.md#guards)', where)),
+    'https://github.test/o/r/blob/topic/docs/Design.md#guards');
+  // A leading ./ or / is written as often as a bare path and means the same
+  // thing here -- both are the repository root.
+  assert.equal(href(inline('[a](./x.md)', where)), 'https://github.test/o/r/blob/topic/x.md');
+  assert.equal(href(inline('[a](/x.md)', where)), 'https://github.test/o/r/blob/topic/x.md');
+  // An absolute link is nobody's relative path and is left exactly as it was.
+  assert.equal(href(inline('[docs](https://x.test/a)', where)), 'https://x.test/a');
+});
+
+test('a bare #N becomes a link to the issue of that number', () => {
+  assert.equal(href(inline('Closes #28.', where)), 'https://github.test/o/r/issues/28');
+  assert.equal(inline('(#28)', where).includes('>#28</a>)'), true);
+  // Not a mention: a fragment inside a link this same call just built, and a
+  // colour in prose, neither of which starts a word.
+  assert.equal(href(inline('[x](y.md#3)', where)), 'https://github.test/o/r/blob/topic/y.md#3');
+  assert.equal(inline('#ffcc00 is the colour', where), '#ffcc00 is the colour');
+});
+
+// The row under the badges. Derived from the PR's own URL rather than from the
+// status's nameWithOwner, which carries no host -- so this is also the test that
+// a GitHub Enterprise install is not quietly sent to github.com.
+test('the head links point at the repository the pull request is in', () => {
+  const pr = { number: 7, url: 'https://github.test/o/r/pull/7', headRefName: 'topic', baseRefName: 'main' };
+  assert.deepEqual(headLinks(pr).map((l) => [l.text, l.href]), [
+    ['PR #7 ↗', 'https://github.test/o/r/pull/7'],
+    ['o/r', 'https://github.test/o/r'],
+    ['issues', 'https://github.test/o/r/issues'],
+    ['pulls', 'https://github.test/o/r/pulls'],
+    ['milestones', 'https://github.test/o/r/milestones'],
+  ]);
+});
+
+// A fork's pull request is opened *against* this repository, and its issues and
+// milestones are here rather than in the fork. The URL is the base repo's
+// either way, which is the whole reason these are derived from it.
+test('a pull request from a fork links to the repository it was opened against', () => {
+  const fork = {
+    number: 9, url: 'https://github.test/o/r/pull/9', isCrossRepository: true,
+    headRefName: 'contributor:patch', baseRefName: 'main',
+  };
+  for (const l of headLinks(fork)) assert.match(l.href, /^https:\/\/github\.test\/o\/r(\/|$)/);
+});
+
+test('without a repository to resolve against, neither becomes a link', () => {
+  assert.equal(inline('[README](README.md) and #28', null),
+    '[README](README.md) and #28');
+});
+
+// The href is interpolated into an attribute and set with innerHTML, so a
+// target this pane will not open has to stay text rather than become an <a>.
+// The relative rule is what makes this a live question: before it, anything
+// that was not http(s) simply did not match.
+test('a link to a scheme that is not http(s) is left as its own source', () => {
+  for (const s of ['[x](javascript:alert(1))', '[x](data:text/html,<b>)', '[x](vbscript:x)']) {
+    assert.doesNotMatch(inline(s, where), /<a /);
+  }
+  // A same-page anchor is a position on a page prcoder is not, so it is left
+  // alone too -- and a mailto: is a link this pane has no business opening.
+  assert.doesNotMatch(inline('[top](#intro)', where), /<a /);
+  assert.doesNotMatch(inline('[mail](mailto:a@b.test)', where), /<a /);
 });
 
 // --- fenced blocks ---
@@ -232,6 +333,47 @@ test('a change of marker starts a new list', () => {
 
 test('prose above a list stays its own paragraph', () => {
   assert.deepEqual(kinds('Some prose:\n- a\n- b'), ['p', 'list']);
+});
+
+test('a quoted line is a quote, not prose starting with a chevron', () => {
+  assert.deepEqual(only('> quoted', 'quote'), [{ kind: 'quote', text: 'quoted' }]);
+});
+
+// No space needed after the `>`, unlike a bullet: `>text` is a quote on GitHub.
+test('a quote needs no space after its marker, and gives up only one', () => {
+  assert.deepEqual(only('>tight', 'quote')[0].text, 'tight');
+  assert.deepEqual(only('>   padded', 'quote')[0].text, '  padded');
+});
+
+test('consecutive quoted lines are one quote', () => {
+  assert.deepEqual(only('> one\n> two', 'quote'), [{ kind: 'quote', text: 'one\ntwo' }]);
+});
+
+test('an unmarked line under a quote is still the quote', () => {
+  assert.deepEqual(only('> one\nstill quoted', 'quote')[0].text, 'one\nstill quoted');
+});
+
+// A blank line ends a paragraph, so two quoted stanzas are two quotes -- which
+// is what GitHub renders, and what lets a description quote two people.
+test('a blank line between quoted stanzas gives two quotes', () => {
+  assert.deepEqual(kinds('> one\n\n> two'), ['quote', 'quote']);
+});
+
+test('prose and a list around a quote each stay their own block', () => {
+  assert.deepEqual(kinds('lead\n> quoted\n- a'), ['p', 'quote', 'list']);
+  assert.deepEqual(kinds('> quoted\ntail\n# head'), ['quote', 'heading']);
+});
+
+// The indexing argument, pinned: TASK in tasks.js does not match a quoted
+// checklist line either, so neither side counts it and the tick stays in step.
+test('a quoted checklist line counts on neither side', () => {
+  assert.deepEqual(kinds('- [ ] a\n\n> - [ ] b\n\n- [ ] c'), ['task', 'quote', 'task']);
+  assert.deepEqual(only('- [ ] a\n\n> - [ ] b\n\n- [ ] c', 'task').map((b) => b.index), [0, 1]);
+  assert.deepEqual(taskLines('- [ ] a\n\n> - [ ] b\n\n- [ ] c'), [0, 4]);
+});
+
+test('a quote inside a fence is a sample, not a quote', () => {
+  assert.deepEqual(kinds('```sh\n> not a quote\n```'), ['code']);
 });
 
 test('a bullet inside a fence is a sample, not a list', () => {

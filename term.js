@@ -52,15 +52,47 @@ const rows = () => out.rows || 24;
 // of scrollback every time the block was empty.
 const ERASE = (n) => (n ? `\x1b[${n}F\x1b[0J` : '');
 
+/**
+ * A line cut to `width` terminal columns. slice() counts UTF-16 units, and a PR
+ * title with a CJK character or an emoji in it is wider on screen than that
+ * count: it wrapped, `painted` undercounted the rows by one, and the next erase
+ * left a smear or took a line of scrollback with it.
+ *
+ * ponytail: wide means CJK scripts, fullwidth forms and pictographs, without an
+ * East Asian Width table. It errs wide -- a text-style `©` costs two -- which
+ * only cuts a line a column early. A real wcwidth if something still wraps.
+ */
+const WIDE = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}\u3000-\u303f\uff01-\uff60\uffe0-\uffe6]|\p{Extended_Pictographic}/u;
+const ZERO = /[\p{Mark}\u200d]/u;   // combining marks, variation selectors, ZWJ
+
+export function clip(line, width) {
+  let used = 0;
+  let out = '';
+  for (const ch of line) {
+    const w = ZERO.test(ch) ? 0 : WIDE.test(ch) ? 2 : 1;
+    if (used + w > width) break;
+    used += w;
+    out += ch;
+  }
+  return out;
+}
+
 export function paint() {
   if (!live()) return;
-  const body = [...footer, ...(prompt ? ['', prompt.text] : [])].map((l) => l.slice(0, cols()));
+  const fit = (l) => clip(l, cols());
+  const body = footer.map(fit);
+  // The question goes last but is cut first from nothing. A terminal short
+  // enough that the rule and the status rows already fill it used to drop the
+  // `quit? ... [y/N]` line while `prompt` stayed set -- so the next keypress
+  // answered a question nobody was shown. Status rows are what give way.
+  const ask = prompt ? ['', fit(prompt.text)] : [];
   // Nothing to say, nothing drawn -- otherwise every line logged before the
   // first status() trails a rule under itself with no block beneath it.
-  if (!body.length) return void (out.write(ERASE(painted)), painted = 0);
-  // Truncated before the rule is styled, so slice() stays a width measure: SGR
+  if (!body.length && !ask.length) return void (out.write(ERASE(painted)), painted = 0);
+  // Truncated before the rule is styled, so clip() stays a width measure: SGR
   // is zero-width, and cutting through an escape sequence would print garbage.
-  const lines = [`\x1b[2m${'─'.repeat(cols())}\x1b[0m`, ...body].slice(0, Math.max(1, rows() - 1));
+  const room = Math.max(1, rows() - 1 - ask.length);
+  const lines = [...[`\x1b[2m${'─'.repeat(cols())}\x1b[0m`, ...body].slice(0, room), ...ask];
   out.write(`${ERASE(painted)}\x1b[?25l${lines.map((l) => `${l}\n`).join('')}\x1b[?25h`);
   painted = lines.length;
 }
@@ -72,8 +104,7 @@ export function paint() {
  * caller repaint on a timer to keep an age honest without writing escape
  * sequences at an idle terminal every thirty seconds.
  */
-export function status(lines) {
-  const next = lines.filter((l) => l != null);
+export function status(next) {
   if (next.length === footer.length && next.every((l, i) => l === footer[i])) return;
   footer = next;
   paint();

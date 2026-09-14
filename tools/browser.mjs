@@ -2,7 +2,7 @@
 // change is otherwise verified by reading the CSS, which is how three of them
 // shipped unseen.
 //
-//   node tools/browser.mjs [outdir]        # default: ./shots (gitignored)
+//   node tools/browser.mjs [outdir]        # default: ./data/shots (gitignored)
 //   PRCODER_BROWSER=firefox node tools/browser.mjs
 //
 // Firefox is a separate download: `npx playwright install firefox` once.
@@ -17,17 +17,18 @@
 //
 // CLAUDE_BIN is stubbed because every page load opens a websocket and spawns
 // it in a PTY -- unstubbed, each run starts a real Claude session and leaves it
-// running.
+// running. The stub is `tools/claude-stub.mjs` rather than /bin/cat: it echoes
+// as cat does, and it also sends the cursor-position probe a real session sends
+// between turns, which is the half the icon check needs.
 //
-// This is not read-only, and what it writes goes to GitHub. The queue is
-// per-branch, so a fresh branch has nothing to photograph; the run seeds six
-// items -- at least one per tab -- and puts the branch's own queue back at the
-// end, which also takes the block it mirrored back out of the PR description.
-// Ticking a description checkbox edits the description on GitHub too, and so
-// does mirroring a queue item with the diamond. A run that dies in between
-// leaves both behind, and the next run drops the fixture rather than restoring
-// it. Anything you add here that writes needs the same treatment, and needs to
-// run against a repo you own.
+// This is not read-only, and what it writes goes to GitHub. The run replaces
+// the repo's queue with six fixture items -- at least one per tab -- and puts
+// the queue back at the end, which also takes the block it mirrored back out of
+// the PR description. Ticking a description checkbox edits the description on
+// GitHub too, and so does mirroring a queue item with the diamond. A run that
+// dies in between leaves both behind, and the next run drops the fixture rather
+// than restoring it. Anything you add here that writes needs the same
+// treatment, and needs to run against a repo you own.
 
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:net';
@@ -38,7 +39,9 @@ import { fileURLToPath } from 'node:url';
 import { chromium, firefox } from 'playwright';
 
 const repo = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-const out = path.resolve(process.argv[2] ?? path.join(repo, 'shots'));
+// data/, not a new top-level shots/: this repo's scratch space is data/, and it
+// is gitignored precisely so driver output has somewhere to live.
+const out = path.resolve(process.argv[2] ?? path.join(repo, 'data', 'shots'));
 const port = Number(process.env.PRCODER_PORT) || 17434;
 
 // server.js falls back to a free port when the one it is given is taken, and
@@ -58,7 +61,7 @@ await free(port);
 await fs.mkdir(out, { recursive: true });
 const server = spawn('node', ['server.js'], {
   cwd: repo,
-  env: { ...process.env, PRCODER_PORT: String(port), PRCODER_NO_OPEN: '1', CLAUDE_BIN: '/bin/cat' },
+  env: { ...process.env, PRCODER_PORT: String(port), PRCODER_NO_OPEN: '1', CLAUDE_BIN: path.join(repo, 'tools', 'claude-stub.mjs') },
   stdio: 'ignore',
 });
 // The kill at the end of the file is load-bearing twice over: a live child
@@ -86,7 +89,7 @@ const browser = await engine.launch();
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
 page.on('pageerror', (e) => console.log('PAGE EXCEPTION:', e.message));
 
-// The queue is per-branch, so a fresh branch has an empty one and there is no
+// The repo's queue may be empty, and then there is no
 // row to click into or tab to count -- and the strip only shows a tab that has
 // something in it, so an empty queue is a strip of two. Seed one item per tab
 // through the API the pane itself uses, before the first page load, so the pane
@@ -125,7 +128,7 @@ const seed = (over) => ({ text: over.t, done: false, inPr: false, issue: null, d
 // the last one, rather than restoring the mess and adding to it.
 const mine = new Set(FIXTURE.map((f) => f.t));
 had = had.filter((i) => !mine.has(i.text));
-const seeded = await queueApi(FIXTURE.map(seed));
+const seeded = await queueApi({ items: FIXTURE.map(seed) });
 console.log('seeded: ', Array.isArray(seeded) ? `${seeded.length} items` : JSON.stringify(seeded));
 
 for (let i = 0; i < 30; i++) {
@@ -177,13 +180,13 @@ for (const name of ['Local', 'PR', 'Issues', 'Completed', 'Deleted']) {
 // not depend on reading a screenshot.
 await drag('#gut-pr', 980, 450);
 await page.waitForTimeout(300);
-const wrap = await page.evaluate(() => {
+const strip = await page.evaluate(() => {
   const t = [...document.querySelectorAll('#queue-body .tab')];
   const pane = document.getElementById('queue').getBoundingClientRect().width;
   return { rows: new Set(t.map((b) => b.offsetTop)).size, n: t.length, pane: Math.round(pane) };
 });
-console.log('narrow: ', `${wrap.n} tabs on ${wrap.rows} row(s) in a ${wrap.pane}px pane`,
-  wrap.rows === 1 ? '' : '  <-- the strip wrapped');
+console.log('narrow: ', `${strip.n} tabs on ${strip.rows} row(s) in a ${strip.pane}px pane`,
+  strip.rows === 1 ? '' : '  <-- the strip wrapped');
 await page.locator('#queue').screenshot({ path: path.join(out, 'queue-narrow.png') });
 await drag('#gut-pr', 375, 450);
 await page.waitForTimeout(300);
@@ -255,6 +258,61 @@ console.log('still open after a refresh:',
   JSON.stringify(await page.locator('.md-section[open] > summary h3').allInnerTexts()),
   ' (want the one clicked above)');
 
+// The head's way out of the pane, which is only right-aligned on screen: the
+// stylesheet says `justify-content: flex-end` on a row that is `.meta` as well,
+// and whether those two agree is a fact about the browser. Measured against the
+// head's own content box, with the title's left edge as the control -- the row
+// moved, the rest of the head did not.
+console.log('head:   ', await page.evaluate(() => {
+  const row = document.querySelector('#pr-head .pr-links');
+  const head = document.getElementById('pr-head');
+  const pad = parseFloat(getComputedStyle(head).paddingRight);
+  const edge = Math.round(head.getBoundingClientRect().right - pad);
+  const title = document.querySelector('#pr-head .pr-title').getBoundingClientRect();
+  return `${[...row.querySelectorAll('a')].map((a) => a.textContent).join(' ')} | row right ${
+    Math.round(row.getBoundingClientRect().right)} of ${edge}, title left ${Math.round(title.left)}`;
+}), ' (want the row flush with the head edge, the title still at the margin)');
+console.log('out:    ', await page.evaluate(() =>
+  [...document.querySelectorAll('#pr-head .pr-links a')].map((a) => a.href).join(' ')));
+// The dots between them are delimiters, and were an `a::before` -- which is
+// inside the link's box, so they were underlined with it and a press on one
+// followed the link to its right. Hit-tested rather than read off the DOM: that
+// a separator is its own element says nothing about where a click lands.
+console.log('dots:   ', await page.evaluate(() =>
+  [...document.querySelectorAll('#pr-head .pr-links span')].map((sep) => {
+    const b = sep.getBoundingClientRect();
+    return document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2)?.tagName;
+  }).join(' ')), ' (want SPAN each, never A)');
+
+// The two link kinds that only mean something against a repository: a relative
+// path, which GitHub leaves for the page to resolve and prcoder resolves to a
+// blob URL on the head branch, and a bare #N. Both showed as their own source
+// until they were rendered; this repo's own description carries one of each.
+console.log('links:  ', await page.evaluate(() => {
+  const find = (re) => [...document.querySelectorAll('#pr-body .md a')]
+    .find((a) => re.test(a.textContent));
+  return `${find(/^README$/)?.href} | ${find(/^#\d+$/)?.href}`;
+}), ' (want a /blob/<head>/README.md URL, and an /issues/N one)');
+
+// Where each tab was left. The two offsets are kept apart in module state, and
+// the switch is what used to lose them: renderPrTab read scrollTop *after*
+// switchTo had already moved `tab`, so Detail's offset was filed under Files
+// and handed straight back. Scroll one, cross to the other and back.
+const scrollTo = (px) => page.$eval('#pr-body', (el, n) => {
+  el.scrollTop = n;
+  return el.scrollTop;
+}, px);
+const scrollNow = () => page.$eval('#pr-body', (el) => el.scrollTop);
+const onDetail = await scrollTo(300);
+await page.waitForTimeout(100);
+await page.locator('#pr-head .tab').nth(1).click();
+const filesFresh = await scrollNow();
+await scrollTo(150);
+await page.waitForTimeout(100);
+await page.locator('#pr-head .tab').nth(0).click();
+console.log('scroll:  ', `Files opened at ${filesFresh}, Detail came back to ${await scrollNow()}`,
+  `  (want 0, then ${onDetail})`);
+
 // The measure, which is inert at the pane's 375px floor and is the whole reason
 // for the cap at the other end of its range.
 await drag('#gut-pr', 900, 450);
@@ -318,6 +376,48 @@ console.log('after reload, tab is', JSON.stringify(onTab), ' (want Detail)');
 
 console.log('dragged: ', dragged, '  (want --w-pr 520, --h-diff 300, --h-queue 260)');
 console.log('restored:', restored, restored === dragged ? '' : '  <-- did not persist');
+
+// The other way to move a gutter, which has no cursor to watch: tab to it and
+// press a key. Right by 10, then shift-Right by 50, then Home back to the
+// stylesheet's own default -- so the three numbers say that focus lands, that
+// the step sizes differ, and that the reset is reachable without a mouse.
+const wPr = () => page.evaluate(() =>
+  Math.round(document.querySelector('#pr').getBoundingClientRect().width));
+await page.locator('#gut-pr').focus();
+const focused = await page.evaluate(() => document.activeElement?.id);
+const valuenow = () => page.locator('#gut-pr').getAttribute('aria-valuenow');
+const before = await wPr();
+const nowBefore = await valuenow();
+await page.keyboard.press('ArrowRight');
+await page.waitForTimeout(50);
+const nudged = await wPr();
+await page.keyboard.press('Shift+ArrowRight');
+await page.waitForTimeout(50);
+const shoved = await wPr();
+const nowShoved = await valuenow();
+await page.keyboard.press('Home');
+await page.waitForTimeout(50);
+const homed = await page.evaluate(() =>
+  document.querySelector('main').style.getPropertyValue('--w-pr'));
+console.log('keys:    ', `focus ${focused}, ${before} -> ${nudged} -> ${shoved}`,
+  `  (want gut-pr, +10 then +50)`);
+console.log('home:    ', JSON.stringify(homed), '  (want "" -- back to the template)');
+// Moved, and said so: a ResizeObserver on the 1px gutter never fired on a move.
+console.log('valuenow:', `${nowBefore} -> ${nowShoved} -> ${await valuenow()} after Home`,
+  ' (want a percentage of <main> that moves with the keys and again with Home)');
+
+// Home just put the pane back on its 375px floor, which is the one width where
+// the balanced wrap does anything: a real title runs to three lines there, and
+// a greedy wrap leaves the last of them holding a word or two. Range rectangles
+// rather than a screenshot -- the claim is about how wide the lines come out,
+// and `text-wrap: balance` is a property no stylesheet can be read for.
+const wrap = await page.evaluate(() => {
+  const r = document.createRange();
+  r.selectNodeContents(document.querySelector('#pr-head .pr-title'));
+  return [...r.getClientRects()].map((b) => Math.round(b.width));
+});
+console.log('wrap:    ', `${await page.locator('#pr').evaluate((e) => Math.round(e.getBoundingClientRect().width))}px pane,`,
+  `lines ${wrap.join(', ')}`, ' (want three of similar width, not two full and a stub)');
 
 // The two toasts. The reload above is a real trigger for the first one:
 // sessionStorage survives it, so ws.onopen decides the session was restarted
@@ -387,9 +487,81 @@ console.log('caret:  ', `${caret} of ${span.len}`,
     : caret === 0 ? '  <-- click landed at the start of the text'
       : '  <-- click landed at the end of the text');
 
-// Back to whatever the branch had, which also takes our block back out of the
-// PR description on the way past.
-console.log('restored:', (await queueApi(had)).length, 'items (was', had.length + ')');
+// Then two scratch rows on Local for the reorder checks, on top of the fixture
+// and put back after, in a finally: everything between here and the restore
+// drives a browser, and a hang would otherwise leave them in the store.
+const queue = await page.evaluate(() => fetch('/api/queue').then((r) => r.json()));
+const putQueue = (items) => page.evaluate((body) => fetch('/api/queue', {
+  method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+}).then((r) => r.json()), { items });
+await putQueue([...queue,
+  { text: 'driver scratch item, put back at the end of the run' },
+  { text: 'driver scratch item two' }]);
+try {
+  await page.reload();
+  await page.waitForSelector('.item .text');
+
+  // A row drag carries its own data type. It carried text/plain, which a link
+  // or a text selection dropped on a row also carries; Number() of that is NaN,
+  // splice() reads NaN as 0, and the queue's first item moved and was saved.
+  // The synthetic drop is that case, and the queue must come out of it as the
+  // real drag left it.
+  const scratch = () => page.evaluate(() => fetch('/api/queue').then((r) => r.json()))
+    .then((items) => items.filter((i) => i.text.startsWith('driver scratch')).map((i) => i.text.replace(/^driver scratch item,? /, '')));
+  const scratchRows = page.locator('.item', { hasText: 'driver scratch' });
+  await scratchRows.nth(1).locator('.grip').dragTo(scratchRows.nth(0));
+  await page.waitForTimeout(500);
+  const reordered = await scratch();
+  const before = (await page.evaluate(() => fetch('/api/queue').then((r) => r.json()))).map((i) => i.text);
+  await scratchRows.nth(0).evaluate((li) => {
+    const dt = new DataTransfer();
+    dt.setData('text/plain', 'a dropped selection');
+    li.dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true }));
+  });
+  await page.waitForTimeout(500);
+  const after = (await page.evaluate(() => fetch('/api/queue').then((r) => r.json()))).map((i) => i.text);
+  console.log('drag:   ', reordered.join(' | '), '  (want "two" first)');
+
+  // The same move without a pointer: the grip takes focus, and Down moves its
+  // row past the next one shown -- which puts the pair back how they started --
+  // with focus following the row rather than staying put on the old position.
+  await scratchRows.nth(0).locator('.grip').focus();
+  await page.keyboard.press('ArrowDown');
+  await page.waitForTimeout(500);
+  const keyed = await scratch();
+  const focusedRow = await page.evaluate(() => document.activeElement?.closest('.item')?.querySelector('.text')?.textContent);
+  console.log('rowkeys:', keyed.join(' | '), `, focus on "${focusedRow}"`,
+    '  (want "two" last, focus still on "driver scratch item two")');
+  console.log('drop:   ', JSON.stringify(after) === JSON.stringify(before) ? 'unchanged' : 'MOVED',
+    '  (want unchanged -- a text drop is not a row)');
+} finally {
+  await putQueue(queue);
+}
+console.log('queue:  ', (await page.evaluate(() => fetch('/api/queue').then((r) => r.json()))).length, 'items  (want', queue.length + ')');
+
+// Back to whatever the repo had, which also takes our block back out of the PR
+// description on the way past.
+console.log('restored:', (await queueApi({ items: had })).length, 'items (was', had.length + ')');
+
+// The tab icon, which goes blue while the PTY is printing and back to green two
+// seconds after it stops -- prcoder's only reading of "Claude is working". A
+// PTY echoes what is typed at it, so a keystroke here is the same burst of
+// output a Claude turn is made of.
+//
+// The green half is the one that matters: the stub keeps sending the
+// cursor-position probe throughout, five times a second, exactly as a real
+// session does between turns. Green here means those are being skipped. Before
+// they were, the icon stayed busy from the first paint until the tab closed,
+// and every check on a /bin/cat stub passed, because cat never asks.
+const iconFill = () => page.evaluate(() =>
+  document.querySelector('link[rel=icon]').href.match(/%23(\w{6})/)[1]);
+await page.locator('#term-host').click();
+await page.keyboard.type('hello');
+await page.waitForTimeout(200);
+const busy = await iconFill();
+await page.waitForTimeout(2500);
+console.log('icon:   ', `${busy} while printing, ${await iconFill()} after 2.5s of probes only`,
+  '  (want 1f6feb then 238636)');
 
 console.log('title: ', await page.title());
 console.log('panes: ', await page.evaluate(() => getComputedStyle(document.querySelector('main')).gridTemplateColumns));

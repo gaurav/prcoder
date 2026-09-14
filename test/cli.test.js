@@ -18,11 +18,10 @@ test('flag values are never read as a PR target', () => {
 // The URL has to be the same every run for a bookmark, a Dock app or an IDE
 // pane to point at it; and two repos on one machine must not share it.
 test('the port is a fixed function of the repo path', () => {
-  const a = portFor('/Users/x/code/prcoder', {});
-  assert.equal(a, portFor('/Users/x/code/prcoder', {}));
+  const a = portFor('/Users/x/code/prcoder');
+  assert.equal(a, portFor('/Users/x/code/prcoder'));
   assert.ok(a >= PORT_BASE && a < PORT_BASE + PORT_SPAN, `${a} out of range`);
-  assert.notEqual(a, portFor('/Users/x/code/other', {}));
-  assert.equal(portFor('/anything', { PRCODER_PORT: '4000' }), 4000);
+  assert.notEqual(a, portFor('/Users/x/code/other'));
 });
 
 // The one that made this range move. Browsers refuse a list of well-known
@@ -32,7 +31,7 @@ test('the port is a fixed function of the repo path', () => {
 // below it. A path is not a bookmark: this has to hold for any of them.
 test('no derived port is one a browser refuses to load', () => {
   for (let i = 0; i < 5000; i++) {
-    const p = portFor(`/Users/x/code/repo-${i}`, {});
+    const p = portFor(`/Users/x/code/repo-${i}`);
     assert.ok(p > 10080, `${p} is in the browsers' blocked range`);
   }
 });
@@ -40,7 +39,7 @@ test('no derived port is one a browser refuses to load', () => {
 // A first run walks these until one binds. Wrapping rather than climbing keeps
 // every candidate inside the range checked above.
 test('the candidates are the whole range, starting at the seed', () => {
-  const seed = portFor('/Users/x/code/prcoder', {});
+  const seed = portFor('/Users/x/code/prcoder');
   const c = portCandidates('/Users/x/code/prcoder');
   assert.equal(c[0], seed);
   assert.equal(c.length, PORT_SPAN);
@@ -136,4 +135,12 @@ test('the block says how old it is, once that is worth saying', () => {
   assert.match(statusLines(STATUS, { local: 'x', tabs: 1, age: 600_000 }).join('\n'),
     /1 tab   checked 10m ago/);
   assert.doesNotMatch(statusLines(STATUS, { local: 'x', tabs: 1, age: 0 }).join('\n'), /checked/);
+});
+
+// The label column padded, not cut. Sliced to eight, `PR #10000` printed as
+// `PR #1000` -- a wrong number that looks like a right one, in the block the
+// terminal stares at all session.
+test('a PR number too wide for the label column widens the row, it does not lose a digit', () => {
+  assert.match(block({ pr: { ...STATUS.pr, number: 10000 } }), /PR #10000\b/);
+  assert.doesNotMatch(block({ pr: { ...STATUS.pr, number: 10000 } }), /PR #1000\s/);
 });

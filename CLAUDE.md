@@ -1,7 +1,9 @@
 # prcoder
 
 A local server + browser UI wrapping a real `claude` PTY. See README.md for what
-it does and how to run it.
+it does and how to run it, `docs/Design.md` for why it works the way it does --
+the guards, the threat model, the non-goals -- and `docs/Verifying.md` for what
+this repo checks and how. Keep those two true when you change what they describe.
 
 ## Scratch work goes in `data/`
 
@@ -12,14 +14,16 @@ written to `/tmp` is one nobody in this session can look at.
 
 ## Two traps
 
-**Don't delete the `postinstall` chmod in package.json.** It looks like dead
-setup. npm blocks node-pty's own install script, which is what makes
+**Don't delete the `postinstall` script.** `tools/postinstall.mjs` looks like
+dead setup. npm blocks node-pty's own install script, which is what makes
 `prebuilds/*/spawn-helper` executable. Without it every PTY spawn fails with a
 bare `posix_spawnp failed` — no mention of permissions, and node-pty still
 imports fine, so it reads like a Node ABI problem when it isn't.
 `npm install-scripts approve node-pty` does *not* replace it — tested 2026-08-23,
 the approved script is `node-gyp rebuild` and the prebuilt helper still lands
-non-executable.
+non-executable. It is Node rather than the `chmod ... || true` it used to be
+because cmd.exe has neither command, so the shell version failed `npm install`
+outright on Windows.
 
 **Run tests with bare `node --test`, not `node --test test/`.** On Node 26 a
 directory argument is resolved as a module and dies with `Cannot find module`.
@@ -64,19 +68,20 @@ None of it exists without a tty. `process.stdout.isTTY` gates the block and
 -- which is what `tools/browser.mjs` (`stdio: 'ignore'`) is standing proof of.
 `tools/cli.mjs` drives the other half, in a real PTY.
 
-## Never write the queue's markers in prose
+## A marker alone on its own line is a block
 
-`splitPrBlock` in `queue.js` finds prcoder's block with `body.indexOf(OPEN)` —
-the *first* occurrence. Write `<!-- prcoder:todo -->` literally into a PR
-description's prose, as a sentence about how prcoder works, and the next queue
-write treats that sentence as the start of the block and replaces everything
-from it to the real closing marker. Half the description, gone, on a poll.
+`splitPrBlock` in `queue.js` takes prcoder's block to start at the first line
+that is exactly `<!-- prcoder:todo -->`, outside a fence, and to end at the
+next line that is exactly the closer. A marker quoted in a sentence or a code
+span is inert -- that was the old trap, where the *first* occurrence anywhere
+opened the block and the next queue write deleted everything from that sentence
+to the real closing marker (#9, caught one edit before a push on 2026-09-01).
 
-This repo describes prcoder in its own PRs, so the trap is live here rather
-than theoretical — it was caught in review on 2026-09-01, one edit before
-being pushed. Say "prcoder's own HTML-comment markers" instead, and if you must
-show the literal string, check that the body still contains exactly one of each
-marker before writing it.
+What is still live: put either marker on a line by itself, unfenced, anywhere
+in a description -- a pasted sample of the block, say -- and that line is the
+block. This repo describes prcoder in its own PRs, so show a sample inside a
+fence, and check the body still has exactly one unfenced line of each marker
+before writing it.
 
 A running prcoder rewrites that block from its store on every poll of a visible
 tab, so a `gh pr edit` against this repo's own PR can be silently reverted within
@@ -91,8 +96,10 @@ Inside the block, `done` is the only field the description owns: a `- [ ]` to
 one and by exact text otherwise, then tombstones every `inPr` item whose line
 has gone -- so editing an item's text or dropping a line buries the item. To
 change anything else, edit `.prcoder/queue.json` and regenerate the block with
-`renderPrBlock`, then check the round trip: `syncFromPrBlock(items, newBody)`
-should give back the items you started with.
+`renderPrBlock(items, body, prNumber)`, then check the round trip:
+`syncFromPrBlock(items, newBody, prNumber)` should give back the items you
+started with. The number matters -- an item records the PR it was mirrored
+into, and a block leaves every other PR's items alone.
 
 ## The Claude pane is not prcoder's to draw on
 
@@ -161,6 +168,38 @@ it to the browser. All three leave the caret at 0. The row has to stop being
 draggable for as long as the pointer is on its text, which is why the queue
 rows have a grip.
 
+## A stub that only echoes is not a session
+
+`CLAUDE_BIN=/bin/cat` was the drivers' stand-in for `claude` because an echo is
+the same burst of output a turn is made of. It is not the same *session*. A real
+one asks the terminal where the cursor is (`ESC [ ? 6 n`) every ~200ms forever,
+and xterm answers every one -- so the PTY is never quiet, and the tab icon's "2
+seconds of quiet means idle" never fired in a real browser. cat never asks, so
+the driver's icon check passed for as long as the bug existed.
+
+It is a request/response loop, which is why a bare PTY test misses it too: with
+nothing answering, Claude asks once and gives up. `tools/claude-stub.mjs` echoes
+*and* probes. It needs raw mode and has to swallow the `ESC [ ? ... R` answers
+rather than echo them -- a stub that prints its own answers back is output, which
+is the state the check is trying to tell apart.
+
+Anything else that reads the PTY's timing has the same blind spot: drive it
+against the stub that probes, not against cat.
+
+## Don't wrap `window.WebSocket` in a Playwright init script
+
+`send` in `public/app.js` tests `ws.readyState !== WebSocket.OPEN`. A wrapper
+function does not carry the statics, so `WebSocket.OPEN` becomes `undefined`,
+every send returns false, and the page silently stops talking to the PTY --
+no error, no closed socket. Three runs of a driver investigating an
+always-busy tab icon came back green because the instrumentation had switched
+off the traffic causing it. Copy `CONNECTING`/`OPEN`/`CLOSING`/`CLOSED` onto
+the wrapper, or listen without wrapping.
+
+Same shape in reverse: a `MutationObserver` in `addInitScript` has no
+`document.head` to observe yet, and the throw takes the rest of the init script
+with it. Install observers after `goto`.
+
 ## Verifying against GitHub
 
 Prefer checking GitHub's real behaviour over trusting its docs — the diff-anchor
@@ -168,3 +207,14 @@ scheme in `files.js` was confirmed by grepping the rendered HTML of a public PR,
 and that assertion is pinned in `test/files.test.js` with the date.
 
 Test writes against this repo's own PRs. Never against a repo you don't own.
+
+## Green is not evidence that a rebuilt history is intact
+
+Splitting work into a commit per finding means rebuilding files by hand, and
+both `npm test` and the drivers run against the *working tree* — so they stay
+green while a commit is missing half of what its message claims. It happened
+here: the server half of one change was staged out of its own commit and
+nothing went red.
+
+The only check that sees it is `git diff <the tree you drove> HEAD` coming back
+empty. Take that diff before trusting a reassembled series, not the test run.

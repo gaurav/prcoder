@@ -10,6 +10,7 @@
 // in .claude/skills/run-prcoder, run by hand against a real PR.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import http from 'node:http';
 import { server } from '../server.js';
 
 let base;
@@ -66,4 +67,79 @@ test('the vendored xterm files are where the map says', async () => {
                    '/vendor/addon-fit.mjs', '/vendor/addon-web-links.mjs']) {
     assert.equal((await fetch(base + p)).status, 200, p);
   }
+});
+
+// A page on the web cannot read this server's answers, but every mutating route
+// takes effect on the way out -- and the /pty socket is not covered by the
+// same-origin policy at all. An origin that is not ours is refused; one that is
+// absent is not a browser, which is what keeps curl and the drivers working.
+test('a request from another origin is refused before it reaches a handler', async () => {
+  const res = await fetch(`${base}/api/diff`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', origin: 'https://evil.test' },
+    body: JSON.stringify({ path: 'files.js' }),
+  });
+  assert.equal(res.status, 403);
+  assert.deepEqual(await res.json(), { error: 'cross-origin request refused' });
+});
+
+test('our own origin is not refused, and neither is a request without one', async () => {
+  const post = (headers) => fetch(`${base}/api/diff`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', ...headers },
+    body: JSON.stringify({ path: 'files.js' }),
+  });
+  // 500 is the no-PR error every route gives here: past the guard, into the handler.
+  assert.equal((await post({ origin: base })).status, 500);
+  assert.equal((await post({})).status, 500);
+});
+
+// DNS rebinding: attacker.test resolves to 127.0.0.1 once its page has loaded,
+// so Origin and Host agree -- and a same-origin GET sends no Origin at all. The
+// Host name is what gives it away. fetch will not set Host, so this goes by hand.
+test('a request naming a host that is not loopback is refused, origin or none', async () => {
+  const { port } = server.address();
+  const get = (headers) => new Promise((resolve, reject) => {
+    http.get({ host: '127.0.0.1', port, path: '/api/whoami', headers }, (res) => {
+      res.resume();
+      resolve(res.statusCode);
+    }).on('error', reject);
+  });
+  const rebound = `attacker.test:${port}`;
+  assert.equal(await get({ host: rebound }), 403);
+  assert.equal(await get({ host: rebound, origin: `http://${rebound}` }), 403);
+  for (const name of ['localhost', '127.0.0.1', '[::1]']) {
+    assert.equal(await get({ host: `${name}:${port}` }), 200, name);
+  }
+});
+
+test('a malformed origin is refused rather than parsed into a pass', async () => {
+  const res = await fetch(`${base}/api/diff`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', origin: 'not a url' },
+    body: JSON.stringify({ path: 'files.js' }),
+  });
+  assert.equal(res.status, 403);
+});
+
+// The payload shape is part of this route's contract, and it has changed twice:
+// a bare array, then `{items, branch}`, and now `{items}` again. A client that
+// missed a change used to send something the route then indexed into, and the
+// TypeError told nobody what to send. None of these reaches a store write, so
+// the queue on disk is untouched either way.
+test('a queue write of the wrong shape says so, rather than throwing from inside', async () => {
+  const put = async (body) => {
+    const res = await fetch(`${base}/api/queue`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    return [res.status, (await res.json()).error];
+  };
+  const want = 'the queue must be sent as {items}';
+  // Both old wire formats, either of which somebody may still have open.
+  assert.deepEqual(await put([]), [500, want]);
+  assert.deepEqual(await put([{ text: 'a task' }]), [500, want]);
+  assert.deepEqual(await put({ branch: 'work' }), [500, want]);
+  assert.deepEqual(await put({ items: 'not an array', branch: 'work' }), [500, want]);
 });

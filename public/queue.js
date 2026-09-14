@@ -1,4 +1,4 @@
-import { h, btn, api, toast } from './pr.js';
+import { h, btn, ext, api, toast } from './pr.js';
 import { TABS } from './items.js';
 
 // The client owns the list; every change persists the whole array. Single user,
@@ -6,14 +6,17 @@ import { TABS } from './items.js';
 let items = [];
 let tab = 'local';
 let deps = {};
-// Set while a branch switch is in flight. Every save() writes the whole array,
-// and the server stamps it with whatever branch is checked out by the time it
-// lands, so one stray checkbox during the switch would file this branch's items
-// under the next one. The server refuses a payload carrying a stale branch;
-// this stops us sending one in the first place.
+// Set while a branch switch is in flight. The switch ends by replacing the
+// whole list from the server, so a click landing in the middle of it writes the
+// array as it was before the switch and then watches the response take it back.
+// Inert for those few hundred milliseconds is the honest thing to show.
 let frozen = false;
 
-export const freeze = (on) => { frozen = on; };
+// Repaints, because render() is what marks the list inert. The guard in save()
+// used to be the only one, by which point the click had already flipped a box
+// or pushed an item into the local array -- the write was dropped and the UI
+// went on showing it as saved until a poll silently took it back.
+export const freeze = (on) => { frozen = on; render(); };
 
 /**
  * Replace the list from the server. Skipped while an item is being edited: the
@@ -65,16 +68,32 @@ export async function initQueue(d) {
   // Before the fetch, so a remembered ↑ is not shown as the markup's ↓ for as
   // long as /api/queue takes to answer.
   paintWhere();
-  items = await fetch('/api/queue').then((r) => r.json());
+  // api(), not a bare fetch: a 500 answers `{error}` with a 200-shaped body, and
+  // assigning that object to `items` made the very next render() throw on
+  // items.filter -- a server-side error taking the whole pane down rather than
+  // showing itself.
+  try {
+    items = await api('/api/queue', undefined, 'GET');
+  } catch (e) {
+    toast(e.message, true);
+  }
   render();
 }
 
-const save = async (url = '/api/queue', method = 'PUT', body = items) => {
-  if (frozen) return;
+/** Whether the change reached the server, for the one caller that has to undo. */
+const save = async (url = '/api/queue', method = 'PUT', body = { items }) => {
+  // The backstop behind inert -- a blur fired *by* the freeze still lands here.
+  // Loud, because the local array has already moved and the next poll is about
+  // to move it back.
+  if (frozen) {
+    toast('busy switching branches — that change was not saved', true);
+    return false;
+  }
   let data;
-  try { data = await api(url, body, method); } catch (e) { toast(e.message, true); return; }
+  try { data = await api(url, body, method); } catch (e) { toast(e.message, true); return false; }
   if (Array.isArray(data)) items = data;
   render();
+  return true;
 };
 
 const LABELS = { local: 'Local', pr: 'PR', issues: 'Issues', done: 'Completed', deleted: 'Deleted' };
@@ -106,9 +125,13 @@ export function stripFor(list, active) {
 
 function render() {
   const host = document.getElementById('queue-body');
+  // Native, and it covers what a per-control `disabled` would miss: the
+  // contentEditable text, the drag handles, focus.
+  host.inert = frozen;
   const count = (name) => items.filter(TABS[name]).length;
   const { strip, tab: active } = stripFor(items, tab);
   tab = active;
+  const shown = items.filter(TABS[tab]);
 
   host.replaceChildren(
     h('div', { className: 'tabs' },
@@ -116,7 +139,7 @@ function render() {
       h('span', { className: 'spacer' }),
       ...bulks(),
     ),
-    h('ul', { className: 'items' }, ...items.filter(TABS[tab]).map((i) => row(i))),
+    h('ul', { className: 'items' }, ...shown.map((i, n) => row(i, shown[n - 1], shown[n + 1]))),
   );
 
   // Adding always lands in Local, so say so where that is not what you are
@@ -178,17 +201,57 @@ function paintWhere() {
   b.classList.toggle('top', addTo === 'top');
 }
 
+/**
+ * Drop `from` where `to` currently sits, in place.
+ *
+ * The correction is the whole of it: the row is removed first, which shifts
+ * every index above it down by one, so an unadjusted `to` puts a downward drag
+ * *past* the row it was dropped on while an upward one lands before it -- the
+ * same gesture meaning two different things depending on direction. Out here
+ * rather than inline in the drop handler because it is the one part of a drag
+ * that can be checked without a browser.
+ */
+export function reorder(list, from, to) {
+  const [moved] = list.splice(from, 1);
+  list.splice(from < to ? to - 1 : to, 0, moved);
+  return list;
+}
+
 const tabBtn = (name, label) =>
   btn(label, () => { tab = name; render(); }, { className: tab === name ? 'tab on' : 'tab' });
 
+/**
+ * What a row's drag carries. Its own type, not text/plain: a link or a text
+ * selection dropped on a row carries text/plain too, and Number() of that is
+ * NaN -- which splice() reads as 0, so the first item moved and was saved.
+ */
+const ROW = 'application/x-prcoder-row';
+
 const bulk = (label, fn, props = {}) => btn(label, fn, { className: 'bulk', ...props });
 
-function row(item) {
+function row(item, above, below) {
   const idx = items.indexOf(item);
   // Order is the backlog's meaning, and only Local is a backlog -- the other
   // tabs are filtered views where a drop would splice the item to a position
   // in the full array that nobody on this tab can see.
   const ordered = tab === 'local';
+
+  // The keyboard's way to reorder, which a drag has no equivalent of. Moves
+  // past the next row *shown*, not the next in the array: the tab filters, so
+  // the array neighbour may be a done or deleted item you cannot see move.
+  const grip = h('span', { className: 'grip', title: 'drag, or focus and press ↑ ↓, to reorder', tabIndex: 0 }, '⠿');
+  grip.setAttribute('role', 'button');
+  grip.setAttribute('aria-label', `reorder “${item.text}”: up or down arrow moves it`);
+  grip.onkeydown = async (e) => {
+    const past = { ArrowUp: above, ArrowDown: below }[e.key];
+    if (!past) return;
+    e.preventDefault();
+    const at = [...document.querySelectorAll('#queue-body .item .grip')].indexOf(grip);
+    // reorder() drops in front of its target, so going down targets the row after.
+    reorder(items, idx, items.indexOf(past) + (e.key === 'ArrowDown' ? 1 : 0));
+    // save() repaints every row, so focus goes to the grip now in the new place.
+    if (await save()) document.querySelectorAll('#queue-body .item .grip')[at + (e.key === 'ArrowDown' ? 1 : -1)]?.focus();
+  };
 
   const box = h('input', { type: 'checkbox', checked: item.done });
   box.onchange = () => { item.done = box.checked; save(); };
@@ -198,14 +261,17 @@ function row(item) {
   text.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); text.blur(); } };
 
   const li = h('li', { className: 'item', draggable: ordered },
-    ordered ? h('span', { className: 'grip', title: 'drag to reorder' }, '⠿') : null,
+    ordered ? grip : null,
     box,
     text,
-    item.issue ? h('a', { className: 'tag issue', href: item.issueUrl ?? '#', target: '_blank', rel: 'noopener' }, `#${item.issue}`) : null,
+    item.issue ? ext(item.issueUrl ?? '#', `#${item.issue}`, { className: 'tag issue' }) : null,
     h('span', { className: 'actions' },
       btn('▶', () => deps.sendToClaude(item.text), { title: 'send to Claude' }),
       btn(item.inPr ? '◆' : '◇', () => { item.inPr = !item.inPr; save(); }, {
-        title: hasPr ? (item.inPr ? 'in PR description' : 'add to PR description') : NO_PR,
+        // Which PR, now that items record it: the queue is one list, so a ◆ can
+        // be an item that is in another PR's description and not this one's.
+        title: item.inPr ? `in ${item.pr ? `PR #${item.pr}'s` : 'the PR'} description`
+          : hasPr ? 'add to PR description' : NO_PR,
         disabled: !hasPr,
       }),
       item.issue ? null : btn('◎', () => save('/api/queue/issue', 'POST', { items, index: idx }),
@@ -225,29 +291,38 @@ function row(item) {
   // gives up being draggable for exactly as long as the pointer is on its text,
   // and the grip above is the handle that always drags.
   li.addEventListener('pointerdown', (e) => { li.draggable = ordered && !text.contains(e.target); });
-  li.addEventListener('dragstart', (e) => { e.dataTransfer.setData('text/plain', idx); li.classList.add('dragging'); });
+  li.addEventListener('dragstart', (e) => { e.dataTransfer.setData(ROW, idx); li.classList.add('dragging'); });
   li.addEventListener('dragend', () => li.classList.remove('dragging'));
   li.addEventListener('dragover', (e) => e.preventDefault());
   li.addEventListener('drop', (e) => {
     e.preventDefault();
-    const from = Number(e.dataTransfer.getData('text/plain'));
+    if (!e.dataTransfer.types.includes(ROW)) return;
+    const from = Number(e.dataTransfer.getData(ROW));
     if (from === idx) return;
-    items.splice(idx, 0, items.splice(from, 1)[0]);
+    reorder(items, from, idx);
     save();
   });
 
   return li;
 }
 
+/** True once the server has it, so the caller knows whether to clear the input. */
 export async function addItem(text) {
-  if (!text.trim()) return;
+  if (!text.trim()) return false;
   const item = { text: text.trim(), done: false, inPr: false, issue: null, deleted: false };
   // The end of the whole array, past any promoted or done rows: Local filters
   // without reordering, so a new item still shows last there.
   if (addTo === 'top') items.unshift(item); else items.push(item);
   // A brand-new item is local by definition, so this is the tab it is on.
   tab = 'local';
-  await save();
+  if (!await save()) {
+    // Taken back out. save() has already said what went wrong, and a row left
+    // sitting there is one the next poll is about to delete without comment --
+    // while the text it came from has gone from the input.
+    items = items.filter((i) => i !== item);
+    render();
+    return false;
+  }
   // Either end can be off-screen in a list taller than the pane, and an item
   // you cannot see reads as a save that did not happen. Not scrollIntoView:
   // save() has already repainted from the server's echo, so the object above no
@@ -256,4 +331,5 @@ export async function addItem(text) {
   // also calls; the viewport should not jump for those.
   const host = document.getElementById('queue-body');
   host.scrollTop = addTo === 'top' ? 0 : host.scrollHeight;
+  return true;
 }

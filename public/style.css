@@ -2,7 +2,8 @@
   --bg: #14161a; --panel: #1c1f26; --line: #2c313c;
   --fg: #d5d9e0; --dim: #8c93a1; --accent: #7aa2f7;
   color-scheme: dark;
-  /* The description, and only the description. Every face here ships with an OS
+  /* The description and the pull request's title -- the two things in this
+     window that are read rather than operated. Every face here ships with an OS
      -- no webfont, deliberately: one arriving late would move every line under
      a scroll position renderPrTab had already restored. */
   --serif: ui-serif, Charter, "Bitstream Charter", "Iowan Old Style",
@@ -58,6 +59,11 @@ main.diff-open #gut-diff { display: block; }
 .gut::after { content: ''; position: absolute; }
 .gut.col::after { inset: 0 -3px; cursor: col-resize; }
 .gut.row::after { inset: -3px 0; cursor: row-resize; }
+/* The line is 1px, so the ring goes on the grab area -- there is nowhere else
+   to put it. focus-visible, because a gutter you have just dragged should not
+   keep one. */
+.gut:focus { outline: none; }
+.gut:focus-visible::after { outline: 2px solid var(--accent); }
 
 .pane { background: var(--panel); display: flex; flex-direction: column; min-height: 0; min-width: 0; }
 .pane > header {
@@ -126,8 +132,39 @@ a { color: var(--accent); }
 #pr-head > :last-child { margin-bottom: 0; }
 
 .empty { color: var(--dim); }
-.pr-link { display: block; font-size: 12px; margin-bottom: 4px; }
-.pr-title { margin: 0 0 6px; font-size: 16px; line-height: 1.35; }
+/* The head's way out: this pull request on GitHub, the repo, and the lists you
+   leave for. Right-aligned because it is a way *out* of the pane rather than
+   part of what the pane says -- the title, the badges and the tabs all start at
+   the left margin, and this line started there too, where it was looked for to
+   the right of the title or under the badges and never found at the top.
+
+   `justify-content` rather than `text-align`: at the pane's 375px floor the row
+   wraps, and this is what keeps the wrapped half against the right edge too. It
+   reuses `.meta` for the flex, the wrap, the gap and the 12px dim type, so the
+   only thing said twice would be the alignment. */
+.pr-links { justify-content: flex-end; }
+
+/* Serif, like the description under it: the title is the first sentence of the
+   argument, not a label on the pane. Everything else in this header -- the
+   branch names, the badges, the tabs -- stays sans, so the split is the same
+   one the description makes between structure and prose.
+
+   21px is about 16pt, and is a display size rather than a bumped body size: a
+   serif reads smaller than the system sans at the same pixels, and the pane is
+   26% of the window, so the title is read at a glance across a screen it only
+   occupies a quarter of. The line-height comes down as the size goes up, the
+   way it does for any heading.
+
+   `text-wrap: balance` is what makes it quick to read rather than merely big.
+   The pane's floor is 375px, where a real title runs to three lines, and the
+   default greedy wrap leaves the last one holding a word or two -- the ragged
+   edge is what a glance lands on, so an orphan costs more here than the same
+   orphan would in prose. Balancing evens the lines instead. It is a no-op at a
+   wide pane, where the title fits on one, and a browser without it wraps
+   greedily, which is where this started. No `font-weight`: the <h2> is bold
+   already, and 600 against 700 was indistinguishable in this stack when both
+   were photographed. */
+.pr-title { margin: 0 0 8px; font-family: var(--serif); font-size: 21px; line-height: 1.25; text-wrap: balance; }
 .meta { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; color: var(--dim); font-size: 12px; margin-bottom: 8px; }
 .add { color: #7fd88f; } .del { color: #f08b8b; }
 
@@ -138,11 +175,11 @@ a { color: var(--accent); }
 .badge.pass { background: #1f4d2e; color: #9ae6b4; }
 .badge.pend { background: #4d411f; color: #f0dc9a; }
 
-/* A pull request description is prose, and it is the one thing in this window
-   that is read rather than operated. It gets a reading face, a reading size and
-   a measure; everything around it -- headings, code, the file rows, the tabs --
-   stays sans, so the difference between structure and argument is visible
-   without reading either.
+/* A pull request description is prose, and with the title above it the only
+   part of this window that is read rather than operated. It gets a reading
+   face, a reading size and a measure; everything around it -- the file rows,
+   the tabs, its own headings and code -- stays sans, so the difference between
+   structure and argument is visible without reading either.
 
    The measure is not decoration. #pr goes to 60% of the window (see `main`), and
    an unbroken 15px serif line 900px wide is worse than the 13px it replaces.
@@ -221,6 +258,13 @@ a { color: var(--accent); }
 }
 .md-section > summary .count { font-size: 12px; }
 
+/* A quote is marked by a rule and a colour, not by an indent: at 375px the pane
+   has no width to give away, and the rule alone is what GitHub uses too. */
+.md blockquote {
+  margin: 10px 0; padding-left: 12px;
+  border-left: 3px solid var(--line); color: var(--dim);
+}
+
 .md ul, .md ol { margin: 6px 0; padding-left: 1.35em; }
 .md li { margin: 3px 0; }
 .md li::marker { color: var(--dim); }
@@ -294,7 +338,7 @@ a { color: var(--accent); }
 .item .grip { flex: none; cursor: grab; color: var(--dim); font-size: 11px; opacity: .25; }
 .item .grip:active { cursor: grabbing; }
 .actions { display: flex; gap: 2px; opacity: 0; }
-.item:hover .grip, .item:hover .actions, .item:focus-within .actions { opacity: 1; }
+.item:hover .grip, .item .grip:focus-visible, .item:hover .actions, .item:focus-within .actions { opacity: 1; }
 .item .grip:hover { color: var(--accent); }
 .actions button {
   background: none; border: 0; color: var(--dim);

@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseFuture, renderPrBlock, syncFromPrBlock, toggleTask } from '../queue.js';
 import { taskLines } from '../public/tasks.js';
+import { reorder } from '../public/queue.js';
 import { blocks, sectionize } from '../public/pr.js';
 
 const FUTURE = `# Notes
@@ -175,6 +176,58 @@ test('a body line matches the mirrored twin, not the local-only one', () => {
     { text: 'same', done: false, inPr: false, issue: null, deleted: false },
     { text: 'same', done: true, inPr: true, issue: null, deleted: false },
   ]);
+});
+
+// The queue is one list for the repo; a block is one PR's. Item X went into PR
+// 1's description, and PR 2's still holds the block from a visit before X
+// existed. Putting PR 2 on screen used to merge the whole queue against that
+// block, bury X for being absent from it, and let the next save make it stick
+// -- and a write there would have put PR 1's items into PR 2's description.
+test('switching to a PR with an older block buries nothing mirrored into another PR', () => {
+  const items = [
+    { text: 'in both', done: false, inPr: true, pr: 2, issue: null, deleted: false },
+    { text: 'X', done: false, inPr: true, pr: 1, issue: null, deleted: false },
+  ];
+  const twos = renderPrBlock([items[0]], 'PR 2.', 2);
+  assert.deepEqual(syncFromPrBlock(items, twos, 2), items);
+  assert.doesNotMatch(renderPrBlock(items, twos, 2), /- \[ \] X/);
+  assert.match(renderPrBlock(items, 'PR 1.', 1), /- \[ \] X/);
+
+  // PR 2's own items are still buried when a line goes, and a new line is PR 2's.
+  const edited = twos.replace('- [ ] in both', '- [ ] added there');
+  const [gone, x, added] = syncFromPrBlock(items, edited, 2);
+  assert.deepEqual([gone.deleted, gone.inPr], [true, false]);
+  assert.deepEqual(x, items[1]);
+  assert.deepEqual([added.text, added.pr], ['added there', 2]);
+});
+
+// Mirrored before items recorded a PR: the first block that has the line claims
+// it, rather than every block that lacks it burying it.
+test('an item with no PR recorded is claimed by the block it is found in', () => {
+  const legacy = [{ text: 'old', done: false, inPr: true, issue: null, deleted: false }];
+  const body = renderPrBlock(legacy, 'Desc.', 5);
+  assert.match(body, /- \[ \] old/);
+  assert.equal(syncFromPrBlock(legacy, body, 5)[0].pr, 5);
+});
+
+// Queue text is free text, and three kinds of it did not survive a trip through
+// the block: a leading `@pr` or `@deleted` was read as a FUTURE.md marker, text
+// that is exactly `#42` read as issue 42, and a Shift-Enter newline split the
+// item across lines. Each came back with text that matched nothing, and the
+// sync buried the item it had just written.
+test('item text that looks like markup survives a round trip through the block', () => {
+  const items = [
+    { text: '@pr review the docs', done: false, inPr: true, issue: null, deleted: false },
+    { text: '@deleted flag, rename it', done: false, inPr: true, issue: null, deleted: false },
+    { text: '#42', done: false, inPr: true, issue: null, deleted: false },
+    { text: 'first line\nsecond line', done: false, inPr: true, issue: null, deleted: false },
+    { text: 'filed', done: false, inPr: true, issue: 7, deleted: false },
+  ];
+  const body = renderPrBlock(items, 'Desc.');
+  assert.match(body, /- \[ \] first line second line\n/);
+  assert.deepEqual(syncFromPrBlock(items, body), items);
+  // And a tick there reaches each of them.
+  assert.ok(syncFromPrBlock(items, body.replaceAll('- [ ]', '- [x]')).every((i) => i.done));
 });
 
 // The consequence that makes issueNumber() throw rather than pass NaN through.
@@ -353,4 +406,151 @@ test('folding a description into sections does not renumber its checkboxes', () 
   for (const b of folded) {
     assert.doesNotThrow(() => toggleTask(FOLDED, b.index, true, b.text), `${b.index} (${b.text})`);
   }
+});
+
+// Half a block: an open marker whose closer someone deleted while hand-editing
+// the description on github.com. It used to report `found` with an empty
+// `after`, so the next poll wrote a fresh closing marker wherever the body
+// happened to end and everything past the last item went with it.
+const HALF_OPEN = [
+  'Why this change.',
+  '',
+  '<!-- prcoder:todo -->',
+  '## TODO',
+  '',
+  '- [ ] one',
+  '',
+  'Prose that must not be eaten.',
+].join('\n');
+
+test('an open marker with no closing one does not swallow the rest of the body', () => {
+  const out = renderPrBlock([{ text: 'one', done: false, inPr: true, issue: null, deleted: false }], HALF_OPEN);
+  assert.match(out, /Prose that must not be eaten\./);
+  assert.match(out, /Why this change\./);
+});
+
+test('a half-open block is not read as a queue, so nothing is tombstoned from it', () => {
+  const mine = [{ text: 'one', done: false, inPr: true, issue: null, deleted: false }];
+  assert.deepEqual(syncFromPrBlock(mine, HALF_OPEN), mine);
+});
+
+// #9. A description that talks about prcoder quotes its marker, and this repo's
+// own descriptions do. Matched anywhere, the first quote opened the block and
+// the next write replaced everything from that sentence to the real closing
+// marker. Only a marker alone on its own line, outside a fence, is one now.
+test('a marker quoted in prose, a code span or a fence does not open the block', () => {
+  const OPEN = '<!-- prcoder:todo -->';
+  const body = [
+    `The queue lives between ${OPEN} and its closer.`,
+    '',
+    `Inline, as \`${OPEN}\`, it is still just text.`,
+    '',
+    '```markdown',
+    OPEN,
+    '- [ ] a sample',
+    '<!-- /prcoder:todo -->',
+    '```',
+    '',
+    'Prose that must not be eaten.',
+    '',
+    OPEN, '## TODO', '', '- [ ] real', '<!-- /prcoder:todo -->',
+  ].join('\n');
+  const items = [{ text: 'real', done: false, inPr: true, issue: null, deleted: false }];
+
+  const out = renderPrBlock([{ ...items[0], text: 'renamed' }], body);
+  assert.match(out, /The queue lives between[\s\S]*Inline, as[\s\S]*- \[ \] a sample[\s\S]*Prose that must not be eaten\./);
+  assert.match(out, /- \[ \] renamed/);
+  assert.doesNotMatch(out, /- \[ \] real/);
+  assert.deepEqual(syncFromPrBlock(items, body), items);
+
+  const lastTask = taskLines(body).length - 1;
+  assert.equal(toggleTask(body, lastTask, true, 'real').inBlock, true);
+});
+
+// Hand-placed, mid-line or indented: not a block any more. The cost is a second
+// block appended below, never prose deleted.
+test('a marker that is not alone on its line is left alone, and a block is appended', () => {
+  const body = 'Notes <!-- prcoder:todo -->\n- [ ] old\n<!-- /prcoder:todo -->\nMore prose.';
+  const out = renderPrBlock([{ text: 'new', done: false, inPr: true, issue: null, deleted: false }], body);
+  assert.ok(out.startsWith(body.trimEnd()));
+  assert.match(out, /- \[ \] new/);
+});
+
+// A description whose template comments out an example task. The pane's
+// withoutHtml() deletes the comment before it counts anything, so if taskLines
+// still counted the line inside it every pane index would be one low -- and
+// toggleTask's text check would then refuse every box on the page.
+const COMMENTED = [
+  '- [ ] a real task',
+  '',
+  '<!--',
+  '- [ ] an example nobody ticks',
+  '-->',
+  '',
+  '- [ ] another real task',
+].join('\n');
+
+test('a checklist line inside an HTML comment counts for neither side', () => {
+  const seen = paneTasks(COMMENTED);
+  assert.deepEqual(seen, ['a real task', 'another real task']);
+  assert.deepEqual(taskLines(COMMENTED), [0, 6]);
+  for (const [index, text] of seen.entries()) {
+    assert.doesNotThrow(() => toggleTask(COMMENTED, index, true, text), `index ${index} (${text})`);
+  }
+  // Index 1 is the line below the comment, not the one inside it.
+  assert.match(toggleTask(COMMENTED, 1, true, 'another real task').body, /- \[x\] another real task/);
+  assert.match(toggleTask(COMMENTED, 1, true, 'another real task').body, /- \[ \] an example nobody ticks/);
+});
+
+// A <summary> is a disclosure's label, rendered inline, so a checklist line
+// written inside one is text on GitHub. The pane folded the whole summary into
+// one heading line while the server still counted the task in it, so every
+// index after it pointed one line further down than the pane meant.
+test('a checklist line inside a <summary> counts for neither side', () => {
+  const body = '<details>\n<summary>\n- [ ] not a task, a label\n</summary>\n\n- [ ] a real task\n</details>\n- [ ] another';
+  assert.deepEqual(paneTasks(body), ['a real task', 'another']);
+  assert.deepEqual(taskLines(body), [5, 7]);
+  assert.match(toggleTask(body, 0, true, 'a real task').body, /- \[x\] a real task/);
+});
+
+// Same order as the pane, which strips comments before it looks for fences: a
+// ``` inside a comment opens a fence on neither side.
+test('a fence marker inside a comment opens no fence', () => {
+  const body = '<!-- ```sh -->\n- [ ] still a task';
+  assert.deepEqual(taskLines(body), [1]);
+  assert.deepEqual(paneTasks(body), ['still a task']);
+});
+
+// A note left on a checklist line. The pane renders the line without the
+// comment and sends that text, so reading the raw line refused every tick on it
+// as "the description changed under that checkbox". A `[x]` inside a comment
+// ahead of the box is not the box, either.
+test('a checkbox with a comment on its line can be ticked, and only its own box flips', () => {
+  const body = '- [ ] fix the parser <!-- see #12 -->\n<!-- [x] --> - [ ] and the lexer';
+  const seen = paneTasks(body);
+  assert.deepEqual(seen.map((t) => t.trim()), ['fix the parser', 'and the lexer']);
+  assert.equal(toggleTask(body, 0, true, seen[0]).body.split('\n')[0], '- [x] fix the parser <!-- see #12 -->');
+  assert.equal(toggleTask(body, 1, true, seen[1]).body.split('\n')[1], '<!-- [x] --> - [x] and the lexer');
+});
+
+// The pane used to delete a comment's newlines with it, so a comment that
+// ended on a task's line joined that task onto the line the comment started on
+// -- where it was no longer at the start of a line, and no longer a task. The
+// server kept the line, counted it, and every index after it was off by one.
+test('a comment ending on a task line leaves that task a task on both sides', () => {
+  const body = 'prose <!--\nnote\n--> - [ ] after the comment\n- [ ] last';
+  assert.deepEqual(paneTasks(body).map((t) => t.trim()), ['after the comment', 'last']);
+  assert.deepEqual(taskLines(body), [2, 3]);
+  assert.doesNotThrow(() => toggleTask(body, 1, true, 'last'));
+});
+
+// A drop means the same thing whichever way the row was dragged: the row lands
+// where the row it was dropped on is now. Unadjusted, the removal shifted the
+// target out from under the insert and a downward drag overshot it by one.
+test('a dragged row lands in the same place in both directions', () => {
+  assert.deepEqual(reorder(['a', 'b', 'c', 'd'], 0, 2), ['b', 'a', 'c', 'd']);
+  assert.deepEqual(reorder(['a', 'b', 'c', 'd'], 2, 0), ['c', 'a', 'b', 'd']);
+  // The two ends, where an off-by-one falls off the array instead of misplacing.
+  assert.deepEqual(reorder(['a', 'b', 'c'], 0, 2), ['b', 'a', 'c']);
+  assert.deepEqual(reorder(['a', 'b', 'c'], 2, 0), ['c', 'a', 'b']);
 });

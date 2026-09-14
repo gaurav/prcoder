@@ -96,18 +96,20 @@ export async function repoInfo(cwd) {
 /**
  * `remoteHead` comes from the caller because only the PR knows it — and for a
  * fork it is not on origin at all, so `git ls-remote origin` would miss it.
+ * `branch` likewise, because the caller has just asked for it.
  */
-export async function snapshot(cwd, remoteHead = null) {
-  const branch = await currentBranch(cwd);
-  const head = await text(['rev-parse', 'HEAD'], cwd);
-
-  const status = await git(['status', '--porcelain', '--untracked-files=no'], cwd);
+export async function snapshot(cwd, remoteHead, branch) {
+  // Independent reads, so they run together rather than one spawn at a time.
+  const [head, status, known] = await Promise.all([
+    text(['rev-parse', 'HEAD'], cwd),
+    git(['status', '--porcelain', '--untracked-files=no'], cwd),
+    remoteHead && asks(['rev-parse', '--verify', '--quiet', `${remoteHead}^{commit}`], cwd),
+  ]);
   const dirty = userDirt(status);
 
   let sync = 'unpushed';
   let ahead = 0;
   if (remoteHead) {
-    const known = await asks(['rev-parse', '--verify', '--quiet', `${remoteHead}^{commit}`], cwd);
     // 128 rather than 1 when the commit is unknown, so only ask once we have it.
     const isAncestor = known && await asks(['merge-base', '--is-ancestor', remoteHead, 'HEAD'], cwd);
     sync = syncState({ head, remoteHead, remoteKnownLocally: known, remoteIsAncestor: isAncestor });
@@ -124,7 +126,15 @@ export async function snapshot(cwd, remoteHead = null) {
  */
 export async function remoteBranchHead(cwd, branch) {
   if (!branch) return null;
-  const out = await git(['ls-remote', '--heads', 'origin', branch], cwd).catch(() => '');
+  // The full ref path, because ls-remote's argument is a pattern matched
+  // against the *tail* of a ref on slash boundaries: a bare `topic` matches
+  // origin's `refs/heads/feature/topic` and reports a stranger's head for a
+  // branch that was never pushed. `refs/heads/topic` matches only itself.
+  //
+  // Not caught. A branch origin does not have is a successful call that prints
+  // nothing; a failure is a network, auth or timeout problem, and answering null
+  // for it said "not pushed" -- which the create route acts on by pushing.
+  const out = await git(['ls-remote', '--heads', 'origin', `refs/heads/${branch}`], cwd);
   return out.trim().split(/\s/)[0] || null;
 }
 

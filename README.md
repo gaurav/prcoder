@@ -1,8 +1,9 @@
 # prcoder
 
-A PR-focused shell around Claude Code. Run it in a repo, get three panes in your
-browser: the pull request you're working on, a live Claude Code session, and a
-task queue that stays out of your files.
+A PR-focused shell around Claude Code. Run it in a repo, get four panes in your
+browser: the pull request you're working on, the diff of whichever file you
+clicked, a live Claude Code session, and a task queue that stays out of your
+files.
 
 ```sh
 npm install
@@ -77,9 +78,10 @@ to drop back to the default. The sizes are remembered per browser, so the
 layout you settle on is the one the next `prcoder` opens with.
 
 **Pull request** — which pull request you are in stays at the top: the title,
-the state, the branch it targets, the checks. Below that are two tabs, because
-reading the argument and working the files are two different things and each
-wants the whole pane.
+the state, the branch it targets, the checks. Under those, right-aligned, is the
+way out of the window: this pull request on GitHub, the repo, and its issues,
+pulls and milestones. Below that are two tabs, because reading the argument and
+working the files are two different things and each wants the whole pane.
 
 *Detail* is the description. It opens as the lead paragraph and then one folded
 line per section, so a long one is an outline you scan rather than a wall you
@@ -151,16 +153,17 @@ the port this working copy listens on.
 {
   "version": 1,
   "items": [
-    { "text": "Add retry to the fetch path", "branch": "add-retries",
-      "done": false, "inPr": false, "issue": null, "deleted": false }
+    { "text": "Add retry to the fetch path",
+      "done": false, "inPr": false, "pr": null, "issue": null, "deleted": false }
   ]
 }
 ```
 
-Items are tagged with the branch you added them on and the pane shows the
-branch you have checked out, so switching PRs swaps the list and nothing from
-one lands in another. Items for a branch you have deleted stay in the file:
-out of view, but not gone.
+One list for the repo, whatever is checked out. Items were scoped to the branch
+you added them on for a while; that hid them rather than organising them --
+moving to an unrelated branch mid-task took the list away, and merging a branch
+put its unfinished items out of reach for good. An older file's `branch` fields
+are dropped on the next write and those items come back.
 
 The queue is machine-local, which is the trade for not writing your files.
 The way to carry an item elsewhere is the ◆ button, which mirrors it into a
@@ -168,7 +171,8 @@ The way to carry an item elsewhere is the ◆ button, which mirrors it into a
 block on github.com — ticking a box, adding a line from your phone, deleting
 one — are folded back in on refresh. prcoder only mirrors into the pull request
 for the branch you have checked out: a PR you are merely looking at is never
-written to. Separate worktrees keep separate queues, since each has its own
+written to. An item records which PR it went into (`pr`), so it stays in that
+description when you move to another PR and is not taken for deleted there. Separate worktrees keep separate queues, since each has its own
 `.prcoder/`.
 
 If you have a `FUTURE.md` from an earlier version, its `## Queue` section is
@@ -226,6 +230,11 @@ with prcoder at all.
 
 ## Requirements
 
+Node 22.18 or later in the 22 line, or 24.2 or later. `server.js` starts only
+under `import.meta.main`, which older versions do not have: there it is
+undefined, and prcoder exits at once having done nothing and said nothing. CI
+runs 26.
+
 The [`gh` CLI](https://cli.github.com/), authenticated. All GitHub access goes
 through it, so there is no token to configure.
 
@@ -241,9 +250,12 @@ one.
 One prcoder per repo, each a browser tab, soon lost among the pull requests and
 diffs you opened while working. Cheapest first:
 
-**In the tabs.** The favicon is a green *PR* square, and every title ends in
-`· prcoder`, so in Firefox typing `% prcoder` in the address bar lists every
-instance and nothing from github.com.
+**In the tabs.** The favicon is a green *PR* square -- blue while that tab's
+Claude is working, so a turn you walked away from says whether it is still
+going -- and every title ends in `· prcoder`, so in Firefox typing `% prcoder`
+in the address bar lists every instance and nothing from github.com. Amber is
+free on purpose, held for a third state prcoder cannot see yet: Claude stopped
+to ask you something.
 
 **A window per repo.** `PRCODER_OPEN` replaces the platform opener with your
 own command, URL appended. Firefox hands the arguments to the running copy, so
@@ -278,7 +290,10 @@ management listed below, deliberately not built yet.
 
 Syntax-highlighted diffs, review threads, multi-session management. This is a prototype for
 finding out whether a PR-shaped workspace beats a chat-shaped one; it's meant to
-be cheap to rewrite.
+be cheap to rewrite. [docs/Design.md](docs/Design.md) has the full list and the reasoning behind
+it, along with why prcoder exists at all and what a localhost server is exposed to.
 
 `npm test` covers the parts worth pinning down: the queue store, file grouping, GitHub's diff
-anchors, every queue ↔ PR-description transition, and the routes that answer without `gh`.
+anchors, every queue ↔ PR-description transition, and the routes that answer without `gh`. What
+cannot be unit-tested is driven in a real browser and a real PTY —
+[docs/Verifying.md](docs/Verifying.md).

@@ -53,7 +53,7 @@ test('an item can be counted by two tabs at once', () => {
 });
 
 // counts() is what the terminal's status block reads, so the block and the tab
-// strip cannot disagree about a branch's queue.
+// strip cannot disagree about the queue.
 test('counts answers every tab, including the ones with nothing in them', () => {
   assert.deepEqual(counts([LOCAL, MIRRORED, FILED, DONE, GONE]),
     { local: 1, pr: 1, issues: 1, done: 1, deleted: 1 });

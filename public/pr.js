@@ -1,4 +1,4 @@
-import { TASK, fences } from './tasks.js';
+import { TASK, fences, hideComments, summary } from './tasks.js';
 
 // Skips absent sections; DOM append() would render them as the text "null".
 const kids = (list) => list.flat().filter((k) => k != null);
@@ -24,6 +24,9 @@ export const btn = (label, fn, props = {}) => {
   b.onclick = fn;
   return b;
 };
+
+/** A link out of the app, which is every link it has. */
+export const ext = (href, text, props = {}) => h('a', { href, target: '_blank', rel: 'noopener', ...props }, text);
 
 /**
  * JSON in, JSON out, an error thrown either way it can fail -- a bad status or
@@ -110,15 +113,13 @@ const GROUPS = [
  */
 const TITLE_MAX = 72;
 
-const prRepo = (url) => url?.match(/github\.com\/([^/]+\/[^/]+)\/pull\/\d+/)?.[1] ?? null;
-
 export function pageTitle(status) {
   // A failed poll keeps the last good title (paint() is not reached), so this
   // is only the very first load, where there is nothing to name the tab with.
   if (!status || status.error) return 'prcoder';
 
   if (status.pr) {
-    const repo = prRepo(status.pr.url) ?? status.nameWithOwner ?? 'prcoder';
+    const repo = repoName(linkBase(status.pr).repo);
     return `${clamp(`${repo}#${status.pr.number}`, status.pr.title)} · prcoder`;
   }
 
@@ -175,16 +176,18 @@ export function renderHeader(status, prs, { onSwitch, onCommit }) {
   paintLight('pr-sync', headerSync(status));
 }
 
-// The same words the terminal's status block uses (SYNC in server.js). `ahead`
-// is not in the table because it counts.
+// `ahead` is not in the table because it counts.
 const SYNC = { behind: 'pull needed', diverged: 'diverged', unpushed: 'not pushed' };
 
+/** The sync light's words, shared with the terminal's status block in server.js. */
+export const syncPhrase = (s) => (s.sync === 'ahead' ? `${s.ahead} unpushed` : SYNC[s.sync] ?? null);
+
 /** Pure: the status -> the PR pane's light, or null for nothing worth saying. */
-export function headerSync(status) {
+function headerSync(status) {
   if (status.error) return { className: 'light unknown', text: 'unavailable' };
   if (status.scope === 'other-repo') return { className: 'light', text: 'another repo' };
   if (status.scope === 'other-branch') return { className: 'light', text: 'not checked out' };
-  const out = status.sync === 'ahead' ? `${status.ahead} unpushed` : SYNC[status.sync];
+  const out = syncPhrase(status);
   if (out) return { className: 'light warn', text: out };
   if (status.detached) return { className: 'light', text: 'detached HEAD' };
   return null;
@@ -228,15 +231,15 @@ export function renderNoPr(status, { onCreate }) {
   // Comparing a branch with itself opens an empty diff, so on main there is
   // nothing to offer — the fix is a branch, not a button.
   const can = !status.detached && !onDefault;
-  const btn = h('button', { className: 'pr-create', disabled: !can }, 'Create a pull request');
-  if (can) btn.onclick = () => onCreate(btn);
+  const create = h('button', { className: 'pr-create', disabled: !can }, 'Create a pull request');
+  if (can) create.onclick = () => onCreate(create);
 
   host.replaceChildren(...kids([
     h('p', { className: 'empty' }, why),
     status.sync === 'unpushed' && can
       ? h('p', { className: 'pr-note' }, 'This branch is not on GitHub yet; it will be pushed first.')
       : null,
-    btn,
+    create,
   ]));
 }
 
@@ -257,10 +260,63 @@ let tab = 'detail';
 let shownFor = null;
 const scrolled = { detail: 0, files: 0 };
 const openSections = new Set();
+// Whether the single-section description below is still allowed to open itself.
+let autoOpen = true;
 // Groups record which are *closed*, the inverse of sections, because their
 // default is open -- so a group nobody has touched needs no entry, and a group
 // that appears for the first time arrives open rather than missing.
 const closedGroups = new Set();
+
+// What a relative link and a bare #N in the description are written against.
+// Set by renderPr rather than threaded through description(), blockNode(),
+// sectionNode() and taskRow(), none of which has any other use for it; inline()
+// takes it as an argument so it can still be tested without a pull request.
+let links = null;
+
+/**
+ * The two things `[README](README.md)` and `#28` need to become links: the
+ * repository they are relative to, and the ref a path in it should be read at.
+ *
+ * The head branch, because a description points at the files the pull request
+ * adds as often as at ones that were already there -- except from a fork, where
+ * the head branch is in a repository this URL is not. GitHub leaves these hrefs
+ * relative and lets the browser resolve them against the page, which on a pull
+ * request page is `/owner/repo/pull/` and a 404; prcoder is not on that page,
+ * so it has to resolve them itself and may as well resolve them usefully.
+ */
+const linkBase = (pr) => ({
+  repo: pr.url.replace(/\/pull\/\d+$/, ''),
+  ref: pr.isCrossRepository ? pr.baseRefName : pr.headRefName,
+});
+
+/** `owner/repo`, from a repository URL on any host. */
+const repoName = (repoUrl) => repoUrl.replace(/^https?:\/\/[^/]+\//, '');
+
+/**
+ * The head's way out of the pane: this pull request on GitHub, then the repo it
+ * is in and the three lists people leave for -- issues, pull requests,
+ * milestones.
+ *
+ * Built from the PR's own URL rather than from the `nameWithOwner` the status
+ * carries, which says nothing about the host. That keeps these links right for
+ * a GitHub Enterprise host, and points a fork's pull request at the repository
+ * it was opened *against*, which is where its issues are. The rest of prcoder
+ * does not run against an Enterprise host yet -- `parsePrUrl`, the `gh api`
+ * calls and two hard-coded github.com URLs all assume it (#53) -- so this is
+ * the part not to undo, not proof that the whole works.
+ *
+ * The arrow is on the first link only. That is the one that means "what you are
+ * looking at, on GitHub"; the rest read as a menu, and five arrows in a row
+ * read as decoration.
+ */
+export const headLinks = (pr) => {
+  const { repo } = linkBase(pr);
+  return [
+    { text: `PR #${pr.number} ↗`, href: pr.url },
+    { text: repoName(repo), href: repo },
+    ...['issues', 'pulls', 'milestones'].map((p) => ({ text: p, href: `${repo}/${p}` })),
+  ];
+};
 
 /**
  * The pull request pane, in two roots.
@@ -272,6 +328,7 @@ const closedGroups = new Set();
  * an agent-written description is long enough to bury a file list entirely.
  */
 export function renderPr(pr, handlers) {
+  links = linkBase(pr);
   // A different pull request is a different set of sections and a different
   // amount of scroll; none of the old numbers mean anything against it.
   if (shownFor !== pr.number) {
@@ -279,6 +336,7 @@ export function renderPr(pr, handlers) {
     scrolled.detail = 0;
     scrolled.files = 0;
     openSections.clear();
+    autoOpen = true;
   }
   renderPrHead(pr, handlers);
   renderPrTab(pr, handlers);
@@ -294,8 +352,6 @@ function renderPrHead(pr, handlers) {
     btn(label, () => switchTo(name), { className: tab === name ? 'tab on' : 'tab' });
 
   document.getElementById('pr-head').replaceChildren(...kids([
-    h('a', { className: 'pr-link', href: pr.url, target: '_blank', rel: 'noopener' },
-      `#${pr.number} on GitHub ↗`),
     h('h2', { className: 'pr-title' }, pr.title),
     pr.note ? h('p', { className: 'pr-note' }, pr.note) : null,
     h('div', { className: 'meta' },
@@ -305,6 +361,16 @@ function renderPrHead(pr, handlers) {
       h('span', { className: 'del' }, `−${pr.deletions}`),
     ),
     checks(pr.checks),
+    h('div', { className: 'meta pr-links' },
+      // The dots are their own elements rather than an `a::before`, which is
+      // what they were: a pseudo-element lives inside the link's box, so the
+      // separator was underlined with it and a click on the gap followed the
+      // link to its right. `pointer-events: none` does not help -- the point is
+      // still over the <a> itself once the pseudo-element declines it.
+      ...kids(headLinks(pr).map((l, i) => [
+        i ? h('span', { className: 'sep' }, '\u00b7') : null,
+        ext(l.href, l.text),
+      ]))),
     h('div', { className: 'tabs' },
       tabBtn('detail', tabLabel('Detail', taskCount(pr.body))),
       tabBtn('files', tabLabel('Files', viewedCount(pr.files)))),
@@ -337,9 +403,13 @@ export const viewedCount = (files = []) =>
 
 function renderPrTab(pr, handlers) {
   const host = document.getElementById('pr-body');
-  // Read before the replace. Afterwards the old height is gone and the browser
-  // has already clamped scrollTop against whatever went in.
-  scrolled[tab] = host.scrollTop;
+  // Recorded as it happens rather than read before the replace: a tab switch
+  // sets `tab` to the tab being switched *to* before it re-renders, so reading
+  // scrollTop here filed the outgoing tab's offset under the incoming one and
+  // restored it four lines later. The listener only ever fires while the DOM
+  // and `tab` agree, and reassigning the one handler every render is
+  // idempotent -- there is never a second one to remove.
+  host.onscroll = () => { scrolled[tab] = host.scrollTop; };
   // A <summary> is a keyboard control, and a poll landing a second after you
   // tabbed onto one would otherwise drop focus on the floor. queue.js decided
   // not to freeze a whole pane over focus and that still holds -- this restores
@@ -349,8 +419,7 @@ function renderPrTab(pr, handlers) {
   host.replaceChildren(...kids(tab === 'files' ? [
     ...GROUPS.map(([key, label]) => fileGroup(label, pr.groups[key], handlers)),
     h('div', { className: 'meta' },
-      h('a', { href: `${pr.url}#issuecomment`, target: '_blank', rel: 'noopener' },
-        `${pr.counts.comments} comments · ${pr.counts.reviews} reviews ↗`)),
+      ext(`${pr.url}#issuecomment`, `${pr.counts.comments} comments · ${pr.counts.reviews} reviews ↗`)),
   ] : [
     issueRow(pr.issues, true, 'Closes:'),
     h('div', { className: 'body md' }, ...description(pr.body, handlers.onTask)),
@@ -393,8 +462,7 @@ function issueRow(list, closes, label) {
   if (!kind.length) return null;
   return h('div', { className: 'issues' },
     h('span', { className: 'issues-label' }, label),
-    ...kind.map((i) => h('a', { href: i.url, target: '_blank', rel: 'noopener', title: i.title ?? '' },
-      `#${i.number}`)));
+    ...kind.map((i) => ext(i.url, `#${i.number}`, { title: i.title ?? '' })));
 }
 
 /**
@@ -408,17 +476,24 @@ function issueRow(list, closes, label) {
  */
 function fileGroup(label, files, handlers) {
   if (!files?.length) return null;
-  const seen = files.filter((f) => f.viewed).length;
-  const d = h('details', {
-    className: 'fold group', open: !closedGroups.has(label), dataset: { group: label },
-  },
-  h('summary', {},
-    h('h3', {}, label),
-    h('span', { className: 'count' }, `${seen}/${files.length}`)),
-  h('div', { className: 'sec-body' }, ...files.map((f) => fileRow(f, handlers))));
-  d.addEventListener('toggle', () => {
-    if (d.open) closedGroups.delete(label); else closedGroups.add(label);
-  });
+  const { done, total } = viewedCount(files);
+  return fold({
+    className: 'group', dataset: { group: label }, title: label, count: `${done}/${total}`,
+    open: !closedGroups.has(label),
+    onToggle: (open) => { if (open) closedGroups.delete(label); else closedGroups.add(label); },
+  }, files.map((f) => fileRow(f, handlers)));
+}
+
+/**
+ * A <details> fold with a heading and an optional count, the shape both the file
+ * groups and the description's sections take. `onToggle` fires for a click and
+ * for the initial `open`, so it has to be idempotent.
+ */
+function fold({ className, dataset, title, count, open, onToggle }, children) {
+  const d = h('details', { className: `fold ${className}`, open, dataset },
+    h('summary', {}, h('h3', {}, title), count ? h('span', { className: 'count' }, count) : null),
+    h('div', { className: 'sec-body' }, ...children));
+  d.addEventListener('toggle', () => onToggle(d.open));
   return d;
 }
 
@@ -435,8 +510,7 @@ function fileRow(f, { onViewed, onOpen, selected }) {
   // inside a box that still overflows from the left. Checked in both engines
   // on 2026-09-09; `unicode-bidi: plaintext` on the link fixes the order too,
   // but moves the cut to the tail, which is the thing the rtl was for.
-  const link = h('a', { href: f.url, target: '_blank', rel: 'noopener', className: 'path', title: f.path },
-    h('bdi', {}, f.path));
+  const link = ext(f.url, h('bdi', {}, f.path), { className: 'path', title: f.path });
   link.addEventListener('click', (e) => {
     if (e.metaKey || e.ctrlKey) return;   // GitHub stays one modifier away
     e.preventDefault();
@@ -456,8 +530,8 @@ function fileRow(f, { onViewed, onOpen, selected }) {
 }
 
 /**
- * A PR description as blocks, in body order: `code`, `p`, `heading`, `task` and
- * `list`. No DOM -- blockNode() below turns one of these into an element, and
+ * A PR description as blocks, in body order: `code`, `p`, `heading`, `task`,
+ * `list` and `quote`. No DOM -- blockNode() below turns one of these into an element, and
  * sectionize() regroups them into folds. Splitting it this way is what lets the
  * whole renderer be tested without a browser.
  *
@@ -487,14 +561,17 @@ export function blocks(text) {
     for (const para of chunk.text.split(/\n{2,}/).filter(Boolean)) {
       let prose = [];
       let list = null;
-      // Prose and a list are the two things that can be open, never both: every
-      // branch that opens one closes the other, which is what keeps the output
-      // in body order.
+      let quote = null;
+      // Prose, a list and a quote are the three things that can be open, never
+      // two at once: every branch that opens one closes the others, which is
+      // what keeps the output in body order.
       const flush = () => {
         if (prose.length) out.push({ kind: 'p', text: prose.join('\n') });
         if (list) out.push(list);
+        if (quote) out.push(quote);
         prose = [];
         list = null;
+        quote = null;
       };
       for (const line of para.split('\n')) {
         const task = TASK.exec(line);
@@ -514,12 +591,24 @@ export function blocks(text) {
           continue;
         }
 
+        const quoted = QUOTE.exec(line);
+        if (quoted) {
+          if (prose.length || list) flush();
+          quote ??= { kind: 'quote', text: null };
+          quote.text = quote.text === null ? quoted[1] : `${quote.text}\n${quoted[1]}`;
+          continue;
+        }
+
         const num = ORDERED.exec(line);
         const bul = num ? null : BULLET.exec(line);
         if (num || bul) {
           // A change of marker starts a new list, the way GitHub renders it.
           if (list && list.ordered !== Boolean(num)) flush();
-          if (prose.length) flush();
+          // Conditional, unlike the branches above, because flush() would close
+          // the very list this line is appending to. Anything else that can be
+          // open has to be named here or it comes out after the list instead of
+          // before it.
+          if (prose.length || quote) flush();
           list ??= { kind: 'list', ordered: Boolean(num), start: num ? Number(num[1]) : 1, items: [] };
           list.items.push(num ? num[2] : bul[1]);
           continue;
@@ -529,6 +618,14 @@ export function blocks(text) {
         // own bullets run to four hundred characters.
         if (list) {
           list.items[list.items.length - 1] += `\n${line.trim()}`;
+          continue;
+        }
+        // Lazy continuation: an unmarked line under a quote is still the quote,
+        // the way GitHub reads it and the way the list above reads its own. A
+        // marked line is not -- every branch over this one flushes first, so a
+        // heading or a list after a quote ends it rather than joining it.
+        if (quote !== null) {
+          quote.text += `\n${line.trim()}`;
           continue;
         }
         prose.push(line);
@@ -553,9 +650,25 @@ export function blocks(text) {
  * there is nothing to indent into, and a real indent stack would need a notion
  * of a line that tasks.js does not have.
  */
-export const BULLET = /^[ \t]*[-*+][ \t]+(.*)$/;
+const BULLET = /^[ \t]*[-*+][ \t]+(.*)$/;
 /** `1.` and `1)`, the two GitHub renders. The author's start number is kept. */
-export const ORDERED = /^[ \t]*(\d{1,9})[.)][ \t]+(.*)$/;
+const ORDERED = /^[ \t]*(\d{1,9})[.)][ \t]+(.*)$/;
+
+/**
+ * A quote needs no space after its `>`, unlike a bullet: `>text` is a quote on
+ * GitHub, and there is no `>flag` the way there is a `-flag` for it to eat.
+ * Exactly one space is eaten if there is one, so an indent inside a quote is
+ * the author's and survives.
+ *
+ * ponytail: a quote's content is one prose paragraph, whatever it contains --
+ * a bullet, a heading, a fence or a nested `> >` inside one shows as its own
+ * text. Give the quote its own blocks() pass when a description needs it. A
+ * checklist line is the one that cannot wait quietly: `> - [ ]` is a checkbox
+ * on GitHub and prose here, but TASK in tasks.js does not match it either, so
+ * both sides skip it and the tick indices stay in step. Anything that starts
+ * counting quoted lines has to change both.
+ */
+const QUOTE = /^[ \t]*>[ \t]?(.*)$/;
 
 /** One block as an element. The DOM half of blocks(); everything above is pure. */
 const blockNode = (b, onTask) => ({
@@ -566,6 +679,7 @@ const blockNode = (b, onTask) => ({
   // Offset by two: the pane's own <h1> names it and the PR title is the <h2>,
   // so a description's top-level heading sits under both.
   heading: () => h(`h${Math.min(b.level + 2, 6)}`, { innerHTML: inline(b.text) }),
+  quote: () => h('blockquote', { innerHTML: inline(b.text) }),
   task: () => taskRow(b, onTask),
   list: () => h(b.ordered ? 'ol' : 'ul', b.start > 1 ? { start: b.start } : {},
     ...b.items.map((t) => h('li', { innerHTML: inline(t) }))),
@@ -624,22 +738,13 @@ export function sectionize(list) {
  */
 function sectionNode(s, onTask) {
   const tasks = s.nodes.filter((b) => b.kind === 'task');
-  const d = h('details', {
-    className: 'fold md-section', open: openSections.has(s.key), dataset: { key: s.key },
-  },
-    h('summary', {},
-      h('h3', {}, s.title),
-      // So a fold never hides work without saying so.
-      tasks.length
-        ? h('span', { className: 'count' }, `${tasks.filter((b) => b.done).length}/${tasks.length}`)
-        : null),
-    h('div', { className: 'sec-body' }, ...s.nodes.map((b) => blockNode(b, onTask))));
-  // Fires for a click and for the `open` above, which re-adds a key already in
-  // the set -- idempotent either way.
-  d.addEventListener('toggle', () => {
-    if (d.open) openSections.add(s.key); else openSections.delete(s.key);
-  });
-  return d;
+  return fold({
+    className: 'md-section', dataset: { key: s.key }, title: s.title,
+    // So a fold never hides work without saying so.
+    count: tasks.length ? `${tasks.filter((b) => b.done).length}/${tasks.length}` : null,
+    open: openSections.has(s.key),
+    onToggle: (open) => { if (open) openSections.add(s.key); else openSections.delete(s.key); },
+  }, s.nodes.map((b) => blockNode(b, onTask)));
 }
 
 /**
@@ -653,7 +758,11 @@ function description(body, onTask) {
   const { lead, sections } = sectionize(blocks(body));
   // A description that is one heading and nothing else would fold to a single
   // line showing nothing at all.
-  if (!lead.length && sections.length === 1) openSections.add(sections[0].key);
+  // Once per pull request, not once per poll. renderPr runs every 60s, and
+  // without the flag a reader who collapses that one section watches it reopen
+  // a minute later, every minute.
+  if (autoOpen && !lead.length && sections.length === 1) openSections.add(sections[0].key);
+  autoOpen = false;
   return [
     ...lead.map((b) => blockNode(b, onTask)),
     ...sections.map((sec) => sectionNode(sec, onTask)),
@@ -691,11 +800,11 @@ export const HEADING = /^(#{1,6})\s+(.*)$/;
  * counts of checklist lines have to match -- so anything added here that could
  * delete or merge a line containing a `- [ ]` breaks the tick, silently.
  */
-export const withoutHtml = (text) => (text ?? '')
-  .replace(/<!--[\s\S]*?-->/g, '')
+export const withoutHtml = (text) => hideComments(text ?? '')
   .replace(/<\/?details[^>]*>/g, '')
-  .replace(/<summary[^>]*>([\s\S]*?)<\/summary>/g,
-    (_, t) => `#### ${t.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim()}`);
+  // The heading is one line, and the summary's other lines stay behind it empty.
+  .replace(summary(), (s, t) =>
+    `#### ${t.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim()}${'\n'.repeat(s.split('\n').length - 1)}`);
 
 /** A checkbox in the description, ticked through to GitHub. */
 function taskRow({ done, text, index }, onTask) {
@@ -718,17 +827,52 @@ function taskRow({ done, text, index }, onTask) {
  * because a bare `*` mid-word is vanishingly rare in prose and common only in
  * globs, which live in code spans and are already out of reach.
  */
-export const inline = (s) => {
+export const inline = (s, where = links) => {
   const code = [];
+  const a = (href, text) => `<a href="${href}" target="_blank" rel="noopener">${text}</a>`;
   return escape(s)
     .replace(/`([^`]+)`/g, (_, c) => `\u0000${code.push(c) - 1}\u0000`)
     .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
     .replace(/\*([^*\n]+)\*/g, '<em>$1</em>')
     .replace(/(?<![A-Za-z0-9_])_([^_\n]+)_(?![A-Za-z0-9_])/g, '<em>$1</em>')
-    .replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
-    .replace(/(^|[\s(])(https?:\/\/[^\s)]+)/g, '$1<a href="$2" target="_blank" rel="noopener">$2</a>')
+    .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (m, text, href) => {
+      const url = target(href, where);
+      return url ? a(url, text) : m;
+    })
+    .replace(/(^|[\s(])(https?:\/\/[^\s)]+)/g, (_, pre, url) => pre + a(url, url))
+    // After the two link rules, so a `#` inside an href this just built is not
+    // a mention: those are preceded by a path character, and a mention has to
+    // start a word. Same match as linkedIssues() in github.js, which is what
+    // puts the same numbers in the Mentions row.
+    .replace(/(^|[\s(])#(\d+)\b/g, (m, pre, n) =>
+      (where ? `${pre}${a(`${where.repo}/issues/${n}`, `#${n}`)}` : m))
     .replace(/\n/g, '<br>')
     .replace(/\u0000(\d+)\u0000/g, (_, i) => `<code>${code[i]}</code>`);
 };
 
-const escape = (s) => s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+/**
+ * Where a link in a description actually points, or null for one this pane will
+ * not open -- which stays as its own source, the way everything else it does
+ * not know does.
+ *
+ * The null is the guard as much as the fallback: this href is interpolated into
+ * an `href="..."` and set with innerHTML, so `javascript:` and `data:` targets
+ * are a typed turn into the running claude session away (see escape() below).
+ * Only http(s) and repository-relative paths get through; a bare `#anchor` is a
+ * position on a page prcoder is not, so it is left alone too.
+ */
+const target = (href, where) => {
+  if (/^https?:\/\//.test(href)) return href;
+  if (/^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith('#')) return null;
+  return where ? `${where.repo}/blob/${where.ref}/${href.replace(/^\.?\//, '')}` : null;
+};
+
+// Quotes as well as angle brackets. inline() interpolates a link's URL into an
+// href="..." attribute and blockNode() sets the result with innerHTML, so a `"`
+// left raw closes the attribute and whatever follows is parsed as another one --
+// including an inline event handler, which innerHTML does fire. The page holding
+// this pane is the page holding the /pty socket, so that is a typed turn into
+// the running claude session, from a description anyone can write.
+const escape = (s) => s.replace(/[&<>"']/g, (c) => ({
+  '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+}[c]));

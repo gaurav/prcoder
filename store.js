@@ -7,10 +7,12 @@
 // the branch switcher disabling itself permanently. This is the fix for that
 // whole class of problem.
 //
-// One file holds every branch's items in one flat array, each tagged with the
-// branch it belongs to. The queue reads as per-branch because a checkout used
-// to swap FUTURE.md; an ignored directory does not swap, so the scoping has to
-// be written down.
+// One file, one flat array, every item visible whatever is checked out. It was
+// scoped per branch for a while, because a checkout used to swap FUTURE.md and
+// an ignored directory does not swap. That turned out to hide items rather than
+// organise them: moving to an unrelated branch mid-task took the list away, and
+// merging a branch put its unfinished items permanently out of reach. Issue #48
+// is where a better answer would go if one is wanted.
 
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -22,7 +24,7 @@ const PORT_FILE = 'port.json';
 // Bump only when an existing field changes meaning. Adding a field does not
 // need one: reads fill in what is missing, so an older prcoder skips a field it
 // does not know rather than failing on it.
-export const VERSION = 1;
+const VERSION = 1;
 
 const dir = (repo) => path.join(repo, DIR);
 const file = (repo) => path.join(dir(repo), FILE);
@@ -32,17 +34,18 @@ const EMPTY = { version: VERSION, items: [] };
 
 /**
  * Every field, coerced. The client PUTs back the array it was handed, which
- * decorate() has added a derived `issueUrl` to and which carries a `branch`
- * that may be a checkout out of date — so this constructs rather than spreads.
+ * decorate() has added a derived `issueUrl` to — so this constructs rather than
+ * spreads, and a `branch` left on an item by an older prcoder is dropped here.
  * The markdown writer dropped unknown fields for free; JSON would keep them.
  */
-export const pick = (branch) => (i) => ({
+export const pick = (i) => ({
   text: String(i?.text ?? ''),
   done: !!i?.done,
   inPr: !!i?.inPr,
+  // Which PR's description it is mirrored into. Meaningless once it is not.
+  pr: i?.inPr && Number.isInteger(i?.pr) ? i.pr : null,
   issue: Number.isInteger(i?.issue) ? i.issue : null,
   deleted: !!i?.deleted,
-  branch,
 });
 
 /**
@@ -69,15 +72,19 @@ export function normalise(raw) {
   if (Number(parsed.version) > VERSION) return { store: EMPTY, stale: true };
 
   return {
-    store: { version: VERSION, items: parsed.items.map((i) => pick(String(i?.branch ?? ''))(i)) },
+    store: { version: VERSION, items: parsed.items.map(pick) },
     stale: false,
   };
 }
 
-/** The store, plus whether the bytes behind it need moving aside on write. */
+/**
+ * The store, whether the bytes behind it need moving aside on write, and whether
+ * there were any bytes at all -- which is not the same question as whether the
+ * list is empty, and the one-time import in server.js has to ask the first.
+ */
 export async function readStore(repo) {
-  const raw = await fs.readFile(file(repo), 'utf8').catch(() => '');
-  return normalise(raw);
+  const raw = await fs.readFile(file(repo), 'utf8').catch(() => null);
+  return { ...normalise(raw ?? ''), exists: raw !== null };
 }
 
 /**
@@ -90,14 +97,16 @@ export async function readStore(repo) {
  * is worse than not doing this at all.
  */
 export async function writeStore(repo, store, { stale = false } = {}) {
+  if (stale) await fs.rename(file(repo), `${file(repo)}.bak`).catch(() => {});
+  await writeJson(repo, file(repo), { ...store, version: VERSION });
+}
+
+/** The temp-then-rename write above, for every file in the directory. */
+async function writeJson(repo, target, obj) {
   await fs.mkdir(dir(repo), { recursive: true });
   await writeIgnore(repo);
-
-  const target = file(repo);
-  if (stale) await fs.rename(target, `${target}.bak`).catch(() => {});
-
   const tmp = `${target}.${process.pid}.tmp`;
-  await fs.writeFile(tmp, `${JSON.stringify({ ...store, version: VERSION }, null, 2)}\n`);
+  await fs.writeFile(tmp, `${JSON.stringify(obj, null, 2)}\n`);
   await fs.rename(tmp, target);
 }
 
@@ -143,39 +152,7 @@ export async function readPort(repo) {
 }
 
 /** Written like the queue: temp file, then a rename, which is atomic in one directory. */
-export async function writePort(repo, port) {
-  await fs.mkdir(dir(repo), { recursive: true });
-  await writeIgnore(repo);
+export const writePort = (repo, port) => writeJson(repo, portFile(repo), { version: VERSION, port });
 
-  const target = portFile(repo);
-  const tmp = `${target}.${process.pid}.tmp`;
-  await fs.writeFile(tmp, `${JSON.stringify({ version: VERSION, port }, null, 2)}\n`);
-  await fs.rename(tmp, target);
-}
-
-/** '@{' is invalid in a ref name, so the detached bucket cannot collide. */
-export const branchKey = (branch) => branch || '@{detached}';
-
-export const forBranch = (store, branch) =>
-  store.items.filter((i) => i.branch === branchKey(branch));
-
-/**
- * The first item that belongs to a branch other than this one, if any.
- *
- * A tab can be up to a poll out of date, and Claude switches branches in the
- * terminal pane constantly. Without this, that tab's next write stamps the old
- * branch's items with the new branch and overwrites the new branch's slice
- * wholesale. Items typed since the last load carry no branch at all, so adding
- * to the queue still works while the tab catches up.
- */
-export const staleBranch = (items, branch) =>
-  items.find((i) => i.branch && i.branch !== branchKey(branch));
-
-/** This branch's items replaced, every other branch's left exactly as they were. */
-export const replaceBranch = (store, branch, items) => ({
-  ...store,
-  items: [
-    ...store.items.filter((i) => i.branch !== branchKey(branch)),
-    ...items.map(pick(branchKey(branch))),
-  ],
-});
+/** The whole list replaced, coerced on the way in. */
+export const replaceItems = (store, items) => ({ ...store, items: items.map(pick) });

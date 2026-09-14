@@ -2,7 +2,7 @@ import { Terminal } from '/vendor/xterm.mjs';
 import { FitAddon } from '/vendor/addon-fit.mjs';
 import { WebLinksAddon } from '/vendor/addon-web-links.mjs';
 import { renderPr, renderNoPr, renderHeader, renderQueueSync, pageTitle, api, toast } from './pr.js';
-import { openDiff, closeDiff, selectedPath } from './diff.js';
+import { openDiff, closeDiff, selectedPath, setViewed } from './diff.js';
 import { initQueue, addItem, setItems, freeze } from './queue.js';
 import './panes.js';   // draggable pane gutters; nothing here calls into it
 
@@ -36,7 +36,53 @@ const sync = () => {
   if (dims !== sent && send({ type: 'resize', cols: term.cols, rows: term.rows })) sent = dims;
 };
 
-ws.onmessage = (e) => term.write(e.data);
+// The tab icon, blue while Claude is working, so a session left in a
+// background tab says whether it is still going without switching to it.
+// The PTY carries no "thinking" signal, but it doesn't need one: Claude
+// repaints its spinner every few hundred ms mid-turn and prints nothing at all
+// while it waits for you. Measured 2026-09-11 against a turn with a 12s tool
+// call in it: no gap over 750ms until the turn ended, then silence. So the
+// bytes *are* the signal, and 2s of quiet is the end of a turn.
+//
+// Amber is deliberately not used: it is held for the third state, "stopped to
+// ask you something", which prcoder cannot see yet -- issue #51.
+//
+// One sequence has to come out of the signal first, because it is a question
+// rather than output. Claude asks the terminal where the cursor is (DSR,
+// `ESC [ ? 6 n`) every ~200ms for as long as the session is up, and xterm
+// answers every one, so the stream is never quiet for two seconds and the icon
+// stuck busy from the first paint onwards. It only happens against a terminal
+// that answers: measured 2026-09-12 against a bare PTY with nothing replying,
+// Claude asks once and never again, which is why a driver on a `cat` stub saw
+// nothing wrong. Dropping a frame that is nothing but probes is not parsing the
+// TUI -- it is a question for the terminal, answered by the terminal, and this
+// never looks at anything Claude drew.
+const PROBE = /^(?:\x1b\[\?6n)+$/;
+const link = document.querySelector('link[rel=icon]');
+// Derived, not written out a second time -- so the icon in index.html stays the
+// one definition of it. Change its colour there and change this to match.
+const IDLE = link.href;
+const BUSY = IDLE.replace('%23238636', '%231f6feb');
+// Re-inserted rather than mutated in place: browsers disagree about whether an
+// href changed on a live <link rel=icon> is noticed at all.
+// Tracked here rather than read back off the element: `link.href` returns the
+// URL re-resolved, and a compare against that is a compare against something
+// the browser wrote, not something this did.
+let shown = IDLE;
+const icon = (href) => {
+  if (shown === href) return;
+  shown = link.href = href;
+  link.remove();
+  document.head.append(link);
+};
+let quiet;
+ws.onmessage = (e) => {
+  term.write(e.data);
+  if (PROBE.test(e.data)) return;
+  icon(BUSY);
+  clearTimeout(quiet);
+  quiet = setTimeout(() => icon(IDLE), 2000);
+};
 // A tab the browser unloaded in the background comes back as a fresh page, and
 // the socket it closed on the way out has already killed the PTY — so this is a
 // new Claude session nobody asked for. sessionStorage is per-tab and survives
@@ -55,7 +101,11 @@ ws.onopen = () => {
     sessionStorage.setItem(PTY_SEEN, '1');
   } catch { /* private mode: no memory, so no claim about a previous session */ }
 };
-ws.onclose = () => term.write('\r\n\x1b[31m[claude exited — reload to restart]\x1b[0m\r\n');
+ws.onclose = () => {
+  clearTimeout(quiet);
+  icon(IDLE);
+  term.write('\r\n\x1b[31m[claude exited — reload to restart]\x1b[0m\r\n');
+};
 
 term.onData((d) => send({ type: 'input', data: d }));
 new ResizeObserver(sync).observe(document.getElementById('term-host'));
@@ -66,8 +116,6 @@ function sendToClaude(text) {
   send({ type: 'input', data: text + '\r' });
   term.focus();
 }
-
-const setViewed = (path, viewed) => api('/api/pr/viewed', { path, viewed });
 
 // The switcher only changes when PRs are opened or closed, so it is not worth a
 // call every minute — page load and opening the dropdown are enough.
@@ -105,7 +153,7 @@ async function toggleTask(task) {
 
 const fileHandlers = {
   onViewed: setViewed,
-  onOpen: (f) => openDiff(f, { onViewed: setViewed }),
+  onOpen: openDiff,
   onTask: toggleTask,
 };
 
@@ -134,7 +182,7 @@ function paint(status) {
   if (!open) return;
   const f = status.pr?.files.find((x) => x.path === open);
   if (!f) closeDiff();
-  else if (moved) openDiff(f, { onViewed: setViewed });
+  else if (moved) openDiff(f);
 }
 
 /**
@@ -174,15 +222,19 @@ async function switchPr(number) {
 }
 
 async function createPr(btn) {
-  // Opened before the await, or the popup blocker eats it.
+  // Opened before the await, or the popup blocker eats it. Blocked outright and
+  // this is null -- which used to throw on `win.location`, throw again on
+  // `win.close()` inside the catch, and leave the button disabled for good with
+  // nothing said. The request is still worth making; only the tab is lost.
   const win = window.open('', '_blank');
   btn.disabled = true;
   try {
     const { url, pushed } = await api('/api/pr/create');
-    win.location = url;
+    if (win) win.location = url;
+    else toast(`Popup blocked — the compare page is at ${url}`, true, true);
     if (pushed) toast('Pushed this branch to origin first.');
   } catch (e) {
-    win.close();
+    win?.close();
     toast(e.message, true);
   }
   btn.disabled = false;
@@ -205,14 +257,19 @@ document.addEventListener('visibilitychange', () => {
 });
 
 const input = document.getElementById('queue-input');
-input.addEventListener('keydown', (e) => {
+input.addEventListener('keydown', async (e) => {
   // Shift-Enter is the newline; plain Enter still saves, which is the whole
   // reason this is a textarea with a key handler rather than a form.
   if (e.key !== 'Enter' || e.shiftKey) return;
   e.preventDefault();
-  addItem(input.value);
-  input.value = '';
-  grow();
+  // Cleared only once the server has the item. addItem is async and save()
+  // reports a refusal with a toast rather than a throw, so clearing on the way
+  // past threw the text away on a stale-branch refusal, on any API failure, and
+  // on an Enter pressed during a branch switch.
+  if (await addItem(input.value)) {
+    input.value = '';
+    grow();
+  }
 });
 /** One line until it needs more, then up to a third of the pane. */
 const grow = () => {

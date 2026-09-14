@@ -16,7 +16,8 @@ someone else's repo).
 For handing the user a URL, or poking at it by hand:
 
 ```bash
-PRCODER_NO_OPEN=1 PRCODER_PORT=17433 node server.js > /tmp/prcoder.log 2>&1 &
+mkdir -p data
+PRCODER_NO_OPEN=1 PRCODER_PORT=17433 node server.js > data/prcoder.log 2>&1 &
 sleep 2
 curl -s localhost:17433/api/status | head -c 200   # pr, files, queue
 lsof -ti :17433 | xargs kill                       # `kill %1` does not survive a Bash call
@@ -33,10 +34,13 @@ and prints the URL on stdout. For a look with the user's own eyes, leave it runn
 them `http://localhost:17433`, or `open` it.
 
 API shape: the `routes` table in `server.js`, keyed `"METHOD /path"`, JSON
-in/out, errors as 500 `{error}`. All handlers are serialised — one slow call
-delays the rest, that's expected.
+in/out, errors as 500 `{error}`. Every handler but `/api/whoami` is serialised —
+one slow call delays the rest, that's expected.
 
 ## Verifying a change
+
+`docs/Verifying.md` is the standing account of what this repo checks and how -- read it before
+adding a check, and update it when you add one that outlives the session.
 
 ```bash
 node --test                # bare, never `node --test test/` (Node 26 breaks)
@@ -52,9 +56,9 @@ the `spawn` block near the top of `tools/browser.mjs`, not from here (line
 numbers go stale; the block does not).
 
 ```bash
-node tools/browser.mjs /tmp/shots                 # the browser: writes PNGs. Firefox
-                                                  # by default, which is the engine that
-                                                  # catches selection, focus and drag
+node tools/browser.mjs                            # the browser: writes PNGs to data/shots.
+                                                  # Firefox by default, which is the engine
+                                                  # that catches selection, focus and drag
 PRCODER_BROWSER=chromium node tools/browser.mjs   # the second engine, when a rendering
                                                   # difference is the question
 node tools/cli.mjs                                # the other half, in a real PTY: the

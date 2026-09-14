@@ -30,10 +30,12 @@ export function run(bin, args, { input, ...opts } = {}) {
           `  ${err ? `exit ${err.code}` : 'ok'} ${Date.now() - started}ms`);
         if (!err) return resolve(stdout);
         err.stderr = stderr;
+        // What the tool said, rather than Node's `Command failed: <argv>` -- which
+        // for an issue title is the whole title. Every catch reads e.message.
+        err.message = stderr.trim() || err.message;
         reject(err);
       });
-    if (input !== undefined) child.stdin.end(input);
-    else child.stdin.end();
+    child.stdin.end(input);
   });
 }
 
@@ -48,9 +50,9 @@ const PR_FIELDS = [
   'headRefOid', 'updatedAt', 'isCrossRepository',
 ].join(',');
 
-/** Just enough to know whether the PR moved, without the GraphQL viewed pass. */
-export async function prHeads(cwd, target) {
-  const args = ['pr', 'view', ...(target ? [target] : []), '--json', 'number,headRefOid,updatedAt,state'];
+/** `gh pr view`, or null when there is no PR to view. */
+async function viewPr(cwd, target, fields) {
+  const args = ['pr', 'view', ...(target ? [target] : []), '--json', fields];
   try {
     return JSON.parse(await gh(args, { cwd }));
   } catch (e) {
@@ -59,10 +61,22 @@ export async function prHeads(cwd, target) {
   }
 }
 
+/** Just enough to know whether the PR moved, without the GraphQL viewed pass. */
+export const prHeads = (cwd, target) => viewPr(cwd, target, 'number,headRefOid,updatedAt,state');
+
+/**
+ * A description with LF line endings. One saved from github.com's editor comes
+ * back CRLF -- 9 of cli/cli's last 30 on 2026-09-13 -- and every line pattern
+ * here ends in `(.*)$`, where `.` stops at the `\r`: no line is a checkbox, a
+ * heading or a list, and a tick made on GitHub never reaches the queue. Both
+ * reads come through this, so nothing downstream has to know.
+ */
+export const lf = (body) => (body ?? '').replace(/\r\n/g, '\n');
+
 /** The description as GitHub has it right now, for a read-modify-write. */
 export async function prBody(cwd, prUrl) {
   const { body } = JSON.parse(await gh(['pr', 'view', prUrl, '--json', 'body'], { cwd }));
-  return body ?? '';
+  return lf(body);
 }
 
 /** Open PRs, for the switcher. */
@@ -77,25 +91,22 @@ export async function listPrs(cwd) {
  * second call and is merged in by path.
  */
 export async function loadPr(cwd, target) {
-  let pr;
-  try {
-    const args = ['pr', 'view', ...(target ? [target] : []), '--json', PR_FIELDS];
-    pr = JSON.parse(await gh(args, { cwd }));
-  } catch (e) {
-    if (/no pull requests found|no default remote|not a git repo/i.test(e.stderr ?? '')) return null;
-    throw e;
-  }
+  const pr = await viewPr(cwd, target, PR_FIELDS);
+  if (!pr) return null;
+  pr.body = lf(pr.body);
 
   const { nodeId, viewed } = await viewedState(cwd, pr.url);
-  const files = pr.files.map((f) => ({ ...f, viewed: viewed.get(f.path) === 'VIEWED' }));
+  // The raw lists are summarised here and not sent on: every poll carries this
+  // object to every tab, and nothing reads them past this point.
+  const { statusCheckRollup, closingIssuesReferences, comments, reviews, ...rest } = pr;
 
   return {
-    ...pr,
-    files,
+    ...rest,
+    files: pr.files.map((f) => ({ ...f, viewed: viewed.get(f.path) === 'VIEWED' })),
     nodeId,
-    checks: rollup(pr.statusCheckRollup),
+    checks: rollup(statusCheckRollup),
     issues: linkedIssues(pr),
-    counts: { comments: pr.comments?.length ?? 0, reviews: pr.reviews?.length ?? 0 },
+    counts: { comments: comments?.length ?? 0, reviews: reviews?.length ?? 0 },
   };
 }
 
