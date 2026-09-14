@@ -109,7 +109,8 @@ position crossed to the other tab and back, because the switch is what used to l
 into the `/api/status` response because neither of this repo's own descriptions contains a `>`; the
 splitters dragged to known coordinates and the page reloaded, and moved again from the keyboard —
 focus lands, an arrow moves the line by ten and shift-arrow by fifty, `Home` resets, and
-`aria-valuenow` reports the position as a percentage of the window; the switcher, both sync-light
+`aria-valuenow` reports the position as a percentage of the window and changes when the line moves
+(it was a ResizeObserver on the 1px gutter, which a move never resizes); the switcher, both sync-light
 states, the Deleted tab (which needed a tombstone put in through the API before it would render at
 all), the queue's synced light, the description's checkboxes and the disabled states; and both
 toasts, the four-second one watched to fade and the sticky one clicked away; the head's row of links out, whose right

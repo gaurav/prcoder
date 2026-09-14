@@ -38,6 +38,8 @@ const at = (r, from, g) => {
   return { left: b.left - r.left, top: b.top - r.top, bottom: r.bottom - b.bottom }[from];
 };
 
+const reports = [];
+
 for (const g of document.querySelectorAll('.gut')) {
   const { var: name, from } = g.dataset;
   const along = from === 'left' ? 'width' : 'height';
@@ -50,8 +52,7 @@ for (const g of document.querySelectorAll('.gut')) {
     const r = main.getBoundingClientRect();
     g.setAttribute('aria-valuenow', String(Math.round((at(r, from, g) / r[along]) * 100)));
   };
-  report();
-  new ResizeObserver(report).observe(g);
+  reports.push(report);
 
   g.addEventListener('pointerdown', (e) => {
     e.preventDefault();   // or the drag selects text across the panes
@@ -97,3 +98,14 @@ for (const g of document.querySelectorAll('.gut')) {
     save();
   });
 }
+
+// When to say it again. Not a ResizeObserver on the gutter, which is what this
+// was: a 1px line keeps its size while it moves, so a drag or an arrow key left
+// the number where the page load put it. A gutter moves when <main>'s custom
+// properties change (every drag, key and reset writes one), when its grid
+// template changes (the diff pane opening), or when the window does -- and any
+// of those can move the other gutters too, so all of them report.
+const reportAll = () => reports.forEach((report) => report());
+reportAll();
+new MutationObserver(reportAll).observe(main, { attributeFilter: ['style', 'class'] });
+new ResizeObserver(reportAll).observe(main);

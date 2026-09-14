@@ -255,13 +255,16 @@ const wPr = () => page.evaluate(() =>
   Math.round(document.querySelector('#pr').getBoundingClientRect().width));
 await page.locator('#gut-pr').focus();
 const focused = await page.evaluate(() => document.activeElement?.id);
+const valuenow = () => page.locator('#gut-pr').getAttribute('aria-valuenow');
 const before = await wPr();
+const nowBefore = await valuenow();
 await page.keyboard.press('ArrowRight');
 await page.waitForTimeout(50);
 const nudged = await wPr();
 await page.keyboard.press('Shift+ArrowRight');
 await page.waitForTimeout(50);
 const shoved = await wPr();
+const nowShoved = await valuenow();
 await page.keyboard.press('Home');
 await page.waitForTimeout(50);
 const homed = await page.evaluate(() =>
@@ -269,8 +272,9 @@ const homed = await page.evaluate(() =>
 console.log('keys:    ', `focus ${focused}, ${before} -> ${nudged} -> ${shoved}`,
   `  (want gut-pr, +10 then +50)`);
 console.log('home:    ', JSON.stringify(homed), '  (want "" -- back to the template)');
-console.log('valuenow:', await page.locator('#gut-pr').getAttribute('aria-valuenow'),
-  ' (want a percentage of <main>, not null)');
+// Moved, and said so: a ResizeObserver on the 1px gutter never fired on a move.
+console.log('valuenow:', `${nowBefore} -> ${nowShoved} -> ${await valuenow()} after Home`,
+  ' (want a percentage of <main> that moves with the keys and again with Home)');
 
 // Home just put the pane back on its 375px floor, which is the one width where
 // the balanced wrap does anything: a real title runs to three lines there, and
