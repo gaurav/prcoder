@@ -5,6 +5,12 @@ it does and how to run it, `docs/Design.md` for why it works the way it does --
 the guards, the threat model, the non-goals -- and `docs/Verifying.md` for what
 this repo checks and how. Keep those two true when you change what they describe.
 
+**The queue is being redesigned.** Before touching anything under the queue --
+the description mirror, `.prcoder/queue.json`, the queue pane -- read "Where the
+queue is going" in `docs/Design.md`: the mirror is frozen, and the new design
+(a local list plus a tab per source, with one-way moves) lives on `queue-tabs`,
+PR #27.
+
 ## Scratch work goes in `data/`
 
 `data/` is gitignored and is where anything temporary belongs -- driver
