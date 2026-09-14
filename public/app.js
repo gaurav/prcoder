@@ -140,7 +140,13 @@ const NOTES = {
  */
 async function toggleTask(task) {
   try {
-    await api('/api/pr/task', task);
+    const { body } = await api('/api/pr/task', task);
+    // The PR pane and the queue's PR tab both draw these boxes; a tick in one
+    // has to show in the other without waiting for the poll.
+    if (last?.pr) {
+      last.pr.body = body;
+      paint(last);
+    }
   } catch (e) {
     toast(e.message, true);
     loadStatus();
@@ -166,10 +172,11 @@ function paint(status) {
     renderPr({ ...status.pr, note: NOTES[status.scope] },
       { ...fileHandlers, selected: selectedPath() });
   } else renderNoPr(status, { onCreate: createPr });
-  // Mirroring needs the PR to be *this* branch's: prcoder will not write our
-  // items into a PR we are only looking at, so the controls that would ask it
-  // to must disable themselves rather than silently do nothing.
-  if (status.queue) setItems(status.queue, status.scope === 'current');
+  // Moving an item in needs the PR to be *this* branch's: prcoder will not write
+  // into a PR we are only looking at, so the controls that would ask it to must
+  // disable themselves rather than silently do nothing. Reading its checklist
+  // into the PR tab needs only a PR on screen.
+  if (status.queue) setItems(status.queue, status.scope === 'current', status.pr);
 
   // Keep an open diff honest: close it if its file left the PR (or the PR
   // switched away), refresh it if the branch moved — the server cache is
@@ -277,5 +284,5 @@ input.addEventListener('input', grow);
 // needs it — renderHeader synthesises an option for the current PR until it
 // lands, and loadPrs repaints the header itself when it does.
 loadPrs();
-await initQueue({ sendToClaude });
+await initQueue({ sendToClaude, onTask: toggleTask });
 loadStatus();

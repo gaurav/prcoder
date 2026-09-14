@@ -65,6 +65,17 @@ test('Deleted is drawn only when it holds something', () => {
   assert.deepEqual(stripFor([LOCAL, DONE, GONE], 'local').strip, ['local', 'done', 'deleted']);
 });
 
+// The sources sit between Local and your list's other tabs, and only when they
+// exist: no PR on screen, no PR tab. Standing on one that goes away -- a switch
+// to a branch with no PR -- lands you back on Local like any emptied tab.
+test('source tabs sit after Local, and only the available ones are drawn', () => {
+  assert.deepEqual(stripFor([LOCAL, GONE], 'local', ['pr', 'issues']).strip,
+    ['local', 'pr', 'issues', 'done', 'deleted']);
+  assert.deepEqual(stripFor([], 'local', ['issues']).strip, ['local', 'issues', 'done']);
+  assert.equal(stripFor([], 'pr', ['pr', 'issues']).tab, 'pr');
+  assert.equal(stripFor([], 'pr', ['issues']).tab, 'local');
+});
+
 // Restoring the last tombstone empties Deleted while you are standing on it.
 // Without the fallback the pane keeps a `tab` no button matches: nothing is
 // highlighted and the list below is empty with no way back.

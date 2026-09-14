@@ -330,6 +330,8 @@ a { color: var(--accent); }
 .item .text:focus { box-shadow: 0 0 0 1px var(--accent); border-radius: 2px; }
 .item input[type=checkbox]:checked ~ .text { color: var(--dim); text-decoration: line-through; }
 .item .tag { font-size: 11px; text-decoration: none; padding: 0 5px; border: 1px solid var(--line); border-radius: 8px; }
+/* A mention on the Issues tab that is not an open issue: closed, or a PR. */
+.item.source.closed .text { color: var(--dim); }
 
 /* The row's only reliable drag handle: the text gives up draggable while it is
    being clicked, so the caret can land where you aimed. Unlike .actions it does

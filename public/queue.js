@@ -1,4 +1,4 @@
-import { h, btn, ext, api, toast } from './pr.js';
+import { h, btn, ext, api, toast, blocks, writeThrough } from './pr.js';
 import { TABS } from './items.js';
 
 // The client owns the list; every change persists the whole array. Single user,
@@ -27,12 +27,20 @@ export const freeze = (on) => { frozen = on; render(); };
  * the pane can keep focus indefinitely -- a clicked tab does, in Chromium -- and
  * freezing on it leaves the queue stale with nothing to unstick it.
  */
-export function setItems(next, prAvailable) {
+export function setItems(next, prAvailable, prOnScreen = null) {
   if (document.activeElement?.closest?.('#queue-body .text[contenteditable]')) return;
   items = next;
   hasPr = prAvailable;
+  pr = prOnScreen;
   render();
 }
+
+// The sources, read straight from where they live rather than kept in the
+// queue: the PR on screen, from the poll. Its description's checkboxes are the
+// PR tab, and the issues it mentions without closing are the Issues tab -- whose
+// titles are fetched when that tab is opened, since nothing else needs them.
+let pr = null;
+let openIssues = null;
 
 // Moving an item into a PR description needs this branch's own PR on screen.
 // Filing an issue does not, so that control stays live on a branch that has none.
@@ -96,7 +104,7 @@ const save = async (url = '/api/queue', method = 'PUT', body = { items }) => {
   return true;
 };
 
-const LABELS = { local: 'Local', done: 'Completed', deleted: 'Deleted' };
+const LABELS = { local: 'Local', pr: 'PR', issues: 'Issues', done: 'Completed', deleted: 'Deleted' };
 
 // Local is always there because an *empty* Local is the thing worth seeing --
 // it is how a tidy session ends. Completed is always there because it is where
@@ -104,9 +112,11 @@ const LABELS = { local: 'Local', done: 'Completed', deleted: 'Deleted' };
 const ALWAYS = ['local', 'done'];
 
 /**
- * Which tabs the strip draws, and which of them is active. Pure, and exported
- * only so it can be checked without a DOM -- render() is the sole caller and
- * decides neither for itself.
+ * Which tabs the strip draws, and which of them is active: your own list's tabs,
+ * with the `sources` that are available -- PR and Issues, when there is a PR on
+ * screen -- between Local and the rest. Pure, and exported only so it can
+ * be checked without a DOM -- render() is the sole caller and decides neither
+ * for itself.
  *
  * The tab you were on can empty and vanish from the strip -- restoring the last
  * tombstone does it -- leaving nothing highlighted and a list with no tab to
@@ -117,28 +127,47 @@ const ALWAYS = ['local', 'done'];
  * clicked, and a driver that clicks one that is missing hangs for 30s rather
  * than failing.
  */
-export function stripFor(list, active) {
-  const strip = Object.keys(TABS).filter((n) => ALWAYS.includes(n) || list.some(TABS[n]));
+export function stripFor(list, active, sources = []) {
+  const own = Object.keys(TABS).filter((n) => n !== 'local' && (ALWAYS.includes(n) || list.some(TABS[n])));
+  const strip = ['local', ...sources, ...own];
   return { strip, tab: strip.includes(active) ? active : 'local' };
 }
+
+/** The PR description's checklist, in the order a tick counts it. */
+const prTasks = () => (pr ? blocks(pr.body).filter((b) => b.kind === 'task') : []);
+
+/**
+ * The issues the description mentions and does not close. The ones it closes
+ * are what the PR already answers; a bare `#N` elsewhere is work it points at.
+ *
+ * ponytail: mentions only. Milestones, search and showing an issue here are a
+ * design of their own, and this tab is where they would go.
+ */
+const mentioned = () => (pr?.issues ?? []).filter((i) => !i.closes);
 
 function render() {
   const host = document.getElementById('queue-body');
   // Native, and it covers what a per-control `disabled` would miss: the
   // contentEditable text, the drag handles, focus.
   host.inert = frozen;
-  const count = (name) => items.filter(TABS[name]).length;
-  const { strip, tab: active } = stripFor(items, tab);
+  const { strip, tab: active } = stripFor(items, tab, pr ? ['pr', 'issues'] : []);
   tab = active;
-  const shown = items.filter(TABS[tab]);
+  // A source's count is what it still holds open; the list's own are its tabs.
+  const count = (name) => (name === 'pr' ? prTasks().filter((t) => !t.done).length
+    : name === 'issues' ? mentioned().length
+      : items.filter(TABS[name]).length);
+  const label = (n) => `${LABELS[n]} (${count(n)})`;
+  const shown = TABS[tab] ? items.filter(TABS[tab]) : [];
 
   host.replaceChildren(
     h('div', { className: 'tabs' },
-      ...strip.map((n) => tabBtn(n, `${LABELS[n]} (${count(n)})`)),
+      ...strip.map((n) => tabBtn(n, label(n))),
       h('span', { className: 'spacer' }),
       ...bulks(),
     ),
-    h('ul', { className: 'items' }, ...shown.map((i, n) => row(i, shown[n - 1], shown[n + 1]))),
+    tab === 'pr' ? prList()
+      : tab === 'issues' ? issueList()
+        : h('ul', { className: 'items' }, ...shown.map((i, n) => row(i, shown[n - 1], shown[n + 1]))),
   );
 
   // Adding always lands in Local, so say so where that is not what you are
@@ -224,8 +253,72 @@ export function reorder(list, from, to) {
   return list;
 }
 
-const tabBtn = (name, label) =>
-  btn(label, () => { tab = name; render(); }, { className: tab === name ? 'tab on' : 'tab' });
+const tabBtn = (name, label) => btn(label, () => {
+  tab = name;
+  render();
+  if (name === 'issues') loadIssues();
+}, { className: tab === name ? 'tab on' : 'tab' });
+
+/** Titles, refetched on every visit to the tab: issues change on GitHub, not here. */
+async function loadIssues() {
+  try {
+    openIssues = new Map((await api('/api/issues', undefined, 'GET')).map((i) => [i.number, i.title]));
+  } catch (e) {
+    toast(e.message, true);
+  }
+  if (tab === 'issues') render();
+}
+
+/**
+ * Copied into your queue, and left where it was: a checkbox in the description
+ * is the PR's record and an issue is the project's, so pulling an item is taking
+ * it on, not taking it away. Something already on Local is not added twice.
+ */
+async function pull(text, issue = null) {
+  if (items.some((i) => TABS.local(i) && i.text === text)) {
+    toast('already in your queue');
+    return;
+  }
+  const item = { text, done: false, issue, deleted: false };
+  if (addTo === 'top') items.unshift(item); else items.push(item);
+  if (await save()) toast(`added to your queue: ${text}`);
+  else items = items.filter((i) => i !== item);
+}
+
+/** The PR tab: the description's own checkboxes, ticked through to GitHub. */
+function prList() {
+  const tasks = prTasks();
+  if (!tasks.length) return h('p', { className: 'empty' }, `No checkboxes in PR #${pr.number}'s description.`);
+  return h('ul', { className: 'items' }, ...tasks.map((t) => {
+    const box = h('input', { type: 'checkbox', checked: t.done, title: 'tick this on GitHub' });
+    writeThrough(box, (v) => deps.onTask({ index: t.index, done: v, text: t.text }));
+    return h('li', { className: 'item source' },
+      box,
+      h('span', { className: 'text', textContent: t.text }),
+      h('span', { className: 'actions' },
+        btn('↓', () => pull(t.text), { title: 'copy into your queue' })));
+  }));
+}
+
+/**
+ * The Issues tab: what the description mentions without closing. A mention that
+ * is not among the open issues is a closed one, or a pull request -- a bare `#N`
+ * is either on GitHub -- and says so rather than disappearing, since the
+ * description still points at it.
+ */
+function issueList() {
+  const list = mentioned();
+  if (!list.length) return h('p', { className: 'empty' }, `PR #${pr.number}'s description mentions no issues it does not close.`);
+  return h('ul', { className: 'items' }, ...list.map((i) => {
+    const title = openIssues?.get(i.number);
+    const text = title ?? (openIssues ? 'not an open issue' : '…');
+    return h('li', { className: `item source${title || !openIssues ? '' : ' closed'}` },
+      ext(i.url, `#${i.number}`, { className: 'tag issue' }),
+      h('span', { className: 'text', textContent: text }),
+      h('span', { className: 'actions' },
+        btn('↓', () => pull(title ?? `#${i.number}`, i.number), { title: 'copy into your queue' })));
+  }));
+}
 
 /**
  * What a row's drag carries. Its own type, not text/plain: a link or a text

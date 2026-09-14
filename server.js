@@ -11,7 +11,7 @@ import { createHash } from 'node:crypto';
 import { text as readBody } from 'node:stream/consumers';
 import { spawn as ptySpawn } from 'node-pty';
 import { WebSocketServer } from 'ws';
-import { loadPr, prHeads, prBody, listPrs, setViewed, setBody, createIssue, fetchPatches, runCount } from './github.js';
+import { loadPr, prHeads, prBody, listPrs, listIssues, setViewed, setBody, createIssue, fetchPatches, runCount } from './github.js';
 import { snapshot, currentBranch, repoInfo, prScope, compareUrl, checkoutPr, pushBranch, remoteBranchHead } from './git.js';
 import { groupFiles, fileUrl } from './files.js';
 import { appendTasks, toggleTask } from './queue.js';
@@ -354,6 +354,8 @@ const routes = {
 
   'GET /api/prs': () => listPrs(repo),
 
+  'GET /api/issues': () => listIssues(repo),
+
   'POST /api/pr/switch': async ({ number }) => {
     await checkoutPr(repo, number);
     term.verbose(`checked out PR #${number}`);
@@ -397,7 +399,9 @@ const routes = {
     // and the client says so.
     await editBody((current) => toggleTask(current, index, done, text));
     term.verbose(`${done ? 'ticked' : 'unticked'} a checkbox in PR #${pr.number}'s description`);
-    return { ok: true };
+    // The body GitHub now has, so both panes that show its checkboxes can
+    // repaint from it rather than wait a minute for the poll to agree.
+    return { body: pr.body };
   },
 
   'POST /api/diff': async ({ path: p }) => {
