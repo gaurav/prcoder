@@ -687,12 +687,14 @@ const wss = new WebSocketServer({ server, path: '/pty' }).on('error', () => {}).
  * byte-identical: rewriting it would be prcoder's last write to a tracked
  * file, done unasked, on the way to never writing one again.
  *
- * Once per repo, for the branch you started on. Telling "never imported" from
- * "you deleted them all" needs bookkeeping this does not earn.
+ * Once per repo: the file existing is the whole record of it.
  */
 async function importFuture() {
-  const { store, stale } = await readStore(repo);
-  if (store.items.length || stale) return;
+  // Any queue file at all means this has run, or a queue was kept without it. An
+  // empty one is a queue somebody emptied: testing for items here brought every
+  // FUTURE.md item back on the next start after the last one was cleared.
+  const { store, exists } = await readStore(repo);
+  if (exists) return;
 
   const text = await fs.readFile(path.join(repo, 'FUTURE.md'), 'utf8').catch(() => '');
   const items = parseFuture(text);

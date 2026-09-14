@@ -77,10 +77,14 @@ export function normalise(raw) {
   };
 }
 
-/** The store, plus whether the bytes behind it need moving aside on write. */
+/**
+ * The store, whether the bytes behind it need moving aside on write, and whether
+ * there were any bytes at all -- which is not the same question as whether the
+ * list is empty, and the one-time import in server.js has to ask the first.
+ */
 export async function readStore(repo) {
-  const raw = await fs.readFile(file(repo), 'utf8').catch(() => '');
-  return normalise(raw);
+  const raw = await fs.readFile(file(repo), 'utf8').catch(() => null);
+  return { ...normalise(raw ?? ''), exists: raw !== null };
 }
 
 /**
