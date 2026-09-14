@@ -15,67 +15,38 @@ Agent HQ is a cloud fleet dashboard. None of them treats the pull request as the
 prcoder is a prototype for finding out whether a PR-shaped workspace beats a chat-shaped one. It is
 deliberately cheap to throw away.
 
-## Where the queue is going
+## The queue is yours
 
-The queue below is on its way out, and nothing new should be built on it. It was started on the idea
-that one list could *be* every place work lives — the PR description, FUTURE.md, issues — and move
-items between them, and keeping that two-way mirror correct is what the guards in the next section
-are for. In use, the queue works best as something smaller: your own TODO list for this working copy,
-kept in `.prcoder/`.
+The queue is your own TODO list for this working copy, kept in `.prcoder/queue.json` and nowhere
+else. It started as something bigger — one list that *was* every place work lives, two-way mirrored
+into a block in the PR description, with guards to stop that sync burying items — and in use it
+worked best as the smaller thing. That redesign, decided 2026-09-14, is [#27](https://github.com/gaurav/prcoder/pull/27).
 
-The direction, decided 2026-09-14 and carried by [#27](https://github.com/gaurav/prcoder/pull/27)
-(`queue-tabs`):
+**Moving an item out is one-way.** ◇ appends it to the PR description as a checkbox and ◎ files it
+as an issue; either way it is written there first and taken off the list after (`moveOut` in
+[`server.js`](../server.js)). That order is the one whose failure is recoverable: a write that did
+not land leaves the item where it was, and a store write that fails after one that did leaves it in
+both places and says so, rather than in neither. Nothing reads a description back into the queue,
+so there is no merge to get wrong: no tombstoning an item for being absent from a block, and no
+latch for a description that fell behind. The description write re-reads the body first and never
+falls back to a cached copy (`editBody`) — a read that did not happen says nothing about what the
+description holds now.
 
-- **The queue is yours.** Local, done and deleted items, stored in `.prcoder/queue.json` and nowhere
-  else.
-- **Each permanent source gets a tab of its own**, read straight from the source: the PR
-  description's checklist, issues (grouped by milestone), and later FUTURE.md. The question a tab
-  answers is "what does this PR's description still need?", and pulling an item from it adds it to
-  your queue.
-- **Moving an item to a source is one-way.** It is appended to the description, filed as an issue,
-  or written to FUTURE.md, and it leaves the queue. No mirror, no sync, and so none of the guards
-  below: no `syncFromPrBlock`, no `ours()`/`belongs()`, no `mirrorFailed` latch, no `pr` field.
-  Items already mirrored stay in the queue as local items rather than being dropped.
-- **Quitting with local items still in the queue** asks whether to move them somewhere durable, so
-  the work can be picked up on another machine.
+**Only the checked-out branch's PR is written to** — `ours()` in [`server.js`](../server.js).
+`prcoder <pr-url>` pins a PR that is not the checkout's, and appending your list to a stranger's
+description is not a move anybody asked for. It fails closed while the PR is still loading.
 
-The order of work: #27 first gets the base merged in, then replaces mirroring with move routes, then
-turns its flag-filtered PR and Issues tabs into views of the sources. FUTURE.md as a source, the
-interactive quit prompt and a milestone filter are follow-ups of their own. Until #27 merges, the
-mirror in this branch is correct but frozen: fix it if it loses work, and otherwise leave it.
+**Each permanent source is a tab, read straight from it.** PR is the description's checklist, and
+Issues is the issues the description mentions without closing; pulling from either copies the item
+into Local and leaves the source alone, since a checkbox is the PR's record and an issue is the
+project's. Issues is deliberately that narrow for now: an upcoming milestone to focus on, search, and
+showing an issue in the pane are a design still to be settled. FUTURE.md as a source, and quitting
+with items still on Local offering to move them somewhere durable, are follow-ups of their own.
 
-## Three guards, because the obvious version loses work
-
-The queue lives in `.prcoder/queue.json` and the PR description is a *projection* of it, never the
-other way round. Two guards keep that one-directional, and each closes a path where an item
-disappears with nobody noticing. Each is a few lines; each is argued at its own function.
-
-**Mirror only the checked-out branch's PR** — `ours()` in [`server.js`](../server.js).
-`syncFromPrBlock` tombstones any mirrored item missing from the description's block, which is only
-safe when the queue and the description came from the same branch — and, now that the queue is one
-list for the repo, only for the items that were mirrored into *that* PR. Each item records its PR in
-`pr`, and `belongs()` in [`queue.js`](../queue.js) keeps another PR's items out of this block in both
-directions: not written into it, and not buried for being absent from it. `prcoder <pr-url>` pins a PR that
-is not the checkout's, and without this gate prcoder merges your items against a stranger's block,
-burying all of them, *and* writes your queue into their description. It fails closed: a missed merge
-is recovered by the next poll, where a wrong one is not.
-
-**Don't trust a description we failed to write** — the `mirrorFailed` latch in `writeQueue`. When
-`setBody` fails, the store already has the change and GitHub is behind; treating that stale body as
-evidence on the next poll buries the item that failed to go out. The latch suspends the *merge* and
-only the merge, because the only thing that can clear it is a successful write of the queue's block —
-a latch that also stopped writing would be one nothing could open. A checkbox ticked elsewhere in the
-description does not count: that write sends GitHub's stale block straight back. It is held per pull request, because only a write
-to *that* description is evidence that it caught up: one flag for all of them was cleared by a write
-to another PR, and the description still behind was trusted again. Neither side of that write falls
-back to a body it failed to read: a read that did not happen says nothing about what the description
-holds now.
-
-There was a third — a per-branch queue, and a guard refusing a write from a branch the tab had
-left. It is gone, and [#48](https://github.com/gaurav/prcoder/issues/48) holds what replaced it and
-why: scoping the list to the checkout hid items rather than organising them. Moving to an unrelated
-branch mid-task took the list away, and merging a branch put its unfinished items out of reach for
-good. One list for the repo is the behaviour to beat.
+The queue was scoped per branch once, with a guard refusing a write from a branch the tab had left.
+That is gone too, and [#48](https://github.com/gaurav/prcoder/issues/48) holds why: scoping the list
+to the checkout hid items rather than organising them. Moving to an unrelated branch mid-task took
+the list away, and merging a branch put its unfinished items out of reach for good.
 
 ## What a localhost server is exposed to
 
@@ -124,9 +95,9 @@ alerts are not alerts here. Everything past that is
 [#41](https://github.com/gaurav/prcoder/issues/41)'s decision to take; one more paper cut is an
 argument for settling it rather than for continuing.
 
-**The queue is machine-local**, which is the trade for not writing your files. Mirroring an item
-into the PR description is how you carry it to another machine, and separate worktrees keep separate
-queues. There is no conflict detection between two tabs racing on one repo — last write wins on the
+**The queue is machine-local**, which is the trade for not writing your files. Moving an item into
+the PR description or an issue is how you carry it to another machine, and separate worktrees keep
+separate queues. There is no conflict detection between two tabs racing on one repo — last write wins on the
 whole list. A write-side guard was written and cut: it misses the case that actually
 happens (two tabs on one server, where the mtime matches because the same process wrote it), and
 merging on conflict needs item identity, which text is not. The upgrade, if a lost item is ever
