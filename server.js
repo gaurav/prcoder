@@ -8,6 +8,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
+import { text as readBody } from 'node:stream/consumers';
 import { spawn as ptySpawn } from 'node-pty';
 import { WebSocketServer } from 'ws';
 import { loadPr, prHeads, prBody, listPrs, setViewed, setBody, createIssue, fetchPatches, runCount } from './github.js';
@@ -541,9 +542,8 @@ async function handleApi(req, res, key) {
       .end(JSON.stringify({ error: 'cross-origin request refused' }));
   }
   try {
-    const chunks = [];
-    for await (const c of req) chunks.push(c);
-    const body = chunks.length ? JSON.parse(Buffer.concat(chunks)) : undefined;
+    const raw = await readBody(req);
+    const body = raw ? JSON.parse(raw) : undefined;
     // Serialised, and resolved *before* the header goes out: writing the 200
     // first means a throwing handler hits writeHead twice, and the second one
     // takes the whole process down with ERR_HTTP_HEADERS_SENT.
