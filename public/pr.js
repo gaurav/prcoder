@@ -175,16 +175,18 @@ export function renderHeader(status, prs, { onSwitch, onCommit }) {
   paintLight('pr-sync', headerSync(status));
 }
 
-// The same words the terminal's status block uses (SYNC in server.js). `ahead`
-// is not in the table because it counts.
+// `ahead` is not in the table because it counts.
 const SYNC = { behind: 'pull needed', diverged: 'diverged', unpushed: 'not pushed' };
 
+/** The sync light's words, shared with the terminal's status block in server.js. */
+export const syncPhrase = (s) => (s.sync === 'ahead' ? `${s.ahead} unpushed` : SYNC[s.sync] ?? null);
+
 /** Pure: the status -> the PR pane's light, or null for nothing worth saying. */
-export function headerSync(status) {
+function headerSync(status) {
   if (status.error) return { className: 'light unknown', text: 'unavailable' };
   if (status.scope === 'other-repo') return { className: 'light', text: 'another repo' };
   if (status.scope === 'other-branch') return { className: 'light', text: 'not checked out' };
-  const out = status.sync === 'ahead' ? `${status.ahead} unpushed` : SYNC[status.sync];
+  const out = syncPhrase(status);
   if (out) return { className: 'light warn', text: out };
   if (status.detached) return { className: 'light', text: 'detached HEAD' };
   return null;

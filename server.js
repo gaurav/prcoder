@@ -16,6 +16,7 @@ import { groupFiles, fileUrl } from './files.js';
 import { parseFuture, renderPrBlock, syncFromPrBlock, toggleTask } from './queue.js';
 import { readStore, writeStore, readPort, writePort, replaceItems } from './store.js';
 import * as term from './term.js';
+import { syncPhrase } from './public/pr.js';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const repo = process.cwd();
@@ -283,12 +284,6 @@ export const ago = (ms) => {
   const mins = Math.round(ms / 60_000);
   return mins < 60 ? `checked ${mins}m ago` : `checked ${Math.round(mins / 60)}h ago`;
 };
-
-// The same words the pane's sync light uses (public/pr.js). The browser cannot
-// import this file, so the two lists are kept in step by hand -- a terminal and
-// a pane disagreeing about the same branch is worse than the duplication.
-const SYNC = { behind: 'pull needed', diverged: 'diverged', unpushed: 'not pushed' };
-const syncPhrase = (s) => (s.sync === 'ahead' ? `${s.ahead} unpushed` : SYNC[s.sync] ?? null);
 
 /**
  * Whether the queue has reached GitHub. `mirrorFailed` is the state worth
