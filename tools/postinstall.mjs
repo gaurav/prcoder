@@ -16,17 +16,16 @@ import path from 'node:path';
 
 const prebuilds = path.join(import.meta.dirname, '..', 'node_modules', 'node-pty', 'prebuilds');
 
-let dirs = [];
-try {
-  dirs = readdirSync(prebuilds);
-} catch {
-  // No prebuilds at all: node-pty built from source, or is not installed yet.
-}
+// Absent is the only failure that means "nothing to do". A permission or I/O
+// error still leaves a helper nobody could make executable, and swallowing it
+// reported a clean install whose every PTY spawn then failed the opaque way
+// described above -- the thing this script exists to prevent.
+const unlessMissing = (fn) => {
+  try { return fn(); } catch (e) { if (e.code !== 'ENOENT') throw e; }
+};
 
-for (const d of dirs) {
-  try {
-    chmodSync(path.join(prebuilds, d, 'spawn-helper'), 0o755);
-  } catch {
-    // This prebuild has no helper -- Windows ships none.
-  }
-}
+// No prebuilds at all: node-pty built from source, or is not installed yet.
+const dirs = unlessMissing(() => readdirSync(prebuilds)) ?? [];
+
+// A prebuild with no helper -- Windows ships none.
+for (const d of dirs) unlessMissing(() => chmodSync(path.join(prebuilds, d, 'spawn-helper'), 0o755));
