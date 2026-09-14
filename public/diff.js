@@ -22,7 +22,15 @@ export function diffRows(patch) {
 
 const el = (id) => document.getElementById(id);
 
-export async function openDiff(f, { onViewed }) {
+/** Ticking this here ticks the same checkbox on github.com; the file rows use it too. */
+export const setViewed = (path, viewed) => api('/api/pr/viewed', { path, viewed });
+
+/** Highlight the open file's row, or none. */
+const markSelected = (path) => {
+  for (const r of document.querySelectorAll('.file')) r.classList.toggle('sel', r.dataset.path === path);
+};
+
+export async function openDiff(f) {
   openPath = f.path;
   // A <bdi>, for the reason spelled out at fileRow in pr.js: this element is
   // `direction: rtl` so a long path is cut at the head, and that alone would
@@ -32,14 +40,13 @@ export async function openDiff(f, { onViewed }) {
   el('diff-gh').href = f.url;
   el('diff').hidden = false;
   document.querySelector('main').classList.add('diff-open');
-  for (const r of document.querySelectorAll('.file.sel')) r.classList.remove('sel');
-  document.querySelector(`.file[data-path="${CSS.escape(f.path)}"]`)?.classList.add('sel');
+  markSelected(f.path);
 
   // Same GraphQL round-trip the row checkboxes use; on success mirror the
   // row so the two boxes never disagree without a repaint.
   const box = el('diff-viewed');
   box.checked = f.viewed;
-  writeThrough(box, (v) => onViewed(f.path, v), (v) => {
+  writeThrough(box, (v) => setViewed(f.path, v), (v) => {
     const row = document.querySelector(`.file[data-path="${CSS.escape(f.path)}"]`);
     row?.classList.toggle('viewed', v);
     const rowBox = row?.querySelector('input[type=checkbox]');
@@ -74,5 +81,5 @@ export function closeDiff() {
   openPath = null;
   el('diff').hidden = true;
   document.querySelector('main').classList.remove('diff-open');
-  for (const r of document.querySelectorAll('.file.sel')) r.classList.remove('sel');
+  markSelected(null);
 }

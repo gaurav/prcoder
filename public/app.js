@@ -2,7 +2,7 @@ import { Terminal } from '/vendor/xterm.mjs';
 import { FitAddon } from '/vendor/addon-fit.mjs';
 import { WebLinksAddon } from '/vendor/addon-web-links.mjs';
 import { renderPr, renderNoPr, renderHeader, renderQueueSync, pageTitle, api, toast } from './pr.js';
-import { openDiff, closeDiff, selectedPath } from './diff.js';
+import { openDiff, closeDiff, selectedPath, setViewed } from './diff.js';
 import { initQueue, addItem, setItems, freeze } from './queue.js';
 import './panes.js';   // draggable pane gutters; nothing here calls into it
 
@@ -117,8 +117,6 @@ function sendToClaude(text) {
   term.focus();
 }
 
-const setViewed = (path, viewed) => api('/api/pr/viewed', { path, viewed });
-
 // The switcher only changes when PRs are opened or closed, so it is not worth a
 // call every minute — page load and opening the dropdown are enough.
 let prs = [];
@@ -155,7 +153,7 @@ async function toggleTask(task) {
 
 const fileHandlers = {
   onViewed: setViewed,
-  onOpen: (f) => openDiff(f, { onViewed: setViewed }),
+  onOpen: openDiff,
   onTask: toggleTask,
 };
 
@@ -184,7 +182,7 @@ function paint(status) {
   if (!open) return;
   const f = status.pr?.files.find((x) => x.path === open);
   if (!f) closeDiff();
-  else if (moved) openDiff(f, { onViewed: setViewed });
+  else if (moved) openDiff(f);
 }
 
 /**
