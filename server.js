@@ -623,7 +623,11 @@ const wss = new WebSocketServer({ server, path: '/pty' }).on('error', () => {}).
   ptys.add(pty);
   repaint();
   pty.onData((d) => ws.readyState === ws.OPEN && ws.send(d));
-  pty.onExit(() => ws.close());
+  // Out of the set as soon as it is dead, so askToQuit only ever kills live ones.
+  pty.onExit(() => {
+    ptys.delete(pty);
+    ws.close();
+  });
 
   // A throw in a 'message' listener reaches the emitter, and an uncaught
   // exception there takes the process down -- with it every *other* tab's
