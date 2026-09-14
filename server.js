@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // prcoder — a PR-focused shell around Claude Code.
-// Serves a three-pane UI at localhost and pipes a real `claude` PTY to the browser.
+// Serves a four-pane UI at localhost and pipes a real `claude` PTY to the browser.
 
 import http from 'node:http';
 import { spawn } from 'node:child_process';
