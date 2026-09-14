@@ -34,8 +34,8 @@ and prints the URL on stdout. For a look with the user's own eyes, leave it runn
 them `http://localhost:17433`, or `open` it.
 
 API shape: the `routes` table in `server.js`, keyed `"METHOD /path"`, JSON
-in/out, errors as 500 `{error}`. All handlers are serialised — one slow call
-delays the rest, that's expected.
+in/out, errors as 500 `{error}`. Every handler but `/api/whoami` is serialised —
+one slow call delays the rest, that's expected.
 
 ## Verifying a change
 

@@ -400,14 +400,17 @@ const repaint = () => term.status(last
   ? statusLines(last, { ...urls, tabs: wss.clients.size, age: Date.now() - checkedAt })
   : []);
 
+/**
+ * Routes that skip the serial lock. whoami is cached facts only, so it answers
+ * instantly -- the whole point: it is what a *second* prcoder calls to find out
+ * who took its port, and a probe queued behind a slow `gh` would time out and
+ * report the wrong thing.
+ */
+const UNLOCKED = new Set(['GET /api/whoami']);
+
 const routes = {
   'GET /api/status': () => status(),
 
-  /**
-   * Cached facts only, so it answers instantly. That is the whole point: it is
-   * what a *second* prcoder calls to find out who took its port, and a probe
-   * that waits on `gh` would time out and report the wrong thing.
-   */
   'GET /api/whoami': () => ({ prcoder: true, repo, branch: last?.branch ?? null,
     nameWithOwner: info?.nameWithOwner ?? null }),
 
@@ -546,7 +549,8 @@ async function handleApi(req, res, key) {
     // first means a throwing handler hits writeHead twice, and the second one
     // takes the whole process down with ERR_HTTP_HEADERS_SENT.
     const started = Date.now();
-    const payload = JSON.stringify(await serial(() => handler(body)) ?? null);
+    const result = UNLOCKED.has(key) ? handler(body) : serial(() => handler(body));
+    const payload = JSON.stringify(await result ?? null);
     term.debug(`${key} ${Date.now() - started}ms`);
     res.writeHead(200, { 'content-type': 'application/json' });
     res.end(payload);
