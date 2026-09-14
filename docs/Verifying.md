@@ -61,8 +61,9 @@ Every figure here was measured on `5f7d6cc`, in both engines.
 ## What gets checked, and where
 
 Unit tests cover the queue store, the port derivation, the description renderer, file grouping,
-GitHub's diff anchors, the sync verdict, every queue ↔ PR-description transition, the status block's
-wording, the queue light's states, and the terminal's own erase bookkeeping — the last because a
+GitHub's diff anchors, the sync verdict, the checklist lines a move appends to a description, the
+queue's tabs and how an older store migrates, the status block's wording, and the terminal's own
+erase bookkeeping — the last because a
 block that miscounts its rows either eats scrollback or leaves a smear, and both look like anything
 but an off-by-one.
 

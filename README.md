@@ -114,20 +114,18 @@ slash commands still work, permission prompts still appear, and typing while
 Claude is mid-turn queues the message the way it always has. Links Claude prints
 are clickable.
 
-**Queue** — throw an item in, drag to reorder, tick it off. Each item can be
-sent to Claude, mirrored into the PR description, or turned into a GitHub issue.
-An item that is in the PR description *and* becomes an issue has its PR line
-replaced by a link to the issue.
+**Queue** — your own TODO list for this working copy. Throw an item in, drag it
+(or focus its grip and use the arrow keys) to reorder, tick it off. Each item can
+be sent to Claude, or moved somewhere permanent: ◇ appends it to the PR
+description as a checkbox, ◎ files it as a new GitHub issue. A move is one-way —
+the item is written there and leaves the queue — so the description or the issue
+is where it lives from then on.
 
-The tabs are where an item has got to. **Local** is the working list: items that
-are only on this machine. Carrying one out to the PR with ◆ or filing it with ◎
-moves it to **PR** or **Issues**, so Local drains as you deal with things and a
+**Local** is the working list, and it drains as you move and finish things: a
 session you finished tidily ends with it empty. **Completed** is what you ticked
 off, with a delete-all for clearing it out, and **Deleted** holds tombstones
 until you empty it — nothing you typed disappears without somewhere to get it
-back. The tabs with nothing in them hide, except Local, whose emptiness is the
-thing worth seeing. An item can be in two at once — done *and* still in the PR is
-both true — so the counts do not add up to the list, on purpose.
+back. Every item is on exactly one tab, and Deleted hides when it holds nothing.
 
 New items go to the bottom, so typing them in builds a list in the order you
 mean to work through it. The arrow next to the input flips that to the top for
@@ -154,7 +152,7 @@ the port this working copy listens on.
   "version": 1,
   "items": [
     { "text": "Add retry to the fetch path",
-      "done": false, "inPr": false, "pr": null, "issue": null, "deleted": false }
+      "done": false, "issue": null, "deleted": false }
   ]
 }
 ```
@@ -165,24 +163,17 @@ moving to an unrelated branch mid-task took the list away, and merging a branch
 put its unfinished items out of reach for good. An older file's `branch` fields
 are dropped on the next write and those items come back.
 
-The queue is machine-local, which is the trade for not writing your files.
-The way to carry an item elsewhere is the ◆ button, which mirrors it into a
-`<!-- prcoder:todo -->` block in the PR description. Edits you make to that
-block on github.com — ticking a box, adding a line from your phone, deleting
-one — are folded back in on refresh. prcoder only mirrors into the pull request
-for the branch you have checked out: a PR you are merely looking at is never
-written to. An item records which PR it went into (`pr`), so it stays in that
-description when you move to another PR and is not taken for deleted there. Separate worktrees keep separate queues, since each has its own
-`.prcoder/`.
+The queue is machine-local, which is the trade for not writing your files, and
+moving an item out is how you carry it to another machine. ◇ writes only into
+the pull request for the branch you have checked out: a PR you are merely
+looking at is never written to. An earlier prcoder mirrored items into a block
+in the description instead; that file's `inPr` and `pr` fields are dropped too,
+and those items stay in the queue as ordinary ones rather than being taken for
+already moved. Separate worktrees keep separate queues, since each has its own
+`.prcoder/`. FUTURE.md is neither read nor written.
 
-If you have a `FUTURE.md` from an earlier version, its `## Queue` section is
-imported once, on the first run, and the file is never read or written again.
-
-Next to the pane's title is the queue's own light: whether the items you have
-mirrored are actually on GitHub. It reads `in the PR` when they are, and
-`not saved to the PR` when a write failed — prcoder keeps the change locally
-and stops trusting the description it can see until a write succeeds, so the
-light is how you know to stay open a moment longer.
+Quitting with items still on Local says how many, since nothing but this
+machine has them.
 
 ## The terminal you started it from
 
@@ -193,7 +184,7 @@ It keeps a status block pinned under a scrolling log:
 prcoder  gaurav/prcoder   initial-implementation → main   2 unpushed · 8 uncommitted
 PR #1    A browser workspace around a live Claude Code session
          https://github.com/gaurav/prcoder/pull/1
-queue    4 local · 1 done · 10 in the PR · 1 issue   queue mirrored
+queue    4 local · 1 done
 serving  http://localhost:17455   1 tab   q quit · r refresh · v verbose · o open
 ```
 
@@ -207,8 +198,8 @@ place and the log scrolls above it, so what happened stays in the scrollback.
 
 **Keys.** `r` polls now, which is the way to move the block without going back
 to the browser. `v` cycles quiet → verbose → debug. Verbose narrates the things
-that change something you care about — an item queued, ticked, mirrored into
-the description, filed as an issue, a PR checked out. Debug adds every `git` and
+that change something you care about — an item queued, ticked, moved into the
+description or an issue, a PR checked out. Debug adds every `git` and
 `gh` subprocess with its timing, the per-poll count of them, route timings, and
 a line when the PR has moved upstream. `PRCODER_VERBOSE=1` or `=2` starts at a
 level, which is the only way to see startup itself. `o` reopens the browser.
