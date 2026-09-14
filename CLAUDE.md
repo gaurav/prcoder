@@ -68,19 +68,20 @@ None of it exists without a tty. `process.stdout.isTTY` gates the block and
 -- which is what `tools/browser.mjs` (`stdio: 'ignore'`) is standing proof of.
 `tools/cli.mjs` drives the other half, in a real PTY.
 
-## Never write the queue's markers in prose
+## A marker alone on its own line is a block
 
-`splitPrBlock` in `queue.js` finds prcoder's block with `body.indexOf(OPEN)` —
-the *first* occurrence. Write `<!-- prcoder:todo -->` literally into a PR
-description's prose, as a sentence about how prcoder works, and the next queue
-write treats that sentence as the start of the block and replaces everything
-from it to the real closing marker. Half the description, gone, on a poll.
+`splitPrBlock` in `queue.js` takes prcoder's block to start at the first line
+that is exactly `<!-- prcoder:todo -->`, outside a fence, and to end at the
+next line that is exactly the closer. A marker quoted in a sentence or a code
+span is inert -- that was the old trap, where the *first* occurrence anywhere
+opened the block and the next queue write deleted everything from that sentence
+to the real closing marker (#9, caught one edit before a push on 2026-09-01).
 
-This repo describes prcoder in its own PRs, so the trap is live here rather
-than theoretical — it was caught in review on 2026-09-01, one edit before
-being pushed. Say "prcoder's own HTML-comment markers" instead, and if you must
-show the literal string, check that the body still contains exactly one of each
-marker before writing it.
+What is still live: put either marker on a line by itself, unfenced, anywhere
+in a description -- a pasted sample of the block, say -- and that line is the
+block. This repo describes prcoder in its own PRs, so show a sample inside a
+fence, and check the body still has exactly one unfenced line of each marker
+before writing it.
 
 A running prcoder rewrites that block from its store on every poll of a visible
 tab, so a `gh pr edit` against this repo's own PR can be silently reverted within
@@ -95,8 +96,10 @@ Inside the block, `done` is the only field the description owns: a `- [ ]` to
 one and by exact text otherwise, then tombstones every `inPr` item whose line
 has gone -- so editing an item's text or dropping a line buries the item. To
 change anything else, edit `.prcoder/queue.json` and regenerate the block with
-`renderPrBlock`, then check the round trip: `syncFromPrBlock(items, newBody)`
-should give back the items you started with.
+`renderPrBlock(items, body, prNumber)`, then check the round trip:
+`syncFromPrBlock(items, newBody, prNumber)` should give back the items you
+started with. The number matters -- an item records the PR it was mirrored
+into, and a block leaves every other PR's items alone.
 
 ## The Claude pane is not prcoder's to draw on
 

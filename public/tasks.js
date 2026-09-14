@@ -68,6 +68,17 @@ export function fences(body) {
  */
 export function taskLines(body = '') {
   const visible = hideComments(body, ' ');
+  const fenced = fencedLines(body);
+  return visible.split('\n').flatMap((line, i) => (!fenced.has(i) && TASK.test(line) ? [i] : []));
+}
+
+/**
+ * The numbers of the body's lines that sit inside a fence, fence lines included.
+ * Comments are blanked first, the order the pane uses, so a ``` inside a comment
+ * opens nothing.
+ */
+export function fencedLines(body = '') {
+  const visible = hideComments(body, ' ');
   const fenced = new Set();
   const lineAt = (index) => visible.slice(0, index).split('\n').length - 1;
   // The same expression fences() matches with, so the two agree by
@@ -77,5 +88,5 @@ export function taskLines(body = '') {
   while ((m = re.exec(visible)) !== null) {
     for (let i = lineAt(m.index); i <= lineAt(re.lastIndex - 1); i++) fenced.add(i);
   }
-  return visible.split('\n').flatMap((line, i) => (!fenced.has(i) && TASK.test(line) ? [i] : []));
+  return fenced;
 }

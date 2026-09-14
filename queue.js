@@ -12,7 +12,7 @@
 // parseFuture is the one thing here that still reads FUTURE.md, for the
 // one-time import in server.js. Nothing writes that file.
 
-import { TASK, taskLines, hideComments } from './public/tasks.js';
+import { TASK, taskLines, hideComments, fencedLines } from './public/tasks.js';
 
 const HEADING = '## Queue';
 const OPEN = '<!-- prcoder:todo -->';
@@ -160,25 +160,31 @@ export function toggleTask(body, index, done, expected) {
   const box = visible.search(/\[( |x|X)\]/);
   lines[at] = `${lines[at].slice(0, box)}${done ? '[x]' : '[ ]'}${lines[at].slice(box + 3)}`;
 
-  const open = lines.findIndex((l) => l.includes(OPEN));
-  const close = lines.findIndex((l) => l.includes(CLOSE));
-  return {
-    body: lines.join('\n'),
-    inBlock: open !== -1 && at > open && (close === -1 || at < close),
-  };
+  const { found, open, close } = splitPrBlock(body ?? '');
+  return { body: lines.join('\n'), inBlock: found && at > open && at < close };
 }
 
 /**
- * indexOf, so the *first* marker wins. That makes a literal `<!-- prcoder:todo
- * -->` written into the description's prose — a sentence about how prcoder
- * works — read as the start of the block, and the next write replaces
- * everything from there to the real closing marker. See CLAUDE.md; anchoring
- * these to their own line would close it, at the cost of a migration for every
- * body already written with the markers where they are.
+ * The block, found by markers that are each alone on a line and outside any
+ * fence -- the only way renderPrBlock writes them. `open` and `close` are those
+ * lines' numbers.
+ *
+ * It used to be the first occurrence anywhere, so a description that quoted
+ * the marker in a sentence about how prcoder works had that sentence read as
+ * the start of the block, and the next write replaced everything from there to
+ * the real closing marker (#9). A marker placed by hand mid-line, or indented,
+ * is no longer a block either: the next write appends a fresh one below it,
+ * which leaves a duplicate for someone to delete rather than deleting prose.
  */
 function splitPrBlock(body = '') {
-  const start = body.indexOf(OPEN);
-  const end = start === -1 ? -1 : body.indexOf(CLOSE, start);
+  const lines = body.split('\n');
+  const fenced = fencedLines(body);
+  const find = (marker, from) => lines.findIndex((l, i) => i >= from && l === marker && !fenced.has(i));
+  const open = find(OPEN, 0);
+  const close = open === -1 ? -1 : find(CLOSE, open + 1);
+  const offset = (line) => lines.slice(0, line).join('\n').length + (line ? 1 : 0);
+  const start = open === -1 ? -1 : offset(open);
+  const end = close === -1 ? -1 : offset(close);
   // Both markers or none. A half-open block used to report found with an empty
   // `after`, so the next write closed it where the body happened to end and
   // took everything past the last item with it -- one hand-edit on github.com
@@ -190,6 +196,8 @@ function splitPrBlock(body = '') {
     before: body.slice(0, start),
     after: body.slice(end + CLOSE.length),
     found: true,
+    open,
+    close,
   };
 }
 

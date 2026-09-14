@@ -434,6 +434,48 @@ test('a half-open block is not read as a queue, so nothing is tombstoned from it
   assert.deepEqual(syncFromPrBlock(mine, HALF_OPEN), mine);
 });
 
+// #9. A description that talks about prcoder quotes its marker, and this repo's
+// own descriptions do. Matched anywhere, the first quote opened the block and
+// the next write replaced everything from that sentence to the real closing
+// marker. Only a marker alone on its own line, outside a fence, is one now.
+test('a marker quoted in prose, a code span or a fence does not open the block', () => {
+  const OPEN = '<!-- prcoder:todo -->';
+  const body = [
+    `The queue lives between ${OPEN} and its closer.`,
+    '',
+    `Inline, as \`${OPEN}\`, it is still just text.`,
+    '',
+    '```markdown',
+    OPEN,
+    '- [ ] a sample',
+    '<!-- /prcoder:todo -->',
+    '```',
+    '',
+    'Prose that must not be eaten.',
+    '',
+    OPEN, '## TODO', '', '- [ ] real', '<!-- /prcoder:todo -->',
+  ].join('\n');
+  const items = [{ text: 'real', done: false, inPr: true, issue: null, deleted: false }];
+
+  const out = renderPrBlock([{ ...items[0], text: 'renamed' }], body);
+  assert.match(out, /The queue lives between[\s\S]*Inline, as[\s\S]*- \[ \] a sample[\s\S]*Prose that must not be eaten\./);
+  assert.match(out, /- \[ \] renamed/);
+  assert.doesNotMatch(out, /- \[ \] real/);
+  assert.deepEqual(syncFromPrBlock(items, body), items);
+
+  const lastTask = taskLines(body).length - 1;
+  assert.equal(toggleTask(body, lastTask, true, 'real').inBlock, true);
+});
+
+// Hand-placed, mid-line or indented: not a block any more. The cost is a second
+// block appended below, never prose deleted.
+test('a marker that is not alone on its line is left alone, and a block is appended', () => {
+  const body = 'Notes <!-- prcoder:todo -->\n- [ ] old\n<!-- /prcoder:todo -->\nMore prose.';
+  const out = renderPrBlock([{ text: 'new', done: false, inPr: true, issue: null, deleted: false }], body);
+  assert.ok(out.startsWith(body.trimEnd()));
+  assert.match(out, /- \[ \] new/);
+});
+
 // A description whose template comments out an example task. The pane's
 // withoutHtml() deletes the comment before it counts anything, so if taskLines
 // still counted the line inside it every pane index would be one low -- and
