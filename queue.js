@@ -51,12 +51,41 @@ function parseItem(line) {
 }
 
 /**
+ * An item's text as one line of the block. A checklist line cannot hold a
+ * newline, and the queue input takes one on Shift-Enter -- rendered raw, the
+ * rest of the item became lines of prose, and the item's own line never matched
+ * its text again, so the next sync buried it. Matching compares both sides in
+ * this form.
+ */
+const oneLine = (text) => text.replace(/\s+/g, ' ').trim();
+
+/**
  * One line of the PR description's block. Markers (`@pr`, `@issue#42`) are only
- * ever read now, never written: they were how FUTURE.md encoded the fields the
- * store keeps as fields, and the block itself has never carried them.
+ * ever read from FUTURE.md, never written: they were how that file encoded the
+ * fields the store keeps as fields, and the block itself has never carried them.
  */
 function renderItem(item) {
-  return `- [${item.done ? 'x' : ' '}] ${item.issue ? `#${item.issue}` : item.text}`;
+  return `- [${item.done ? 'x' : ' '}] ${item.issue ? `#${item.issue}` : oneLine(item.text)}`;
+}
+
+/**
+ * One line of the block, read back. No markers: the block never has any, and
+ * reading them here turned an item whose text starts with `@pr` or `@deleted`
+ * into an item with different text, which the next sync then buried. A bare
+ * `#N` is still an issue, because that is how renderItem writes one.
+ */
+function parseBlockLine(line) {
+  const m = TASK.exec(line);
+  if (!m) return null;
+  const text = oneLine(m[2]);
+  const bare = /^#(\d+)$/.exec(text);
+  return {
+    text: bare ? '' : text,
+    done: m[1].toLowerCase() === 'x',
+    inPr: true,
+    issue: bare ? Number(bare[1]) : null,
+    deleted: false,
+  };
 }
 
 /**
@@ -176,12 +205,16 @@ export function syncFromPrBlock(items, body = '', number) {
   if (!found) return items;
 
   const block = body.slice(before.length, body.length - after.length);
-  const fromPr = block.split('\n').map(parseItem).filter((i) => i && (i.text || i.issue));
+  const fromPr = block.split('\n').map(parseBlockLine).filter((i) => i && (i.text || i.issue));
 
   const merged = items.map((i) => ({ ...i }));
   const matched = new Set();
 
-  const same = (line) => (m) => (line.issue ? m.issue === line.issue : m.text === line.text);
+  // A bare `#42` is an issue's line -- or the line of an item whose text is
+  // `#42`, which renders identically and has no issue to match on.
+  const same = (line) => (m) => (line.issue
+    ? m.issue === line.issue || (m.issue == null && oneLine(m.text) === `#${line.issue}`)
+    : oneLine(m.text) === line.text);
   const pick = (pred) => merged.findIndex((m, idx) => !matched.has(idx) && belongs(m, number) && pred(m));
   const claim = number == null ? {} : { pr: number };
 

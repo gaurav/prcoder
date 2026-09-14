@@ -210,6 +210,26 @@ test('an item with no PR recorded is claimed by the block it is found in', () =>
   assert.equal(syncFromPrBlock(legacy, body, 5)[0].pr, 5);
 });
 
+// Queue text is free text, and three kinds of it did not survive a trip through
+// the block: a leading `@pr` or `@deleted` was read as a FUTURE.md marker, text
+// that is exactly `#42` read as issue 42, and a Shift-Enter newline split the
+// item across lines. Each came back with text that matched nothing, and the
+// sync buried the item it had just written.
+test('item text that looks like markup survives a round trip through the block', () => {
+  const items = [
+    { text: '@pr review the docs', done: false, inPr: true, issue: null, deleted: false },
+    { text: '@deleted flag, rename it', done: false, inPr: true, issue: null, deleted: false },
+    { text: '#42', done: false, inPr: true, issue: null, deleted: false },
+    { text: 'first line\nsecond line', done: false, inPr: true, issue: null, deleted: false },
+    { text: 'filed', done: false, inPr: true, issue: 7, deleted: false },
+  ];
+  const body = renderPrBlock(items, 'Desc.');
+  assert.match(body, /- \[ \] first line second line\n/);
+  assert.deepEqual(syncFromPrBlock(items, body), items);
+  // And a tick there reaches each of them.
+  assert.ok(syncFromPrBlock(items, body.replaceAll('- [ ]', '- [x]')).every((i) => i.done));
+});
+
 // The consequence that makes issueNumber() throw rather than pass NaN through.
 // MARKERS is anchored, so a value it cannot match ends the marker run: the
 // text is corrupted and @pr is lost with it, quietly and on the way back in.
