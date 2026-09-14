@@ -220,6 +220,47 @@ await page.locator('#queue-body .tab', { hasText: 'Local' }).click();
 await page.waitForTimeout(150);
 console.log('row ↩:  ', await local(), JSON.stringify(await page.locator('.item .text').allTextContents()));
 
+// The source tabs, which read GitHub rather than the queue. The PR tab is this
+// PR's own checklist: one box ticked from here and unticked again is two real
+// edits to the description, checked to leave the body as it was -- read back
+// through /api/status, whose copy is the one editBody replaced after each
+// write. Issues is the issues the description mentions without closing them;
+// ↓ copies one into Local without touching the issue, and the queue restore at
+// the end takes the copy back out.
+const prBody = () => page.evaluate(() => fetch('/api/status').then((r) => r.json()).then((st) => st.pr?.body));
+const bodyBefore = await prBody();
+await page.locator('#queue-body .tab', { hasText: /^PR/ }).click();
+await page.waitForTimeout(150);
+await page.locator('#queue').screenshot({ path: path.join(out, 'queue-pr.png') });
+const prRows = page.locator('#queue-body .item.source');
+console.log('pr tab: ', await page.locator('#queue-body .tab', { hasText: /^PR/ }).innerText(), `${await prRows.count()} rows`);
+const firstBox = () => page.locator('#queue-body .item.source input[type=checkbox]').first();
+const wasTicked = await firstBox().isChecked();
+for (const _ of [1, 2]) {
+  await firstBox().click();
+  // Disabled while the write is out, and repainted from the new body after.
+  await page.waitForFunction(() => {
+    const box = document.querySelector('#queue-body .item.source input[type=checkbox]');
+    return box && !box.disabled;
+  }, null, { timeout: 30_000 });
+  await page.waitForTimeout(300);
+}
+console.log('  ticked and unticked:', (await firstBox().isChecked()) === wasTicked ? 'box back as it was' : 'BOX CHANGED',
+  (await prBody()) === bodyBefore ? '· body unchanged' : '· BODY CHANGED');
+
+await page.locator('#queue-body .tab', { hasText: /^Issues/ }).click();
+await page.waitForFunction(() => ![...document.querySelectorAll('#queue-body .item.source .text')]
+  .some((t) => t.textContent === '…'), null, { timeout: 30_000 });
+await page.locator('#queue').screenshot({ path: path.join(out, 'queue-issues.png') });
+console.log('issues: ', await page.locator('#queue-body .tab', { hasText: /^Issues/ }).innerText(),
+  JSON.stringify(await page.locator('#queue-body .item.source').allInnerTexts()));
+const localBefore = await local();
+await page.locator('#queue-body .item.source .actions button').first().click();
+await page.locator('#queue-body .tab', { hasText: /^Local \(4\)/ }).waitFor({ timeout: 10_000 });
+console.log('  pulled: ', localBefore, '->', await local(), '(want one more)');
+await page.locator('#queue-body .tab', { hasText: /^Local/ }).click();
+await page.waitForTimeout(150);
+
 // The two tabs, and what each says about the other. `Detail (3/10)` /
 // `Files (7/23)` is the whole reason the counts are on the labels -- they are
 // what you can see while you are looking at the other half.
