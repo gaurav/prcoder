@@ -211,7 +211,10 @@ function row(item, above, below) {
     h('span', { className: 'actions' },
       btn('▶', () => deps.sendToClaude(item.text), { title: 'send to Claude' }),
       btn(item.inPr ? '◆' : '◇', () => { item.inPr = !item.inPr; save(); }, {
-        title: hasPr ? (item.inPr ? 'in PR description' : 'add to PR description') : NO_PR,
+        // Which PR, now that items record it: the queue is one list, so a ◆ can
+        // be an item that is in another PR's description and not this one's.
+        title: item.inPr ? `in ${item.pr ? `PR #${item.pr}'s` : 'the PR'} description`
+          : hasPr ? 'add to PR description' : NO_PR,
         disabled: !hasPr,
       }),
       item.issue ? null : btn('◎', () => save('/api/queue/issue', 'POST', { items, index: idx }),
