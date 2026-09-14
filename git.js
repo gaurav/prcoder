@@ -96,18 +96,20 @@ export async function repoInfo(cwd) {
 /**
  * `remoteHead` comes from the caller because only the PR knows it — and for a
  * fork it is not on origin at all, so `git ls-remote origin` would miss it.
+ * `branch` likewise, because the caller has just asked for it.
  */
-export async function snapshot(cwd, remoteHead = null) {
-  const branch = await currentBranch(cwd);
-  const head = await text(['rev-parse', 'HEAD'], cwd);
-
-  const status = await git(['status', '--porcelain', '--untracked-files=no'], cwd);
+export async function snapshot(cwd, remoteHead, branch) {
+  // Independent reads, so they run together rather than one spawn at a time.
+  const [head, status, known] = await Promise.all([
+    text(['rev-parse', 'HEAD'], cwd),
+    git(['status', '--porcelain', '--untracked-files=no'], cwd),
+    remoteHead && asks(['rev-parse', '--verify', '--quiet', `${remoteHead}^{commit}`], cwd),
+  ]);
   const dirty = userDirt(status);
 
   let sync = 'unpushed';
   let ahead = 0;
   if (remoteHead) {
-    const known = await asks(['rev-parse', '--verify', '--quiet', `${remoteHead}^{commit}`], cwd);
     // 128 rather than 1 when the commit is unknown, so only ask once we have it.
     const isAncestor = known && await asks(['merge-base', '--is-ancestor', remoteHead, 'HEAD'], cwd);
     sync = syncState({ head, remoteHead, remoteKnownLocally: known, remoteIsAncestor: isAncestor });

@@ -349,7 +349,8 @@ async function status({ full = false } = {}) {
   const branch = await currentBranch(repo);
   const detached = !branch;
   // A pinned target keeps working on a detached HEAD; branch-following cannot.
-  const heads = detached && !target ? null : await prHeads(repo, target);
+  // A full refresh reloads regardless, so it has no use for the cheap check.
+  const heads = full || (detached && !target) ? null : await prHeads(repo, target);
 
   // The cheap call decides whether the expensive one is needed: loadPr also
   // runs a paginated GraphQL pass, which is far too much for a 60s poll.
@@ -360,8 +361,9 @@ async function status({ full = false } = {}) {
 
   // With no PR there is no headRefOid to compare against, so ask origin.
   const oid = pr?.headRefOid ?? heads?.headRefOid ?? await remoteBranchHead(repo, branch);
-  const snap = await snapshot(repo, oid);
+  const snap = await snapshot(repo, oid, branch);
   const scope = prScope(pr, { branch: snap.branch, nameWithOwner: info.nameWithOwner });
+  const tracked = scope === 'current' || scope === 'none';
 
   last = {
     ...snap,
@@ -370,12 +372,12 @@ async function status({ full = false } = {}) {
     // A PR we have not checked out can never be in sync with this working
     // tree, so its verdict is meaningless. With no PR at all the branch still
     // has one, and "not pushed yet" is what the create button needs to know.
-    sync: scope === 'current' || scope === 'none' ? snap.sync : null,
+    sync: tracked ? snap.sync : null,
     // `ahead` is derived from the same remote head, so it is meaningless in
     // exactly the same cases -- and it outlives the pane: askToQuit reads it to
     // say "N unpushed commits", which for a pinned PR on another branch was a
     // count against a branch you are not on.
-    ahead: scope === 'current' || scope === 'none' ? snap.ahead : null,
+    ahead: tracked ? snap.ahead : null,
     // The queue's own light, in the pane as well as in the terminal.
     mirrorFailed,
     pr: pr ? { ...pr, groups: withUrls(pr) } : null,
