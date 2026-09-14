@@ -25,6 +25,14 @@ export const hideComments = (body, fill = '') =>
   body.replace(/<!--[\s\S]*?-->/g, (c) => c.replace(/[^\n]/g, fill));
 
 /**
+ * A `<details>` block's `<summary>`, whose first group is its content. GitHub
+ * renders that content as the disclosure's label -- inline text, so a `- [ ]`
+ * written inside one is no checkbox. The pane turns it into one heading line
+ * and the server blanks it, and both have to agree that nothing in it counts.
+ */
+export const summary = () => /<summary[^>]*>([\s\S]*?)<\/summary>/g;
+
+/**
  * The body cut into fenced blocks and the text between them, in order. Fences
  * come out before paragraphs are split on blank lines, because a fence is
  * allowed to contain them.
@@ -67,7 +75,7 @@ export function fences(body) {
  * all. Blanked rather than removed, so the indices still address the raw body.
  */
 export function taskLines(body = '') {
-  const visible = hideComments(body, ' ');
+  const visible = hideComments(body, ' ').replace(summary(), (s) => s.replace(/[^\n]/g, ' '));
   const fenced = fencedLines(body);
   return visible.split('\n').flatMap((line, i) => (!fenced.has(i) && TASK.test(line) ? [i] : []));
 }

@@ -502,6 +502,17 @@ test('a checklist line inside an HTML comment counts for neither side', () => {
   assert.match(toggleTask(COMMENTED, 1, true, 'another real task').body, /- \[ \] an example nobody ticks/);
 });
 
+// A <summary> is a disclosure's label, rendered inline, so a checklist line
+// written inside one is text on GitHub. The pane folded the whole summary into
+// one heading line while the server still counted the task in it, so every
+// index after it pointed one line further down than the pane meant.
+test('a checklist line inside a <summary> counts for neither side', () => {
+  const body = '<details>\n<summary>\n- [ ] not a task, a label\n</summary>\n\n- [ ] a real task\n</details>\n- [ ] another';
+  assert.deepEqual(paneTasks(body), ['a real task', 'another']);
+  assert.deepEqual(taskLines(body), [5, 7]);
+  assert.match(toggleTask(body, 0, true, 'a real task').body, /- \[x\] a real task/);
+});
+
 // Same order as the pane, which strips comments before it looks for fences: a
 // ``` inside a comment opens a fence on neither side.
 test('a fence marker inside a comment opens no fence', () => {

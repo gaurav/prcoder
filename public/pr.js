@@ -1,4 +1,4 @@
-import { TASK, fences, hideComments } from './tasks.js';
+import { TASK, fences, hideComments, summary } from './tasks.js';
 
 // Skips absent sections; DOM append() would render them as the text "null".
 const kids = (list) => list.flat().filter((k) => k != null);
@@ -802,8 +802,9 @@ export const HEADING = /^(#{1,6})\s+(.*)$/;
  */
 export const withoutHtml = (text) => hideComments(text ?? '')
   .replace(/<\/?details[^>]*>/g, '')
-  .replace(/<summary[^>]*>([\s\S]*?)<\/summary>/g,
-    (_, t) => `#### ${t.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim()}`);
+  // The heading is one line, and the summary's other lines stay behind it empty.
+  .replace(summary(), (s, t) =>
+    `#### ${t.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim()}${'\n'.repeat(s.split('\n').length - 1)}`);
 
 /** A checkbox in the description, ticked through to GitHub. */
 function taskRow({ done, text, index }, onTask) {
