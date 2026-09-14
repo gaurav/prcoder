@@ -37,8 +37,7 @@ const repo = process.cwd();
 export const PORT_BASE = 10240;
 export const PORT_SPAN = 4096;
 
-export function portFor(repo, env = process.env) {
-  if (Number(env.PRCODER_PORT)) return Number(env.PRCODER_PORT);
+export function portFor(repo) {
   return PORT_BASE + createHash('sha1').update(repo).digest().readUInt16BE(0) % PORT_SPAN;
 }
 
@@ -47,7 +46,7 @@ export function portFor(repo, env = process.env) {
  * first run walks past the first entry, and only until something binds.
  */
 export function portCandidates(repo) {
-  const first = portFor(repo, {}) - PORT_BASE;   // the seed, never a PRCODER_PORT pin
+  const first = portFor(repo) - PORT_BASE;
   return Array.from({ length: PORT_SPAN }, (_, n) => PORT_BASE + (first + n) % PORT_SPAN);
 }
 // Args split at the first flag: everything before it is ours (an optional PR
@@ -800,8 +799,8 @@ function bind(ports) {
  * heal: without it the loser took a fresh random port every run forever.
  */
 async function listenOnRepoPort() {
-  if (Number(process.env.PRCODER_PORT)) {
-    const pinned = Number(process.env.PRCODER_PORT);
+  const pinned = Number(process.env.PRCODER_PORT);
+  if (pinned) {
     await bind([pinned, 0]);
     return pinned;                       // never recorded: a pin is for one run
   }
