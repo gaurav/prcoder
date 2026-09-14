@@ -9,9 +9,20 @@
 /** The same checklist line GitHub renders as a checkbox. */
 export const TASK = /^\s*[-*]\s*\[( |x|X)\]\s*(.*)$/;
 
-// Factories rather than constants: a /g regex carries lastIndex between calls.
+// A factory rather than a constant: a /g regex carries lastIndex between calls.
 const fence = () => /^[ \t]*```[^\n]*\n([\s\S]*?)^[ \t]*```[ \t]*$/gm;
-export const comment = () => /<!--[\s\S]*?-->/g;
+
+/**
+ * HTML comments gone, and every line where it was. The pane renders from this
+ * and the server counts and reads checklist lines from it, so a comment can
+ * neither hide a task from one side nor change a task's text for one side.
+ *
+ * `fill` replaces each character of a comment that is not a newline. The pane
+ * wants nothing there; the server passes a space so a character offset in the
+ * result is still the same offset in the raw line it has to edit.
+ */
+export const hideComments = (body, fill = '') =>
+  body.replace(/<!--[\s\S]*?-->/g, (c) => c.replace(/[^\n]/g, fill));
 
 /**
  * The body cut into fenced blocks and the text between them, in order. Fences
@@ -56,7 +67,7 @@ export function fences(body) {
  * all. Blanked rather than removed, so the indices still address the raw body.
  */
 export function taskLines(body = '') {
-  const visible = body.replace(comment(), (c) => c.replace(/[^\n]/g, ' '));
+  const visible = hideComments(body, ' ');
   const fenced = new Set();
   const lineAt = (index) => visible.slice(0, index).split('\n').length - 1;
   // The same expression fences() matches with, so the two agree by

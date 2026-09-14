@@ -12,7 +12,7 @@
 // parseFuture is the one thing here that still reads FUTURE.md, for the
 // one-time import in server.js. Nothing writes that file.
 
-import { TASK, taskLines } from './public/tasks.js';
+import { TASK, taskLines, hideComments } from './public/tasks.js';
 
 const HEADING = '## Queue';
 const OPEN = '<!-- prcoder:todo -->';
@@ -107,12 +107,17 @@ export function toggleTask(body, index, done, expected) {
   const at = taskLines(body ?? '')[index];
   if (at === undefined) throw new Error('that checkbox is no longer in the description -- refresh');
 
-  const text = TASK.exec(lines[at])[2].trim();
+  // Read through the same comment blanking the pane rendered from: its text for
+  // `- [ ] fix <!-- note -->` is `fix`, and the raw line's never would be.
+  const visible = hideComments(body ?? '', ' ').split('\n')[at];
+  const text = TASK.exec(visible)[2].trim();
   if (text !== (expected ?? '').trim()) {
     throw new Error(`the description changed under that checkbox (now "${text}") -- refresh`);
   }
-  // TASK anchors the box at the start of the line, so the first [ ] is it.
-  lines[at] = lines[at].replace(/\[( |x|X)\]/, done ? '[x]' : '[ ]');
+  // TASK anchors the box at the start of the line, so the first [ ] outside a
+  // comment is it -- found in the blanked copy, whose offsets are the raw line's.
+  const box = visible.search(/\[( |x|X)\]/);
+  lines[at] = `${lines[at].slice(0, box)}${done ? '[x]' : '[ ]'}${lines[at].slice(box + 3)}`;
 
   const open = lines.findIndex((l) => l.includes(OPEN));
   const close = lines.findIndex((l) => l.includes(CLOSE));

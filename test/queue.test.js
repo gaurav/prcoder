@@ -416,6 +416,29 @@ test('a fence marker inside a comment opens no fence', () => {
   assert.deepEqual(paneTasks(body), ['still a task']);
 });
 
+// A note left on a checklist line. The pane renders the line without the
+// comment and sends that text, so reading the raw line refused every tick on it
+// as "the description changed under that checkbox". A `[x]` inside a comment
+// ahead of the box is not the box, either.
+test('a checkbox with a comment on its line can be ticked, and only its own box flips', () => {
+  const body = '- [ ] fix the parser <!-- see #12 -->\n<!-- [x] --> - [ ] and the lexer';
+  const seen = paneTasks(body);
+  assert.deepEqual(seen.map((t) => t.trim()), ['fix the parser', 'and the lexer']);
+  assert.equal(toggleTask(body, 0, true, seen[0]).body.split('\n')[0], '- [x] fix the parser <!-- see #12 -->');
+  assert.equal(toggleTask(body, 1, true, seen[1]).body.split('\n')[1], '<!-- [x] --> - [x] and the lexer');
+});
+
+// The pane used to delete a comment's newlines with it, so a comment that
+// ended on a task's line joined that task onto the line the comment started on
+// -- where it was no longer at the start of a line, and no longer a task. The
+// server kept the line, counted it, and every index after it was off by one.
+test('a comment ending on a task line leaves that task a task on both sides', () => {
+  const body = 'prose <!--\nnote\n--> - [ ] after the comment\n- [ ] last';
+  assert.deepEqual(paneTasks(body).map((t) => t.trim()), ['after the comment', 'last']);
+  assert.deepEqual(taskLines(body), [2, 3]);
+  assert.doesNotThrow(() => toggleTask(body, 1, true, 'last'));
+});
+
 // A drop means the same thing whichever way the row was dragged: the row lands
 // where the row it was dropped on is now. Unadjusted, the removal shifted the
 // target out from under the insert and a downward drag overshot it by one.

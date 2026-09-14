@@ -1,4 +1,4 @@
-import { TASK, fences, comment } from './tasks.js';
+import { TASK, fences, hideComments } from './tasks.js';
 
 // Skips absent sections; DOM append() would render them as the text "null".
 const kids = (list) => list.flat().filter((k) => k != null);
@@ -798,8 +798,7 @@ export const HEADING = /^(#{1,6})\s+(.*)$/;
  * counts of checklist lines have to match -- so anything added here that could
  * delete or merge a line containing a `- [ ]` breaks the tick, silently.
  */
-export const withoutHtml = (text) => (text ?? '')
-  .replace(comment(), '')
+export const withoutHtml = (text) => hideComments(text ?? '')
   .replace(/<\/?details[^>]*>/g, '')
   .replace(/<summary[^>]*>([\s\S]*?)<\/summary>/g,
     (_, t) => `#### ${t.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim()}`);

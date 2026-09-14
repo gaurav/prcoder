@@ -68,8 +68,11 @@ test("prcoder's own block markers do not show up in the pane", () => {
   assert.match(out, /Prose above[\s\S]*Prose below/);
 });
 
+// Its lines stay, though, empty: taskLines numbers the raw body's lines, and a
+// comment that took its newlines with it put every line after it on a
+// different number here than there.
 test('a comment spanning lines goes entirely, not just its first line', () => {
-  assert.equal(withoutHtml('a\n<!-- one\ntwo\nthree -->\nb').trim(), 'a\n\nb'.trim());
+  assert.equal(withoutHtml('a\n<!-- one\ntwo\nthree -->\nb'), 'a\n\n\n\nb');
 });
 
 // A <details> block is how this repo's own PR keeps its history out of the way.
