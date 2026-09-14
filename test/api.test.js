@@ -10,6 +10,7 @@
 // in .claude/skills/run-prcoder, run by hand against a real PR.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import http from 'node:http';
 import { server } from '../server.js';
 
 let base;
@@ -91,6 +92,25 @@ test('our own origin is not refused, and neither is a request without one', asyn
   // 500 is the no-PR error every route gives here: past the guard, into the handler.
   assert.equal((await post({ origin: base })).status, 500);
   assert.equal((await post({})).status, 500);
+});
+
+// DNS rebinding: attacker.test resolves to 127.0.0.1 once its page has loaded,
+// so Origin and Host agree -- and a same-origin GET sends no Origin at all. The
+// Host name is what gives it away. fetch will not set Host, so this goes by hand.
+test('a request naming a host that is not loopback is refused, origin or none', async () => {
+  const { port } = server.address();
+  const get = (headers) => new Promise((resolve, reject) => {
+    http.get({ host: '127.0.0.1', port, path: '/api/whoami', headers }, (res) => {
+      res.resume();
+      resolve(res.statusCode);
+    }).on('error', reject);
+  });
+  const rebound = `attacker.test:${port}`;
+  assert.equal(await get({ host: rebound }), 403);
+  assert.equal(await get({ host: rebound, origin: `http://${rebound}` }), 403);
+  for (const name of ['localhost', '127.0.0.1', '[::1]']) {
+    assert.equal(await get({ host: `${name}:${port}` }), 200, name);
+  }
 });
 
 test('a malformed origin is refused rather than parsed into a pass', async () => {

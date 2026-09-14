@@ -52,8 +52,11 @@ at it, approvals included.
 Every route and the socket refuse an `Origin` that is not the server's own. A request that states
 none is allowed through: a browser always states one on an upgrade or a `fetch`, so nothing with an
 origin to give is being waved past, while `curl`, the drivers and prcoder's own busy-port probe keep
-working. `sameOrigin` in [`server.js`](../server.js) carries the rest, including why it compares
-against `Host` rather than a computed URL.
+working. That comparison is only worth anything if `Host` is really this machine: DNS rebinding
+points an attacker's own name at 127.0.0.1 after its page has loaded, and from then on its `Origin`
+and `Host` agree. So a `Host` that is not `localhost`, `127.0.0.1` or `[::1]` is refused first.
+`sameOrigin` in [`server.js`](../server.js) carries the rest, including why it compares against
+`Host` rather than a computed URL.
 
 ## What it deliberately does not do
 

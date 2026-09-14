@@ -524,11 +524,23 @@ const routes = {
  * WebSocket upgrade and on any request a page makes with fetch, so nothing that
  * has an origin to give is being waved through; curl, the drivers and prcoder's
  * own whoami probe send none, and the run-prcoder skill's curls keep working.
- * Compared against Host rather than a computed URL so a port fallback, an
- * ::1-vs-127.0.0.1 answer and a renamed loopback alias all take care of
- * themselves.
+ * Compared against Host rather than a computed URL so a port fallback and an
+ * ::1-vs-127.0.0.1 answer take care of themselves.
+ *
+ * Which is only sound once Host itself is a loopback name. DNS rebinding points
+ * attacker.example at 127.0.0.1 after the page has loaded, and from then on the
+ * page is same-origin with this server as far as the browser is concerned:
+ * Origin and Host agree, and a same-origin GET states no Origin at all. The
+ * name it used is the one thing it cannot change, so a Host that is not ours
+ * is refused before anything else is looked at. A hosts-file alias for
+ * 127.0.0.1 is refused with it -- use localhost.
  */
+const LOOPBACK = new Set(['localhost', '127.0.0.1', '[::1]']);
+
 const sameOrigin = (req) => {
+  try {
+    if (!LOOPBACK.has(new URL(`http://${req.headers.host}`).hostname)) return false;
+  } catch { return false; }
   const { origin } = req.headers;
   if (!origin) return true;
   try { return new URL(origin).host === req.headers.host; } catch { return false; }

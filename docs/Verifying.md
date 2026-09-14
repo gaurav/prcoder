@@ -79,7 +79,9 @@ pins `/api/whoami`'s cache-only contract, the 404 and 500 shapes, static serving
 hand-written `vendor` paths into `node_modules` (which break silently on an xterm upgrade and
 surface as a blank page), and the origin refusal: an `Origin` that is not ours is a 403 before any
 handler runs, one that matches reaches the handler, one that is absent does too, and a malformed one
-is refused rather than parsed into a pass. Only the handlers that answer without `gh` — the rest
+is refused rather than parsed into a pass. A `Host` that is not a loopback name is refused with or
+without an `Origin`, which is the DNS-rebinding case; that test sends its requests with `node:http`,
+because `fetch` will not set `Host`. Only the handlers that answer without `gh` — the rest
 would be testing this machine's GitHub auth.
 
 Some things can only be checked against the real thing, so they are:
