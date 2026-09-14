@@ -116,6 +116,10 @@ test('a branch name that is the tail of another branch is not mistaken for it', 
 
     assert.match(await remoteBranchHead(work, 'feature/topic'), /^[0-9a-f]{40}$/);
     assert.equal(await remoteBranchHead(work, 'topic'), null);
+
+    // An origin that cannot be reached is not an answer about the branch.
+    await run(work, 'remote', 'set-url', 'origin', path.join(dir, 'gone.git'));
+    await assert.rejects(remoteBranchHead(work, 'feature/topic'));
   } finally {
     await fs.rm(dir, { recursive: true, force: true });
   }

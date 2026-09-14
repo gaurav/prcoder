@@ -130,7 +130,11 @@ export async function remoteBranchHead(cwd, branch) {
   // against the *tail* of a ref on slash boundaries: a bare `topic` matches
   // origin's `refs/heads/feature/topic` and reports a stranger's head for a
   // branch that was never pushed. `refs/heads/topic` matches only itself.
-  const out = await git(['ls-remote', '--heads', 'origin', `refs/heads/${branch}`], cwd).catch(() => '');
+  //
+  // Not caught. A branch origin does not have is a successful call that prints
+  // nothing; a failure is a network, auth or timeout problem, and answering null
+  // for it said "not pushed" -- which the create route acts on by pushing.
+  const out = await git(['ls-remote', '--heads', 'origin', `refs/heads/${branch}`], cwd);
   return out.trim().split(/\s/)[0] || null;
 }
 
