@@ -21,14 +21,15 @@
 // as cat does, and it also sends the cursor-position probe a real session sends
 // between turns, which is the half the icon check needs.
 //
-// This is not read-only, and what it writes goes to GitHub. The run replaces
-// the repo's queue with six fixture items -- at least one per tab -- and puts
-// the queue back at the end, which also takes the block it mirrored back out of
-// the PR description. Ticking a description checkbox edits the description on
-// GitHub too, and so does mirroring a queue item with the diamond. A run that
-// dies in between leaves both behind, and the next run drops the fixture rather
-// than restoring it. Anything you add here that writes needs the same
-// treatment, and needs to run against a repo you own.
+// It writes, so it is not read-only. The run replaces the repo's queue with a
+// fixture -- at least one item per tab -- and puts the queue back at the end; a
+// run that dies in between leaves the fixture behind, and the next run drops it
+// rather than restoring it. The queue itself writes only `.prcoder/`.
+//
+// Nothing here clicks ◇ or ◎. Those move an item into the PR description or a
+// new issue, one-way: there is no queue to put back that would take the line
+// out of the description again, or close the issue. Anything added here that
+// writes to GitHub needs its own undo, and needs to run against a repo you own.
 
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:net';
@@ -96,10 +97,8 @@ page.on('pageerror', (e) => console.log('PAGE EXCEPTION:', e.message));
 // paints the fixture rather than an empty list it would not refetch for another
 // minute.
 //
-// `inPr` on one of them is a real write to this repo's own PR description --
-// that is the feature, and putting the old queue back at the end takes the
-// block out again. `issue` is a bare number, so it links to an existing issue
-// rather than filing a new one.
+// `issue` is a bare number, so it links to an existing issue rather than filing
+// a new one, and the item stays on Local like any other.
 const queueApi = (body, method = 'PUT') =>
   fetch(`http://localhost:${port}/api/queue`, {
     method,
@@ -113,19 +112,16 @@ for (let i = 0; i < 60; i++) {
 }
 const FIXTURE = [
   { t: 'a local item, still only on this machine' },
-  // Two locals, because the promotion check below carries one out and the
-  // caret check further down still needs a row on Local to click into.
   { t: 'a second local item, to click into' },
-  { t: 'carried out to the pull request', inPr: true },
-  { t: 'filed as an issue', issue: 20 },
+  { t: 'linked to an issue', issue: 20 },
   { t: 'ticked off', done: true },
   { t: 'thrown away', deleted: true },
 ];
-const seed = (over) => ({ text: over.t, done: false, inPr: false, issue: null, deleted: false, ...over });
-// A run that dies before the restore leaves its fixture in the store, and with
-// it a block in the PR description. Dropping anything that looks like the
-// fixture from what we are going to put back makes the next run clean up after
-// the last one, rather than restoring the mess and adding to it.
+const seed = (over) => ({ text: over.t, done: false, issue: null, deleted: false, ...over });
+// A run that dies before the restore leaves its fixture in the store. Dropping
+// anything that looks like the fixture from what we are going to put back makes
+// the next run clean up after the last one, rather than restoring the mess and
+// adding to it.
 const mine = new Set(FIXTURE.map((f) => f.t));
 had = had.filter((i) => !mine.has(i.text));
 const seeded = await queueApi({ items: FIXTURE.map(seed) });
@@ -157,14 +153,13 @@ const drag = async (sel, x, y) => {
 };
 
 
-// Every queue tab, and what each shows. Local draining as items are carried out
-// is the whole point of the set, so the counts are read rather than eyeballed
-// -- and the strip is shot at the pane's own width to see whether five tabs
-// wrap. `#queue-body .tab` and not `.tab`: the pull request pane has a strip of
+// Every queue tab, and what each shows. The counts are read rather than
+// eyeballed -- and the strip is shot at the pane's own width to see whether the
+// tabs wrap. `#queue-body .tab` and not `.tab`: the pull request pane has a strip of
 // its own, driven further down.
 const queueStrip = () => page.locator('#queue-body .tab').allTextContents();
 console.log('q tabs: ', (await queueStrip()).join(' | '));
-for (const name of ['Local', 'PR', 'Issues', 'Completed', 'Deleted']) {
+for (const name of ['Local', 'Completed', 'Deleted']) {
   await page.locator('#queue-body .tab', { hasText: name }).click();
   await page.waitForTimeout(150);
   const rows = await page.locator('.item .text').allTextContents();
@@ -172,8 +167,8 @@ for (const name of ['Local', 'PR', 'Issues', 'Completed', 'Deleted']) {
   console.log(`  ${name.padEnd(9)} ${JSON.stringify(rows)}${grips ? '  [draggable]' : ''}`);
   await page.locator('#queue').screenshot({ path: path.join(out, `queue-${name.toLowerCase()}.png`) });
 }
-// Five tabs is as many as this strip will ever hold, and 1440px is the only
-// width it had been looked at -- where they fit easily. The pane the queue
+// 1440px is the only width the strip had been looked at -- where the tabs and
+// the bulk button fit easily. The pane the queue
 // actually lives in is whatever is left after the PR column, so drag that wide
 // and ask the tabs themselves whether they are still on one row: same offsetTop
 // for the first and the last is the only version of "does not wrap" that does
@@ -190,19 +185,6 @@ console.log('narrow: ', `${strip.n} tabs on ${strip.rows} row(s) in a ${strip.pa
 await page.locator('#queue').screenshot({ path: path.join(out, 'queue-narrow.png') });
 await drag('#gut-pr', 375, 450);
 await page.waitForTimeout(300);
-
-// The claim the tab set is built on: carrying an item out with the row's own ◆
-// takes it out of Local. Seeding an already-mirrored item proves the filter;
-// only clicking the button proves the transition.
-await page.locator('#queue-body .tab', { hasText: 'Local' }).click();
-await page.waitForTimeout(150);
-await page.locator('.item', { hasText: 'a local item' }).locator('button[title*="PR description"]').click();
-// Waited for rather than slept past: mirroring is a real read-modify-write
-// against the description on GitHub, so the row does not move for a second or
-// two and any fixed timeout is either flaky or slower than it needs to be.
-await page.locator('#queue-body .tab', { hasText: 'Local (1)' }).waitFor({ timeout: 30_000 });
-console.log('promoted:', (await queueStrip()).join(' | '));
-console.log('  Local now', JSON.stringify(await page.locator('.item .text').allTextContents()));
 
 // The confirm is the only thing between one click and every completed item, so
 // check it is load-bearing rather than decorative: dismissing it has to leave
@@ -228,12 +210,12 @@ await page.waitForTimeout(150);
 // Local, and a restore that puts it back is the half worth proving anyway.
 const local = () => page.locator('#queue-body .tab', { hasText: /^Local/ }).innerText();
 await page.locator('.item', { hasText: 'a second local item' }).locator('button[title="delete"]').click();
-await page.locator('#queue-body .tab', { hasText: 'Local (0)' }).waitFor({ timeout: 10_000 });
+await page.locator('#queue-body .tab', { hasText: 'Local (2)' }).waitFor({ timeout: 10_000 });
 console.log('row ✕:  ', await local(), '+', await page.locator('#queue-body .tab', { hasText: /^Deleted/ }).innerText());
 await page.locator('#queue-body .tab', { hasText: 'Deleted' }).click();
 await page.waitForTimeout(150);
 await page.locator('.item', { hasText: 'a second local item' }).locator('button[title="restore"]').click();
-await page.locator('#queue-body .tab', { hasText: 'Local (1)' }).waitFor({ timeout: 10_000 });
+await page.locator('#queue-body .tab', { hasText: 'Local (3)' }).waitFor({ timeout: 10_000 });
 await page.locator('#queue-body .tab', { hasText: 'Local' }).click();
 await page.waitForTimeout(150);
 console.log('row ↩:  ', await local(), JSON.stringify(await page.locator('.item .text').allTextContents()));
@@ -456,9 +438,8 @@ console.log('clicked:', JSON.stringify(await toastText()), '  (want null)');
 // queue is legitimately empty the moment the last item has been finished or
 // filed -- which it was, on 2026-09-06, and the driver then failed on a missing
 // locator rather than on the bug it exists to catch. The fixture seeded before
-// the first page load is what it clicks into now, which is why that list keeps
-// a second local item after the promotion check above carries the first one
-// out. The reload above left the pane on Local, the tab it opens on.
+// the first page load is what it clicks into now. The reload above left the
+// pane on Local, the tab it opens on.
 await page.waitForSelector('.item .text');
 
 // The bug above, pinned: a click in the middle of an item's text has to land
@@ -499,7 +480,12 @@ await putQueue([...queue,
   { text: 'driver scratch item two' }]);
 try {
   await page.reload();
-  await page.waitForSelector('.item .text');
+  // The PR head, not a queue row: rows paint from /api/queue first, and the
+  // status poll lands a second or two later and paints them again. A drag that
+  // starts in between loses its row mid-flight and nothing moves -- which the
+  // check below reported as a drop that did not reorder.
+  await page.waitForSelector('#pr-head .pr-title', { timeout: 30_000 });
+  await page.waitForTimeout(500);
 
   // A row drag carries its own data type. It carried text/plain, which a link
   // or a text selection dropped on a row also carries; Number() of that is NaN,
@@ -539,8 +525,7 @@ try {
 }
 console.log('queue:  ', (await page.evaluate(() => fetch('/api/queue').then((r) => r.json()))).length, 'items  (want', queue.length + ')');
 
-// Back to whatever the repo had, which also takes our block back out of the PR
-// description on the way past.
+// Back to whatever the repo had.
 console.log('restored:', (await queueApi({ items: had })).length, 'items (was', had.length + ')');
 
 // The tab icon, which goes blue while the PTY is printing and back to green two
