@@ -79,8 +79,7 @@ export function paint() {
  * caller repaint on a timer to keep an age honest without writing escape
  * sequences at an idle terminal every thirty seconds.
  */
-export function status(lines) {
-  const next = lines.filter((l) => l != null);
+export function status(next) {
   if (next.length === footer.length && next.every((l, i) => l === footer[i])) return;
   footer = next;
   paint();
