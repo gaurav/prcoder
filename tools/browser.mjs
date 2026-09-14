@@ -235,18 +235,22 @@ await page.locator('#queue').screenshot({ path: path.join(out, 'queue-pr.png') }
 const prRows = page.locator('#queue-body .item.source');
 console.log('pr tab: ', await page.locator('#queue-body .tab', { hasText: /^PR/ }).innerText(), `${await prRows.count()} rows`);
 const firstBox = () => page.locator('#queue-body .item.source input[type=checkbox]').first();
-const wasTicked = await firstBox().isChecked();
-for (const _ of [1, 2]) {
-  await firstBox().click();
-  // Disabled while the write is out, and repainted from the new body after.
-  await page.waitForFunction(() => {
-    const box = document.querySelector('#queue-body .item.source input[type=checkbox]');
-    return box && !box.disabled;
-  }, null, { timeout: 30_000 });
-  await page.waitForTimeout(300);
-}
-console.log('  ticked and unticked:', (await firstBox().isChecked()) === wasTicked ? 'box back as it was' : 'BOX CHANGED',
-  (await prBody()) === bodyBefore ? '· body unchanged' : '· BODY CHANGED');
+// A description can have no checkboxes at all -- this repo's PR #27 has none --
+// and then there is nothing to tick, which is a skip rather than a hang.
+if (await prRows.count()) {
+  const wasTicked = await firstBox().isChecked();
+  for (const _ of [1, 2]) {
+    await firstBox().click();
+    // Disabled while the write is out, and repainted from the new body after.
+    await page.waitForFunction(() => {
+      const box = document.querySelector('#queue-body .item.source input[type=checkbox]');
+      return box && !box.disabled;
+    }, null, { timeout: 30_000 });
+    await page.waitForTimeout(300);
+  }
+  console.log('  ticked and unticked:', (await firstBox().isChecked()) === wasTicked ? 'box back as it was' : 'BOX CHANGED',
+    (await prBody()) === bodyBefore ? '· body unchanged' : '· BODY CHANGED');
+} else console.log('  no checkboxes in this description to tick');
 
 await page.locator('#queue-body .tab', { hasText: /^Issues/ }).click();
 await page.waitForFunction(() => ![...document.querySelectorAll('#queue-body .item.source .text')]
@@ -521,12 +525,32 @@ await putQueue([...queue,
   { text: 'driver scratch item two' }]);
 try {
   await page.reload();
-  // The PR head, not a queue row: rows paint from /api/queue first, and the
-  // status poll lands a second or two later and paints them again. A drag that
-  // starts in between loses its row mid-flight and nothing moves -- which the
-  // check below reported as a drop that did not reorder.
+  // The PR head, not a queue row. The checks below read /api/queue half a second
+  // after each drop, and the drop's PUT goes through the server's serial lock --
+  // behind the page's first status poll, which is several gh calls. Started
+  // before that poll lands, the drop worked and the read still saw the old order.
   await page.waitForSelector('#pr-head .pr-title', { timeout: 30_000 });
   await page.waitForTimeout(500);
+
+  // A poll's repaint replaces every row, so one landing mid-drag took the row
+  // from under the pointer and the drop reordered nothing. setItems holds a
+  // repaint back while a row is marked as dragging; checked directly rather than
+  // by racing a real drag against the 60s timer. The control is the same refresh
+  // without the mark, which does replace the row.
+  const heldRow = async (dragging) => {
+    const row = await page.evaluateHandle(() => document.querySelector('#queue-body .item'));
+    if (dragging) await row.evaluate((el) => el.classList.add('dragging'));
+    await Promise.all([
+      page.waitForResponse((r) => r.url().endsWith('/api/status')),
+      page.locator('#pr-refresh').click(),
+    ]);
+    await page.waitForTimeout(300);
+    const kept = await row.evaluate((el) => el.isConnected);
+    await row.evaluate((el) => el.classList.remove('dragging'));
+    return kept;
+  };
+  console.log('repaint:', `mid-drag row ${await heldRow(true) ? 'kept' : 'REPLACED'},`,
+    `idle row ${await heldRow(false) ? 'KEPT' : 'replaced'}`, '  (want kept, then replaced)');
 
   // A row drag carries its own data type. It carried text/plain, which a link
   // or a text selection dropped on a row also carries; Number() of that is NaN,

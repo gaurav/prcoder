@@ -21,14 +21,17 @@ export const freeze = (on) => { frozen = on; render(); };
 /**
  * Replace the list from the server. Skipped while an item is being edited: the
  * text is contentEditable and only saves on blur, so a poll landing mid-typing
- * would throw the edit away.
+ * would throw the edit away. Skipped while a row is being dragged, too: the
+ * repaint replaces the row under the pointer, the drop lands on nothing, and
+ * the reorder silently does not happen.
  *
- * Only that edit is at risk, so only that holds the list back. Anything else in
+ * Only those two are at risk, so only they hold the list back. Anything else in
  * the pane can keep focus indefinitely -- a clicked tab does, in Chromium -- and
  * freezing on it leaves the queue stale with nothing to unstick it.
  */
 export function setItems(next, prAvailable, prOnScreen = null) {
   if (document.activeElement?.closest?.('#queue-body .text[contenteditable]')) return;
+  if (document.querySelector('#queue-body .item.dragging')) return;
   items = next;
   hasPr = prAvailable;
   pr = prOnScreen;
