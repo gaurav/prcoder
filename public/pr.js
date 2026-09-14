@@ -231,15 +231,15 @@ export function renderNoPr(status, { onCreate }) {
   // Comparing a branch with itself opens an empty diff, so on main there is
   // nothing to offer — the fix is a branch, not a button.
   const can = !status.detached && !onDefault;
-  const btn = h('button', { className: 'pr-create', disabled: !can }, 'Create a pull request');
-  if (can) btn.onclick = () => onCreate(btn);
+  const create = h('button', { className: 'pr-create', disabled: !can }, 'Create a pull request');
+  if (can) create.onclick = () => onCreate(create);
 
   host.replaceChildren(...kids([
     h('p', { className: 'empty' }, why),
     status.sync === 'unpushed' && can
       ? h('p', { className: 'pr-note' }, 'This branch is not on GitHub yet; it will be pushed first.')
       : null,
-    btn,
+    create,
   ]));
 }
 
@@ -648,9 +648,9 @@ export function blocks(text) {
  * there is nothing to indent into, and a real indent stack would need a notion
  * of a line that tasks.js does not have.
  */
-export const BULLET = /^[ \t]*[-*+][ \t]+(.*)$/;
+const BULLET = /^[ \t]*[-*+][ \t]+(.*)$/;
 /** `1.` and `1)`, the two GitHub renders. The author's start number is kept. */
-export const ORDERED = /^[ \t]*(\d{1,9})[.)][ \t]+(.*)$/;
+const ORDERED = /^[ \t]*(\d{1,9})[.)][ \t]+(.*)$/;
 
 /**
  * A quote needs no space after its `>`, unlike a bullet: `>text` is a quote on
@@ -666,7 +666,7 @@ export const ORDERED = /^[ \t]*(\d{1,9})[.)][ \t]+(.*)$/;
  * both sides skip it and the tick indices stay in step. Anything that starts
  * counting quoted lines has to change both.
  */
-export const QUOTE = /^[ \t]*>[ \t]?(.*)$/;
+const QUOTE = /^[ \t]*>[ \t]?(.*)$/;
 
 /** One block as an element. The DOM half of blocks(); everything above is pure. */
 const blockNode = (b, onTask) => ({
