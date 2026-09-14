@@ -59,8 +59,12 @@ export function splitArgs(argv) {
 }
 
 let { target, claudeArgs } = splitArgs(process.argv.slice(2));
-// Set when a mirror write fails, cleared when one succeeds. See mirrors().
-let mirrorFailed = false;
+// The URLs of PRs whose last mirror write failed; one leaves when a write to it
+// succeeds. See mirrors(). Per PR because a flag for all of them was cleared by
+// a write to a different PR, after which the one GitHub is still behind on was
+// trusted again -- and merging against its stale block undoes the very change
+// that never reached it.
+const mirrorFailed = new Set();
 
 // The PR is fetched once and reused; the queue routes need its body and node id.
 let pr = null;
@@ -172,7 +176,7 @@ function withUrls(p) {
 const ours = (branch) => Boolean(pr)
   && prScope(pr, { branch, nameWithOwner: info?.nameWithOwner }) === 'current';
 
-const mirrors = (branch) => ours(branch) && !mirrorFailed;
+const mirrors = (branch) => ours(branch) && !mirrorFailed.has(pr.url);
 
 async function readQueue(branch) {
   // Still the checkout's branch, and only for mirrors(): which PR we are
@@ -227,7 +231,8 @@ async function writeQueue(items, branch) {
   // And while it is set the cheap comparison is worthless: `cached` is a copy
   // GitHub is known to disagree with, so matching it proves nothing. Every
   // change tries the write until one lands.
-  if (ours(branch) && (mirrorFailed || renderPrBlock(items, cached) !== cached)) {
+  if (ours(branch) && (mirrorFailed.has(pr.url) || renderPrBlock(items, cached) !== cached)) {
+    const { url } = pr;
     try {
       // Re-read rather than trusting that copy: someone may have edited the
       // prose around our block on github.com since the last poll, and
@@ -245,7 +250,7 @@ async function writeQueue(items, branch) {
       // on GitHub may now be behind, and merging against it would bury the very
       // item that failed to go out. mirrors() stops trusting it until a write
       // succeeds. Offline on a train is the case this is for.
-      mirrorFailed = true;
+      mirrorFailed.add(url);
       console.error('pr body not updated:', e.message);
     }
   }
@@ -268,7 +273,7 @@ async function editBody(edit) {
   cur.body = body;
   // A write that landed is the evidence the flag was waiting for, whichever
   // route made it.
-  mirrorFailed = false;
+  mirrorFailed.delete(cur.url);
   return body !== current;
 }
 
@@ -384,8 +389,9 @@ async function status({ full = false } = {}) {
     // say "N unpushed commits", which for a pinned PR on another branch was a
     // count against a branch you are not on.
     ahead: tracked ? snap.ahead : null,
-    // The queue's own light, in the pane as well as in the terminal.
-    mirrorFailed,
+    // The queue's own light, in the pane as well as in the terminal -- about the
+    // PR on screen, since that is the only one a write can reach from here.
+    mirrorFailed: Boolean(pr && mirrorFailed.has(pr.url)),
     pr: pr ? { ...pr, groups: withUrls(pr) } : null,
     queue: await readQueue(snap.branch),
   };
@@ -852,7 +858,9 @@ function askToQuit() {
     wss.clients.size && (wss.clients.size > 1
       ? `${wss.clients.size} browser tabs — their Claude sessions end`
       : '1 browser tab — the Claude session ends'),
-    mirrorFailed && 'the PR description never got the last change',
+    mirrorFailed.size && (mirrorFailed.size > 1
+      ? `${mirrorFailed.size} PR descriptions never got the last change`
+      : 'a PR description never got the last change'),
     last?.ahead && `${last.ahead} unpushed commit${last.ahead > 1 ? 's' : ''}`,
     last?.dirtyFiles?.length && `${last.dirtyFiles.length} uncommitted file${last.dirtyFiles.length > 1 ? 's' : ''}`,
   ].filter(Boolean);

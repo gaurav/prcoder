@@ -32,8 +32,11 @@ is recovered by the next poll, where a wrong one is not.
 `setBody` fails, the store already has the change and GitHub is behind; treating that stale body as
 evidence on the next poll buries the item that failed to go out. The latch suspends the *merge* and
 only the merge, because the only thing that can clear it is a successful write — a latch that also
-stopped writing would be one nothing could open. Neither side of that write falls back to a body it
-failed to read: a read that did not happen says nothing about what the description holds now.
+stopped writing would be one nothing could open. It is held per pull request, because only a write
+to *that* description is evidence that it caught up: one flag for all of them was cleared by a write
+to another PR, and the description still behind was trusted again. Neither side of that write falls
+back to a body it failed to read: a read that did not happen says nothing about what the description
+holds now.
 
 There was a third — a per-branch queue, and a guard refusing a write from a branch the tab had
 left. It is gone, and [#48](https://github.com/gaurav/prcoder/issues/48) holds what replaced it and
