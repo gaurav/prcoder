@@ -50,9 +50,9 @@ const PR_FIELDS = [
   'headRefOid', 'updatedAt', 'isCrossRepository',
 ].join(',');
 
-/** Just enough to know whether the PR moved, without the GraphQL viewed pass. */
-export async function prHeads(cwd, target) {
-  const args = ['pr', 'view', ...(target ? [target] : []), '--json', 'number,headRefOid,updatedAt,state'];
+/** `gh pr view`, or null when there is no PR to view. */
+async function viewPr(cwd, target, fields) {
+  const args = ['pr', 'view', ...(target ? [target] : []), '--json', fields];
   try {
     return JSON.parse(await gh(args, { cwd }));
   } catch (e) {
@@ -60,6 +60,9 @@ export async function prHeads(cwd, target) {
     throw e;
   }
 }
+
+/** Just enough to know whether the PR moved, without the GraphQL viewed pass. */
+export const prHeads = (cwd, target) => viewPr(cwd, target, 'number,headRefOid,updatedAt,state');
 
 /** The description as GitHub has it right now, for a read-modify-write. */
 export async function prBody(cwd, prUrl) {
@@ -79,25 +82,21 @@ export async function listPrs(cwd) {
  * second call and is merged in by path.
  */
 export async function loadPr(cwd, target) {
-  let pr;
-  try {
-    const args = ['pr', 'view', ...(target ? [target] : []), '--json', PR_FIELDS];
-    pr = JSON.parse(await gh(args, { cwd }));
-  } catch (e) {
-    if (/no pull requests found|no default remote|not a git repo/i.test(e.stderr ?? '')) return null;
-    throw e;
-  }
+  const pr = await viewPr(cwd, target, PR_FIELDS);
+  if (!pr) return null;
 
   const { nodeId, viewed } = await viewedState(cwd, pr.url);
-  const files = pr.files.map((f) => ({ ...f, viewed: viewed.get(f.path) === 'VIEWED' }));
+  // The raw lists are summarised here and not sent on: every poll carries this
+  // object to every tab, and nothing reads them past this point.
+  const { statusCheckRollup, closingIssuesReferences, comments, reviews, ...rest } = pr;
 
   return {
-    ...pr,
-    files,
+    ...rest,
+    files: pr.files.map((f) => ({ ...f, viewed: viewed.get(f.path) === 'VIEWED' })),
     nodeId,
-    checks: rollup(pr.statusCheckRollup),
+    checks: rollup(statusCheckRollup),
     issues: linkedIssues(pr),
-    counts: { comments: pr.comments?.length ?? 0, reviews: pr.reviews?.length ?? 0 },
+    counts: { comments: comments?.length ?? 0, reviews: reviews?.length ?? 0 },
   };
 }
 
