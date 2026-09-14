@@ -6,28 +6,21 @@
 // A *task* in this codebase is a checklist line in a PR description (tasks.js);
 // an *item* is a row of the queue, which is this.
 //
-// Carrying an item out to the PR or to an issue is a flag on disk, not a move.
-// It is these filters, and nothing in the store, that take a promoted item out
-// of Local -- so Local drains as work is carried out of it, and a session that
-// ended tidily leaves it empty.
+// The queue is yours, so these tabs are states of your own list and nothing
+// else. Work carried to the PR description or an issue is not a flag here: it
+// has left the queue (moveOut in server.js), which is what drains Local, and a
+// session that ended tidily leaves it empty.
 
 /**
- * ponytail: an item that is both done and mirrored satisfies two of these, so
- * tab counts do not sum to the length of the list. It genuinely is both, and
- * hiding it from either tab would be the lie. Making them sum needs an
- * exclusive `stage` field, which costs the bare-#N rule for an item that is
- * mirrored *and* filed, leaves restore with no stage to restore to, and changes
- * what existing fields mean -- the one thing store.js says to bump VERSION for.
- * See issue #43, which is where that trade-off is written down. (#20 asked a
- * different question -- what the pane should do with a filed item at all -- and
- * the tabs below are the answer to it.)
+ * Exclusive: every item is on exactly one tab, a tombstone shadowing everything
+ * else, so the counts sum to the list. They could not while an item could be
+ * both done and mirrored into a description (#43); a move is not a state, so
+ * nothing is both any more.
  */
 export const TABS = {
-  local: (i) => !i.deleted && !i.done && !i.inPr && !i.issue,
-  pr: (i) => !i.deleted && i.inPr,
-  issues: (i) => !i.deleted && !!i.issue,
-  done: (i) => !i.deleted && i.done,
-  deleted: (i) => i.deleted,
+  local: (i) => !i.deleted && !i.done,
+  done: (i) => !i.deleted && !!i.done,
+  deleted: (i) => !!i.deleted,
 };
 
 /** How many items are in each tab, for a caller that wants several at once. */

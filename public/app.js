@@ -1,7 +1,7 @@
 import { Terminal } from '/vendor/xterm.mjs';
 import { FitAddon } from '/vendor/addon-fit.mjs';
 import { WebLinksAddon } from '/vendor/addon-web-links.mjs';
-import { renderPr, renderNoPr, renderHeader, renderQueueSync, pageTitle, api, toast } from './pr.js';
+import { renderPr, renderNoPr, renderHeader, pageTitle, api, toast } from './pr.js';
 import { openDiff, closeDiff, selectedPath, setViewed } from './diff.js';
 import { initQueue, addItem, setItems, freeze } from './queue.js';
 import './panes.js';   // draggable pane gutters; nothing here calls into it
@@ -140,10 +140,7 @@ const NOTES = {
  */
 async function toggleTask(task) {
   try {
-    const { queue } = await api('/api/pr/task', task);
-    // Only when the line was one of the queue's own, so the two panes agree
-    // without waiting for the poll.
-    if (queue) setItems(queue, true);
+    await api('/api/pr/task', task);
   } catch (e) {
     toast(e.message, true);
     loadStatus();
@@ -165,7 +162,6 @@ function paint(status) {
   // "prcoder", which is why this is here and not in loadStatus's catch.
   document.title = pageTitle(status);
   renderHeader(status, prs, handlers);
-  renderQueueSync(status);
   if (status.pr) {
     renderPr({ ...status.pr, note: NOTES[status.scope] },
       { ...fileHandlers, selected: selectedPath() });
@@ -197,7 +193,6 @@ async function loadStatus() {
   } catch (e) {
     const failed = { error: e.message, dirtyFiles: [], pr: null };
     renderHeader(failed, prs, handlers);
-    renderQueueSync(failed);
   }
 }
 

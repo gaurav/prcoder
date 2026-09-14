@@ -34,10 +34,10 @@ export function setItems(next, prAvailable) {
   render();
 }
 
-// Mirroring into a PR description needs a PR. Creating an issue does not, so
-// that control stays live on a branch that has none.
+// Moving an item into a PR description needs this branch's own PR on screen.
+// Filing an issue does not, so that control stays live on a branch that has none.
 let hasPr = true;
-const NO_PR = 'no pull request on this branch to push to';
+const NO_PR = 'no pull request for this branch to move items into';
 
 // Which end the input adds to. The queue is two things at once -- a backlog in
 // the order you mean to work through it, and somewhere to put the thing you
@@ -96,12 +96,11 @@ const save = async (url = '/api/queue', method = 'PUT', body = { items }) => {
   return true;
 };
 
-const LABELS = { local: 'Local', pr: 'PR', issues: 'Issues', done: 'Completed', deleted: 'Deleted' };
+const LABELS = { local: 'Local', done: 'Completed', deleted: 'Deleted' };
 
 // Local is always there because an *empty* Local is the thing worth seeing --
 // it is how a tidy session ends. Completed is always there because it is where
-// the delete-all lives. The rest hide when they hold nothing, the way Deleted
-// always did.
+// the delete-all lives. Deleted hides when it holds nothing.
 const ALWAYS = ['local', 'done'];
 
 /**
@@ -113,8 +112,8 @@ const ALWAYS = ['local', 'done'];
  * tombstone does it -- leaving nothing highlighted and a list with no tab to
  * click back to. Local is never left this way: it is in ALWAYS.
  *
- * tools/browser.mjs leans on the hiding rule from the other side: it seeds an
- * item per tab precisely because a tab with nothing in it is not there to be
+ * tools/browser.mjs leans on the hiding rule from the other side: it seeds a
+ * deleted item precisely because a tab with nothing in it is not there to be
  * clicked, and a driver that clicks one that is missing hangs for 30s rather
  * than failing.
  */
@@ -158,8 +157,12 @@ function bulks() {
   const many = (n) => `${n} item${n === 1 ? '' : 's'}`;
 
   if (tab === 'local') {
-    return [bulk('→ all to PR', () => { of('local').forEach((i) => { i.inPr = true; }); save(); },
-      { disabled: !hasPr, title: hasPr ? '' : NO_PR })];
+    return [bulk('→ all to PR', () => {
+      const local = of('local');
+      // Confirmed, because it writes to GitHub and empties the tab in one click.
+      if (!local.length || !confirm(`Move ${many(local.length)} into the PR description?\n\nThey are added there as checkboxes and leave the queue.`)) return;
+      toPr(local);
+    }, { disabled: !hasPr, title: hasPr ? 'move every item here into the PR description' : NO_PR })];
   }
   if (tab === 'done') {
     return [bulk('delete all', () => {
@@ -167,7 +170,7 @@ function bulks() {
       // A tombstone, like the row's own ✕: these land in Deleted, and the
       // confirm says so rather than implying they are gone.
       if (!done.length || !confirm(`Delete ${many(done.length)} from Completed?\n\nThey move to the Deleted tab, where they can be restored.`)) return;
-      done.forEach((i) => { i.deleted = true; i.inPr = false; });
+      done.forEach((i) => { i.deleted = true; });
       save();
     })];
   }
@@ -181,10 +184,14 @@ function bulks() {
       save();
     })];
   }
-  // PR and Issues are reference lists: what to do with those items is on the
-  // row, or on GitHub.
   return [];
 }
+
+/**
+ * Out of the queue and into somewhere permanent. The server writes there first
+ * and answers the list without them, so a failure leaves them where they were.
+ */
+const toPr = (moving) => save('/api/queue/to-pr', 'POST', { items, indices: moving.map((i) => items.indexOf(i)) });
 
 // The button is static markup in the pane header, which render()'s
 // replaceChildren never reaches, so only the two things that change addTo have
@@ -231,8 +238,8 @@ const bulk = (label, fn, props = {}) => btn(label, fn, { className: 'bulk', ...p
 
 function row(item, above, below) {
   const idx = items.indexOf(item);
-  // Order is the backlog's meaning, and only Local is a backlog -- the other
-  // tabs are filtered views where a drop would splice the item to a position
+  // Order is the backlog's meaning, and only Local is a backlog -- Completed and
+  // Deleted are filtered views where a drop would splice the item to a position
   // in the full array that nobody on this tab can see.
   const ordered = tab === 'local';
 
@@ -267,19 +274,17 @@ function row(item, above, below) {
     item.issue ? ext(item.issueUrl ?? '#', `#${item.issue}`, { className: 'tag issue' }) : null,
     h('span', { className: 'actions' },
       btn('▶', () => deps.sendToClaude(item.text), { title: 'send to Claude' }),
-      btn(item.inPr ? '◆' : '◇', () => { item.inPr = !item.inPr; save(); }, {
-        // Which PR, now that items record it: the queue is one list, so a ◆ can
-        // be an item that is in another PR's description and not this one's.
-        title: item.inPr ? `in ${item.pr ? `PR #${item.pr}'s` : 'the PR'} description`
-          : hasPr ? 'add to PR description' : NO_PR,
+      // Both are moves, not flags: the item is written there and leaves the queue.
+      btn('◇', () => toPr([item]), {
+        title: hasPr ? 'move into the PR description' : NO_PR,
         disabled: !hasPr,
       }),
-      item.issue ? null : btn('◎', () => save('/api/queue/issue', 'POST', { items, index: idx }),
-        { title: 'create an issue' }),
+      item.issue ? null : btn('◎', () => save('/api/queue/to-issue', 'POST', { items, index: idx }),
+        { title: 'move into a new issue' }),
       item.deleted
         ? btn('↩', () => { item.deleted = false; save(); }, { title: 'restore' })
         // A tombstone, not a splice: the Deleted tab is where it goes.
-        : btn('✕', () => { item.deleted = true; item.inPr = false; save(); }, { title: 'delete' }),
+        : btn('✕', () => { item.deleted = true; save(); }, { title: 'delete' }),
     ),
   );
 
@@ -309,8 +314,8 @@ function row(item, above, below) {
 /** True once the server has it, so the caller knows whether to clear the input. */
 export async function addItem(text) {
   if (!text.trim()) return false;
-  const item = { text: text.trim(), done: false, inPr: false, issue: null, deleted: false };
-  // The end of the whole array, past any promoted or done rows: Local filters
+  const item = { text: text.trim(), done: false, issue: null, deleted: false };
+  // The end of the whole array, past any done or deleted rows: Local filters
   // without reordering, so a new item still shows last there.
   if (addTo === 'top') items.unshift(item); else items.push(item);
   // A brand-new item is local by definition, so this is the tab it is on.

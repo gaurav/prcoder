@@ -2,7 +2,6 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { rollup, linkedIssues, parsePrUrl, run, issueNumber, lf } from '../github.js';
 import { taskLines } from '../public/tasks.js';
-import { syncFromPrBlock } from '../queue.js';
 
 test('check states collapse into passed, failed and pending', () => {
   assert.deepEqual(rollup([
@@ -98,12 +97,10 @@ test('output with no issue number throws instead of yielding NaN', () => {
 
 // A description saved from github.com's editor arrives CRLF, and every line
 // pattern ends in `(.*)$`, which stops at the `\r`. Unconverted, the body has no
-// checkboxes at all, so a box ticked on GitHub never reached the queue.
+// checkboxes at all, and the pane showed none to tick.
 test('a CRLF description reads as the same checklist as an LF one', () => {
-  const crlf = ['<!-- prcoder:todo -->', '## TODO', '', '- [x] ticked on github.com', '<!-- /prcoder:todo -->'].join('\r\n');
+  const crlf = ['## TODO', '', '- [x] ticked on github.com', '- [ ] not yet', ''].join('\r\n');
   assert.deepEqual(taskLines(crlf), [], 'the bug this guards against');
-  assert.deepEqual(taskLines(lf(crlf)), [3]);
-  const [item] = syncFromPrBlock([{ text: 'ticked on github.com', done: false, inPr: true, issue: null, deleted: false }], lf(crlf));
-  assert.equal(item.done, true);
+  assert.deepEqual(taskLines(lf(crlf)), [2, 3]);
   assert.equal(lf(null), '');
 });

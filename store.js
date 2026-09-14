@@ -35,15 +35,18 @@ const EMPTY = { version: VERSION, items: [] };
 /**
  * Every field, coerced. The client PUTs back the array it was handed, which
  * decorate() has added a derived `issueUrl` to — so this constructs rather than
- * spreads, and a `branch` left on an item by an older prcoder is dropped here.
- * The markdown writer dropped unknown fields for free; JSON would keep them.
+ * spreads. The markdown writer dropped unknown fields for free; JSON would keep
+ * them.
+ *
+ * Constructing is also the whole migration from older prcoders. A `branch` from
+ * the per-branch queue goes, and so do `inPr` and `pr` from the description
+ * mirror: an item that was mirrored stays in the queue as an ordinary one,
+ * because a duplicate of a line already in the description is something you can
+ * delete, and an item dropped on the word of a block nobody re-read is not.
  */
 export const pick = (i) => ({
   text: String(i?.text ?? ''),
   done: !!i?.done,
-  inPr: !!i?.inPr,
-  // Which PR's description it is mirrored into. Meaningless once it is not.
-  pr: i?.inPr && Number.isInteger(i?.pr) ? i.pr : null,
   issue: Number.isInteger(i?.issue) ? i.issue : null,
   deleted: !!i?.deleted,
 });
