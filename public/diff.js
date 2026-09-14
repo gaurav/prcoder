@@ -2,7 +2,7 @@
 // iframed, so the pane draws the raw patch itself and keeps a link out for
 // the fancy view.
 
-import { h, api, writeThrough } from './pr.js';
+import { h, ext, api, writeThrough } from './pr.js';
 
 // Lives outside the render because the 60s poll rebuilds #pr-body from
 // scratch; #diff itself is never repainted by the poll (queue.js does the
@@ -63,7 +63,7 @@ export async function openDiff(f, { onViewed }) {
   if (patch == null) {
     body.replaceChildren(h('p', { className: 'empty' },
       'No local diff for this file (binary, too large, or unavailable) — ',
-      h('a', { href: f.url, target: '_blank', rel: 'noopener' }, 'view it on GitHub ↗')));
+      ext(f.url, 'view it on GitHub ↗')));
     return;
   }
   body.replaceChildren(...diffRows(patch).map(({ cls, text }) =>

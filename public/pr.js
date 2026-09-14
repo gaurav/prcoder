@@ -25,6 +25,9 @@ export const btn = (label, fn, props = {}) => {
   return b;
 };
 
+/** A link out of the app, which is every link it has. */
+export const ext = (href, text, props = {}) => h('a', { href, target: '_blank', rel: 'noopener', ...props }, text);
+
 /**
  * JSON in, JSON out, an error thrown either way it can fail -- a bad status or
  * an `error` in the payload. No body means no body at all, not `{}`: fetch
@@ -363,7 +366,7 @@ function renderPrHead(pr, handlers) {
       // still over the <a> itself once the pseudo-element declines it.
       ...kids(headLinks(pr).map((l, i) => [
         i ? h('span', { className: 'sep' }, '\u00b7') : null,
-        h('a', { href: l.href, target: '_blank', rel: 'noopener' }, l.text),
+        ext(l.href, l.text),
       ]))),
     h('div', { className: 'tabs' },
       tabBtn('detail', tabLabel('Detail', taskCount(pr.body))),
@@ -413,8 +416,7 @@ function renderPrTab(pr, handlers) {
   host.replaceChildren(...kids(tab === 'files' ? [
     ...GROUPS.map(([key, label]) => fileGroup(label, pr.groups[key], handlers)),
     h('div', { className: 'meta' },
-      h('a', { href: `${pr.url}#issuecomment`, target: '_blank', rel: 'noopener' },
-        `${pr.counts.comments} comments · ${pr.counts.reviews} reviews ↗`)),
+      ext(`${pr.url}#issuecomment`, `${pr.counts.comments} comments · ${pr.counts.reviews} reviews ↗`)),
   ] : [
     issueRow(pr.issues, true, 'Closes:'),
     h('div', { className: 'body md' }, ...description(pr.body, handlers.onTask)),
@@ -457,8 +459,7 @@ function issueRow(list, closes, label) {
   if (!kind.length) return null;
   return h('div', { className: 'issues' },
     h('span', { className: 'issues-label' }, label),
-    ...kind.map((i) => h('a', { href: i.url, target: '_blank', rel: 'noopener', title: i.title ?? '' },
-      `#${i.number}`)));
+    ...kind.map((i) => ext(i.url, `#${i.number}`, { title: i.title ?? '' })));
 }
 
 /**
@@ -499,8 +500,7 @@ function fileRow(f, { onViewed, onOpen, selected }) {
   // inside a box that still overflows from the left. Checked in both engines
   // on 2026-09-09; `unicode-bidi: plaintext` on the link fixes the order too,
   // but moves the cut to the tail, which is the thing the rtl was for.
-  const link = h('a', { href: f.url, target: '_blank', rel: 'noopener', className: 'path', title: f.path },
-    h('bdi', {}, f.path));
+  const link = ext(f.url, h('bdi', {}, f.path), { className: 'path', title: f.path });
   link.addEventListener('click', (e) => {
     if (e.metaKey || e.ctrlKey) return;   // GitHub stays one modifier away
     e.preventDefault();

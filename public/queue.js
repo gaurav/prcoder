@@ -1,4 +1,4 @@
-import { h, btn, api, toast } from './pr.js';
+import { h, btn, ext, api, toast } from './pr.js';
 
 // The client owns the list; every change persists the whole array. Single user,
 // single repo — no ids, no diffing.
@@ -183,7 +183,7 @@ function row(item) {
     h('span', { className: 'grip', title: 'drag to reorder' }, '⠿'),
     box,
     text,
-    item.issue ? h('a', { className: 'tag issue', href: item.issueUrl ?? '#', target: '_blank', rel: 'noopener' }, `#${item.issue}`) : null,
+    item.issue ? ext(item.issueUrl ?? '#', `#${item.issue}`, { className: 'tag issue' }) : null,
     h('span', { className: 'actions' },
       btn('▶', () => deps.sendToClaude(item.text), { title: 'send to Claude' }),
       btn(item.inPr ? '◆' : '◇', () => { item.inPr = !item.inPr; save(); }, {
