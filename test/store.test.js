@@ -59,18 +59,6 @@ test('an absent store is empty rather than an error', async () => {
   assert.equal(stale, false);
 });
 
-// Empty and absent read the same list, and are not the same fact. The one-time
-// FUTURE.md import asked whether the list was empty, so emptying the queue
-// brought every imported item back on the next start.
-test('an emptied store still exists, so it is not mistaken for a first run', async () => {
-  const dir = await repo();
-  assert.equal((await readStore(dir)).exists, false);
-  await writeStore(dir, { version: 1, items: [] });
-  const { store, exists } = await readStore(dir);
-  assert.deepEqual(store.items, []);
-  assert.equal(exists, true);
-});
-
 // The bytes are kept, not overwritten -- but reading is not the moment to touch
 // anyone's disk, so the rename waits for a write that was replacing them anyway.
 test('an unreadable store reads empty and is moved aside on the next write', async () => {

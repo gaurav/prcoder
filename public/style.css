@@ -387,11 +387,8 @@ a { color: var(--accent); }
   content: ''; width: 7px; height: 7px; border-radius: 50%;
   background: var(--line); flex: none;
 }
-.light.ok::before { background: #7fd88f; }
 .light.warn { color: #f0dc9a; }
 .light.warn::before { background: #f0dc9a; }
-.light.bad { color: #f5a3a3; }
-.light.bad::before { background: #f5a3a3; }
 .light.unknown::before { background: transparent; box-shadow: inset 0 0 0 1px var(--dim); }
 
 /* Sits over the panes so it never reflows them. Above the terminal pane rather

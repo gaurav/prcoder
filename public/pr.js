@@ -83,7 +83,7 @@ export function writeThrough(box, run, settle = () => {}) {
   };
 }
 
-/** The light itself, for the two pane headers that survive a poll. */
+/** The PR pane header's sync light, which survives a poll. */
 function paintLight(id, state) {
   const light = document.getElementById(id);
   light.hidden = !state;
