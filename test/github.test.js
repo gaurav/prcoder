@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { rollup, linkedIssues, parsePrUrl, run, issueNumber } from '../github.js';
+import { rollup, linkedIssues, parsePrUrl, run, issueNumber, lf } from '../github.js';
+import { taskLines } from '../public/tasks.js';
+import { syncFromPrBlock } from '../queue.js';
 
 test('check states collapse into passed, failed and pending', () => {
   assert.deepEqual(rollup([
@@ -92,4 +94,16 @@ test('a notice printed before the URL does not confuse the parse', () => {
 test('output with no issue number throws instead of yielding NaN', () => {
   assert.throws(() => issueNumber('something unexpected'), /could not be read/);
   assert.throws(() => issueNumber(''), /no url printed/);
+});
+
+// A description saved from github.com's editor arrives CRLF, and every line
+// pattern ends in `(.*)$`, which stops at the `\r`. Unconverted, the body has no
+// checkboxes at all, so a box ticked on GitHub never reached the queue.
+test('a CRLF description reads as the same checklist as an LF one', () => {
+  const crlf = ['<!-- prcoder:todo -->', '## TODO', '', '- [x] ticked on github.com', '<!-- /prcoder:todo -->'].join('\r\n');
+  assert.deepEqual(taskLines(crlf), [], 'the bug this guards against');
+  assert.deepEqual(taskLines(lf(crlf)), [3]);
+  const [item] = syncFromPrBlock([{ text: 'ticked on github.com', done: false, inPr: true, issue: null, deleted: false }], lf(crlf));
+  assert.equal(item.done, true);
+  assert.equal(lf(null), '');
 });

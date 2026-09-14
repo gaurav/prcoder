@@ -64,10 +64,19 @@ async function viewPr(cwd, target, fields) {
 /** Just enough to know whether the PR moved, without the GraphQL viewed pass. */
 export const prHeads = (cwd, target) => viewPr(cwd, target, 'number,headRefOid,updatedAt,state');
 
+/**
+ * A description with LF line endings. One saved from github.com's editor comes
+ * back CRLF -- 9 of cli/cli's last 30 on 2026-09-13 -- and every line pattern
+ * here ends in `(.*)$`, where `.` stops at the `\r`: no line is a checkbox, a
+ * heading or a list, and a tick made on GitHub never reaches the queue. Both
+ * reads come through this, so nothing downstream has to know.
+ */
+export const lf = (body) => (body ?? '').replace(/\r\n/g, '\n');
+
 /** The description as GitHub has it right now, for a read-modify-write. */
 export async function prBody(cwd, prUrl) {
   const { body } = JSON.parse(await gh(['pr', 'view', prUrl, '--json', 'body'], { cwd }));
-  return body ?? '';
+  return lf(body);
 }
 
 /** Open PRs, for the switcher. */
@@ -84,6 +93,7 @@ export async function listPrs(cwd) {
 export async function loadPr(cwd, target) {
   const pr = await viewPr(cwd, target, PR_FIELDS);
   if (!pr) return null;
+  pr.body = lf(pr.body);
 
   const { nodeId, viewed } = await viewedState(cwd, pr.url);
   // The raw lists are summarised here and not sent on: every poll carries this
