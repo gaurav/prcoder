@@ -125,7 +125,11 @@ blue while the PTY prints and back to green two seconds after it stops, typed at
 `tools/claude-stub.mjs` stub, whose echo is the same burst of output a Claude turn is made of and
 whose cursor-position probe, every 200ms throughout, is what a real session sends between turns. The
 green half is the assertion: it was a `cat` stub that never probed, so the icon stuck busy from the
-first paint in every real session and no check could see it.
+first paint in every real session and no check could see it. And a queue row dragged by its grip onto
+the row above, then a synthetic `drop` carrying only `text/plain` -- a link or a selection -- on the
+same row, which must leave the queue exactly as the real drag did. Row drags carried `text/plain`
+too, until that drop read as a drag from row `NaN` and moved the first item; run against the old
+code the check prints `MOVED`, in both engines.
 
 Driven in the PTY: the tab count, `r` forcing a poll, the busy-port line finding the other instance
 and naming its repo, the quit prompt naming what it costs, a second instance with no tab quitting on

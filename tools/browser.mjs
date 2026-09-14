@@ -331,7 +331,9 @@ const queue = await page.evaluate(() => fetch('/api/queue').then((r) => r.json()
 const putQueue = (items) => page.evaluate((body) => fetch('/api/queue', {
   method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
 }).then((r) => r.json()), { items });
-await putQueue([...queue, { text: 'driver scratch item, put back at the end of the run' }]);
+await putQueue([...queue,
+  { text: 'driver scratch item, put back at the end of the run' },
+  { text: 'driver scratch item two' }]);
 // finally, because everything between here and the restore drives a browser: a
 // reload that hangs or a locator that times out would otherwise leave the
 // scratch item sitting in the live .prcoder/queue.json, and this driver is run
@@ -349,6 +351,29 @@ try {
   await page.waitForTimeout(200);
   const caret = await page.evaluate(() => window.getSelection().anchorOffset);
   console.log('caret:  ', caret, caret > 0 ? '' : '  <-- click landed at the start');
+
+  // A row drag carries its own data type. It carried text/plain, which a link
+  // or a text selection dropped on a row also carries; Number() of that is NaN,
+  // splice() reads NaN as 0, and the queue's first item moved and was saved.
+  // The synthetic drop is that case, and the queue must come out of it as the
+  // real drag left it.
+  const scratch = () => page.evaluate(() => fetch('/api/queue').then((r) => r.json()))
+    .then((items) => items.filter((i) => i.text.startsWith('driver scratch')).map((i) => i.text.replace(/^driver scratch item,? /, '')));
+  const scratchRows = page.locator('.item', { hasText: 'driver scratch' });
+  await scratchRows.nth(1).locator('.grip').dragTo(scratchRows.nth(0));
+  await page.waitForTimeout(500);
+  const reordered = await scratch();
+  const before = (await page.evaluate(() => fetch('/api/queue').then((r) => r.json()))).map((i) => i.text);
+  await scratchRows.nth(0).evaluate((li) => {
+    const dt = new DataTransfer();
+    dt.setData('text/plain', 'a dropped selection');
+    li.dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true }));
+  });
+  await page.waitForTimeout(500);
+  const after = (await page.evaluate(() => fetch('/api/queue').then((r) => r.json()))).map((i) => i.text);
+  console.log('drag:   ', reordered.join(' | '), '  (want "two" first)');
+  console.log('drop:   ', JSON.stringify(after) === JSON.stringify(before) ? 'unchanged' : 'MOVED',
+    '  (want unchanged -- a text drop is not a row)');
 } finally {
   await putQueue(queue);
 }

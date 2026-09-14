@@ -167,6 +167,13 @@ export function reorder(list, from, to) {
 const tabBtn = (name, label) =>
   btn(label, () => { tab = name; render(); }, { className: tab === name ? 'tab on' : 'tab' });
 
+/**
+ * What a row's drag carries. Its own type, not text/plain: a link or a text
+ * selection dropped on a row carries text/plain too, and Number() of that is
+ * NaN -- which splice() reads as 0, so the first item moved and was saved.
+ */
+const ROW = 'application/x-prcoder-row';
+
 const bulk = (label, fn, props = {}) => btn(label, fn, { className: 'bulk', ...props });
 
 function row(item) {
@@ -207,12 +214,13 @@ function row(item) {
   // gives up being draggable for exactly as long as the pointer is on its text,
   // and the grip above is the handle that always drags.
   li.addEventListener('pointerdown', (e) => { li.draggable = !text.contains(e.target); });
-  li.addEventListener('dragstart', (e) => { e.dataTransfer.setData('text/plain', idx); li.classList.add('dragging'); });
+  li.addEventListener('dragstart', (e) => { e.dataTransfer.setData(ROW, idx); li.classList.add('dragging'); });
   li.addEventListener('dragend', () => li.classList.remove('dragging'));
   li.addEventListener('dragover', (e) => e.preventDefault());
   li.addEventListener('drop', (e) => {
     e.preventDefault();
-    const from = Number(e.dataTransfer.getData('text/plain'));
+    if (!e.dataTransfer.types.includes(ROW)) return;
+    const from = Number(e.dataTransfer.getData(ROW));
     if (from === idx) return;
     reorder(items, from, idx);
     save();
