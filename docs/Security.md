@@ -25,6 +25,22 @@ and `Host` agree. So a `Host` that is not `localhost`, `127.0.0.1` or `[::1]` is
 `sameOrigin` in [`server.js`](../server.js) carries the rest, including why it compares against
 `Host` rather than a computed URL. `test/api.test.js` pins both refusals.
 
+**What it does not stop: a frame.** A page on the web can load prcoder in an `<iframe>`, and the
+framed page's own requests are same-origin, so they pass. The outer page cannot type into the
+terminal, but it can lay something over the frame and turn a click on its own content into a click
+on ▶, Commit, Create PR or a checkbox. `frame-ancestors 'none'` in a Content-Security-Policy closes
+it. prcoder sends no CSP yet; that is the first item of
+[#49](https://github.com/gaurav/prcoder/issues/49).
+
+## Other programs on this machine
+
+Both checks only mean something against a browser, which cannot lie about `Origin` or `Host`.
+Anything else can: `curl` sends whatever headers it likes, and a request with no `Origin` is let
+through on purpose. So any program that can connect to the port gets the PTY. Your own programs
+could run `claude` themselves anyway; the ones that matter are other accounts, since every user on
+a machine shares loopback. On a single-user laptop that is nobody. A per-run token would close it,
+at a cost to every client that is not the page — [#59](https://github.com/gaurav/prcoder/issues/59).
+
 ## The pull request description
 
 A description is text someone else may have written — a collaborator on your own PR, or anyone at
@@ -35,7 +51,9 @@ Two functions in [`public/pr.js`](../public/pr.js) keep it out. `escape()` escap
 angle brackets, because a link's URL is interpolated into `href="..."` and a raw `"` closes the
 attribute and opens an event handler, which `innerHTML` does fire. `target()` lets through only
 `http(s)` and repository-relative links, so `javascript:` and `data:` hrefs stay as their own source.
-`test/pr.test.js` pins both.
+`test/pr.test.js` pins both. They are the only line of defence: with no CSP, a hole in either runs
+as script. [#49](https://github.com/gaurav/prcoder/issues/49) holds that and the rest of what is open
+around the renderer.
 
 This is also why the renderer is an allowlist ([Design.md](Design.md) argues the scope side of
 that): every construct it learns is new markup built from untrusted text, and has to go through
