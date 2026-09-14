@@ -30,10 +30,12 @@ export function run(bin, args, { input, ...opts } = {}) {
           `  ${err ? `exit ${err.code}` : 'ok'} ${Date.now() - started}ms`);
         if (!err) return resolve(stdout);
         err.stderr = stderr;
+        // What the tool said, rather than Node's `Command failed: <argv>` -- which
+        // for an issue title is the whole title. Every catch reads e.message.
+        err.message = stderr.trim() || err.message;
         reject(err);
       });
-    if (input !== undefined) child.stdin.end(input);
-    else child.stdin.end();
+    child.stdin.end(input);
   });
 }
 

@@ -254,7 +254,7 @@ async function writeQueue(items, branch) {
       // item that failed to go out. mirrors() stops trusting it until a write
       // succeeds. Offline on a train is the case this is for.
       mirrorFailed = true;
-      console.error('pr body not updated:', e.stderr || e.message);
+      console.error('pr body not updated:', e.message);
     }
   }
   return decorate(items);
@@ -545,9 +545,9 @@ async function handleApi(req, res, key) {
     res.writeHead(200, { 'content-type': 'application/json' });
     res.end(payload);
   } catch (e) {
-    console.error(key, e.stderr || e.message);
+    console.error(key, e.message);
     res.writeHead(500, { 'content-type': 'application/json' });
-    res.end(JSON.stringify({ error: (e.stderr || e.message).trim() }));
+    res.end(JSON.stringify({ error: e.message.trim() }));
   }
 }
 
@@ -716,12 +716,12 @@ async function ready() {
   // handled, so this is always first in the chain.
   await serial(async () => {
     info ??= await repoInfo(repo).catch((e) => {
-      console.error('repo:', e.stderr || e.message);
+      console.error('repo:', e.message);
       return null;
     });
-    await refreshPr().catch((e) => console.error('pr:', e.stderr || e.message));
+    await refreshPr().catch((e) => console.error('pr:', e.message));
     await importFuture().catch((e) => console.error('import:', e.message));
-    await status().catch((e) => console.error('status:', e.stderr || e.message));
+    await status().catch((e) => console.error('status:', e.message));
   });
   console.log(`prcoder: ${repo}`);
   console.log(pr ? `PR #${pr.number}: ${pr.title}` : 'no pull request for this branch');
@@ -857,7 +857,7 @@ if (import.meta.main) {
       // is no reason to run them alongside a checkout.
       else if (ch === 'r') {
         term.verbose('refreshing…');
-        serial(() => status({ full: true })).catch((e) => console.error('refresh:', e.stderr || e.message));
+        serial(() => status({ full: true })).catch((e) => console.error('refresh:', e.message));
       }
     },
   });
