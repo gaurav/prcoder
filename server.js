@@ -237,18 +237,9 @@ async function writeQueue(items, branch) {
       // says nothing about what the description holds now, and writing the
       // stale copy back over prose added since is the exact loss the re-read
       // exists to prevent -- so a failed read fails the mirror instead.
-      const current = await prBody(repo, pr.url);
-      const body = renderPrBlock(items, current);
-      if (body !== current) {
-        await setBody(repo, pr.url, body);
+      if (await editBody((current) => renderPrBlock(items, current))) {
         term.verbose(`wrote the queue block into PR #${pr.number}'s description`);
       }
-      // Only once GitHub has it: an optimistic assignment survives the failure
-      // and makes prcoder report items the PR has never seen. Reached with
-      // nothing to write as well, which is a mirror that has caught up by
-      // itself -- someone else wrote the same block, or the change was undone.
-      pr.body = body;
-      mirrorFailed = false;
     } catch (e) {
       // The store already has the change, so nothing is lost — but the body
       // on GitHub may now be behind, and merging against it would bury the very
@@ -259,6 +250,26 @@ async function writeQueue(items, branch) {
     }
   }
   return decorate(items);
+}
+
+/**
+ * Read, change and write the description: the one way either route writes it.
+ * Answers whether anything was sent.
+ */
+async function editBody(edit) {
+  const cur = requirePr();
+  const current = await prBody(repo, cur.url);
+  const body = edit(current);
+  if (body !== current) await setBody(repo, cur.url, body);
+  // Only once GitHub has it: an optimistic assignment survives the failure
+  // and makes prcoder report items the PR has never seen. Reached with
+  // nothing to write as well, which is a mirror that has caught up by
+  // itself -- someone else wrote the same block, or the change was undone.
+  cur.body = body;
+  // A write that landed is the evidence the flag was waiting for, whichever
+  // route made it.
+  mirrorFailed = false;
+  return body !== current;
 }
 
 /**
@@ -443,19 +454,17 @@ const routes = {
    * otherwise be written back out of date.
    */
   'POST /api/pr/task': async ({ index, done, text }) => {
-    const cur = requirePr();
     // Unguarded on purpose: a read that failed is not the cached body. Falling
     // back to it wrote a stale description back over whatever had been added on
     // github.com since the last poll -- to tick one box. The tick fails instead,
     // and the client says so.
-    const current = await prBody(repo, cur.url);
-    const { body, inBlock } = toggleTask(current, index, done, text);
-    await setBody(repo, cur.url, body);
-    pr.body = body;
-    // A write that landed is the evidence the flag was waiting for, whichever
-    // route made it.
-    mirrorFailed = false;
-    term.verbose(`${done ? 'ticked' : 'unticked'} a checkbox in PR #${cur.number}'s description`);
+    let inBlock;
+    await editBody((current) => {
+      const toggled = toggleTask(current, index, done, text);
+      inBlock = toggled.inBlock;
+      return toggled.body;
+    });
+    term.verbose(`${done ? 'ticked' : 'unticked'} a checkbox in PR #${pr.number}'s description`);
 
     // Our own block is a projection of the queue, so a tick there has to reach
     // the store: readQueue folds the new body back into the items and
