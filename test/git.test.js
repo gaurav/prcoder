@@ -102,9 +102,13 @@ test('a branch name that is the tail of another branch is not mistaken for it', 
   const bare = path.join(dir, 'origin.git');
   const work = path.join(dir, 'work');
   // The identity goes on the command, not into a config: a CI runner has none
-  // set, and `git commit` there is a hard failure rather than a warning.
+  // set, and `git commit` there is a hard failure rather than a warning. Signing
+  // is turned off the same way: a machine that signs every commit hands this
+  // throwaway repo's commit to its signer, and a locked 1Password agent failed
+  // the test after a minute's wait with nothing to do with ls-remote.
   const run = (cwd, ...args) => git('git', [
-    '-c', 'user.name=prcoder tests', '-c', 'user.email=tests@prcoder.invalid', ...args,
+    '-c', 'user.name=prcoder tests', '-c', 'user.email=tests@prcoder.invalid',
+    '-c', 'commit.gpgsign=false', ...args,
   ], { cwd });
   try {
     await git('git', ['init', '-q', '--bare', bare]);

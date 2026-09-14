@@ -15,6 +15,35 @@ Agent HQ is a cloud fleet dashboard. None of them treats the pull request as the
 prcoder is a prototype for finding out whether a PR-shaped workspace beats a chat-shaped one. It is
 deliberately cheap to throw away.
 
+## Where the queue is going
+
+The queue below is on its way out, and nothing new should be built on it. It was started on the idea
+that one list could *be* every place work lives — the PR description, FUTURE.md, issues — and move
+items between them, and keeping that two-way mirror correct is what the guards in the next section
+are for. In use, the queue works best as something smaller: your own TODO list for this working copy,
+kept in `.prcoder/`.
+
+The direction, decided 2026-09-14 and carried by [#27](https://github.com/gaurav/prcoder/pull/27)
+(`queue-tabs`):
+
+- **The queue is yours.** Local, done and deleted items, stored in `.prcoder/queue.json` and nowhere
+  else.
+- **Each permanent source gets a tab of its own**, read straight from the source: the PR
+  description's checklist, issues (grouped by milestone), and later FUTURE.md. The question a tab
+  answers is "what does this PR's description still need?", and pulling an item from it adds it to
+  your queue.
+- **Moving an item to a source is one-way.** It is appended to the description, filed as an issue,
+  or written to FUTURE.md, and it leaves the queue. No mirror, no sync, and so none of the guards
+  below: no `syncFromPrBlock`, no `ours()`/`belongs()`, no `mirrorFailed` latch, no `pr` field.
+  Items already mirrored stay in the queue as local items rather than being dropped.
+- **Quitting with local items still in the queue** asks whether to move them somewhere durable, so
+  the work can be picked up on another machine.
+
+The order of work: #27 first gets the base merged in, then replaces mirroring with move routes, then
+turns its flag-filtered PR and Issues tabs into views of the sources. FUTURE.md as a source, the
+interactive quit prompt and a milestone filter are follow-ups of their own. Until #27 merges, the
+mirror in this branch is correct but frozen: fix it if it loses work, and otherwise leave it.
+
 ## Three guards, because the obvious version loses work
 
 The queue lives in `.prcoder/queue.json` and the PR description is a *projection* of it, never the
