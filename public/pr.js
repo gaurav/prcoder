@@ -298,10 +298,12 @@ const repoName = (repoUrl) => repoUrl.replace(/^https?:\/\/[^/]+\//, '');
  * milestones.
  *
  * Built from the PR's own URL rather than from the `nameWithOwner` the status
- * carries, which says nothing about the host. That keeps a GitHub Enterprise
- * install working, and points a fork's pull request at the repository it was
- * opened *against*, which is where its issues are. `git.js`'s compare URL is
- * the one place that hardcodes github.com, and it is not a thing to copy.
+ * carries, which says nothing about the host. That keeps these links right for
+ * a GitHub Enterprise host, and points a fork's pull request at the repository
+ * it was opened *against*, which is where its issues are. The rest of prcoder
+ * does not run against an Enterprise host yet -- `parsePrUrl`, the `gh api`
+ * calls and two hard-coded github.com URLs all assume it (#53) -- so this is
+ * the part not to undo, not proof that the whole works.
  *
  * The arrow is on the first link only. That is the one that means "what you are
  * looking at, on GitHub"; the rest read as a menu, and five arrows in a row
