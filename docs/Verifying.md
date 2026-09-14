@@ -133,6 +133,9 @@ same row, which must leave the queue exactly as the real drag did. Row drags car
 too, until that drop read as a drag from row `NaN` and moved the first item; run against the old
 code the check prints `MOVED`, in both engines. Then the same row moved back from the keyboard: focus
 on its grip, Down, and the pair is in its original order with focus still on the row that moved.
+And the two source tabs: one PR-tab checkbox ticked and unticked, two real description edits
+checked to leave the body as it was, and one mentioned issue pulled into Local, which the queue
+restore takes back out.
 
 Driven in the PTY: the tab count, `r` forcing a poll, the busy-port line finding the other instance
 and naming its repo, the quit prompt naming what it costs, a second instance with no tab quitting on

@@ -36,10 +36,12 @@ description holds now.
 `prcoder <pr-url>` pins a PR that is not the checkout's, and appending your list to a stranger's
 description is not a move anybody asked for. It fails closed while the PR is still loading.
 
-**Still to come on #27:** a tab for each permanent source, read straight from it — the PR
-description's checklist and issues grouped by milestone first, FUTURE.md later — with a way to pull
-an item from a source into the queue. After that, quitting with items still on Local offers to move
-them somewhere durable, so the work can be picked up on another machine.
+**Each permanent source is a tab, read straight from it.** PR is the description's checklist, and
+Issues is the issues the description mentions without closing; pulling from either copies the item
+into Local and leaves the source alone, since a checkbox is the PR's record and an issue is the
+project's. Issues is deliberately that narrow for now: an upcoming milestone to focus on, search, and
+showing an issue in the pane are a design still to be settled. FUTURE.md as a source, and quitting
+with items still on Local offering to move them somewhere durable, are follow-ups of their own.
 
 The queue was scoped per branch once, with a guard refusing a write from a branch the tab had left.
 That is gone too, and [#48](https://github.com/gaurav/prcoder/issues/48) holds why: scoping the list

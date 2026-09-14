@@ -125,7 +125,13 @@ is where it lives from then on.
 session you finished tidily ends with it empty. **Completed** is what you ticked
 off, with a delete-all for clearing it out, and **Deleted** holds tombstones
 until you empty it — nothing you typed disappears without somewhere to get it
-back. Every item is on exactly one tab, and Deleted hides when it holds nothing.
+back. Every item is on exactly one of those, and Deleted hides when it holds
+nothing.
+
+With a pull request on screen, two more tabs read GitHub rather than your queue.
+**PR** is the description's own checklist, ticked through to GitHub like the
+boxes in the PR pane; **Issues** is the issues the description mentions without
+closing. ↓ on either copies the item into Local and leaves it where it was.
 
 New items go to the bottom, so typing them in builds a list in the order you
 mean to work through it. The arrow next to the input flips that to the top for
