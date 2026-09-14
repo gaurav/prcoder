@@ -278,9 +278,7 @@ management listed below, deliberately not built yet.
 
 ## Not here
 
-Syntax-highlighted diffs, review threads, multi-session management. This is a prototype for
-finding out whether a PR-shaped workspace beats a chat-shaped one; it's meant to
-be cheap to rewrite. [docs/Design.md](docs/Design.md) has the full list and the reasoning behind
+Syntax-highlighted diffs, review threads, multi-session management. [docs/Design.md](docs/Design.md) has the full list and the reasoning behind
 it, along with why prcoder exists at all and what a localhost server is exposed to.
 
 `npm test` covers the parts worth pinning down: the queue store, file grouping, GitHub's diff

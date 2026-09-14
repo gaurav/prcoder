@@ -12,9 +12,6 @@ fits that loop. Claude Code Desktop, Conductor and Nimbalyst are session manager
 worktrees. PR-Agent and CodeRabbit review *for* you, which is the opposite end of the problem.
 Agent HQ is a cloud fleet dashboard. None of them treats the pull request as the workspace.
 
-prcoder is a prototype for finding out whether a PR-shaped workspace beats a chat-shaped one. It is
-deliberately cheap to throw away.
-
 ## Where the queue is going
 
 The queue below is on its way out, and nothing new should be built on it. It was started on the idea
