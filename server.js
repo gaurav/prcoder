@@ -183,8 +183,22 @@ async function readQueue(branch) {
   // allowed to merge against is a fact about the branch. Which items exist is
   // not -- the queue is one list whatever is checked out.
   branch ??= await currentBranch(repo);
-  const { store } = await readStore(repo);
-  return decorate(mirrors(branch) ? syncFromPrBlock(store.items, pr.body ?? '', pr.number) : store.items);
+  const { store, stale } = await readStore(repo);
+  if (!mirrors(branch)) return decorate(store.items);
+
+  // Kept, not just shown. The merge used to go to the browser and nowhere else,
+  // so a box ticked on github.com was done for as long as this PR was on screen
+  // and undone again after a switch -- the store still had the old value, and
+  // off this PR the store is all there is. Written only when the description
+  // actually changed something, so an ordinary poll stays a read.
+  const next = replaceItems(store, syncFromPrBlock(store.items, pr.body ?? '', pr.number));
+  if (JSON.stringify(next.items) !== JSON.stringify(store.items)) {
+    for (const line of queueChanges(store.items, next.items)) term.verbose(`from the PR description: ${line}`);
+    // A store that cannot be written still has a queue to show, so this is
+    // reported rather than failing the poll; the next poll merges it again.
+    await writeStore(repo, next, { stale }).catch((e) => console.error('queue not saved:', e.message));
+  }
+  return decorate(next.items);
 }
 
 /**
