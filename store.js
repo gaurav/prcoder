@@ -42,6 +42,8 @@ export const pick = (i) => ({
   text: String(i?.text ?? ''),
   done: !!i?.done,
   inPr: !!i?.inPr,
+  // Which PR's description it is mirrored into. Meaningless once it is not.
+  pr: i?.inPr && Number.isInteger(i?.pr) ? i.pr : null,
   issue: Number.isInteger(i?.issue) ? i.issue : null,
   deleted: !!i?.deleted,
 });

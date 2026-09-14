@@ -2,8 +2,8 @@
 // and the markdown checklist grammar it shares with FUTURE.md.
 //
 // The queue itself lives in .prcoder/queue.json (see store.js) and an item is
-// { text, done, inPr, issue, deleted, branch }. `inPr` mirrors it into the PR
-// description; `issue` links it to a GitHub issue. An item can be both, in
+// { text, done, inPr, pr, issue, deleted }. `inPr` mirrors it into a PR
+// description and `pr` is which one; `issue` links it to a GitHub issue. An item can be both, in
 // which case the PR line becomes a bare #N reference — that is the "converting
 // to an issue replaces the PR line" rule. `deleted` is a tombstone: deleting an
 // item here or on github.com keeps the record, so nothing the user typed
@@ -76,11 +76,23 @@ export function parseFuture(text) {
 }
 
 /**
- * Replace the prcoder block in a PR body. Items live there when `inPr`; an
- * item that is also an issue renders as a bare `#N` so GitHub links it.
+ * Whether an item is PR `number`'s to show and to bury. The queue is one list for
+ * the repo while each block is one PR's, so an item mirrored into another PR is
+ * neither written into this block nor read as deleted for being absent from it
+ * -- which it was, every time a switch put a PR with an older block on screen.
+ *
+ * An item with no `pr` is anybody's: not mirrored at all, or mirrored before
+ * items recorded where. The first PR it is written into or matched in claims it.
  */
-export function renderPrBlock(items, body = '') {
-  const mine = items.filter((i) => i.inPr && !i.deleted);
+const belongs = (item, number) => !item.inPr || item.pr == null || item.pr === number;
+
+/**
+ * Replace the prcoder block in PR `number`'s body. Items live there when `inPr`
+ * and it is theirs; an item that is also an issue renders as a bare `#N` so
+ * GitHub links it.
+ */
+export function renderPrBlock(items, body = '', number) {
+  const mine = items.filter((i) => i.inPr && !i.deleted && belongs(i, number));
   const block = mine.length
     ? [OPEN, '## TODO', '', ...mine.map((i) => renderItem(i)), CLOSE].join('\n')
     : '';
@@ -159,7 +171,7 @@ function splitPrBlock(body = '') {
  * ponytail: last-write-wins, no conflict detection. Single user, single PR —
  * add real merging only if simultaneous edits actually bite.
  */
-export function syncFromPrBlock(items, body = '') {
+export function syncFromPrBlock(items, body = '', number) {
   const { before, after, found } = splitPrBlock(body);
   if (!found) return items;
 
@@ -170,7 +182,8 @@ export function syncFromPrBlock(items, body = '') {
   const matched = new Set();
 
   const same = (line) => (m) => (line.issue ? m.issue === line.issue : m.text === line.text);
-  const pick = (pred) => merged.findIndex((m, idx) => !matched.has(idx) && pred(m));
+  const pick = (pred) => merged.findIndex((m, idx) => !matched.has(idx) && belongs(m, number) && pred(m));
+  const claim = number == null ? {} : { pr: number };
 
   for (const line of fromPr) {
     // A line in the body describes an item that is in the body, so an item
@@ -179,9 +192,12 @@ export function syncFromPrBlock(items, body = '') {
     const is = same(line);
     let i = pick((m) => is(m) && m.inPr);
     if (i === -1) i = pick(is);
-    if (i === -1) merged.push({ ...line, inPr: true });
+    if (i === -1) merged.push({ ...line, inPr: true, ...claim });
     // Re-adding a line on github.com is how an item comes back from the dead.
-    else { matched.add(i); merged[i].done = line.done; merged[i].inPr = true; merged[i].deleted = false; }
+    else {
+      matched.add(i);
+      Object.assign(merged[i], { done: line.done, inPr: true, deleted: false, ...claim });
+    }
   }
 
   // An item we put in the PR body that is no longer there was deleted on
@@ -189,7 +205,10 @@ export function syncFromPrBlock(items, body = '') {
   // was struck out one by one, so it is not evidence of anything.
   if (fromPr.length) {
     for (const [idx, m] of merged.entries()) {
-      if (m.inPr && !matched.has(idx) && idx < items.length) { m.inPr = false; m.deleted = true; }
+      if (m.inPr && !matched.has(idx) && idx < items.length && belongs(m, number)) {
+        m.inPr = false;
+        m.deleted = true;
+      }
     }
   }
   return merged;

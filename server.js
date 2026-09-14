@@ -184,7 +184,7 @@ async function readQueue(branch) {
   // not -- the queue is one list whatever is checked out.
   branch ??= await currentBranch(repo);
   const { store } = await readStore(repo);
-  return decorate(mirrors(branch) ? syncFromPrBlock(store.items, pr.body ?? '') : store.items);
+  return decorate(mirrors(branch) ? syncFromPrBlock(store.items, pr.body ?? '', pr.number) : store.items);
 }
 
 /**
@@ -212,6 +212,9 @@ async function writeQueue(items, branch) {
     throw new Error('the queue must be sent as {items}');
   }
   branch ??= await currentBranch(repo);
+  // Mirrored from here, so mirrored into this PR: an item switched on without a
+  // PR of its own is this one's from now on, and stays out of every other's.
+  if (ours(branch)) items = items.map((i) => (i.inPr && i.pr == null ? { ...i, pr: pr.number } : i));
 
   const { store, stale: staleBytes } = await readStore(repo);
   for (const line of queueChanges(store.items, items)) term.verbose(line);
@@ -231,7 +234,7 @@ async function writeQueue(items, branch) {
   // And while it is set the cheap comparison is worthless: `cached` is a copy
   // GitHub is known to disagree with, so matching it proves nothing. Every
   // change tries the write until one lands.
-  if (ours(branch) && (mirrorFailed.has(pr.url) || renderPrBlock(items, cached) !== cached)) {
+  if (ours(branch) && (mirrorFailed.has(pr.url) || renderPrBlock(items, cached, pr.number) !== cached)) {
     const { url } = pr;
     try {
       // Re-read rather than trusting that copy: someone may have edited the
@@ -242,7 +245,7 @@ async function writeQueue(items, branch) {
       // says nothing about what the description holds now, and writing the
       // stale copy back over prose added since is the exact loss the re-read
       // exists to prevent -- so a failed read fails the mirror instead.
-      if (await editBody((current) => renderPrBlock(items, current))) {
+      if (await editBody((current) => renderPrBlock(items, current, pr.number))) {
         term.verbose(`wrote the queue block into PR #${pr.number}'s description`);
       }
     } catch (e) {

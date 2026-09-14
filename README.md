@@ -144,7 +144,7 @@ the port this working copy listens on.
   "version": 1,
   "items": [
     { "text": "Add retry to the fetch path",
-      "done": false, "inPr": false, "issue": null, "deleted": false }
+      "done": false, "inPr": false, "pr": null, "issue": null, "deleted": false }
   ]
 }
 ```
@@ -161,7 +161,8 @@ The way to carry an item elsewhere is the ◆ button, which mirrors it into a
 block on github.com — ticking a box, adding a line from your phone, deleting
 one — are folded back in on refresh. prcoder only mirrors into the pull request
 for the branch you have checked out: a PR you are merely looking at is never
-written to. Separate worktrees keep separate queues, since each has its own
+written to. An item records which PR it went into (`pr`), so it stays in that
+description when you move to another PR and is not taken for deleted there. Separate worktrees keep separate queues, since each has its own
 `.prcoder/`.
 
 If you have a `FUTURE.md` from an earlier version, its `## Queue` section is

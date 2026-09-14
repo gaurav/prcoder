@@ -23,7 +23,10 @@ disappears with nobody noticing. Each is a few lines; each is argued at its own 
 
 **Mirror only the checked-out branch's PR** — `ours()` in [`server.js`](../server.js).
 `syncFromPrBlock` tombstones any mirrored item missing from the description's block, which is only
-safe when the queue and the description came from the same branch. `prcoder <pr-url>` pins a PR that
+safe when the queue and the description came from the same branch — and, now that the queue is one
+list for the repo, only for the items that were mirrored into *that* PR. Each item records its PR in
+`pr`, and `belongs()` in [`queue.js`](../queue.js) keeps another PR's items out of this block in both
+directions: not written into it, and not buried for being absent from it. `prcoder <pr-url>` pins a PR that
 is not the checkout's, and without this gate prcoder merges your items against a stranger's block,
 burying all of them, *and* writes your queue into their description. It fails closed: a missed merge
 is recovered by the next poll, where a wrong one is not.

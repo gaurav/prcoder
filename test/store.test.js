@@ -7,7 +7,7 @@ import { normalise, pick, readStore, writeStore, readPort, writePort, replaceIte
 
 const repo = () => fs.mkdtemp(path.join(os.tmpdir(), 'prcoder-store-'));
 const item = (over = {}) =>
-  ({ text: 'a task', done: false, inPr: false, issue: null, deleted: false, ...over });
+  ({ text: 'a task', done: false, inPr: false, pr: null, issue: null, deleted: false, ...over });
 
 // The client PUTs back the array it was handed, which decorate() has added an
 // issueUrl to. The markdown writer dropped unknown fields for free; JSON would
@@ -15,7 +15,7 @@ const item = (over = {}) =>
 test('only the fields we own are stored', () => {
   const stored = pick({ ...item(), issueUrl: 'https://github.com/o/r/issues/1', junk: 1 });
   assert.deepEqual(Object.keys(stored).sort(),
-    ['deleted', 'done', 'inPr', 'issue', 'text']);
+    ['deleted', 'done', 'inPr', 'issue', 'pr', 'text']);
 });
 
 // The queue was scoped per branch for a while, so a file written then has a
@@ -23,7 +23,7 @@ test('only the fields we own are stored', () => {
 // come back into view on the next read, which is the point of #48.
 test('a branch left on an item by an older prcoder is dropped', () => {
   assert.deepEqual(Object.keys(pick(item({ branch: 'merged-and-gone' }))).sort(),
-    ['deleted', 'done', 'inPr', 'issue', 'text']);
+    ['deleted', 'done', 'inPr', 'issue', 'pr', 'text']);
   const { store } = normalise(JSON.stringify(
     { version: 1, items: [item({ branch: 'work' }), item({ text: 'b', branch: 'other' })] }));
   assert.deepEqual(store.items.map((i) => i.text), ['a task', 'b']);
@@ -32,7 +32,15 @@ test('a branch left on an item by an older prcoder is dropped', () => {
 test('fields are coerced, so a hand-edited file cannot make a half-item', () => {
   const out = pick({ text: 42, done: 'yes', issue: '7' });
   assert.deepEqual(out,
-    { text: '42', done: true, inPr: false, issue: null, deleted: false });
+    { text: '42', done: true, inPr: false, pr: null, issue: null, deleted: false });
+});
+
+// Which PR an item is mirrored into is only a fact while it is mirrored. Kept
+// past that, it would decide which PR's block may bury an item that is in none.
+test("an item's PR is kept while it is mirrored and dropped once it is not", () => {
+  assert.equal(pick(item({ inPr: true, pr: 7 })).pr, 7);
+  assert.equal(pick(item({ inPr: false, pr: 7 })).pr, null);
+  assert.equal(pick(item({ inPr: true, pr: '7' })).pr, null);
 });
 
 // Absent and empty are ordinary: a repo that has never run prcoder, and one
@@ -73,7 +81,7 @@ test('a store from a newer version is not guessed at', () => {
 test('a missing field takes its default instead of failing the read', () => {
   const { store, stale } = normalise(JSON.stringify({ version: 1, items: [{ text: 'bare' }] }));
   assert.equal(stale, false);
-  assert.deepEqual(store.items, [{ text: 'bare', done: false, inPr: false, issue: null, deleted: false }]);
+  assert.deepEqual(store.items, [{ text: 'bare', done: false, inPr: false, pr: null, issue: null, deleted: false }]);
 });
 
 // One list, whatever is checked out. The branch scoping this replaces is what

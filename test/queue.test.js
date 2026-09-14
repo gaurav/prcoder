@@ -178,6 +178,38 @@ test('a body line matches the mirrored twin, not the local-only one', () => {
   ]);
 });
 
+// The queue is one list for the repo; a block is one PR's. Item X went into PR
+// 1's description, and PR 2's still holds the block from a visit before X
+// existed. Putting PR 2 on screen used to merge the whole queue against that
+// block, bury X for being absent from it, and let the next save make it stick
+// -- and a write there would have put PR 1's items into PR 2's description.
+test('switching to a PR with an older block buries nothing mirrored into another PR', () => {
+  const items = [
+    { text: 'in both', done: false, inPr: true, pr: 2, issue: null, deleted: false },
+    { text: 'X', done: false, inPr: true, pr: 1, issue: null, deleted: false },
+  ];
+  const twos = renderPrBlock([items[0]], 'PR 2.', 2);
+  assert.deepEqual(syncFromPrBlock(items, twos, 2), items);
+  assert.doesNotMatch(renderPrBlock(items, twos, 2), /- \[ \] X/);
+  assert.match(renderPrBlock(items, 'PR 1.', 1), /- \[ \] X/);
+
+  // PR 2's own items are still buried when a line goes, and a new line is PR 2's.
+  const edited = twos.replace('- [ ] in both', '- [ ] added there');
+  const [gone, x, added] = syncFromPrBlock(items, edited, 2);
+  assert.deepEqual([gone.deleted, gone.inPr], [true, false]);
+  assert.deepEqual(x, items[1]);
+  assert.deepEqual([added.text, added.pr], ['added there', 2]);
+});
+
+// Mirrored before items recorded a PR: the first block that has the line claims
+// it, rather than every block that lacks it burying it.
+test('an item with no PR recorded is claimed by the block it is found in', () => {
+  const legacy = [{ text: 'old', done: false, inPr: true, issue: null, deleted: false }];
+  const body = renderPrBlock(legacy, 'Desc.', 5);
+  assert.match(body, /- \[ \] old/);
+  assert.equal(syncFromPrBlock(legacy, body, 5)[0].pr, 5);
+});
+
 // The consequence that makes issueNumber() throw rather than pass NaN through.
 // MARKERS is anchored, so a value it cannot match ends the marker run: the
 // text is corrupted and @pr is lost with it, quietly and on the way back in.
