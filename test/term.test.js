@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { sink, status, log, paint, verbose, debug, cycleVerbosity, confirm } from '../term.js';
+import { sink, status, log, paint, verbose, debug, cycleVerbosity, confirm, clip } from '../term.js';
 
 /** A stand-in for process.stdout, so the tty path can be exercised anywhere. */
 function fake(isTTY, columns = 40, rows = 24) {
@@ -46,6 +46,20 @@ test('block lines are cut to the width, so one line stays one row', () => {
   for (const line of out.text.split('\n')) {
     assert.ok(line.replaceAll(/\x1b\[[\d?]*[A-Za-z]/g, '').length < 20, line.length);
   }
+});
+
+// The same, measured in columns. A CJK character or an emoji takes two, so a
+// title cut by UTF-16 length still wrapped, and every erase after it was a row
+// short.
+test('wide characters count two columns, and nothing is cut in half', () => {
+  assert.equal(clip('漢字漢字漢字', 5), '漢字');
+  assert.equal(clip('ship it 🚀🚀', 10), 'ship it 🚀');
+  assert.equal(clip('e\u0301e\u0301', 2), 'e\u0301e\u0301');   // combining accents are free
+  assert.equal(clip('plain', 80), 'plain');
+  const out = fake(true, 21);
+  status(['PR #1  漢字'.repeat(10)]);
+  const [, row] = out.text.split('\n');
+  assert.ok([...row].reduce((w, ch) => w + (/\p{Script=Han}/u.test(ch) ? 2 : 1), 0) <= 20, row);
 });
 
 // The gate itself: a debug line leaking at quiet is noise on every poll, and a
