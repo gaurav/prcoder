@@ -69,10 +69,11 @@ for (const g of document.querySelectorAll('.gut')) {
   });
 
   // The way back out of a corner: drop to the template's own default.
-  g.addEventListener('dblclick', () => {
+  const reset = () => {
     main.style.removeProperty(name);
     save();
-  });
+  };
+  g.addEventListener('dblclick', reset);
 
   // These were pointer-only: role="separator" on something with nothing to
   // focus and no key that did anything, so a keyboard could not resize or reset
@@ -85,8 +86,7 @@ for (const g of document.querySelectorAll('.gut')) {
   g.addEventListener('keydown', (e) => {
     if (e.key === 'Home') {
       e.preventDefault();
-      main.style.removeProperty(name);
-      return save();
+      return reset();
     }
     const towards = { ArrowLeft: -1, ArrowUp: -1, ArrowRight: 1, ArrowDown: 1 }[e.key];
     if (!towards) return;
