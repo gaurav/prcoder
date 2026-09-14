@@ -473,17 +473,24 @@ function issueRow(list, closes, label) {
  */
 function fileGroup(label, files, handlers) {
   if (!files?.length) return null;
-  const seen = files.filter((f) => f.viewed).length;
-  const d = h('details', {
-    className: 'fold group', open: !closedGroups.has(label), dataset: { group: label },
-  },
-  h('summary', {},
-    h('h3', {}, label),
-    h('span', { className: 'count' }, `${seen}/${files.length}`)),
-  h('div', { className: 'sec-body' }, ...files.map((f) => fileRow(f, handlers))));
-  d.addEventListener('toggle', () => {
-    if (d.open) closedGroups.delete(label); else closedGroups.add(label);
-  });
+  const { done, total } = viewedCount(files);
+  return fold({
+    className: 'group', dataset: { group: label }, title: label, count: `${done}/${total}`,
+    open: !closedGroups.has(label),
+    onToggle: (open) => { if (open) closedGroups.delete(label); else closedGroups.add(label); },
+  }, files.map((f) => fileRow(f, handlers)));
+}
+
+/**
+ * A <details> fold with a heading and an optional count, the shape both the file
+ * groups and the description's sections take. `onToggle` fires for a click and
+ * for the initial `open`, so it has to be idempotent.
+ */
+function fold({ className, dataset, title, count, open, onToggle }, children) {
+  const d = h('details', { className: `fold ${className}`, open, dataset },
+    h('summary', {}, h('h3', {}, title), count ? h('span', { className: 'count' }, count) : null),
+    h('div', { className: 'sec-body' }, ...children));
+  d.addEventListener('toggle', () => onToggle(d.open));
   return d;
 }
 
@@ -728,22 +735,13 @@ export function sectionize(list) {
  */
 function sectionNode(s, onTask) {
   const tasks = s.nodes.filter((b) => b.kind === 'task');
-  const d = h('details', {
-    className: 'fold md-section', open: openSections.has(s.key), dataset: { key: s.key },
-  },
-    h('summary', {},
-      h('h3', {}, s.title),
-      // So a fold never hides work without saying so.
-      tasks.length
-        ? h('span', { className: 'count' }, `${tasks.filter((b) => b.done).length}/${tasks.length}`)
-        : null),
-    h('div', { className: 'sec-body' }, ...s.nodes.map((b) => blockNode(b, onTask))));
-  // Fires for a click and for the `open` above, which re-adds a key already in
-  // the set -- idempotent either way.
-  d.addEventListener('toggle', () => {
-    if (d.open) openSections.add(s.key); else openSections.delete(s.key);
-  });
-  return d;
+  return fold({
+    className: 'md-section', dataset: { key: s.key }, title: s.title,
+    // So a fold never hides work without saying so.
+    count: tasks.length ? `${tasks.filter((b) => b.done).length}/${tasks.length}` : null,
+    open: openSections.has(s.key),
+    onToggle: (open) => { if (open) openSections.add(s.key); else openSections.delete(s.key); },
+  }, s.nodes.map((b) => blockNode(b, onTask)));
 }
 
 /**
