@@ -34,8 +34,9 @@ is recovered by the next poll, where a wrong one is not.
 **Don't trust a description we failed to write** — the `mirrorFailed` latch in `writeQueue`. When
 `setBody` fails, the store already has the change and GitHub is behind; treating that stale body as
 evidence on the next poll buries the item that failed to go out. The latch suspends the *merge* and
-only the merge, because the only thing that can clear it is a successful write — a latch that also
-stopped writing would be one nothing could open. It is held per pull request, because only a write
+only the merge, because the only thing that can clear it is a successful write of the queue's block —
+a latch that also stopped writing would be one nothing could open. A checkbox ticked elsewhere in the
+description does not count: that write sends GitHub's stale block straight back. It is held per pull request, because only a write
 to *that* description is evidence that it caught up: one flag for all of them was cleared by a write
 to another PR, and the description still behind was trusted again. Neither side of that write falls
 back to a body it failed to read: a read that did not happen says nothing about what the description

@@ -248,6 +248,12 @@ async function writeQueue(items, branch) {
       if (await editBody((current) => renderPrBlock(items, current, pr.number))) {
         term.verbose(`wrote the queue block into PR #${pr.number}'s description`);
       }
+      // GitHub now holds exactly the block these items render to, which is the
+      // evidence the latch was waiting for -- and only this route has it. A tick
+      // elsewhere in the description is a write that landed too, but it carried
+      // whatever stale block GitHub had back out, so clearing the latch there
+      // let the next poll merge that block over the change it was guarding.
+      mirrorFailed.delete(url);
     } catch (e) {
       // The store already has the change, so nothing is lost — but the body
       // on GitHub may now be behind, and merging against it would bury the very
@@ -274,9 +280,6 @@ async function editBody(edit) {
   // nothing to write as well, which is a mirror that has caught up by
   // itself -- someone else wrote the same block, or the change was undone.
   cur.body = body;
-  // A write that landed is the evidence the flag was waiting for, whichever
-  // route made it.
-  mirrorFailed.delete(cur.url);
   return body !== current;
 }
 
