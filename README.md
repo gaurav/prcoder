@@ -220,6 +220,11 @@ with prcoder at all.
 
 ## Requirements
 
+Node 22.18 or later in the 22 line, or 24.2 or later. `server.js` starts only
+under `import.meta.main`, which older versions do not have: there it is
+undefined, and prcoder exits at once having done nothing and said nothing. CI
+runs 26.
+
 The [`gh` CLI](https://cli.github.com/), authenticated. All GitHub access goes
 through it, so there is no token to configure.
 
