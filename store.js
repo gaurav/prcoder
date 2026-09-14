@@ -24,7 +24,7 @@ const PORT_FILE = 'port.json';
 // Bump only when an existing field changes meaning. Adding a field does not
 // need one: reads fill in what is missing, so an older prcoder skips a field it
 // does not know rather than failing on it.
-export const VERSION = 1;
+const VERSION = 1;
 
 const dir = (repo) => path.join(repo, DIR);
 const file = (repo) => path.join(dir(repo), FILE);
@@ -91,14 +91,16 @@ export async function readStore(repo) {
  * is worse than not doing this at all.
  */
 export async function writeStore(repo, store, { stale = false } = {}) {
+  if (stale) await fs.rename(file(repo), `${file(repo)}.bak`).catch(() => {});
+  await writeJson(repo, file(repo), { ...store, version: VERSION });
+}
+
+/** The temp-then-rename write above, for every file in the directory. */
+async function writeJson(repo, target, obj) {
   await fs.mkdir(dir(repo), { recursive: true });
   await writeIgnore(repo);
-
-  const target = file(repo);
-  if (stale) await fs.rename(target, `${target}.bak`).catch(() => {});
-
   const tmp = `${target}.${process.pid}.tmp`;
-  await fs.writeFile(tmp, `${JSON.stringify({ ...store, version: VERSION }, null, 2)}\n`);
+  await fs.writeFile(tmp, `${JSON.stringify(obj, null, 2)}\n`);
   await fs.rename(tmp, target);
 }
 
@@ -144,15 +146,7 @@ export async function readPort(repo) {
 }
 
 /** Written like the queue: temp file, then a rename, which is atomic in one directory. */
-export async function writePort(repo, port) {
-  await fs.mkdir(dir(repo), { recursive: true });
-  await writeIgnore(repo);
-
-  const target = portFile(repo);
-  const tmp = `${target}.${process.pid}.tmp`;
-  await fs.writeFile(tmp, `${JSON.stringify({ version: VERSION, port }, null, 2)}\n`);
-  await fs.rename(tmp, target);
-}
+export const writePort = (repo, port) => writeJson(repo, portFile(repo), { version: VERSION, port });
 
 /** The whole list replaced, coerced on the way in. */
 export const replaceItems = (store, items) => ({ ...store, items: items.map(pick) });
