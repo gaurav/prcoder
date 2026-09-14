@@ -338,7 +338,7 @@ a { color: var(--accent); }
 .item .grip { flex: none; cursor: grab; color: var(--dim); font-size: 11px; opacity: .25; }
 .item .grip:active { cursor: grabbing; }
 .actions { display: flex; gap: 2px; opacity: 0; }
-.item:hover .grip, .item:hover .actions, .item:focus-within .actions { opacity: 1; }
+.item:hover .grip, .item .grip:focus-visible, .item:hover .actions, .item:focus-within .actions { opacity: 1; }
 .item .grip:hover { color: var(--accent); }
 .actions button {
   background: none; border: 0; color: var(--dim);

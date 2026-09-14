@@ -126,7 +126,7 @@ function render() {
           bulk('clear done', () => { items.forEach((i) => { if (i.done) { i.deleted = true; i.inPr = false; } }); save(); }),
         ]),
     ),
-    h('ul', { className: 'items' }, ...shown.map((i) => row(i))),
+    h('ul', { className: 'items' }, ...shown.map((i, n) => row(i, shown[n - 1], shown[n + 1]))),
   );
 
   document.getElementById('queue-input').placeholder =
@@ -176,8 +176,25 @@ const ROW = 'application/x-prcoder-row';
 
 const bulk = (label, fn, props = {}) => btn(label, fn, { className: 'bulk', ...props });
 
-function row(item) {
+function row(item, above, below) {
   const idx = items.indexOf(item);
+
+  // The keyboard's way to reorder, which a drag has no equivalent of. Moves
+  // past the next row *shown*, not the next in the array: the tab filters, so
+  // the array neighbour may be a done or deleted item you cannot see move.
+  const grip = h('span', { className: 'grip', title: 'drag, or focus and press ↑ ↓, to reorder', tabIndex: 0 }, '⠿');
+  grip.setAttribute('role', 'button');
+  grip.setAttribute('aria-label', `reorder “${item.text}”: up or down arrow moves it`);
+  grip.onkeydown = async (e) => {
+    const past = { ArrowUp: above, ArrowDown: below }[e.key];
+    if (!past) return;
+    e.preventDefault();
+    const at = [...document.querySelectorAll('#queue-body .item .grip')].indexOf(grip);
+    // reorder() drops in front of its target, so going down targets the row after.
+    reorder(items, idx, items.indexOf(past) + (e.key === 'ArrowDown' ? 1 : 0));
+    // save() repaints every row, so focus goes to the grip now in the new place.
+    if (await save()) document.querySelectorAll('#queue-body .item .grip')[at + (e.key === 'ArrowDown' ? 1 : -1)]?.focus();
+  };
 
   const box = h('input', { type: 'checkbox', checked: item.done });
   box.onchange = () => { item.done = box.checked; save(); };
@@ -187,7 +204,7 @@ function row(item) {
   text.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); text.blur(); } };
 
   const li = h('li', { className: 'item', draggable: true },
-    h('span', { className: 'grip', title: 'drag to reorder' }, '⠿'),
+    grip,
     box,
     text,
     item.issue ? ext(item.issueUrl ?? '#', `#${item.issue}`, { className: 'tag issue' }) : null,

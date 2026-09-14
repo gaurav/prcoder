@@ -130,7 +130,8 @@ first paint in every real session and no check could see it. And a queue row dra
 the row above, then a synthetic `drop` carrying only `text/plain` -- a link or a selection -- on the
 same row, which must leave the queue exactly as the real drag did. Row drags carried `text/plain`
 too, until that drop read as a drag from row `NaN` and moved the first item; run against the old
-code the check prints `MOVED`, in both engines.
+code the check prints `MOVED`, in both engines. Then the same row moved back from the keyboard: focus
+on its grip, Down, and the pair is in its original order with focus still on the row that moved.
 
 Driven in the PTY: the tab count, `r` forcing a poll, the busy-port line finding the other instance
 and naming its repo, the quit prompt naming what it costs, a second instance with no tab quitting on

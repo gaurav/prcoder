@@ -376,6 +376,17 @@ try {
   await page.waitForTimeout(500);
   const after = (await page.evaluate(() => fetch('/api/queue').then((r) => r.json()))).map((i) => i.text);
   console.log('drag:   ', reordered.join(' | '), '  (want "two" first)');
+
+  // The same move without a pointer: the grip takes focus, and Down moves its
+  // row past the next one shown -- which puts the pair back how they started --
+  // with focus following the row rather than staying put on the old position.
+  await scratchRows.nth(0).locator('.grip').focus();
+  await page.keyboard.press('ArrowDown');
+  await page.waitForTimeout(500);
+  const keyed = await scratch();
+  const focusedRow = await page.evaluate(() => document.activeElement?.closest('.item')?.querySelector('.text')?.textContent);
+  console.log('rowkeys:', keyed.join(' | '), `, focus on "${focusedRow}"`,
+    '  (want "two" last, focus still on "driver scratch item two")');
   console.log('drop:   ', JSON.stringify(after) === JSON.stringify(before) ? 'unchanged' : 'MOVED',
     '  (want unchanged -- a text drop is not a row)');
 } finally {
