@@ -9,6 +9,10 @@
 /** The same checklist line GitHub renders as a checkbox. */
 export const TASK = /^\s*[-*]\s*\[( |x|X)\]\s*(.*)$/;
 
+// Factories rather than constants: a /g regex carries lastIndex between calls.
+const fence = () => /^[ \t]*```[^\n]*\n([\s\S]*?)^[ \t]*```[ \t]*$/gm;
+export const comment = () => /<!--[\s\S]*?-->/g;
+
 /**
  * The body cut into fenced blocks and the text between them, in order. Fences
  * come out before paragraphs are split on blank lines, because a fence is
@@ -21,7 +25,7 @@ export const TASK = /^\s*[-*]\s*\[( |x|X)\]\s*(.*)$/;
  */
 export function fences(body) {
   const out = [];
-  const re = /^[ \t]*```[^\n]*\n([\s\S]*?)^[ \t]*```[ \t]*$/gm;
+  const re = fence();
   let last = 0;
   let m;
   while ((m = re.exec(body)) !== null) {
@@ -52,12 +56,12 @@ export function fences(body) {
  * all. Blanked rather than removed, so the indices still address the raw body.
  */
 export function taskLines(body = '') {
-  const visible = body.replace(/<!--[\s\S]*?-->/g, (c) => c.replace(/[^\n]/g, ' '));
+  const visible = body.replace(comment(), (c) => c.replace(/[^\n]/g, ' '));
   const fenced = new Set();
   const lineAt = (index) => visible.slice(0, index).split('\n').length - 1;
   // The same expression fences() matches with, so the two agree by
   // construction rather than by being read side by side.
-  const re = /^[ \t]*```[^\n]*\n([\s\S]*?)^[ \t]*```[ \t]*$/gm;
+  const re = fence();
   let m;
   while ((m = re.exec(visible)) !== null) {
     for (let i = lineAt(m.index); i <= lineAt(re.lastIndex - 1); i++) fenced.add(i);
