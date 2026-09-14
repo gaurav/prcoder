@@ -1,7 +1,8 @@
 # How this repo checks itself
 
-`npm test` is `node --test` — bare, never `node --test test/`, for the reason in
-[CLAUDE.md](../CLAUDE.md). That covers everything that can be checked without a browser or a tty.
+`npm test` is `node --test` — bare, never `node --test test/`, because Node 26 resolves a directory
+argument as a module and dies with `Cannot find module` ([CLAUDE.md](../CLAUDE.md) has the rest,
+including why that puts the drivers in `tools/`). That covers everything that can be checked without a browser or a tty.
 This file is about the rest, and about the rule that produced it.
 
 ## Reading the CSS is not verification
@@ -19,8 +20,9 @@ driven, not reasoned about. The two drivers exist for the two halves.
 ## The two drivers
 
 `node tools/browser.mjs` boots its own server and drives the UI in a real browser, writing PNGs to
-`data/shots`. Firefox by default — see [CLAUDE.md](../CLAUDE.md) for why one engine is not "a real
-browser", and for the three fixes to the Firefox caret bug that do **not** work.
+`data/shots`. Firefox by default, because a Firefox-only bug — a click into a draggable row's text
+putting the caret at offset 0 — survived every Chromium screenshot; see [CLAUDE.md](../CLAUDE.md)
+for the rest, and for the three fixes to it that do **not** work.
 `PRCODER_BROWSER=chromium` forces the other; running both is worth the second minute.
 
 `node tools/cli.mjs` drives the other half in a real PTY, because none of the terminal UI exists
@@ -92,7 +94,8 @@ Some things can only be checked against the real thing, so they are:
 - **`git ls-remote`'s branch argument is a pattern, not a ref name.** Checked against real git in a
   scratch repo, because the belief *was* the bug: with only `refs/heads/feature/topic` on the
   remote, a bare `topic` comes back with its sha. A stub would have pinned the belief.
-- **The `git` exit codes the sync verdict depends on** — see [CLAUDE.md](../CLAUDE.md), which
+- **The `git` exit codes the sync verdict depends on**, because a non-zero exit is often an answer
+  rather than a failure and git's codes differ per command — see [CLAUDE.md](../CLAUDE.md), which
   records which command returns what and why `asks()` exists.
 - **Which CSS stops a dotfile's leading dot migrating to the end of its path**, decided by measuring
   four candidates in both engines rather than by reasoning about the bidi algorithm. The column is
