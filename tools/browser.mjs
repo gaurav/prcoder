@@ -78,8 +78,8 @@ const engine = { chromium, firefox }[process.env.PRCODER_BROWSER]
   ?? (existsSync(firefox.executablePath()) ? firefox : chromium);
 console.log('engine: ', engine.name());
 const browser = await engine.launch();
-// 1440 is where the PR pane's 26% and its 375px floor cross, so this is the
-// width at which the column is doing what it was sized to do.
+// The PR pane defaults to its 375px floor at any width, so 1440 is simply a
+// common laptop size with room for all three panes.
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
 page.on('pageerror', (e) => console.log('PAGE EXCEPTION:', e.message));
 

@@ -25,11 +25,18 @@ body {
    because every line in this layout is draggable. Each gutter writes one length
    back onto <main> as a variable (see panes.js); the clamps are what keep a
    drag from squeezing a pane to nothing, so the maxima must leave #term room
-   even when both row gutters are pushed as far as they go. */
+   even when both row gutters are pushed as far as they go.
+
+   The defaults for the PR and queue panes are pixels, not percentages. The PR
+   pane holds prose set to a fixed measure and the queue holds rows of a fixed
+   height, so a percentage only pads them out on a big screen and leaves the
+   terminal less room. The % maxima still stop a pixel default from starving
+   #term in a small window. The values are the ones the owner had dragged to
+   and kept (2026-09-15). */
 main {
   height: 100%; display: grid; background: var(--line);
-  grid-template-columns: clamp(375px, var(--w-pr, 26%), 60%) 1px 1fr;
-  grid-template-rows: 1fr 1px clamp(120px, var(--h-queue, 32%), 40%);
+  grid-template-columns: clamp(375px, var(--w-pr, 375px), 60%) 1px 1fr;
+  grid-template-rows: 1fr 1px clamp(120px, var(--h-queue, 227px), 40%);
   grid-template-areas:
     "pr gpr term"
     "pr gpr gqueue"
@@ -38,7 +45,7 @@ main {
 #pr { grid-area: pr; } #term { grid-area: term; } #queue { grid-area: queue; }
 main.diff-open {
   grid-template-rows:
-    clamp(140px, var(--h-diff, 40%), 50%) 1px 1fr 1px clamp(120px, var(--h-queue, 25%), 40%);
+    clamp(140px, var(--h-diff, 40%), 50%) 1px 1fr 1px clamp(120px, var(--h-queue, 227px), 40%);
   grid-template-areas:
     "pr gpr diff"
     "pr gpr gdiff"
