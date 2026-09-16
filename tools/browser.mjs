@@ -53,7 +53,11 @@ const free = (p) => new Promise((res, rej) => {
 await free(port);
 
 await fs.mkdir(out, { recursive: true });
-const server = spawn('node', ['server.js'], {
+// Everything below is written against this repo's PR #1 -- its sections, its
+// file groups, its issue chips -- and the server follows the current branch, so
+// a run from any other branch drives a pull request the assertions do not fit.
+// PRCODER_PR pins one; unset is the old branch-following behaviour.
+const server = spawn('node', ['server.js', ...(process.env.PRCODER_PR ? [process.env.PRCODER_PR] : [])], {
   cwd: repo,
   env: { ...process.env, PRCODER_PORT: String(port), PRCODER_NO_OPEN: '1', CLAUDE_BIN: path.join(repo, 'tools', 'claude-stub.mjs') },
   stdio: 'ignore',

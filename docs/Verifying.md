@@ -25,6 +25,11 @@ putting the caret at offset 0 — survived every Chromium screenshot; see [CLAUD
 for the rest, and for the three fixes to it that do **not** work.
 `PRCODER_BROWSER=chromium` forces the other; running both is worth the second minute.
 
+Its assertions are written against this repo's own PR #1 — that description's sections, file groups
+and issue chips — and the server follows whatever branch you are on, so a run from a feature branch
+drives a pull request they do not fit and fails on the section count. `PRCODER_PR=1` pins it. Unset
+it to check the branch-following itself.
+
 `node tools/cli.mjs` drives the other half in a real PTY, because none of the terminal UI exists
 without a tty: the status block, the keys and the quit prompt all switch off the moment stdout is a
 pipe, which is exactly what a scripted `node server.js` gets — and so exactly what the browser
