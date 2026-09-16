@@ -37,7 +37,19 @@ export async function openDiff(f) {
   // move a leading dot to the other end.
   el('diff-path').replaceChildren(h('bdi', {}, f.path));
   el('diff-path').title = f.path;
+  // Four ways to read the same file on GitHub, and the pane is a fifth: the
+  // patch is what changed, and the other three are what a patch cannot say --
+  // what the file became (a Markdown one rendered rather than as source), who
+  // last touched the lines around a hunk, and what else has landed in it.
+  //
+  // The three that are built from the head commit hide together when a payload
+  // has none -- a link to `/blob/undefined/` is one that looks fine and 404s --
+  // and the diff link stays, because it is built from the PR alone.
+  el('diff-file').href = f.blob ?? '';
+  el('diff-blame').href = f.blame ?? '';
+  el('diff-history').href = f.history ?? '';
   el('diff-gh').href = f.url;
+  el('diff-out').hidden = !f.blob;
   el('diff').hidden = false;
   document.querySelector('main').classList.add('diff-open');
   markSelected(f.path);

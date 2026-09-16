@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  pageTitle, withoutHtml, inline, headLinks, queueSync, HEADING, blocks, sectionize,
+  pageTitle, withoutHtml, inline, headLinks, noPrLinks, queueSync, HEADING, blocks, sectionize,
   tabLabel, taskCount, viewedCount, checkCount, worst,
 } from '../public/pr.js';
 import { fences, TASK, taskLines } from '../public/tasks.js';
@@ -222,6 +222,25 @@ test('a pull request from a fork links to the repository it was opened against',
     headRefName: 'contributor:patch', baseRefName: 'main',
   };
   for (const l of headLinks(fork)) assert.match(l.href, /^https:\/\/github\.test\/o\/r(\/|$)/);
+});
+
+// The pane with no pull request offers the same lists, minus the pull request
+// itself -- and the arrow moves onto the repository, which is what you are
+// looking at when there is nothing else to be looking at.
+test('with no pull request the repository and its lists are still linked', () => {
+  assert.deepEqual(noPrLinks(status()).map((l) => [l.text, l.href]), [
+    ['ggvaidya/prcoder ↗', 'https://github.com/ggvaidya/prcoder'],
+    ['issues', 'https://github.com/ggvaidya/prcoder/issues'],
+    ['pulls', 'https://github.com/ggvaidya/prcoder/pulls'],
+    ['milestones', 'https://github.com/ggvaidya/prcoder/milestones'],
+  ]);
+});
+
+// Before `gh repo view` has answered -- or outside a GitHub remote entirely --
+// there is nothing to build a URL from, and a row of links to
+// `https://github.com/undefined` is worse than no row at all.
+test('no repository means no links rather than links to nowhere', () => {
+  assert.deepEqual(noPrLinks(status({ nameWithOwner: undefined })), []);
 });
 
 test('without a repository to resolve against, neither becomes a link', () => {

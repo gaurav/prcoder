@@ -234,8 +234,16 @@ export function renderNoPr(status, { onCreate }) {
   const create = h('button', { className: 'pr-create', disabled: !can }, 'Create a pull request');
   if (can) create.onclick = () => onCreate(create);
 
+  // The same way out of the window the head carries, which is the one thing
+  // this pane can still offer: there is no pull request, but the repository and
+  // its lists are where you would go to find out why. Left-aligned, unlike the
+  // head's: that one is a line in a block of pull request facts and has to be
+  // told apart from them, where this sits alone between a sentence and a button.
+  const out = noPrLinks(status);
+
   host.replaceChildren(...kids([
     h('p', { className: 'empty' }, why),
+    out.length ? linkRow(out, 'meta') : null,
     status.sync === 'unpushed' && can
       ? h('p', { className: 'pr-note' }, 'This branch is not on GitHub yet; it will be pushed first.')
       : null,
@@ -311,12 +319,48 @@ const repoName = (repoUrl) => repoUrl.replace(/^https?:\/\/[^/]+\//, '');
  */
 export const headLinks = (pr) => {
   const { repo } = linkBase(pr);
-  return [
-    { text: `PR #${pr.number} ↗`, href: pr.url },
-    { text: repoName(repo), href: repo },
-    ...['issues', 'pulls', 'milestones'].map((p) => ({ text: p, href: `${repo}/${p}` })),
-  ];
+  return [{ text: `PR #${pr.number} ↗`, href: pr.url }, ...repoLinks(repo)];
 };
+
+/** The repository and the three lists: the tail of the head's row, and the
+ *  whole of the one in the pane with no pull request to head. */
+const repoLinks = (repo) => [
+  { text: repoName(repo), href: repo },
+  ...['issues', 'pulls', 'milestones'].map((p) => ({ text: p, href: `${repo}/${p}` })),
+];
+
+/**
+ * The same way out, for the pane that has no pull request to build it from.
+ *
+ * The host is hard-coded here where the head's is not, because there is no PR
+ * URL to read one off -- `nameWithOwner` is all `gh repo view` was asked for.
+ * That makes this the third of the github.com assumptions #53 is about, not a
+ * new kind of one; the head's is still the part not to undo.
+ *
+ * The arrow lands on the repository for the same reason it lands on the PR
+ * above: it is the "what you are looking at, on GitHub" link, and here that is
+ * the repository itself.
+ */
+export const noPrLinks = ({ nameWithOwner }) => {
+  if (!nameWithOwner) return [];
+  const [self, ...rest] = repoLinks(`https://github.com/${nameWithOwner}`);
+  return [{ ...self, text: `${self.text} ↗` }, ...rest];
+};
+
+/**
+ * One row of links, dot-separated.
+ *
+ * The dots are their own elements rather than an `a::before`, which is what
+ * they were: a pseudo-element lives inside the link's box, so the separator was
+ * underlined with it and a click on the gap followed the link to its right.
+ * `pointer-events: none` does not help -- the point is still over the <a>
+ * itself once the pseudo-element declines it.
+ */
+const linkRow = (list, className) => h('div', { className },
+  ...list.map((l, i) => [
+    i ? h('span', { className: 'sep' }, '·') : null,
+    ext(l.href, l.text),
+  ]));
 
 /**
  * The pull request pane, in two roots.
@@ -365,16 +409,7 @@ function renderPrHead(pr, handlers) {
       h('span', { className: 'add' }, `+${pr.additions}`),
       h('span', { className: 'del' }, `−${pr.deletions}`),
     ),
-    h('div', { className: 'meta pr-links' },
-      // The dots are their own elements rather than an `a::before`, which is
-      // what they were: a pseudo-element lives inside the link's box, so the
-      // separator was underlined with it and a click on the gap followed the
-      // link to its right. `pointer-events: none` does not help -- the point is
-      // still over the <a> itself once the pseudo-element declines it.
-      ...kids(headLinks(pr).map((l, i) => [
-        i ? h('span', { className: 'sep' }, '\u00b7') : null,
-        ext(l.href, l.text),
-      ]))),
+    linkRow(headLinks(pr), 'meta pr-links'),
     h('div', { className: 'tabs' },
       tabBtn('detail', tabLabel('Detail', taskCount(pr.body))),
       tabBtn('files', tabLabel('Files', viewedCount(pr.files))),
@@ -503,7 +538,45 @@ function fileGroup(label, files, handlers) {
     className: 'group', dataset: { group: label }, title: label, count: `${done}/${total}`,
     open: !closedGroups.has(label),
     onToggle: (open) => { if (open) closedGroups.delete(label); else closedGroups.add(label); },
-  }, files.map((f) => fileRow(f, handlers)));
+  }, [...byDir(files)].map(([dir, list]) => dirGroup(label, dir, list, handlers)));
+}
+
+/**
+ * The files of one group, split by the directory they are in.
+ *
+ * A Map because the order is the answer: `gh` returns the files sorted by path,
+ * so one pass leaves the directories in that order and the files inside them in
+ * it too. Files at the top of the repository have no directory to be named
+ * after, and `(root)` is the one label that cannot collide with a real one --
+ * a directory's key here always ends in `/`.
+ */
+const byDir = (files) => {
+  const dirs = new Map();
+  for (const f of files) {
+    const cut = f.path.lastIndexOf('/');
+    const dir = cut === -1 ? '(root)' : f.path.slice(0, cut + 1);
+    if (!dirs.has(dir)) dirs.set(dir, []);
+    dirs.get(dir).push(f);
+  }
+  return dirs;
+};
+
+/**
+ * One directory inside a group, folded like the group itself.
+ *
+ * The fold state is keyed by group *and* directory: `public/` under Code and
+ * `public/` under Tests are two different folds, and a single key would close
+ * both. Both keys live in the one `closedGroups` set -- a group's label never
+ * ends in `/`, so the two kinds cannot collide.
+ */
+function dirGroup(group, dir, files, handlers) {
+  const key = `${group}/${dir}`;
+  const { done, total } = viewedCount(files);
+  return fold({
+    className: 'dir', dataset: { dir }, title: dir, count: `${done}/${total}`,
+    open: !closedGroups.has(key),
+    onToggle: (open) => { if (open) closedGroups.delete(key); else closedGroups.add(key); },
+  }, files.map((f) => fileRow(f, handlers, dir)));
 }
 
 /**
@@ -519,7 +592,7 @@ function fold({ className, dataset, title, count, open, onToggle }, children) {
   return d;
 }
 
-function fileRow(f, { onViewed, onOpen, selected }) {
+function fileRow(f, { onViewed, onOpen, selected }, dir = '(root)') {
   const box = h('input', { type: 'checkbox', checked: f.viewed, title: 'mark viewed on GitHub' });
   writeThrough(box, (v) => onViewed(f.path, v), (v) => row.classList.toggle('viewed', v));
   // The path goes inside a <bdi>. Its container is `direction: rtl` so that a
@@ -532,7 +605,11 @@ function fileRow(f, { onViewed, onOpen, selected }) {
   // inside a box that still overflows from the left. Checked in both engines
   // on 2026-09-09; `unicode-bidi: plaintext` on the link fixes the order too,
   // but moves the cut to the tail, which is the thing the rtl was for.
-  const link = ext(f.url, h('bdi', {}, f.path), { className: 'path', title: f.path });
+  // The name the fold above it does not already say. `title` stays the whole
+  // path: the row is what you point at when you want to know where a file is,
+  // and the directory heading may have scrolled off the top of a long group.
+  const shown = dir === '(root)' ? f.path : f.path.slice(dir.length);
+  const link = ext(f.url, h('bdi', {}, shown), { className: 'path', title: f.path });
   link.addEventListener('click', (e) => {
     if (e.metaKey || e.ctrlKey) return;   // GitHub stays one modifier away
     e.preventDefault();

@@ -309,6 +309,18 @@ a { color: var(--accent); }
    rows have to stay wide enough to ellipsize from the left. */
 .group > .sec-body { padding: 2px 0 0 10px; }
 
+/* The directory inside a group: the same fold, quieter. A group's label is a
+   category and is set as one -- small caps, letter-spaced; a directory is a
+   name, so it keeps its own case and its trailing slash, which is what tells it
+   apart from the category above it at a glance. The indent is the fold's own
+   18px, halved: two levels of it would leave a 375px pane with a column of
+   arrows and nowhere to draw a path. */
+.dir { margin-bottom: 2px; }
+.dir > summary { padding: 1px 0; font: 400 12px/1.5 ui-sans-serif, system-ui, sans-serif; color: var(--dim); }
+.dir > summary:hover { color: var(--fg); }
+.dir > summary .count { font-size: 11px; opacity: .7; }
+.dir > .sec-body { padding: 0 0 4px 9px; }
+
 .file { display: flex; align-items: center; gap: 6px; padding: 2px 0; font-size: 13px; }
 .file.viewed .path { opacity: .45; text-decoration: line-through; }
 /* `direction: rtl` puts the ellipsis at the *head*, so a path too long for the
@@ -332,8 +344,13 @@ a { color: var(--accent); }
   white-space: nowrap; direction: rtl; text-align: left; font-size: 12px; color: var(--dim);
 }
 #diff-viewed-label { font-size: 12px; color: var(--dim); white-space: nowrap; }
-#diff-gh { font-size: 12px; white-space: nowrap; text-decoration: none; }
-#diff-gh:hover { text-decoration: underline; }
+/* The ways out of the pane, as one menu rather than four buttons: the arrow is
+   on the first only, for the reason headLinks gives -- four in a row read as
+   decoration. `nowrap` on the group keeps a separator from starting a line. */
+#diff-out, #diff-gh { font-size: 12px; white-space: nowrap; }
+#diff header a { text-decoration: none; }
+#diff header a:hover { text-decoration: underline; }
+#diff header .sep { color: var(--dim); margin: 0 2px; }
 #diff-body { font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; padding: 6px 0; }
 .dl { white-space: pre; padding: 0 10px; }
 .dl.add { color: #9ae6b4; background: #1f4d2e33; }

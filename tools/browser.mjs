@@ -81,6 +81,15 @@ for (const sig of ['SIGTERM', 'SIGHUP', 'SIGINT']) process.on(sig, () => process
 const engine = { chromium, firefox }[process.env.PRCODER_BROWSER]
   ?? (existsSync(firefox.executablePath()) ? firefox : chromium);
 console.log('engine: ', engine.name());
+// Which of the server's two ways of finding a pull request this run is about to
+// exercise. Worth saying out loud: pinning one is the only way to drive the
+// panes from a feature branch, and it is also the way to run the whole file and
+// never touch the path every real user is on. A run from `initial-implementation`
+// with PRCODER_PR unset is what covers that path, and this line is how a reader
+// knows which of the two they just did.
+console.log('pr:     ', process.env.PRCODER_PR
+  ? `pinned to #${process.env.PRCODER_PR} (branch-following not exercised)`
+  : "following the current branch");
 const browser = await engine.launch();
 // The PR pane defaults to its 375px floor at any width, so 1440 is simply a
 // common laptop size with room for all three panes.
@@ -234,6 +243,12 @@ await page.locator('#pr').screenshot({ path: path.join(out, 'pr-files.png') });
 // sections, and the opposite default for the opposite reason.
 console.log('groups open on arrival:', await page.locator('.group[open]').count(),
   'of', await page.locator('.group').count(), ' (want all of them)');
+// The second level: one fold per directory inside each group, and rows that say
+// only what the fold above them does not.
+console.log('dirs:    ', (await page.locator('.dir > summary h3').allInnerTexts()).join(' '),
+  ' (want a directory per group, each ending in / or named (root))');
+console.log('rows:    ', (await page.locator('.dir').first().locator('.file .path').allInnerTexts()).join(' '),
+  ' (want names without the directory above them)');
 await page.locator('.group > summary').first().click();
 await page.waitForTimeout(200);
 console.log('after collapsing one:', await page.locator('.group[open]').count(), 'open');
@@ -244,7 +259,11 @@ console.log('after collapsing one:', await page.locator('.group[open]').count(),
 // size and reads as a full stop either way.
 console.log('dotfile paths draw in order:', await page.evaluate(() => {
   const dots = [...document.querySelectorAll('.file .path')]
-    .filter((a) => a.title.startsWith('.'));
+    // The drawn text, not the title: a row inside a directory fold shows the
+    // name alone, so `.github/workflows/test.yml` draws as `test.yml` and has no
+    // leading dot left to get wrong. What is still at risk is a name that
+    // starts with one -- `.gitignore` at the root, a dotfile in any directory.
+    .filter((a) => a.textContent.startsWith('.'));
   if (!dots.length) return 'no dotfile in this PR to check';
   const bad = dots.filter((a) => {
     const t = document.createTreeWalker(a, NodeFilter.SHOW_TEXT).nextNode();
@@ -259,6 +278,16 @@ await page.waitForTimeout(200);
 
 await page.locator('.file .path').first().click();   // opens the diff pane (Files tab)
 await page.waitForSelector('main.diff-open');
+
+// The diff pane's two ways out: the file itself at this PR's head, and the
+// patch in GitHub's diff viewer. Both hrefs are read rather than assumed
+// because the blob one is assembled from a sha the payload carries -- a missing
+// one would render as `/blob/undefined/`, which looks like a link and 404s.
+const diffLinks = await page.locator('#diff header a').evaluateAll(
+  (as) => as.map((a) => `${a.innerText} ${a.href}`));
+console.log('diff out:', diffLinks.join('\n          '),
+  '\n           (want File/Blame/History at /blob|blame|commits/<40-hex>/<path>,',
+  'Diff at /pull/N/files#diff-<64-hex>)');
 await drag('#gut-pr', 520, 450);
 await drag('#gut-diff', 720, 300);
 await drag('#gut-queue', 720, 640);
