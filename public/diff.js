@@ -37,6 +37,13 @@ export async function openDiff(f) {
   // move a leading dot to the other end.
   el('diff-path').replaceChildren(h('bdi', {}, f.path));
   el('diff-path').title = f.path;
+  // Two ways to read the same file on GitHub, and the pane is a third: the
+  // patch is what changed, the file is what it changed into -- the untouched
+  // parts around a hunk, and a Markdown file as it renders rather than as
+  // source. `blob` is absent only for a payload from an older server, and the
+  // link hides rather than pointing at `undefined`.
+  el('diff-file').href = f.blob ?? '';
+  el('diff-file').hidden = !f.blob;
   el('diff-gh').href = f.url;
   el('diff').hidden = false;
   document.querySelector('main').classList.add('diff-open');

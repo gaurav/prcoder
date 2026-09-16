@@ -244,6 +244,15 @@ await page.waitForTimeout(200);
 
 await page.locator('.file .path').first().click();   // opens the diff pane (Files tab)
 await page.waitForSelector('main.diff-open');
+
+// The diff pane's two ways out: the file itself at this PR's head, and the
+// patch in GitHub's diff viewer. Both hrefs are read rather than assumed
+// because the blob one is assembled from a sha the payload carries -- a missing
+// one would render as `/blob/undefined/`, which looks like a link and 404s.
+const diffLinks = await page.locator('#diff header a').evaluateAll(
+  (as) => as.map((a) => `${a.innerText} ${a.href}`));
+console.log('diff out:', diffLinks.join('\n          '),
+  '\n           (want File at /blob/<40-hex>/<path>, Diff at /pull/N/files#diff-<64-hex>)');
 await drag('#gut-pr', 520, 450);
 await drag('#gut-diff', 720, 300);
 await drag('#gut-queue', 720, 640);

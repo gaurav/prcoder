@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { bucket, groupFiles, diffAnchor, fileUrl } from '../files.js';
+import { bucket, groupFiles, diffAnchor, fileUrl, blobUrl } from '../files.js';
 
 test('tests are recognised across language conventions', () => {
   for (const p of [
@@ -43,5 +43,17 @@ test('diffAnchor matches the anchors GitHub actually renders', () => {
   assert.equal(
     fileUrl('https://github.com/cli/cli/pull/9000', 'pkg/cmd/attestation/verify/verify_test.go'),
     'https://github.com/cli/cli/pull/9000/files#diff-a66a0a835797250cd9db8a466dc2d263f4f19f673e6d25eb40b66163b1100084',
+  );
+});
+
+// The other way to read the file, pinned to the commit so it keeps saying what
+// the pane was showing after the next push. A fork's head resolves under the
+// base repository, which is why one rule covers both: checked 2026-09-16
+// against cli/cli#14373, whose head lives in a fork, and the base repo's blob
+// URL at that sha answered 200.
+test('the file link is the whole file at the head commit', () => {
+  assert.equal(
+    blobUrl('https://github.com/cli/cli/pull/9000', '682398a89f408d305fba87c2be1c25864aab4077', 'docs/install_linux.md'),
+    'https://github.com/cli/cli/blob/682398a89f408d305fba87c2be1c25864aab4077/docs/install_linux.md',
   );
 });
