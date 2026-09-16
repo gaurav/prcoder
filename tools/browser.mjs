@@ -220,6 +220,29 @@ await page.locator('#queue-body .tab', { hasText: 'Local' }).click();
 await page.waitForTimeout(150);
 console.log('row ↩:  ', await local(), JSON.stringify(await page.locator('.item .text').allTextContents()));
 
+// ▶ sends the item and ticks it off in one click, so the row leaves Local for
+// Completed. Both halves are checked here, because the tick is only honest if
+// the text really reached the PTY: the stub echoes what it is given, so the
+// terminal is the evidence that something was sent rather than just crossed
+// out. Round-tripped like the ✕ above -- the caret check below still needs a
+// full Local tab.
+const SENT = 'a local item, still only on this machine';
+await page.locator('.item', { hasText: SENT }).locator('button[title="send to Claude, and check it off"]').click();
+await page.locator('#queue-body .tab', { hasText: 'Local (2)' }).waitFor({ timeout: 10_000 });
+await page.waitForTimeout(400);   // the stub echoes on the PTY's own schedule
+const echoed = (await page.locator('#term-host').innerText()).includes(SENT);
+console.log('row ▶:  ', await local(), '+', await page.locator('#queue-body .tab', { hasText: /^Completed/ }).innerText(),
+  `, terminal echoed it: ${echoed}`, ' (want it off Local, on Completed, and echoed true)');
+await page.locator('#queue-body .tab', { hasText: 'Completed' }).click();
+await page.waitForTimeout(150);
+// The way back, which is why this is a tick and not a delete: the box that
+// checked itself unchecks.
+await page.locator('.item', { hasText: SENT }).locator('input[type=checkbox]').uncheck();
+await page.locator('#queue-body .tab', { hasText: 'Local (3)' }).waitFor({ timeout: 10_000 });
+await page.locator('#queue-body .tab', { hasText: 'Local' }).click();
+await page.waitForTimeout(150);
+console.log('unticked:', await local(), ' (want Local (3) again)');
+
 // The source tabs, which read GitHub rather than the queue. The PR tab is this
 // PR's own checklist: one box ticked from here and unticked again is two real
 // edits to the description, checked to leave the body as it was -- read back

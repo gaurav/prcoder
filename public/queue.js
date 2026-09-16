@@ -369,7 +369,20 @@ function row(item, above, below) {
     text,
     item.issue ? ext(item.issueUrl ?? '#', `#${item.issue}`, { className: 'tag issue' }) : null,
     h('span', { className: 'actions' },
-      btn('▶', () => deps.sendToClaude(item.text), { title: 'send to Claude' }),
+      // Sending is what doing an item looks like here, so it ticks the box the
+      // way finishing it would: the row leaves Local for Completed, and the
+      // Local tab stays a list of what has not been handed over yet. Not a
+      // delete -- Completed is where you go to see what you sent, and its own
+      // checkbox puts an item back if Claude turned out not to do it.
+      //
+      // Only if it went. `sendToClaude` answers false on a closed socket, and
+      // an item ticked off after a refused send is work nobody has done and
+      // nothing will remind you of.
+      btn('▶', () => {
+        if (!deps.sendToClaude(item.text)) return toast('Claude is not connected — nothing was sent.', true);
+        item.done = true;
+        save();
+      }, { title: 'send to Claude, and check it off' }),
       // Both are moves, not flags: the item is written there and leaves the queue.
       btn('◇', () => toPr([item]), {
         title: hasPr ? 'move into the PR description' : NO_PR,

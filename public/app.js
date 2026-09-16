@@ -112,9 +112,15 @@ new ResizeObserver(sync).observe(document.getElementById('term-host'));
 
 // Type an item into Claude's prompt. If Claude is mid-turn it queues the
 // message itself, which is exactly the behaviour we want.
+//
+// Whether it went is the return value, because the queue ticks an item off on
+// the strength of it: `send` refuses on a socket that is not open -- a dead PTY,
+// a reload in flight -- and an item checked off after a refused send is one
+// nobody has done and nobody is going to be reminded of.
 function sendToClaude(text) {
-  send({ type: 'input', data: text + '\r' });
+  const sent = send({ type: 'input', data: text + '\r' });
   term.focus();
+  return sent;
 }
 
 // The switcher only changes when PRs are opened or closed, so it is not worth a

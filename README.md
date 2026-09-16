@@ -116,14 +116,18 @@ are clickable.
 
 **Queue** — your own TODO list for this working copy. Throw an item in, drag it
 (or focus its grip and use the arrow keys) to reorder, tick it off. Each item can
-be sent to Claude, or moved somewhere permanent: ◇ appends it to the PR
-description as a checkbox, ◎ files it as a new GitHub issue. A move is one-way —
+be sent to Claude, or moved somewhere permanent: ▶ types it into the session and
+ticks it off in the same click, ◇ appends it to the PR description as a
+checkbox, ◎ files it as a new GitHub issue. A move is one-way —
 the item is written there and leaves the queue — so the description or the issue
 is where it lives from then on.
 
-**Local** is the working list, and it drains as you move and finish things: a
-session you finished tidily ends with it empty. **Completed** is what you ticked
-off, with a delete-all for clearing it out, and **Deleted** holds tombstones
+**Local** is the working list, and it drains as you move and finish things — so
+handing an item to Claude takes it off the list, and Local stays what you have
+not handed over yet. A session you finished tidily ends with it empty.
+**Completed** is what you ticked off and what you sent, with a delete-all for
+clearing it out; unticking one there puts it back on Local, which is the way
+back if Claude did not do it, and **Deleted** holds tombstones
 until you empty it — nothing you typed disappears without somewhere to get it
 back. Every item is on exactly one of those, and Deleted hides when it holds
 nothing.
