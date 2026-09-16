@@ -70,11 +70,11 @@ Every figure here was measured on `5f7d6cc`, in both engines.
 
 ## What gets checked, and where
 
-Unit tests cover the queue store, the port derivation, the description renderer, file grouping,
-GitHub's diff anchors, the sync verdict, every queue ↔ PR-description transition, the status block's
-wording, the queue light's states, and the terminal's own erase bookkeeping — the last because a
-block that miscounts its rows either eats scrollback or leaves a smear, and both look like anything
-but an off-by-one.
+Unit tests cover the queue store, the port derivation, the description renderer, file grouping and
+the order the folds come out in, GitHub's diff anchors, the sync verdict, every queue ↔
+PR-description transition, the status block's wording, the queue light's states, and the terminal's
+own erase bookkeeping — the last because a block that miscounts its rows either eats scrollback or
+leaves a smear, and both look like anything but an off-by-one.
 
 Two of them pin a *coupling* rather than a behaviour. The description wins on `done`, so a tick the
 description never received is reverted by the next merge — correct, and exactly why the store may
