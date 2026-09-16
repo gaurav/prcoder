@@ -100,10 +100,9 @@ actually changed. Inside each of those, the files are folded by the directory
 they are in, and a row says only the name the directory above it does not --
 so a path is read once per directory rather than once per file. Both levels
 fold, and both remember what you closed. The checkbox on each file is GitHub's
-own "viewed" checkbox:
-tick it here and it's ticked on github.com. Clicking a file opens its diff in
-the **Diff** pane; cmd/ctrl-clicking opens GitHub's diff viewer at that file
-instead.
+own "viewed" checkbox: tick it here and it's ticked on github.com. Clicking a
+file opens its diff in the **Diff** pane; cmd/ctrl-clicking opens GitHub's diff
+viewer at that file instead.
 
 Each tab carries the count the other one cannot show you — how many description
 boxes are still unticked, how many files are still unviewed — so neither hides
