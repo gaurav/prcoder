@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // prcoder — a PR-focused shell around Claude Code.
-// Serves a three-pane UI at localhost and pipes a real `claude` PTY to the browser.
+// Serves a four-pane UI at localhost and pipes a real `claude` PTY to the browser.
 
 import http from 'node:http';
 import { spawn } from 'node:child_process';
@@ -13,7 +13,7 @@ import { spawn as ptySpawn } from 'node-pty';
 import { WebSocketServer } from 'ws';
 import { loadPr, prHeads, prBody, listPrs, listIssues, setViewed, setBody, createIssue, fetchPatches, runCount } from './github.js';
 import { snapshot, currentBranch, repoInfo, prScope, compareUrl, checkoutPr, pushBranch, remoteBranchHead } from './git.js';
-import { groupFiles, fileUrl } from './files.js';
+import { groupFiles, fileUrl, fileViews } from './files.js';
 import { appendTasks, toggleTask } from './queue.js';
 import { readStore, writeStore, readPort, writePort, replaceItems } from './store.js';
 import { counts } from './public/items.js';
@@ -143,11 +143,17 @@ async function refreshPr(detached) {
   pr = !target && detached ? null : await loadPr(repo, target);
 }
 
-/** Files bucketed for the pane, each linking into GitHub's diff viewer. */
+/**
+ * Files bucketed for the pane, each carrying the two ways to read it on GitHub:
+ * this file's patch in the diff viewer, and the whole file at the PR's head.
+ */
 function withUrls(p) {
   const groups = groupFiles(p.files);
   for (const list of Object.values(groups)) {
-    for (const f of list) f.url = fileUrl(p.url, f.path);
+    for (const f of list) {
+      f.url = fileUrl(p.url, f.path);
+      Object.assign(f, fileViews(p.url, p.headRefOid, f.path));
+    }
   }
   return groups;
 }

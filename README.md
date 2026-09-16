@@ -30,7 +30,9 @@ The switcher in the PR pane header lists open pull requests and runs
 `gh pr checkout` to move between them. Uncommitted work hides it behind a
 Commit button, because the checkout would fail anyway. On a branch with no pull
 request the pane says so, disables the editing controls, and offers to create
-one -- pushing the branch first if GitHub has not seen it.
+one -- pushing the branch first if GitHub has not seen it. It still carries the
+way out of the window that the pull request head does: the repository and its
+issues, pulls and milestones.
 
 Next to it, a light for the one thing prcoder cannot fix for you: whether the
 branch and the remote agree. It reads `unpushed`, `N unpushed`, `pull needed`
@@ -94,7 +96,11 @@ it came from.
 
 *Files* is every changed file grouped as *Tests* / *Code* / *Config & docs*,
 tests first, because tests are the fastest way to see what functionality
-actually changed. The checkbox on each file is GitHub's own "viewed" checkbox:
+actually changed. Inside each of those, the files are folded by the directory
+they are in, and a row says only the name the directory above it does not --
+so a path is read once per directory rather than once per file. Both levels
+fold, and both remember what you closed. The checkbox on each file is GitHub's
+own "viewed" checkbox:
 tick it here and it's ticked on github.com. Clicking a file opens its diff in
 the **Diff** pane; cmd/ctrl-clicking opens GitHub's diff viewer at that file
 instead.
@@ -107,7 +113,14 @@ from you while you are in the other.
 select → read → tick viewed → ask Claude never leaves the window. It shows the
 same hunks GitHub does (fetched once per push and cached), refreshes itself when
 the branch head moves, and links out to GitHub for anything the plain rendering
-can't do — syntax highlighting, comments, binary and oversized files.
+can't do — syntax highlighting, comments, binary and oversized files. Four links,
+because they answer different questions. *Diff* is this file's patch in GitHub's
+viewer. The other three are the whole file as this pull request leaves it:
+*File ↗* for what it became — the untouched parts a hunk doesn't show, and a
+Markdown file rendered rather than as source — *Blame* for who last touched the
+lines around a hunk, and *History* for what else has landed in it. Those three
+are pinned to the head commit, so they go on saying what you were looking at
+after the next push.
 
 **Claude Code** — the real `claude` binary in a PTY, so Escape still interrupts,
 slash commands still work, permission prompts still appear, and typing while
@@ -289,10 +302,9 @@ management listed below, deliberately not built yet.
 
 ## Not here
 
-Syntax-highlighted diffs, review threads, multi-session management. This is a prototype for
-finding out whether a PR-shaped workspace beats a chat-shaped one; it's meant to
-be cheap to rewrite. [docs/Design.md](docs/Design.md) has the full list and the reasoning behind
-it, along with why prcoder exists at all and what a localhost server is exposed to.
+Syntax-highlighted diffs, review threads, multi-session management. [docs/Design.md](docs/Design.md) has the full list and the reasoning behind
+it, along with why prcoder exists at all; [docs/Security.md](docs/Security.md) has what a
+localhost server is exposed to.
 
 `npm test` covers the parts worth pinning down: the queue store, file grouping, GitHub's diff
 anchors, every queue ↔ PR-description transition, and the routes that answer without `gh`. What

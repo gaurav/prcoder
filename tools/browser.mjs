@@ -60,7 +60,11 @@ const free = (p) => new Promise((res, rej) => {
 await free(port);
 
 await fs.mkdir(out, { recursive: true });
-const server = spawn('node', ['server.js'], {
+// Everything below is written against this repo's PR #1 -- its sections, its
+// file groups, its issue chips -- and the server follows the current branch, so
+// a run from any other branch drives a pull request the assertions do not fit.
+// PRCODER_PR pins one; unset is the old branch-following behaviour.
+const server = spawn('node', ['server.js', ...(process.env.PRCODER_PR ? [process.env.PRCODER_PR] : [])], {
   cwd: repo,
   env: { ...process.env, PRCODER_PORT: String(port), PRCODER_NO_OPEN: '1', CLAUDE_BIN: path.join(repo, 'tools', 'claude-stub.mjs') },
   stdio: 'ignore',
@@ -84,9 +88,18 @@ for (const sig of ['SIGTERM', 'SIGHUP', 'SIGINT']) process.on(sig, () => process
 const engine = { chromium, firefox }[process.env.PRCODER_BROWSER]
   ?? (existsSync(firefox.executablePath()) ? firefox : chromium);
 console.log('engine: ', engine.name());
+// Which of the server's two ways of finding a pull request this run is about to
+// exercise. Worth saying out loud: pinning one is the only way to drive the
+// panes from a feature branch, and it is also the way to run the whole file and
+// never touch the path every real user is on. A run from `initial-implementation`
+// with PRCODER_PR unset is what covers that path, and this line is how a reader
+// knows which of the two they just did.
+console.log('pr:     ', process.env.PRCODER_PR
+  ? `pinned to #${process.env.PRCODER_PR} (branch-following not exercised)`
+  : "following the current branch");
 const browser = await engine.launch();
-// 1440 is where the PR pane's 26% and its 375px floor cross, so this is the
-// width at which the column is doing what it was sized to do.
+// The PR pane defaults to its 375px floor at any width, so 1440 is simply a
+// common laptop size with room for all three panes.
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
 page.on('pageerror', (e) => console.log('PAGE EXCEPTION:', e.message));
 
@@ -385,6 +398,12 @@ await page.locator('#pr').screenshot({ path: path.join(out, 'pr-files.png') });
 // sections, and the opposite default for the opposite reason.
 console.log('groups open on arrival:', await page.locator('.group[open]').count(),
   'of', await page.locator('.group').count(), ' (want all of them)');
+// The second level: one fold per directory inside each group, and rows that say
+// only what the fold above them does not.
+console.log('dirs:    ', (await page.locator('.dir > summary h3').allInnerTexts()).join(' '),
+  ' (want a directory per group, each ending in / or named (root))');
+console.log('rows:    ', (await page.locator('.dir').first().locator('.file .path').allInnerTexts()).join(' '),
+  ' (want names without the directory above them)');
 await page.locator('.group > summary').first().click();
 await page.waitForTimeout(200);
 console.log('after collapsing one:', await page.locator('.group[open]').count(), 'open');
@@ -395,7 +414,11 @@ console.log('after collapsing one:', await page.locator('.group[open]').count(),
 // size and reads as a full stop either way.
 console.log('dotfile paths draw in order:', await page.evaluate(() => {
   const dots = [...document.querySelectorAll('.file .path')]
-    .filter((a) => a.title.startsWith('.'));
+    // The drawn text, not the title: a row inside a directory fold shows the
+    // name alone, so `.github/workflows/test.yml` draws as `test.yml` and has no
+    // leading dot left to get wrong. What is still at risk is a name that
+    // starts with one -- `.gitignore` at the root, a dotfile in any directory.
+    .filter((a) => a.textContent.startsWith('.'));
   if (!dots.length) return 'no dotfile in this PR to check';
   const bad = dots.filter((a) => {
     const t = document.createTreeWalker(a, NodeFilter.SHOW_TEXT).nextNode();
@@ -410,6 +433,16 @@ await page.waitForTimeout(200);
 
 await page.locator('.file .path').first().click();   // opens the diff pane (Files tab)
 await page.waitForSelector('main.diff-open');
+
+// The diff pane's two ways out: the file itself at this PR's head, and the
+// patch in GitHub's diff viewer. Both hrefs are read rather than assumed
+// because the blob one is assembled from a sha the payload carries -- a missing
+// one would render as `/blob/undefined/`, which looks like a link and 404s.
+const diffLinks = await page.locator('#diff header a').evaluateAll(
+  (as) => as.map((a) => `${a.innerText} ${a.href}`));
+console.log('diff out:', diffLinks.join('\n          '),
+  '\n           (want File/Blame/History at /blob|blame|commits/<40-hex>/<path>,',
+  'Diff at /pull/N/files#diff-<64-hex>)');
 await drag('#gut-pr', 520, 450);
 await drag('#gut-diff', 720, 300);
 await drag('#gut-queue', 720, 640);
@@ -616,25 +649,30 @@ console.log('queue:  ', (await page.evaluate(() => fetch('/api/queue').then((r) 
 // Back to whatever the repo had.
 console.log('restored:', (await queueApi({ items: had })).length, 'items (was', had.length + ')');
 
-// The tab icon, which goes blue while the PTY is printing and back to green two
-// seconds after it stops -- prcoder's only reading of "Claude is working". A
-// PTY echoes what is typed at it, so a keystroke here is the same burst of
-// output a Claude turn is made of.
+// The tab icon, which goes blue while a turn is running and back to green two
+// seconds after its output stops -- prcoder's only reading of "Claude is
+// working". A PTY echoes what is typed at it, which is what the first half
+// turns on: the echo of a keystroke is output, and the icon has to stay green
+// through it or it reports busy while Claude is waiting on the operator. Enter
+// starts the turn; the stub's echo of the line is then what holds it open.
 //
-// The green half is the one that matters: the stub keeps sending the
-// cursor-position probe throughout, five times a second, exactly as a real
-// session does between turns. Green here means those are being skipped. Before
-// they were, the icon stayed busy from the first paint until the tab closed,
-// and every check on a /bin/cat stub passed, because cat never asks.
+// The last reading is the other bug: the stub keeps sending the cursor-position
+// probe throughout, five times a second, exactly as a real session does. Green
+// after 2.5s means those are being skipped rather than holding the turn open.
+// Before they were, the icon stayed busy from the first paint until the tab
+// closed, and every check on a /bin/cat stub passed, because cat never asks.
 const iconFill = () => page.evaluate(() =>
   document.querySelector('link[rel=icon]').href.match(/%23(\w{6})/)[1]);
 await page.locator('#term-host').click();
 await page.keyboard.type('hello');
 await page.waitForTimeout(200);
+const typing = await iconFill();
+await page.keyboard.press('Enter');
+await page.waitForTimeout(200);
 const busy = await iconFill();
 await page.waitForTimeout(2500);
-console.log('icon:   ', `${busy} while printing, ${await iconFill()} after 2.5s of probes only`,
-  '  (want 1f6feb then 238636)');
+console.log('icon:   ', `${typing} while typing, ${busy} after Enter, ${await iconFill()} after 2.5s of probes only`,
+  '  (want 238636, 1f6feb, 238636)');
 
 console.log('title: ', await page.title());
 console.log('panes: ', await page.evaluate(() => getComputedStyle(document.querySelector('main')).gridTemplateColumns));

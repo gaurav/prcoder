@@ -22,6 +22,9 @@ const ws = new WebSocket(`ws://${location.host}/pty`);
 const send = (msg) => {
   if (ws.readyState !== WebSocket.OPEN) return false;
   ws.send(JSON.stringify(msg));
+  // A line sent is the start of a turn -- Enter in the terminal, or an item
+  // sent from the queue, which appends its own. See the tab icon below.
+  if (msg.type === 'input' && msg.data.endsWith('\r')) turn(true);
   return true;
 };
 
@@ -36,27 +39,33 @@ const sync = () => {
   if (dims !== sent && send({ type: 'resize', cols: term.cols, rows: term.rows })) sent = dims;
 };
 
-// The tab icon, blue while Claude is working, so a session left in a
+// The tab icon, blue while a turn is running, so a session left in a
 // background tab says whether it is still going without switching to it.
-// The PTY carries no "thinking" signal, but it doesn't need one: Claude
-// repaints its spinner every few hundred ms mid-turn and prints nothing at all
-// while it waits for you. Measured 2026-09-11 against a turn with a 12s tool
-// call in it: no gap over 750ms until the turn ended, then silence. So the
-// bytes *are* the signal, and 2s of quiet is the end of a turn.
+// The PTY carries no "thinking" signal and nothing here reads the frames, so a
+// turn is bracketed rather than detected: sending a line starts one, and the
+// output holds it open. Claude repaints its spinner every few hundred ms
+// mid-turn -- measured 2026-09-11 against a turn with a 12s tool call in it, no
+// gap ran over 750ms until the turn ended -- so 2s of quiet is the end of one.
+//
+// Output cannot *start* a turn, because a PTY echoes what is typed at it:
+// Claude repainting its prompt as you type is output too, and keying off that
+// alone turned the icon busy while it was waiting on the operator -- which is
+// the one state it exists to tell apart.
 //
 // Amber is deliberately not used: it is held for the third state, "stopped to
 // ask you something", which prcoder cannot see yet -- issue #51.
 //
-// One sequence has to come out of the signal first, because it is a question
-// rather than output. Claude asks the terminal where the cursor is (DSR,
+// One sequence has to come out of the signal even so, because it is a question
+// rather than output, and it arrives *during* a turn where the bracketing above
+// cannot help: Claude asks the terminal where the cursor is (DSR,
 // `ESC [ ? 6 n`) every ~200ms for as long as the session is up, and xterm
-// answers every one, so the stream is never quiet for two seconds and the icon
-// stuck busy from the first paint onwards. It only happens against a terminal
-// that answers: measured 2026-09-12 against a bare PTY with nothing replying,
-// Claude asks once and never again, which is why a driver on a `cat` stub saw
-// nothing wrong. Dropping a frame that is nothing but probes is not parsing the
-// TUI -- it is a question for the terminal, answered by the terminal, and this
-// never looks at anything Claude drew.
+// answers every one, so the stream is never quiet for two seconds and a turn
+// once started never ended. It only happens against a terminal that answers:
+// measured 2026-09-12 against a bare PTY with nothing replying, Claude asks
+// once and never again, which is why a driver on a `cat` stub saw nothing
+// wrong. Dropping a frame that is nothing but probes is not parsing the TUI --
+// it is a question for the terminal, answered by the terminal, and this never
+// looks at anything Claude drew.
 const PROBE = /^(?:\x1b\[\?6n)+$/;
 const link = document.querySelector('link[rel=icon]');
 // Derived, not written out a second time -- so the icon in index.html stays the
@@ -76,12 +85,19 @@ const icon = (href) => {
   document.head.append(link);
 };
 let quiet;
+const turn = (on) => {
+  clearTimeout(quiet);
+  icon(on ? BUSY : IDLE);
+  // ponytail: typing during a turn echoes, and the echo holds the turn open, so
+  // busy can outlast the turn's real end by as long as you keep typing. Closing
+  // that needs what the frames say rather than when they arrive -- see #51,
+  // which is the same wall from the other side.
+  if (on) quiet = setTimeout(() => icon(IDLE), 2000);
+};
 ws.onmessage = (e) => {
   term.write(e.data);
   if (PROBE.test(e.data)) return;
-  icon(BUSY);
-  clearTimeout(quiet);
-  quiet = setTimeout(() => icon(IDLE), 2000);
+  if (shown === BUSY) turn(true);   // holds an open turn open; cannot start one
 };
 // A tab the browser unloaded in the background comes back as a fresh page, and
 // the socket it closed on the way out has already killed the PTY — so this is a
@@ -102,8 +118,7 @@ ws.onopen = () => {
   } catch { /* private mode: no memory, so no claim about a previous session */ }
 };
 ws.onclose = () => {
-  clearTimeout(quiet);
-  icon(IDLE);
+  turn(false);
   term.write('\r\n\x1b[31m[claude exited — reload to restart]\x1b[0m\r\n');
 };
 

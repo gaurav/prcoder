@@ -1,7 +1,8 @@
 # How this repo checks itself
 
-`npm test` is `node --test` — bare, never `node --test test/`, for the reason in
-[CLAUDE.md](../CLAUDE.md). That covers everything that can be checked without a browser or a tty.
+`npm test` is `node --test` — bare, never `node --test test/`, because Node 26 resolves a directory
+argument as a module and dies with `Cannot find module` ([CLAUDE.md](../CLAUDE.md) has the rest,
+including why that puts the drivers in `tools/`). That covers everything that can be checked without a browser or a tty.
 This file is about the rest, and about the rule that produced it.
 
 ## Reading the CSS is not verification
@@ -19,9 +20,18 @@ driven, not reasoned about. The two drivers exist for the two halves.
 ## The two drivers
 
 `node tools/browser.mjs` boots its own server and drives the UI in a real browser, writing PNGs to
-`data/shots`. Firefox by default — see [CLAUDE.md](../CLAUDE.md) for why one engine is not "a real
-browser", and for the three fixes to the Firefox caret bug that do **not** work.
+`data/shots`. Firefox by default, because a Firefox-only bug — a click into a draggable row's text
+putting the caret at offset 0 — survived every Chromium screenshot; see [CLAUDE.md](../CLAUDE.md)
+for the rest, and for the three fixes to it that do **not** work.
 `PRCODER_BROWSER=chromium` forces the other; running both is worth the second minute.
+
+Its assertions are written against this repo's own PR #1 — that description's sections, file groups
+and issue chips — and the server follows whatever branch you are on, so a run from a feature branch
+drives a pull request they do not fit and fails on the section count. `PRCODER_PR=1` pins it.
+
+Pinning is also the way to run the whole file and never touch the path every real user is on, so
+leave it unset on `initial-implementation`: that run is the only thing that covers branch-following,
+and the driver's second line says which of the two you just did.
 
 `node tools/cli.mjs` drives the other half in a real PTY, because none of the terminal UI exists
 without a tty: the status block, the keys and the quit prompt all switch off the moment stdout is a
@@ -93,7 +103,8 @@ Some things can only be checked against the real thing, so they are:
 - **`git ls-remote`'s branch argument is a pattern, not a ref name.** Checked against real git in a
   scratch repo, because the belief *was* the bug: with only `refs/heads/feature/topic` on the
   remote, a bare `topic` comes back with its sha. A stub would have pinned the belief.
-- **The `git` exit codes the sync verdict depends on** — see [CLAUDE.md](../CLAUDE.md), which
+- **The `git` exit codes the sync verdict depends on**, because a non-zero exit is often an answer
+  rather than a failure and git's codes differ per command — see [CLAUDE.md](../CLAUDE.md), which
   records which command returns what and why `asks()` exists.
 - **Which CSS stops a dotfile's leading dot migrating to the end of its path**, decided by measuring
   four candidates in both engines rather than by reasoning about the bidi algorithm. The column is
@@ -122,12 +133,13 @@ the browser settles, and whose separators are hit-tested at their own centres --
 on one followed the link to its right, and that a separator is now its own element says nothing
 about where a click lands; the description's two
 repository-relative link kinds, a relative path and a bare `#N`, read back as resolved hrefs off
-this repo's own description rather than as the source they used to show; and the tab icon going
-blue while the PTY prints and back to green two seconds after it stops, typed at the
-`tools/claude-stub.mjs` stub, whose echo is the same burst of output a Claude turn is made of and
-whose cursor-position probe, every 200ms throughout, is what a real session sends between turns. The
-green half is the assertion: it was a `cat` stub that never probed, so the icon stuck busy from the
-first paint in every real session and no check could see it. And a queue row dragged by its grip onto
+this repo's own description rather than as the source they used to show; and the tab icon, staying
+green while a line is typed at the `tools/claude-stub.mjs` stub -- an echo is output too, and the
+icon reporting busy while Claude waits on you is the bug that reading is for -- then going blue on
+the Enter that starts the turn, and back to green two seconds later even though the stub's
+cursor-position probe, every 200ms throughout, is still arriving. That last one is its own
+assertion: it was a `cat` stub that never probed, so the icon stuck busy from the first paint in
+every real session and no check could see it. And a queue row dragged by its grip onto
 the row above, then a synthetic `drop` carrying only `text/plain` -- a link or a selection -- on the
 same row, which must leave the queue exactly as the real drag did. Row drags carried `text/plain`
 too, until that drop read as a drag from row `NaN` and moved the first item; run against the old

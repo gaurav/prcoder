@@ -2,8 +2,9 @@
 
 A local server + browser UI wrapping a real `claude` PTY. See README.md for what
 it does and how to run it, `docs/Design.md` for why it works the way it does --
-the guards, the threat model, the non-goals -- and `docs/Verifying.md` for what
-this repo checks and how. Keep those two true when you change what they describe.
+the guards, the non-goals -- `docs/Security.md` for what the server is exposed to
+and the checks new work has to keep, and `docs/Verifying.md` for what this repo
+checks and how. Keep those three true when you change what they describe.
 
 **The queue is yours, and moves out one way.** It no longer mirrors into the PR
 description; "The queue is yours" in `docs/Design.md` says what replaced that and

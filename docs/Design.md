@@ -1,9 +1,10 @@
 # Why prcoder looks like this
 
 What the panes do is in [the README](../README.md). This file is the *why*: the argument for
-building it at all, the three guards that shape the queue, what the localhost server is exposed to,
-and what it deliberately does not do. Where a decision is a property of one function, the docstring
-at that function argues it in full and this file only says which one to read.
+building it at all, what shapes the queue, and what it deliberately does not do. What the server is
+exposed to, and the checks that close it, is in [Security.md](Security.md). Where a
+decision is a property of one function, the docstring at that function argues it in full and this
+file only says which one to read.
 
 ## Why it exists
 
@@ -11,9 +12,6 @@ The working loop has moved out of the IDE and into agent → PR-review → agent
 fits that loop. Claude Code Desktop, Conductor and Nimbalyst are session managers: N agents in N
 worktrees. PR-Agent and CodeRabbit review *for* you, which is the opposite end of the problem.
 Agent HQ is a cloud fleet dashboard. None of them treats the pull request as the workspace.
-
-prcoder is a prototype for finding out whether a PR-shaped workspace beats a chat-shaped one. It is
-deliberately cheap to throw away.
 
 ## The queue is yours
 
@@ -48,23 +46,6 @@ That is gone too, and [#48](https://github.com/gaurav/prcoder/issues/48) holds w
 to the checkout hid items rather than organising them. Moving to an unrelated branch mid-task took
 the list away, and merging a branch put its unfinished items out of reach for good.
 
-## What a localhost server is exposed to
-
-Listening on loopback is not the boundary it looks like. A page on the web cannot read localhost's
-answers, but it can send a request that takes effect on the way out — switching branches, rewriting
-the PR description, filing an issue — and WebSockets are not subject to the same-origin policy at
-all, so that page could open `/pty`, get a `claude` PTY in this repo, read what it printed and type
-at it, approvals included.
-
-Every route and the socket refuse an `Origin` that is not the server's own. A request that states
-none is allowed through: a browser always states one on an upgrade or a `fetch`, so nothing with an
-origin to give is being waved past, while `curl`, the drivers and prcoder's own busy-port probe keep
-working. That comparison is only worth anything if `Host` is really this machine: DNS rebinding
-points an attacker's own name at 127.0.0.1 after its page has loaded, and from then on its `Origin`
-and `Host` agree. So a `Host` that is not `localhost`, `127.0.0.1` or `[::1]` is refused first.
-`sameOrigin` in [`server.js`](../server.js) carries the rest, including why it compares against
-`Host` rather than a computed URL.
-
 ## What it deliberately does not do
 
 Review comment threads (counts and a link only), syntax highlighting in the diff pane,
@@ -93,7 +74,8 @@ not do. What was added is one block, not a grammar — a quote's content is one 
 bullet, a heading or a nested `> >` inside one shows as its own text, and GitHub's `> [!NOTE]`
 alerts are not alerts here. Everything past that is
 [#41](https://github.com/gaurav/prcoder/issues/41)'s decision to take; one more paper cut is an
-argument for settling it rather than for continuing.
+argument for settling it rather than for continuing. It is a security boundary as well as a scope
+one — [Security.md](Security.md) says why.
 
 **The queue is machine-local**, which is the trade for not writing your files. Moving an item into
 the PR description or an issue is how you carry it to another machine, and separate worktrees keep
