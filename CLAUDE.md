@@ -148,6 +148,24 @@ forces one. That is Playwright's own patched Firefox, not the one in
 caret bug is invisible in Chromium and fatal in Firefox, and it is the one thing
 here that only one engine can tell you about.
 
+Installed is not the same as working, and the check cannot tell them apart.
+Playwright's Firefox has been failing to start on this machine since at least
+2026-09-16: `browserType.launch: Timeout 180000ms exceeded`, after
+`sandbox_extension_issue_file_to_process failed for .../plugin-container.app: 1
+(Operation not permitted)` and a `RenderCompositorSWGL failed mapping default
+framebuffer` crash annotation. `existsSync(firefox.executablePath())` is true
+throughout, so the Chromium fallback never fires and the run burns three minutes
+before it dies -- and reinstalling, which is the fix the paragraph above gives
+for a miss, is not the fix for this. `PRCODER_BROWSER=chromium` is the way past
+it. #61 is where the owed Firefox pass lives.
+
+Two things about running the driver at all, both of which read as a hung server.
+It takes minutes, so `node tools/browser.mjs | tail` shows nothing at all until
+the very end -- `tail` buffers the whole stream -- and the way to watch a run is
+to redirect to a file. And Firefox needs more of the machine than a sandboxed
+shell grants it; the failure above is identical either way, but a launch that
+dies on the sandbox alone is a different bug with the same 180s timeout.
+
 Don't read the offset the driver prints as evidence. The assertion is `caret > 0`
 and nothing finer: `.item .text` is `flex: 1`, so the middle of its box is past
 the end of the sentence and the click sends the caret to the end of the text.
