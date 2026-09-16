@@ -96,7 +96,11 @@ it came from.
 
 *Files* is every changed file grouped as *Tests* / *Code* / *Config & docs*,
 tests first, because tests are the fastest way to see what functionality
-actually changed. The checkbox on each file is GitHub's own "viewed" checkbox:
+actually changed. Inside each of those, the files are folded by the directory
+they are in, and a row says only the name the directory above it does not --
+so a path is read once per directory rather than once per file. Both levels
+fold, and both remember what you closed. The checkbox on each file is GitHub's
+own "viewed" checkbox:
 tick it here and it's ticked on github.com. Clicking a file opens its diff in
 the **Diff** pane; cmd/ctrl-clicking opens GitHub's diff viewer at that file
 instead.

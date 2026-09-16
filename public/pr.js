@@ -516,7 +516,45 @@ function fileGroup(label, files, handlers) {
     className: 'group', dataset: { group: label }, title: label, count: `${done}/${total}`,
     open: !closedGroups.has(label),
     onToggle: (open) => { if (open) closedGroups.delete(label); else closedGroups.add(label); },
-  }, files.map((f) => fileRow(f, handlers)));
+  }, [...byDir(files)].map(([dir, list]) => dirGroup(label, dir, list, handlers)));
+}
+
+/**
+ * The files of one group, split by the directory they are in.
+ *
+ * A Map because the order is the answer: `gh` returns the files sorted by path,
+ * so one pass leaves the directories in that order and the files inside them in
+ * it too. Files at the top of the repository have no directory to be named
+ * after, and `(root)` is the one label that cannot collide with a real one --
+ * a directory's key here always ends in `/`.
+ */
+const byDir = (files) => {
+  const dirs = new Map();
+  for (const f of files) {
+    const cut = f.path.lastIndexOf('/');
+    const dir = cut === -1 ? '(root)' : f.path.slice(0, cut + 1);
+    if (!dirs.has(dir)) dirs.set(dir, []);
+    dirs.get(dir).push(f);
+  }
+  return dirs;
+};
+
+/**
+ * One directory inside a group, folded like the group itself.
+ *
+ * The fold state is keyed by group *and* directory: `public/` under Code and
+ * `public/` under Tests are two different folds, and a single key would close
+ * both. Both keys live in the one `closedGroups` set -- a group's label never
+ * ends in `/`, so the two kinds cannot collide.
+ */
+function dirGroup(group, dir, files, handlers) {
+  const key = `${group}/${dir}`;
+  const { done, total } = viewedCount(files);
+  return fold({
+    className: 'dir', dataset: { dir }, title: dir, count: `${done}/${total}`,
+    open: !closedGroups.has(key),
+    onToggle: (open) => { if (open) closedGroups.delete(key); else closedGroups.add(key); },
+  }, files.map((f) => fileRow(f, handlers, dir)));
 }
 
 /**
@@ -532,7 +570,7 @@ function fold({ className, dataset, title, count, open, onToggle }, children) {
   return d;
 }
 
-function fileRow(f, { onViewed, onOpen, selected }) {
+function fileRow(f, { onViewed, onOpen, selected }, dir = '(root)') {
   const box = h('input', { type: 'checkbox', checked: f.viewed, title: 'mark viewed on GitHub' });
   writeThrough(box, (v) => onViewed(f.path, v), (v) => row.classList.toggle('viewed', v));
   // The path goes inside a <bdi>. Its container is `direction: rtl` so that a
@@ -545,7 +583,11 @@ function fileRow(f, { onViewed, onOpen, selected }) {
   // inside a box that still overflows from the left. Checked in both engines
   // on 2026-09-09; `unicode-bidi: plaintext` on the link fixes the order too,
   // but moves the cut to the tail, which is the thing the rtl was for.
-  const link = ext(f.url, h('bdi', {}, f.path), { className: 'path', title: f.path });
+  // The name the fold above it does not already say. `title` stays the whole
+  // path: the row is what you point at when you want to know where a file is,
+  // and the directory heading may have scrolled off the top of a long group.
+  const shown = dir === '(root)' ? f.path : f.path.slice(dir.length);
+  const link = ext(f.url, h('bdi', {}, shown), { className: 'path', title: f.path });
   link.addEventListener('click', (e) => {
     if (e.metaKey || e.ctrlKey) return;   // GitHub stays one modifier away
     e.preventDefault();

@@ -209,6 +209,12 @@ await page.locator('#pr').screenshot({ path: path.join(out, 'pr-files.png') });
 // sections, and the opposite default for the opposite reason.
 console.log('groups open on arrival:', await page.locator('.group[open]').count(),
   'of', await page.locator('.group').count(), ' (want all of them)');
+// The second level: one fold per directory inside each group, and rows that say
+// only what the fold above them does not.
+console.log('dirs:    ', (await page.locator('.dir > summary h3').allInnerTexts()).join(' '),
+  ' (want a directory per group, each ending in / or named (root))');
+console.log('rows:    ', (await page.locator('.dir').first().locator('.file .path').allInnerTexts()).join(' '),
+  ' (want names without the directory above them)');
 await page.locator('.group > summary').first().click();
 await page.waitForTimeout(200);
 console.log('after collapsing one:', await page.locator('.group[open]').count(), 'open');
@@ -219,7 +225,11 @@ console.log('after collapsing one:', await page.locator('.group[open]').count(),
 // size and reads as a full stop either way.
 console.log('dotfile paths draw in order:', await page.evaluate(() => {
   const dots = [...document.querySelectorAll('.file .path')]
-    .filter((a) => a.title.startsWith('.'));
+    // The drawn text, not the title: a row inside a directory fold shows the
+    // name alone, so `.github/workflows/test.yml` draws as `test.yml` and has no
+    // leading dot left to get wrong. What is still at risk is a name that
+    // starts with one -- `.gitignore` at the root, a dotfile in any directory.
+    .filter((a) => a.textContent.startsWith('.'));
   if (!dots.length) return 'no dotfile in this PR to check';
   const bad = dots.filter((a) => {
     const t = document.createTreeWalker(a, NodeFilter.SHOW_TEXT).nextNode();
