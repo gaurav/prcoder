@@ -234,8 +234,16 @@ export function renderNoPr(status, { onCreate }) {
   const create = h('button', { className: 'pr-create', disabled: !can }, 'Create a pull request');
   if (can) create.onclick = () => onCreate(create);
 
+  // The same way out of the window the head carries, which is the one thing
+  // this pane can still offer: there is no pull request, but the repository and
+  // its lists are where you would go to find out why. Left-aligned, unlike the
+  // head's: that one is a line in a block of pull request facts and has to be
+  // told apart from them, where this sits alone between a sentence and a button.
+  const out = noPrLinks(status);
+
   host.replaceChildren(...kids([
     h('p', { className: 'empty' }, why),
+    out.length ? linkRow(out, 'meta') : null,
     status.sync === 'unpushed' && can
       ? h('p', { className: 'pr-note' }, 'This branch is not on GitHub yet; it will be pushed first.')
       : null,
@@ -311,12 +319,48 @@ const repoName = (repoUrl) => repoUrl.replace(/^https?:\/\/[^/]+\//, '');
  */
 export const headLinks = (pr) => {
   const { repo } = linkBase(pr);
-  return [
-    { text: `PR #${pr.number} ↗`, href: pr.url },
-    { text: repoName(repo), href: repo },
-    ...['issues', 'pulls', 'milestones'].map((p) => ({ text: p, href: `${repo}/${p}` })),
-  ];
+  return [{ text: `PR #${pr.number} ↗`, href: pr.url }, ...repoLinks(repo)];
 };
+
+/** The repository and the three lists: the tail of the head's row, and the
+ *  whole of the one in the pane with no pull request to head. */
+const repoLinks = (repo) => [
+  { text: repoName(repo), href: repo },
+  ...['issues', 'pulls', 'milestones'].map((p) => ({ text: p, href: `${repo}/${p}` })),
+];
+
+/**
+ * The same way out, for the pane that has no pull request to build it from.
+ *
+ * The host is hard-coded here where the head's is not, because there is no PR
+ * URL to read one off -- `nameWithOwner` is all `gh repo view` was asked for.
+ * That makes this the third of the github.com assumptions #53 is about, not a
+ * new kind of one; the head's is still the part not to undo.
+ *
+ * The arrow lands on the repository for the same reason it lands on the PR
+ * above: it is the "what you are looking at, on GitHub" link, and here that is
+ * the repository itself.
+ */
+export const noPrLinks = ({ nameWithOwner }) => {
+  if (!nameWithOwner) return [];
+  const [self, ...rest] = repoLinks(`https://github.com/${nameWithOwner}`);
+  return [{ ...self, text: `${self.text} ↗` }, ...rest];
+};
+
+/**
+ * One row of links, dot-separated.
+ *
+ * The dots are their own elements rather than an `a::before`, which is what
+ * they were: a pseudo-element lives inside the link's box, so the separator was
+ * underlined with it and a click on the gap followed the link to its right.
+ * `pointer-events: none` does not help -- the point is still over the <a>
+ * itself once the pseudo-element declines it.
+ */
+const linkRow = (list, className) => h('div', { className },
+  ...list.map((l, i) => [
+    i ? h('span', { className: 'sep' }, '·') : null,
+    ext(l.href, l.text),
+  ]));
 
 /**
  * The pull request pane, in two roots.
@@ -361,16 +405,7 @@ function renderPrHead(pr, handlers) {
       h('span', { className: 'del' }, `−${pr.deletions}`),
     ),
     checks(pr.checks),
-    h('div', { className: 'meta pr-links' },
-      // The dots are their own elements rather than an `a::before`, which is
-      // what they were: a pseudo-element lives inside the link's box, so the
-      // separator was underlined with it and a click on the gap followed the
-      // link to its right. `pointer-events: none` does not help -- the point is
-      // still over the <a> itself once the pseudo-element declines it.
-      ...kids(headLinks(pr).map((l, i) => [
-        i ? h('span', { className: 'sep' }, '\u00b7') : null,
-        ext(l.href, l.text),
-      ]))),
+    linkRow(headLinks(pr), 'meta pr-links'),
     h('div', { className: 'tabs' },
       tabBtn('detail', tabLabel('Detail', taskCount(pr.body))),
       tabBtn('files', tabLabel('Files', viewedCount(pr.files)))),

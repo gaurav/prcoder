@@ -30,7 +30,9 @@ The switcher in the PR pane header lists open pull requests and runs
 `gh pr checkout` to move between them. Uncommitted work hides it behind a
 Commit button, because the checkout would fail anyway. On a branch with no pull
 request the pane says so, disables the editing controls, and offers to create
-one -- pushing the branch first if GitHub has not seen it.
+one -- pushing the branch first if GitHub has not seen it. It still carries the
+way out of the window that the pull request head does: the repository and its
+issues, pulls and milestones.
 
 Next to it, a light for the one thing prcoder cannot fix for you: whether the
 branch and the remote agree. It reads `unpushed`, `N unpushed`, `pull needed`
