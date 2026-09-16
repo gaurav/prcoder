@@ -55,11 +55,11 @@ are re-checked rather than quoted:
 | What | Firefox | Chromium |
 | --- | --- | --- |
 | Description prose width, in an 864px pane | 568px | 567px |
-| Title line widths at the pane's 375px floor | 285, 263, 236 | 285, 263, 236 |
+| Title line widths at the pane's 375px default width | 285, 263, 236 | 285, 263, 236 |
 
 The prose cap and the title's `text-wrap: balance` are both properties no stylesheet can be read
-for, and the 375px floor is the only width at which balancing does anything — a real title runs to
-three lines there, and a greedy wrap leaves the last holding a word or two. The title figures were
+for, and the pane's 375px default width is the only one at which balancing does anything — a real
+title runs to three lines there, and a greedy wrap leaves the last holding a word or two. The title figures were
 taken by hand for most of this repo's first PR while the description claimed the driver measured
 them; it does now.
 

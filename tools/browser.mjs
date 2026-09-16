@@ -91,7 +91,7 @@ console.log('pr:     ', process.env.PRCODER_PR
   ? `pinned to #${process.env.PRCODER_PR} (branch-following not exercised)`
   : "following the current branch");
 const browser = await engine.launch();
-// The PR pane defaults to its 375px floor at any width, so 1440 is simply a
+// The PR pane opens at 375px at any window width, so 1440 is simply a
 // common laptop size with room for all three panes.
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
 page.on('pageerror', (e) => console.log('PAGE EXCEPTION:', e.message));
@@ -196,8 +196,8 @@ await page.locator('#pr-head .tab').nth(0).click();
 console.log('scroll:  ', `Files opened at ${filesFresh}, Detail came back to ${await scrollNow()}`,
   `  (want 0, then ${onDetail})`);
 
-// The measure, which is inert at the pane's 375px floor and is the whole reason
-// for the cap at the other end of its range.
+// The measure, which is inert at the pane's 375px default and is the whole
+// reason for the cap at the other end of its range.
 await drag('#gut-pr', 900, 450);
 await page.waitForTimeout(300);
 await page.locator('#pr').screenshot({ path: path.join(out, 'pr-wide.png') });
@@ -325,7 +325,7 @@ console.log('home:    ', JSON.stringify(homed), '  (want "" -- back to the templ
 console.log('valuenow:', `${nowBefore} -> ${nowShoved} -> ${await valuenow()} after Home`,
   ' (want a percentage of <main> that moves with the keys and again with Home)');
 
-// Home just put the pane back on its 375px floor, which is the one width where
+// Home just put the pane back to its 375px default, which is the one width where
 // the balanced wrap does anything: a real title runs to three lines there, and
 // a greedy wrap leaves the last of them holding a word or two. Range rectangles
 // rather than a screenshot -- the claim is about how wide the lines come out,

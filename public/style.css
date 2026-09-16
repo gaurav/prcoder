@@ -32,10 +32,15 @@ body {
    height, so a percentage only pads them out on a big screen and leaves the
    terminal less room. The % maxima still stop a pixel default from starving
    #term in a small window. The values are the ones the owner had dragged to
-   and kept (2026-09-15). */
+   and kept (2026-09-15).
+
+   A pane's default is its var() fallback, not the clamp minimum -- they are
+   only the same number for #pr by coincidence. The 180px floor is there so the
+   PR pane can be dragged down to a stub when the terminal wants the window;
+   #pr opens at 375px regardless. */
 main {
   height: 100%; display: grid; background: var(--line);
-  grid-template-columns: clamp(375px, var(--w-pr, 375px), 60%) 1px 1fr;
+  grid-template-columns: clamp(180px, var(--w-pr, 375px), 60%) 1px 1fr;
   grid-template-rows: 1fr 1px clamp(120px, var(--h-queue, 227px), 40%);
   grid-template-areas:
     "pr gpr term"
@@ -124,8 +129,8 @@ a { color: var(--accent); }
    sets `margin-left: auto`, shared by all four panes, so a tab button lands
    hard against the right edge -- that rule already carries two exceptions
    (`.commit`, `.where`) and this would be the third. And at the pane's 375px
-   floor the header holds an <h1>, a flex:1 <select>, the light and the refresh
-   glyph, so two more buttons squeeze the select to nothing.
+   default the header holds an <h1>, a flex:1 <select>, the light and the
+   refresh glyph, so two more buttons squeeze the select to nothing.
 
    A sticky tab row as the first child of #pr-body, keeping one scroller: this
    is the one that looks right and is not. Two views in one scroller share one
@@ -145,8 +150,8 @@ a { color: var(--accent); }
    the left margin, and this line started there too, where it was looked for to
    the right of the title or under the badges and never found at the top.
 
-   `justify-content` rather than `text-align`: at the pane's 375px floor the row
-   wraps, and this is what keeps the wrapped half against the right edge too. It
+   `justify-content` rather than `text-align`: at the pane's 375px default the
+   row wraps, and this is what keeps the wrapped half against the right edge. It
    reuses `.meta` for the flex, the wrap, the gap and the 12px dim type, so the
    only thing said twice would be the alignment. */
 .pr-links { justify-content: flex-end; }
@@ -163,7 +168,7 @@ a { color: var(--accent); }
    way it does for any heading.
 
    `text-wrap: balance` is what makes it quick to read rather than merely big.
-   The pane's floor is 375px, where a real title runs to three lines, and the
+   The pane opens at 375px, where a real title runs to three lines, and the
    default greedy wrap leaves the last one holding a word or two -- the ragged
    edge is what a glance lands on, so an orphan costs more here than the same
    orphan would in prose. Balancing evens the lines instead. It is a no-op at a
