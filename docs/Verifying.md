@@ -27,8 +27,11 @@ for the rest, and for the three fixes to it that do **not** work.
 
 Its assertions are written against this repo's own PR #1 — that description's sections, file groups
 and issue chips — and the server follows whatever branch you are on, so a run from a feature branch
-drives a pull request they do not fit and fails on the section count. `PRCODER_PR=1` pins it. Unset
-it to check the branch-following itself.
+drives a pull request they do not fit and fails on the section count. `PRCODER_PR=1` pins it.
+
+Pinning is also the way to run the whole file and never touch the path every real user is on, so
+leave it unset on `initial-implementation`: that run is the only thing that covers branch-following,
+and the driver's second line says which of the two you just did.
 
 `node tools/cli.mjs` drives the other half in a real PTY, because none of the terminal UI exists
 without a tty: the status block, the keys and the quit prompt all switch off the moment stdout is a

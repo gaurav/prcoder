@@ -81,6 +81,15 @@ for (const sig of ['SIGTERM', 'SIGHUP', 'SIGINT']) process.on(sig, () => process
 const engine = { chromium, firefox }[process.env.PRCODER_BROWSER]
   ?? (existsSync(firefox.executablePath()) ? firefox : chromium);
 console.log('engine: ', engine.name());
+// Which of the server's two ways of finding a pull request this run is about to
+// exercise. Worth saying out loud: pinning one is the only way to drive the
+// panes from a feature branch, and it is also the way to run the whole file and
+// never touch the path every real user is on. A run from `initial-implementation`
+// with PRCODER_PR unset is what covers that path, and this line is how a reader
+// knows which of the two they just did.
+console.log('pr:     ', process.env.PRCODER_PR
+  ? `pinned to #${process.env.PRCODER_PR} (branch-following not exercised)`
+  : "following the current branch");
 const browser = await engine.launch();
 // The PR pane defaults to its 375px floor at any width, so 1440 is simply a
 // common laptop size with room for all three panes.
