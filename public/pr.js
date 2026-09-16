@@ -258,7 +258,7 @@ export function renderNoPr(status, { onCreate }) {
  */
 let tab = 'detail';
 let shownFor = null;
-const scrolled = { detail: 0, files: 0 };
+const scrolled = { detail: 0, files: 0, checks: 0 };
 const openSections = new Set();
 // Whether the single-section description below is still allowed to open itself.
 let autoOpen = true;
@@ -335,9 +335,14 @@ export function renderPr(pr, handlers) {
     shownFor = pr.number;
     scrolled.detail = 0;
     scrolled.files = 0;
+    scrolled.checks = 0;
     openSections.clear();
     autoOpen = true;
   }
+  // A poll can take the tab out from under the reader: checks that have been
+  // deleted from the workflow, or a force-push that has not queued any yet,
+  // leave nothing for the Checks tab to show and no tab to leave it by.
+  if (tab === 'checks' && !pr.checks.list.length) tab = 'detail';
   renderPrHead(pr, handlers);
   renderPrTab(pr, handlers);
 }
@@ -348,8 +353,8 @@ function renderPrHead(pr, handlers) {
     renderPrHead(pr, handlers);
     renderPrTab(pr, handlers);
   };
-  const tabBtn = (name, label) =>
-    btn(label, () => switchTo(name), { className: tab === name ? 'tab on' : 'tab' });
+  const tabBtn = (name, label, extra = '') =>
+    btn(label, () => switchTo(name), { className: `tab${extra}${tab === name ? ' on' : ''}` });
 
   document.getElementById('pr-head').replaceChildren(...kids([
     h('h2', { className: 'pr-title' }, pr.title),
@@ -360,7 +365,6 @@ function renderPrHead(pr, handlers) {
       h('span', { className: 'add' }, `+${pr.additions}`),
       h('span', { className: 'del' }, `−${pr.deletions}`),
     ),
-    checks(pr.checks),
     h('div', { className: 'meta pr-links' },
       // The dots are their own elements rather than an `a::before`, which is
       // what they were: a pseudo-element lives inside the link's box, so the
@@ -373,7 +377,10 @@ function renderPrHead(pr, handlers) {
       ]))),
     h('div', { className: 'tabs' },
       tabBtn('detail', tabLabel('Detail', taskCount(pr.body))),
-      tabBtn('files', tabLabel('Files', viewedCount(pr.files)))),
+      tabBtn('files', tabLabel('Files', viewedCount(pr.files))),
+      pr.checks.list.length
+        ? tabBtn('checks', tabLabel('Checks', checkCount(pr.checks)), ` dot ${worst(pr.checks)}`)
+        : null),
   ]));
 }
 
@@ -401,6 +408,24 @@ export const taskCount = (body) => {
 export const viewedCount = (files = []) =>
   ({ done: files.filter((f) => f.viewed).length, total: files.length });
 
+/**
+ * The checks as the same done-over-total the other two tabs carry, so a run in
+ * progress reads as `Checks (1/3)` and a green one as `Checks ✓`.
+ *
+ * A failure is not "done": it is counted in the total and not in the done, so
+ * the fraction stays short of the total for as long as something is red. The
+ * colour beside it is what tells those two apart -- a pending 1/3 and a failed
+ * 1/3 are the same fraction.
+ */
+export const checkCount = ({ passed, failed, pending }) =>
+  ({ done: passed, total: passed + failed + pending });
+
+/**
+ * The one state a row of checks is worth reporting as. Red beats yellow beats
+ * green: a single failure is the thing to know about, whatever else passed.
+ */
+export const worst = ({ failed, pending }) => (failed ? 'fail' : pending ? 'pend' : 'pass');
+
 function renderPrTab(pr, handlers) {
   const host = document.getElementById('pr-body');
   // Recorded as it happens rather than read before the replace: a tab switch
@@ -416,7 +441,13 @@ function renderPrTab(pr, handlers) {
   // it instead.
   const focused = document.activeElement?.closest?.('.md-section')?.dataset.key;
 
-  host.replaceChildren(...kids(tab === 'files' ? [
+  host.replaceChildren(...kids(tab === 'checks' ? [
+    ...pr.checks.list.map((c) => h('div', { className: 'check' },
+      h('span', { className: `dot ${c.state}` }),
+      // A check GitHub gave no URL for is rare and not worth a dead link, so it
+      // stays plain text rather than becoming an <a> to nowhere.
+      c.url ? ext(c.url, c.name) : h('span', {}, c.name))),
+  ] : tab === 'files' ? [
     ...GROUPS.map(([key, label]) => fileGroup(label, pr.groups[key], handlers)),
     h('div', { className: 'meta' },
       ext(`${pr.url}#issuecomment`, `${pr.counts.comments} comments · ${pr.counts.reviews} reviews ↗`)),
@@ -435,15 +466,6 @@ function renderPrTab(pr, handlers) {
 }
 
 const badge = (text, kind) => h('span', { className: `badge ${kind}` }, text);
-
-function checks({ passed, failed, pending }) {
-  if (!passed && !failed && !pending) return null;
-  return h('div', { className: 'meta' },
-    failed ? badge(`${failed} failing`, 'fail') : null,
-    pending ? badge(`${pending} pending`, 'pend') : null,
-    passed ? badge(`${passed} passing`, 'pass') : null,
-  );
-}
 
 /**
  * One row of issue chips. The row label says which kind, so the chips stay bare

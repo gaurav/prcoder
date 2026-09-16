@@ -112,11 +112,36 @@ const drag = async (sel, x, y) => {
   await page.mouse.up();
 };
 
-// The two tabs, and what each says about the other. `Detail (3/10)` /
+// The tabs, and what each says about the others. `Detail (3/10)` /
 // `Files (7/23)` is the whole reason the counts are on the labels -- they are
-// what you can see while you are looking at the other half.
+// what you can see while you are looking at another one.
 const tabs = await page.locator('#pr-head .tab').allInnerTexts();
 console.log('tabs:    ', tabs.join('  |  '), '  (want a count on each)');
+
+// The checks, which are a tab and a coloured dot rather than the badges they
+// used to be above the title. The colour is a computed background rather than a
+// class name, because the class is only a promise that the stylesheet has a
+// rule -- and green/yellow/red is the whole claim. This repo's own PR is the
+// fixture, so what it says depends on what CI is doing right now: the assertion
+// is that the dot's colour and the fraction agree, not what either one is.
+const checksTab = page.locator('#pr-head .tab.dot');
+if (await checksTab.count()) {
+  const label = await checksTab.innerText();
+  const dot = await checksTab.evaluate((e) => getComputedStyle(e, '::before').backgroundColor);
+  const cls = await checksTab.getAttribute('class');
+  await checksTab.click();
+  await page.waitForSelector('.check');
+  const rows = await page.locator('.check').allInnerTexts();
+  const linked = await page.locator('.check a').count();
+  console.log('checks:  ', JSON.stringify(label), cls, dot,
+    ` (want a fraction or ✓, and green 127,216,143 / yellow 240,220,154 / red 245,163,163 to match it)`);
+  console.log('check rows:', rows.join(' | '), `, ${linked} of ${rows.length} link out`,
+    ' (want one row per check, each linking to its run)');
+  await page.locator('#pr').screenshot({ path: path.join(out, 'pr-checks.png') });
+  await page.locator('#pr-head .tab').nth(0).click();
+} else {
+  console.log('checks:   no tab  (want none only if this PR really has no checks)');
+}
 
 // The folds. A description this long is ten collapsed lines until you open
 // one, which is the point -- and the open one has to survive the poll, because
