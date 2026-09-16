@@ -113,12 +113,14 @@ from you while you are in the other.
 select → read → tick viewed → ask Claude never leaves the window. It shows the
 same hunks GitHub does (fetched once per push and cached), refreshes itself when
 the branch head moves, and links out to GitHub for anything the plain rendering
-can't do — syntax highlighting, comments, binary and oversized files. Two links,
-because they answer different questions: *Diff ↗* is this file's patch in
-GitHub's diff viewer, and *File ↗* is the whole file as this pull request leaves
-it — the untouched parts a hunk doesn't show, and a Markdown file rendered
-rather than as source. *File ↗* is pinned to the head commit, so it goes on
-saying what you were looking at after the next push.
+can't do — syntax highlighting, comments, binary and oversized files. Four links,
+because they answer different questions. *Diff* is this file's patch in GitHub's
+viewer. The other three are the whole file as this pull request leaves it:
+*File ↗* for what it became — the untouched parts a hunk doesn't show, and a
+Markdown file rendered rather than as source — *Blame* for who last touched the
+lines around a hunk, and *History* for what else has landed in it. Those three
+are pinned to the head commit, so they go on saying what you were looking at
+after the next push.
 
 **Claude Code** — the real `claude` binary in a PTY, so Escape still interrupts,
 slash commands still work, permission prompts still appear, and typing while

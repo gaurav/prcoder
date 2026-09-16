@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { bucket, groupFiles, diffAnchor, fileUrl, blobUrl } from '../files.js';
+import { bucket, groupFiles, diffAnchor, fileUrl, fileViews } from '../files.js';
 
 test('tests are recognised across language conventions', () => {
   for (const p of [
@@ -51,9 +51,12 @@ test('diffAnchor matches the anchors GitHub actually renders', () => {
 // base repository, which is why one rule covers both: checked 2026-09-16
 // against cli/cli#14373, whose head lives in a fork, and the base repo's blob
 // URL at that sha answered 200.
-test('the file link is the whole file at the head commit', () => {
-  assert.equal(
-    blobUrl('https://github.com/cli/cli/pull/9000', '682398a89f408d305fba87c2be1c25864aab4077', 'docs/install_linux.md'),
-    'https://github.com/cli/cli/blob/682398a89f408d305fba87c2be1c25864aab4077/docs/install_linux.md',
-  );
+test('the file links are the whole file at the head commit', () => {
+  const sha = '682398a89f408d305fba87c2be1c25864aab4077';
+  assert.deepEqual(fileViews('https://github.com/cli/cli/pull/9000', sha, 'docs/install_linux.md'), {
+    blob: `https://github.com/cli/cli/blob/${sha}/docs/install_linux.md`,
+    blame: `https://github.com/cli/cli/blame/${sha}/docs/install_linux.md`,
+    // GitHub's path for a file's history is /commits/, not /history/.
+    history: `https://github.com/cli/cli/commits/${sha}/docs/install_linux.md`,
+  });
 });

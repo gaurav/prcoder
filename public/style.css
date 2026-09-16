@@ -327,8 +327,13 @@ a { color: var(--accent); }
   white-space: nowrap; direction: rtl; text-align: left; font-size: 12px; color: var(--dim);
 }
 #diff-viewed-label { font-size: 12px; color: var(--dim); white-space: nowrap; }
-#diff-gh { font-size: 12px; white-space: nowrap; text-decoration: none; }
-#diff-gh:hover { text-decoration: underline; }
+/* The ways out of the pane, as one menu rather than four buttons: the arrow is
+   on the first only, for the reason headLinks gives -- four in a row read as
+   decoration. `nowrap` on the group keeps a separator from starting a line. */
+#diff-out, #diff-gh { font-size: 12px; white-space: nowrap; }
+#diff header a { text-decoration: none; }
+#diff header a:hover { text-decoration: underline; }
+#diff header .sep { color: var(--dim); margin: 0 2px; }
 #diff-body { font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; padding: 6px 0; }
 .dl { white-space: pre; padding: 0 10px; }
 .dl.add { color: #9ae6b4; background: #1f4d2e33; }

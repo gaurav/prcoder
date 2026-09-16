@@ -29,8 +29,17 @@
         <h1>Diff</h1>
         <span id="diff-path"></span>
         <label id="diff-viewed-label"><input id="diff-viewed" type="checkbox" title="mark viewed on GitHub"> viewed</label>
-        <a id="diff-file" target="_blank" rel="noopener" title="open the whole file at this pull request's head on GitHub">File ↗</a>
-        <a id="diff-gh" target="_blank" rel="noopener" title="open this file's diff on GitHub">Diff ↗</a>
+        <!-- The three that need the PR's head commit, hidden together when a
+             payload has none; the diff link below needs only the PR. -->
+        <span id="diff-out">
+          <a id="diff-file" target="_blank" rel="noopener" title="the whole file at this pull request's head, on GitHub">File ↗</a>
+          <span class="sep">·</span>
+          <a id="diff-blame" target="_blank" rel="noopener" title="who last touched each line of it">Blame</a>
+          <span class="sep">·</span>
+          <a id="diff-history" target="_blank" rel="noopener" title="the commits that have touched this file">History</a>
+          <span class="sep">·</span>
+        </span>
+        <a id="diff-gh" target="_blank" rel="noopener" title="this file's diff in GitHub's viewer">Diff</a>
         <button id="diff-close" title="close diff">✕</button>
       </header>
       <div id="diff-body" class="scroll"></div>

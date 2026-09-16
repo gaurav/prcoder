@@ -30,17 +30,28 @@ export function fileUrl(prUrl, p) {
 }
 
 /**
- * The whole file as this pull request leaves it, which a patch is only a view
- * of. Worth its own link for the two things a diff cannot show: the parts
- * nobody touched, and a Markdown file rendered rather than as source.
+ * The whole file as this pull request leaves it, in the three views GitHub has
+ * of it. A patch cannot show any of them: the parts nobody touched, a Markdown
+ * file rendered rather than as source (`blob`), who last touched each of the
+ * lines around a hunk (`blame`), or what else has landed in the file
+ * (`history`).
  *
- * Pinned to the head commit rather than the branch name, so it keeps saying
+ * One function because the three differ by a path segment and nothing else --
+ * GitHub's own URLs are `/blob/`, `/blame/` and `/commits/` over the same ref
+ * and path.
+ *
+ * Pinned to the head commit rather than the branch name, so they keep saying
  * what the pane was showing after another push. The commit is enough for a
  * fork's pull request too, and that is not an assumption: GitHub keeps the head
  * of an open PR in the *base* repository, so a fork's sha resolves under the
  * base repo's URL. Checked 2026-09-16 against cli/cli#14373, a cross-repository
  * PR -- `/cli/cli/blob/682398a/docs/install_linux.md` answered 200.
  */
-export function blobUrl(prUrl, sha, p) {
-  return `${prUrl.replace(/\/pull\/\d+$/, '')}/blob/${sha}/${p}`;
+export function fileViews(prUrl, sha, p) {
+  const repo = prUrl.replace(/\/pull\/\d+$/, '');
+  return {
+    blob: `${repo}/blob/${sha}/${p}`,
+    blame: `${repo}/blame/${sha}/${p}`,
+    history: `${repo}/commits/${sha}/${p}`,
+  };
 }

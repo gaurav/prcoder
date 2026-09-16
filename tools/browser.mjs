@@ -252,7 +252,8 @@ await page.waitForSelector('main.diff-open');
 const diffLinks = await page.locator('#diff header a').evaluateAll(
   (as) => as.map((a) => `${a.innerText} ${a.href}`));
 console.log('diff out:', diffLinks.join('\n          '),
-  '\n           (want File at /blob/<40-hex>/<path>, Diff at /pull/N/files#diff-<64-hex>)');
+  '\n           (want File/Blame/History at /blob|blame|commits/<40-hex>/<path>,',
+  'Diff at /pull/N/files#diff-<64-hex>)');
 await drag('#gut-pr', 520, 450);
 await drag('#gut-diff', 720, 300);
 await drag('#gut-queue', 720, 640);
