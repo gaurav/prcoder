@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   pageTitle, withoutHtml, inline, headLinks, noPrLinks, queueSync, HEADING, blocks, sectionize,
-  tabLabel, taskCount, viewedCount,
+  tabLabel, taskCount, viewedCount, checkCount, worst,
 } from '../public/pr.js';
 import { fences, TASK, taskLines } from '../public/tasks.js';
 
@@ -478,6 +478,23 @@ test('a tab with something to count carries done over total', () => {
   // Nothing done yet still counts: `(0/4)` is four things waiting, and reads
   // very differently from a bare `Files`.
   assert.equal(tabLabel('Files', { done: 0, total: 4 }), 'Files (0/4)');
+});
+
+// A failure is counted in the total and not in the done, so the fraction stays
+// short of the total for as long as anything is red -- `Checks ✓` is reachable
+// only by everything passing.
+test('the checks count is passing over all of them', () => {
+  assert.deepEqual(checkCount({ passed: 1, failed: 1, pending: 1 }), { done: 1, total: 3 });
+  assert.equal(tabLabel('Checks', checkCount({ passed: 1, failed: 1, pending: 1 })), 'Checks (1/3)');
+  assert.equal(tabLabel('Checks', checkCount({ passed: 3, failed: 0, pending: 0 })), 'Checks ✓');
+  assert.equal(tabLabel('Checks', checkCount({ passed: 0, failed: 1, pending: 0 })), 'Checks (0/1)');
+});
+
+// Which is why the dot is there at all: these two labels are identical.
+test('a failure colours the tab even when something else is still running', () => {
+  assert.equal(worst({ failed: 1, pending: 2 }), 'fail');
+  assert.equal(worst({ failed: 0, pending: 2 }), 'pend');
+  assert.equal(worst({ failed: 0, pending: 0 }), 'pass');
 });
 
 test('the description count walks the body, fences and all', () => {

@@ -80,10 +80,10 @@ to drop back to the default. The sizes are remembered per browser, so the
 layout you settle on is the one the next `prcoder` opens with.
 
 **Pull request** — which pull request you are in stays at the top: the title,
-the state, the branch it targets, the checks. Under those, right-aligned, is the
-way out of the window: this pull request on GitHub, the repo, and its issues,
-pulls and milestones. Below that are two tabs, because reading the argument and
-working the files are two different things and each wants the whole pane.
+the state, the branch it targets. Under those, right-aligned, is the way out of
+the window: this pull request on GitHub, the repo, and its issues, pulls and
+milestones. Below that are the tabs, because reading the argument, working the
+files and watching CI are three different things and each wants the whole pane.
 
 *Detail* is the description. It opens as the lead paragraph and then one folded
 line per section, so a long one is an outline you scan rather than a wall you
@@ -104,9 +104,15 @@ own "viewed" checkbox: tick it here and it's ticked on github.com. Clicking a
 file opens its diff in the **Diff** pane; cmd/ctrl-clicking opens GitHub's diff
 viewer at that file instead.
 
-Each tab carries the count the other one cannot show you — how many description
-boxes are still unticked, how many files are still unviewed — so neither hides
-from you while you are in the other.
+*Checks* is CI, one row per check, each linking to its run. The tab is there
+only when the pull request has any.
+
+Each tab carries the count the others cannot show you — how many description
+boxes are still unticked, how many files are still unviewed, how many checks
+have gone green — so none of them hides from you while you are in another. The
+Checks tab also carries a dot: green when everything passed, yellow while
+something is still running, red as soon as anything fails, which is the part a
+fraction alone can't tell you.
 
 **Diff** — the selected file's patch, rendered plainly above the terminal so
 select → read → tick viewed → ask Claude never leaves the window. It shows the
