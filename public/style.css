@@ -303,6 +303,12 @@ a { color: var(--accent); }
 .dir > summary:hover { color: var(--fg); }
 .dir > summary .count { font-size: 11px; opacity: .7; }
 .dir > .sec-body { padding: 0 0 4px 9px; }
+/* The seam between a group's two runs. Files at the top of the repository are
+   the group's first rows and the directories follow them at the same indent, so
+   without this the last root file and the first fold are one row apart and read
+   as one list. A `.dir` after another `.dir` needs nothing -- it has its own
+   margin-bottom above it. */
+.sec-body > .file + .dir { margin-top: 7px; }
 
 .file { display: flex; align-items: center; gap: 6px; padding: 2px 0; font-size: 13px; }
 .file.viewed .path { opacity: .45; text-decoration: line-through; }

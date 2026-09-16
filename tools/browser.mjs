@@ -219,11 +219,27 @@ await page.locator('#pr').screenshot({ path: path.join(out, 'pr-files.png') });
 console.log('groups open on arrival:', await page.locator('.group[open]').count(),
   'of', await page.locator('.group').count(), ' (want all of them)');
 // The second level: one fold per directory inside each group, and rows that say
-// only what the fold above them does not.
+// only what the fold above them does not. The order is the pane's own -- a
+// directory ahead of what is inside it, siblings alphabetical -- so this is
+// where a comparator that has quietly become a string compare shows up.
 console.log('dirs:    ', (await page.locator('.dir > summary h3').allInnerTexts()).join(' '),
-  ' (want a directory per group, each ending in / or named (root))');
+  ' (want each ending in /, a parent before its children, alphabetical)');
 console.log('rows:    ', (await page.locator('.dir').first().locator('.file .path').allInnerTexts()).join(' '),
   ' (want names without the directory above them)');
+// Files at the top of the repository are not a fold: they are the group's first
+// rows, above every directory in it. Counted per group rather than over the
+// pane, because "before the first .dir" is only a claim within one group.
+console.log('root rows lead their group:', await page.evaluate(() => {
+  const groups = [...document.querySelectorAll('.group > .sec-body')];
+  const say = groups.map((b) => {
+    const kids = [...b.children];
+    const rows = kids.filter((k) => k.classList.contains('file'));
+    const firstDir = kids.findIndex((k) => k.classList.contains('dir'));
+    const late = rows.some((r) => firstDir !== -1 && kids.indexOf(r) > firstDir);
+    return `${rows.length}${late ? ' AFTER A DIR' : ''}`;
+  });
+  return `${say.join(', ')} across ${groups.length} groups`;
+}), ' (want a count per group and no AFTER A DIR)');
 await page.locator('.group > summary').first().click();
 await page.waitForTimeout(200);
 console.log('after collapsing one:', await page.locator('.group[open]').count(), 'open');
