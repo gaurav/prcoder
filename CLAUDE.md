@@ -159,12 +159,25 @@ before it dies -- and reinstalling, which is the fix the paragraph above gives
 for a miss, is not the fix for this. `PRCODER_BROWSER=chromium` is the way past
 it. #61 is where the owed Firefox pass lives.
 
+Upgrading Playwright is not the fix either, and the download is ten minutes you
+will not get back. 1.63.0 ships Firefox 155 (build 1543), which fails
+differently rather than not at all: the process exits 1 in under a second with
+`Could not find profile folder` -- for a `-profile` directory that exists, for
+one under `data/`, and for no `-profile` at all, where the default profile is
+its own to make. Running the binary directly, outside Playwright, reproduces
+every one of those, while `firefox --version` prints `155.0`, so it is Firefox
+that cannot start and not the harness around it. The bundle is `adhoc,
+linker-signed` with `Info.plist=not bound`, which is the likeliest reason
+macOS 27 will not let it reach a profile, but that part is a guess and the
+failure is not. Tested 2026-09-17 on macOS 27.0 (26A428).
+
 Two things about running the driver at all, both of which read as a hung server.
 It takes minutes, so `node tools/browser.mjs | tail` shows nothing at all until
 the very end -- `tail` buffers the whole stream -- and the way to watch a run is
-to redirect to a file. And Firefox needs more of the machine than a sandboxed
-shell grants it; the failure above is identical either way, but a launch that
-dies on the sandbox alone is a different bug with the same 180s timeout.
+to redirect to a file. And the shell sandbox is not what stops Firefox, which
+was an open question here until it was measured: both builds fail identically
+with Claude Code's sandbox on and off, so `dangerouslyDisableSandbox` buys
+nothing and a launch that hangs is not evidence of one (tested 2026-09-17).
 
 Don't read the offset the driver prints as evidence. The assertion is `caret > 0`
 and nothing finer: `.item .text` is `flex: 1`, so the middle of its box is past
