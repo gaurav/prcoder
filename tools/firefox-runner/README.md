@@ -21,6 +21,20 @@ Every line has said `FAIL` since 2026-09-17. The run worth doing is the one
 after a macOS or Firefox update; if a line comes back `OK`, #61 is unblocked and
 `tools/browser.mjs` should be pointed at whatever that line launched.
 
+## The other thing in here
+
+`caret-repro.html` is for the bug that made Firefox the default engine in the
+first place: a mousedown inside a `draggable` element goes to the drag machinery
+rather than the caret, so a click into a `contentEditable` child lands at offset
+0. Open it in a real Firefox and click into the middle of both rows.
+
+The point of the second row is that prcoder's fix -- the grip, which switches
+`draggable` off while the pointer is over the text -- hides the bug completely.
+So the app feeling fine in Firefox is not evidence the browser was fixed, and
+the plain row is the only one that answers the question. If both rows put the
+caret where you clicked, the bug is gone, and CLAUDE.md, docs/Verifying.md and
+#61 all describe something that no longer exists.
+
 ## What fails
 
 | What | How |
