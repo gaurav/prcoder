@@ -63,7 +63,7 @@ directive that blocks a script, a stylesheet or a font is a console message rath
 exception, so the driver says nothing, and the only thing that turns red is whichever check needed
 the thing that did not load — the icon check covers xterm, the pane figures cover the stylesheet.
 That is real coverage, but it is indirect: a directive that nothing exercises can be wrong through a
-green run. Add a `page.on('console')` line for the run that changes the header.
+green run. Add a `page.on('console')` line for the run that changes the header; #62 is making that permanent.
 
 `node tools/firefox-runner/probe.mjs` is not a driver and boots no server. It asks a narrower
 question — can anything on this machine drive Firefox — by trying Playwright's own build and the
