@@ -50,6 +50,13 @@ per screenshot. `tools/cli.mjs` stubs it with `/bin/cat`, which is all the termi
 because a stub that only echoes cannot fail the icon check. The UI's controls hit the live PR, so a stray click edits a description on GitHub —
 undo what you write, or stay read-only.
 
+Chromium has a quieter version of the same trap. Playwright serves a headless run from
+`chromium_headless_shell-<build>` and a headed one from `chromium-<build>`, which are two separate
+downloads under one `npx playwright install chromium`; this machine has the shell for build 1234
+and not the browser. So `PRCODER_BROWSER=chromium` works, and the same run with `headless: false`
+fails with `Executable doesn't exist at .../chromium-1234/...`, which reads as a broken Playwright
+install rather than as the one missing half it is. `npx playwright install chromium` fixes it.
+
 `node tools/firefox-runner/probe.mjs` is not a driver and boots no server. It asks a narrower
 question — can anything on this machine drive Firefox — by trying Playwright's own build and the
 Firefox in `/Applications` over WebDriver BiDi, headless and headed, and then the bare binary with
