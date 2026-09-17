@@ -612,12 +612,22 @@ const vendor = {
   '/vendor/addon-web-links.mjs': '@xterm/addon-web-links/lib/addon-web-links.mjs',
 };
 
+// A second line of defence for the page that holds the PTY. A hole in the
+// description renderer loads no script, and no other page can frame prcoder and
+// turn a click on its own content into a click on ▶. style-src stays loose
+// because xterm injects its own <style>; img-src is left unset so the data:
+// favicon still loads. docs/Security.md argues the frame; #49 is the rest.
+const csp = "script-src 'self'; style-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'";
+
 const mime = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css' };
 
 async function serveFile(res, file) {
   try {
     const body = await fs.readFile(file);
-    res.writeHead(200, { 'content-type': mime[path.extname(file)] ?? 'application/octet-stream' });
+    res.writeHead(200, {
+      'content-type': mime[path.extname(file)] ?? 'application/octet-stream',
+      'content-security-policy': csp,
+    });
     res.end(body);
   } catch {
     res.writeHead(404).end('not found');

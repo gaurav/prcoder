@@ -59,6 +59,15 @@ test('static files come from public/, and a miss is a 404', async () => {
   assert.equal((await fetch(`${base}/nothing.js`)).status, 404);
 });
 
+// The page holds the PTY socket, so it is the one worth a policy: a frame is
+// the hole the origin check does not close (docs/Security.md), and script-src
+// is what a future escape in the description renderer would run into.
+test('the page is served with a CSP that forbids framing and foreign script', async () => {
+  const csp = (await fetch(`${base}/`)).headers.get('content-security-policy');
+  assert.match(csp, /frame-ancestors 'none'/);
+  assert.match(csp, /script-src 'self'/);
+});
+
 // The vendor map is hand-written paths into node_modules, so it breaks silently
 // on an xterm upgrade -- and a 404 here is a blank page with a module error in
 // a console prcoder never shows.
