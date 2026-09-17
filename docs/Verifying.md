@@ -89,10 +89,11 @@ Every figure here was measured on `5f7d6cc`, in both engines.
 ## What gets checked, and where
 
 Unit tests cover the queue store, the port derivation, the description renderer, file grouping and
-the order the folds come out in, GitHub's diff anchors, the sync verdict, every queue ↔
-PR-description transition, the status block's wording, the queue light's states, and the terminal's
-own erase bookkeeping — the last because a block that miscounts its rows either eats scrollback or
-leaves a smear, and both look like anything but an off-by-one.
+the order the folds come out in, GitHub's diff anchors, the sync verdict, the checklist lines a
+move appends to a description, the queue's tabs and how an older store migrates, the status block's
+wording, the queue light's states, and the terminal's own erase bookkeeping — the last because a
+block that miscounts its rows either eats scrollback or leaves a smear, and both look like anything
+but an off-by-one.
 
 Two of them pin a *coupling* rather than a behaviour. The description wins on `done`, so a tick the
 description never received is reverted by the next merge — correct, and exactly why the store may
@@ -162,6 +163,11 @@ same row, which must leave the queue exactly as the real drag did. Row drags car
 too, until that drop read as a drag from row `NaN` and moved the first item; run against the old
 code the check prints `MOVED`, in both engines. Then the same row moved back from the keyboard: focus
 on its grip, Down, and the pair is in its original order with focus still on the row that moved.
+A status repaint landing on a row marked as dragging leaves that row in place, and the same refresh
+without the mark replaces it — the control that says the check is looking at a real repaint. And the
+two source tabs: one PR-tab checkbox ticked and unticked, two real description edits
+checked to leave the body as it was, and one mentioned issue pulled into Local, which the queue
+restore takes back out. A description with no checkboxes skips the tick rather than waiting on one.
 
 Driven in the PTY: the tab count, `r` forcing a poll, the busy-port line finding the other instance
 and naming its repo, the quit prompt naming what it costs, a second instance with no tab quitting on
@@ -169,14 +175,9 @@ one press with no prompt at all, and no `claude` left running afterwards.
 
 ## What the caret assertion actually proves
 
-Narrower than it looks, and worth knowing before trusting it. The assertion is `caret > 0` — that a
-click into a queue item's text did not land at position 0, which is what the Firefox drag bug does
-([CLAUDE.md](../CLAUDE.md)). That is all it proves.
-
-The offset it prints is not a constant and is not evidence. `.item .text` is `flex: 1`, so its box
-runs to the end of the row and the middle of the box is past the end of the sentence — the click
-lands after the last glyph and the caret goes to the end of the text. So the number printed is the
-length of whichever row happens to come first, which is why it moves when the queue's contents
-move. A check that would catch a click landing on the *wrong* character has to aim at the
-text node rather than at the box; that is a two-line fix, and it is on the branch stacked on this
-one rather than cherry-picked back here.
+It prints `caret: 12 of 34` — an offset into the first Local row's text and that text's length — and
+passes only strictly between the two. `0 of n` is the Firefox drag bug ([CLAUDE.md](../CLAUDE.md));
+`n of n` means the click missed the glyphs, which is what it did for as long as it aimed at the
+middle of `.item .text`: that box is `flex: 1`, so its middle is past the end of the sentence, and
+the old `caret > 0` passed on a caret sitting at the end. The driver measures the text node and
+clicks 40% of the way into it now, so the number means what it says in both engines.

@@ -6,11 +6,9 @@ the guards, the non-goals -- `docs/Security.md` for what the server is exposed t
 and the checks new work has to keep, and `docs/Verifying.md` for what this repo
 checks and how. Keep those three true when you change what they describe.
 
-**The queue is being redesigned.** Before touching anything under the queue --
-the description mirror, `.prcoder/queue.json`, the queue pane -- read "Where the
-queue is going" in `docs/Design.md`: the mirror is frozen, and the new design
-(a local list plus a tab per source, with one-way moves) lives on `queue-tabs`,
-PR #27.
+**The queue is yours, and moves out one way.** It no longer mirrors into the PR
+description; "The queue is yours" in `docs/Design.md` says what replaced that and
+what is still to come. Don't bring a sync back without reading it.
 
 ## Scratch work goes in `data/`
 
@@ -75,38 +73,13 @@ None of it exists without a tty. `process.stdout.isTTY` gates the block and
 -- which is what `tools/browser.mjs` (`stdio: 'ignore'`) is standing proof of.
 `tools/cli.mjs` drives the other half, in a real PTY.
 
-## A marker alone on its own line is a block
+## Old descriptions still carry the mirror's block
 
-`splitPrBlock` in `queue.js` takes prcoder's block to start at the first line
-that is exactly `<!-- prcoder:todo -->`, outside a fence, and to end at the
-next line that is exactly the closer. A marker quoted in a sentence or a code
-span is inert -- that was the old trap, where the *first* occurrence anywhere
-opened the block and the next queue write deleted everything from that sentence
-to the real closing marker (#9, caught one edit before a push on 2026-09-01).
-
-What is still live: put either marker on a line by itself, unfenced, anywhere
-in a description -- a pasted sample of the block, say -- and that line is the
-block. This repo describes prcoder in its own PRs, so show a sample inside a
-fence, and check the body still has exactly one unfenced line of each marker
-before writing it.
-
-A running prcoder rewrites that block from its store on every poll of a visible
-tab, so a `gh pr edit` against this repo's own PR can be silently reverted within
-a minute -- it happened on 2026-09-06, mid-edit, and the two versions disagreed
-about which items were ticked. Check the repo's port (`.prcoder/port.json`)
-before hand-editing the block, and re-read the body afterwards rather than
-assuming the write stuck.
-
-Inside the block, `done` is the only field the description owns: a `- [ ]` to
-`- [x]` is exactly what the pane writes, so it is safe. Nothing else is.
-`syncFromPrBlock` matches a line to an item by issue number when the line has
-one and by exact text otherwise, then tombstones every `inPr` item whose line
-has gone -- so editing an item's text or dropping a line buries the item. To
-change anything else, edit `.prcoder/queue.json` and regenerate the block with
-`renderPrBlock(items, body, prNumber)`, then check the round trip:
-`syncFromPrBlock(items, newBody, prNumber)` should give back the items you
-started with. The number matters -- an item records the PR it was mirrored
-into, and a block leaves every other PR's items alone.
+Descriptions written by an earlier prcoder hold a checklist between prcoder's
+own HTML-comment markers. Nothing reads or rewrites that block any more: it is
+an ordinary checklist now, ticked like any other from the PR pane, and a line
+moved in with ◇ is appended at the end of the body rather than into it. Leave
+old blocks alone; hand-editing them is safe.
 
 When a prcoder is already running on this repo, none of that is the way in: it
 rewrites the block from its store on the next poll and your edit is gone. Talk
@@ -175,12 +148,17 @@ takes minutes, so `node tools/browser.mjs | tail` shows nothing at all until the
 very end -- `tail` buffers the whole stream -- and the way to watch a run is to
 redirect to a file.
 
-Don't read the offset the driver prints as evidence. The assertion is `caret > 0`
-and nothing finer: `.item .text` is `flex: 1`, so the middle of its box is past
-the end of the sentence and the click sends the caret to the end of the text.
-The number is therefore the length of whichever row comes first, and it moves
-when the queue does -- it has been 65, 66 and 51 at different times, all of them
-passing and none of them meaning anything. docs/Verifying.md has the rest.
+The caret check prints `caret: 12 of 34` -- an offset into that row's text, and
+the length of it. Both are needed, and reading only the first is how the check
+sat half-broken. `.item .text` is `flex: 1`, so its box runs to the end of the
+row and the middle of the box is past the end of the sentence; clicking there
+sent the caret to the end of the text, and `caret > 0` passed. That is all the
+old `65` and `66` in this file ever were -- the length of whatever row came
+first, one apart because the two engines round a click past the end
+differently. The driver measures the text node and aims inside it now, so the
+engines agree and the number means what it says. `0 of n` is the Firefox drag
+bug; `n of n` means the click missed the glyphs and the check is not checking
+anything.
 
 What the driver waits on encodes an assumption about what the pane shows first.
 It waited on `.file` to decide the panes had finished loading, which was true

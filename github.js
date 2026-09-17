@@ -79,6 +79,17 @@ export async function prBody(cwd, prUrl) {
   return lf(body);
 }
 
+/**
+ * Open issues, for the titles on the queue's Issues tab.
+ *
+ * ponytail: the first 200, fetched whole and filtered by the pane. A repo past
+ * that, or a tab that wants milestones or search, is a query of its own.
+ */
+export async function listIssues(cwd) {
+  const args = ['issue', 'list', '--state', 'open', '--limit', '200', '--json', 'number,title'];
+  return JSON.parse(await gh(args, { cwd }));
+}
+
 /** Open PRs, for the switcher. */
 export async function listPrs(cwd) {
   const args = ['pr', 'list', '--state', 'open', '--json', 'number,title,headRefName,isDraft'];

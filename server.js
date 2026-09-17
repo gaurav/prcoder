@@ -11,11 +11,12 @@ import { createHash } from 'node:crypto';
 import { text as readBody } from 'node:stream/consumers';
 import { spawn as ptySpawn } from 'node-pty';
 import { WebSocketServer } from 'ws';
-import { loadPr, prHeads, prBody, listPrs, setViewed, setBody, createIssue, fetchPatches, runCount } from './github.js';
+import { loadPr, prHeads, prBody, listPrs, listIssues, setViewed, setBody, createIssue, fetchPatches, runCount } from './github.js';
 import { snapshot, currentBranch, repoInfo, prScope, compareUrl, checkoutPr, pushBranch, remoteBranchHead } from './git.js';
 import { groupFiles, fileUrl, fileViews } from './files.js';
-import { parseFuture, renderPrBlock, syncFromPrBlock, toggleTask } from './queue.js';
+import { appendTasks, toggleTask } from './queue.js';
 import { readStore, writeStore, readPort, writePort, replaceItems } from './store.js';
+import { counts } from './public/items.js';
 import * as term from './term.js';
 import { syncPhrase } from './public/pr.js';
 
@@ -59,19 +60,13 @@ export function splitArgs(argv) {
 }
 
 let { target, claudeArgs } = splitArgs(process.argv.slice(2));
-// The URLs of PRs whose last mirror write failed; one leaves when a write to it
-// succeeds. See mirrors(). Per PR because a flag for all of them was cleared by
-// a write to a different PR, after which the one GitHub is still behind on was
-// trusted again -- and merging against its stale block undoes the very change
-// that never reached it.
-const mirrorFailed = new Set();
 
 // The PR is fetched once and reused; the queue routes need its body and node id.
 let pr = null;
 // owner/repo and default branch: constant while we run, and loaded at startup
-// rather than lazily, because two things now need it before the first poll —
-// the issue links decorate() derives, and mirrors(), which fails closed and so
-// would quietly mirror nothing while it was still null.
+// rather than lazily, because two things need it before the first poll -- the
+// issue links decorate() derives, and ours(), which refuses a move into the PR
+// description while it is still null.
 let info = null;
 
 // ponytail: patches fetched lazily on the first diff click, keyed by head oid
@@ -119,7 +114,7 @@ const quote = (t) => `'${t.length > 48 ? `${t.slice(0, 47)}…` : t}'`;
  * writeQueue).
  *
  * Returns the lines rather than printing them, which is the only reason the
- * five transitions below can be checked without a terminal.
+ * transitions below can be checked without a terminal.
  */
 export function queueChanges(was, now) {
   const before = new Map(was.map((i) => [i.text, i]));
@@ -129,9 +124,6 @@ export function queueChanges(was, now) {
     if (!p) lines.push(`queued ${quote(i.text)}`);
     else if (p.done !== i.done) lines.push(`${i.done ? 'ticked' : 'unticked'} ${quote(i.text)}`);
     else if (p.deleted !== i.deleted) lines.push(`${i.deleted ? 'deleted' : 'restored'} ${quote(i.text)}`);
-    else if (p.inPr !== i.inPr) {
-      lines.push(`${i.inPr ? 'added' : 'removed'} ${quote(i.text)} ${i.inPr ? 'to' : 'from'} the PR description`);
-    }
   }
   for (const i of was) {
     if (!now.some((n) => n.text === i.text)) lines.push(`dropped ${quote(i.text)}`);
@@ -167,61 +159,29 @@ function withUrls(p) {
 }
 
 /**
- * Whether the PR on screen is the one this branch's queue is a projection of.
- *
- * This gates the mirror in both directions, and it is load-bearing rather than
- * tidy. syncFromPrBlock tombstones any mirrored item missing from the block, so
- * a body that is not ours is not evidence that anything was deleted — and our
- * items are not something to write into someone else's description. Two ways to
- * get there: `prcoder <pr-url>` pins a PR that is not the checkout's, and a
- * failed mirror leaves GitHub holding a body we know is out of date.
- *
- * It fails closed. A missed merge is recovered on the next poll; a wrong one
- * buries every mirrored item the branch has.
+ * Whether the PR on screen is this branch's own -- the only description a queue
+ * item may be moved into. `prcoder <pr-url>` pins a PR that is not the
+ * checkout's, and appending your list to a stranger's description is not a move
+ * anybody asked for. Fails closed while `pr` or `info` is still loading.
  */
 const ours = (branch) => Boolean(pr)
   && prScope(pr, { branch, nameWithOwner: info?.nameWithOwner }) === 'current';
 
-const mirrors = (branch) => ours(branch) && !mirrorFailed.has(pr.url);
-
-async function readQueue(branch) {
-  // Still the checkout's branch, and only for mirrors(): which PR we are
-  // allowed to merge against is a fact about the branch. Which items exist is
-  // not -- the queue is one list whatever is checked out.
-  branch ??= await currentBranch(repo);
-  const { store, stale } = await readStore(repo);
-  if (!mirrors(branch)) return decorate(store.items);
-
-  // Kept, not just shown. The merge used to go to the browser and nowhere else,
-  // so a box ticked on github.com was done for as long as this PR was on screen
-  // and undone again after a switch -- the store still had the old value, and
-  // off this PR the store is all there is. Written only when the description
-  // actually changed something, so an ordinary poll stays a read.
-  const next = replaceItems(store, syncFromPrBlock(store.items, pr.body ?? '', pr.number));
-  if (JSON.stringify(next.items) !== JSON.stringify(store.items)) {
-    for (const line of queueChanges(store.items, next.items)) term.verbose(`from the PR description: ${line}`);
-    // A store that cannot be written still has a queue to show, so this is
-    // reported rather than failing the poll; the next poll merges it again.
-    await writeStore(repo, next, { stale }).catch((e) => console.error('queue not saved:', e.message));
-  }
-  return decorate(next.items);
-}
+/**
+ * The queue is yours and lives only in `.prcoder/queue.json`: nothing here reads
+ * it back from GitHub. Moving an item out is a separate, one-way route (see
+ * moveOut), not a flag this list keeps in step with a description.
+ */
+const readQueue = async () => decorate((await readStore(repo)).store.items);
 
 /**
- * The store is the source of truth and the PR description is a projection of
- * it, so they move together. Writing one alone leaves readQueue's merge running
- * against a stale body, which then undoes the write that just happened: a tick
- * reverts, and an item whose text was edited gets buried as deleted because its
- * old line no longer matches anything. The network call only happens when the
- * rendered block actually changes, so ticking a local-only item stays offline.
- *
  * ponytail: last write wins. The store is re-read on every poll so an outside
  * edit is picked up, but two tabs racing means the slower one loses what it
  * never saw. Fixing that needs item identity — text is not it, since an edit is
  * indistinguishable from a delete plus an add — so if a lost item is ever
  * actually observed, give pick() a crypto.randomUUID() and union by id.
  */
-async function writeQueue(items, branch) {
+async function writeQueue(items) {
   // The shape is the contract, and it has changed twice: the route took a bare
   // array, then `{items, branch}`, and now `{items}` again. A client that
   // missed a change -- an old tab, a curl copied from somewhere -- used to send
@@ -231,63 +191,34 @@ async function writeQueue(items, branch) {
   if (!Array.isArray(items)) {
     throw new Error('the queue must be sent as {items}');
   }
-  branch ??= await currentBranch(repo);
-  // Mirrored from here, so mirrored into this PR: an item switched on without a
-  // PR of its own is this one's from now on, and stays out of every other's.
-  if (ours(branch)) items = items.map((i) => (i.inPr && i.pr == null ? { ...i, pr: pr.number } : i));
-
-  const { store, stale: staleBytes } = await readStore(repo);
+  const { store, stale } = await readStore(repo);
   for (const line of queueChanges(store.items, items)) term.verbose(line);
-  await writeStore(repo, replaceItems(store, items), { stale: staleBytes });
-
-  // The block rendered against the body we last saw. If that is already what it
-  // says, this change touched nothing the PR shows -- a local-only item ticked,
-  // reordered or deleted, which is most of what the queue does -- so there is
-  // nothing to send, and no `gh pr view` spent finding that out.
-  const cached = pr?.body ?? '';
-  // ours(), not mirrors(): the flag is a reason to distrust the body we have,
-  // never a reason to stop writing. Gating the write on it too made the failure
-  // permanent -- the only line that clears it sits inside this block, so one
-  // dropped write left the light saying "will retry" at a retry that could
-  // never be attempted, and no later queue change ever reached the PR again.
-  //
-  // And while it is set the cheap comparison is worthless: `cached` is a copy
-  // GitHub is known to disagree with, so matching it proves nothing. Every
-  // change tries the write until one lands.
-  if (ours(branch) && (mirrorFailed.has(pr.url) || renderPrBlock(items, cached, pr.number) !== cached)) {
-    const { url } = pr;
-    try {
-      // Re-read rather than trusting that copy: someone may have edited the
-      // prose around our block on github.com since the last poll, and
-      // renderPrBlock only owns what is between the markers.
-      //
-      // No fallback to `cached` if that read fails. A read that did not happen
-      // says nothing about what the description holds now, and writing the
-      // stale copy back over prose added since is the exact loss the re-read
-      // exists to prevent -- so a failed read fails the mirror instead.
-      if (await editBody((current) => renderPrBlock(items, current, pr.number))) {
-        term.verbose(`wrote the queue block into PR #${pr.number}'s description`);
-      }
-      // GitHub now holds exactly the block these items render to, which is the
-      // evidence the latch was waiting for -- and only this route has it. A tick
-      // elsewhere in the description is a write that landed too, but it carried
-      // whatever stale block GitHub had back out, so clearing the latch there
-      // let the next poll merge that block over the change it was guarding.
-      mirrorFailed.delete(url);
-    } catch (e) {
-      // The store already has the change, so nothing is lost — but the body
-      // on GitHub may now be behind, and merging against it would bury the very
-      // item that failed to go out. mirrors() stops trusting it until a write
-      // succeeds. Offline on a train is the case this is for.
-      mirrorFailed.add(url);
-      console.error('pr body not updated:', e.message);
-    }
-  }
+  await writeStore(repo, replaceItems(store, items), { stale });
   return decorate(items);
 }
 
 /**
- * Read, change and write the description: the one way either route writes it.
+ * Items leave the queue for somewhere permanent: written there first, then taken
+ * off the list. In that order because the failure it leaves is the recoverable
+ * one -- a write that did not land keeps the item where it was, and a store
+ * write that fails after one that did leaves the item in both places, which the
+ * error says, rather than in neither.
+ */
+async function moveOut(items, indices, send) {
+  const moving = indices.map((n) => items[n]).filter(Boolean);
+  if (!moving.length) throw new Error('nothing to move');
+  // `send` answers where the items went, for the one error that has to say so:
+  // "failed" without a URL is what makes someone file the same issue again.
+  const where = await send(moving);
+  try {
+    return await writeQueue(items.filter((i) => !moving.includes(i)));
+  } catch (e) {
+    throw new Error(`moved to ${where}, but the queue still lists ${moving.length === 1 ? 'it' : 'them'}: ${e.message}`);
+  }
+}
+
+/**
+ * Read, change and write the description: the one way anything writes it.
  * Answers whether anything was sent.
  */
 async function editBody(edit) {
@@ -295,10 +226,8 @@ async function editBody(edit) {
   const current = await prBody(repo, cur.url);
   const body = edit(current);
   if (body !== current) await setBody(repo, cur.url, body);
-  // Only once GitHub has it: an optimistic assignment survives the failure
-  // and makes prcoder report items the PR has never seen. Reached with
-  // nothing to write as well, which is a mirror that has caught up by
-  // itself -- someone else wrote the same block, or the change was undone.
+  // Only once GitHub has it: an optimistic assignment survives the failure and
+  // makes the pane show a description GitHub never saw.
   cur.body = body;
   return body !== current;
 }
@@ -328,19 +257,6 @@ export const ago = (ms) => {
 };
 
 /**
- * Whether the queue has reached GitHub. `mirrorFailed` is the state worth
- * having a light for: the store took the change, GitHub did not, and prcoder
- * has stopped trusting the body it can see. Until now it said so once, on
- * stderr, and scrolled away.
- */
-function mirrorPhrase(s) {
-  if (s.mirrorFailed) return 'PR description behind — will retry';
-  if (!s.pr) return null;
-  if (s.scope !== 'current') return 'not mirroring — that PR is on another branch';
-  return s.queue?.some((i) => i.inPr && !i.deleted) ? 'queue mirrored' : null;
-}
-
-/**
  * The block pinned under the log: everything status() worked out anyway, for
  * the terminal that is otherwise sat idle for the whole session. Pure, so the
  * wording is testable without a tty.
@@ -349,8 +265,9 @@ export function statusLines(s, u = {}) {
   // padEnd, not a slice: a label longer than the column has to push the row out
   // rather than lose its tail, or `PR #10000` prints as a real-looking `PR #1000`.
   const row = (label, ...rest) => `${label.padEnd(8)} ${rest.filter(Boolean).join('   ')}`;
-  const live = (s.queue ?? []).filter((i) => !i.deleted);
-  const n = (k) => live.filter(k).length;
+  // The same predicates the pane's tabs use, so the block and the tab strip
+  // cannot report the queue differently.
+  const q = counts(s.queue ?? []);
 
   return [
     row('prcoder', s.nameWithOwner,
@@ -359,9 +276,7 @@ export function statusLines(s, u = {}) {
         .filter(Boolean).join(' · ')),
     s.pr ? row(`PR #${s.pr.number}`, s.pr.title) : row('PR', 'none for this branch'),
     s.pr && row('', s.pr.url),
-    row('queue', `${n((i) => !i.done)} active · ${n((i) => i.done)} done · ` +
-      `${n((i) => i.inPr)} in the PR · ${n((i) => i.issue)} issue${n((i) => i.issue) === 1 ? '' : 's'}`,
-      mirrorPhrase(s)),
+    row('queue', `${q.local} local · ${q.done} done`),
     // The age belongs next to the tab count because the tab is the cause: the
     // browser polls only while its tab is visible, so backgrounding it stops
     // the clock on every number above while the socket stays open and the count
@@ -415,11 +330,8 @@ async function status({ full = false } = {}) {
     // say "N unpushed commits", which for a pinned PR on another branch was a
     // count against a branch you are not on.
     ahead: tracked ? snap.ahead : null,
-    // The queue's own light, in the pane as well as in the terminal -- about the
-    // PR on screen, since that is the only one a write can reach from here.
-    mirrorFailed: Boolean(pr && mirrorFailed.has(pr.url)),
     pr: pr ? { ...pr, groups: withUrls(pr) } : null,
-    queue: await readQueue(snap.branch),
+    queue: await readQueue(),
   };
   checkedAt = Date.now();
   repaint();
@@ -448,15 +360,14 @@ const routes = {
 
   'GET /api/prs': () => listPrs(repo),
 
+  'GET /api/issues': () => listIssues(repo),
+
   'POST /api/pr/switch': async ({ number }) => {
     await checkoutPr(repo, number);
     term.verbose(`checked out PR #${number}`);
     // Clear rather than pin: the checkout put us on the branch, so following it
     // gives the same answer and self-heals when Claude switches branches later.
     target = undefined;
-    // The queue is keyed by branch, and status() reloads the PR first, so the
-    // new branch's items are merged against the new branch's PR and not the
-    // one we just left.
     return status({ full: true });
   },
 
@@ -484,35 +395,19 @@ const routes = {
 
   /**
    * One checkbox in the description, ticked from the PR pane. The body is
-   * re-read rather than taken from the cached PR for the same reason
-   * writeQueue does it: prose edited on github.com since the last poll would
-   * otherwise be written back out of date.
+   * re-read rather than taken from the cached PR: prose edited on github.com
+   * since the last poll would otherwise be written back out of date.
    */
   'POST /api/pr/task': async ({ index, done, text }) => {
     // Unguarded on purpose: a read that failed is not the cached body. Falling
     // back to it wrote a stale description back over whatever had been added on
     // github.com since the last poll -- to tick one box. The tick fails instead,
     // and the client says so.
-    let inBlock;
-    await editBody((current) => {
-      const toggled = toggleTask(current, index, done, text);
-      inBlock = toggled.inBlock;
-      return toggled.body;
-    });
+    await editBody((current) => toggleTask(current, index, done, text));
     term.verbose(`${done ? 'ticked' : 'unticked'} a checkbox in PR #${pr.number}'s description`);
-
-    // Our own block is a projection of the queue, so a tick there has to reach
-    // the store: readQueue folds the new body back into the items and
-    // writeQueue persists them. It re-renders the block from those items
-    // against the body we just wrote, finds it unchanged, and so makes no
-    // second call of its own.
-    //
-    // Only when the block is this branch's own projection, though. A tick
-    // elsewhere in the description, or anywhere in a PR we are merely looking
-    // at, is the PR pane's business and none of the queue's.
-    const branch = await currentBranch(repo);
-    if (!inBlock || !mirrors(branch)) return { queue: null };
-    return { queue: await writeQueue(await readQueue(branch), branch) };
+    // The body GitHub now has, so both panes that show its checkboxes can
+    // repaint from it rather than wait a minute for the poll to agree.
+    return { body: pr.body };
   },
 
   'POST /api/diff': async ({ path: p }) => {
@@ -526,18 +421,27 @@ const routes = {
 
   'PUT /api/queue': ({ items }) => writeQueue(items),
 
-  'POST /api/queue/issue': async ({ items, index }) => {
-    info ??= await repoInfo(repo);
-    const { url, number } = await createIssue(repo, info.nameWithOwner, items[index].text);
-    items[index].issue = number;
-    term.verbose(`filed ${quote(items[index].text)} as ${url}`);
-    try {
-      return await writeQueue(items);
-    } catch (e) {
-      // The issue exists on GitHub whatever happened here, so the error has to
-      // name it: "failed" without a number is what makes someone file another.
-      throw new Error(`filed ${url}, but the queue did not record it: ${e.message}`);
+  /** Appended to the description as checklist lines, one per item. */
+  'POST /api/queue/to-pr': async ({ items, indices }) => {
+    if (!ours(await currentBranch(repo))) {
+      throw new Error('the pull request on screen is not this branch\'s — check it out to move items into it');
     }
+    return moveOut(items, indices, async (moving) => {
+      await editBody((current) => appendTasks(current, moving.map((i) => i.text)));
+      const where = `PR #${pr.number}'s description`;
+      term.verbose(`moved ${moving.length === 1 ? quote(moving[0].text) : `${moving.length} items`} into ${where}`);
+      return where;
+    });
+  },
+
+  /** Filed as an issue, one item at a time: each is its own issue. */
+  'POST /api/queue/to-issue': async ({ items, index }) => {
+    info ??= await repoInfo(repo);
+    return moveOut(items, [index], async ([item]) => {
+      const { url } = await createIssue(repo, info.nameWithOwner, item.text);
+      term.verbose(`filed ${quote(item.text)} as ${url}`);
+      return url;
+    });
   },
 };
 
@@ -698,37 +602,6 @@ const wss = new WebSocketServer({ server, path: '/pty' }).on('error', () => {}).
 });
 
 /**
- * FUTURE.md's queue, once, for a repo that has no store yet.
- *
- * Not left to the PR description to recover: an item that is both mirrored and
- * an issue renders as a bare `- [ ] #42`, which parses back with no text at
- * all, and items never mirrored are not there to recover. Ordering goes too.
- *
- * It runs at startup rather than inside readQueue so it lands before the first
- * merge against the PR body — otherwise the body's lines match nothing, and
- * every mirrored item arrives a second time as a new one. FUTURE.md is left
- * byte-identical: rewriting it would be prcoder's last write to a tracked
- * file, done unasked, on the way to never writing one again.
- *
- * Once per repo: the file existing is the whole record of it.
- */
-async function importFuture() {
-  // Any queue file at all means this has run, or a queue was kept without it. An
-  // empty one is a queue somebody emptied: testing for items here brought every
-  // FUTURE.md item back on the next start after the last one was cleared.
-  const { store, exists } = await readStore(repo);
-  if (exists) return;
-
-  const text = await fs.readFile(path.join(repo, 'FUTURE.md'), 'utf8').catch(() => '');
-  const items = parseFuture(text);
-  if (!items.length) return;
-
-  await writeStore(repo, replaceItems(store, items));
-  console.log(`imported ${items.length} items from FUTURE.md into .prcoder/queue.json`);
-  console.log('prcoder no longer reads or writes FUTURE.md; your copy is untouched');
-}
-
-/**
  * Who has the port we wanted. Worth asking rather than guessing: the likely
  * cause is a second prcoder in the same repo, and then the useful answer is not
  * "the port is busy" but "the window you are looking for is over there".
@@ -767,19 +640,16 @@ async function ready() {
   };
 
   // Through the serial chain, so a request arriving before this finishes waits
-  // rather than running against a half-loaded process. `mirrors()` fails closed
-  // on a null `pr` or `info`, so a queue write landing in that window is stored
-  // and never mirrored -- and because syncFromPrBlock takes `done` from the
-  // body, the next poll reads the block prcoder never updated and reverts the
-  // very tick that was just made. `listening` fires before any connection is
-  // handled, so this is always first in the chain.
+  // rather than running against a half-loaded process: ours() refuses a move
+  // into the description while `pr` and `info` are still null, which would read
+  // as the PR not being this branch's. `listening` fires before any connection
+  // is handled, so this is always first in the chain.
   await serial(async () => {
     info ??= await repoInfo(repo).catch((e) => {
       console.error('repo:', e.message);
       return null;
     });
     await refreshPr().catch((e) => console.error('pr:', e.message));
-    await importFuture().catch((e) => console.error('import:', e.message));
     await status().catch((e) => console.error('status:', e.message));
   });
   console.log(`prcoder: ${repo}`);
@@ -874,23 +744,24 @@ async function listenOnRepoPort() {
  * already in hand; none of it shells out, because a keypress that waits on git
  * is a keypress that can hang.
  *
- * `mirrorFailed` is the one that matters. The others are recoverable by
- * starting prcoder again; that one means GitHub is holding a description the
- * queue has already moved past, and quitting leaves it that way.
- *
  * An empty list is not a question worth asking, so it is not asked: no tab open,
- * nothing unmirrored, nothing in the working tree that quitting could lose.
+ * nothing left in the queue, nothing in the working tree that quitting could
+ * lose.
  */
+/** The queue's outstanding items. Cached, so no subprocess. */
+const localOnly = () => counts(last?.queue ?? []).local;
+
 function askToQuit() {
   const risk = [
     wss.clients.size && (wss.clients.size > 1
       ? `${wss.clients.size} browser tabs — their Claude sessions end`
       : '1 browser tab — the Claude session ends'),
-    mirrorFailed.size && (mirrorFailed.size > 1
-      ? `${mirrorFailed.size} PR descriptions never got the last change`
-      : 'a PR description never got the last change'),
     last?.ahead && `${last.ahead} unpushed commit${last.ahead > 1 ? 's' : ''}`,
     last?.dirtyFiles?.length && `${last.dirtyFiles.length} uncommitted file${last.dirtyFiles.length > 1 ? 's' : ''}`,
+    // The queue is what you meant to finish this time round, and it lives only
+    // on this machine: an item still in it reached neither the PR nor an issue,
+    // and nobody working anywhere else will ever see it.
+    localOnly() && `${localOnly()} queue item${localOnly() > 1 ? 's' : ''} not moved anywhere — move them to the PR or an issue to keep them past this machine`,
   ].filter(Boolean);
   // Killed here rather than left to the close handlers: process.exit does not
   // wait for them, and an orphaned `claude` outlives the terminal it was
