@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   pageTitle, withoutHtml, inline, headLinks, noPrLinks, HEADING, blocks, sectionize,
-  tabLabel, taskCount, viewedCount,
+  tabLabel, taskCount, viewedCount, byPath, byDir,
 } from '../public/pr.js';
 import { fences, TASK, taskLines } from '../public/tasks.js';
 
@@ -481,4 +481,43 @@ test('the file count is files viewed on GitHub, over files changed', () => {
   // than throw at it -- renderPrHead runs on the first paint either way.
   assert.deepEqual(viewedCount(), { done: 0, total: 0 });
   assert.deepEqual(viewedCount([]), { done: 0, total: 0 });
+});
+
+test('paths order like a tree, a directory ahead of what is inside it', () => {
+  assert.deepEqual(['gamma/', 'alpha/beta/', 'alpha/', '.github/'].sort(byPath),
+    ['.github/', 'alpha/', 'alpha/beta/', 'gamma/']);
+  // The case the obvious implementation gets wrong. `-` is 45 and `/` is 47, so
+  // comparing the whole strings sorts `alpha-x/` *between* a directory and its
+  // own child; comparing segment by segment puts it after both.
+  assert.deepEqual(['alpha-x/', 'alpha/beta/', 'alpha/'].sort(byPath),
+    ['alpha/', 'alpha/beta/', 'alpha-x/']);
+  // And the contrast, pinned so the claim above stays checkable: the default
+  // sort does put it between them.
+  assert.deepEqual(['alpha/beta/', 'alpha-x/', 'alpha/'].sort(),
+    ['alpha-x/', 'alpha/', 'alpha/beta/']);
+  // Every key a fold carries ends in `/`, but the comparator is handed bare
+  // file paths too, and two files in one directory are decided by the name.
+  assert.deepEqual(['a/z.js', 'a/b.js'].sort(byPath), ['a/b.js', 'a/z.js']);
+});
+
+test('a group splits into its root files and its directories, both in path order', () => {
+  // Deliberately unsorted: the order is the pane's own now, not whatever order
+  // `gh` handed the files over in.
+  const f = (path) => ({ path });
+  const { root, dirs } = byDir([
+    f('docs/Verifying.md'), f('server.js'), f('alpha/beta/two.js'),
+    f('CLAUDE.md'), f('alpha/one.js'), f('docs/Design.md'),
+  ]);
+  assert.deepEqual(root.map((x) => x.path), ['CLAUDE.md', 'server.js']);
+  assert.deepEqual(dirs.map(([dir]) => dir), ['alpha/', 'alpha/beta/', 'docs/']);
+  assert.deepEqual(dirs.map(([, list]) => list.map((x) => x.path)),
+    [['alpha/one.js'], ['alpha/beta/two.js'], ['docs/Design.md', 'docs/Verifying.md']]);
+});
+
+test('a root file is never a directory of its own', () => {
+  const { root, dirs } = byDir([{ path: 'README.md' }, { path: '.gitignore' }]);
+  // The old shape gave them a `(root)` fold that sorted wherever their first
+  // file fell. They are rows now, and nothing below is left to fold.
+  assert.deepEqual(root.map((x) => x.path), ['.gitignore', 'README.md']);
+  assert.deepEqual(dirs, []);
 });

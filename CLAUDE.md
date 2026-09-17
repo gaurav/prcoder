@@ -81,6 +81,16 @@ an ordinary checklist now, ticked like any other from the PR pane, and a line
 moved in with ◇ is appended at the end of the body rather than into it. Leave
 old blocks alone; hand-editing them is safe.
 
+When a prcoder is already running on this repo, none of that is the way in: it
+rewrites the block from its store on the next poll and your edit is gone. Talk
+to the server instead -- `GET /api/queue` for the items, `PUT /api/queue` with
+`{items}` to write them -- and it updates the store and the description together.
+Adding an item that way is clean. Changing an existing item's text is not: the
+old text is what the block's line still says, so the write tombstones that item
+and adds a new one, and the store ends up holding both. Same rule as above --
+text is identity -- and the tombstone is by design, but a checkbox you edited
+twice is two rows in `queue.json` and one line in the PR.
+
 ## The Claude pane is not prcoder's to draw on
 
 `term.write()` in `public/app.js` puts bytes into xterm's buffer without them
@@ -115,11 +125,28 @@ places the caret correctly with the same markup, so there was nothing to see.
 prcoder is used in Firefox, so `tools/browser.mjs` now defaults to it and falls
 back to Chromium only when it is not installed; `PRCODER_BROWSER=chromium|firefox`
 forces one. That is Playwright's own patched Firefox, not the one in
-/Applications -- Playwright cannot drive a stock build, so the check is
-`existsSync(firefox.executablePath())` and the fix for a miss is
-`npx playwright install firefox`. Running both is worth the second minute: the
+/Applications -- the default path needs the Juggler patch only that build has,
+so the check is `existsSync(firefox.executablePath())` and the fix for a miss is
+`npx playwright install firefox`. (A stock install is drivable over WebDriver
+BiDi with `channel: 'moz-firefox'`; `tools/firefox-runner/` has what came of
+trying it.) Running both is worth the second minute: the
 caret bug is invisible in Chromium and fatal in Firefox, and it is the one thing
 here that only one engine can tell you about.
+
+Installed is not the same as working, and the check cannot tell them apart.
+Firefox has not started at all on this machine since 2026-09-16 --
+`existsSync(firefox.executablePath())` is true throughout, so the Chromium
+fallback never fires and a default run burns three minutes before it dies.
+`PRCODER_BROWSER=chromium` is the way past it. `tools/firefox-runner/` is the
+whole story: what fails, the six hypotheses already eliminated (reinstalling and
+changing the Firefox version are two of them), and the one command that
+re-checks it after a macOS or Firefox update. #61 is where the owed Firefox pass
+lives.
+
+One thing about running the driver at all, which reads as a hung server: it
+takes minutes, so `node tools/browser.mjs | tail` shows nothing at all until the
+very end -- `tail` buffers the whole stream -- and the way to watch a run is to
+redirect to a file.
 
 The caret check prints `caret: 12 of 34` -- an offset into that row's text, and
 the length of it. Both are needed, and reading only the first is how the check

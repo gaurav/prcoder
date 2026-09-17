@@ -492,31 +492,67 @@ function issueRow(list, closes, label) {
 function fileGroup(label, files, handlers) {
   if (!files?.length) return null;
   const { done, total } = viewedCount(files);
+  const { root, dirs } = byDir(files);
   return fold({
     className: 'group', dataset: { group: label }, title: label, count: `${done}/${total}`,
     open: !closedGroups.has(label),
     onToggle: (open) => { if (open) closedGroups.delete(label); else closedGroups.add(label); },
-  }, [...byDir(files)].map(([dir, list]) => dirGroup(label, dir, list, handlers)));
+  }, [
+    ...root.map((f) => fileRow(f, handlers)),
+    ...dirs.map(([dir, list]) => dirGroup(label, dir, list, handlers)),
+  ]);
 }
 
 /**
- * The files of one group, split by the directory they are in.
+ * Two paths, ordered the way a tree is: a directory ahead of what is inside it,
+ * siblings alphabetical.
  *
- * A Map because the order is the answer: `gh` returns the files sorted by path,
- * so one pass leaves the directories in that order and the files inside them in
- * it too. Files at the top of the repository have no directory to be named
- * after, and `(root)` is the one label that cannot collide with a real one --
- * a directory's key here always ends in `/`.
+ * Segment by segment, and it has to be -- comparing the whole strings is the
+ * obvious version and it splits a directory from its children. `alpha-x/` and
+ * `alpha/beta/` first differ at `-` (45) against `/` (47), so a string compare
+ * puts `alpha-x/` *between* `alpha/` and `alpha/beta/`. Segment 0 is `alpha`
+ * against `alpha-x` here, which cannot go wrong that way.
+ *
+ * Running out of segments is the answer for a prefix: `alpha/` and
+ * `alpha/beta/` agree on segment 0, and the trailing `/` every directory key
+ * carries leaves `alpha/` with an empty final segment, which sorts below any
+ * real name. The length return is what catches a key without the slash.
  */
-const byDir = (files) => {
-  const dirs = new Map();
+export const byPath = (a, b) => {
+  const A = a.split('/'), B = b.split('/');
+  for (let i = 0; i < Math.min(A.length, B.length); i++) {
+    if (A[i] !== B[i]) return A[i] < B[i] ? -1 : 1;
+  }
+  return A.length - B.length;
+};
+
+/**
+ * The files of one group, split into the ones at the top of the repository and
+ * one entry per directory below it.
+ *
+ * The order is this pane's own, not `gh`'s. It used to be inherited -- `gh`
+ * returns the files sorted by path, so one pass left the directories in
+ * whatever order their *first* file happened to fall in, which is not an order
+ * over the directories at all: a group here drew `.claude/skills/run-prcoder/`,
+ * `.github/workflows/`, the root, `docs/`, with the repo's own README buried in
+ * the middle. The Map is an accumulator now; `byPath` decides.
+ *
+ * Root files come back separately because they are not a fold. They have no
+ * directory to be named after and nothing to strip off their rows, so they draw
+ * as the group's first rows and each group reads like a tree.
+ */
+export const byDir = (files) => {
+  const root = [], dirs = new Map();
   for (const f of files) {
     const cut = f.path.lastIndexOf('/');
-    const dir = cut === -1 ? '(root)' : f.path.slice(0, cut + 1);
+    if (cut === -1) { root.push(f); continue; }
+    const dir = f.path.slice(0, cut + 1);
     if (!dirs.has(dir)) dirs.set(dir, []);
     dirs.get(dir).push(f);
   }
-  return dirs;
+  const byFilePath = (x, y) => byPath(x.path, y.path);
+  for (const list of dirs.values()) list.sort(byFilePath);
+  return { root: root.sort(byFilePath), dirs: [...dirs].sort(([a], [b]) => byPath(a, b)) };
 };
 
 /**
@@ -525,7 +561,8 @@ const byDir = (files) => {
  * The fold state is keyed by group *and* directory: `public/` under Code and
  * `public/` under Tests are two different folds, and a single key would close
  * both. Both keys live in the one `closedGroups` set -- a group's label never
- * ends in `/`, so the two kinds cannot collide.
+ * ends in `/` and a directory's key always does, so the two kinds cannot
+ * collide.
  */
 function dirGroup(group, dir, files, handlers) {
   const key = `${group}/${dir}`;
@@ -550,7 +587,7 @@ function fold({ className, dataset, title, count, open, onToggle }, children) {
   return d;
 }
 
-function fileRow(f, { onViewed, onOpen, selected }, dir = '(root)') {
+function fileRow(f, { onViewed, onOpen, selected }, dir = '') {
   const box = h('input', { type: 'checkbox', checked: f.viewed, title: 'mark viewed on GitHub' });
   writeThrough(box, (v) => onViewed(f.path, v), (v) => row.classList.toggle('viewed', v));
   // The path goes inside a <bdi>. Its container is `direction: rtl` so that a
@@ -566,7 +603,8 @@ function fileRow(f, { onViewed, onOpen, selected }, dir = '(root)') {
   // The name the fold above it does not already say. `title` stays the whole
   // path: the row is what you point at when you want to know where a file is,
   // and the directory heading may have scrolled off the top of a long group.
-  const shown = dir === '(root)' ? f.path : f.path.slice(dir.length);
+  // A root row has no fold above it and passes no `dir`, which slices nothing.
+  const shown = f.path.slice(dir.length);
   const link = ext(f.url, h('bdi', {}, shown), { className: 'path', title: f.path });
   link.addEventListener('click', (e) => {
     if (e.metaKey || e.ctrlKey) return;   // GitHub stays one modifier away

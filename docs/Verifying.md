@@ -23,7 +23,10 @@ driven, not reasoned about. The two drivers exist for the two halves.
 `data/shots`. Firefox by default, because a Firefox-only bug — a click into a draggable row's text
 putting the caret at offset 0 — survived every Chromium screenshot; see [CLAUDE.md](../CLAUDE.md)
 for the rest, and for the three fixes to it that do **not** work.
-`PRCODER_BROWSER=chromium` forces the other; running both is worth the second minute.
+`PRCODER_BROWSER=chromium` forces the other; running both is worth the second minute — when both
+run. As of 2026-09-17 Firefox does not start at all on this machine, so a default run burns three
+minutes and dies; [tools/firefox-runner](../tools/firefox-runner/README.md) is why, and is the
+one-command re-check.
 
 Its assertions are written against this repo's own PR #1 — that description's sections, file groups
 and issue chips — and the server follows whatever branch you are on, so a run from a feature branch
@@ -47,6 +50,21 @@ per screenshot. `tools/cli.mjs` stubs it with `/bin/cat`, which is all the termi
 because a stub that only echoes cannot fail the icon check. The UI's controls hit the live PR, so a stray click edits a description on GitHub —
 undo what you write, or stay read-only.
 
+Chromium has a quieter version of the same trap. Playwright serves a headless run from
+`chromium_headless_shell-<build>` and a headed one from `chromium-<build>`, which are two separate
+downloads under one `npx playwright install chromium`; this machine has the shell for build 1234
+and not the browser. So `PRCODER_BROWSER=chromium` works, and the same run with `headless: false`
+fails with `Executable doesn't exist at .../chromium-1234/...`, which reads as a broken Playwright
+install rather than as the one missing half it is. `npx playwright install chromium` fixes it.
+
+`node tools/firefox-runner/probe.mjs` is not a driver and boots no server. It asks a narrower
+question — can anything on this machine drive Firefox — by trying Playwright's own build and the
+Firefox in `/Applications` over WebDriver BiDi, headless and headed, and then the bare binary with
+no Playwright in the way. That last one is what says whose bug a failure is, and it is why the
+ad-hoc signature on Playwright's build is ruled out rather than suspected. Every line has said
+FAIL since 2026-09-17; the run that matters is the one after a macOS or Firefox update, and
+[the directory's README](../tools/firefox-runner/README.md) is what to read before adding a case.
+
 ## The measured figures
 
 Numbers that only mean something re-measured. The driver prints all of these on every run, so they
@@ -55,11 +73,11 @@ are re-checked rather than quoted:
 | What | Firefox | Chromium |
 | --- | --- | --- |
 | Description prose width, in an 864px pane | 568px | 567px |
-| Title line widths at the pane's 375px floor | 285, 263, 236 | 285, 263, 236 |
+| Title line widths at the pane's 375px default width | 285, 263, 236 | 285, 263, 236 |
 
 The prose cap and the title's `text-wrap: balance` are both properties no stylesheet can be read
-for, and the 375px floor is the only width at which balancing does anything — a real title runs to
-three lines there, and a greedy wrap leaves the last holding a word or two. The title figures were
+for, and the pane's 375px default width is the only one at which balancing does anything — a real
+title runs to three lines there, and a greedy wrap leaves the last holding a word or two. The title figures were
 taken by hand for most of this repo's first PR while the description claimed the driver measured
 them; it does now.
 
@@ -70,10 +88,10 @@ Every figure here was measured on `5f7d6cc`, in both engines.
 
 ## What gets checked, and where
 
-Unit tests cover the queue store, the port derivation, the description renderer, file grouping,
-GitHub's diff anchors, the sync verdict, the checklist lines a move appends to a description, the
-queue's tabs and how an older store migrates, the status block's wording, and the terminal's own
-erase bookkeeping — the last because a
+Unit tests cover the queue store, the port derivation, the description renderer, file grouping and
+the order the folds come out in, GitHub's diff anchors, the sync verdict, the checklist lines a
+move appends to a description, the queue's tabs and how an older store migrates, the status block's
+wording, the queue light's states, and the terminal's own erase bookkeeping — the last because a
 block that miscounts its rows either eats scrollback or leaves a smear, and both look like anything
 but an off-by-one.
 

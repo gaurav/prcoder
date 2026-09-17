@@ -85,8 +85,8 @@ for (const sig of ['SIGTERM', 'SIGHUP', 'SIGINT']) process.on(sig, () => process
 // `npx playwright install firefox` has been run -- not whether the machine has
 // Firefox. Chromium is the fallback, and PRCODER_BROWSER=chromium|firefox is
 // the override; which one ran matters for reading the output, so it is logged.
-const engine = { chromium, firefox }[process.env.PRCODER_BROWSER]
-  ?? (existsSync(firefox.executablePath()) ? firefox : chromium);
+const forced = { chromium, firefox }[process.env.PRCODER_BROWSER];
+const engine = forced ?? (existsSync(firefox.executablePath()) ? firefox : chromium);
 console.log('engine: ', engine.name());
 // Which of the server's two ways of finding a pull request this run is about to
 // exercise. Worth saying out loud: pinning one is the only way to drive the
@@ -97,8 +97,25 @@ console.log('engine: ', engine.name());
 console.log('pr:     ', process.env.PRCODER_PR
   ? `pinned to #${process.env.PRCODER_PR} (branch-following not exercised)`
   : "following the current branch");
-const browser = await engine.launch();
-// The PR pane defaults to its 375px floor at any width, so 1440 is simply a
+// existsSync above says the build was downloaded, not that it starts, and on
+// macOS 27 Firefox does not -- see tools/firefox-runner. So the fallback has to
+// survive a launch that fails as well as one that was never installed, or the
+// default run waits out Playwright's 180s timeout and dies with no browser at
+// all. The wait is 45s here because this is the unattended path and a browser
+// that has not started by then is not starting; a forced engine keeps the full
+// timeout and is left to fail, since falling back is the wrong answer to
+// someone who asked for Firefox by name.
+const browser = await (async () => {
+  try {
+    return await engine.launch(forced ? {} : { timeout: 45_000 });
+  } catch (err) {
+    if (forced || engine === chromium) throw err;
+    console.log(`engine:  ${engine.name()} would not start, falling back to chromium`);
+    console.log('        ', String(err).split('\n')[0]);
+    return chromium.launch();
+  }
+})();
+// The PR pane opens at 375px at any window width, so 1440 is simply a
 // common laptop size with room for all three panes.
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
 page.on('pageerror', (e) => console.log('PAGE EXCEPTION:', e.message));
@@ -376,8 +393,8 @@ await page.locator('#pr-head .tab').nth(0).click();
 console.log('scroll:  ', `Files opened at ${filesFresh}, Detail came back to ${await scrollNow()}`,
   `  (want 0, then ${onDetail})`);
 
-// The measure, which is inert at the pane's 375px floor and is the whole reason
-// for the cap at the other end of its range.
+// The measure, which is inert at the pane's 375px default and is the whole
+// reason for the cap at the other end of its range.
 await drag('#gut-pr', 900, 450);
 await page.waitForTimeout(300);
 await page.locator('#pr').screenshot({ path: path.join(out, 'pr-wide.png') });
@@ -399,11 +416,27 @@ await page.locator('#pr').screenshot({ path: path.join(out, 'pr-files.png') });
 console.log('groups open on arrival:', await page.locator('.group[open]').count(),
   'of', await page.locator('.group').count(), ' (want all of them)');
 // The second level: one fold per directory inside each group, and rows that say
-// only what the fold above them does not.
+// only what the fold above them does not. The order is the pane's own -- a
+// directory ahead of what is inside it, siblings alphabetical -- so this is
+// where a comparator that has quietly become a string compare shows up.
 console.log('dirs:    ', (await page.locator('.dir > summary h3').allInnerTexts()).join(' '),
-  ' (want a directory per group, each ending in / or named (root))');
+  ' (want each ending in /, a parent before its children, alphabetical)');
 console.log('rows:    ', (await page.locator('.dir').first().locator('.file .path').allInnerTexts()).join(' '),
   ' (want names without the directory above them)');
+// Files at the top of the repository are not a fold: they are the group's first
+// rows, above every directory in it. Counted per group rather than over the
+// pane, because "before the first .dir" is only a claim within one group.
+console.log('root rows lead their group:', await page.evaluate(() => {
+  const groups = [...document.querySelectorAll('.group > .sec-body')];
+  const say = groups.map((b) => {
+    const kids = [...b.children];
+    const rows = kids.filter((k) => k.classList.contains('file'));
+    const firstDir = kids.findIndex((k) => k.classList.contains('dir'));
+    const late = rows.some((r) => firstDir !== -1 && kids.indexOf(r) > firstDir);
+    return `${rows.length}${late ? ' AFTER A DIR' : ''}`;
+  });
+  return `${say.join(', ')} across ${groups.length} groups`;
+}), ' (want a count per group and no AFTER A DIR)');
 await page.locator('.group > summary').first().click();
 await page.waitForTimeout(200);
 console.log('after collapsing one:', await page.locator('.group[open]').count(), 'open');
@@ -489,7 +522,7 @@ console.log('home:    ', JSON.stringify(homed), '  (want "" -- back to the templ
 console.log('valuenow:', `${nowBefore} -> ${nowShoved} -> ${await valuenow()} after Home`,
   ' (want a percentage of <main> that moves with the keys and again with Home)');
 
-// Home just put the pane back on its 375px floor, which is the one width where
+// Home just put the pane back to its 375px default, which is the one width where
 // the balanced wrap does anything: a real title runs to three lines there, and
 // a greedy wrap leaves the last of them holding a word or two. Range rectangles
 // rather than a screenshot -- the claim is about how wide the lines come out,
