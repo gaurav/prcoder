@@ -142,53 +142,28 @@ places the caret correctly with the same markup, so there was nothing to see.
 prcoder is used in Firefox, so `tools/browser.mjs` now defaults to it and falls
 back to Chromium only when it is not installed; `PRCODER_BROWSER=chromium|firefox`
 forces one. That is Playwright's own patched Firefox, not the one in
-/Applications -- Playwright cannot drive a stock build, so the check is
-`existsSync(firefox.executablePath())` and the fix for a miss is
-`npx playwright install firefox`. Running both is worth the second minute: the
+/Applications -- the default path needs the Juggler patch only that build has,
+so the check is `existsSync(firefox.executablePath())` and the fix for a miss is
+`npx playwright install firefox`. (A stock install is drivable over WebDriver
+BiDi with `channel: 'moz-firefox'`; `tools/firefox-runner/` has what came of
+trying it.) Running both is worth the second minute: the
 caret bug is invisible in Chromium and fatal in Firefox, and it is the one thing
 here that only one engine can tell you about.
 
 Installed is not the same as working, and the check cannot tell them apart.
-Playwright's Firefox has been failing to start on this machine since at least
-2026-09-16: `browserType.launch: Timeout 180000ms exceeded`, after
-`sandbox_extension_issue_file_to_process failed for .../plugin-container.app: 1
-(Operation not permitted)` and a `RenderCompositorSWGL failed mapping default
-framebuffer` crash annotation. `existsSync(firefox.executablePath())` is true
-throughout, so the Chromium fallback never fires and the run burns three minutes
-before it dies -- and reinstalling, which is the fix the paragraph above gives
-for a miss, is not the fix for this. `PRCODER_BROWSER=chromium` is the way past
-it. #61 is where the owed Firefox pass lives.
+Firefox has not started at all on this machine since 2026-09-16 --
+`existsSync(firefox.executablePath())` is true throughout, so the Chromium
+fallback never fires and a default run burns three minutes before it dies.
+`PRCODER_BROWSER=chromium` is the way past it. `tools/firefox-runner/` is the
+whole story: what fails, the six hypotheses already eliminated (reinstalling and
+changing the Firefox version are two of them), and the one command that
+re-checks it after a macOS or Firefox update. #61 is where the owed Firefox pass
+lives.
 
-Changing the Firefox version does not help in either direction, and each
-attempt is a ~100MB download. Build 1471 (Firefox 134, ten months older) dies
-with `Can't find profile directory`; build 1538 (153) hangs; build 1543
-(Firefox 155, Playwright 1.63.0) exits 1 with `Could not find profile folder`
--- for a `-profile` directory that exists, for one under `data/`, and for no
-`-profile` at all. Three versions, one wall.
-
-Four things it is *not*, each of which looked likely enough to cost an hour on
-2026-09-17. Not Playwright's build being `adhoc, linker-signed`: the owner's
-own Mozilla-signed Firefox 155.0.1 in `/Applications` fails headless the same
-way, from a bare shell with no Playwright anywhere near it. Not the profile
-path, per the three `-profile` variants above. Not TCC grants an agent session
-lacks: all of it fails from a Terminal window too. And not Playwright's inability
-to drive a stock build -- `channel: 'moz-firefox'` does exactly that over
-WebDriver BiDi, is supported by the pinned 1.62.1, correctly launches
-`/Applications/Firefox.app`, and fails headless *and* headed like the rest. Nor
-is `sandbox_extension_issue_file_to_process` the smoking gun it reads as: it
-prints for the signed Firefox as well.
-
-What is left is Firefox on macOS 27 (27.0 / 26A428) being unable to resolve a
-profile when launched as a bare binary, which is Mozilla's to fix or a newer
-build's. Don't re-derive this list; #61 carries it.
-
-Two things about running the driver at all, both of which read as a hung server.
-It takes minutes, so `node tools/browser.mjs | tail` shows nothing at all until
-the very end -- `tail` buffers the whole stream -- and the way to watch a run is
-to redirect to a file. And the shell sandbox is not what stops Firefox, which
-was an open question here until it was measured: every combination above fails
-identically with Claude Code's sandbox on and off, so `dangerouslyDisableSandbox`
-buys nothing here and a hung launch is not evidence of it.
+One thing about running the driver at all, which reads as a hung server: it
+takes minutes, so `node tools/browser.mjs | tail` shows nothing at all until the
+very end -- `tail` buffers the whole stream -- and the way to watch a run is to
+redirect to a file.
 
 Don't read the offset the driver prints as evidence. The assertion is `caret > 0`
 and nothing finer: `.item .text` is `flex: 1`, so the middle of its box is past
