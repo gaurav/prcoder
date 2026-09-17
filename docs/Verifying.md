@@ -57,6 +57,14 @@ and not the browser. So `PRCODER_BROWSER=chromium` works, and the same run with 
 fails with `Executable doesn't exist at .../chromium-1234/...`, which reads as a broken Playwright
 install rather than as the one missing half it is. `npx playwright install chromium` fixes it.
 
+The browser driver reports a `pageerror` and nothing else, which is the blind spot to know about
+when changing the Content-Security-Policy `serveFile` sends ([Security.md](Security.md)). A
+directive that blocks a script, a stylesheet or a font is a console message rather than a page
+exception, so the driver says nothing, and the only thing that turns red is whichever check needed
+the thing that did not load — the icon check covers xterm, the pane figures cover the stylesheet.
+That is real coverage, but it is indirect: a directive that nothing exercises can be wrong through a
+green run. Add a `page.on('console')` line for the run that changes the header.
+
 `node tools/firefox-runner/probe.mjs` is not a driver and boots no server. It asks a narrower
 question — can anything on this machine drive Firefox — by trying Playwright's own build and the
 Firefox in `/Applications` over WebDriver BiDi, headless and headed, and then the bare binary with
