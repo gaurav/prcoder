@@ -247,7 +247,9 @@ are a separate download -- `npx playwright install firefox chromium`. The driver
 prefers Firefox and falls back to Chromium, because Firefox is what catches
 anything to do with selection, focus or dragging, which Chromium is happy to
 render correctly and Firefox is not. `PRCODER_BROWSER=chromium|firefox` forces
-one.
+one -- and on macOS 27 that is currently the flag you want, because Firefox does
+not start there at all; [tools/firefox-runner](tools/firefox-runner/README.md)
+is what is known about it.
 
 ## Finding it again
 

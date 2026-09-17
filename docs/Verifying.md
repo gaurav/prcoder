@@ -23,7 +23,10 @@ driven, not reasoned about. The two drivers exist for the two halves.
 `data/shots`. Firefox by default, because a Firefox-only bug — a click into a draggable row's text
 putting the caret at offset 0 — survived every Chromium screenshot; see [CLAUDE.md](../CLAUDE.md)
 for the rest, and for the three fixes to it that do **not** work.
-`PRCODER_BROWSER=chromium` forces the other; running both is worth the second minute.
+`PRCODER_BROWSER=chromium` forces the other; running both is worth the second minute — when both
+run. As of 2026-09-17 Firefox does not start at all on this machine, so a default run burns three
+minutes and dies; [tools/firefox-runner](../tools/firefox-runner/README.md) is why, and is the
+one-command re-check.
 
 Its assertions are written against this repo's own PR #1 — that description's sections, file groups
 and issue chips — and the server follows whatever branch you are on, so a run from a feature branch
@@ -46,6 +49,14 @@ per screenshot. `tools/cli.mjs` stubs it with `/bin/cat`, which is all the termi
 `tools/browser.mjs` uses `tools/claude-stub.mjs`, which also sends the probe a real session sends,
 because a stub that only echoes cannot fail the icon check. The UI's controls hit the live PR, so a stray click edits a description on GitHub —
 undo what you write, or stay read-only.
+
+`node tools/firefox-runner/probe.mjs` is not a driver and boots no server. It asks a narrower
+question — can anything on this machine drive Firefox — by trying Playwright's own build and the
+Firefox in `/Applications` over WebDriver BiDi, headless and headed, and then the bare binary with
+no Playwright in the way. That last one is what says whose bug a failure is, and it is why the
+ad-hoc signature on Playwright's build is ruled out rather than suspected. Every line has said
+FAIL since 2026-09-17; the run that matters is the one after a macOS or Firefox update, and
+[the directory's README](../tools/firefox-runner/README.md) is what to read before adding a case.
 
 ## The measured figures
 
