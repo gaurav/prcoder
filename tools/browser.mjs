@@ -78,8 +78,8 @@ for (const sig of ['SIGTERM', 'SIGHUP', 'SIGINT']) process.on(sig, () => process
 // `npx playwright install firefox` has been run -- not whether the machine has
 // Firefox. Chromium is the fallback, and PRCODER_BROWSER=chromium|firefox is
 // the override; which one ran matters for reading the output, so it is logged.
-const engine = { chromium, firefox }[process.env.PRCODER_BROWSER]
-  ?? (existsSync(firefox.executablePath()) ? firefox : chromium);
+const forced = { chromium, firefox }[process.env.PRCODER_BROWSER];
+const engine = forced ?? (existsSync(firefox.executablePath()) ? firefox : chromium);
 console.log('engine: ', engine.name());
 // Which of the server's two ways of finding a pull request this run is about to
 // exercise. Worth saying out loud: pinning one is the only way to drive the
@@ -90,7 +90,24 @@ console.log('engine: ', engine.name());
 console.log('pr:     ', process.env.PRCODER_PR
   ? `pinned to #${process.env.PRCODER_PR} (branch-following not exercised)`
   : "following the current branch");
-const browser = await engine.launch();
+// existsSync above says the build was downloaded, not that it starts, and on
+// macOS 27 Firefox does not -- see tools/firefox-runner. So the fallback has to
+// survive a launch that fails as well as one that was never installed, or the
+// default run waits out Playwright's 180s timeout and dies with no browser at
+// all. The wait is 45s here because this is the unattended path and a browser
+// that has not started by then is not starting; a forced engine keeps the full
+// timeout and is left to fail, since falling back is the wrong answer to
+// someone who asked for Firefox by name.
+const browser = await (async () => {
+  try {
+    return await engine.launch(forced ? {} : { timeout: 45_000 });
+  } catch (err) {
+    if (forced || engine === chromium) throw err;
+    console.log(`engine:  ${engine.name()} would not start, falling back to chromium`);
+    console.log('        ', String(err).split('\n')[0]);
+    return chromium.launch();
+  }
+})();
 // The PR pane opens at 375px at any window width, so 1440 is simply a
 // common laptop size with room for all three panes.
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
