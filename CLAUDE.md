@@ -166,6 +166,22 @@ with `Can't find profile directory`; build 1538 (153) hangs; build 1543
 -- for a `-profile` directory that exists, for one under `data/`, and for no
 `-profile` at all. Three versions, one wall.
 
+Four things it is *not*, each of which looked likely enough to cost an hour on
+2026-09-17. Not Playwright's build being `adhoc, linker-signed`: the owner's
+own Mozilla-signed Firefox 155.0.1 in `/Applications` fails headless the same
+way, from a bare shell with no Playwright anywhere near it. Not the profile
+path, per the three `-profile` variants above. Not TCC grants an agent session
+lacks: all of it fails from a Terminal window too. And not Playwright's inability
+to drive a stock build -- `channel: 'moz-firefox'` does exactly that over
+WebDriver BiDi, is supported by the pinned 1.62.1, correctly launches
+`/Applications/Firefox.app`, and fails headless *and* headed like the rest. Nor
+is `sandbox_extension_issue_file_to_process` the smoking gun it reads as: it
+prints for the signed Firefox as well.
+
+What is left is Firefox on macOS 27 (27.0 / 26A428) being unable to resolve a
+profile when launched as a bare binary, which is Mozilla's to fix or a newer
+build's. Don't re-derive this list; #61 carries it.
+
 Two things about running the driver at all, both of which read as a hung server.
 It takes minutes, so `node tools/browser.mjs | tail` shows nothing at all until
 the very end -- `tail` buffers the whole stream -- and the way to watch a run is
