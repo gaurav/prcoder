@@ -186,9 +186,9 @@ Two things about running the driver at all, both of which read as a hung server.
 It takes minutes, so `node tools/browser.mjs | tail` shows nothing at all until
 the very end -- `tail` buffers the whole stream -- and the way to watch a run is
 to redirect to a file. And the shell sandbox is not what stops Firefox, which
-was an open question here until it was measured: both builds fail identically
-with Claude Code's sandbox on and off, so `dangerouslyDisableSandbox` buys
-nothing and a launch that hangs is not evidence of one (tested 2026-09-17).
+was an open question here until it was measured: every combination above fails
+identically with Claude Code's sandbox on and off, so `dangerouslyDisableSandbox`
+buys nothing here and a hung launch is not evidence of it.
 
 Don't read the offset the driver prints as evidence. The assertion is `caret > 0`
 and nothing finer: `.item .text` is `flex: 1`, so the middle of its box is past
