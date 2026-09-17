@@ -149,6 +149,11 @@ goes to the drag machinery rather than to the caret, so clicking into a
 `contentEditable` child lands at offset 0 instead of where you clicked. Chromium
 places the caret correctly with the same markup, so there was nothing to see.
 
+Still live: checked by hand on 2026-09-17 in a real Firefox on this machine,
+with `tools/firefox-runner/caret-repro.html`. The plain draggable row put the
+caret at 0 and the row with a grip did not, so the grip stays and everything
+below about it still describes the browser you have.
+
 prcoder is used in Firefox, so `tools/browser.mjs` now defaults to it and falls
 back to Chromium only when it is not installed; `PRCODER_BROWSER=chromium|firefox`
 forces one. That is Playwright's own patched Firefox, not the one in

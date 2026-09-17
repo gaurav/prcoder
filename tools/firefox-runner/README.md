@@ -35,6 +35,11 @@ the plain row is the only one that answers the question. If both rows put the
 caret where you clicked, the bug is gone, and CLAUDE.md, docs/Verifying.md and
 #61 all describe something that no longer exists.
 
+Run on 2026-09-17: the plain row put the caret at 0, the grip row put it where
+it was clicked. The bug is live, the grip is load-bearing, and the run worth
+repeating is the one after a Firefox update rather than the next time someone
+wonders.
+
 ## What fails
 
 | What | How |
@@ -84,7 +89,8 @@ Firefox on macOS 27 (27.0 / 26A428) cannot resolve a profile when it is
 launched as a bare binary, which is how every automation tool starts it. That is
 Mozilla's to fix, or a build newer than 155. Nothing in this repo moves it.
 
-#61 carries the pass that is owed when it does: the pane work driven in Firefox,
-and the question of whether the caret bug that made Firefox mandatory is still
-live. [CLAUDE.md](../../CLAUDE.md) has that bug and the three fixes to it that
-do not work.
+#61 carries the pass that is owed when it does: the pane work driven in Firefox.
+The other half of that issue -- whether the caret bug that made Firefox
+mandatory is still live -- is answered above and needs no driver.
+[CLAUDE.md](../../CLAUDE.md) has that bug and the three fixes to it that do not
+work.
