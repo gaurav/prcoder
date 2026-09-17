@@ -159,17 +159,12 @@ before it dies -- and reinstalling, which is the fix the paragraph above gives
 for a miss, is not the fix for this. `PRCODER_BROWSER=chromium` is the way past
 it. #61 is where the owed Firefox pass lives.
 
-Upgrading Playwright is not the fix either, and the download is ten minutes you
-will not get back. 1.63.0 ships Firefox 155 (build 1543), which fails
-differently rather than not at all: the process exits 1 in under a second with
-`Could not find profile folder` -- for a `-profile` directory that exists, for
-one under `data/`, and for no `-profile` at all, where the default profile is
-its own to make. Running the binary directly, outside Playwright, reproduces
-every one of those, while `firefox --version` prints `155.0`, so it is Firefox
-that cannot start and not the harness around it. The bundle is `adhoc,
-linker-signed` with `Info.plist=not bound`, which is the likeliest reason
-macOS 27 will not let it reach a profile, but that part is a guess and the
-failure is not. Tested 2026-09-17 on macOS 27.0 (26A428).
+Changing the Firefox version does not help in either direction, and each
+attempt is a ~100MB download. Build 1471 (Firefox 134, ten months older) dies
+with `Can't find profile directory`; build 1538 (153) hangs; build 1543
+(Firefox 155, Playwright 1.63.0) exits 1 with `Could not find profile folder`
+-- for a `-profile` directory that exists, for one under `data/`, and for no
+`-profile` at all. Three versions, one wall.
 
 Two things about running the driver at all, both of which read as a hung server.
 It takes minutes, so `node tools/browser.mjs | tail` shows nothing at all until
