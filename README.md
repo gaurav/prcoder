@@ -114,7 +114,10 @@ from you while you are in the other.
 select → read → tick viewed → ask Claude never leaves the window. It shows the
 same hunks GitHub does (fetched once per push and cached), refreshes itself when
 the branch head moves, and links out to GitHub for anything the plain rendering
-can't do — syntax highlighting, comments, binary and oversized files. Four links,
+can't do — syntax highlighting, comments, binary and oversized files. A file the
+pull request adds or deletes is shown as plain text under a green **NEW** or red
+**DELETED** title rather than as a wall of `+` or `-`: a patch that is all one
+sign has nothing to contrast. Four links,
 because they answer different questions. *Diff* comes first because it is what
 the pane itself shows: this file's patch in GitHub's viewer. The other three are
 the whole file as this pull request leaves it: *File* for what it became — the

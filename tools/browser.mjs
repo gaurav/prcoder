@@ -286,6 +286,10 @@ await page.waitForTimeout(200);
 
 await page.locator('.file .path').first().click();   // opens the diff pane (Files tab)
 await page.waitForSelector('main.diff-open');
+// The title says whether the pane holds a change or a whole file; every file in
+// PR #1 is one the PR adds, so it should read NEW there and DIFF nowhere.
+await page.waitForFunction(() => document.querySelectorAll('#diff-body .dl').length > 0);
+console.log('diff title:', await page.locator('#diff h1').innerText(), ' (want NEW: every file in PR #1 is added)');
 
 // The diff pane's two ways out: the file itself at this PR's head, and the
 // patch in GitHub's diff viewer. Both hrefs are read rather than assumed

@@ -11,9 +11,33 @@ let openPath = null;
 
 export const selectedPath = () => openPath;
 
-/** Pure: patch text -> [{cls, text}]. GitHub's `patch` starts at the first @@. */
+/**
+ * Pure: whether the patch is a whole file rather than a change to one. GitHub's
+ * `patch` for a file the PR adds is one hunk from nothing, `@@ -0,0 +1,N @@`,
+ * and for a file it removes one hunk to nothing, `@@ -1,N +0,0 @@` (checked
+ * against gaurav/ideas#13, 2026-09-18). Read off the patch rather than the
+ * REST `status` field so the server keeps sending the patch alone.
+ */
+export function diffKind(patch) {
+  const head = patch.slice(0, patch.indexOf('\n') + 1 || undefined);
+  return /^@@ -0,0 /.test(head) ? 'add' : / \+0,0 @@/.test(head) ? 'del' : null;
+}
+
+/**
+ * Pure: patch text -> [{cls, text}]. GitHub's `patch` starts at the first @@.
+ *
+ * A whole file is shown plain: every line of an added file is `+`, so the
+ * green says nothing and the `+` column is only in the way of reading it. The
+ * pane's title carries the fact instead (NEW / DELETED, see openDiff). The
+ * `\ No newline at end of file` note keeps the hunk colour so it reads as one.
+ */
 export function diffRows(patch) {
-  return patch.split('\n').map((text) => ({
+  const lines = patch.split('\n');
+  if (diffKind(patch)) {
+    return lines.slice(1).map((text) => text.startsWith('\\')
+      ? { cls: 'hunk', text } : { cls: 'ctx', text: text.slice(1) });
+  }
+  return lines.map((text) => ({
     cls: text.startsWith('+') ? 'add' : text.startsWith('-') ? 'del'
       : text.startsWith('@@') ? 'hunk' : 'ctx',
     text,
@@ -29,6 +53,18 @@ export const setViewed = (path, viewed) => api('/api/pr/viewed', { path, viewed 
 const markSelected = (path) => {
   for (const r of document.querySelectorAll('.file')) r.classList.toggle('sel', r.dataset.path === path);
 };
+
+/**
+ * The title says what the body no longer has to (see diffRows): NEW and DELETED
+ * in the colours the file rows use for +/-, DIFF for a change to a file that
+ * stays. Reset to DIFF while loading, so a file with no patch does not keep the
+ * last one's word.
+ */
+function setTitle(kind) {
+  const title = el('diff').querySelector('h1');
+  title.textContent = kind === 'add' ? 'New' : kind === 'del' ? 'Deleted' : 'Diff';
+  title.className = kind ?? '';
+}
 
 export async function openDiff(f) {
   openPath = f.path;
@@ -69,6 +105,7 @@ export async function openDiff(f) {
 
   const body = el('diff-body');
   body.replaceChildren(h('div', { className: 'empty' }, 'Loading…'));
+  setTitle(null);
   let patch;
   try {
     ({ patch } = await api('/api/diff', { path: f.path }));
@@ -85,6 +122,7 @@ export async function openDiff(f) {
       ext(f.url, 'view it on GitHub')));
     return;
   }
+  setTitle(diffKind(patch));
   body.replaceChildren(...diffRows(patch).map(({ cls, text }) =>
     h('div', { className: `dl ${cls}` }, text)));
 }

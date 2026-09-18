@@ -350,6 +350,9 @@ a { color: var(--accent); }
 .dl.add { color: #9ae6b4; background: #1f4d2e33; }
 .dl.del { color: #f5a3a3; background: #4d1f2433; }
 .dl.hunk { color: var(--accent); margin-top: 4px; }
+/* NEW / DELETED, in the file rows' +/- colours (`.add`/`.del` above); written
+   out because `.pane h1` outranks a bare class. */
+.pane h1.add { color: #7fd88f; } .pane h1.del { color: #f08b8b; }
 .file.sel { background: var(--bg); border-radius: 4px; }
 
 /* --- Queue pane --- */
