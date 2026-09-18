@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   pageTitle, withoutHtml, inline, headLinks, noPrLinks, prsInto, queueSync, HEADING, blocks, sectionize,
-  tabLabel, taskCount, viewedCount, byPath, byDir,
+  tabLabel, taskCount, viewedCount, byPath, byDir, nums,
 } from '../public/pr.js';
 import { fences, TASK, taskLines } from '../public/tasks.js';
 
@@ -554,4 +554,13 @@ test('a root file is never a directory of its own', () => {
   // file fell. They are rows now, and nothing below is left to fold.
   assert.deepEqual(root.map((x) => x.path), ['.gitignore', 'README.md']);
   assert.deepEqual(dirs, []);
+});
+
+test('a file row leaves out the side that did not change', () => {
+  assert.deepEqual(nums({ additions: 101, deletions: 0 }), [['add', '+101']]);
+  assert.deepEqual(nums({ additions: 0, deletions: 101 }), [['del', '−101']]);
+  assert.deepEqual(nums({ additions: 2, deletions: 3 }),
+    [['add', '+2'], ['del', '−3']]);
+  // A rename or a mode change touches no lines and gets no counts.
+  assert.deepEqual(nums({ additions: 0, deletions: 0 }), []);
 });

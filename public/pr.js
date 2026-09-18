@@ -628,6 +628,18 @@ function dirGroup(group, dir, files, handlers) {
 }
 
 /**
+ * The +/− counts for one file, as [class, text] pairs. A side that changed
+ * nothing is left out rather than shown as a zero: `+101` reads as an addition
+ * at a glance where `+101 −0` does not. A file with neither (a rename, a mode
+ * change) gets no counts at all. The header's totals above keep both sides on
+ * purpose -- `+400 −0` there says the shape of the whole PR at a glance.
+ */
+export const nums = ({ additions, deletions }) => [
+  additions ? ['add', `+${additions}`] : null,
+  deletions ? ['del', `−${deletions}`] : null,
+].filter(Boolean);
+
+/**
  * A <details> fold with a heading and an optional count, the shape both the file
  * groups and the description's sections take. `onToggle` fires for a click and
  * for the initial `open`, so it has to be idempotent.
@@ -671,8 +683,7 @@ function fileRow(f, { onViewed, onOpen, selected }, dir = '') {
     box,
     link,
     h('span', { className: 'nums' },
-      h('span', { className: 'add' }, `+${f.additions}`), ' ',
-      h('span', { className: 'del' }, `−${f.deletions}`)),
+      ...nums(f).map(([cls, text], i) => [i ? ' ' : null, h('span', { className: cls }, text)])),
   );
   return row;
 }
