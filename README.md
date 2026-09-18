@@ -34,6 +34,11 @@ one -- pushing the branch first if GitHub has not seen it. It still carries the
 way out of the window that the pull request head does: the repository and its
 issues, pulls and milestones.
 
+It also lists the open pull requests that merge *into* the branch you are on,
+which on `main` is the question that branch is interesting for. Clicking one
+checks it out, the same way the switcher does; uncommitted work dims the rows
+for the same reason it hides the switcher.
+
 Next to it, a light for the one thing prcoder cannot fix for you: whether the
 branch and the remote agree. It reads `unpushed`, `N unpushed`, `pull needed`
 or `diverged`, and it needs no `git fetch` -- GitHub's view of the branch head

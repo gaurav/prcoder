@@ -82,9 +82,15 @@ export async function prBody(cwd, prUrl) {
   return lf(body);
 }
 
-/** Open PRs, for the switcher. */
+/**
+ * Open PRs, for the switcher -- and, filtered by `baseRefName`, for the list of
+ * pull requests into the branch you are on that the pane with no pull request
+ * shows. That field is not spare: it is free here, where a `gh pr list --base`
+ * of its own would be a call on a poll that already has seven.
+ */
 export async function listPrs(cwd) {
-  const args = ['pr', 'list', '--state', 'open', '--json', 'number,title,headRefName,isDraft'];
+  const args = ['pr', 'list', '--state', 'open', '--json',
+    'number,title,headRefName,baseRefName,isDraft'];
   return JSON.parse(await gh(args, { cwd }));
 }
 

@@ -213,8 +213,20 @@ export function queueSync(status) {
 /** The queue pane's header, like the PR pane's, survives polls. */
 export const renderQueueSync = (status) => paintLight('queue-sync', queueSync(status));
 
-/** The pane with no PR to show: why, and the one thing worth doing about it. */
-export function renderNoPr(status, { onCreate }) {
+/**
+ * The open pull requests that merge *into* this branch.
+ *
+ * Filtered from the list the switcher already fetches rather than asked for:
+ * `gh pr list` carries `baseRefName` for free, where a `--base` query of its own
+ * would be another call in the one state that already makes an extra one (#19).
+ * A detached HEAD is no branch to merge into, not every pull request.
+ */
+export const prsInto = (prs, branch) =>
+  (branch ? prs.filter((p) => p.baseRefName === branch) : []);
+
+/** The pane with no PR to show: why, what merges into here, and the one thing
+ *  worth doing about it. */
+export function renderNoPr(status, prs, { onCreate, onSwitch }) {
   const host = document.getElementById('pr-body');
   // The head is a whole pull request's worth of identity -- title, badges,
   // tabs -- and nothing else clears it, so without this the last PR's heading
@@ -243,12 +255,37 @@ export function renderNoPr(status, { onCreate }) {
 
   host.replaceChildren(...kids([
     h('p', { className: 'empty' }, why),
+    intoRow(status, prs, onSwitch),
     out.length ? linkRow(out, 'meta') : null,
     status.sync === 'unpushed' && can
       ? h('p', { className: 'pr-note' }, 'This branch is not on GitHub yet; it will be pushed first.')
       : null,
     create,
   ]));
+}
+
+/**
+ * The pull requests into this branch, each a row that checks it out.
+ *
+ * This is the branch-only pane's reason to exist: on `main` there is nothing to
+ * create and nothing to read, and what you actually want to know is which pull
+ * requests land here. A row goes through the same `gh pr checkout` the switcher
+ * above does, and is named the way the switcher names one.
+ *
+ * Dimmed rather than dropped on a dirty tree, where that checkout would fail --
+ * the header has already swapped the switcher for a Commit button, and which
+ * pull requests target this branch is still worth reading while you cannot move
+ * to one.
+ */
+function intoRow(status, prs, onSwitch) {
+  const into = prsInto(prs, status.branch);
+  if (!into.length) return null;
+  const blocked = status.dirtyFiles.length > 0;
+  return h('div', { className: 'pr-into' },
+    h('span', { className: 'pr-into-label' }, `Pull requests into ${status.branch}`),
+    ...into.map((p) => btn(`#${p.number} ${p.isDraft ? '(draft) ' : ''}${p.title}`,
+      () => onSwitch(p.number),
+      { disabled: blocked, title: blocked ? 'Commit or stash your changes first' : '' })));
 }
 
 /**

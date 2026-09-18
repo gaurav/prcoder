@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  pageTitle, withoutHtml, inline, headLinks, noPrLinks, queueSync, HEADING, blocks, sectionize,
+  pageTitle, withoutHtml, inline, headLinks, noPrLinks, prsInto, queueSync, HEADING, blocks, sectionize,
   tabLabel, taskCount, viewedCount, byPath, byDir,
 } from '../public/pr.js';
 import { fences, TASK, taskLines } from '../public/tasks.js';
@@ -240,6 +240,28 @@ test('with no pull request the repository and its lists are still linked', () =>
 // `https://github.com/undefined` is worse than no row at all.
 test('no repository means no links rather than links to nowhere', () => {
   assert.deepEqual(noPrLinks(status({ nameWithOwner: undefined })), []);
+});
+
+// The list the switcher fetches, which carries every open pull request in the
+// repository -- the pane wants the ones that land on the branch you are on.
+const OPEN = [
+  { number: 1, baseRefName: 'main', title: 'The one into main' },
+  { number: 27, baseRefName: 'initial-implementation', title: 'One of three' },
+  { number: 60, baseRefName: 'initial-implementation', title: 'Another' },
+];
+
+test('the pane lists the pull requests that merge into this branch, and no others', () => {
+  assert.deepEqual(prsInto(OPEN, 'main').map((p) => p.number), [1]);
+  assert.deepEqual(prsInto(OPEN, 'initial-implementation').map((p) => p.number), [27, 60]);
+  assert.deepEqual(prsInto(OPEN, 'a-branch-nothing-targets'), []);
+});
+
+// A detached HEAD is no branch to merge into. Falsy rather than absent is the
+// case that matters: `p.baseRefName === undefined` is false for every real pull
+// request, but the guard says so instead of relying on it.
+test('a detached HEAD lists nothing, not everything', () => {
+  assert.deepEqual(prsInto(OPEN, null), []);
+  assert.deepEqual(prsInto(OPEN, undefined), []);
 });
 
 test('without a repository to resolve against, neither becomes a link', () => {

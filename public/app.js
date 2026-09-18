@@ -133,14 +133,18 @@ function sendToClaude(text) {
 }
 
 // The switcher only changes when PRs are opened or closed, so it is not worth a
-// call every minute — page load and opening the dropdown are enough.
+// call every minute — page load, opening the dropdown, and a checkout are
+// enough. The branch-only pane's list of what merges into this branch comes out
+// of the same array, and is as fresh as that.
 let prs = [];
 let last = null;
 const loadPrs = () => api('/api/prs', undefined, 'GET')
   .catch(() => [])   // the switcher is a convenience; a failure is not a banner
   // Repaint, or a PR opened since page load stays invisible until the next
-  // poll — the switcher only rebuilds its options when the set changes.
-  .then((l) => { prs = l; if (last) renderHeader(last, prs, handlers); });
+  // poll — the switcher only rebuilds its options when the set changes. The
+  // whole status, because the branch-only pane reads this list too; `last` is
+  // already the branch this fetch was for, so nothing asks for it again.
+  .then((l) => { prs = l; if (last) paint(last); });
 document.getElementById('pr-switch').addEventListener('mousedown', loadPrs);
 
 const NOTES = {
@@ -174,6 +178,12 @@ const fileHandlers = {
 
 function paint(status) {
   const moved = last?.pr?.headRefOid !== status.pr?.headRefOid;
+  // A checkout is the one thing that changes which pull requests merge into the
+  // branch under you, and the branch-only pane lists them. Refreshed here rather
+  // than on the poll, which is the whole reason that list is affordable.
+  // `last &&`, or the first paint counts as a change and fetches the list a
+  // second time behind the one the page load already asked for.
+  const switched = last && last.branch !== status.branch;
   last = status;
   // Named for the tab strip, not the page: which PR, in which repo. A poll
   // that fails leaves the last good name up rather than reverting to
@@ -184,7 +194,8 @@ function paint(status) {
   if (status.pr) {
     renderPr({ ...status.pr, note: NOTES[status.scope] },
       { ...fileHandlers, selected: selectedPath() });
-  } else renderNoPr(status, { onCreate: createPr });
+  } else renderNoPr(status, prs, { onCreate: createPr, onSwitch: switchPr });
+  if (switched) loadPrs();
   // Mirroring needs the PR to be *this* branch's: prcoder will not write our
   // items into a PR we are only looking at, so the controls that would ask it
   // to must disable themselves rather than silently do nothing.
