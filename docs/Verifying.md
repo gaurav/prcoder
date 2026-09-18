@@ -32,6 +32,13 @@ Its assertions are written against this repo's own PR #1 — that description's 
 and issue chips — and the server follows whatever branch you are on, so a run from a feature branch
 drives a pull request they do not fit and fails on the section count. `PRCODER_PR=1` pins it.
 
+Every file in PR #1 is one it adds, so the driver only ever sees the diff pane's NEW title: the
+plain-diff DIFF and the DELETED views are on a path it never takes. They were checked on
+2026-09-18 by starting a stubbed prcoder on a pull request with the real mix (`gaurav/ideas#13`,
+`CLAUDE_BIN=tools/claude-stub.mjs PRCODER_NO_OPEN=1 PRCODER_PORT=<free>` from that repo) and
+screenshotting `#diff` per file from a script in `data/`. Do that again for anything that changes
+what the pane draws; a run against this repo alone says nothing about the two states it lacks.
+
 Pinning is also the way to run the whole file and never touch the path every real user is on, so
 leave it unset on `initial-implementation`: that run is the only thing that covers branch-following,
 and the driver's second line says which of the two you just did.

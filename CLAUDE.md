@@ -17,7 +17,10 @@ PR #27.
 `data/` is gitignored and is where anything temporary belongs -- driver
 screenshots, snapshots of a PR body taken before a write, intermediate output.
 Not `/tmp`: reads outside this working directory are blocked, so a screenshot
-written to `/tmp` is one nobody in this session can look at.
+written to `/tmp` is one nobody in this session can look at. A one-off
+Playwright script has to live here too -- `import 'playwright'` resolves from
+this repo's `node_modules`, and from a scratch directory it is `Cannot find
+package 'playwright'`.
 
 ## Two traps
 
