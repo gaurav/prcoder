@@ -35,9 +35,21 @@ non-executable. It is Node rather than the `chmod ... || true` it used to be
 because cmd.exe has neither command, so the shell version failed `npm install`
 outright on Windows.
 
-**Run tests with bare `node --test`, not `node --test test/`.** On Node 26 a
-directory argument is resolved as a module and dies with `Cannot find module`.
-Bare discovery treats *everything* under `test/` as a test file, which is why
+**`npm test` is `node --test "test/**/*.test.js"`, and the quotes are
+load-bearing.** Not `node --test test/`: on Node 26 a directory argument is
+resolved as a module and dies with `Cannot find module`. Not bare `node --test`
+either, which walks the *whole* working directory — so a scratch checkout under
+`data/` became a second copy of the suite, 386 tests and one failure on the
+vendored-xterm path check because the clone had no `node_modules` (2026-09-18).
+Node 26 has no `--test-exclude-glob` to say it the other way round; the flag is
+gone, and `node --help` lists no replacement.
+
+The glob has to reach node unexpanded. `sh` has no `**`, so unquoted it collapses
+to whatever one directory it matches — that run reported 1 test and passed. The
+quotes are double for the same reason the postinstall script is Node: single
+quotes are not quotes to cmd.exe.
+
+Discovery still treats *everything* under `test/` as a test file, which is why
 the drivers live in `tools/` — `browser.mjs` for the UI, `cli.mjs` for the
 terminal. Either one under `test/` would run on every `npm test`, spawn a
 server and drive a browser or a PTY.

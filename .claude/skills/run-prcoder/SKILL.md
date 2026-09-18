@@ -26,7 +26,7 @@ lsof -ti :17433 | xargs kill                       # `kill %1` does not survive 
 `/api/status` is the check worth making by hand, because it is the one that
 needs a live `gh` and a real PR. Everything that does not — the 404 and 500
 shapes, static serving, `/api/whoami`, the vendored xterm paths — is
-`test/api.test.js`, so `node --test` already covers it.
+`test/api.test.js`, so `npm test` already covers it.
 
 `PRCODER_NO_OPEN=1` stops it opening the user's browser; without `PRCODER_PORT`
 it takes the port recorded in `.prcoder/port.json`, writing one on the first run,
@@ -43,7 +43,7 @@ one slow call delays the rest, that's expected.
 adding a check, and update it when you add one that outlives the session.
 
 ```bash
-node --test                # bare, never `node --test test/` (Node 26 breaks)
+npm test                   # node --test "test/**/*.test.js"; see CLAUDE.md for the quotes
 node --check public/*.js   # the client files the tests do not import
 ```
 

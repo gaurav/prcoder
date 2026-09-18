@@ -1,8 +1,10 @@
 # How this repo checks itself
 
-`npm test` is `node --test` — bare, never `node --test test/`, because Node 26 resolves a directory
-argument as a module and dies with `Cannot find module` ([CLAUDE.md](../CLAUDE.md) has the rest,
-including why that puts the drivers in `tools/`). That covers everything that can be checked without a browser or a tty.
+`npm test` is `node --test "test/**/*.test.js"` — a quoted glob, never `node --test test/`, because
+Node 26 resolves a directory argument as a module and dies with `Cannot find module`, and never bare
+either, because that walks the whole working directory and runs any scratch checkout under `data/`
+as a second suite ([CLAUDE.md](../CLAUDE.md) has the rest, including why the quotes are
+load-bearing and why that puts the drivers in `tools/`). That covers everything that can be checked without a browser or a tty.
 This file is about the rest, and about the rule that produced it.
 
 ## Reading the CSS is not verification
