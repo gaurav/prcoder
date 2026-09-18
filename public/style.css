@@ -345,8 +345,13 @@ a { color: var(--accent); }
 #diff header a { text-decoration: none; }
 #diff header a:hover { text-decoration: underline; }
 #diff header .sep { color: var(--dim); margin: 0 2px; }
-#diff-body { font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; padding: 6px 0; }
-.dl { white-space: pre; padding: 0 10px; }
+/* 14px to match the terminal under it (app.js sets xterm to 14), which is the
+   other monospace pane and the one this is read against. */
+#diff-body { font: 14px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; padding: 6px 0; }
+/* `max-content`: a block div is as wide as the pane, not as its line, so the
+   +/- tint used to stop at the first viewport's edge once a wide diff was
+   scrolled right. `min-width` keeps a short line's tint reaching the edge. */
+.dl { white-space: pre; padding: 0 10px; width: max-content; min-width: 100%; }
 .dl.add { color: #9ae6b4; background: #1f4d2e33; }
 .dl.del { color: #f5a3a3; background: #4d1f2433; }
 .dl.hunk { color: var(--accent); margin-top: 4px; }
