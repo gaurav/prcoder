@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { rollup, linkedIssues, parsePrUrl, run, issueNumber, lf } from '../github.js';
+import { rollup, linkedIssues, titlesFrom, parsePrUrl, run, issueNumber, lf } from '../github.js';
 import { taskLines } from '../public/tasks.js';
 import { syncFromPrBlock } from '../queue.js';
 
@@ -21,13 +21,16 @@ const pr = (body, closing = []) => ({
   url: 'https://github.com/o/r/pull/7', body, closingIssuesReferences: closing,
 });
 
+// No title anywhere in here: `gh pr view --json closingIssuesReferences` returns
+// id, number, repository and url and nothing else, so the titles are a separate
+// call (issueTitles) and linkedIssues stays about which numbers and which kind.
 test('closing references are marked and sorted alongside body mentions', () => {
   assert.deepEqual(
     linkedIssues(pr('Fixes the thing, see #12 and #3.',
-      [{ number: 9, title: 'Bug', url: 'https://github.com/o/r/issues/9' }])),
+      [{ number: 9, url: 'https://github.com/o/r/issues/9' }])),
     [
       { number: 3, url: 'https://github.com/o/r/issues/3', closes: false },
-      { number: 9, title: 'Bug', url: 'https://github.com/o/r/issues/9', closes: true },
+      { number: 9, url: 'https://github.com/o/r/issues/9', closes: true },
       { number: 12, url: 'https://github.com/o/r/issues/12', closes: false },
     ],
   );
@@ -35,7 +38,7 @@ test('closing references are marked and sorted alongside body mentions', () => {
 
 test('an issue both closed and mentioned is listed once, as closing', () => {
   const issues = linkedIssues(pr('Closes #9.',
-    [{ number: 9, title: 'Bug', url: 'https://github.com/o/r/issues/9' }]));
+    [{ number: 9, url: 'https://github.com/o/r/issues/9' }]));
   assert.equal(issues.length, 1);
   assert.equal(issues[0].closes, true);
 });
@@ -47,6 +50,26 @@ test('#N attached to a word is not a linked issue, but a parenthesised one is', 
 
 test('an empty body links nothing', () => {
   assert.deepEqual(linkedIssues(pr(null)), []);
+});
+
+// Captured from the real API on 2026-09-18, against gaurav/prcoder: a number
+// that resolves to nothing is an error *beside* the data rather than a null
+// inside it, and gh exits 1 with this whole body still on stdout. Everything
+// that did resolve is in there, which is why the failure is read rather than
+// swallowed -- one typo'd #N may not cost every other title.
+const PARTIAL = JSON.stringify({
+  data: { repository: { i999999: null, i27: { title: 'Make the queue your own list' } } },
+  errors: [{ type: 'NOT_FOUND', path: ['repository', 'i999999'] }],
+});
+
+test('the titles that resolved survive a NOT_FOUND on the ones that did not', () => {
+  assert.deepEqual(titlesFrom(PARTIAL), new Map([[27, 'Make the queue your own list']]));
+});
+
+test('a response that is not a response is no titles, never a throw', () => {
+  for (const out of ['', 'gh: could not connect', '{}', undefined]) {
+    assert.deepEqual(titlesFrom(out), new Map());
+  }
 });
 
 test('owner, repo and number come from the PR URL, not the local checkout', () => {

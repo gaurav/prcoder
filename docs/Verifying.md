@@ -97,7 +97,9 @@ taken by hand for most of this repo's first PR while the description claimed the
 them; it does now.
 
 A poll costs **seven subprocess calls**, clean tree and dirty alike. `PRCODER_VERBOSE=2` prints the
-count on every poll, so a change that adds a call is visible rather than inferred.
+count on every poll, so a change that adds a call is visible rather than inferred. The expensive
+path a changed `updatedAt` takes costs one call more than it did: a single `gh api graphql` that
+asks for every linked issue's title at once, however many there are.
 
 Every figure here was measured on `5f7d6cc`, in both engines.
 

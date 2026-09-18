@@ -29,7 +29,10 @@ export function run(bin, args, { input, ...opts } = {}) {
         debug(`${line.length > 110 ? `${line.slice(0, 109)}…` : line}` +
           `  ${err ? `exit ${err.code}` : 'ok'} ${Date.now() - started}ms`);
         if (!err) return resolve(stdout);
+        // stdout goes the same way -- and a gh api graphql call that exits 1
+        // over a NOT_FOUND still prints the response, partial data and all.
         err.stderr = stderr;
+        err.stdout = stdout;
         // What the tool said, rather than Node's `Command failed: <argv>` -- which
         // for an issue title is the whole title. Every catch reads e.message.
         err.message = stderr.trim() || err.message;
@@ -105,7 +108,7 @@ export async function loadPr(cwd, target) {
     files: pr.files.map((f) => ({ ...f, viewed: viewed.get(f.path) === 'VIEWED' })),
     nodeId,
     checks: rollup(statusCheckRollup),
-    issues: linkedIssues(pr),
+    issues: await withTitles(cwd, pr.url, linkedIssues(pr)),
     counts: { comments: comments?.length ?? 0, reviews: reviews?.length ?? 0 },
   };
 }
@@ -211,7 +214,7 @@ export function rollup(checks) {
 export function linkedIssues(pr) {
   const seen = new Map();
   for (const i of pr.closingIssuesReferences ?? []) {
-    seen.set(i.number, { number: i.number, title: i.title, url: i.url, closes: true });
+    seen.set(i.number, { number: i.number, url: i.url, closes: true });
   }
   const repoUrl = pr.url.replace(/\/pull\/\d+$/, '');
   for (const [, n] of (pr.body ?? '').matchAll(/(?:^|[\s(])#(\d+)\b/g)) {
@@ -219,4 +222,67 @@ export function linkedIssues(pr) {
     if (!seen.has(number)) seen.set(number, { number, url: `${repoUrl}/issues/${number}`, closes: false });
   }
   return [...seen.values()].sort((a, b) => a.number - b.number);
+}
+
+/**
+ * The same list with a title on every entry it could get one for.
+ *
+ * The titles are their own call because no `gh pr view --json` field carries
+ * one: `closingIssuesReferences` gives number, url and repository and nothing
+ * else (checked 2026-09-18), and a bare `#N` out of the body is only ever a
+ * number. It rides on loadPr, which status() runs on a reload rather than on
+ * every poll, so the poll's call count is unchanged and a reload costs one more.
+ *
+ * `issueOrPullRequest`, not `issue`: a `#N` in a description is as often a pull
+ * request as an issue -- #27 in this repo's own -- and `issue(number:)` on one
+ * resolves to nothing.
+ */
+async function withTitles(cwd, prUrl, issues) {
+  // ponytail: 50 aliases is plenty for a description; if a body ever needs more,
+  // chunk the numbers rather than growing one query.
+  const numbers = issues.map((i) => i.number).slice(0, 50);
+  const titles = numbers.length ? await issueTitles(cwd, prUrl, numbers) : new Map();
+  for (const i of issues) i.title = titles.get(i.number) ?? null;
+  return issues;
+}
+
+/**
+ * Titles for issue numbers in the PR's own repository, as number -> title.
+ *
+ * One aliased query for the lot, so a description mentioning a dozen issues is
+ * still one subprocess. Only the numbers are interpolated into it; owner and
+ * repo go through variables, as VIEWED_QUERY's do.
+ *
+ * A number that resolves to nothing -- a typo, or an issue that lives in
+ * another repo -- comes back as a NOT_FOUND *error* beside the data rather than
+ * a null inside it, and gh exits 1 over it with the whole response still on
+ * stdout. Confirmed against the real API on 2026-09-18. So the failure is read
+ * for its data: one bad number must not cost every other title.
+ */
+export async function issueTitles(cwd, prUrl, numbers) {
+  const { owner, repo } = parsePrUrl(prUrl);
+  const query = `query($owner:String!,$repo:String!){ repository(owner:$owner,name:$repo){ ` +
+    numbers.map((n) => `i${n}: issueOrPullRequest(number:${n})` +
+      `{ ... on Issue { title } ... on PullRequest { title } }`).join(' ') + ` } }`;
+  const args = ['api', 'graphql', '-f', `query=${query}`, '-F', `owner=${owner}`, '-F', `repo=${repo}`];
+  try {
+    return titlesFrom(await gh(args, { cwd }));
+  } catch (e) {
+    return titlesFrom(e.stdout);
+  }
+}
+
+/** The `iN: { title }` aliases of a response, whether or not it also carried
+ *  errors. Anything unparseable is no titles -- they are decoration, and a
+ *  lookup that fails may not fail the pane. */
+export function titlesFrom(out) {
+  let repo;
+  try {
+    repo = JSON.parse(out || '{}')?.data?.repository;
+  } catch {
+    return new Map();
+  }
+  return new Map(Object.entries(repo ?? {})
+    .filter(([, v]) => v?.title)
+    .map(([alias, v]) => [Number(alias.slice(1)), v.title]));
 }
