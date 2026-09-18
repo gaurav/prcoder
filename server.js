@@ -18,6 +18,7 @@ import { parseFuture, renderPrBlock, syncFromPrBlock, toggleTask } from './queue
 import { readStore, writeStore, readPort, writePort, replaceItems } from './store.js';
 import * as term from './term.js';
 import { syncPhrase } from './public/pr.js';
+import { parseCli, usage, VERSION } from './cli.js';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const repo = process.cwd();
@@ -50,15 +51,12 @@ export function portCandidates(repo) {
   const first = portFor(repo) - PORT_BASE;
   return Array.from({ length: PORT_SPAN }, (_, n) => PORT_BASE + (first + n) % PORT_SPAN);
 }
-// Args split at the first flag: everything before it is ours (an optional PR
-// number, URL or branch), everything from it on is handed to `claude` verbatim.
-// No table of Claude's flags to keep in sync, and no collisions to arbitrate.
-export function splitArgs(argv) {
-  const cut = argv.findIndex((a) => a.startsWith('-'));
-  return { target: cut === 0 ? undefined : argv[0], claudeArgs: cut === -1 ? [] : argv.slice(cut) };
-}
-
-let { target, claudeArgs } = splitArgs(process.argv.slice(2));
+// The PR to open (a number, URL or branch) and the agent's argv, both from the
+// command line -- see cli.js. Parsed in main, not here: a test importing this
+// module must not parse the runner's argv, and the spawn needs `agentArgs` to
+// be an array either way.
+let target;
+let agentArgs = [];
 // The URLs of PRs whose last mirror write failed; one leaves when a write to it
 // succeeds. See mirrors(). Per PR because a flag for all of them was cleared by
 // a write to a different PR, after which the one GitHub is still behind on was
@@ -665,7 +663,7 @@ const wss = new WebSocketServer({ server, path: '/pty' }).on('error', () => {}).
   // that has already started has already read the repo.
   if (!sameOrigin(req)) return ws.close(1008, 'cross-origin connection refused');
 
-  const pty = ptySpawn(process.env.CLAUDE_BIN || 'claude', claudeArgs, {
+  const pty = ptySpawn(process.env.CLAUDE_BIN || 'claude', agentArgs, {
     name: 'xterm-256color',
     cols: 80,
     rows: 24,
@@ -800,9 +798,9 @@ async function ready() {
   if (!process.env.PRCODER_NO_OPEN) openBrowser();
 }
 
-// ponytail: the platform's own opener, not a dependency. PRCODER_NO_OPEN=1 to
-// skip; PRCODER_OPEN to run your own command with the URL appended, which is
-// how a browser is told "a new window, not a tab".
+// ponytail: the platform's own opener, not a dependency. --no-open (or
+// PRCODER_NO_OPEN=1) to skip; PRCODER_OPEN to run your own command with the URL
+// appended, which is how a browser is told "a new window, not a tab".
 function openBrowser() {
   const url = urls.local;
   const opener = { darwin: 'open', win32: 'start' }[process.platform] || 'xdg-open';
@@ -916,6 +914,26 @@ function askToQuit() {
 }
 
 if (import.meta.main) {
+  let cli;
+  try {
+    cli = parseCli(process.argv.slice(2));
+  } catch (e) {
+    console.error(`prcoder: ${e.message}\n${usage().split('\n')[0]}`);
+    process.exit(2);
+  }
+  if (cli.help) { console.log(usage()); process.exit(0); }
+  if (cli.version) { console.log(VERSION); process.exit(0); }
+  ({ target, agentArgs } = cli);
+  // ponytail: a flag sets the env var the rest of this file already reads
+  // (portFor, the port-moved wording, the browser open); threading a settings
+  // object through would touch six sites to say the same thing. The ceiling:
+  // the env reaches the `claude` child too, so a nested prcoder started from
+  // that pane in another repo inherits a --port pin and falls back with the
+  // "taken" note. A module-level pin is the fix if that ever bites.
+  if (cli.port) process.env.PRCODER_PORT = String(cli.port);
+  if (cli.noOpen) process.env.PRCODER_NO_OPEN = '1';
+  if (cli.verbose) term.setVerbosity(cli.verbose);
+
   // Before anything can print: init() is what routes console through the log,
   // and a line written ahead of it would sit above the block and stay there.
   term.init();
