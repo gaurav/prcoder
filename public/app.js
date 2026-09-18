@@ -127,8 +127,12 @@ new ResizeObserver(sync).observe(document.getElementById('term-host'));
 
 // Type an item into Claude's prompt. If Claude is mid-turn it queues the
 // message itself, which is exactly the behaviour we want.
-function sendToClaude(text) {
-  send({ type: 'input', data: text + '\r' });
+// `submit` false types the text and stops there: the prompt is left ready to
+// edit and send by hand, which is what the queue's ▶ wants. Trailing
+// whitespace is cut either way -- a newline in the text *is* the Enter that
+// would have sent it half-written.
+function sendToClaude(text, submit = true) {
+  send({ type: 'input', data: text.replace(/\s+$/, '') + (submit ? '\r' : '') });
   term.focus();
 }
 
