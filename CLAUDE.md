@@ -51,8 +51,9 @@ quotes are not quotes to cmd.exe.
 
 Discovery still treats *everything* under `test/` as a test file, which is why
 the drivers live in `tools/` — `browser.mjs` for the UI, `cli.mjs` for the
-terminal. Either one under `test/` would run on every `npm test`, spawn a
-server and drive a browser or a PTY.
+terminal, `no-pr.mjs` for the pane the first one cannot reach. Any of them under
+`test/` would run on every `npm test`, spawn a server and drive a browser or a
+PTY.
 
 `node:test` is a preference, not a constraint. If it ever gets in the way —
 maintainability, a matcher you keep hand-rolling, watch mode, anything — the

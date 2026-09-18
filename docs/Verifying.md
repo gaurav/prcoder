@@ -17,9 +17,10 @@ description grew one, and `_for_` with its underscores showing because a formatt
 `*for*` in the body.
 
 So: anything whose correctness is a fact about what a browser or a terminal actually does gets
-driven, not reasoned about. The two drivers exist for the two halves.
+driven, not reasoned about. Three drivers exist for it: two for the two halves of the window, and
+one for the pane the first of them cannot reach.
 
-## The two drivers
+## The drivers
 
 `node tools/browser.mjs` boots its own server and drives the UI in a real browser, writing PNGs to
 `data/shots`. Firefox by default, because a Firefox-only bug — a click into a draggable row's text
@@ -41,14 +42,16 @@ plain-diff DIFF and the DELETED views are on a path it never takes. They were ch
 screenshotting `#diff` per file from a script in `data/`. Do that again for anything that changes
 what the pane draws; a run against this repo alone says nothing about the two states it lacks.
 
-The pane with **no** pull request is out of the driver's reach for the same reason: it follows the
-branch it runs on, that branch has PR #1, and `PRCODER_PR` only pins a different one. Drive it from
-a clone instead, which is also somewhere a checkout can land without disturbing your own — `git
-clone <this repo's URL> data/main-clone` arrives on `main`, and `node <repo>/server.js` run with
-that clone as the working directory serves the code you are editing against it. No `npm install`
-there: every import resolves from the directory `server.js` is in. That is how the list of pull
-requests into the branch, its dimmed state on a dirty tree and the checkout a row performs were
-checked on 2026-09-18, from a script in `data/`. Delete the clone when you are done with it.
+The pane with **no** pull request is out of that driver's reach for the same reason — it follows the
+branch it runs on, that branch has PR #1, and `PRCODER_PR` only pins a different one — so
+`node tools/no-pr.mjs` is the third driver. It clones the remote into `data/main-clone`, which
+arrives on `main`, and runs *this* working tree's `server.js` with the clone as its working
+directory: `repo` in there is only `process.cwd()`, and nothing is installed in the clone because
+every import resolves from the directory `server.js` is in. It drives the list of pull requests
+that merge into the branch, its dimmed state on a dirty tree (a tracked file, since `userDirt` reads
+`--untracked-files=no`), and the checkout a row performs — which is the other reason for the clone:
+that checkout has to land somewhere that is not your own working copy. The clone is left behind and
+reset on the next run; deleting it is safe.
 
 Pinning is also the way to run the whole file and never touch the path every real user is on, so
 leave it unset on `initial-implementation`: that run is the only thing that covers branch-following,

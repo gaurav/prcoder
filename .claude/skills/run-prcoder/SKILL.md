@@ -63,6 +63,9 @@ PRCODER_BROWSER=chromium node tools/browser.mjs   # the second engine, when a re
                                                   # difference is the question
 node tools/cli.mjs                                # the other half, in a real PTY: the
                                                   # status block, the keys, the quit prompt
+node tools/no-pr.mjs                              # the pane on a branch with no pull
+                                                  # request, in a clone on main -- the one
+                                                  # state browser.mjs cannot reach
 ```
 
 Read the PNGs back — a screenshot is the only thing that answers "does this look
