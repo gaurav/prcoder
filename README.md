@@ -120,16 +120,15 @@ pull request adds or deletes is shown as plain text under a green **NEW** or red
 sign has nothing to contrast. A renamed file says where it came from on its
 first line, and a rename with no other change says only that. A diff with more
 than one hunk gets an outline down its right edge -- one row per hunk, named by
-the context git puts after the `@@` (the enclosing function, a heading) -- and
-a click scrolls the body to it. Four links,
-because they answer different questions. *Diff* comes first because it is what
-the pane itself shows: this file's patch in GitHub's viewer. The other three are
-the whole file as this pull request leaves it: *File* for what it became — the
-untouched parts a hunk doesn't show, and a Markdown file rendered rather than as
-source — *Blame* for who last touched the
-lines around a hunk, and *History* for what else has landed in it. Those three
-are pinned to the head commit, so they go on saying what you were looking at
-after the next push.
+the context git puts after the `@@` (the enclosing function, a heading) -- and a
+click scrolls the body to it. Four links, because they answer different
+questions. *Diff* comes first because it is what the pane itself shows: this
+file's patch in GitHub's viewer. The other three are the whole file as this pull
+request leaves it: *File* for what it became — the untouched parts a hunk
+doesn't show, and a Markdown file rendered rather than as source — *Blame* for
+who last touched the lines around a hunk, and *History* for what else has landed
+in it. Those three are pinned to the head commit, so they go on saying what you
+were looking at after the next push.
 
 **Claude Code** — the real `claude` binary in a PTY, so Escape still interrupts,
 slash commands still work, permission prompts still appear, and typing while
