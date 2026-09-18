@@ -88,13 +88,18 @@ are re-checked rather than quoted:
 | What | Firefox | Chromium |
 | --- | --- | --- |
 | Description prose width, in an 864px pane | 568px | 567px |
-| Title line widths at the pane's 375px default width | 285, 263, 236 | 285, 263, 236 |
+| Title line widths at the pane's 375px default width | not re-measured | 251, 257, 318 |
 
 The prose cap and the title's `text-wrap: balance` are both properties no stylesheet can be read
 for, and the pane's 375px default width is the only one at which balancing does anything — a real
 title runs to three lines there, and a greedy wrap leaves the last holding a word or two. The title figures were
 taken by hand for most of this repo's first PR while the description claimed the driver measured
 them; it does now.
+
+That last row is the one figure here that is about GitHub's data rather than about this code: it is
+the *current* PR title, wrapped, so it moves when the title is rewritten and says nothing about a
+regression when it does. It was 285, 263, 236 in both engines under the title this PR carried on
+`5f7d6cc`. Re-measured in Chromium on 2026-09-18 (`4879171`); Firefox is the pass #61 owes.
 
 A poll costs **seven subprocess calls**, clean tree and dirty alike. `PRCODER_VERBOSE=2` prints the
 count on every poll, so a change that adds a call is visible rather than inferred. The expensive
