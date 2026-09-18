@@ -136,11 +136,15 @@ When a prcoder is already running on this repo, none of that is the way in: it
 rewrites the block from its store on the next poll and your edit is gone. Talk
 to the server instead -- `GET /api/queue` for the items, `PUT /api/queue` with
 `{items}` to write them -- and it updates the store and the description together.
-Adding an item that way is clean. Changing an existing item's text is not: the
-old text is what the block's line still says, so the write tombstones that item
-and adds a new one, and the store ends up holding both. Same rule as above --
-text is identity -- and the tombstone is by design, but a checkbox you edited
-twice is two rows in `queue.json` and one line in the PR.
+Adding an item that way is clean, and so is taking one back out: flip `inPr` to
+false with the text untouched and the line goes, the item stays in the queue as
+a finished one, and `renderPrBlock` removes the markers and the `## TODO`
+heading with the last item rather than leaving an empty block (done 2026-09-18).
+Changing an existing item's text is not: the old text is what the block's line
+still says, so the write tombstones that item and adds a new one, and the store
+ends up holding both. Same rule as above -- text is identity -- and the
+tombstone is by design, but a checkbox you edited twice is two rows in
+`queue.json` and one line in the PR.
 
 ## The Claude pane is not prcoder's to draw on
 

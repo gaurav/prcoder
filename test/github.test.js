@@ -102,6 +102,17 @@ test('run() puts the child stderr on the error, where the callers look for it', 
     (e) => e.stderr.includes('no pull requests found'));
 });
 
+// And stdout, for the same reason one step further on: `gh api graphql` exits 1
+// whenever the response carries an `errors` array, and prints that response --
+// partial data included -- anyway. issueTitles() reads its titles off that
+// failure, so an error with no stdout on it loses every title that did resolve
+// to the one issue number that did not.
+test('run() puts the child stdout on the error too, where a partial answer lives', async () => {
+  await assert.rejects(
+    () => run('sh', ['-c', 'echo the-partial-answer; echo NOT_FOUND >&2; exit 1']),
+    (e) => e.stdout.includes('the-partial-answer') && e.stderr.includes('NOT_FOUND'));
+});
+
 // The number goes into FUTURE.md as `@issue#N`. `@issue#NaN` does not match the
 // marker pattern coming back, so it silently becomes part of the task text --
 // which is why an unreadable number has to throw rather than pass through.
