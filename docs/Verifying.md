@@ -41,6 +41,15 @@ plain-diff DIFF and the DELETED views are on a path it never takes. They were ch
 screenshotting `#diff` per file from a script in `data/`. Do that again for anything that changes
 what the pane draws; a run against this repo alone says nothing about the two states it lacks.
 
+The pane with **no** pull request is out of the driver's reach for the same reason: it follows the
+branch it runs on, that branch has PR #1, and `PRCODER_PR` only pins a different one. Drive it from
+a clone instead, which is also somewhere a checkout can land without disturbing your own — `git
+clone <this repo's URL> data/main-clone` arrives on `main`, and `node <repo>/server.js` run with
+that clone as the working directory serves the code you are editing against it. No `npm install`
+there: every import resolves from the directory `server.js` is in. That is how the list of pull
+requests into the branch, its dimmed state on a dirty tree and the checkout a row performs were
+checked on 2026-09-18, from a script in `data/`. Delete the clone when you are done with it.
+
 Pinning is also the way to run the whole file and never touch the path every real user is on, so
 leave it unset on `initial-implementation`: that run is the only thing that covers branch-following,
 and the driver's second line says which of the two you just did.
