@@ -1,6 +1,7 @@
 :root {
   --bg: #14161a; --panel: #1c1f26; --line: #2c313c;
   --fg: #d5d9e0; --dim: #8c93a1; --accent: #7aa2f7;
+  --add: #7fd88f; --del: #f08b8b;   /* the file rows' +/- counts and the diff pane's NEW / DELETED */
   color-scheme: dark;
   /* The description and the pull request's title -- the two things in this
      window that are read rather than operated. Every face here ships with an OS
@@ -178,7 +179,7 @@ a { color: var(--accent); }
    were photographed. */
 .pr-title { margin: 0 0 8px; font-family: var(--serif); font-size: 21px; line-height: 1.25; text-wrap: balance; }
 .meta { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; color: var(--dim); font-size: 12px; margin-bottom: 8px; }
-.add { color: #7fd88f; } .del { color: #f08b8b; }
+.add { color: var(--add); } .del { color: var(--del); }
 
 .badge { padding: 1px 6px; border-radius: 9px; background: var(--line); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; }
 .badge.open { background: #1f4d2e; color: #9ae6b4; }
@@ -355,9 +356,8 @@ a { color: var(--accent); }
 .dl.add { color: #9ae6b4; background: #1f4d2e33; }
 .dl.del { color: #f5a3a3; background: #4d1f2433; }
 .dl.hunk { color: var(--accent); margin-top: 4px; }
-/* NEW / DELETED, in the file rows' +/- colours (`.add`/`.del` above); written
-   out because `.pane h1` outranks a bare class. */
-.pane h1.add { color: #7fd88f; } .pane h1.del { color: #f08b8b; }
+/* NEW / DELETED; written out because `.pane h1` outranks a bare `.add`. */
+.pane h1.add { color: var(--add); } .pane h1.del { color: var(--del); }
 .file.sel { background: var(--bg); border-radius: 4px; }
 
 /* --- Queue pane --- */
