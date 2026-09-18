@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { rollup, linkedIssues, titlesFrom, parsePrUrl, run, issueNumber, lf } from '../github.js';
+import { rollup, linkedIssues, linksFrom, parsePrUrl, run, issueNumber, lf } from '../github.js';
 import { taskLines } from '../public/tasks.js';
 import { syncFromPrBlock } from '../queue.js';
 
@@ -23,7 +23,7 @@ const pr = (body, closing = []) => ({
 
 // No title anywhere in here: `gh pr view --json closingIssuesReferences` returns
 // id, number, repository and url and nothing else, so the titles are a separate
-// call (issueTitles) and linkedIssues stays about which numbers and which kind.
+// call (issueLinks) and linkedIssues stays about which numbers and which kind.
 test('closing references are marked and sorted alongside body mentions', () => {
   assert.deepEqual(
     linkedIssues(pr('Fixes the thing, see #12 and #3.',
@@ -57,18 +57,29 @@ test('an empty body links nothing', () => {
 // inside it, and gh exits 1 with this whole body still on stdout. Everything
 // that did resolve is in there, which is why the failure is read rather than
 // swallowed -- one typo'd #N may not cost every other title.
+//
+// #27 is a pull request, and its URL says so: the number alone cannot be told
+// apart from an issue's, which is why the URL is taken from here rather than
+// built from the repository and the number.
 const PARTIAL = JSON.stringify({
-  data: { repository: { i999999: null, i27: { title: 'Make the queue your own list' } } },
+  data: {
+    repository: {
+      i999999: null,
+      i27: { title: 'Make the queue your own list', url: 'https://github.com/gaurav/prcoder/pull/27' },
+    },
+  },
   errors: [{ type: 'NOT_FOUND', path: ['repository', 'i999999'] }],
 });
 
-test('the titles that resolved survive a NOT_FOUND on the ones that did not', () => {
-  assert.deepEqual(titlesFrom(PARTIAL), new Map([[27, 'Make the queue your own list']]));
+test('what resolved survives a NOT_FOUND on what did not, pull request URL and all', () => {
+  assert.deepEqual(linksFrom(PARTIAL), new Map([[27, {
+    title: 'Make the queue your own list', url: 'https://github.com/gaurav/prcoder/pull/27',
+  }]]));
 });
 
-test('a response that is not a response is no titles, never a throw', () => {
+test('a response that is not a response is nothing, never a throw', () => {
   for (const out of ['', 'gh: could not connect', '{}', undefined]) {
-    assert.deepEqual(titlesFrom(out), new Map());
+    assert.deepEqual(linksFrom(out), new Map());
   }
 });
 
@@ -104,7 +115,7 @@ test('run() puts the child stderr on the error, where the callers look for it', 
 
 // And stdout, for the same reason one step further on: `gh api graphql` exits 1
 // whenever the response carries an `errors` array, and prints that response --
-// partial data included -- anyway. issueTitles() reads its titles off that
+// partial data included -- anyway. issueLinks() reads its answers off that
 // failure, so an error with no stdout on it loses every title that did resolve
 // to the one issue number that did not.
 test('run() puts the child stdout on the error too, where a partial answer lives', async () => {

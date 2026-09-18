@@ -114,7 +114,7 @@ export async function loadPr(cwd, target) {
     files: pr.files.map((f) => ({ ...f, viewed: viewed.get(f.path) === 'VIEWED' })),
     nodeId,
     checks: rollup(statusCheckRollup),
-    issues: await withTitles(cwd, pr.url, linkedIssues(pr)),
+    issues: await withLinks(cwd, pr.url, linkedIssues(pr)),
     counts: { comments: comments?.length ?? 0, reviews: reviews?.length ?? 0 },
   };
 }
@@ -231,29 +231,39 @@ export function linkedIssues(pr) {
 }
 
 /**
- * The same list with a title on every entry it could get one for.
+ * The same list with GitHub's own title and URL on every entry it could get
+ * them for, falling back to the number and the derived URL for the rest.
  *
- * The titles are their own call because no `gh pr view --json` field carries
- * one: `closingIssuesReferences` gives number, url and repository and nothing
- * else (checked 2026-09-18), and a bare `#N` out of the body is only ever a
- * number. It rides on loadPr, which status() runs on a reload rather than on
- * every poll, so the poll's call count is unchanged and a reload costs one more.
+ * They are their own call because no `gh pr view --json` field carries a title:
+ * `closingIssuesReferences` gives number, url and repository and nothing else
+ * (checked 2026-09-18), and a bare `#N` out of the body is only ever a number.
+ * It rides on loadPr, which status() runs on a reload rather than on every
+ * poll, so the poll's call count is unchanged and a reload costs one more.
  *
  * `issueOrPullRequest`, not `issue`: a `#N` in a description is as often a pull
  * request as an issue -- #27 in this repo's own -- and `issue(number:)` on one
  * resolves to nothing.
  */
-async function withTitles(cwd, prUrl, issues) {
+async function withLinks(cwd, prUrl, issues) {
   // ponytail: 50 aliases is plenty for a description; if a body ever needs more,
   // chunk the numbers rather than growing one query.
   const numbers = issues.map((i) => i.number).slice(0, 50);
-  const titles = numbers.length ? await issueTitles(cwd, prUrl, numbers) : new Map();
-  for (const i of issues) i.title = titles.get(i.number) ?? null;
+  const links = numbers.length ? await issueLinks(cwd, prUrl, numbers) : new Map();
+  for (const i of issues) {
+    const found = links.get(i.number);
+    i.title = found?.title ?? null;
+    // linkedIssues can only guess `/issues/N` from the repository URL, and half
+    // the numbers in a description like this one are pull requests. GitHub
+    // redirects, so the guess works -- but it is a guess, and the answer is
+    // already in the response the title came out of.
+    if (found?.url) i.url = found.url;
+  }
   return issues;
 }
 
 /**
- * Titles for issue numbers in the PR's own repository, as number -> title.
+ * What GitHub knows about a list of numbers in the PR's own repository, as
+ * number -> { title, url }.
  *
  * One aliased query for the lot, so a description mentioning a dozen issues is
  * still one subprocess. Only the numbers are interpolated into it; owner and
@@ -265,23 +275,23 @@ async function withTitles(cwd, prUrl, issues) {
  * stdout. Confirmed against the real API on 2026-09-18. So the failure is read
  * for its data: one bad number must not cost every other title.
  */
-export async function issueTitles(cwd, prUrl, numbers) {
+export async function issueLinks(cwd, prUrl, numbers) {
   const { owner, repo } = parsePrUrl(prUrl);
   const query = `query($owner:String!,$repo:String!){ repository(owner:$owner,name:$repo){ ` +
     numbers.map((n) => `i${n}: issueOrPullRequest(number:${n})` +
-      `{ ... on Issue { title } ... on PullRequest { title } }`).join(' ') + ` } }`;
+      `{ ... on Issue { title url } ... on PullRequest { title url } }`).join(' ') + ` } }`;
   const args = ['api', 'graphql', '-f', `query=${query}`, '-F', `owner=${owner}`, '-F', `repo=${repo}`];
   try {
-    return titlesFrom(await gh(args, { cwd }));
+    return linksFrom(await gh(args, { cwd }));
   } catch (e) {
-    return titlesFrom(e.stdout);
+    return linksFrom(e.stdout);
   }
 }
 
-/** The `iN: { title }` aliases of a response, whether or not it also carried
- *  errors. Anything unparseable is no titles -- they are decoration, and a
- *  lookup that fails may not fail the pane. */
-export function titlesFrom(out) {
+/** The `iN: { title, url }` aliases of a response, whether or not it also
+ *  carried errors. Anything unparseable is nothing -- these are decoration and
+ *  a redirect, and a lookup that fails may not fail the pane. */
+export function linksFrom(out) {
   let repo;
   try {
     repo = JSON.parse(out || '{}')?.data?.repository;
@@ -290,5 +300,5 @@ export function titlesFrom(out) {
   }
   return new Map(Object.entries(repo ?? {})
     .filter(([, v]) => v?.title)
-    .map(([alias, v]) => [Number(alias.slice(1)), v.title]));
+    .map(([alias, v]) => [Number(alias.slice(1)), { title: v.title, url: v.url ?? null }]));
 }

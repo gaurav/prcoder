@@ -74,7 +74,7 @@ graphql` exits 1 whenever the response carries an `errors` array — and prints
 that whole response anyway, data included. Ask one query for ten issue titles
 where one of the numbers does not exist and you get nine titles beside a single
 NOT_FOUND, over exit 1. `run` attaches `err.stdout` for exactly that, and
-`issueTitles` in `github.js` reads its data off the failure; a catch that
+`issueLinks` in `github.js` reads its data off the failure; a catch that
 returned nothing there would lose nine answers to one bad number. Checked
 against the real API on 2026-09-18.
 

@@ -207,6 +207,14 @@ console.log('issues: ', await page.evaluate(() => {
   }).join('  ');
 }), ' (want Closes: then Mentions:, both below, each line a number and a title)');
 
+// A number in a description is as often a pull request as an issue, and only
+// GitHub can say which: the chip's URL is the one the titles query returned, not
+// `/issues/<n>` built from the number. #27 is this repo's queue-tabs PR, so it is
+// the one that says whether that held -- /issues/27 redirects, and a redirect is
+// exactly what this stops being the answer.
+console.log('chip 27:', await page.evaluate(() => [...document.querySelectorAll('#pr-body .issues a')]
+  .find((a) => a.textContent.startsWith('#27 '))?.href), ' (want /pull/27, not /issues/27)');
+
 // Where each tab was left. The two offsets are kept apart in module state, and
 // the switch is what used to lose them: renderPrTab read scrollTop *after*
 // switchTo had already moved `tab`, so Detail's offset was filed under Files
