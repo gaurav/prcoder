@@ -92,7 +92,10 @@ The prose is set in serif at a reading size and capped to a comfortable line
 length, because it is the one thing in the window that is read rather than
 operated. Checklists in it are real checkboxes and write straight back to the
 description -- ticking one inside prcoder's own TODO block ticks the queue item
-it came from.
+it came from. It ends with the issues the description points at, each one a
+line carrying its title: the ones this pull request closes, then the ones it
+only mentions. A bare `#41` in the prose is a link but says nothing about what
+it is, and the titles are the whole point of the list.
 
 *Files* is every changed file grouped as *Tests* / *Code* / *Config & docs*,
 tests first, because tests are the fastest way to see what functionality

@@ -50,12 +50,21 @@ built-in runner.
 
 ## Subprocess errors lie by omission
 
-Two failures this repo depends on are invisible rather than loud, so check the
-real behaviour before trusting either.
+Three failures this repo depends on are invisible rather than loud, so check
+the real behaviour before trusting any of them.
 
 `execFile` hands stderr to its callback and never puts it on the error object.
 `run` in `github.js` attaches it, and every `no pull requests found`-style guard
 reads it — without that they match against `undefined` and silently never fire.
+
+A non-zero exit does not mean there is nothing on stdout, either. `gh api
+graphql` exits 1 whenever the response carries an `errors` array — and prints
+that whole response anyway, data included. Ask one query for ten issue titles
+where one of the numbers does not exist and you get nine titles beside a single
+NOT_FOUND, over exit 1. `run` attaches `err.stdout` for exactly that, and
+`issueTitles` in `github.js` reads its data off the failure; a catch that
+returned nothing there would lose nine answers to one bad number. Checked
+against the real API on 2026-09-18.
 
 git's exit codes are per-command, and a non-zero one is often an answer rather
 than a failure. `rev-parse --verify --quiet` exits 1 for a missing object where
