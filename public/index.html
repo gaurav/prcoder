@@ -45,6 +45,12 @@
       </header>
       <div id="diff-main">
         <div id="diff-body" class="scroll"></div>
+        <!-- Inside the pane rather than between two of them, but the same
+             gutter: it writes a distance from <main>'s right edge, which is the
+             outline's own right edge, so the number is its width. -->
+        <div id="gut-outline" class="gut col" role="separator" aria-orientation="vertical"
+             tabindex="0" aria-label="resize the hunk outline" aria-valuemin="0" aria-valuemax="100"
+             data-var="--w-outline" data-from="right"></div>
         <!-- One row per hunk, from the context git puts after the @@; a click
              scrolls the body to that hunk. Empty, and so hidden, for a whole file. -->
         <nav id="diff-outline" aria-label="hunks in this diff"></nav>

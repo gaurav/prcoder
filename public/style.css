@@ -361,8 +361,17 @@ a { color: var(--accent); }
    single hunk (nothing to choose between) get the full width back. */
 #diff-main { display: flex; flex: 1; min-height: 0; }
 #diff-body { flex: 1; min-width: 0; }
-#diff-outline { flex: none; max-width: 30%; overflow: auto; border-left: 1px solid var(--line); padding: 6px 0; }
-#diff-outline:empty { display: none; }
+/* The other gutters are 1px grid tracks that let <main>'s background through.
+   This one is a flex item inside a pane, so it has to be the line itself -- and
+   say its width, or an empty flex item shrinks to nothing. */
+#gut-outline { flex: none; width: 1px; background: var(--line); }
+/* `auto` until the first drag, so the default is still whatever the longest
+   hunk label needs. The gutter writes a px width after that, and the max-width
+   is what keeps a drag from eating the diff. */
+#diff-outline { flex: none; width: var(--w-outline, auto); max-width: 60%; overflow: auto; padding: 6px 0; }
+/* Nothing to point at for a whole-file diff: the outline hides itself, and the
+   line and its ±3px of grab area would otherwise be left behind in mid-air. */
+#diff-outline:empty, #diff-main:has(#diff-outline:empty) #gut-outline { display: none; }
 #diff-outline button {
   display: block; width: 100%; max-width: 100%; text-align: left; background: none; border: 0; cursor: pointer;
   font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--dim); padding: 2px 10px;
