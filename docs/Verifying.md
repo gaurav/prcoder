@@ -42,6 +42,13 @@ plain-diff DIFF and the DELETED views are on a path it never takes. They were ch
 screenshotting `#diff` per file from a script in `data/`. Do that again for anything that changes
 what the pane draws; a run against this repo alone says nothing about the two states it lacks.
 
+The hunk outline is out of reach for the same reason -- no hunks, so `#diff-outline` is empty and
+hides itself, and its gutter with it. Making that gutter draggable was checked on 2026-09-18 from a
+script in `data/` against the prcoder already running on this repo: rows injected into the outline,
+the line dragged, and the outline's width read back against the cursor's own position, which is what
+says the number written is a distance from the right edge rather than a drift. The gutter is hidden
+before the injection and shown after, which is the empty case the running app is always in here.
+
 The pane with **no** pull request is out of that driver's reach for the same reason — it follows the
 branch it runs on, that branch has PR #1, and `PRCODER_PR` only pins a different one — so
 `node tools/no-pr.mjs` is the third driver. It clones the remote into `data/main-clone`, which
@@ -85,6 +92,12 @@ exception, so the driver says nothing, and the only thing that turns red is whic
 the thing that did not load — the icon check covers xterm, the pane figures cover the stylesheet.
 That is real coverage, but it is indirect: a directive that nothing exercises can be wrong through a
 green run. Add a `page.on('console')` line for the run that changes the header; #62 is making that permanent.
+
+No driver touches the **queue pane** at all. Its row actions, the grip's arrow-key reorder, drag and
+drop and the tabs are checked by hand or not at all -- the grip exists because of a Firefox-only
+caret bug found that way. [#65](https://github.com/gaurav/prcoder/issues/65) is the fourth driver,
+and what it needs first: a queue of its own, which a clone gives for free the way `tools/no-pr.mjs`
+already takes one.
 
 `node tools/firefox-runner/probe.mjs` is not a driver and boots no server. It asks a narrower
 question — can anything on this machine drive Firefox — by trying Playwright's own build and the
@@ -175,7 +188,8 @@ And some only on screen. Driven in the browser: the two tabs and the folded desc
 forced poll to prove a fold survives `renderPr` replacing the whole pane, and each tab's scroll
 position crossed to the other tab and back, because the switch is what used to lose it; quoted sections, spliced
 into the `/api/status` response because neither of this repo's own descriptions contains a `>`; the
-splitters dragged to known coordinates and the page reloaded, and moved again from the keyboard —
+three splitters between the panes dragged to known coordinates and the page reloaded (not the
+fourth, inside the diff pane, which no pull request here can show), and moved again from the keyboard —
 focus lands, an arrow moves the line by ten and shift-arrow by fifty, `Home` resets, and
 `aria-valuenow` reports the position as a percentage of the window and changes when the line moves
 (it was a ResizeObserver on the 1px gutter, which a move never resizes); the switcher, both sync-light
