@@ -117,7 +117,8 @@ the branch head moves, and links out to GitHub for anything the plain rendering
 can't do — syntax highlighting, comments, binary and oversized files. A file the
 pull request adds or deletes is shown as plain text under a green **NEW** or red
 **DELETED** title rather than as a wall of `+` or `-`: a patch that is all one
-sign has nothing to contrast. Four links,
+sign has nothing to contrast. A renamed file says where it came from on its
+first line, and a rename with no other change says only that. Four links,
 because they answer different questions. *Diff* comes first because it is what
 the pane itself shows: this file's patch in GitHub's viewer. The other three are
 the whole file as this pull request leaves it: *File* for what it became — the

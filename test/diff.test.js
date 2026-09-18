@@ -28,6 +28,15 @@ test('a removed file is the same, read off a hunk to nothing', () => {
   assert.deepEqual(diffRows(patch).map((r) => r.text), ['a', 'b']);
 });
 
+// GitHub says `previous_filename` for a rename; a pure rename has no patch at
+// all, which the pane must not read as binary.
+test('a renamed file leads with its old name, and a pure rename is only that', () => {
+  assert.deepEqual(diffRows('@@ -1 +1 @@\n-a\n+b', 'old.md').map((r) => r.text),
+    ['renamed from old.md', '@@ -1 +1 @@', '-a', '+b']);
+  assert.deepEqual(diffRows(null, 'old.md'), [{ cls: 'hunk', text: 'renamed from old.md' }]);
+  assert.deepEqual(diffRows(null), []);
+});
+
 // A hunk that happens to start at line 0 of neither side is a change, and a
 // one-line patch has no newline to find.
 test('diffKind reads only the first hunk header', () => {

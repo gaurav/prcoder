@@ -519,7 +519,7 @@ const routes = {
     const cur = requirePr();
     const key = cur.url + cur.headRefOid;
     if (patches.key !== key) patches = { key, map: await fetchPatches(repo, cur.url) };
-    return { path: p, patch: patches.map.get(p) ?? null };
+    return { path: p, ...(patches.map.get(p) ?? { patch: null }) };
   },
 
   'GET /api/queue': () => readQueue(),

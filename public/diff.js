@@ -30,18 +30,24 @@ export function diffKind(patch) {
  * green says nothing and the `+` column is only in the way of reading it. The
  * pane's title carries the fact instead (NEW / DELETED, see openDiff). The
  * `\ No newline at end of file` note keeps the hunk colour so it reads as one.
+ *
+ * `from` is the old path of a renamed file. It becomes a first row in the hunk
+ * colour, and for a rename with no other change it is the whole body -- the
+ * patch is null then, which is not the binary case the caller handles.
  */
-export function diffRows(patch) {
+export function diffRows(patch, from) {
+  const head = from ? [{ cls: 'hunk', text: `renamed from ${from}` }] : [];
+  if (patch == null) return head;
   const lines = patch.split('\n');
   if (diffKind(patch)) {
     return lines.slice(1).map((text) => text.startsWith('\\')
       ? { cls: 'hunk', text } : { cls: 'ctx', text: text.slice(1) });
   }
-  return lines.map((text) => ({
+  return head.concat(lines.map((text) => ({
     cls: text.startsWith('+') ? 'add' : text.startsWith('-') ? 'del'
       : text.startsWith('@@') ? 'hunk' : 'ctx',
     text,
-  }));
+  })));
 }
 
 const el = (id) => document.getElementById(id);
@@ -106,9 +112,9 @@ export async function openDiff(f) {
   const body = el('diff-body');
   body.replaceChildren(h('div', { className: 'empty' }, 'Loading…'));
   setTitle(null);
-  let patch;
+  let patch, from;
   try {
-    ({ patch } = await api('/api/diff', { path: f.path }));
+    ({ patch, from } = await api('/api/diff', { path: f.path }));
   } catch (e) {
     patch = undefined;
     console.error('diff', e);
@@ -116,14 +122,14 @@ export async function openDiff(f) {
   // Two quick clicks can resolve out of order; only the current file may paint.
   if (openPath !== f.path) return;
 
-  if (patch == null) {
+  if (patch == null && !from) {
     body.replaceChildren(h('p', { className: 'empty' },
       'No local diff for this file (binary, too large, or unavailable) — ',
       ext(f.url, 'view it on GitHub')));
     return;
   }
-  setTitle(diffKind(patch));
-  body.replaceChildren(...diffRows(patch).map(({ cls, text }) =>
+  setTitle(patch == null ? null : diffKind(patch));
+  body.replaceChildren(...diffRows(patch, from).map(({ cls, text }) =>
     h('div', { className: `dl ${cls}` }, text)));
 }
 

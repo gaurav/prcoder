@@ -146,18 +146,24 @@ export async function setViewed(cwd, nodeId, path, viewed) {
 }
 
 /**
- * Per-file patch text, keyed by path. Shape confirmed against this repo's PR #1
- * on 2026-08-26: --slurp wraps the pages in one array, the REST field is
+ * Per-file `{patch, from}`, keyed by path. Shape confirmed against this repo's
+ * PR #1 on 2026-08-26: --slurp wraps the pages in one array, the REST field is
  * `filename` where `gh pr view` says `path` (same string), and `patch` starts
  * at the first @@ with no file header. It is absent for binary and oversized
  * files, and files past GitHub's 300-file cap are missing entirely — both read
  * back as null/undefined and the client falls through to the GitHub link.
+ *
+ * `from` is `previous_filename`, set only when GitHub saw the file as renamed
+ * (cli/cli#14116, checked 2026-09-18: `status: "renamed"`, a patch when it was
+ * edited too). Without it a pure rename is a file with no patch, and the pane
+ * would call it binary.
  */
 export async function fetchPatches(cwd, prUrl) {
   const { owner, repo, number } = parsePrUrl(prUrl);
   const out = await gh(['api', '--paginate', '--slurp',
     `repos/${owner}/${repo}/pulls/${number}/files`], { cwd });
-  return new Map(JSON.parse(out).flat().map((f) => [f.filename, f.patch ?? null]));
+  return new Map(JSON.parse(out).flat().map((f) =>
+    [f.filename, { patch: f.patch ?? null, from: f.previous_filename }]));
 }
 
 export function parsePrUrl(url) {
