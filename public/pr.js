@@ -313,13 +313,13 @@ const repoName = (repoUrl) => repoUrl.replace(/^https?:\/\/[^/]+\//, '');
  * calls and two hard-coded github.com URLs all assume it (#53) -- so this is
  * the part not to undo, not proof that the whole works.
  *
- * The arrow is on the first link only. That is the one that means "what you are
- * looking at, on GitHub"; the rest read as a menu, and five arrows in a row
- * read as decoration.
+ * No ↗ on any of them. Every link out of prcoder opens a new tab, so marking
+ * one (it used to be the first of each row) only raised the question of what
+ * the unmarked ones did.
  */
 export const headLinks = (pr) => {
   const { repo } = linkBase(pr);
-  return [{ text: `PR #${pr.number} ↗`, href: pr.url }, ...repoLinks(repo)];
+  return [{ text: `PR #${pr.number}`, href: pr.url }, ...repoLinks(repo)];
 };
 
 /** The repository and the three lists: the tail of the head's row, and the
@@ -336,16 +336,9 @@ const repoLinks = (repo) => [
  * URL to read one off -- `nameWithOwner` is all `gh repo view` was asked for.
  * That makes this the third of the github.com assumptions #53 is about, not a
  * new kind of one; the head's is still the part not to undo.
- *
- * The arrow lands on the repository for the same reason it lands on the PR
- * above: it is the "what you are looking at, on GitHub" link, and here that is
- * the repository itself.
  */
-export const noPrLinks = ({ nameWithOwner }) => {
-  if (!nameWithOwner) return [];
-  const [self, ...rest] = repoLinks(`https://github.com/${nameWithOwner}`);
-  return [{ ...self, text: `${self.text} ↗` }, ...rest];
-};
+export const noPrLinks = ({ nameWithOwner }) =>
+  nameWithOwner ? repoLinks(`https://github.com/${nameWithOwner}`) : [];
 
 /**
  * One row of links, dot-separated.
@@ -454,7 +447,7 @@ function renderPrTab(pr, handlers) {
   host.replaceChildren(...kids(tab === 'files' ? [
     ...GROUPS.map(([key, label]) => fileGroup(label, pr.groups[key], handlers)),
     h('div', { className: 'meta' },
-      ext(`${pr.url}#issuecomment`, `${pr.counts.comments} comments · ${pr.counts.reviews} reviews ↗`)),
+      ext(`${pr.url}#issuecomment`, `${pr.counts.comments} comments · ${pr.counts.reviews} reviews`)),
   ] : [
     issueRow(pr.issues, true, 'Closes:'),
     h('div', { className: 'body md' }, ...description(pr.body, handlers.onTask)),

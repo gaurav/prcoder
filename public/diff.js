@@ -82,7 +82,7 @@ export async function openDiff(f) {
   if (patch == null) {
     body.replaceChildren(h('p', { className: 'empty' },
       'No local diff for this file (binary, too large, or unavailable) — ',
-      ext(f.url, 'view it on GitHub ↗')));
+      ext(f.url, 'view it on GitHub')));
     return;
   }
   body.replaceChildren(...diffRows(patch).map(({ cls, text }) =>

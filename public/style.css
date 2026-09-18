@@ -338,9 +338,9 @@ a { color: var(--accent); }
   white-space: nowrap; direction: rtl; text-align: left; font-size: 12px; color: var(--dim);
 }
 #diff-viewed-label { font-size: 12px; color: var(--dim); white-space: nowrap; }
-/* The ways out of the pane, as one menu rather than four buttons: the arrow is
-   on the first only, for the reason headLinks gives -- four in a row read as
-   decoration. `nowrap` on the group keeps a separator from starting a line. */
+/* The ways out of the pane, as one menu rather than four buttons, and none
+   marked ↗ -- see headLinks. `nowrap` on the group keeps a separator from
+   starting a line. */
 #diff-out, #diff-gh { font-size: 12px; white-space: nowrap; }
 #diff header a { text-decoration: none; }
 #diff header a:hover { text-decoration: underline; }

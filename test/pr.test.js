@@ -205,7 +205,7 @@ test('a bare #N becomes a link to the issue of that number', () => {
 test('the head links point at the repository the pull request is in', () => {
   const pr = { number: 7, url: 'https://github.test/o/r/pull/7', headRefName: 'topic', baseRefName: 'main' };
   assert.deepEqual(headLinks(pr).map((l) => [l.text, l.href]), [
-    ['PR #7 ↗', 'https://github.test/o/r/pull/7'],
+    ['PR #7', 'https://github.test/o/r/pull/7'],
     ['o/r', 'https://github.test/o/r'],
     ['issues', 'https://github.test/o/r/issues'],
     ['pulls', 'https://github.test/o/r/pulls'],
@@ -225,11 +225,10 @@ test('a pull request from a fork links to the repository it was opened against',
 });
 
 // The pane with no pull request offers the same lists, minus the pull request
-// itself -- and the arrow moves onto the repository, which is what you are
-// looking at when there is nothing else to be looking at.
+// itself.
 test('with no pull request the repository and its lists are still linked', () => {
   assert.deepEqual(noPrLinks(status()).map((l) => [l.text, l.href]), [
-    ['ggvaidya/prcoder ↗', 'https://github.com/ggvaidya/prcoder'],
+    ['ggvaidya/prcoder', 'https://github.com/ggvaidya/prcoder'],
     ['issues', 'https://github.com/ggvaidya/prcoder/issues'],
     ['pulls', 'https://github.com/ggvaidya/prcoder/pulls'],
     ['milestones', 'https://github.com/ggvaidya/prcoder/milestones'],
