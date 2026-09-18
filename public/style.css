@@ -353,6 +353,19 @@ a { color: var(--accent); }
    +/- tint used to stop at the first viewport's edge once a wide diff was
    scrolled right. `min-width` keeps a short line's tint reaching the edge. */
 .dl { white-space: pre; padding: 0 10px; width: max-content; min-width: 100%; }
+/* The body and, beside it, the outline: a column of hunk names that stays put
+   while the body scrolls. `:empty` hides it, so a whole file (no hunks) and a
+   single hunk (nothing to choose between) get the full width back. */
+#diff-main { display: flex; flex: 1; min-height: 0; }
+#diff-body { flex: 1; min-width: 0; }
+#diff-outline { flex: none; max-width: 30%; overflow: auto; border-left: 1px solid var(--line); padding: 6px 0; }
+#diff-outline:empty { display: none; }
+#diff-outline button {
+  display: block; width: 100%; max-width: 100%; text-align: left; background: none; border: 0; cursor: pointer;
+  font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--dim); padding: 2px 10px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+#diff-outline button:hover { color: var(--fg); }
 .dl.add { color: #9ae6b4; background: #1f4d2e33; }
 .dl.del { color: #f5a3a3; background: #4d1f2433; }
 .dl.hunk { color: var(--accent); margin-top: 4px; }

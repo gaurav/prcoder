@@ -2,7 +2,7 @@
 // iframed, so the pane draws the raw patch itself and keeps a link out for
 // the fancy view.
 
-import { h, ext, api, writeThrough } from './pr.js';
+import { h, btn, ext, api, writeThrough } from './pr.js';
 
 // Lives outside the render because the 60s poll rebuilds #pr-body from
 // scratch; #diff itself is never repainted by the poll (queue.js does the
@@ -48,6 +48,24 @@ export function diffRows(patch, from) {
       : text.startsWith('@@') ? 'hunk' : 'ctx',
     text,
   })));
+}
+
+/**
+ * Pure: the rows -> [{at, text}], one per hunk header, for the outline beside
+ * the body. `at` is the row's index, which is what the click scrolls to.
+ *
+ * The text is what git put after the second @@ -- the enclosing function, a
+ * Markdown heading, whatever the funcname rule found -- so for a modified
+ * source file this is a table of contents with no parsing at all (#63). A hunk
+ * with no context is named by its new-side start line instead. Fewer than two
+ * hunks is no outline: one entry names the only place there is to be.
+ */
+export function outline(rows) {
+  const hunks = rows.flatMap(({ text }, at) => {
+    const m = text.match(/^@@ -\S+ \+(\d+)[^@]*@@ ?(.*)$/);
+    return m ? [{ at, text: m[2] || `line ${m[1]}` }] : [];
+  });
+  return hunks.length > 1 ? hunks : [];
 }
 
 const el = (id) => document.getElementById(id);
@@ -129,8 +147,10 @@ export async function openDiff(f) {
     return;
   }
   setTitle(patch == null ? null : diffKind(patch));
-  body.replaceChildren(...diffRows(patch, from).map(({ cls, text }) =>
-    h('div', { className: `dl ${cls}` }, text)));
+  const rows = diffRows(patch, from).map(({ cls, text }) => h('div', { className: `dl ${cls}` }, text));
+  body.replaceChildren(...rows);
+  el('diff-outline').replaceChildren(...outline(diffRows(patch, from)).map(({ at, text }) =>
+    btn(text, () => rows[at].scrollIntoView({ block: 'start' }), { title: text })));
 }
 
 export function closeDiff() {
