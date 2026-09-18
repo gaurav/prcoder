@@ -282,9 +282,12 @@ a { color: var(--accent); }
 .md li { margin: 3px 0; }
 .md li::marker { color: var(--dim); }
 
-.issues { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 6px; font-size: 12px; }
-.issues-label { color: var(--dim); }
-.issues a { padding: 1px 6px; border: 1px solid var(--line); border-radius: 9px; text-decoration: none; }
+/* A line per issue, because each one carries its title now: the pill these used
+   to be held a bare #N and nothing longer. */
+.issues { margin: 10px 0; font-size: 12px; }
+.issues-label { display: block; color: var(--dim); }
+.issues a { display: block; padding: 1px 0 1px 10px; text-decoration: none; }
+.issues a:hover { text-decoration: underline; }
 
 .group { margin-bottom: 10px; }
 .group > summary {

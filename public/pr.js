@@ -449,8 +449,8 @@ function renderPrTab(pr, handlers) {
     h('div', { className: 'meta' },
       ext(`${pr.url}#issuecomment`, `${pr.counts.comments} comments · ${pr.counts.reviews} reviews`)),
   ] : [
-    issueRow(pr.issues, true, 'Closes:'),
     h('div', { className: 'body md' }, ...description(pr.body, handlers.onTask)),
+    issueRow(pr.issues, true, 'Closes:'),
     issueRow(pr.issues, false, 'Mentions:'),
   ]));
 
@@ -474,23 +474,26 @@ function checks({ passed, failed, pending }) {
 }
 
 /**
- * One row of issue chips. The row label says which kind, so the chips stay bare
- * numbers.
+ * One list of issues, labelled with what this pull request does about them.
  *
- * The two kinds mean different things and are placed differently because of it.
- * `Closes:` is a handful of issues this pull request answers, and it belongs
- * above the description as part of what the pull request *is*. `Mentions:` is
- * every bare `#N` linkedIssues() could find in the body, which on a description
- * that discusses its own backlog is dozens -- six rows of chips between the
- * title and the first sentence, which is the burial this pane is being fixed
- * for. It goes underneath.
+ * Both lists sit below the description, `Closes:` first. The closing ones were
+ * above it, from before a description reliably said which issues it closed:
+ * they are now named in the abstract's own prose -- and inline() links every
+ * `#N` in it -- so a row of the same numbers a line above that sentence was
+ * saying it twice, in the one place the pane is trying to keep clear.
+ *
+ * A line per issue, titled, rather than a wrapped row of bare-number chips:
+ * `#41` says nothing about what it is, and a description that discusses its own
+ * backlog carries a dozen of them. The title is what makes the list readable,
+ * and it is also what makes a chip the wrong shape -- a pill does not hold a
+ * sentence. A number with no title left is still a link.
  */
 function issueRow(list, closes, label) {
   const kind = list.filter((i) => i.closes === closes);
   if (!kind.length) return null;
   return h('div', { className: 'issues' },
     h('span', { className: 'issues-label' }, label),
-    ...kind.map((i) => ext(i.url, `#${i.number}`, { title: i.title ?? '' })));
+    ...kind.map((i) => ext(i.url, i.title ? `#${i.number} ${i.title}` : `#${i.number}`)));
 }
 
 /**

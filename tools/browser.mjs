@@ -194,6 +194,19 @@ console.log('links:  ', await page.evaluate(() => {
   return `${find(/^README$/)?.href} | ${find(/^#\d+$/)?.href}`;
 }), ' (want a /blob/<head>/README.md URL, and an /issues/N one)');
 
+// The issue lists, which are both below the description now and both titled.
+// Position is the point of the change and a title is a round trip through a
+// second gh call, so both are read off the page rather than off the source: an
+// untitled line means the lookup came back empty, which nothing else shows.
+console.log('issues: ', await page.evaluate(() => {
+  const body = document.querySelector('#pr-body .md');
+  return [...document.querySelectorAll('#pr-body .issues')].map((row) => {
+    const after = body.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING;
+    return `${row.querySelector('.issues-label').textContent}${row.querySelectorAll('a').length}` +
+      `${after ? ' below' : ' ABOVE'} "${row.querySelector('a').textContent.slice(0, 40)}…"`;
+  }).join('  ');
+}), ' (want Closes: then Mentions:, both below, each line a number and a title)');
+
 // Where each tab was left. The two offsets are kept apart in module state, and
 // the switch is what used to lose them: renderPrTab read scrollTop *after*
 // switchTo had already moved `tab`, so Detail's offset was filed under Files
