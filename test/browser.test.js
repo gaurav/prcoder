@@ -111,7 +111,7 @@ before(async () => {
   await page.route('**/api/prs', (r) => r.fulfill({ json: [] }));
   await page.route('**/api/queue', (r) => r.fulfill({ json: [] }));
   await page.route('**/api/diff', (r) => r.fulfill({ json: {
-    path: 'evil.js', patch: '@@ -0,0 +1,2 @@\n' + SOURCE.split('\n').map((l) => '+' + l).join('\n'),
+    path: 'evil.js', patch: '@@ -0,0 +1,3 @@\n' + SOURCE.split('\n').map((l) => '+' + l).join('\n'),
   } }));
   await page.route('**/api/pr/task', (r) => {
     posted.push(r.request().postDataJSON());
