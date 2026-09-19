@@ -205,7 +205,7 @@ console.log('issues: ', await page.evaluate(() => {
     return `${row.querySelector('.issues-label').textContent}${row.querySelectorAll('a').length}` +
       `${after ? ' below' : ' ABOVE'} "${row.querySelector('a').textContent.slice(0, 40)}…"`;
   }).join('  ');
-}), ' (want Closes: then Mentions:, both below, each line a number and a title)');
+}), ' (want Closes then Mentions, both below, each line a number and a title)');
 
 // A number in a description is as often a pull request as an issue, and only
 // GitHub can say which: the chip's URL is the one the titles query returned, not

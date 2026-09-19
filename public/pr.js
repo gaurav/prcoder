@@ -487,8 +487,8 @@ function renderPrTab(pr, handlers) {
       ext(`${pr.url}#issuecomment`, `${pr.counts.comments} comments · ${pr.counts.reviews} reviews`)),
   ] : [
     h('div', { className: 'body md' }, ...description(pr.body, handlers.onTask)),
-    issueRow(pr.issues, true, 'Closes:'),
-    issueRow(pr.issues, false, 'Mentions:'),
+    issueRow(pr.issues, true, 'Closes'),
+    issueRow(pr.issues, false, 'Mentions'),
   ]));
 
   // Assigning forces layout, so this lands against the new content rather than
@@ -524,13 +524,24 @@ function checks({ passed, failed, pending }) {
  * backlog carries a dozen of them. The title is what makes the list readable,
  * and it is also what makes a chip the wrong shape -- a pill does not hold a
  * sentence. A number with no title left is still a link.
+ *
+ * The number and the title are separate spans inside the one link so the
+ * stylesheet can treat them apart: thirteen rows that were one colour and one
+ * weight end to end gave the eye nowhere to land, and a wrapped title came back
+ * to the margin under the `#` and read as a fourteenth. The row is still the
+ * whole link -- the split is for the grid and the colour, not the click. The
+ * space between them is what keeps `textContent` reading `#27 Make the …`, which
+ * is how tools/browser.mjs finds a row; the grid never renders it.
  */
 function issueRow(list, closes, label) {
   const kind = list.filter((i) => i.closes === closes);
   if (!kind.length) return null;
   return h('div', { className: 'issues' },
     h('span', { className: 'issues-label' }, label),
-    ...kind.map((i) => ext(i.url, i.title ? `#${i.number} ${i.title}` : `#${i.number}`)));
+    ...kind.map((i) => ext(i.url, [
+      h('span', { className: 'num' }, `#${i.number}`),
+      ...(i.title ? [' ', h('span', { className: 'ttl' }, i.title)] : []),
+    ])));
 }
 
 /**
