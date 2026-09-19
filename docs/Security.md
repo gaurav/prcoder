@@ -79,9 +79,10 @@ to Claude *without* a click removes the only check there is.
 
 ## Static files
 
-Everything outside `/api/` and the four `vendor` paths is served from `public/`, and a path that
-resolves outside it is a 403 (`server.js`, beside `serveFile`). `new URL` has already collapsed `..`
-by then, so the check is a backstop, and nothing tests it.
+Everything outside `/api/` and the `vendor` paths — xterm's four files, Prism's core and one file
+per grammar — is served from `public/`, and a path that resolves outside it is a 403 (`server.js`,
+beside `serveFile`). `new URL` has already collapsed `..` by then, so the check is a backstop, and
+nothing tests it.
 
 ## A file the pull request adds
 
