@@ -1,0 +1,23 @@
+name: test
+
+# Pushes to main and pull requests: a PR branch would otherwise run twice.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 26
+          cache: npm
+      - run: npm ci
+      # test/browser.test.js drives the pane in Chromium and skips when the browser
+      # is missing, so this step is what makes it run rather than skip here.
+      # Chromium only: the one engine the test uses, and the one download.
+      - run: npx playwright install --with-deps chromium
+      - run: npm test
