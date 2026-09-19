@@ -4,7 +4,14 @@
 Node 26 resolves a directory argument as a module and dies with `Cannot find module`, and never bare
 either, because that walks the whole working directory and runs any scratch checkout under `data/`
 as a second suite ([CLAUDE.md](../CLAUDE.md) has the rest, including why the quotes are
-load-bearing and why that puts the drivers in `tools/`). That covers everything that can be checked without a browser or a tty.
+load-bearing and why that puts the drivers in `tools/`). That covers everything that can be checked
+without a browser or a tty, plus one test that needs a browser: `test/browser.test.js` opens the real
+page from the server started in-process, with the API routes and the `/pty` socket answered by
+Playwright from a fixture, so it needs no `gh`, no `claude` and no PTY, and asserts the things this
+pane has shipped broken -- raw markup as text, headings, checkbox write-back, the issue lists, the
+tab count. It skips with a note when Playwright or Chromium is missing; CI installs Chromium so it
+runs there. Its blind spot is its fixture, shaped by hand from what `/api/status` answers today, so a
+field the server renames and the client follows still passes; the `gh` stub issue is what closes that.
 This file is about the rest, and about the rule that produced it.
 
 ## Reading the CSS is not verification

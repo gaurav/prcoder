@@ -45,7 +45,9 @@ so one slow call delays the rest.
 ## Verifying a change
 
 ```bash
-npm test                   # node --test "test/**/*.test.js"; see CLAUDE.md for the quotes
+npm test                   # node --test "test/**/*.test.js"; see CLAUDE.md for the quotes.
+                           # Includes test/browser.test.js, in Chromium; it skips with a
+                           # note when the browser is missing (npx playwright install chromium)
 node --check public/*.js   # the client files the tests do not import
 ```
 

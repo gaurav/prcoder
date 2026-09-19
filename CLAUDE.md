@@ -262,7 +262,9 @@ every send returns false, and the page silently stops talking to the PTY --
 no error, no closed socket. Three runs of a driver investigating an
 always-busy tab icon came back green because the instrumentation had switched
 off the traffic causing it. Copy `CONNECTING`/`OPEN`/`CLOSING`/`CLOSED` onto
-the wrapper, or listen without wrapping.
+the wrapper, or listen without wrapping. To keep the page from opening a PTY at
+all, `page.routeWebSocket('**/pty', () => {})` mocks the socket without touching
+the constructor -- `test/browser.test.js` runs the whole page that way.
 
 Same shape in reverse: a `MutationObserver` in `addInitScript` has no
 `document.head` to observe yet, and the throw takes the rest of the init script
