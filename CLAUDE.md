@@ -125,6 +125,18 @@ about which items were ticked. Check the repo's port (`.prcoder/port.json`)
 before hand-editing the block, and re-read the body afterwards rather than
 assuming the write stuck.
 
+`tools/browser.mjs` is a second writer of that block, and a quieter one. It
+spawns its own prcoder and drives the queue -- dragging a row is one of the
+things it checks -- so a run from the branch whose PR it drives mirrors the
+result and leaves the PR's description holding those lines in a different
+order. It reordered three of PR #1's on 2026-09-19, caught only by diffing the
+body against a snapshot taken before the run. Pinned to a PR that is *not* the
+checkout's branch it writes nothing at all, because `ours(branch)` gates the
+mirror -- which is why this never showed while the driver was pinned to #1 from
+a feature branch, and why it started the day the branch became #1's own.
+Snapshot the body before a run, and put it back through `PUT /api/queue`, never
+`gh pr edit`.
+
 Inside the block, `done` is the only field the description owns: a `- [ ]` to
 `- [x]` is exactly what the pane writes, so it is safe. Nothing else is.
 `syncFromPrBlock` matches a line to an item by issue number when the line has

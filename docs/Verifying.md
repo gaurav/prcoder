@@ -33,8 +33,17 @@ belongs there too.
 
 ## The drivers
 
-`node tools/browser.mjs` boots its own server and drives the UI in a real browser, writing PNGs to
-`data/shots`. Firefox by default, because a Firefox-only bug — a click into a draggable row's text
+`node tools/browser.mjs [label]` boots its own server and drives the UI in a real browser, writing
+PNGs to `data/shots/<label>/` — the label saying what the run was for, `highlighting` or `pr-69-tsx`
+rather than a date, since a directory of PNGs named after panes says nothing about which run took
+them. It defaults to `latest`. A run replaces its own label rather than adding to it, so a shot the
+driver has stopped taking cannot linger beside the ones it still takes, and the labels themselves
+are capped at five, oldest first, by when a run last wrote into them (`PRCODER_KEEP`). Nothing is
+deleted that is not a directory of `.png` files — a label holding anything else is reported and left
+alone, and so are loose PNGs directly under `data/shots`. `tools/shots.mjs` is the whole of it, and
+`test/shots.test.js` is there because it is the one piece of driver code that deletes things.
+
+Firefox by default, because a Firefox-only bug — a click into a draggable row's text
 putting the caret at offset 0 — survived every Chromium screenshot; see [CLAUDE.md](../CLAUDE.md)
 for the rest, and for the three fixes to it that do **not** work.
 `PRCODER_BROWSER=chromium` forces the other; running both is worth the second minute — when both

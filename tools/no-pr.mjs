@@ -23,10 +23,15 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
+import { openShots, pruneShots } from './shots.mjs';
 
 const repo = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const clone = path.join(repo, 'data', 'main-clone');
-const shots = path.resolve(process.argv[2] ?? path.join(repo, 'data', 'shots'));
+// A label under data/shots, not a path -- see tools/shots.mjs. Its own default,
+// because this driver's three shots are of a state the other two cannot reach
+// and are worth keeping apart from theirs.
+const shotsRoot = path.join(repo, 'data', 'shots');
+const label = process.argv[2] ?? 'no-pr';
 const port = Number(process.env.PRCODER_PORT) || 17491;
 
 // Same reason as the other two: server.js quietly takes a free port when its own
@@ -38,7 +43,7 @@ const free = (p) => new Promise((res, rej) => {
   probe.listen(p, '127.0.0.1');
 });
 await free(port);
-await fs.mkdir(shots, { recursive: true });
+const shots = await openShots(shotsRoot, label);
 
 const git = (args, cwd = clone) => spawnSync('git', args, { cwd, encoding: 'utf8' });
 const url = git(['remote', 'get-url', 'origin'], repo).stdout.trim();
@@ -115,5 +120,6 @@ await browser.close();
 await log.close();
 server.kill();
 console.log('shots:  ', shots);
+await pruneShots(shotsRoot);
 console.log('clone:   left on', git(['branch', '--show-current']).stdout.trim(),
   '-- deleting data/main-clone is safe, the next run re-clones');

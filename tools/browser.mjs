@@ -2,7 +2,8 @@
 // change is otherwise verified by reading the CSS, which is how three of them
 // shipped unseen.
 //
-//   node tools/browser.mjs [outdir]        # default: ./data/shots (gitignored)
+//   node tools/browser.mjs [label]         # PNGs to ./data/shots/<label>/ (gitignored)
+//                                         # the label says what the run was for; default `latest`
 //   PRCODER_BROWSER=firefox node tools/browser.mjs
 //
 // Firefox is a separate download: `npx playwright install firefox` once.
@@ -26,16 +27,19 @@
 
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:net';
-import fs from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium, firefox } from 'playwright';
+import { openShots, pruneShots } from './shots.mjs';
 
 const repo = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 // data/, not a new top-level shots/: this repo's scratch space is data/, and it
-// is gitignored precisely so driver output has somewhere to live.
-const out = path.resolve(process.argv[2] ?? path.join(repo, 'data', 'shots'));
+// is gitignored precisely so driver output has somewhere to live. The argument
+// is a label for this run rather than a path -- what you were looking at, so
+// the PNGs still say so a week later -- and tools/shots.mjs is what it means.
+const shotsRoot = path.join(repo, 'data', 'shots');
+const label = process.argv[2] ?? 'latest';
 const port = Number(process.env.PRCODER_PORT) || 17434;
 
 // server.js falls back to a free port when the one it is given is taken, and
@@ -52,7 +56,8 @@ const free = (p) => new Promise((res, rej) => {
 });
 await free(port);
 
-await fs.mkdir(out, { recursive: true });
+// Before the server starts: a bad label should fail while nothing is running.
+const out = await openShots(shotsRoot, label);
 // Everything below is written against this repo's PR #1 -- its sections, its
 // file groups, its issue chips -- and the server follows the current branch, so
 // a run from any other branch drives a pull request the assertions do not fit.
@@ -545,3 +550,5 @@ console.log('shots: ', out);
 
 await browser.close();
 server.kill();
+// Last, so this run's label is the newest and is never its own candidate.
+await pruneShots(shotsRoot);

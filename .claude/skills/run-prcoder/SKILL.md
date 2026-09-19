@@ -63,7 +63,8 @@ and is where a check that outlives the session gets written down. The short
 form:
 
 ```bash
-node tools/browser.mjs                            # the UI, PNGs to data/shots; Firefox, falling
+node tools/browser.mjs highlighting               # the UI, PNGs to data/shots/highlighting/;
+                                                  # the label says what you were looking at. Firefox, falling
                                                   # back to Chromium if it will not start
 PRCODER_BROWSER=chromium node tools/browser.mjs   # skip that wait, or compare engines
 node tools/cli.mjs                                # the terminal half, in a real PTY
