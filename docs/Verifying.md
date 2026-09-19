@@ -143,8 +143,11 @@ regression when it does. It was 285, 263, 236 in both engines under the title th
 A poll costs **seven subprocess calls**, clean tree and dirty alike. `PRCODER_VERBOSE=2` prints the
 count on every poll, so a change that adds a call is visible rather than inferred. The pull requests
 into the current branch are filtered out of the list the switcher already holds for that reason: a
-`gh pr list --base` of their own would be an eighth call, on the one branch that already makes an
-extra one ([#19](https://github.com/gaurav/prcoder/issues/19)). The expensive
+`gh pr list --base` of their own would be an eighth call. A branch with no pull request also
+makes seven: it used to swap the PR's headRefOid for a `git ls-remote` over the network on every
+poll ([#19](https://github.com/gaurav/prcoder/issues/19)), and now reads git's own
+`refs/remotes/origin/<branch>` instead, a local call that `tools/no-pr.mjs`'s server log shows in
+its place (2026-09-19). The expensive
 path a changed `updatedAt` takes costs one call more than it did: a single `gh api graphql` that
 asks for every linked issue's title at once, however many there are.
 

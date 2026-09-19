@@ -194,18 +194,15 @@ console.log('links:  ', await page.evaluate(() => {
   return `${find(/^README$/)?.href} | ${find(/^#\d+$/)?.href}`;
 }), ' (want a /blob/<head>/README.md URL, and an /issues/N one)');
 
-// The issue lists, which are both below the description now and both titled.
-// Position is the point of the change and a title is a round trip through a
-// second gh call, so both are read off the page rather than off the source: an
-// untitled line means the lookup came back empty, which nothing else shows.
-console.log('issues: ', await page.evaluate(() => {
-  const body = document.querySelector('#pr-body .md');
-  return [...document.querySelectorAll('#pr-body .issues')].map((row) => {
-    const after = body.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING;
-    return `${row.querySelector('.issues-label').textContent}${row.querySelectorAll('a').length}` +
-      `${after ? ' below' : ' ABOVE'} "${row.querySelector('a').textContent.slice(0, 40)}…"`;
-  }).join('  ');
-}), ' (want Closes then Mentions, both below, each line a number and a title)');
+// The issue lists' titles. Where the lists sit and how a row is shaped is
+// test/browser.test.js's now, against a fixture -- what a fixture cannot say is
+// whether the real title lookup (a second gh call, github.js issueLinks) came
+// back with anything, and an untitled row is the only thing on screen that shows
+// it did not.
+console.log('titled: ', await page.evaluate(() => {
+  const rows = [...document.querySelectorAll('#pr-body .issues a')];
+  return `${rows.filter((a) => a.querySelector('.ttl')).length} of ${rows.length}`;
+}), ' (want every row titled: a bare number is a lookup that returned nothing)');
 
 // A number in a description is as often a pull request as an issue, and only
 // GitHub can say which: the chip's URL is the one the titles query returned, not
