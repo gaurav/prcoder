@@ -9,6 +9,12 @@ last two for an agent about to run the thing: how to launch, what to stub, what
 not to write. Keep all of them true when you change what they describe -- the
 skill drifts first, because nothing else links to it.
 
+`docs/Agent.md` is the odd one out: not for an agent working *on* prcoder, which
+is this file, but for the session running *inside* one, in whatever repo that
+is. It is the only doc whose reader cannot check it against the source, so a
+change to the queue's shape or to the `/api/queue` contract has to reach it in
+the same commit. Nothing delivers it to a session yet -- #72.
+
 **The queue is being redesigned.** Before touching anything under the queue --
 the description mirror, `.prcoder/queue.json`, the queue pane -- read "Where the
 queue is going" in `docs/Design.md`: the mirror is frozen, and the new design

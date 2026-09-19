@@ -318,4 +318,6 @@ localhost server is exposed to.
 `npm test` covers the parts worth pinning down: the queue store, file grouping, GitHub's diff
 anchors, every queue ↔ PR-description transition, and the routes that answer without `gh`. What
 cannot be unit-tested is driven in a real browser and a real PTY —
-[docs/Verifying.md](docs/Verifying.md).
+[docs/Verifying.md](docs/Verifying.md). [docs/Agent.md](docs/Agent.md) is written for the
+`claude` session in the middle pane rather than for you: what the queue is and how to read and write
+it without fighting the server.
