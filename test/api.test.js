@@ -12,6 +12,7 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import { server } from '../server.js';
+import { grammars } from '../public/diff.js';
 
 let base;
 before(() => new Promise((res) => server.listen(0, '127.0.0.1', () => {
@@ -70,9 +71,10 @@ test('the page is served with a CSP that forbids framing and foreign script', as
 
 // The vendor map is hand-written paths into node_modules, so it breaks silently
 // on an xterm upgrade -- and a 404 here is a blank page with a module error in
-// a console prcoder never shows.
+// a console prcoder never shows. The grammars come from `language`'s own map
+// rather than a copy of it, so a language the page can ask for and the server
+// does not serve fails here rather than in the pane.
 test('the vendored xterm and Prism files are where the map says', async () => {
-  const grammars = ['bash', 'diff', 'json', 'jsx', 'markdown', 'python', 'toml', 'typescript', 'yaml'];
   for (const p of ['/vendor/xterm.mjs', '/vendor/xterm.css',
                    '/vendor/addon-fit.mjs', '/vendor/addon-web-links.mjs',
                    '/vendor/prism.js', ...grammars.map((l) => `/vendor/prism/${l}.js`)]) {

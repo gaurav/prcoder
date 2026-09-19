@@ -93,8 +93,9 @@ What keeps it in the same shape as the renderer above is in `highlightLines` in
 becomes a `<span>` through `h()` with the file's text as a text node — the same rule as every other
 string from GitHub, and `test/browser.test.js` opens a file made of `<script>` and `<img onerror>` to
 pin that it comes out as characters. The language is chosen from the extension alone: auto-detection
-would run every grammar over the file, and the extension map in `diff.js` is also the list of
-grammars the vendor map in `server.js` serves. What is left is a grammar's regular expressions
+would run every grammar over the file, and `grammars` in `diff.js` — that extension map plus what
+those grammars are built on — is the list the vendor map in `server.js` has to serve, which
+`test/api.test.js` fetches rather than restating. What is left is a grammar's regular expressions
 backtracking on a crafted file, which no escaping helps with. It is bounded by GitHub, which sends no
 `patch` for a large diff, and it is the reason the tokenizer runs in the page and not in `/api/diff`:
 a stall there freezes one browser tab, a stall in the server freezes the process that owns the PTY.

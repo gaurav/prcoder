@@ -66,6 +66,8 @@ test('language is by extension only, or nothing', () => {
   assert.equal(language('src/app.mjs'), 'javascript');
   assert.equal(language('types/index.d.ts'), 'typescript');
   assert.equal(language('.github/workflows/ci.YML'), 'yaml');
+  // Its own grammar, not typescript's: typescript does not parse JSX.
+  assert.equal(language('src/App.tsx'), 'tsx');
   assert.equal(language('Makefile'), null);
   assert.equal(language('notes.txt'), null);
   assert.equal(language('.bashrc'), null);

@@ -71,20 +71,35 @@ export function outline(rows) {
 /**
  * Pure: path -> Prism grammar name, or null for a file the pane shows plain.
  * By extension only, never by content: auto-detection runs every grammar over a
- * stranger's file, and this map is also the list of what the vendor map in
- * server.js serves -- core carries markup, css, clike and javascript, and each
- * of the others is one file under /vendor/prism/.
+ * stranger's file, and this map -- through `grammars` below -- is also the list
+ * of what the vendor map in server.js serves: core carries markup, css, clike
+ * and javascript, and each of the others is one file under /vendor/prism/.
  *
  * The extension is the basename's, after a dot that is not its first character:
  * a dotless `patch` or `sh` at the repo root is a file, not an extension, and a
  * dotfile like `.gitignore` is all name. Both are plain.
  */
 const LANG = {
-  js: 'javascript', mjs: 'javascript', cjs: 'javascript', jsx: 'jsx', ts: 'typescript', tsx: 'typescript',
+  js: 'javascript', mjs: 'javascript', cjs: 'javascript', jsx: 'jsx', ts: 'typescript', tsx: 'tsx',
   json: 'json', yml: 'yaml', yaml: 'yaml', py: 'python', sh: 'bash', bash: 'bash', zsh: 'bash',
   md: 'markdown', html: 'markup', htm: 'markup', xml: 'markup', svg: 'markup', css: 'css',
   diff: 'diff', patch: 'diff', toml: 'toml',
 };
+
+// What core already carries, and what a grammar needs loaded before it. Prism's
+// components.json is the source for both: `tsx` is the one grammar here that
+// extends others rather than clike, and loading it alone leaves it a no-op.
+const CORE = new Set(['markup', 'css', 'clike', 'javascript']);
+const NEEDS = { tsx: ['jsx', 'typescript'] };
+
+/**
+ * Every grammar file the page can ask for, which is what server.js has to
+ * serve. Derived rather than written twice: a language added to the map above
+ * without its file in the vendor map is a plain file and a console line, and
+ * test/api.test.js fetches this list to say so first.
+ */
+export const grammars = [...new Set(Object.values(LANG).flatMap((l) => [...(NEEDS[l] ?? []), l]))]
+  .filter((l) => !CORE.has(l)).sort();
 export const language = (path) => {
   const name = path.slice(path.lastIndexOf('/') + 1);
   const dot = name.lastIndexOf('.');
@@ -131,17 +146,22 @@ export function highlightLines(text, grammar, tokenize) {
 const loaded = {};
 let attempt = 0;
 const fresh = (url) => (attempt ? `${url}?retry=${attempt}` : url);
+async function one(lang) {
+  if (globalThis.Prism.languages[lang]) return;
+  loaded[lang] ??= import(fresh(`/vendor/prism/${lang}.js`))
+    .catch((e) => { loaded[lang] = null; attempt++; throw e; });
+  await loaded[lang];
+}
 async function grammar(lang) {
   if (!loaded.core) {
     globalThis.Prism = { manual: true };
     loaded.core = import(fresh('/vendor/prism.js')).catch((e) => { loaded.core = null; attempt++; throw e; });
   }
   await loaded.core;
-  if (!globalThis.Prism.languages[lang]) {
-    loaded[lang] ??= import(fresh(`/vendor/prism/${lang}.js`))
-      .catch((e) => { loaded[lang] = null; attempt++; throw e; });
-    await loaded[lang];
-  }
+  // Prerequisites first and in order: prism-tsx builds on the jsx and
+  // typescript grammars, and defines nothing at all if they are not there yet.
+  for (const dep of NEEDS[lang] ?? []) await one(dep);
+  await one(lang);
   return globalThis.Prism.languages[lang];
 }
 

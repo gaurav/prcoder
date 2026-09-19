@@ -76,11 +76,16 @@ const REPO = 'https://github.com/example/repo';
 // Prism's tokens, and this is the source that shows if any of it is ever built
 // as HTML rather than text.
 const SOURCE = 'const s = "<script>alert(1)</script>"; // <img src=x onerror=alert(2)>\n\nf(1)';
-const files = [{
-  path: 'evil.js', additions: 3, deletions: 0, viewed: false,
-  url: `${REPO}/pull/12/files#diff-0`, blob: `${REPO}/blob/aaaa/evil.js`,
-  blame: `${REPO}/blame/aaaa/evil.js`, history: `${REPO}/commits/aaaa/evil.js`,
-}];
+// The one extension whose grammar is not built on core alone: prism-tsx needs
+// the jsx and typescript grammars under it, and without them the markup below
+// tokenizes as operators and bare text rather than tags and attributes.
+const TSX = 'const B = ({ n }: { n: number }) => <div className="b">{n}</div>;';
+const added = { 'evil.js': SOURCE, 'app.tsx': TSX };
+const files = Object.keys(added).map((p, i) => ({
+  path: p, additions: added[p].split('\n').length, deletions: 0, viewed: false,
+  url: `${REPO}/pull/12/files#diff-${i}`, blob: `${REPO}/blob/aaaa/${p}`,
+  blame: `${REPO}/blame/aaaa/${p}`, history: `${REPO}/commits/aaaa/${p}`,
+}));
 const pr = {
   number: 12, title: 'A fixture pull request', body: BODY, url: `${REPO}/pull/12`,
   state: 'OPEN', isDraft: false, headRefName: 'topic', baseRefName: 'main',
@@ -109,9 +114,13 @@ async function newPage() {
   await p.route('**/api/status', (r) => r.fulfill({ json: status }));
   await p.route('**/api/prs', (r) => r.fulfill({ json: [] }));
   await p.route('**/api/queue', (r) => r.fulfill({ json: [] }));
-  await p.route('**/api/diff', (r) => r.fulfill({ json: {
-    path: 'evil.js', patch: '@@ -0,0 +1,3 @@\n' + SOURCE.split('\n').map((l) => '+' + l).join('\n'),
-  } }));
+  await p.route('**/api/diff', (r) => {
+    const { path } = r.request().postDataJSON();
+    const lines = added[path].split('\n');
+    return r.fulfill({ json: {
+      path, patch: `@@ -0,0 +1,${lines.length} @@\n` + lines.map((l) => '+' + l).join('\n'),
+    } });
+  });
   await p.route('**/api/pr/task', (r) => {
     posted.push(r.request().postDataJSON());
     return r.fulfill({ json: { queue: null } });
@@ -230,5 +239,28 @@ test('a NEW file is highlighted after a failed Prism load', { skip }, async () =
   await fresh.waitForSelector('#diff-body .tok-string');
   assert.deepEqual(await fresh.$$eval('#diff-body .dl', (els) => els.map((el) => el.textContent)), SOURCE.split('\n'));
   assert.deepEqual(asked, ['', '?retry=1'], `prism.js was asked for as ${JSON.stringify(asked)}`);
+  await fresh.close();
+});
+
+// A grammar that extends others is the one case the loader cannot treat as one
+// file: prism-tsx registers nothing unless jsx and typescript are already in
+// Prism.languages, and a .tsx file would open with its markup coloured as
+// operators -- which is what `tsx: 'typescript'` used to do. Both halves are
+// asserted, because the file highlights either way and only the token names
+// say which grammar ran.
+test('a .tsx file loads the grammars tsx extends, in order, before tsx', { skip }, async () => {
+  const fresh = await newPage();
+  const asked = [];
+  fresh.on('request', (r) => {
+    const m = new URL(r.url()).pathname.match(/^\/vendor\/prism\/(.+)\.js$/);
+    if (m) asked.push(m[1]);
+  });
+  await fresh.locator('#pr-head .tab', { hasText: 'Files' }).click();
+  await fresh.locator('.file[data-path="app.tsx"] .path').click();
+  await fresh.waitForSelector('#diff-body .tok-tag');
+  assert.deepEqual(asked, ['jsx', 'typescript', 'tsx'], `asked for ${JSON.stringify(asked)}`);
+  assert.equal(await fresh.$eval('#diff-body .tok-tag', (el) => el.textContent), 'div');
+  assert.equal(await fresh.locator('#diff-body .tok-attr-name').count(), 1, 'className is an attribute');
+  assert.deepEqual(await fresh.$$eval('#diff-body .dl', (els) => els.map((el) => el.textContent)), [TSX]);
   await fresh.close();
 });
