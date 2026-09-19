@@ -55,9 +55,13 @@ plain-diff DIFF and the DELETED views are on a path it never takes. They were ch
 `CLAUDE_BIN=tools/claude-stub.mjs PRCODER_NO_OPEN=1 PRCODER_PORT=<free>` from that repo) and
 screenshotting `#diff` per file from a script in `data/`. Do that again for anything that changes
 what the pane draws; a run against this repo alone says nothing about the two states it lacks.
-The NEW view it does see is the highlighted one, so the driver's shots of a `.js` or `.md` file
-show the tokens; whether a markup-shaped file comes out as text in spans rather than as elements is
-`test/browser.test.js`, not the driver.
+The NEW view it does see is the highlighted one. The driver prints a `highlight:` line — how many
+token spans the open `.js` file drew and which `tok-` classes they carry — and a `plain:` line for
+`.gitignore`, whose extension has no grammar and which must therefore draw none; `diff.png` is the
+pane itself, and `dragged.png` holds it in context. The printed counts are the point: a regression
+to plain text is a screenshot that looks perfectly ordinary. Whether a markup-shaped file comes out
+as text in spans rather than as elements is `test/browser.test.js`, not the driver, and so is the
+`.tsx` grammar — no `.tsx` file has ever been committed here, so no real PR can exercise it.
 
 The hunk outline is out of reach for the same reason -- no hunks, so `#diff-outline` is empty and
 hides itself, and its gutter with it. Making that gutter draggable was checked on 2026-09-18 from a

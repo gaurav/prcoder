@@ -311,6 +311,19 @@ console.log('diff title:', await page.locator('#diff h1').innerText(), ' (want N
 console.log('outline:', await page.locator('#diff-outline').evaluate((n) => `${n.children.length} rows, ${getComputedStyle(n).display}`),
   ' (want 0 rows, none: a whole file has no hunks to list)');
 
+// The NEW view is the highlighted one, and the colours are the whole of what
+// says so -- a regression to plain text is a screenshot that looks ordinary.
+// So the classes are printed too: they are prcoder's own `tok-` names over
+// Prism's token tree, and the file open here is a .js one the PR adds.
+const tokens = () => page.evaluate(() => {
+  const spans = [...document.querySelectorAll('#diff-body .dl span')];
+  return { n: spans.length, names: [...new Set(spans.flatMap((s) => [...s.classList]))].sort().join(' ') };
+});
+const hi = await tokens();
+console.log('highlight:', `${hi.n} spans:`, hi.names || '(none)',
+  '\n           (want spans in tok- classes: comment, keyword, string at least)');
+await page.locator('#diff').screenshot({ path: path.join(out, 'diff.png') });
+
 // The diff pane's two ways out: the file itself at this PR's head, and the
 // patch in GitHub's diff viewer. Both hrefs are read rather than assumed
 // because the blob one is assembled from a sha the payload carries -- a missing
@@ -320,6 +333,23 @@ const diffLinks = await page.locator('#diff header a').evaluateAll(
 console.log('diff out:', diffLinks.join('\n          '),
   '\n           (want Diff at /pull/N/files#diff-<64-hex> first, then',
   'File/Blame/History at /blob|blame|commits/<40-hex>/<path>; no ↗ on any)');
+// The same path with `language` answering null: an extension with no grammar
+// is not a file that fails to highlight, it is one that is never handed to
+// Prism at all, and the two look identical until you count the spans.
+const plain = page.locator('.file[data-path=".gitignore"] .path');
+if (await plain.count()) {
+  await plain.click();
+  await page.waitForFunction(() => document.getElementById('diff-path').textContent === '.gitignore'
+    && document.querySelectorAll('#diff-body .dl').length > 0);
+  const none = await tokens();
+  console.log('plain:    ', `${none.n} spans`, none.names, ' (want 0 spans: .gitignore has no grammar)');
+  // Back to the highlighted file, which is what the screenshots below hold.
+  await page.locator('.file .path').first().click();
+  await page.waitForFunction(() => document.querySelectorAll('#diff-body .dl span').length > 0);
+} else {
+  console.log('plain:     no extensionless file in this PR to check');
+}
+
 await drag('#gut-pr', 520, 450);
 await drag('#gut-diff', 720, 300);
 await drag('#gut-queue', 720, 640);
