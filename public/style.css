@@ -411,6 +411,18 @@ a { color: var(--accent); }
 .dl.add { color: #9ae6b4; background: #1f4d2e33; }
 .dl.del { color: #f5a3a3; background: #4d1f2433; }
 .dl.hunk { color: var(--accent); margin-top: 4px; }
+/* Token colours for a highlighted NEW file (highlightLines in diff.js). The
+   classes are prcoder's own `tok-` names, not Prism's, so nothing else on the
+   page can pick them up; a token with no rule here reads in the body colour. */
+#diff-body .tok-comment, #diff-body .tok-prolog, #diff-body .tok-doctype, #diff-body .tok-cdata { color: var(--dim); font-style: italic; }
+#diff-body .tok-string, #diff-body .tok-char, #diff-body .tok-attr-value, #diff-body .tok-url { color: var(--add); }
+#diff-body .tok-keyword, #diff-body .tok-important, #diff-body .tok-atrule, #diff-body .tok-tag { color: #bb9af7; }
+#diff-body .tok-function, #diff-body .tok-class-name, #diff-body .tok-selector, #diff-body .tok-title { color: var(--accent); }
+#diff-body .tok-number, #diff-body .tok-boolean, #diff-body .tok-constant, #diff-body .tok-symbol { color: #ff9e64; }
+#diff-body .tok-property, #diff-body .tok-attr-name, #diff-body .tok-builtin, #diff-body .tok-variable { color: #7dcfff; }
+#diff-body .tok-operator, #diff-body .tok-punctuation { color: var(--dim); }
+#diff-body .tok-deleted { color: var(--del); } #diff-body .tok-inserted { color: var(--add); }
+#diff-body .tok-bold { font-weight: bold; } #diff-body .tok-italic { font-style: italic; }
 /* NEW / DELETED; written out because `.pane h1` outranks a bare `.add`. */
 .pane h1.add { color: var(--add); } .pane h1.del { color: var(--del); }
 .file.sel { background: var(--bg); border-radius: 4px; }

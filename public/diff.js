@@ -68,6 +68,66 @@ export function outline(rows) {
   return hunks.length > 1 ? hunks : [];
 }
 
+/**
+ * Pure: path -> Prism grammar name, or null for a file the pane shows plain.
+ * By extension only, never by content: auto-detection runs every grammar over a
+ * stranger's file, and this map is also the list of what the vendor map in
+ * server.js serves -- core carries markup, css, clike and javascript, and each
+ * of the others is one file under /vendor/prism/.
+ */
+const LANG = {
+  js: 'javascript', mjs: 'javascript', cjs: 'javascript', jsx: 'jsx', ts: 'typescript', tsx: 'typescript',
+  json: 'json', yml: 'yaml', yaml: 'yaml', py: 'python', sh: 'bash', bash: 'bash', zsh: 'bash',
+  md: 'markdown', html: 'markup', htm: 'markup', xml: 'markup', svg: 'markup', css: 'css',
+  diff: 'diff', patch: 'diff', toml: 'toml',
+};
+export const language = (path) => LANG[path.slice(path.lastIndexOf('.') + 1).toLowerCase()] ?? null;
+
+/**
+ * Pure: source text -> one array of {cls, text} segments per line, from Prism's
+ * token tree rather than its HTML. The segments become <span>s through h(), so
+ * the file's text is never parsed as markup -- docs/Security.md. A token that
+ * spans lines (a block comment) is split at each newline and keeps its class
+ * on every piece; a nested token takes the innermost class. Every line's text
+ * joins back to the input exactly, which test/diff.test.js pins.
+ *
+ * `tokenize` is passed in so the test can hand over the real Prism from Node.
+ */
+export function highlightLines(text, grammar, tokenize) {
+  const lines = [[]];
+  const walk = (tok, cls) => {
+    if (typeof tok !== 'string') {
+      cls = ['tok-' + tok.type, ...[].concat(tok.alias ?? []).map((a) => 'tok-' + a)].join(' ');
+      return [].concat(tok.content).forEach((t) => walk(t, cls));
+    }
+    tok.split('\n').forEach((part, i) => {
+      if (i) lines.push([]);
+      if (part) lines.at(-1).push({ cls, text: part });
+    });
+  };
+  tokenize(text, grammar).forEach((t) => walk(t, ''));
+  return lines;
+}
+
+// Prism is a classic script that installs window.Prism, loaded here only when a
+// NEW file with a known language opens. `manual` is read off whatever is at
+// window.Prism first, so setting it before the import is what stops it from
+// walking the page for <code> to highlight. A failed load is forgotten so the
+// next open tries again rather than staying plain until a reload.
+const loaded = {};
+async function grammar(lang) {
+  if (!loaded.core) {
+    globalThis.Prism = { manual: true };
+    loaded.core = import('/vendor/prism.js').catch((e) => { loaded.core = null; throw e; });
+  }
+  await loaded.core;
+  if (!globalThis.Prism.languages[lang]) {
+    loaded[lang] ??= import(`/vendor/prism/${lang}.js`).catch((e) => { loaded[lang] = null; throw e; });
+    await loaded[lang];
+  }
+  return globalThis.Prism.languages[lang];
+}
+
 const el = (id) => document.getElementById(id);
 
 /** Ticking this here ticks the same checkbox on github.com; the file rows use it too. */
@@ -146,8 +206,29 @@ export async function openDiff(f) {
       ext(f.url, 'view it on GitHub')));
     return;
   }
-  setTitle(patch == null ? null : diffKind(patch));
-  const rows = diffRows(patch, from).map(({ cls, text }) => h('div', { className: `dl ${cls}` }, text));
+  const kind = patch == null ? null : diffKind(patch);
+  setTitle(kind);
+  // Only a whole added file is highlighted: it is the one body a tokenizer sees
+  // from its first line. A modified file's hunks start mid-file and would
+  // colour wrongly from inside a comment or string -- #68 has the safe way.
+  // Anything that goes wrong here paints the file plain, as before.
+  const lang = kind === 'add' && language(f.path);
+  let lines = null;
+  if (lang) {
+    try {
+      const src = diffRows(patch).filter((r) => r.cls === 'ctx').map((r) => r.text).join('\n');
+      lines = highlightLines(src, await grammar(lang), globalThis.Prism.tokenize);
+    } catch (e) {
+      console.error('highlight', e);
+    }
+    if (openPath !== f.path) return;
+  }
+  let at = 0;
+  const seg = ({ cls, text }) => (cls ? h('span', { className: cls }, text) : text);
+  const rows = diffRows(patch, from).map(({ cls, text }) => {
+    const segs = lines && cls === 'ctx' ? lines[at++] : null;
+    return h('div', { className: `dl ${cls}` }, ...(segs?.length ? segs.map(seg) : [text]));
+  });
   body.replaceChildren(...rows);
   el('diff-outline').replaceChildren(...outline(diffRows(patch, from)).map(({ at, text }) =>
     btn(text, () => rows[at].scrollIntoView({ block: 'start' }), { title: text })));

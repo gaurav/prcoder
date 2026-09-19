@@ -72,15 +72,24 @@ const BODY = [
 ].join('\n');
 
 const REPO = 'https://github.com/example/repo';
+// One added file, with markup in it: the diff pane highlights a NEW file from
+// Prism's tokens, and this is the source that shows if any of it is ever built
+// as HTML rather than text.
+const SOURCE = 'const s = "<script>alert(1)</script>"; // <img src=x onerror=alert(2)>\n\nf(1)';
+const files = [{
+  path: 'evil.js', additions: 3, deletions: 0, viewed: false,
+  url: `${REPO}/pull/12/files#diff-0`, blob: `${REPO}/blob/aaaa/evil.js`,
+  blame: `${REPO}/blame/aaaa/evil.js`, history: `${REPO}/commits/aaaa/evil.js`,
+}];
 const pr = {
   number: 12, title: 'A fixture pull request', body: BODY, url: `${REPO}/pull/12`,
   state: 'OPEN', isDraft: false, headRefName: 'topic', baseRefName: 'main',
-  additions: 1, deletions: 0, changedFiles: 0, files: [],
+  additions: 1, deletions: 0, changedFiles: 1, files,
   headRefOid: 'a'.repeat(40), updatedAt: '2026-09-19T00:00:00Z', isCrossRepository: false,
   reviewDecision: '', nodeId: 'PR_fixture',
   checks: rollup([]), counts: { comments: 0, reviews: 0 },
   issues: [{ number: 7, url: `${REPO}/issues/7`, closes: false, title: 'Per-route locking' }],
-  groups: groupFiles([]),
+  groups: groupFiles(files),
 };
 const status = {
   branch: 'topic', head: 'b'.repeat(40), detached: false, dirtyFiles: [], sync: 'synced', ahead: 0,
@@ -101,6 +110,9 @@ before(async () => {
   await page.route('**/api/status', (r) => r.fulfill({ json: status }));
   await page.route('**/api/prs', (r) => r.fulfill({ json: [] }));
   await page.route('**/api/queue', (r) => r.fulfill({ json: [] }));
+  await page.route('**/api/diff', (r) => r.fulfill({ json: {
+    path: 'evil.js', patch: '@@ -0,0 +1,2 @@\n' + SOURCE.split('\n').map((l) => '+' + l).join('\n'),
+  } }));
   await page.route('**/api/pr/task', (r) => {
     posted.push(r.request().postDataJSON());
     return r.fulfill({ json: { queue: null } });
@@ -163,4 +175,22 @@ test('the issues the description mentions are listed below it, titled', { skip }
 test('the tab carries the task count', { skip }, async () => {
   const tabs = await page.locator('#pr-head .tab').allTextContents();
   assert.ok(tabs.includes('Detail (1/3)'), JSON.stringify(tabs));
+});
+
+// The tokenizer runs in the page over whatever a pull request adds, so the file
+// is markup-shaped on purpose: it has to come out as the same characters in
+// coloured spans, never as elements. A switch to innerHTML, Prism's HTML
+// output or a theme's markup would fail here.
+test('a NEW file is highlighted as text, and its markup never becomes elements', { skip }, async () => {
+  await page.locator('#pr-head .tab', { hasText: 'Files' }).click();
+  await page.locator('.file[data-path="evil.js"] .path').click();
+  await page.waitForSelector('#diff-body .tok-string');
+  assert.equal(await page.$eval('#diff h1', (el) => el.textContent), 'New');
+  assert.deepEqual(await page.$$eval('#diff-body .dl', (els) => els.map((el) => el.textContent)), SOURCE.split('\n'));
+  assert.equal(await page.locator('#diff-body script, #diff-body img').count(), 0);
+  assert.ok(await page.locator('#diff-body .tok-comment').count(), 'the comment is a token');
+  // The blank line is a row with nothing in it, which used to lay out at 0px.
+  const heights = await page.$$eval('#diff-body .dl', (els) => els.map((el) => el.getBoundingClientRect().height));
+  assert.equal(heights.length, 3);
+  assert.ok(heights[1] > 0 && heights[1] === heights[0], `row heights ${heights}`);
 });
