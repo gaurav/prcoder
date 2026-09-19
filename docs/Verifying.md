@@ -53,6 +53,9 @@ plain-diff DIFF and the DELETED views are on a path it never takes. They were ch
 `CLAUDE_BIN=tools/claude-stub.mjs PRCODER_NO_OPEN=1 PRCODER_PORT=<free>` from that repo) and
 screenshotting `#diff` per file from a script in `data/`. Do that again for anything that changes
 what the pane draws; a run against this repo alone says nothing about the two states it lacks.
+The NEW view it does see is the highlighted one, so the driver's shots of a `.js` or `.md` file
+show the tokens; whether a markup-shaped file comes out as text in spans rather than as elements is
+`test/browser.test.js`, not the driver.
 
 The hunk outline is out of reach for the same reason -- no hunks, so `#diff-outline` is empty and
 hides itself, and its gutter with it. Making that gutter draggable was checked on 2026-09-18 from a
