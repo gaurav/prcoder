@@ -12,13 +12,14 @@ import { text as readBody } from 'node:stream/consumers';
 import { spawn as ptySpawn } from 'node-pty';
 import { WebSocketServer } from 'ws';
 import { loadPr, prHeads, prBody, listPrs, listIssues, setViewed, setBody, createIssue, fetchPatches, runCount } from './github.js';
-import { snapshot, currentBranch, repoInfo, prScope, compareUrl, checkoutPr, pushBranch, remoteBranchHead } from './git.js';
+import { snapshot, currentBranch, repoInfo, prScope, compareUrl, checkoutPr, pushBranch, remoteBranchHead, trackingHead } from './git.js';
 import { groupFiles, fileUrl, fileViews } from './files.js';
 import { appendTasks, toggleTask } from './queue.js';
 import { readStore, writeStore, readPort, writePort, replaceItems } from './store.js';
 import { counts } from './public/items.js';
 import * as term from './term.js';
 import { syncPhrase } from './public/pr.js';
+import { grammars } from './public/diff.js';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const repo = process.cwd();
@@ -311,8 +312,12 @@ async function status({ full = false } = {}) {
     await refreshPr(detached);
   }
 
-  // With no PR there is no headRefOid to compare against, so ask origin.
-  const oid = pr?.headRefOid ?? heads?.headRefOid ?? await remoteBranchHead(repo, branch);
+  // With no PR there is no headRefOid to compare against, so read git's own
+  // record of origin's head -- not origin: that was a `git ls-remote` a minute
+  // per visible tab, on the one branch state where nothing has changed until
+  // you push (#19). The create route is the one place that still asks origin,
+  // because it pushes on the answer.
+  const oid = pr?.headRefOid ?? heads?.headRefOid ?? await trackingHead(repo, branch);
   const snap = await snapshot(repo, oid, branch);
   const scope = prScope(pr, { branch: snap.branch, nameWithOwner: info.nameWithOwner });
   const tracked = scope === 'current' || scope === 'none';
@@ -414,7 +419,7 @@ const routes = {
     const cur = requirePr();
     const key = cur.url + cur.headRefOid;
     if (patches.key !== key) patches = { key, map: await fetchPatches(repo, cur.url) };
-    return { path: p, patch: patches.map.get(p) ?? null };
+    return { path: p, ...(patches.map.get(p) ?? { patch: null }) };
   },
 
   'GET /api/queue': () => readQueue(),
@@ -514,14 +519,33 @@ const vendor = {
   '/vendor/xterm.css': '@xterm/xterm/css/xterm.css',
   '/vendor/addon-fit.mjs': '@xterm/addon-fit/lib/addon-fit.mjs',
   '/vendor/addon-web-links.mjs': '@xterm/addon-web-links/lib/addon-web-links.mjs',
+  // Prism core ships markup, css, clike and javascript, and the page asks for
+  // one file per grammar on top of it. *Which* grammars is the page's own
+  // business -- `grammars` in public/diff.js is its extension map plus what
+  // those grammars are built on (tsx extends jsx and typescript) -- so a new
+  // language is added there alone and served here without being named twice.
+  // The paths stay literal, because they are a fact about node_modules.
+  '/vendor/prism.js': 'prismjs/prism.js',
+  ...Object.fromEntries(grammars
+    .map((l) => [`/vendor/prism/${l}.js`, `prismjs/components/prism-${l}.min.js`])),
 };
+
+// A second line of defence for the page that holds the PTY. A hole in the
+// description renderer loads no script, and no other page can frame prcoder and
+// turn a click on its own content into a click on ▶. style-src stays loose
+// because xterm injects its own <style>; img-src is left unset so the data:
+// favicon still loads. docs/Security.md argues the frame; #49 is the rest.
+const csp = "script-src 'self'; style-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'";
 
 const mime = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css' };
 
 async function serveFile(res, file) {
   try {
     const body = await fs.readFile(file);
-    res.writeHead(200, { 'content-type': mime[path.extname(file)] ?? 'application/octet-stream' });
+    res.writeHead(200, {
+      'content-type': mime[path.extname(file)] ?? 'application/octet-stream',
+      'content-security-policy': csp,
+    });
     res.end(body);
   } catch {
     res.writeHead(404).end('not found');

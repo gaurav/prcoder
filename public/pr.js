@@ -193,8 +193,20 @@ function headerSync(status) {
   return null;
 }
 
-/** The pane with no PR to show: why, and the one thing worth doing about it. */
-export function renderNoPr(status, { onCreate }) {
+/**
+ * The open pull requests that merge *into* this branch.
+ *
+ * Filtered from the list the switcher already fetches rather than asked for:
+ * `gh pr list` carries `baseRefName` for free, where a `--base` query of its own
+ * would be another call in the one state that already makes an extra one (#19).
+ * A detached HEAD is no branch to merge into, not every pull request.
+ */
+export const prsInto = (prs, branch) =>
+  (branch ? prs.filter((p) => p.baseRefName === branch) : []);
+
+/** The pane with no PR to show: why, what merges into here, and the one thing
+ *  worth doing about it. */
+export function renderNoPr(status, prs, { onCreate, onSwitch }) {
   const host = document.getElementById('pr-body');
   // The head is a whole pull request's worth of identity -- title, badges,
   // tabs -- and nothing else clears it, so without this the last PR's heading
@@ -223,12 +235,37 @@ export function renderNoPr(status, { onCreate }) {
 
   host.replaceChildren(...kids([
     h('p', { className: 'empty' }, why),
+    intoRow(status, prs, onSwitch),
     out.length ? linkRow(out, 'meta') : null,
     status.sync === 'unpushed' && can
       ? h('p', { className: 'pr-note' }, 'This branch is not on GitHub yet; it will be pushed first.')
       : null,
     create,
   ]));
+}
+
+/**
+ * The pull requests into this branch, each a row that checks it out.
+ *
+ * This is the branch-only pane's reason to exist: on `main` there is nothing to
+ * create and nothing to read, and what you actually want to know is which pull
+ * requests land here. A row goes through the same `gh pr checkout` the switcher
+ * above does, and is named the way the switcher names one.
+ *
+ * Dimmed rather than dropped on a dirty tree, where that checkout would fail --
+ * the header has already swapped the switcher for a Commit button, and which
+ * pull requests target this branch is still worth reading while you cannot move
+ * to one.
+ */
+function intoRow(status, prs, onSwitch) {
+  const into = prsInto(prs, status.branch);
+  if (!into.length) return null;
+  const blocked = status.dirtyFiles.length > 0;
+  return h('div', { className: 'pr-into' },
+    h('span', { className: 'pr-into-label' }, `Pull requests into ${status.branch}`),
+    ...into.map((p) => btn(`#${p.number} ${p.isDraft ? '(draft) ' : ''}${p.title}`,
+      () => onSwitch(p.number),
+      { disabled: blocked, title: blocked ? 'Commit or stash your changes first' : '' })));
 }
 
 /**
@@ -293,13 +330,13 @@ const repoName = (repoUrl) => repoUrl.replace(/^https?:\/\/[^/]+\//, '');
  * calls and two hard-coded github.com URLs all assume it (#53) -- so this is
  * the part not to undo, not proof that the whole works.
  *
- * The arrow is on the first link only. That is the one that means "what you are
- * looking at, on GitHub"; the rest read as a menu, and five arrows in a row
- * read as decoration.
+ * No ↗ on any of them. Every link out of prcoder opens a new tab, so marking
+ * one (it used to be the first of each row) only raised the question of what
+ * the unmarked ones did.
  */
 export const headLinks = (pr) => {
   const { repo } = linkBase(pr);
-  return [{ text: `PR #${pr.number} ↗`, href: pr.url }, ...repoLinks(repo)];
+  return [{ text: `PR #${pr.number}`, href: pr.url }, ...repoLinks(repo)];
 };
 
 /** The repository and the three lists: the tail of the head's row, and the
@@ -316,16 +353,9 @@ const repoLinks = (repo) => [
  * URL to read one off -- `nameWithOwner` is all `gh repo view` was asked for.
  * That makes this the third of the github.com assumptions #53 is about, not a
  * new kind of one; the head's is still the part not to undo.
- *
- * The arrow lands on the repository for the same reason it lands on the PR
- * above: it is the "what you are looking at, on GitHub" link, and here that is
- * the repository itself.
  */
-export const noPrLinks = ({ nameWithOwner }) => {
-  if (!nameWithOwner) return [];
-  const [self, ...rest] = repoLinks(`https://github.com/${nameWithOwner}`);
-  return [{ ...self, text: `${self.text} ↗` }, ...rest];
-};
+export const noPrLinks = ({ nameWithOwner }) =>
+  nameWithOwner ? repoLinks(`https://github.com/${nameWithOwner}`) : [];
 
 /**
  * One row of links, dot-separated.
@@ -434,11 +464,11 @@ function renderPrTab(pr, handlers) {
   host.replaceChildren(...kids(tab === 'files' ? [
     ...GROUPS.map(([key, label]) => fileGroup(label, pr.groups[key], handlers)),
     h('div', { className: 'meta' },
-      ext(`${pr.url}#issuecomment`, `${pr.counts.comments} comments · ${pr.counts.reviews} reviews ↗`)),
+      ext(`${pr.url}#issuecomment`, `${pr.counts.comments} comments · ${pr.counts.reviews} reviews`)),
   ] : [
-    issueRow(pr.issues, true, 'Closes:'),
     h('div', { className: 'body md' }, ...description(pr.body, handlers.onTask)),
-    issueRow(pr.issues, false, 'Mentions:'),
+    issueRow(pr.issues, true, 'Closes'),
+    issueRow(pr.issues, false, 'Mentions'),
   ]));
 
   // Assigning forces layout, so this lands against the new content rather than
@@ -461,23 +491,37 @@ function checks({ passed, failed, pending }) {
 }
 
 /**
- * One row of issue chips. The row label says which kind, so the chips stay bare
- * numbers.
+ * One list of issues, labelled with what this pull request does about them.
  *
- * The two kinds mean different things and are placed differently because of it.
- * `Closes:` is a handful of issues this pull request answers, and it belongs
- * above the description as part of what the pull request *is*. `Mentions:` is
- * every bare `#N` linkedIssues() could find in the body, which on a description
- * that discusses its own backlog is dozens -- six rows of chips between the
- * title and the first sentence, which is the burial this pane is being fixed
- * for. It goes underneath.
+ * Both lists sit below the description, `Closes:` first. The closing ones were
+ * above it, from before a description reliably said which issues it closed:
+ * they are now named in the abstract's own prose -- and inline() links every
+ * `#N` in it -- so a row of the same numbers a line above that sentence was
+ * saying it twice, in the one place the pane is trying to keep clear.
+ *
+ * A line per issue, titled, rather than a wrapped row of bare-number chips:
+ * `#41` says nothing about what it is, and a description that discusses its own
+ * backlog carries a dozen of them. The title is what makes the list readable,
+ * and it is also what makes a chip the wrong shape -- a pill does not hold a
+ * sentence. A number with no title left is still a link.
+ *
+ * The number and the title are separate spans inside the one link so the
+ * stylesheet can treat them apart: thirteen rows that were one colour and one
+ * weight end to end gave the eye nowhere to land, and a wrapped title came back
+ * to the margin under the `#` and read as a fourteenth. The row is still the
+ * whole link -- the split is for the grid and the colour, not the click. The
+ * space between them is what keeps `textContent` reading `#27 Make the …`, which
+ * is how tools/browser.mjs finds a row; the grid never renders it.
  */
 function issueRow(list, closes, label) {
   const kind = list.filter((i) => i.closes === closes);
   if (!kind.length) return null;
   return h('div', { className: 'issues' },
     h('span', { className: 'issues-label' }, label),
-    ...kind.map((i) => ext(i.url, `#${i.number}`, { title: i.title ?? '' })));
+    ...kind.map((i) => ext(i.url, [
+      h('span', { className: 'num' }, `#${i.number}`),
+      ...(i.title ? [' ', h('span', { className: 'ttl' }, i.title)] : []),
+    ])));
 }
 
 /**
@@ -575,6 +619,18 @@ function dirGroup(group, dir, files, handlers) {
 }
 
 /**
+ * The +/− counts for one file, as [class, text] pairs. A side that changed
+ * nothing is left out rather than shown as a zero: `+101` reads as an addition
+ * at a glance where `+101 −0` does not. A file with neither (a rename, a mode
+ * change) gets no counts at all. The header's totals above keep both sides on
+ * purpose -- `+400 −0` there says the shape of the whole PR at a glance.
+ */
+export const nums = ({ additions, deletions }) => [
+  additions ? ['add', `+${additions}`] : null,
+  deletions ? ['del', `−${deletions}`] : null,
+].filter(Boolean);
+
+/**
  * A <details> fold with a heading and an optional count, the shape both the file
  * groups and the description's sections take. `onToggle` fires for a click and
  * for the initial `open`, so it has to be idempotent.
@@ -618,8 +674,7 @@ function fileRow(f, { onViewed, onOpen, selected }, dir = '') {
     box,
     link,
     h('span', { className: 'nums' },
-      h('span', { className: 'add' }, `+${f.additions}`), ' ',
-      h('span', { className: 'del' }, `−${f.deletions}`)),
+      ...nums(f).map(([cls, text], i) => [i ? ' ' : null, h('span', { className: cls }, text)])),
   );
   return row;
 }

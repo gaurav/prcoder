@@ -4,7 +4,10 @@ A local server + browser UI wrapping a real `claude` PTY. See README.md for what
 it does and how to run it, `docs/Design.md` for why it works the way it does --
 the guards, the non-goals -- `docs/Security.md` for what the server is exposed to
 and the checks new work has to keep, and `docs/Verifying.md` for what this repo
-checks and how. Keep those three true when you change what they describe.
+checks and how. `.claude/skills/run-prcoder/SKILL.md` is the short form of the
+last two for an agent about to run the thing: how to launch, what to stub, what
+not to write. Keep all of them true when you change what they describe -- the
+skill drifts first, because nothing else links to it.
 
 **The queue is yours, and moves out one way.** It no longer mirrors into the PR
 description; "The queue is yours" in `docs/Design.md` says what replaced that and
@@ -15,7 +18,10 @@ what is still to come. Don't bring a sync back without reading it.
 `data/` is gitignored and is where anything temporary belongs -- driver
 screenshots, snapshots of a PR body taken before a write, intermediate output.
 Not `/tmp`: reads outside this working directory are blocked, so a screenshot
-written to `/tmp` is one nobody in this session can look at.
+written to `/tmp` is one nobody in this session can look at. A one-off
+Playwright script has to live here too -- `import 'playwright'` resolves from
+this repo's `node_modules`, and from a scratch directory it is `Cannot find
+package 'playwright'`.
 
 ## Two traps
 
@@ -30,12 +36,25 @@ non-executable. It is Node rather than the `chmod ... || true` it used to be
 because cmd.exe has neither command, so the shell version failed `npm install`
 outright on Windows.
 
-**Run tests with bare `node --test`, not `node --test test/`.** On Node 26 a
-directory argument is resolved as a module and dies with `Cannot find module`.
-Bare discovery treats *everything* under `test/` as a test file, which is why
+**`npm test` is `node --test "test/**/*.test.js"`, and the quotes are
+load-bearing.** Not `node --test test/`: on Node 26 a directory argument is
+resolved as a module and dies with `Cannot find module`. Not bare `node --test`
+either, which walks the *whole* working directory — so a scratch checkout under
+`data/` became a second copy of the suite, 386 tests and one failure on the
+vendored-xterm path check because the clone had no `node_modules` (2026-09-18).
+Node 26 has no `--test-exclude-glob` to say it the other way round; the flag is
+gone, and `node --help` lists no replacement.
+
+The glob has to reach node unexpanded. `sh` has no `**`, so unquoted it collapses
+to whatever one directory it matches — that run reported 1 test and passed. The
+quotes are double for the same reason the postinstall script is Node: single
+quotes are not quotes to cmd.exe.
+
+Discovery still treats *everything* under `test/` as a test file, which is why
 the drivers live in `tools/` — `browser.mjs` for the UI, `cli.mjs` for the
-terminal. Either one under `test/` would run on every `npm test`, spawn a
-server and drive a browser or a PTY.
+terminal, `no-pr.mjs` for the pane the first one cannot reach. Any of them under
+`test/` would run on every `npm test`, spawn a server and drive a browser or a
+PTY.
 
 `node:test` is a preference, not a constraint. If it ever gets in the way —
 maintainability, a matcher you keep hand-rolling, watch mode, anything — the
@@ -45,12 +64,21 @@ built-in runner.
 
 ## Subprocess errors lie by omission
 
-Two failures this repo depends on are invisible rather than loud, so check the
-real behaviour before trusting either.
+Three failures this repo depends on are invisible rather than loud, so check
+the real behaviour before trusting any of them.
 
 `execFile` hands stderr to its callback and never puts it on the error object.
 `run` in `github.js` attaches it, and every `no pull requests found`-style guard
 reads it — without that they match against `undefined` and silently never fire.
+
+A non-zero exit does not mean there is nothing on stdout, either. `gh api
+graphql` exits 1 whenever the response carries an `errors` array — and prints
+that whole response anyway, data included. Ask one query for ten issue titles
+where one of the numbers does not exist and you get nine titles beside a single
+NOT_FOUND, over exit 1. `run` attaches `err.stdout` for exactly that, and
+`issueLinks` in `github.js` reads its data off the failure; a catch that
+returned nothing there would lose nine answers to one bad number. Checked
+against the real API on 2026-09-18.
 
 git's exit codes are per-command, and a non-zero one is often an answer rather
 than a failure. `rev-parse --verify --quiet` exits 1 for a missing object where
@@ -85,11 +113,15 @@ When a prcoder is already running on this repo, none of that is the way in: it
 rewrites the block from its store on the next poll and your edit is gone. Talk
 to the server instead -- `GET /api/queue` for the items, `PUT /api/queue` with
 `{items}` to write them -- and it updates the store and the description together.
-Adding an item that way is clean. Changing an existing item's text is not: the
-old text is what the block's line still says, so the write tombstones that item
-and adds a new one, and the store ends up holding both. Same rule as above --
-text is identity -- and the tombstone is by design, but a checkbox you edited
-twice is two rows in `queue.json` and one line in the PR.
+Adding an item that way is clean, and so is taking one back out: flip `inPr` to
+false with the text untouched and the line goes, the item stays in the queue as
+a finished one, and `renderPrBlock` removes the markers and the `## TODO`
+heading with the last item rather than leaving an empty block (done 2026-09-18).
+Changing an existing item's text is not: the old text is what the block's line
+still says, so the write tombstones that item and adds a new one, and the store
+ends up holding both. Same rule as above -- text is identity -- and the
+tombstone is by design, but a checkbox you edited twice is two rows in
+`queue.json` and one line in the PR.
 
 ## The Claude pane is not prcoder's to draw on
 
@@ -122,6 +154,11 @@ goes to the drag machinery rather than to the caret, so clicking into a
 `contentEditable` child lands at offset 0 instead of where you clicked. Chromium
 places the caret correctly with the same markup, so there was nothing to see.
 
+Still live: checked by hand on 2026-09-17 in a real Firefox on this machine,
+with `tools/firefox-runner/caret-repro.html`. The plain draggable row put the
+caret at 0 and the row with a grip did not, so the grip stays and everything
+below about it still describes the browser you have.
+
 prcoder is used in Firefox, so `tools/browser.mjs` now defaults to it and falls
 back to Chromium only when it is not installed; `PRCODER_BROWSER=chromium|firefox`
 forces one. That is Playwright's own patched Firefox, not the one in
@@ -135,9 +172,11 @@ here that only one engine can tell you about.
 
 Installed is not the same as working, and the check cannot tell them apart.
 Firefox has not started at all on this machine since 2026-09-16 --
-`existsSync(firefox.executablePath())` is true throughout, so the Chromium
-fallback never fires and a default run burns three minutes before it dies.
-`PRCODER_BROWSER=chromium` is the way past it. `tools/firefox-runner/` is the
+`existsSync(firefox.executablePath())` is true throughout, so that check never
+catches it; what does is the driver's 45-second launch timeout, after which it
+falls back to Chromium and prints an `engine:` line saying so. A default run
+therefore costs 45 seconds of nothing before the screenshots start, and
+`PRCODER_BROWSER=chromium` skips the wait. `tools/firefox-runner/` is the
 whole story: what fails, the six hypotheses already eliminated (reinstalling and
 changing the Firefox version are two of them), and the one command that
 re-checks it after a macOS or Firefox update. #61 is where the owed Firefox pass
@@ -201,11 +240,28 @@ every send returns false, and the page silently stops talking to the PTY --
 no error, no closed socket. Three runs of a driver investigating an
 always-busy tab icon came back green because the instrumentation had switched
 off the traffic causing it. Copy `CONNECTING`/`OPEN`/`CLOSING`/`CLOSED` onto
-the wrapper, or listen without wrapping.
+the wrapper, or listen without wrapping. To keep the page from opening a PTY at
+all, `page.routeWebSocket('**/pty', () => {})` mocks the socket without touching
+the constructor -- `test/browser.test.js` runs the whole page that way.
 
 Same shape in reverse: a `MutationObserver` in `addInitScript` has no
 `document.head` to observe yet, and the throw takes the rest of the init script
 with it. Install observers after `goto`.
+
+## Two files under `public/` are the server's as well
+
+`server.js` imports `syncPhrase` from `public/pr.js` for the status block, and
+`grammars` from `public/diff.js` to build the Prism half of the vendor map -- so
+which grammars exist is stated once, by the page that asks for them.
+
+Both modules therefore have to load in Node, and what keeps them loading is:
+nothing that touches the DOM at module scope. A `document.querySelector` beside
+the imports is ordinary in a browser file and stops the *server* from starting,
+with a stack trace naming a file under `public/` and nothing about why the
+server was reading it. Inside a function is where it goes -- `el()` in `diff.js`
+is the shape. A syntax error in either one now has that same reach, which is
+what `node --check public/*.js` is for; `test/api.test.js` imports both by
+importing the server.
 
 ## Verifying against GitHub
 

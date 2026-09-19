@@ -34,11 +34,18 @@ one -- pushing the branch first if GitHub has not seen it. It still carries the
 way out of the window that the pull request head does: the repository and its
 issues, pulls and milestones.
 
+It also lists the open pull requests that merge *into* the branch you are on,
+which on `main` is the question that branch is interesting for. Clicking one
+checks it out, the same way the switcher does; uncommitted work dims the rows
+for the same reason it hides the switcher.
+
 Next to it, a light for the one thing prcoder cannot fix for you: whether the
 branch and the remote agree. It reads `unpushed`, `N unpushed`, `pull needed`
 or `diverged`, and it needs no `git fetch` -- GitHub's view of the branch head
-comes back with the pull request metadata. That does mean it is only as fresh
-as the last poll.
+comes back with the pull request metadata. On a branch with no pull request it
+is git's own record of origin's head from the last push or fetch, the one
+`git status` reads, so a push from another machine shows only after a fetch.
+Either way it is only as fresh as the last poll.
 
 ## Arguments
 
@@ -92,7 +99,10 @@ The prose is set in serif at a reading size and capped to a comfortable line
 length, because it is the one thing in the window that is read rather than
 operated. Checklists in it are real checkboxes and write straight back to the
 description -- ticking one inside prcoder's own TODO block ticks the queue item
-it came from.
+it came from. It ends with the issues the description points at, each one a
+line carrying its title: the ones this pull request closes, then the ones it
+only mentions. A bare `#41` in the prose is a link but says nothing about what
+it is, and the titles are the whole point of the list.
 
 *Files* is every changed file grouped as *Tests* / *Code* / *Config & docs*,
 tests first, because tests are the fastest way to see what functionality
@@ -114,14 +124,23 @@ from you while you are in the other.
 select → read → tick viewed → ask Claude never leaves the window. It shows the
 same hunks GitHub does (fetched once per push and cached), refreshes itself when
 the branch head moves, and links out to GitHub for anything the plain rendering
-can't do — syntax highlighting, comments, binary and oversized files. Four links,
-because they answer different questions. *Diff* is this file's patch in GitHub's
-viewer. The other three are the whole file as this pull request leaves it:
-*File ↗* for what it became — the untouched parts a hunk doesn't show, and a
-Markdown file rendered rather than as source — *Blame* for who last touched the
-lines around a hunk, and *History* for what else has landed in it. Those three
-are pinned to the head commit, so they go on saying what you were looking at
-after the next push.
+can't do — comments, binary and oversized files, highlighting of a changed file. A
+file the pull request adds or deletes is shown as its own text under a green **NEW**
+or red **DELETED** title rather than as a wall of `+` or `-`: a patch that is all one
+sign has nothing to contrast. A **NEW** file is syntax-highlighted when its
+extension names a language prcoder ships a grammar for; it is the one view where
+a tokenizer sees a whole file rather than a hunk that starts in the middle of one. A renamed file says where it came from on its
+first line, and a rename with no other change says only that. A diff with more
+than one hunk gets an outline down its right edge -- one row per hunk, named by
+the context git puts after the `@@` (the enclosing function, a heading) -- and a
+click scrolls the body to it. Four links, because they answer different
+questions. *Diff* comes first because it is what the pane itself shows: this
+file's patch in GitHub's viewer. The other three are the whole file as this pull
+request leaves it: *File* for what it became — the untouched parts a hunk
+doesn't show, and a Markdown file rendered rather than as source — *Blame* for
+who last touched the lines around a hunk, and *History* for what else has landed
+in it. Those three are pinned to the head commit, so they go on saying what you
+were looking at after the next push.
 
 **Claude Code** — the real `claude` binary in a PTY, so Escape still interrupts,
 slash commands still work, permission prompts still appear, and typing while
@@ -305,7 +324,7 @@ management listed below, deliberately not built yet.
 
 ## Not here
 
-Syntax-highlighted diffs, review threads, multi-session management. [docs/Design.md](docs/Design.md) has the full list and the reasoning behind
+Syntax-highlighted diffs of modified files, review threads, multi-session management. [docs/Design.md](docs/Design.md) has the full list and the reasoning behind
 it, along with why prcoder exists at all; [docs/Security.md](docs/Security.md) has what a
 localhost server is exposed to.
 

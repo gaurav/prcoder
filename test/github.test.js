@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { rollup, linkedIssues, parsePrUrl, run, issueNumber, lf } from '../github.js';
+import { rollup, linkedIssues, linksFrom, parsePrUrl, run, issueNumber, lf } from '../github.js';
 import { taskLines } from '../public/tasks.js';
 
 test('check states collapse into passed, failed and pending', () => {
@@ -20,13 +20,16 @@ const pr = (body, closing = []) => ({
   url: 'https://github.com/o/r/pull/7', body, closingIssuesReferences: closing,
 });
 
+// No title anywhere in here: `gh pr view --json closingIssuesReferences` returns
+// id, number, repository and url and nothing else, so the titles are a separate
+// call (issueLinks) and linkedIssues stays about which numbers and which kind.
 test('closing references are marked and sorted alongside body mentions', () => {
   assert.deepEqual(
     linkedIssues(pr('Fixes the thing, see #12 and #3.',
-      [{ number: 9, title: 'Bug', url: 'https://github.com/o/r/issues/9' }])),
+      [{ number: 9, url: 'https://github.com/o/r/issues/9' }])),
     [
       { number: 3, url: 'https://github.com/o/r/issues/3', closes: false },
-      { number: 9, title: 'Bug', url: 'https://github.com/o/r/issues/9', closes: true },
+      { number: 9, url: 'https://github.com/o/r/issues/9', closes: true },
       { number: 12, url: 'https://github.com/o/r/issues/12', closes: false },
     ],
   );
@@ -34,7 +37,7 @@ test('closing references are marked and sorted alongside body mentions', () => {
 
 test('an issue both closed and mentioned is listed once, as closing', () => {
   const issues = linkedIssues(pr('Closes #9.',
-    [{ number: 9, title: 'Bug', url: 'https://github.com/o/r/issues/9' }]));
+    [{ number: 9, url: 'https://github.com/o/r/issues/9' }]));
   assert.equal(issues.length, 1);
   assert.equal(issues[0].closes, true);
 });
@@ -46,6 +49,37 @@ test('#N attached to a word is not a linked issue, but a parenthesised one is', 
 
 test('an empty body links nothing', () => {
   assert.deepEqual(linkedIssues(pr(null)), []);
+});
+
+// Captured from the real API on 2026-09-18, against gaurav/prcoder: a number
+// that resolves to nothing is an error *beside* the data rather than a null
+// inside it, and gh exits 1 with this whole body still on stdout. Everything
+// that did resolve is in there, which is why the failure is read rather than
+// swallowed -- one typo'd #N may not cost every other title.
+//
+// #27 is a pull request, and its URL says so: the number alone cannot be told
+// apart from an issue's, which is why the URL is taken from here rather than
+// built from the repository and the number.
+const PARTIAL = JSON.stringify({
+  data: {
+    repository: {
+      i999999: null,
+      i27: { title: 'Make the queue your own list', url: 'https://github.com/gaurav/prcoder/pull/27' },
+    },
+  },
+  errors: [{ type: 'NOT_FOUND', path: ['repository', 'i999999'] }],
+});
+
+test('what resolved survives a NOT_FOUND on what did not, pull request URL and all', () => {
+  assert.deepEqual(linksFrom(PARTIAL), new Map([[27, {
+    title: 'Make the queue your own list', url: 'https://github.com/gaurav/prcoder/pull/27',
+  }]]));
+});
+
+test('a response that is not a response is nothing, never a throw', () => {
+  for (const out of ['', 'gh: could not connect', '{}', undefined]) {
+    assert.deepEqual(linksFrom(out), new Map());
+  }
 });
 
 test('owner, repo and number come from the PR URL, not the local checkout', () => {
@@ -76,6 +110,17 @@ test('run() puts the child stderr on the error, where the callers look for it', 
   await assert.rejects(
     () => run('sh', ['-c', 'echo no pull requests found >&2; exit 1']),
     (e) => e.stderr.includes('no pull requests found'));
+});
+
+// And stdout, for the same reason one step further on: `gh api graphql` exits 1
+// whenever the response carries an `errors` array, and prints that response --
+// partial data included -- anyway. issueLinks() reads its answers off that
+// failure, so an error with no stdout on it loses every title that did resolve
+// to the one issue number that did not.
+test('run() puts the child stdout on the error too, where a partial answer lives', async () => {
+  await assert.rejects(
+    () => run('sh', ['-c', 'echo the-partial-answer; echo NOT_FOUND >&2; exit 1']),
+    (e) => e.stdout.includes('the-partial-answer') && e.stderr.includes('NOT_FOUND'));
 });
 
 // The number goes into FUTURE.md as `@issue#N`. `@issue#NaN` does not match the

@@ -128,25 +128,34 @@ new ResizeObserver(sync).observe(document.getElementById('term-host'));
 // Type an item into Claude's prompt. If Claude is mid-turn it queues the
 // message itself, which is exactly the behaviour we want.
 //
+// `submit` false types the text and stops there: the prompt is left ready to
+// edit and send by hand, which is what the queue's ▶ wants. Trailing
+// whitespace is cut either way -- a newline in the text *is* the Enter that
+// would have sent it half-written.
+//
 // Whether it went is the return value, because the queue ticks an item off on
 // the strength of it: `send` refuses on a socket that is not open -- a dead PTY,
 // a reload in flight -- and an item checked off after a refused send is one
 // nobody has done and nobody is going to be reminded of.
-function sendToClaude(text) {
-  const sent = send({ type: 'input', data: text + '\r' });
+function sendToClaude(text, submit = true) {
+  const sent = send({ type: 'input', data: text.replace(/\s+$/, '') + (submit ? '\r' : '') });
   term.focus();
   return sent;
 }
 
 // The switcher only changes when PRs are opened or closed, so it is not worth a
-// call every minute — page load and opening the dropdown are enough.
+// call every minute — page load, opening the dropdown, and a checkout are
+// enough. The branch-only pane's list of what merges into this branch comes out
+// of the same array, and is as fresh as that.
 let prs = [];
 let last = null;
 const loadPrs = () => api('/api/prs', undefined, 'GET')
   .catch(() => [])   // the switcher is a convenience; a failure is not a banner
   // Repaint, or a PR opened since page load stays invisible until the next
-  // poll — the switcher only rebuilds its options when the set changes.
-  .then((l) => { prs = l; if (last) renderHeader(last, prs, handlers); });
+  // poll — the switcher only rebuilds its options when the set changes. The
+  // whole status, because the branch-only pane reads this list too; `last` is
+  // already the branch this fetch was for, so nothing asks for it again.
+  .then((l) => { prs = l; if (last) paint(last); });
 document.getElementById('pr-switch').addEventListener('mousedown', loadPrs);
 
 const NOTES = {
@@ -183,6 +192,12 @@ const fileHandlers = {
 
 function paint(status) {
   const moved = last?.pr?.headRefOid !== status.pr?.headRefOid;
+  // A checkout is the one thing that changes which pull requests merge into the
+  // branch under you, and the branch-only pane lists them. Refreshed here rather
+  // than on the poll, which is the whole reason that list is affordable.
+  // `last &&`, or the first paint counts as a change and fetches the list a
+  // second time behind the one the page load already asked for.
+  const switched = last && last.branch !== status.branch;
   last = status;
   // Named for the tab strip, not the page: which PR, in which repo. A poll
   // that fails leaves the last good name up rather than reverting to
@@ -192,7 +207,8 @@ function paint(status) {
   if (status.pr) {
     renderPr({ ...status.pr, note: NOTES[status.scope] },
       { ...fileHandlers, selected: selectedPath() });
-  } else renderNoPr(status, { onCreate: createPr });
+  } else renderNoPr(status, prs, { onCreate: createPr, onSwitch: switchPr });
+  if (switched) loadPrs();
   // Moving an item in needs the PR to be *this* branch's: prcoder will not write
   // into a PR we are only looking at, so the controls that would ask it to must
   // disable themselves rather than silently do nothing. Reading its checklist

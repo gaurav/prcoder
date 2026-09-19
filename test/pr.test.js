@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  pageTitle, withoutHtml, inline, headLinks, noPrLinks, HEADING, blocks, sectionize,
-  tabLabel, taskCount, viewedCount, byPath, byDir,
+  pageTitle, withoutHtml, inline, headLinks, noPrLinks, prsInto, HEADING, blocks, sectionize,
+  tabLabel, taskCount, viewedCount, byPath, byDir, nums,
 } from '../public/pr.js';
 import { fences, TASK, taskLines } from '../public/tasks.js';
 
@@ -205,7 +205,7 @@ test('a bare #N becomes a link to the issue of that number', () => {
 test('the head links point at the repository the pull request is in', () => {
   const pr = { number: 7, url: 'https://github.test/o/r/pull/7', headRefName: 'topic', baseRefName: 'main' };
   assert.deepEqual(headLinks(pr).map((l) => [l.text, l.href]), [
-    ['PR #7 ↗', 'https://github.test/o/r/pull/7'],
+    ['PR #7', 'https://github.test/o/r/pull/7'],
     ['o/r', 'https://github.test/o/r'],
     ['issues', 'https://github.test/o/r/issues'],
     ['pulls', 'https://github.test/o/r/pulls'],
@@ -225,11 +225,10 @@ test('a pull request from a fork links to the repository it was opened against',
 });
 
 // The pane with no pull request offers the same lists, minus the pull request
-// itself -- and the arrow moves onto the repository, which is what you are
-// looking at when there is nothing else to be looking at.
+// itself.
 test('with no pull request the repository and its lists are still linked', () => {
   assert.deepEqual(noPrLinks(status()).map((l) => [l.text, l.href]), [
-    ['ggvaidya/prcoder ↗', 'https://github.com/ggvaidya/prcoder'],
+    ['ggvaidya/prcoder', 'https://github.com/ggvaidya/prcoder'],
     ['issues', 'https://github.com/ggvaidya/prcoder/issues'],
     ['pulls', 'https://github.com/ggvaidya/prcoder/pulls'],
     ['milestones', 'https://github.com/ggvaidya/prcoder/milestones'],
@@ -241,6 +240,28 @@ test('with no pull request the repository and its lists are still linked', () =>
 // `https://github.com/undefined` is worse than no row at all.
 test('no repository means no links rather than links to nowhere', () => {
   assert.deepEqual(noPrLinks(status({ nameWithOwner: undefined })), []);
+});
+
+// The list the switcher fetches, which carries every open pull request in the
+// repository -- the pane wants the ones that land on the branch you are on.
+const OPEN = [
+  { number: 1, baseRefName: 'main', title: 'The one into main' },
+  { number: 27, baseRefName: 'initial-implementation', title: 'One of three' },
+  { number: 60, baseRefName: 'initial-implementation', title: 'Another' },
+];
+
+test('the pane lists the pull requests that merge into this branch, and no others', () => {
+  assert.deepEqual(prsInto(OPEN, 'main').map((p) => p.number), [1]);
+  assert.deepEqual(prsInto(OPEN, 'initial-implementation').map((p) => p.number), [27, 60]);
+  assert.deepEqual(prsInto(OPEN, 'a-branch-nothing-targets'), []);
+});
+
+// A detached HEAD is no branch to merge into. Falsy rather than absent is the
+// case that matters: `p.baseRefName === undefined` is false for every real pull
+// request, but the guard says so instead of relying on it.
+test('a detached HEAD lists nothing, not everything', () => {
+  assert.deepEqual(prsInto(OPEN, null), []);
+  assert.deepEqual(prsInto(OPEN, undefined), []);
 });
 
 test('without a repository to resolve against, neither becomes a link', () => {
@@ -520,4 +541,13 @@ test('a root file is never a directory of its own', () => {
   // file fell. They are rows now, and nothing below is left to fold.
   assert.deepEqual(root.map((x) => x.path), ['.gitignore', 'README.md']);
   assert.deepEqual(dirs, []);
+});
+
+test('a file row leaves out the side that did not change', () => {
+  assert.deepEqual(nums({ additions: 101, deletions: 0 }), [['add', '+101']]);
+  assert.deepEqual(nums({ additions: 0, deletions: 101 }), [['del', '−101']]);
+  assert.deepEqual(nums({ additions: 2, deletions: 3 }),
+    [['add', '+2'], ['del', '−3']]);
+  // A rename or a mode change touches no lines and gets no counts.
+  assert.deepEqual(nums({ additions: 0, deletions: 0 }), []);
 });

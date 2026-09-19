@@ -120,9 +120,35 @@ export async function snapshot(cwd, remoteHead, branch) {
 }
 
 /**
- * The remote head when no PR carries it — the only case is a branch with no
- * pull request, where `ls-remote` is the whole answer. A fork PR would need
- * headRefOid instead, since its branch is not on origin at all.
+ * The remote head as git last saw it, from `refs/remotes/origin/<branch>` --
+ * what `git status` reads for "ahead by N" / "up to date", with no network.
+ * A push updates it, so the commit-then-push flow is right immediately. Null
+ * when origin has never had the branch as far as this clone knows.
+ *
+ * This is the poll's answer on a branch with no pull request. It is git's own
+ * record, not a cache of prcoder's -- the header of this file still holds --
+ * and it has git's own blind spot: a push made from another machine is not
+ * seen until a fetch, so `behind` cannot come out of it. That is the trade
+ * against `ls-remote` once a minute per visible tab for a branch whose answer
+ * changes only when someone pushes (#19). Where the answer has to be origin's
+ * -- the create route pushes on it -- remoteBranchHead below still asks.
+ */
+export async function trackingHead(cwd, branch) {
+  if (!branch) return null;
+  try {
+    return await text(['rev-parse', '--verify', '--quiet', `refs/remotes/origin/${branch}`], cwd);
+  } catch (e) {
+    // 1 is "no such ref"; anything else is a real failure.
+    if (e.code === 1) return null;
+    throw e;
+  }
+}
+
+/**
+ * The remote head from origin itself, over the network. One caller: the
+ * create route, which pushes when this says the branch is not there, so it
+ * has to be origin's answer rather than git's memory of it. A fork PR would
+ * need headRefOid instead, since its branch is not on origin at all.
  */
 export async function remoteBranchHead(cwd, branch) {
   if (!branch) return null;

@@ -2,7 +2,8 @@
 // change is otherwise verified by reading the CSS, which is how three of them
 // shipped unseen.
 //
-//   node tools/browser.mjs [outdir]        # default: ./data/shots (gitignored)
+//   node tools/browser.mjs [label]         # PNGs to ./data/shots/<label>/ (gitignored)
+//                                         # the label says what the run was for; default `latest`
 //   PRCODER_BROWSER=firefox node tools/browser.mjs
 //
 // Firefox is a separate download: `npx playwright install firefox` once.
@@ -33,16 +34,19 @@
 
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:net';
-import fs from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium, firefox } from 'playwright';
+import { openShots, pruneShots } from './shots.mjs';
 
 const repo = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 // data/, not a new top-level shots/: this repo's scratch space is data/, and it
-// is gitignored precisely so driver output has somewhere to live.
-const out = path.resolve(process.argv[2] ?? path.join(repo, 'data', 'shots'));
+// is gitignored precisely so driver output has somewhere to live. The argument
+// is a label for this run rather than a path -- what you were looking at, so
+// the PNGs still say so a week later -- and tools/shots.mjs is what it means.
+const shotsRoot = path.join(repo, 'data', 'shots');
+const label = process.argv[2] ?? 'latest';
 const port = Number(process.env.PRCODER_PORT) || 17434;
 
 // server.js falls back to a free port when the one it is given is taken, and
@@ -59,7 +63,8 @@ const free = (p) => new Promise((res, rej) => {
 });
 await free(port);
 
-await fs.mkdir(out, { recursive: true });
+// Before the server starts: a bad label should fail while nothing is running.
+const out = await openShots(shotsRoot, label);
 // Everything below is written against this repo's PR #1 -- its sections, its
 // file groups, its issue chips -- and the server follows the current branch, so
 // a run from any other branch drives a pull request the assertions do not fit.
@@ -374,6 +379,24 @@ console.log('links:  ', await page.evaluate(() => {
   return `${find(/^README$/)?.href} | ${find(/^#\d+$/)?.href}`;
 }), ' (want a /blob/<head>/README.md URL, and an /issues/N one)');
 
+// The issue lists' titles. Where the lists sit and how a row is shaped is
+// test/browser.test.js's now, against a fixture -- what a fixture cannot say is
+// whether the real title lookup (a second gh call, github.js issueLinks) came
+// back with anything, and an untitled row is the only thing on screen that shows
+// it did not.
+console.log('titled: ', await page.evaluate(() => {
+  const rows = [...document.querySelectorAll('#pr-body .issues a')];
+  return `${rows.filter((a) => a.querySelector('.ttl')).length} of ${rows.length}`;
+}), ' (want every row titled: a bare number is a lookup that returned nothing)');
+
+// A number in a description is as often a pull request as an issue, and only
+// GitHub can say which: the chip's URL is the one the titles query returned, not
+// `/issues/<n>` built from the number. #27 is this repo's queue-tabs PR, so it is
+// the one that says whether that held -- /issues/27 redirects, and a redirect is
+// exactly what this stops being the answer.
+console.log('chip 27:', await page.evaluate(() => [...document.querySelectorAll('#pr-body .issues a')]
+  .find((a) => a.textContent.startsWith('#27 '))?.href), ' (want /pull/27, not /issues/27)');
+
 // Where each tab was left. The two offsets are kept apart in module state, and
 // the switch is what used to lose them: renderPrTab read scrollTop *after*
 // switchTo had already moved `tab`, so Detail's offset was filed under Files
@@ -466,6 +489,25 @@ await page.waitForTimeout(200);
 
 await page.locator('.file .path').first().click();   // opens the diff pane (Files tab)
 await page.waitForSelector('main.diff-open');
+// The title says whether the pane holds a change or a whole file; every file in
+// PR #1 is one the PR adds, so it should read NEW there and DIFF nowhere.
+await page.waitForFunction(() => document.querySelectorAll('#diff-body .dl').length > 0);
+console.log('diff title:', await page.locator('#diff h1').innerText(), ' (want NEW: every file in PR #1 is added)');
+console.log('outline:', await page.locator('#diff-outline').evaluate((n) => `${n.children.length} rows, ${getComputedStyle(n).display}`),
+  ' (want 0 rows, none: a whole file has no hunks to list)');
+
+// The NEW view is the highlighted one, and the colours are the whole of what
+// says so -- a regression to plain text is a screenshot that looks ordinary.
+// So the classes are printed too: they are prcoder's own `tok-` names over
+// Prism's token tree, and the file open here is a .js one the PR adds.
+const tokens = () => page.evaluate(() => {
+  const spans = [...document.querySelectorAll('#diff-body .dl span')];
+  return { n: spans.length, names: [...new Set(spans.flatMap((s) => [...s.classList]))].sort().join(' ') };
+});
+const hi = await tokens();
+console.log('highlight:', `${hi.n} spans:`, hi.names || '(none)',
+  '\n           (want spans in tok- classes: comment, keyword, string at least)');
+await page.locator('#diff').screenshot({ path: path.join(out, 'diff.png') });
 
 // The diff pane's two ways out: the file itself at this PR's head, and the
 // patch in GitHub's diff viewer. Both hrefs are read rather than assumed
@@ -474,8 +516,25 @@ await page.waitForSelector('main.diff-open');
 const diffLinks = await page.locator('#diff header a').evaluateAll(
   (as) => as.map((a) => `${a.innerText} ${a.href}`));
 console.log('diff out:', diffLinks.join('\n          '),
-  '\n           (want File/Blame/History at /blob|blame|commits/<40-hex>/<path>,',
-  'Diff at /pull/N/files#diff-<64-hex>)');
+  '\n           (want Diff at /pull/N/files#diff-<64-hex> first, then',
+  'File/Blame/History at /blob|blame|commits/<40-hex>/<path>; no ↗ on any)');
+// The same path with `language` answering null: an extension with no grammar
+// is not a file that fails to highlight, it is one that is never handed to
+// Prism at all, and the two look identical until you count the spans.
+const plain = page.locator('.file[data-path=".gitignore"] .path');
+if (await plain.count()) {
+  await plain.click();
+  await page.waitForFunction(() => document.getElementById('diff-path').textContent === '.gitignore'
+    && document.querySelectorAll('#diff-body .dl').length > 0);
+  const none = await tokens();
+  console.log('plain:    ', `${none.n} spans`, none.names, ' (want 0 spans: .gitignore has no grammar)');
+  // Back to the highlighted file, which is what the screenshots below hold.
+  await page.locator('.file .path').first().click();
+  await page.waitForFunction(() => document.querySelectorAll('#diff-body .dl span').length > 0);
+} else {
+  console.log('plain:     no extensionless file in this PR to check');
+}
+
 await drag('#gut-pr', 520, 450);
 await drag('#gut-diff', 720, 300);
 await drag('#gut-queue', 720, 640);
@@ -713,3 +772,5 @@ console.log('shots: ', out);
 
 await browser.close();
 server.kill();
+// Last, so this run's label is the newest and is never its own candidate.
+await pruneShots(shotsRoot);
