@@ -4,7 +4,10 @@ A local server + browser UI wrapping a real `claude` PTY. See README.md for what
 it does and how to run it, `docs/Design.md` for why it works the way it does --
 the guards, the non-goals -- `docs/Security.md` for what the server is exposed to
 and the checks new work has to keep, and `docs/Verifying.md` for what this repo
-checks and how. Keep those three true when you change what they describe.
+checks and how. `.claude/skills/run-prcoder/SKILL.md` is the short form of the
+last two for an agent about to run the thing: how to launch, what to stub, what
+not to write. Keep all of them true when you change what they describe -- the
+skill drifts first, because nothing else links to it.
 
 **The queue is being redesigned.** Before touching anything under the queue --
 the description mirror, `.prcoder/queue.json`, the queue pane -- read "Where the

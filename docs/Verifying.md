@@ -18,7 +18,10 @@ description grew one, and `_for_` with its underscores showing because a formatt
 
 So: anything whose correctness is a fact about what a browser or a terminal actually does gets
 driven, not reasoned about. Three drivers exist for it: two for the two halves of the window, and
-one for the pane the first of them cannot reach.
+one for the pane the first of them cannot reach. The
+[run-prcoder skill](../.claude/skills/run-prcoder/SKILL.md) is the short form of this section for
+an agent about to run them; a change here that alters how a driver is launched or what it stubs
+belongs there too.
 
 ## The drivers
 
