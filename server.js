@@ -12,7 +12,7 @@ import { text as readBody } from 'node:stream/consumers';
 import { spawn as ptySpawn } from 'node-pty';
 import { WebSocketServer } from 'ws';
 import { loadPr, prHeads, prBody, listPrs, setViewed, setBody, createIssue, fetchPatches, runCount } from './github.js';
-import { snapshot, currentBranch, repoInfo, prScope, compareUrl, checkoutPr, pushBranch, remoteBranchHead } from './git.js';
+import { snapshot, currentBranch, repoInfo, prScope, compareUrl, checkoutPr, pushBranch, remoteBranchHead, trackingHead } from './git.js';
 import { groupFiles, fileUrl, fileViews } from './files.js';
 import { parseFuture, renderPrBlock, syncFromPrBlock, toggleTask } from './queue.js';
 import { readStore, writeStore, readPort, writePort, replaceItems } from './store.js';
@@ -396,8 +396,12 @@ async function status({ full = false } = {}) {
     await refreshPr(detached);
   }
 
-  // With no PR there is no headRefOid to compare against, so ask origin.
-  const oid = pr?.headRefOid ?? heads?.headRefOid ?? await remoteBranchHead(repo, branch);
+  // With no PR there is no headRefOid to compare against, so read git's own
+  // record of origin's head -- not origin: that was a `git ls-remote` a minute
+  // per visible tab, on the one branch state where nothing has changed until
+  // you push (#19). The create route is the one place that still asks origin,
+  // because it pushes on the answer.
+  const oid = pr?.headRefOid ?? heads?.headRefOid ?? await trackingHead(repo, branch);
   const snap = await snapshot(repo, oid, branch);
   const scope = prScope(pr, { branch: snap.branch, nameWithOwner: info.nameWithOwner });
   const tracked = scope === 'current' || scope === 'none';

@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { syncState, compareUrl, prScope, userDirt, remoteBranchHead } from '../git.js';
+import { syncState, compareUrl, prScope, userDirt, remoteBranchHead, trackingHead, snapshot } from '../git.js';
 
 // The four inputs come from `git rev-parse --verify` and `git merge-base
 // --is-ancestor`; the exit codes those return are checked in git.js, not here.
@@ -118,12 +118,26 @@ test('a branch name that is the tail of another branch is not mistaken for it', 
     await run(work, 'remote', 'add', 'origin', bare);
     await run(work, 'push', '-q', 'origin', 'feature/topic');
 
-    assert.match(await remoteBranchHead(work, 'feature/topic'), /^[0-9a-f]{40}$/);
+    const pushed = await remoteBranchHead(work, 'feature/topic');
+    assert.match(pushed, /^[0-9a-f]{40}$/);
     assert.equal(await remoteBranchHead(work, 'topic'), null);
+
+    // The push also left git's own record of origin's head, which is what the
+    // poll reads on a branch with no pull request: the same answer, and the
+    // same tail-of-a-ref guard, since `refs/remotes/origin/topic` is its own ref.
+    assert.equal(await trackingHead(work, 'feature/topic'), pushed);
+    assert.equal(await trackingHead(work, 'topic'), null);
 
     // An origin that cannot be reached is not an answer about the branch.
     await run(work, 'remote', 'set-url', 'origin', path.join(dir, 'gone.git'));
     await assert.rejects(remoteBranchHead(work, 'feature/topic'));
+
+    // The tracking ref needs no origin at all: with it unreachable, one more
+    // local commit reads as one unpushed, from git's memory alone.
+    await run(work, 'commit', '-q', '--allow-empty', '-m', 'y');
+    const snap = await snapshot(work, await trackingHead(work, 'feature/topic'), 'feature/topic');
+    assert.equal(snap.sync, 'ahead');
+    assert.equal(snap.ahead, 1);
   } finally {
     await fs.rm(dir, { recursive: true, force: true });
   }

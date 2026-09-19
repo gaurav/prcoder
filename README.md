@@ -42,8 +42,10 @@ for the same reason it hides the switcher.
 Next to it, a light for the one thing prcoder cannot fix for you: whether the
 branch and the remote agree. It reads `unpushed`, `N unpushed`, `pull needed`
 or `diverged`, and it needs no `git fetch` -- GitHub's view of the branch head
-comes back with the pull request metadata. That does mean it is only as fresh
-as the last poll.
+comes back with the pull request metadata. On a branch with no pull request it
+is git's own record of origin's head from the last push or fetch, the one
+`git status` reads, so a push from another machine shows only after a fetch.
+Either way it is only as fresh as the last poll.
 
 ## Arguments
 
