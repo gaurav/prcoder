@@ -51,6 +51,12 @@ npm test                   # node --test "test/**/*.test.js"; see CLAUDE.md for 
 node --check public/*.js   # the client files the tests do not import
 ```
 
+For the diff pane: under Files, a `.js` or `.md` file opens under **NEW** with
+coloured tokens, and a `.txt` (any extension `language` in `public/diff.js`
+does not list) opens plain. Prism loads on that first click, so a 404 in the
+vendor map shows as a plain file and a `highlight` line in the console, not as
+an error anywhere prcoder shows.
+
 Then look at it. `docs/Verifying.md` is the standing account of the three
 drivers -- what each reaches, which engine, the stub, the Firefox situation --
 and is where a check that outlives the session gets written down. The short

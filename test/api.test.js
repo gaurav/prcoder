@@ -12,6 +12,7 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import { server } from '../server.js';
+import { grammars } from '../public/diff.js';
 
 let base;
 before(() => new Promise((res) => server.listen(0, '127.0.0.1', () => {
@@ -70,10 +71,17 @@ test('the page is served with a CSP that forbids framing and foreign script', as
 
 // The vendor map is hand-written paths into node_modules, so it breaks silently
 // on an xterm upgrade -- and a 404 here is a blank page with a module error in
-// a console prcoder never shows.
-test('the vendored xterm files are where the map says', async () => {
+// a console prcoder never shows. The server derives *which* grammars from the
+// page's own `grammars`, so the two cannot disagree about that; what is still
+// worth fetching is whether the file each one names is really there, which a
+// prismjs upgrade is what changes.
+test('the vendored xterm and Prism files are where the map says', async () => {
+  // A derived list that came back empty would pass the loop below without
+  // fetching anything, so it is checked for being a list of grammars first.
+  assert.ok(grammars.length > 5 && grammars.includes('tsx'), grammars.join(', '));
   for (const p of ['/vendor/xterm.mjs', '/vendor/xterm.css',
-                   '/vendor/addon-fit.mjs', '/vendor/addon-web-links.mjs']) {
+                   '/vendor/addon-fit.mjs', '/vendor/addon-web-links.mjs',
+                   '/vendor/prism.js', ...grammars.map((l) => `/vendor/prism/${l}.js`)]) {
     assert.equal((await fetch(base + p)).status, 200, p);
   }
 });

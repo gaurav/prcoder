@@ -79,9 +79,29 @@ to Claude *without* a click removes the only check there is.
 
 ## Static files
 
-Everything outside `/api/` and the four `vendor` paths is served from `public/`, and a path that
-resolves outside it is a 403 (`server.js`, beside `serveFile`). `new URL` has already collapsed `..`
-by then, so the check is a backstop, and nothing tests it.
+Everything outside `/api/` and the `vendor` paths — xterm's four files, Prism's core and one file
+per grammar — is served from `public/`, and a path that resolves outside it is a 403 (`server.js`,
+beside `serveFile`). `new URL` has already collapsed `..` by then, so the check is a backstop, and
+nothing tests it.
+
+## A file the pull request adds
+
+The diff pane highlights a **NEW** file, and the highlighter is a third piece of untrusted text
+handled in the page: the whole of a file someone else committed, run through Prism's grammars.
+What keeps it in the same shape as the renderer above is in `highlightLines` in
+[`public/diff.js`](../public/diff.js). Prism is asked for its *tokens*, never its HTML, and each token
+becomes a `<span>` through `h()` with the file's text as a text node — the same rule as every other
+string from GitHub, and `test/browser.test.js` opens a file made of `<script>` and `<img onerror>` to
+pin that it comes out as characters. The language is chosen from the extension alone: auto-detection
+would run every grammar over the file, and `grammars` in `diff.js` — that extension map plus what
+those grammars are built on — is the list the vendor map in `server.js` is built from, so the
+server serves what the page can ask for and nothing else, and `test/api.test.js` fetches every one
+of them. What is left is a grammar's regular expressions
+backtracking on a crafted file, which no escaping helps with. It is bounded by GitHub, which sends no
+`patch` for a large diff, and it is the reason the tokenizer runs in the page and not in `/api/diff`:
+a stall there freezes one browser tab, a stall in the server freezes the process that owns the PTY.
+A modified file's diff is not highlighted at all, and
+[#68](https://github.com/gaurav/prcoder/issues/68) has what changes before it can be.
 
 ## Checking new work
 
@@ -94,4 +114,6 @@ by then, so the check is a backstop, and nothing tests it.
   `target()`.
 - **Nothing sends to Claude without a click** on text the user can see.
 - **A new kind of asset** — a font, an image, a worker, anything loaded rather than inlined — has to
-  be allowed by the CSP beside `serveFile`, which is otherwise silent about what it blocks.
+  be allowed by the CSP beside `serveFile`, which is otherwise silent about what it blocks. The
+  Prism grammars under `/vendor/prism/` are same-origin script, which `script-src 'self'` already
+  allows; a highlighter loaded from a CDN would not be.

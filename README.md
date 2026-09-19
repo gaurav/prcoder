@@ -124,10 +124,12 @@ from you while you are in the other.
 select → read → tick viewed → ask Claude never leaves the window. It shows the
 same hunks GitHub does (fetched once per push and cached), refreshes itself when
 the branch head moves, and links out to GitHub for anything the plain rendering
-can't do — syntax highlighting, comments, binary and oversized files. A file the
-pull request adds or deletes is shown as plain text under a green **NEW** or red
-**DELETED** title rather than as a wall of `+` or `-`: a patch that is all one
-sign has nothing to contrast. A renamed file says where it came from on its
+can't do — comments, binary and oversized files, highlighting of a changed file. A
+file the pull request adds or deletes is shown as its own text under a green **NEW**
+or red **DELETED** title rather than as a wall of `+` or `-`: a patch that is all one
+sign has nothing to contrast. A **NEW** file is syntax-highlighted when its
+extension names a language prcoder ships a grammar for; it is the one view where
+a tokenizer sees a whole file rather than a hunk that starts in the middle of one. A renamed file says where it came from on its
 first line, and a rename with no other change says only that. A diff with more
 than one hunk gets an outline down its right edge -- one row per hunk, named by
 the context git puts after the `@@` (the enclosing function, a heading) -- and a
@@ -311,7 +313,7 @@ management listed below, deliberately not built yet.
 
 ## Not here
 
-Syntax-highlighted diffs, review threads, multi-session management. [docs/Design.md](docs/Design.md) has the full list and the reasoning behind
+Syntax-highlighted diffs of modified files, review threads, multi-session management. [docs/Design.md](docs/Design.md) has the full list and the reasoning behind
 it, along with why prcoder exists at all; [docs/Security.md](docs/Security.md) has what a
 localhost server is exposed to.
 

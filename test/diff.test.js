@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { diffRows, diffKind, outline } from '../public/diff.js';
+import { diffRows, diffKind, outline, language, highlightLines } from '../public/diff.js';
 
 const modified = '@@ -1,2 +1,3 @@\n ctx\n-old\n+new\n\\ No newline at end of file';
 
@@ -57,4 +57,59 @@ test('a renamed file leads with its old name, and a pure rename is only that', (
 test('diffKind reads only the first hunk header', () => {
   assert.equal(diffKind('@@ -1,3 +1,4 @@\n ctx\n+x\n@@ -0,0 +9,1 @@\n+y'), null);
   assert.equal(diffKind('@@ -0,0 +1 @@'), 'add');
+});
+
+// The language is read off the extension alone -- never off the content, which
+// would run every grammar over a stranger's file -- and a file with no known
+// one stays plain.
+test('language is by extension only, or nothing', () => {
+  assert.equal(language('src/app.mjs'), 'javascript');
+  assert.equal(language('types/index.d.ts'), 'typescript');
+  assert.equal(language('.github/workflows/ci.YML'), 'yaml');
+  // Its own grammar, not typescript's: typescript does not parse JSX.
+  assert.equal(language('src/App.tsx'), 'tsx');
+  assert.equal(language('Makefile'), null);
+  assert.equal(language('notes.txt'), null);
+  assert.equal(language('.bashrc'), null);
+});
+
+// A dotless name is a name, not an extension. `Makefile` above passes whatever
+// the rule is, because `makefile` happens not to be in the map; these do not.
+// Each is a real extensionless file with a key of the map for a name, and each
+// was highlighted as that language before the extension was taken off the
+// basename after a dot that is not its first character.
+test('a name with no extension is no language', () => {
+  assert.equal(language('patch'), null);
+  assert.equal(language('sh'), null);
+  assert.equal(language('scripts/bash'), null);
+  assert.equal(language('doc/md'), null);
+  assert.equal(language('src/json'), null);
+});
+
+// The real tokenizer, so a Prism upgrade that changes the token shape fails
+// here rather than in the pane. Two properties matter: every line joins back
+// to the source exactly (no character invented or dropped between the spans),
+// and a token that spans lines keeps its class on each of them.
+test('highlightLines splits Prism tokens per line without losing a character', async () => {
+  const { default: Prism } = await import('prismjs');
+  const src = '/* a\n b */ const x = "<s>";\n\nf(1)';
+  const lines = highlightLines(src, Prism.languages.javascript, Prism.tokenize);
+  assert.equal(lines.map((l) => l.map((s) => s.text).join('')).join('\n'), src);
+  assert.equal(lines.length, 4);
+  assert.deepEqual(lines[0], [{ cls: 'tok-comment', text: '/* a' }]);
+  assert.equal(lines[1][0].cls, 'tok-comment');
+  assert.deepEqual(lines[2], []);
+  assert.deepEqual(lines[3].map((s) => s.cls), ['tok-function', 'tok-punctuation', 'tok-number', 'tok-punctuation']);
+  assert.equal(lines[1].find((s) => s.text === '"<s>"').cls, 'tok-string');
+});
+
+// A nested token -- a template string's interpolation -- takes the innermost
+// class, and an alias comes along as a second class.
+test('highlightLines uses the innermost token and carries aliases', async () => {
+  const { default: Prism } = await import('prismjs');
+  const lines = highlightLines('`a${b}`', Prism.languages.javascript, Prism.tokenize);
+  const classes = lines[0].map((s) => s.cls);
+  assert.ok(classes.includes('tok-template-punctuation tok-string'), classes.join());
+  assert.deepEqual(lines[0].find((s) => s.text === 'b'), { cls: 'tok-interpolation', text: 'b' });
+  assert.ok(classes.every((c) => /^tok-[\w-]+( tok-[\w-]+)*$/.test(c)), classes.join());
 });

@@ -68,6 +68,103 @@ export function outline(rows) {
   return hunks.length > 1 ? hunks : [];
 }
 
+/**
+ * Pure: path -> Prism grammar name, or null for a file the pane shows plain.
+ * By extension only, never by content: auto-detection runs every grammar over a
+ * stranger's file, and this map -- through `grammars` below -- is also the list
+ * of what the vendor map in server.js serves: core carries markup, css, clike
+ * and javascript, and each of the others is one file under /vendor/prism/.
+ *
+ * The extension is the basename's, after a dot that is not its first character:
+ * a dotless `patch` or `sh` at the repo root is a file, not an extension, and a
+ * dotfile like `.gitignore` is all name. Both are plain.
+ */
+const LANG = {
+  js: 'javascript', mjs: 'javascript', cjs: 'javascript', jsx: 'jsx', ts: 'typescript', tsx: 'tsx',
+  json: 'json', yml: 'yaml', yaml: 'yaml', py: 'python', sh: 'bash', bash: 'bash', zsh: 'bash',
+  md: 'markdown', html: 'markup', htm: 'markup', xml: 'markup', svg: 'markup', css: 'css',
+  diff: 'diff', patch: 'diff', toml: 'toml',
+};
+
+// What core already carries, and what a grammar needs loaded before it. Prism's
+// components.json is the source for both: `tsx` is the one grammar here that
+// extends others rather than clike, and loading it alone leaves it a no-op.
+const CORE = new Set(['markup', 'css', 'clike', 'javascript']);
+const NEEDS = { tsx: ['jsx', 'typescript'] };
+
+/**
+ * Every grammar file the page can ask for, which is what server.js has to
+ * serve. Derived rather than written twice: a language added to the map above
+ * without its file in the vendor map is a plain file and a console line, and
+ * test/api.test.js fetches this list to say so first.
+ */
+export const grammars = [...new Set(Object.values(LANG).flatMap((l) => [...(NEEDS[l] ?? []), l]))]
+  .filter((l) => !CORE.has(l)).sort();
+export const language = (path) => {
+  const name = path.slice(path.lastIndexOf('/') + 1);
+  const dot = name.lastIndexOf('.');
+  return dot > 0 ? LANG[name.slice(dot + 1).toLowerCase()] ?? null : null;
+};
+
+/**
+ * Pure: source text -> one array of {cls, text} segments per line, from Prism's
+ * token tree rather than its HTML. The segments become <span>s through h(), so
+ * the file's text is never parsed as markup -- docs/Security.md. A token that
+ * spans lines (a block comment) is split at each newline and keeps its class
+ * on every piece; a nested token takes the innermost class. Every line's text
+ * joins back to the input exactly, which test/diff.test.js pins.
+ *
+ * `tokenize` is passed in so the test can hand over the real Prism from Node.
+ */
+export function highlightLines(text, grammar, tokenize) {
+  const lines = [[]];
+  const walk = (tok, cls) => {
+    if (typeof tok !== 'string') {
+      cls = ['tok-' + tok.type, ...[].concat(tok.alias ?? []).map((a) => 'tok-' + a)].join(' ');
+      return [].concat(tok.content).forEach((t) => walk(t, cls));
+    }
+    tok.split('\n').forEach((part, i) => {
+      if (i) lines.push([]);
+      if (part) lines.at(-1).push({ cls, text: part });
+    });
+  };
+  tokenize(text, grammar).forEach((t) => walk(t, ''));
+  return lines;
+}
+
+// Prism is a classic script that installs window.Prism, loaded here only when a
+// NEW file with a known language opens. `manual` is read off whatever is at
+// window.Prism first, so setting it before the import is what stops it from
+// walking the page for <code> to highlight.
+//
+// A failed load is retried on the next open, and the query string is the whole
+// of what makes that work: the page's module map caches a module that *failed*
+// to load under its specifier too, so a second import of the same URL rejects
+// again without going near the network. Dropping our own cache alone leaves
+// every later NEW file plain until a reload. `vendor` in server.js matches on
+// url.pathname, so the query reaches nothing.
+const loaded = {};
+let attempt = 0;
+const fresh = (url) => (attempt ? `${url}?retry=${attempt}` : url);
+async function one(lang) {
+  if (globalThis.Prism.languages[lang]) return;
+  loaded[lang] ??= import(fresh(`/vendor/prism/${lang}.js`))
+    .catch((e) => { loaded[lang] = null; attempt++; throw e; });
+  await loaded[lang];
+}
+async function grammar(lang) {
+  if (!loaded.core) {
+    globalThis.Prism = { manual: true };
+    loaded.core = import(fresh('/vendor/prism.js')).catch((e) => { loaded.core = null; attempt++; throw e; });
+  }
+  await loaded.core;
+  // Prerequisites first and in order: prism-tsx builds on the jsx and
+  // typescript grammars, and defines nothing at all if they are not there yet.
+  for (const dep of NEEDS[lang] ?? []) await one(dep);
+  await one(lang);
+  return globalThis.Prism.languages[lang];
+}
+
 const el = (id) => document.getElementById(id);
 
 /** Ticking this here ticks the same checkbox on github.com; the file rows use it too. */
@@ -146,8 +243,29 @@ export async function openDiff(f) {
       ext(f.url, 'view it on GitHub')));
     return;
   }
-  setTitle(patch == null ? null : diffKind(patch));
-  const rows = diffRows(patch, from).map(({ cls, text }) => h('div', { className: `dl ${cls}` }, text));
+  const kind = patch == null ? null : diffKind(patch);
+  setTitle(kind);
+  // Only a whole added file is highlighted: it is the one body a tokenizer sees
+  // from its first line. A modified file's hunks start mid-file and would
+  // colour wrongly from inside a comment or string -- #68 has the safe way.
+  // Anything that goes wrong here paints the file plain, as before.
+  const lang = kind === 'add' && language(f.path);
+  let lines = null;
+  if (lang) {
+    try {
+      const src = diffRows(patch).filter((r) => r.cls === 'ctx').map((r) => r.text).join('\n');
+      lines = highlightLines(src, await grammar(lang), globalThis.Prism.tokenize);
+    } catch (e) {
+      console.error('highlight', e);
+    }
+    if (openPath !== f.path) return;
+  }
+  let at = 0;
+  const seg = ({ cls, text }) => (cls ? h('span', { className: cls }, text) : text);
+  const rows = diffRows(patch, from).map(({ cls, text }) => {
+    const segs = lines && cls === 'ctx' ? lines[at++] : null;
+    return h('div', { className: `dl ${cls}` }, ...(segs?.length ? segs.map(seg) : [text]));
+  });
   body.replaceChildren(...rows);
   el('diff-outline').replaceChildren(...outline(diffRows(patch, from)).map(({ at, text }) =>
     btn(text, () => rows[at].scrollIntoView({ block: 'start' }), { title: text })));

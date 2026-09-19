@@ -72,15 +72,29 @@ const BODY = [
 ].join('\n');
 
 const REPO = 'https://github.com/example/repo';
+// One added file, with markup in it: the diff pane highlights a NEW file from
+// Prism's tokens, and this is the source that shows if any of it is ever built
+// as HTML rather than text.
+const SOURCE = 'const s = "<script>alert(1)</script>"; // <img src=x onerror=alert(2)>\n\nf(1)';
+// The one extension whose grammar is not built on core alone: prism-tsx needs
+// the jsx and typescript grammars under it, and without them the markup below
+// tokenizes as operators and bare text rather than tags and attributes.
+const TSX = 'const B = ({ n }: { n: number }) => <div className="b">{n}</div>;';
+const added = { 'evil.js': SOURCE, 'app.tsx': TSX };
+const files = Object.keys(added).map((p, i) => ({
+  path: p, additions: added[p].split('\n').length, deletions: 0, viewed: false,
+  url: `${REPO}/pull/12/files#diff-${i}`, blob: `${REPO}/blob/aaaa/${p}`,
+  blame: `${REPO}/blame/aaaa/${p}`, history: `${REPO}/commits/aaaa/${p}`,
+}));
 const pr = {
   number: 12, title: 'A fixture pull request', body: BODY, url: `${REPO}/pull/12`,
   state: 'OPEN', isDraft: false, headRefName: 'topic', baseRefName: 'main',
-  additions: 1, deletions: 0, changedFiles: 0, files: [],
+  additions: 1, deletions: 0, changedFiles: 1, files,
   headRefOid: 'a'.repeat(40), updatedAt: '2026-09-19T00:00:00Z', isCrossRepository: false,
   reviewDecision: '', nodeId: 'PR_fixture',
   checks: rollup([]), counts: { comments: 0, reviews: 0 },
   issues: [{ number: 7, url: `${REPO}/issues/7`, closes: false, title: 'Per-route locking' }],
-  groups: groupFiles([]),
+  groups: groupFiles(files),
 };
 const status = {
   branch: 'topic', head: 'b'.repeat(40), detached: false, dirtyFiles: [], sync: 'synced', ahead: 0,
@@ -92,21 +106,35 @@ let browser;
 let page;
 const posted = [];
 
+// A page with every route answered, so a test that needs a module map of its
+// own -- Prism loads once per page -- can open a second one.
+async function newPage() {
+  const p = await browser.newPage();
+  await p.routeWebSocket('**/pty', () => {});
+  await p.route('**/api/status', (r) => r.fulfill({ json: status }));
+  await p.route('**/api/prs', (r) => r.fulfill({ json: [] }));
+  await p.route('**/api/queue', (r) => r.fulfill({ json: [] }));
+  await p.route('**/api/diff', (r) => {
+    const { path } = r.request().postDataJSON();
+    const lines = added[path].split('\n');
+    return r.fulfill({ json: {
+      path, patch: `@@ -0,0 +1,${lines.length} @@\n` + lines.map((l) => '+' + l).join('\n'),
+    } });
+  });
+  await p.route('**/api/pr/task', (r) => {
+    posted.push(r.request().postDataJSON());
+    return r.fulfill({ json: { queue: null } });
+  });
+  await p.goto(`http://127.0.0.1:${server.address().port}/`);
+  await p.waitForSelector('#pr-head .pr-title');
+  return p;
+}
+
 before(async () => {
   if (skip) return;
   await new Promise((res) => server.listen(0, '127.0.0.1', res));
   browser = await chromium.launch();
-  page = await browser.newPage();
-  await page.routeWebSocket('**/pty', () => {});
-  await page.route('**/api/status', (r) => r.fulfill({ json: status }));
-  await page.route('**/api/prs', (r) => r.fulfill({ json: [] }));
-  await page.route('**/api/queue', (r) => r.fulfill({ json: [] }));
-  await page.route('**/api/pr/task', (r) => {
-    posted.push(r.request().postDataJSON());
-    return r.fulfill({ json: { queue: null } });
-  });
-  await page.goto(`http://127.0.0.1:${server.address().port}/`);
-  await page.waitForSelector('#pr-head .pr-title');
+  page = await newPage();
 });
 
 // Without both, `node --test` never exits.
@@ -163,4 +191,76 @@ test('the issues the description mentions are listed below it, titled', { skip }
 test('the tab carries the task count', { skip }, async () => {
   const tabs = await page.locator('#pr-head .tab').allTextContents();
   assert.ok(tabs.includes('Detail (1/3)'), JSON.stringify(tabs));
+});
+
+// The tokenizer runs in the page over whatever a pull request adds, so the file
+// is markup-shaped on purpose: it has to come out as the same characters in
+// coloured spans, never as elements. A switch to innerHTML, Prism's HTML
+// output or a theme's markup would fail here.
+test('a NEW file is highlighted as text, and its markup never becomes elements', { skip }, async () => {
+  await page.locator('#pr-head .tab', { hasText: 'Files' }).click();
+  await page.locator('.file[data-path="evil.js"] .path').click();
+  await page.waitForSelector('#diff-body .tok-string');
+  assert.equal(await page.$eval('#diff h1', (el) => el.textContent), 'New');
+  assert.deepEqual(await page.$$eval('#diff-body .dl', (els) => els.map((el) => el.textContent)), SOURCE.split('\n'));
+  assert.equal(await page.locator('#diff-body script, #diff-body img').count(), 0);
+  assert.ok(await page.locator('#diff-body .tok-comment').count(), 'the comment is a token');
+  // The blank line is a row with nothing in it, which used to lay out at 0px.
+  const heights = await page.$$eval('#diff-body .dl', (els) => els.map((el) => el.getBoundingClientRect().height));
+  assert.equal(heights.length, 3);
+  assert.ok(heights[1] > 0 && heights[1] === heights[0], `row heights ${heights}`);
+});
+
+// Retrying a failed load is a claim about the browser's module map, not about
+// prcoder's cache: a module whose fetch failed is cached under its specifier
+// too, so importing the same URL again rejects without a request ever going
+// out. Clearing `loaded` alone left every NEW file of the session plain until a
+// reload, which is what the query string in `grammar` is for -- and the second
+// URL here is the only thing that proves it is doing anything. Its own page,
+// because the one above has already loaded Prism successfully.
+test('a NEW file is highlighted after a failed Prism load', { skip }, async () => {
+  const fresh = await newPage();
+  let fail = true;
+  const asked = [];
+  await fresh.route('**/vendor/prism.js*', (r) => {
+    asked.push(new URL(r.request().url()).search);
+    return fail ? r.abort() : r.continue();
+  });
+  const open = async () => {
+    await fresh.locator('.file[data-path="evil.js"] .path').click();
+    await fresh.waitForSelector('#diff-body .dl');
+  };
+  await fresh.locator('#pr-head .tab', { hasText: 'Files' }).click();
+  await open();
+  assert.equal(await fresh.locator('#diff-body .tok-string').count(), 0, 'plain while the load fails');
+
+  fail = false;
+  await open();
+  await fresh.waitForSelector('#diff-body .tok-string');
+  assert.deepEqual(await fresh.$$eval('#diff-body .dl', (els) => els.map((el) => el.textContent)), SOURCE.split('\n'));
+  assert.deepEqual(asked, ['', '?retry=1'], `prism.js was asked for as ${JSON.stringify(asked)}`);
+  await fresh.close();
+});
+
+// A grammar that extends others is the one case the loader cannot treat as one
+// file: prism-tsx registers nothing unless jsx and typescript are already in
+// Prism.languages, and a .tsx file would open with its markup coloured as
+// operators -- which is what `tsx: 'typescript'` used to do. Both halves are
+// asserted, because the file highlights either way and only the token names
+// say which grammar ran.
+test('a .tsx file loads the grammars tsx extends, in order, before tsx', { skip }, async () => {
+  const fresh = await newPage();
+  const asked = [];
+  fresh.on('request', (r) => {
+    const m = new URL(r.url()).pathname.match(/^\/vendor\/prism\/(.+)\.js$/);
+    if (m) asked.push(m[1]);
+  });
+  await fresh.locator('#pr-head .tab', { hasText: 'Files' }).click();
+  await fresh.locator('.file[data-path="app.tsx"] .path').click();
+  await fresh.waitForSelector('#diff-body .tok-tag');
+  assert.deepEqual(asked, ['jsx', 'typescript', 'tsx'], `asked for ${JSON.stringify(asked)}`);
+  assert.equal(await fresh.$eval('#diff-body .tok-tag', (el) => el.textContent), 'div');
+  assert.equal(await fresh.locator('#diff-body .tok-attr-name').count(), 1, 'className is an attribute');
+  assert.deepEqual(await fresh.$$eval('#diff-body .dl', (els) => els.map((el) => el.textContent)), [TSX]);
+  await fresh.close();
 });
