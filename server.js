@@ -614,6 +614,13 @@ const vendor = {
   '/vendor/xterm.css': '@xterm/xterm/css/xterm.css',
   '/vendor/addon-fit.mjs': '@xterm/addon-fit/lib/addon-fit.mjs',
   '/vendor/addon-web-links.mjs': '@xterm/addon-web-links/lib/addon-web-links.mjs',
+  // Prism core ships markup, css, clike and javascript; every grammar below
+  // needs only those, so the page loads core and then the one it wants (see
+  // `language` in public/diff.js). A new grammar has to keep that true --
+  // components.json's `require` says what it needs.
+  '/vendor/prism.js': 'prismjs/prism.js',
+  ...Object.fromEntries(['bash', 'diff', 'json', 'jsx', 'markdown', 'python', 'toml', 'typescript', 'yaml']
+    .map((l) => [`/vendor/prism/${l}.js`, `prismjs/components/prism-${l}.min.js`])),
 };
 
 // A second line of defence for the page that holds the PTY. A hole in the

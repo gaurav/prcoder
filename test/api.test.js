@@ -71,9 +71,11 @@ test('the page is served with a CSP that forbids framing and foreign script', as
 // The vendor map is hand-written paths into node_modules, so it breaks silently
 // on an xterm upgrade -- and a 404 here is a blank page with a module error in
 // a console prcoder never shows.
-test('the vendored xterm files are where the map says', async () => {
+test('the vendored xterm and Prism files are where the map says', async () => {
+  const grammars = ['bash', 'diff', 'json', 'jsx', 'markdown', 'python', 'toml', 'typescript', 'yaml'];
   for (const p of ['/vendor/xterm.mjs', '/vendor/xterm.css',
-                   '/vendor/addon-fit.mjs', '/vendor/addon-web-links.mjs']) {
+                   '/vendor/addon-fit.mjs', '/vendor/addon-web-links.mjs',
+                   '/vendor/prism.js', ...grammars.map((l) => `/vendor/prism/${l}.js`)]) {
     assert.equal((await fetch(base + p)).status, 200, p);
   }
 });
