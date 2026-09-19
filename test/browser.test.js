@@ -101,24 +101,31 @@ let browser;
 let page;
 const posted = [];
 
+// A page with every route answered, so a test that needs a module map of its
+// own -- Prism loads once per page -- can open a second one.
+async function newPage() {
+  const p = await browser.newPage();
+  await p.routeWebSocket('**/pty', () => {});
+  await p.route('**/api/status', (r) => r.fulfill({ json: status }));
+  await p.route('**/api/prs', (r) => r.fulfill({ json: [] }));
+  await p.route('**/api/queue', (r) => r.fulfill({ json: [] }));
+  await p.route('**/api/diff', (r) => r.fulfill({ json: {
+    path: 'evil.js', patch: '@@ -0,0 +1,3 @@\n' + SOURCE.split('\n').map((l) => '+' + l).join('\n'),
+  } }));
+  await p.route('**/api/pr/task', (r) => {
+    posted.push(r.request().postDataJSON());
+    return r.fulfill({ json: { queue: null } });
+  });
+  await p.goto(`http://127.0.0.1:${server.address().port}/`);
+  await p.waitForSelector('#pr-head .pr-title');
+  return p;
+}
+
 before(async () => {
   if (skip) return;
   await new Promise((res) => server.listen(0, '127.0.0.1', res));
   browser = await chromium.launch();
-  page = await browser.newPage();
-  await page.routeWebSocket('**/pty', () => {});
-  await page.route('**/api/status', (r) => r.fulfill({ json: status }));
-  await page.route('**/api/prs', (r) => r.fulfill({ json: [] }));
-  await page.route('**/api/queue', (r) => r.fulfill({ json: [] }));
-  await page.route('**/api/diff', (r) => r.fulfill({ json: {
-    path: 'evil.js', patch: '@@ -0,0 +1,3 @@\n' + SOURCE.split('\n').map((l) => '+' + l).join('\n'),
-  } }));
-  await page.route('**/api/pr/task', (r) => {
-    posted.push(r.request().postDataJSON());
-    return r.fulfill({ json: { queue: null } });
-  });
-  await page.goto(`http://127.0.0.1:${server.address().port}/`);
-  await page.waitForSelector('#pr-head .pr-title');
+  page = await newPage();
 });
 
 // Without both, `node --test` never exits.
@@ -193,4 +200,35 @@ test('a NEW file is highlighted as text, and its markup never becomes elements',
   const heights = await page.$$eval('#diff-body .dl', (els) => els.map((el) => el.getBoundingClientRect().height));
   assert.equal(heights.length, 3);
   assert.ok(heights[1] > 0 && heights[1] === heights[0], `row heights ${heights}`);
+});
+
+// Retrying a failed load is a claim about the browser's module map, not about
+// prcoder's cache: a module whose fetch failed is cached under its specifier
+// too, so importing the same URL again rejects without a request ever going
+// out. Clearing `loaded` alone left every NEW file of the session plain until a
+// reload, which is what the query string in `grammar` is for -- and the second
+// URL here is the only thing that proves it is doing anything. Its own page,
+// because the one above has already loaded Prism successfully.
+test('a NEW file is highlighted after a failed Prism load', { skip }, async () => {
+  const fresh = await newPage();
+  let fail = true;
+  const asked = [];
+  await fresh.route('**/vendor/prism.js*', (r) => {
+    asked.push(new URL(r.request().url()).search);
+    return fail ? r.abort() : r.continue();
+  });
+  const open = async () => {
+    await fresh.locator('.file[data-path="evil.js"] .path').click();
+    await fresh.waitForSelector('#diff-body .dl');
+  };
+  await fresh.locator('#pr-head .tab', { hasText: 'Files' }).click();
+  await open();
+  assert.equal(await fresh.locator('#diff-body .tok-string').count(), 0, 'plain while the load fails');
+
+  fail = false;
+  await open();
+  await fresh.waitForSelector('#diff-body .tok-string');
+  assert.deepEqual(await fresh.$$eval('#diff-body .dl', (els) => els.map((el) => el.textContent)), SOURCE.split('\n'));
+  assert.deepEqual(asked, ['', '?retry=1'], `prism.js was asked for as ${JSON.stringify(asked)}`);
+  await fresh.close();
 });

@@ -120,17 +120,26 @@ export function highlightLines(text, grammar, tokenize) {
 // Prism is a classic script that installs window.Prism, loaded here only when a
 // NEW file with a known language opens. `manual` is read off whatever is at
 // window.Prism first, so setting it before the import is what stops it from
-// walking the page for <code> to highlight. A failed load is forgotten so the
-// next open tries again rather than staying plain until a reload.
+// walking the page for <code> to highlight.
+//
+// A failed load is retried on the next open, and the query string is the whole
+// of what makes that work: the page's module map caches a module that *failed*
+// to load under its specifier too, so a second import of the same URL rejects
+// again without going near the network. Dropping our own cache alone leaves
+// every later NEW file plain until a reload. `vendor` in server.js matches on
+// url.pathname, so the query reaches nothing.
 const loaded = {};
+let attempt = 0;
+const fresh = (url) => (attempt ? `${url}?retry=${attempt}` : url);
 async function grammar(lang) {
   if (!loaded.core) {
     globalThis.Prism = { manual: true };
-    loaded.core = import('/vendor/prism.js').catch((e) => { loaded.core = null; throw e; });
+    loaded.core = import(fresh('/vendor/prism.js')).catch((e) => { loaded.core = null; attempt++; throw e; });
   }
   await loaded.core;
   if (!globalThis.Prism.languages[lang]) {
-    loaded[lang] ??= import(`/vendor/prism/${lang}.js`).catch((e) => { loaded[lang] = null; throw e; });
+    loaded[lang] ??= import(fresh(`/vendor/prism/${lang}.js`))
+      .catch((e) => { loaded[lang] = null; attempt++; throw e; });
     await loaded[lang];
   }
   return globalThis.Prism.languages[lang];
