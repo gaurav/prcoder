@@ -382,7 +382,10 @@ a { color: var(--accent); }
 /* `max-content`: a block div is as wide as the pane, not as its line, so the
    +/- tint used to stop at the first viewport's edge once a wide diff was
    scrolled right. `min-width` keeps a short line's tint reaching the edge. */
-.dl { white-space: pre; padding: 0 10px; width: max-content; min-width: 100%; }
+/* `min-height`: a blank line is a row with an empty text node, which lays out
+   no line box at all, so a NEW file's blank lines collapsed to nothing (seen
+   2026-09-19, measured at 0px against the 21px of a line with text). */
+.dl { white-space: pre; padding: 0 10px; width: max-content; min-width: 100%; min-height: 1lh; }
 /* The body and, beside it, the outline: a column of hunk names that stays put
    while the body scrolls. `:empty` hides it, so a whole file (no hunks) and a
    single hunk (nothing to choose between) get the full width back. */
