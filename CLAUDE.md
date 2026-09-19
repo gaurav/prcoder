@@ -199,9 +199,11 @@ here that only one engine can tell you about.
 
 Installed is not the same as working, and the check cannot tell them apart.
 Firefox has not started at all on this machine since 2026-09-16 --
-`existsSync(firefox.executablePath())` is true throughout, so the Chromium
-fallback never fires and a default run burns three minutes before it dies.
-`PRCODER_BROWSER=chromium` is the way past it. `tools/firefox-runner/` is the
+`existsSync(firefox.executablePath())` is true throughout, so that check never
+catches it; what does is the driver's 45-second launch timeout, after which it
+falls back to Chromium and prints an `engine:` line saying so. A default run
+therefore costs 45 seconds of nothing before the screenshots start, and
+`PRCODER_BROWSER=chromium` skips the wait. `tools/firefox-runner/` is the
 whole story: what fails, the six hypotheses already eliminated (reinstalling and
 changing the Firefox version are two of them), and the one command that
 re-checks it after a macOS or Firefox update. #61 is where the owed Firefox pass

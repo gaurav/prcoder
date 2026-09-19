@@ -50,9 +50,10 @@ wonders.
 | `/Applications/Firefox.app` 155.0.1, Mozilla-signed | exits 1, `Could not find profile folder` |
 
 Build 1538 hanging rather than exiting is why a default `node tools/browser.mjs`
-run burns three minutes and reads as a hung server. `existsSync(firefox.executablePath())`
-is true throughout, so the driver's Chromium fallback never fires: installed is
-not the same as working, and that check cannot tell them apart.
+run sat for Playwright's full three-minute timeout and read as a hung server.
+`existsSync(firefox.executablePath())` is true throughout, so that check cannot
+tell installed from working; the driver now gives an unforced Firefox 45 seconds
+and falls back to Chromium, printing an `engine:` line when it does.
 
 ## What it is not
 

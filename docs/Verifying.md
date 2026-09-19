@@ -30,8 +30,9 @@ belongs there too.
 putting the caret at offset 0 — survived every Chromium screenshot; see [CLAUDE.md](../CLAUDE.md)
 for the rest, and for the three fixes to it that do **not** work.
 `PRCODER_BROWSER=chromium` forces the other; running both is worth the second minute — when both
-run. As of 2026-09-17 Firefox does not start at all on this machine, so a default run burns three
-minutes and dies; [tools/firefox-runner](../tools/firefox-runner/README.md) is why, and is the
+run. As of 2026-09-17 Firefox does not start at all on this machine, so a default run waits 45
+seconds and falls back to Chromium with an `engine:` line saying so -- `PRCODER_BROWSER=chromium`
+skips the wait; [tools/firefox-runner](../tools/firefox-runner/README.md) is why, and is the
 one-command re-check.
 
 Its assertions are written against this repo's own PR #1 — that description's sections, file groups
