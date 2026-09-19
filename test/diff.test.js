@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { diffRows, diffKind, outline, language, highlightLines } from '../public/diff.js';
+import { diffRows, diffKind, outline, language, grammars, highlightLines } from '../public/diff.js';
 
 const modified = '@@ -1,2 +1,3 @@\n ctx\n-old\n+new\n\\ No newline at end of file';
 
@@ -84,6 +84,23 @@ test('a name with no extension is no language', () => {
   assert.equal(language('scripts/bash'), null);
   assert.equal(language('doc/md'), null);
   assert.equal(language('src/json'), null);
+});
+
+// What server.js builds the Prism half of its vendor map from, derived from the
+// map above rather than written out beside it. Two things hold it together:
+// what core already carries is not asked for as a file of its own, and a
+// grammar built on others brings them along -- prism-tsx registers nothing
+// without jsx and typescript under it. A name missing here is a 404 the pane
+// shows as a plain file and a console line, which is why api.test.js fetches
+// every one of them.
+test('the grammar list brings prerequisites and leaves out what core carries', () => {
+  for (const core of ['markup', 'css', 'clike', 'javascript']) {
+    assert.ok(!grammars.includes(core), `${core} is in Prism core, not a file of its own`);
+  }
+  for (const l of ['tsx', 'jsx', 'typescript', 'markdown', 'yaml']) {
+    assert.ok(grammars.includes(l), `${l} is missing from the vendor list`);
+  }
+  assert.deepEqual(grammars, [...new Set(grammars)].sort(), 'sorted, and each named once');
 });
 
 // The real tokenizer, so a Prism upgrade that changes the token shape fails
