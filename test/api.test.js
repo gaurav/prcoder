@@ -71,10 +71,14 @@ test('the page is served with a CSP that forbids framing and foreign script', as
 
 // The vendor map is hand-written paths into node_modules, so it breaks silently
 // on an xterm upgrade -- and a 404 here is a blank page with a module error in
-// a console prcoder never shows. The grammars come from `language`'s own map
-// rather than a copy of it, so a language the page can ask for and the server
-// does not serve fails here rather than in the pane.
+// a console prcoder never shows. The server derives *which* grammars from the
+// page's own `grammars`, so the two cannot disagree about that; what is still
+// worth fetching is whether the file each one names is really there, which a
+// prismjs upgrade is what changes.
 test('the vendored xterm and Prism files are where the map says', async () => {
+  // A derived list that came back empty would pass the loop below without
+  // fetching anything, so it is checked for being a list of grammars first.
+  assert.ok(grammars.length > 5 && grammars.includes('tsx'), grammars.join(', '));
   for (const p of ['/vendor/xterm.mjs', '/vendor/xterm.css',
                    '/vendor/addon-fit.mjs', '/vendor/addon-web-links.mjs',
                    '/vendor/prism.js', ...grammars.map((l) => `/vendor/prism/${l}.js`)]) {

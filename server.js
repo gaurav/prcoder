@@ -18,6 +18,7 @@ import { parseFuture, renderPrBlock, syncFromPrBlock, toggleTask } from './queue
 import { readStore, writeStore, readPort, writePort, replaceItems } from './store.js';
 import * as term from './term.js';
 import { syncPhrase } from './public/pr.js';
+import { grammars } from './public/diff.js';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const repo = process.cwd();
@@ -614,13 +615,14 @@ const vendor = {
   '/vendor/xterm.css': '@xterm/xterm/css/xterm.css',
   '/vendor/addon-fit.mjs': '@xterm/addon-fit/lib/addon-fit.mjs',
   '/vendor/addon-web-links.mjs': '@xterm/addon-web-links/lib/addon-web-links.mjs',
-  // Prism core ships markup, css, clike and javascript. Every grammar below but
-  // tsx needs only those, so the page loads core and then the one it wants;
-  // tsx extends jsx and typescript, which `NEEDS` in public/diff.js loads first.
-  // A new grammar goes in both places -- components.json's `require` says what
-  // it needs, and test/api.test.js fetches every path this list must hold.
+  // Prism core ships markup, css, clike and javascript, and the page asks for
+  // one file per grammar on top of it. *Which* grammars is the page's own
+  // business -- `grammars` in public/diff.js is its extension map plus what
+  // those grammars are built on (tsx extends jsx and typescript) -- so a new
+  // language is added there alone and served here without being named twice.
+  // The paths stay literal, because they are a fact about node_modules.
   '/vendor/prism.js': 'prismjs/prism.js',
-  ...Object.fromEntries(['bash', 'diff', 'json', 'jsx', 'markdown', 'python', 'toml', 'tsx', 'typescript', 'yaml']
+  ...Object.fromEntries(grammars
     .map((l) => [`/vendor/prism/${l}.js`, `prismjs/components/prism-${l}.min.js`])),
 };
 
