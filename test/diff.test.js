@@ -71,6 +71,19 @@ test('language is by extension only, or nothing', () => {
   assert.equal(language('.bashrc'), null);
 });
 
+// A dotless name is a name, not an extension. `Makefile` above passes whatever
+// the rule is, because `makefile` happens not to be in the map; these do not.
+// Each is a real extensionless file with a key of the map for a name, and each
+// was highlighted as that language before the extension was taken off the
+// basename after a dot that is not its first character.
+test('a name with no extension is no language', () => {
+  assert.equal(language('patch'), null);
+  assert.equal(language('sh'), null);
+  assert.equal(language('scripts/bash'), null);
+  assert.equal(language('doc/md'), null);
+  assert.equal(language('src/json'), null);
+});
+
 // The real tokenizer, so a Prism upgrade that changes the token shape fails
 // here rather than in the pane. Two properties matter: every line joins back
 // to the source exactly (no character invented or dropped between the spans),

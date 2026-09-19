@@ -74,6 +74,10 @@ export function outline(rows) {
  * stranger's file, and this map is also the list of what the vendor map in
  * server.js serves -- core carries markup, css, clike and javascript, and each
  * of the others is one file under /vendor/prism/.
+ *
+ * The extension is the basename's, after a dot that is not its first character:
+ * a dotless `patch` or `sh` at the repo root is a file, not an extension, and a
+ * dotfile like `.gitignore` is all name. Both are plain.
  */
 const LANG = {
   js: 'javascript', mjs: 'javascript', cjs: 'javascript', jsx: 'jsx', ts: 'typescript', tsx: 'typescript',
@@ -81,7 +85,11 @@ const LANG = {
   md: 'markdown', html: 'markup', htm: 'markup', xml: 'markup', svg: 'markup', css: 'css',
   diff: 'diff', patch: 'diff', toml: 'toml',
 };
-export const language = (path) => LANG[path.slice(path.lastIndexOf('.') + 1).toLowerCase()] ?? null;
+export const language = (path) => {
+  const name = path.slice(path.lastIndexOf('/') + 1);
+  const dot = name.lastIndexOf('.');
+  return dot > 0 ? LANG[name.slice(dot + 1).toLowerCase()] ?? null : null;
+};
 
 /**
  * Pure: source text -> one array of {cls, text} segments per line, from Prism's
