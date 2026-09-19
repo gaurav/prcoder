@@ -38,10 +38,12 @@ belongs there too.
 putting the caret at offset 0 — survived every Chromium screenshot; see [CLAUDE.md](../CLAUDE.md)
 for the rest, and for the three fixes to it that do **not** work.
 `PRCODER_BROWSER=chromium` forces the other; running both is worth the second minute — when both
-run. As of 2026-09-17 Firefox does not start at all on this machine, so a default run waits 45
-seconds and falls back to Chromium with an `engine:` line saying so -- `PRCODER_BROWSER=chromium`
-skips the wait; [tools/firefox-runner](../tools/firefox-runner/README.md) is why, and is the
-one-command re-check.
+run. Firefox has not started on this machine since 2026-09-16, and on 2026-09-19 that build was
+uninstalled rather than left to time out, so `existsSync(firefox.executablePath())` is false and a
+default run now picks Chromium at once: no 45-second wait, no fallback line, and an `engine:` line
+that says chromium. Nothing here has had a Firefox pass since, which #61 is where to say so;
+[tools/firefox-runner](../tools/firefox-runner/README.md) is why it fails and is the one-command
+re-check, and `npx playwright install firefox` is what brings the build back.
 
 Its assertions are written against this repo's own PR #1 — that description's sections, file groups
 and issue chips — and the server follows whatever branch you are on, so a run from a feature branch
