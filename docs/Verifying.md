@@ -9,7 +9,8 @@ without a browser or a tty, plus one test that needs a browser: `test/browser.te
 page from the server started in-process, with the API routes and the `/pty` socket answered by
 Playwright from a fixture, so it needs no `gh`, no `claude` and no PTY, and asserts the things this
 pane has shipped broken -- raw markup as text, headings, checkbox write-back, the issue lists, the
-tab count. It skips with a note when Playwright or Chromium is missing; CI installs Chromium so it
+tab count -- and a quoted section, which is in its fixture because neither of this repo's own
+descriptions contains a `>` and so no driver run has ever shown one. It skips with a note when Playwright or Chromium is missing; CI installs Chromium so it
 runs there. Its blind spot is its fixture, shaped by hand from what `/api/status` answers today, so a
 field the server renames and the client follows still passes; the `gh` stub issue is what closes that.
 This file is about the rest, and about the rule that produced it.
@@ -197,8 +198,7 @@ Some things can only be checked against the real thing, so they are:
 
 And some only on screen. Driven in the browser: the two tabs and the folded description, including a
 forced poll to prove a fold survives `renderPr` replacing the whole pane, and each tab's scroll
-position crossed to the other tab and back, because the switch is what used to lose it; quoted sections, spliced
-into the `/api/status` response because neither of this repo's own descriptions contains a `>`; the
+position crossed to the other tab and back, because the switch is what used to lose it; the
 three splitters between the panes dragged to known coordinates and the page reloaded (not the
 fourth, inside the diff pane, which no pull request here can show), and moved again from the keyboard —
 focus lands, an arrow moves the line by ten and shift-arrow by fifty, `Home` resets, and

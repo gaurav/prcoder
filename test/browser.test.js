@@ -38,10 +38,15 @@ const skip = !chromium ? 'playwright is not installed (npm ci without --omit=dev
 
 // Each line here is a regression: `_for_` showed its underscores, the comment
 // and prcoder's own markers showed as text, `##` rendered literally, and a
-// <details> left a stray `</details>` behind. The tasks are in the lead, above
-// the first `##`, because sections render folded and a click needs a visible box.
+// <details> left a stray `</details>` behind. The quote is here because neither
+// of this repo's own descriptions has one, so no driver run ever showed it. The
+// tasks are in the lead, above the first `##`, because sections render folded
+// and a click needs a visible box.
 const BODY = [
   'Prose with _for_ in it, and a mention of #7.',
+  '',
+  '> A quoted line',
+  '> that continues.',
   '',
   '<!-- a comment',
   'spanning two lines -->',
@@ -114,10 +119,17 @@ test('raw markup does not reach the page as text', { skip }, async () => {
   // textContent, not innerText: the folded sections are hidden, and a stray
   // `</details>` inside one is exactly what this is for.
   const text = await page.$eval('#pr-body .md', (el) => el.textContent);
-  for (const raw of ['<!--', '-->', '##', '</details>', '<summary>', '_for_']) {
+  for (const raw of ['<!--', '-->', '##', '</details>', '<summary>', '_for_', '> ']) {
     assert.ok(!text.includes(raw), `${JSON.stringify(raw)} rendered as text in: ${text}`);
   }
   assert.ok(text.includes('Prose with for in it'), text);
+});
+
+test('a > run is one quote, its lines kept as lines', { skip }, async () => {
+  const quotes = page.locator('#pr-body .md blockquote');
+  assert.equal(await quotes.count(), 1);
+  // innerText, so the <br> the renderer puts between the lines reads as one.
+  assert.equal(await quotes.first().evaluate((el) => el.innerText), 'A quoted line\nthat continues.');
 });
 
 test('a ## starts a folded section, and deeper headings keep their depth', { skip }, async () => {
