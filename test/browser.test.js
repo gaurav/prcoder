@@ -134,9 +134,18 @@ async function newPage() {
       path, patch: `@@ -0,0 +1,${lines.length} @@\n` + lines.map((l) => '+' + l).join('\n'),
     } });
   });
+  // Answered in the shape the route uses on `queue-tabs` -- the body GitHub now
+  // holds -- rather than this branch's `{queue}`, because both are right here
+  // and only one is right there. toggleTask reads `queue` off the response and
+  // finds none, which is what `{queue: null}` said; the branch that reads
+  // `body` repaints its checkboxes from it. A mock written for one branch is
+  // the trap at the head of this file: it merges without a murmur and blanks
+  // the pane at runtime.
   await p.route('**/api/pr/task', (r) => {
-    posted.push(r.request().postDataJSON());
-    return r.fulfill({ json: { queue: null } });
+    const task = r.request().postDataJSON();
+    posted.push(task);
+    const box = task.done ? '- [x] ' : '- [ ] ';
+    return r.fulfill({ json: { body: BODY.replace(`- [${task.done ? ' ' : 'x'}] ${task.text}`, box + task.text) } });
   });
   await p.goto(`http://127.0.0.1:${server.address().port}/`);
   await p.waitForSelector('#pr-head .pr-title');
