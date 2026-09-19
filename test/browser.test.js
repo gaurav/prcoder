@@ -20,6 +20,19 @@
 // the server's own shaping in front of this test; until then, groups and checks
 // at least come from the server's shapers.
 //
+// Two things about the shape of this file, both of which have cost a debugging
+// session. The tests below share one page, so a tick in one is still ticked in
+// the next -- assert a count against what the page shows rather than against a
+// number written here, or the test that changes it breaks the test that reads
+// it. And every `route` mock is this repo's own copy of a route's contract: the
+// server can change its answer and nothing here will fail, because no test
+// calls the real handler. When a route's response shape changes, the mock is
+// not optional follow-up -- it is part of that change, and a merge that carries
+// this file to a branch whose routes have moved on will pass its own diff and
+// blank the pane at runtime. That happened merging into queue-tabs on
+// 2026-09-19, where /api/pr/task answers with the new body and the old mock's
+// `{queue: null}` assigned undefined over it.
+//
 // Chromium only, like tools/no-pr.mjs, and skipped rather than failed when
 // Playwright or its browser is missing: `npm test` on a machine without either
 // stays green with a note, and CI is where this is enforced.
