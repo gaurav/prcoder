@@ -31,8 +31,8 @@ The switcher in the PR pane header lists open pull requests and runs
 Commit button, because the checkout would fail anyway. On a branch with no pull
 request the pane says so, disables the editing controls, and offers to create
 one -- pushing the branch first if GitHub has not seen it. It still carries the
-way out of the window that the pull request head does: the repository and its
-issues, pulls and milestones.
+way out of the window that the pull request head does, laid out the same way:
+the issues, pulls and milestones, and the repository on the line below them.
 
 It also lists the open pull requests that merge *into* the branch you are on,
 which on `main` is the question that branch is interesting for. Clicking one
@@ -87,10 +87,14 @@ to drop back to the default. The sizes are remembered per browser, so the
 layout you settle on is the one the next `prcoder` opens with.
 
 **Pull request** — which pull request you are in stays at the top: the title,
-the state, the branch it targets, the checks. Under those, right-aligned, is the
-way out of the window: this pull request on GitHub, the repo, and its issues,
-pulls and milestones. Below that are two tabs, because reading the argument and
-working the files are two different things and each wants the whole pane.
+the state, the branch it targets, the checks. Under those is the way out of the
+window, on two lines: this pull request on GitHub with its issues, pulls and
+milestones, and below them the repository they are all in. The repository is on
+its own line because it is the only one of them whose length has no bound, and
+it truncates rather than wraps -- a long owner is clipped and the repository's
+own name kept, since that is the half that says which checkout you are in.
+Below that are two tabs, because reading the argument and working the files are
+two different things and each wants the whole pane.
 
 *Detail* is the description. It opens as the lead paragraph and then one folded
 line per section, so a long one is an outline you scan rather than a wall you
