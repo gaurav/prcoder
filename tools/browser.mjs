@@ -163,20 +163,21 @@ console.log('still open after a refresh:',
   JSON.stringify(await page.locator('.md-section[open] > summary h3').allInnerTexts()),
   ' (want the one clicked above)');
 
-// The head's way out of the pane, which is only right-aligned on screen: the
-// stylesheet says `justify-content: flex-end` on a row that is `.meta` as well,
-// and whether those two agree is a fact about the browser. Measured against the
-// head's own content box, with the title's left edge as the control -- the row
-// moved, the rest of the head did not.
+// The head's way out of the pane, which is two lines and only on screen: both
+// of them are `.meta`, neither has an alignment rule any more, and whether that
+// leaves them at the same left edge as everything else in the head is a fact
+// about the browser rather than about the stylesheet. The title is the control
+// -- it never moved, and these two are now supposed to agree with it. (They did
+// not until 2026-09-21: the row was `justify-content: flex-end`, and this check
+// measured its right edge instead. The stylesheet says why it moved back.)
 console.log('head:   ', await page.evaluate(() => {
   const row = document.querySelector('#pr-head .pr-links');
-  const head = document.getElementById('pr-head');
-  const pad = parseFloat(getComputedStyle(head).paddingRight);
-  const edge = Math.round(head.getBoundingClientRect().right - pad);
-  const title = document.querySelector('#pr-head .pr-title').getBoundingClientRect();
-  return `${[...row.querySelectorAll('a')].map((a) => a.textContent).join(' ')} | row right ${
-    Math.round(row.getBoundingClientRect().right)} of ${edge}, title left ${Math.round(title.left)}`;
-}), ' (want the row flush with the head edge, the title still at the margin)');
+  const repo = document.querySelector('#pr-head .pr-repo');
+  const at = (el) => Math.round(el.getBoundingClientRect().left);
+  const title = at(document.querySelector('#pr-head .pr-title'));
+  return `${[...row.querySelectorAll('a')].map((a) => a.textContent).join(' ')} | row left ${
+    at(row)}, repo left ${at(repo)}, title left ${title}`;
+}), ' (want all three the same)');
 console.log('out:    ', await page.evaluate(() =>
   [...document.querySelectorAll('#pr-head .pr-links a')].map((a) => a.href).join(' ')));
 // The dots between them are delimiters, and were an `a::before` -- which is

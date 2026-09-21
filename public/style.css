@@ -145,19 +145,23 @@ a { color: var(--accent); }
 #pr-head > :last-child { margin-bottom: 0; }
 
 .empty { color: var(--dim); }
-/* The head's way out: this pull request on GitHub, the repo, and the lists you
-   leave for. Right-aligned because it is a way *out* of the pane rather than
-   part of what the pane says -- the title, the badges and the tabs all start at
-   the left margin, and this line started there too, where it was looked for to
-   the right of the title or under the badges and never found at the top.
+/* The head's way out -- this pull request on GitHub, the lists you leave for,
+   and the repository under them -- starts at the left margin, like the title,
+   the badges and the tabs. It has no alignment rule of its own; `.meta` is
+   already flex-start, and `.pr-links` is kept only as a hook for the driver.
 
-   `justify-content` rather than `text-align`: at the pane's 375px default the
-   row wraps, and this is what keeps the wrapped half against the right edge. It
-   reuses `.meta` for the flex, the wrap, the gap and the 12px dim type, so the
-   only thing said twice would be the alignment. */
-.pr-links { justify-content: flex-end; }
+   It was `justify-content: flex-end` for a while, and the reason is worth
+   knowing before moving it back. As one line of five links it read as one more
+   row of dim 12px text between the badges and the tabs, and people looked for
+   it to the right of the title or under the badges and never found it at the
+   top; pushing it to the right edge was what made it a thing rather than part
+   of the pane's prose. Two lines, the second of them a bare repository slug,
+   do that on their own -- the block has a shape now. Left is also where the
+   pane with no pull request has always drawn the same links, so the two panes
+   agree for the first time, and a line that clips is easier to read from an
+   edge that does not move with its content.
 
-/* The repository, on the line under that row rather than in the middle of it.
+   The repository, on the line under that row rather than in the middle of it.
    It is the only link there whose width has no bound -- a real
    `heal-data-stewards/heal-non-data-dictionaries` is most of the pane at its
    375px default -- so in the row it wrapped, and dragged where issues, pulls
@@ -168,7 +172,6 @@ a { color: var(--accent); }
    `.meta` gives every other row. `.pr-repo` keeps the 8px, which is the gap to
    the tabs and is unchanged. */
 .pr-ways { margin-bottom: 2px; }
-#pr-head .pr-repo { justify-content: flex-end; }
 .pr-repo a { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* Serif, like the description under it: the title is the first sentence of the
