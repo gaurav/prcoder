@@ -181,20 +181,27 @@ console.log('head:   ', await page.evaluate(() => {
 console.log('out:    ', await page.evaluate(() =>
   [...document.querySelectorAll('#pr-head .pr-links a')].map((a) => a.href).join(' ')));
 // The repository is the line under that row because it is the one link with no
-// bound on its width, and it clips rather than wraps. test/browser.test.js
-// pins the clipping against a fixture with a 44-character slug; what it cannot
-// say is what this repo's own slug does at the width the pane really opens at,
-// which is usually nothing at all -- `whole` here is the expected answer, and
-// the narrowed line below is where the two spans have to do their job. The
-// pane's floor is 180px, so that is a width a drag can really reach.
+// bound on its width, and it clips rather than wraps.
+//
+// Both lines say `whole` against this repository and that is the right answer:
+// `gaurav/prcoder` is 14 characters and fits the 180px floor with room over.
+// The clipping itself is pinned in test/browser.test.js, whose fixture carries
+// a 44-character slug; what a driver run adds is the shape of the block at a
+// width a drag can really reach, which is pr-head-narrow.png -- the links row
+// wraps there, and the repository line under it does not.
+//
+// So this is a check that goes quiet on a long slug: `owner ... clipped` here
+// means the run was against a repository whose name this pane cannot hold, and
+// what to look at then is whether the *name* is still whole beside it.
 const repoLine = async () => page.evaluate(() => {
   const state = (sel) => { const e = document.querySelector(sel);
     return `${JSON.stringify(e.textContent)} ${e.scrollWidth > e.clientWidth ? 'clipped' : 'whole'}`; };
   return `owner ${state('#pr-head .pr-repo .owner')}, name ${state('#pr-head .pr-repo .name')}`;
 });
-console.log('repo:   ', await repoLine(), ' (want both whole at the default width)');
+console.log('repo:   ', await repoLine(), ' (want both whole -- this repo\'s slug is short)');
 await page.evaluate(() => document.querySelector('main').style.setProperty('--w-pr', '180px'));
-console.log('repo180:', await repoLine(), ' (want the owner clipped, the name whole)');
+console.log('repo180:', await repoLine(),
+  ' (want the name whole; the owner clips only where the slug is long)');
 await page.locator('#pr').screenshot({ path: path.join(out, 'pr-head-narrow.png') });
 await page.evaluate(() => document.querySelector('main').style.removeProperty('--w-pr'));
 // The dots between them are delimiters, and were an `a::before` -- which is

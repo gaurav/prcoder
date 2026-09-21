@@ -216,6 +216,21 @@ Some things can only be checked against the real thing, so they are:
   characters into text people copy. `<bdi>` needs no styles of its own and is what shipped. The
   driver measures the dot's position with range rectangles rather than screenshotting it, because at
   13px a misplaced leading dot reads as a full stop and is invisible either way.
+- **Which CSS keeps a repository's name when its owner will not fit**, same method, four
+  declarations each checked by dropping it (2026-09-21, Chromium; the Firefox pass is owed on
+  [#61](https://github.com/gaurav/prcoder/issues/61), and flex shrink is a place the engines have
+  disagreed). The head's repository line is one link in two spans -- the owner shrinks and
+  ellipsises, the name is `flex: none` -- and `heal-data-stewards/heal-non-data-dictionaries`
+  becomes `heal-dat…/heal-non-data-dictionaries` in a narrow pane. Three of the four are pinned in
+  `test/browser.test.js`, which narrows the pane by writing `--w-pr` the way a drag does; the
+  fourth, `max-width` on the name, is for a name that alone will not fit and the pane's own 180px
+  floor is too wide to reach it, so it was checked by hand against a 60-character one.
+
+  The dotfile column's `direction: rtl` is the obvious one-declaration alternative and was measured
+  against this: it works, with or without `<bdi>`, and stays inside the pane in all three cases. It
+  is not what shipped, because the two cut opposite ends. A path wants its tail -- the filename --
+  and rtl keeps it. An owner is recognised from its front, and rtl leaves `…tewards`, which is not
+  the organisation to anyone reading it; the two spans leave `heal-dat…`, which is.
 
 And some only on screen. Driven in the browser: the two tabs and the folded description, including a
 forced poll to prove a fold survives `renderPr` replacing the whole pane, and each tab's scroll
@@ -227,10 +242,13 @@ focus lands, an arrow moves the line by ten and shift-arrow by fifty, `Home` res
 (it was a ResizeObserver on the 1px gutter, which a move never resizes); the switcher, both sync-light
 states, the Deleted tab (which needed a tombstone put in through the API before it would render at
 all), the queue's synced light, the description's checkboxes and the disabled states; and both
-toasts, the four-second one watched to fade and the sticky one clicked away; the head's row of links out, whose right
-alignment is measured against the head's own content edge with the title's left edge as the control,
-because `justify-content` on a row that is also `.meta` is an agreement between two rules that only
-the browser settles, and whose separators are hit-tested at their own centres -- they were an
+toasts, the four-second one watched to fade and the sticky one clicked away; the head's two lines of
+links out, whose left edges are measured against the title's -- they were right-aligned until
+2026-09-21, and the check that they line up with everything else in the head is what replaced the
+one that proved they did not -- and the repository line under them, printed whole or clipped at the
+default width and again at the pane's 180px floor (both `whole` against `gaurav/prcoder`, which is
+short enough to fit either; the clipping is a test's job, and what the run adds is the shape of the
+block in `pr-head-narrow.png`), and whose separators are hit-tested at their own centres -- they were an
 `a::before`, which lives inside the link's box, so each dot was underlined with its link and a press
 on one followed the link to its right, and that a separator is now its own element says nothing
 about where a click lands; the description's two

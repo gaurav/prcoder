@@ -197,7 +197,14 @@ a { color: var(--accent); }
 
    The owner needs no `min-width: 0` of its own. `overflow: hidden` already
    makes a flex item's automatic minimum size zero, and the pair passed every
-   check with the declaration removed. */
+   check with the declaration removed.
+
+   `direction: rtl` -- what the dotfile column two panes over uses to clip a
+   long path and keep its filename -- is one declaration instead of four and
+   was measured against this. It works. It is not here because the two cut
+   opposite ends: a path is recognised from its tail, an owner from its front,
+   and rtl leaves `…tewards` where the spans leave `heal-dat…`.
+   docs/Verifying.md has the comparison. */
 .pr-ways { margin-bottom: 2px; }
 .pr-repo a { display: inline-flex; min-width: 0; }
 .pr-repo .owner { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
