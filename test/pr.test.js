@@ -214,7 +214,18 @@ test('the head links point at the repository the pull request is in', () => {
     ['pulls', 'https://github.test/o/r/pulls'],
     ['milestones', 'https://github.test/o/r/milestones'],
   ]);
-  assert.deepEqual(repo, { href: 'https://github.test/o/r', slug: 'o/r' });
+  assert.deepEqual(repo, { href: 'https://github.test/o/r', slug: 'o/r', owner: 'o', rest: '/r' });
+});
+
+// The line clips on purpose, and the two spans are what decide which half goes.
+// The slash belongs to the name: clipping a span that ended with it would give
+// `heal-data-...heal-non-data-dictionaries`, with nothing to say a level was
+// dropped. A repository name can hold slashes in other forges, so the split is
+// at the first one and the rest is one piece.
+test('the repository line splits at the first slash, keeping the slash with the name', () => {
+  const { repo } = headLinks({ number: 1, url: 'https://github.com/heal-data-stewards/heal-non-data-dictionaries/pull/1' });
+  assert.deepEqual([repo.owner, repo.rest], ['heal-data-stewards', '/heal-non-data-dictionaries']);
+  assert.equal(repo.owner + repo.rest, repo.slug);
 });
 
 // A fork's pull request is opened *against* this repository, and its issues and
@@ -240,7 +251,8 @@ test('with no pull request the repository and its lists are still linked', () =>
     ['pulls', 'https://github.com/ggvaidya/prcoder/pulls'],
     ['milestones', 'https://github.com/ggvaidya/prcoder/milestones'],
   ]);
-  assert.deepEqual(repo, { href: 'https://github.com/ggvaidya/prcoder', slug: 'ggvaidya/prcoder' });
+  assert.deepEqual(repo,
+    { href: 'https://github.com/ggvaidya/prcoder', slug: 'ggvaidya/prcoder', owner: 'ggvaidya', rest: '/prcoder' });
 });
 
 // Before `gh repo view` has answered -- or outside a GitHub remote entirely --

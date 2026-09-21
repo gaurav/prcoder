@@ -180,6 +180,23 @@ console.log('head:   ', await page.evaluate(() => {
 }), ' (want all three the same)');
 console.log('out:    ', await page.evaluate(() =>
   [...document.querySelectorAll('#pr-head .pr-links a')].map((a) => a.href).join(' ')));
+// The repository is the line under that row because it is the one link with no
+// bound on its width, and it clips rather than wraps. test/browser.test.js
+// pins the clipping against a fixture with a 44-character slug; what it cannot
+// say is what this repo's own slug does at the width the pane really opens at,
+// which is usually nothing at all -- `whole` here is the expected answer, and
+// the narrowed line below is where the two spans have to do their job. The
+// pane's floor is 180px, so that is a width a drag can really reach.
+const repoLine = async () => page.evaluate(() => {
+  const state = (sel) => { const e = document.querySelector(sel);
+    return `${JSON.stringify(e.textContent)} ${e.scrollWidth > e.clientWidth ? 'clipped' : 'whole'}`; };
+  return `owner ${state('#pr-head .pr-repo .owner')}, name ${state('#pr-head .pr-repo .name')}`;
+});
+console.log('repo:   ', await repoLine(), ' (want both whole at the default width)');
+await page.evaluate(() => document.querySelector('main').style.setProperty('--w-pr', '180px'));
+console.log('repo180:', await repoLine(), ' (want the owner clipped, the name whole)');
+await page.locator('#pr').screenshot({ path: path.join(out, 'pr-head-narrow.png') });
+await page.evaluate(() => document.querySelector('main').style.removeProperty('--w-pr'));
 // The dots between them are delimiters, and were an `a::before` -- which is
 // inside the link's box, so they were underlined with it and a press on one
 // followed the link to its right. Hit-tested rather than read off the DOM: that

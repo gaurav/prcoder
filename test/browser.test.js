@@ -84,7 +84,9 @@ const BODY = [
   '<!-- /prcoder:todo -->',
 ].join('\n');
 
-const REPO = 'https://github.com/example/repo';
+// A long slug on purpose: the head's repository line is built to be clipped,
+// and `example/repo` fits any pane this ever opens at. This one is real.
+const REPO = 'https://github.com/heal-data-stewards/heal-non-data-dictionaries';
 // One added file, with markup in it: the diff pane highlights a NEW file from
 // Prism's tokens, and this is the source that shows if any of it is ever built
 // as HTML rather than text.
@@ -111,7 +113,8 @@ const pr = {
 };
 const status = {
   branch: 'topic', head: 'b'.repeat(40), detached: false, dirtyFiles: [], sync: 'synced', ahead: 0,
-  defaultBranch: 'main', nameWithOwner: 'example/repo', scope: 'current', mirrorFailed: false,
+  defaultBranch: 'main', nameWithOwner: 'heal-data-stewards/heal-non-data-dictionaries',
+  scope: 'current', mirrorFailed: false,
   pr, queue: [],
 };
 
@@ -213,6 +216,57 @@ test('the issues the description mentions are listed below it, titled', { skip }
 test('the tab carries the task count', { skip }, async () => {
   const tabs = await page.locator('#pr-head .tab').allTextContents();
   assert.ok(tabs.includes('Detail (1/3)'), JSON.stringify(tabs));
+});
+
+// The repository is the one link in the head with no bound on its width, which
+// is why it is no longer in the row: it wrapped the row and moved the three
+// lists around with it. Asserted as a place in the DOM rather than as a
+// rendered width, because that is what the truncation below hangs off.
+test('the repository is a line of its own, not a link in the row', { skip }, async () => {
+  assert.deepEqual(await page.locator('#pr-head .pr-links a').allTextContents(),
+    ['PR #12', 'issues', 'pulls', 'milestones']);
+  const repo = page.locator('#pr-head .pr-repo a');
+  assert.equal(await repo.textContent(), 'heal-data-stewards/heal-non-data-dictionaries');
+  assert.equal(await repo.getAttribute('href'), REPO);
+  assert.equal(await repo.getAttribute('title'), 'heal-data-stewards/heal-non-data-dictionaries');
+});
+
+// The point of the two spans, and the one thing here no unit test can see:
+// which half of the slug survives a pane too narrow for it. The owner clips and
+// the name does not, so what is left says which checkout this is -- the owner
+// is the same all day.
+//
+// Narrowed by writing `--w-pr` on <main>, which is exactly what dragging the
+// gutter writes (see panes.js): 200px is a pane someone has pulled in to give
+// the terminal the window, and the stylesheet's clamp floor is 180px, so this
+// is a width the app really reaches. The default 375px is checked first, both
+// as the control and because a line that clips when it did not need to would
+// pass every assertion below.
+test('a slug wider than the pane clips the owner and keeps the name whole', { skip }, async () => {
+  const fresh = await newPage();
+  const box = (sel) => fresh.$eval(sel, (el) =>
+    ({ scroll: el.scrollWidth, client: el.clientWidth, right: el.getBoundingClientRect().right }));
+  const whole = await box('#pr-head .pr-repo a');
+  assert.equal(whole.scroll, whole.client, `the pane opens wide enough for the slug, ${JSON.stringify(whole)}`);
+
+  await fresh.evaluate(() => document.querySelector('main').style.setProperty('--w-pr', '200px'));
+  const owner = await box('#pr-head .pr-repo .owner');
+  const name = await box('#pr-head .pr-repo .name');
+  assert.ok(owner.scroll > owner.client, `the owner should be clipped, ${JSON.stringify(owner)}`);
+  assert.equal(name.scroll, name.client, `the name should be whole, ${JSON.stringify(name)}`);
+  // And the clipped line stays inside the pane rather than merely wearing an
+  // ellipsis: a flex item that refuses to shrink overflows with one on.
+  const edge = () => fresh.$eval('#pr-head', (el) =>
+    el.getBoundingClientRect().right - parseFloat(getComputedStyle(el).paddingRight));
+  assert.ok(name.right <= Math.ceil(await edge()), `line ends at ${name.right}, head content edge ${await edge()}`);
+
+  // At the stylesheet's 180px floor the name is still the last thing to go:
+  // the owner has nothing left to shrink into and the name is whole anyway.
+  await fresh.evaluate(() => document.querySelector('main').style.setProperty('--w-pr', '180px'));
+  const floor = await box('#pr-head .pr-repo .name');
+  assert.equal(floor.scroll, floor.client, `the name should survive the floor, ${JSON.stringify(floor)}`);
+  assert.ok(floor.right <= Math.ceil(await edge()), `line ends at ${floor.right}, head content edge ${await edge()}`);
+  await fresh.close();
 });
 
 // The tokenizer runs in the page over whatever a pull request adds, so the file

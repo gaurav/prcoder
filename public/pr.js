@@ -376,8 +376,25 @@ export const headLinks = (pr) => {
 const listLinks = (repo) =>
   ['issues', 'pulls', 'milestones'].map((p) => ({ text: p, href: `${repo}/${p}` }));
 
-/** The repository itself, as its own line rather than a link in the row. */
-const repoCrumb = (repo) => ({ href: repo, slug: repoName(repo) });
+/**
+ * The repository itself, as its own line rather than a link in the row, split
+ * at the first slash so the line can be truncated on purpose.
+ *
+ * `rest` carries the slash. The owner is the half that gives way when the slug
+ * will not fit -- it is the same all day, where the name is what tells you
+ * which checkout you are looking at -- and `heal-data-…heal-non-data-dictionaries`
+ * would be the result of clipping a span that ended with the separator.
+ *
+ * A slug with no slash at all should not reach here, but if one does it is all
+ * name and no owner, which clips the way any other unsplittable name does.
+ */
+const repoCrumb = (repo) => {
+  const slug = repoName(repo);
+  const cut = slug.indexOf('/');
+  return cut < 0
+    ? { href: repo, slug, owner: '', rest: slug }
+    : { href: repo, slug, owner: slug.slice(0, cut), rest: slug.slice(cut) };
+};
 
 /**
  * The same way out, for the pane that has no pull request to build it from.
@@ -411,9 +428,18 @@ const linkRow = (list, className) => h('div', { className },
     ext(l.href, l.text),
   ]));
 
-/** The repository, alone on the line under that row. */
+/**
+ * The repository, alone on the line under that row.
+ *
+ * One link in two spans, because the CSS shrinks them differently: the owner
+ * ellipsises and the name is held whole. `title` is the slug uncut, which is
+ * the only way back to an owner the pane has clipped.
+ */
 const repoRow = (crumb, className) => h('div', { className },
-  ext(crumb.href, crumb.slug));
+  ext(crumb.href, [
+    crumb.owner ? h('span', { className: 'owner' }, crumb.owner) : null,
+    h('span', { className: 'name' }, crumb.rest),
+  ], { title: crumb.slug }));
 
 /**
  * The pull request pane, in two roots.

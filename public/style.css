@@ -170,9 +170,38 @@ a { color: var(--accent); }
 
    The two are one block, so the gap between them is 2px rather than the 8px
    `.meta` gives every other row. `.pr-repo` keeps the 8px, which is the gap to
-   the tabs and is unchanged. */
+   the tabs and is unchanged.
+
+   Which half of the slug gets clipped is the point of the two spans. A pane
+   too narrow for `heal-data-stewards/heal-non-data-dictionaries` shows
+   `heal-data-…/heal-non-data-dictionaries`: the owner gives way, because it is
+   the same all day, and the name is the half that says which checkout this is.
+   `title` on the link (see repoRow) is the way back to the whole slug.
+
+   Every declaration below is load-bearing, each checked by dropping it on
+   2026-09-21 (Chromium; #61 is the owed Firefox pass, and flex shrink is
+   exactly the kind of thing engines have disagreed about). The first three
+   are pinned by test/browser.test.js, which fails on each:
+
+   - `inline-flex` on the link, or none of the rest applies and the line simply
+     overflows the pane.
+   - `min-width: 0` on the link, which is what lets a flex item shrink past its
+     own content. `max-width: 100%` in its place works identically.
+   - `flex: none` on the name, or the two spans shrink together and the name is
+     clipped alongside the owner -- which is the whole thing this avoids.
+   - `max-width: 100%` on the name, the floor for a repository whose name alone
+     will not fit: without it that name overflows the pane with the ellipsis
+     still on it, owner already collapsed to nothing. This is the one the test
+     cannot reach -- the pane's own floor is 180px and no real name is that
+     wide at 12px -- so it was checked by hand against a 60-character one.
+
+   The owner needs no `min-width: 0` of its own. `overflow: hidden` already
+   makes a flex item's automatic minimum size zero, and the pair passed every
+   check with the declaration removed. */
 .pr-ways { margin-bottom: 2px; }
-.pr-repo a { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pr-repo a { display: inline-flex; min-width: 0; }
+.pr-repo .owner { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pr-repo .name { flex: none; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* Serif, like the description under it: the title is the first sentence of the
    argument, not a label on the pane. Everything else in this header -- the
