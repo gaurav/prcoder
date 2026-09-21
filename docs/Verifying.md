@@ -226,6 +226,12 @@ Some things can only be checked against the real thing, so they are:
   fourth, `max-width` on the name, is for a name that alone will not fit and the pane's own 180px
   floor is too wide to reach it, so it was checked by hand against a 60-character one.
 
+  One shape to avoid in that test, which cost a red CI run: **do not compare a rendered text width
+  against a pane width.** The fixture's name is 156px in this machine's 12px system font and 162px
+  in the runner's, against 160px of content at the pane's floor -- so "the name is still whole
+  there" passed on macOS and failed on Linux, and the assertion was about a font rather than about
+  the CSS. The two spans are compared with each other instead, which is the claim anyway.
+
   The dotfile column's `direction: rtl` is the obvious one-declaration alternative and was measured
   against this: it works, with or without `<bdi>`, and stays inside the pane in all three cases. It
   is not what shipped, because the two cut opposite ends. A path wants its tail -- the filename --

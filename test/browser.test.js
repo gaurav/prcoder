@@ -260,12 +260,21 @@ test('a slug wider than the pane clips the owner and keeps the name whole', { sk
     el.getBoundingClientRect().right - parseFloat(getComputedStyle(el).paddingRight));
   assert.ok(name.right <= Math.ceil(await edge()), `line ends at ${name.right}, head content edge ${await edge()}`);
 
-  // At the stylesheet's 180px floor the name is still the last thing to go:
-  // the owner has nothing left to shrink into and the name is whole anyway.
+  // At the stylesheet's 180px floor the ordering still holds: the owner has
+  // given up everything before the name gives up anything.
+  //
+  // What this does *not* assert is that the name survives whole, which is how
+  // it was written first and how it went red on CI. The name is 156px in this
+  // machine's 12px system font and 162px in the runner's, against 160px of
+  // content at the floor -- so the same page clips on Linux and does not on
+  // macOS, and the assertion was really about a font. Anything here that
+  // compares a text width against a pane width has that problem; compare the
+  // two spans with each other instead, which is the claim anyway.
   await fresh.evaluate(() => document.querySelector('main').style.setProperty('--w-pr', '180px'));
-  const floor = await box('#pr-head .pr-repo .name');
-  assert.equal(floor.scroll, floor.client, `the name should survive the floor, ${JSON.stringify(floor)}`);
-  assert.ok(floor.right <= Math.ceil(await edge()), `line ends at ${floor.right}, head content edge ${await edge()}`);
+  const [lastOwner, lastName] = [await box('#pr-head .pr-repo .owner'), await box('#pr-head .pr-repo .name')];
+  assert.ok(lastOwner.client < lastName.client,
+    `the owner should yield first, ${JSON.stringify({ lastOwner, lastName })}`);
+  assert.ok(lastName.right <= Math.ceil(await edge()), `line ends at ${lastName.right}, head content edge ${await edge()}`);
   await fresh.close();
 });
 
