@@ -202,44 +202,53 @@ test('a bare #N becomes a link to the issue of that number', () => {
 // The row under the badges. Derived from the PR's own URL rather than from the
 // status's nameWithOwner, which carries no host -- so this is also the test that
 // a GitHub Enterprise install is not quietly sent to github.com.
+//
+// The repository is not in the row. It is the one link with no bound on its
+// width, and it wrapped the row; it comes back separately for the line below.
 test('the head links point at the repository the pull request is in', () => {
   const pr = { number: 7, url: 'https://github.test/o/r/pull/7', headRefName: 'topic', baseRefName: 'main' };
-  assert.deepEqual(headLinks(pr).map((l) => [l.text, l.href]), [
+  const { links, repo } = headLinks(pr);
+  assert.deepEqual(links.map((l) => [l.text, l.href]), [
     ['PR #7', 'https://github.test/o/r/pull/7'],
-    ['o/r', 'https://github.test/o/r'],
     ['issues', 'https://github.test/o/r/issues'],
     ['pulls', 'https://github.test/o/r/pulls'],
     ['milestones', 'https://github.test/o/r/milestones'],
   ]);
+  assert.deepEqual(repo, { href: 'https://github.test/o/r', slug: 'o/r' });
 });
 
 // A fork's pull request is opened *against* this repository, and its issues and
 // milestones are here rather than in the fork. The URL is the base repo's
-// either way, which is the whole reason these are derived from it.
+// either way, which is the whole reason these are derived from it. The repo
+// line is in this too -- it is the same derivation, off to one side.
 test('a pull request from a fork links to the repository it was opened against', () => {
   const fork = {
     number: 9, url: 'https://github.test/o/r/pull/9', isCrossRepository: true,
     headRefName: 'contributor:patch', baseRefName: 'main',
   };
-  for (const l of headLinks(fork)) assert.match(l.href, /^https:\/\/github\.test\/o\/r(\/|$)/);
+  const { links, repo } = headLinks(fork);
+  for (const l of [...links, repo]) assert.match(l.href, /^https:\/\/github\.test\/o\/r(\/|$)/);
 });
 
 // The pane with no pull request offers the same lists, minus the pull request
-// itself.
+// itself -- and in the same shape, because both panes render it with the same
+// two calls.
 test('with no pull request the repository and its lists are still linked', () => {
-  assert.deepEqual(noPrLinks(status()).map((l) => [l.text, l.href]), [
-    ['ggvaidya/prcoder', 'https://github.com/ggvaidya/prcoder'],
+  const { links, repo } = noPrLinks(status());
+  assert.deepEqual(links.map((l) => [l.text, l.href]), [
     ['issues', 'https://github.com/ggvaidya/prcoder/issues'],
     ['pulls', 'https://github.com/ggvaidya/prcoder/pulls'],
     ['milestones', 'https://github.com/ggvaidya/prcoder/milestones'],
   ]);
+  assert.deepEqual(repo, { href: 'https://github.com/ggvaidya/prcoder', slug: 'ggvaidya/prcoder' });
 });
 
 // Before `gh repo view` has answered -- or outside a GitHub remote entirely --
 // there is nothing to build a URL from, and a row of links to
-// `https://github.com/undefined` is worse than no row at all.
+// `https://github.com/undefined` is worse than no row at all. A null repo is
+// what both panes check before drawing either line.
 test('no repository means no links rather than links to nowhere', () => {
-  assert.deepEqual(noPrLinks(status({ nameWithOwner: undefined })), []);
+  assert.deepEqual(noPrLinks(status({ nameWithOwner: undefined })), { links: [], repo: null });
 });
 
 // The list the switcher fetches, which carries every open pull request in the

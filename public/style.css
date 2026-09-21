@@ -157,6 +157,20 @@ a { color: var(--accent); }
    only thing said twice would be the alignment. */
 .pr-links { justify-content: flex-end; }
 
+/* The repository, on the line under that row rather than in the middle of it.
+   It is the only link there whose width has no bound -- a real
+   `heal-data-stewards/heal-non-data-dictionaries` is most of the pane at its
+   375px default -- so in the row it wrapped, and dragged where issues, pulls
+   and milestones sat along with it. Alone on a line it can overflow instead:
+   the row above keeps one predictable shape, and this line clips.
+
+   The two are one block, so the gap between them is 2px rather than the 8px
+   `.meta` gives every other row. `.pr-repo` keeps the 8px, which is the gap to
+   the tabs and is unchanged. */
+.pr-ways { margin-bottom: 2px; }
+#pr-head .pr-repo { justify-content: flex-end; }
+.pr-repo a { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
 /* Serif, like the description under it: the title is the first sentence of the
    argument, not a label on the pane. Everything else in this header -- the
    branch names, the badges, the tabs -- stays sans, so the split is the same

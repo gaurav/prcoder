@@ -248,15 +248,16 @@ export function renderNoPr(status, prs, { onCreate, onSwitch }) {
 
   // The same way out of the window the head carries, which is the one thing
   // this pane can still offer: there is no pull request, but the repository and
-  // its lists are where you would go to find out why. Left-aligned, unlike the
-  // head's: that one is a line in a block of pull request facts and has to be
-  // told apart from them, where this sits alone between a sentence and a button.
+  // its lists are where you would go to find out why. Laid out exactly as the
+  // head lays it out, down to the class names -- the two panes used to disagree
+  // about where it went, and there was never a reason for them to.
   const out = noPrLinks(status);
 
   host.replaceChildren(...kids([
     h('p', { className: 'empty' }, why),
     intoRow(status, prs, onSwitch),
-    out.length ? linkRow(out, 'meta') : null,
+    out.repo ? linkRow(out.links, 'meta pr-ways') : null,
+    out.repo ? repoRow(out.repo, 'meta pr-repo') : null,
     status.sync === 'unpushed' && can
       ? h('p', { className: 'pr-note' }, 'This branch is not on GitHub yet; it will be pushed first.')
       : null,
@@ -338,9 +339,18 @@ const linkBase = (pr) => ({
 const repoName = (repoUrl) => repoUrl.replace(/^https?:\/\/[^/]+\//, '');
 
 /**
- * The head's way out of the pane: this pull request on GitHub, then the repo it
- * is in and the three lists people leave for -- issues, pull requests,
- * milestones.
+ * The head's way out of the pane, in two parts: a row of links -- this pull
+ * request on GitHub and the three lists people leave for -- and the repository
+ * they are all in, which gets a line to itself.
+ *
+ * The repository used to sit in the middle of that row, between `PR #62` and
+ * `issues`, and it is the only part of it whose width has no bound.
+ * `heal-data-stewards/heal-non-data-dictionaries` is a real one, and at 12px it
+ * is most of the pane at its 375px default -- so the row wrapped, and where
+ * `issues`/`pulls`/`milestones` were moved from one repository to the next. The
+ * four links you aim at are the four that are always the same length; keeping
+ * them on a line of their own is what makes them findable, and lets the line
+ * below them truncate instead of wrap (see .pr-repo in the stylesheet).
  *
  * Built from the PR's own URL rather than from the `nameWithOwner` the status
  * carries, which says nothing about the host. That keeps these links right for
@@ -356,15 +366,18 @@ const repoName = (repoUrl) => repoUrl.replace(/^https?:\/\/[^/]+\//, '');
  */
 export const headLinks = (pr) => {
   const { repo } = linkBase(pr);
-  return [{ text: `PR #${pr.number}`, href: pr.url }, ...repoLinks(repo)];
+  return {
+    links: [{ text: `PR #${pr.number}`, href: pr.url }, ...listLinks(repo)],
+    repo: repoCrumb(repo),
+  };
 };
 
-/** The repository and the three lists: the tail of the head's row, and the
- *  whole of the one in the pane with no pull request to head. */
-const repoLinks = (repo) => [
-  { text: repoName(repo), href: repo },
-  ...['issues', 'pulls', 'milestones'].map((p) => ({ text: p, href: `${repo}/${p}` })),
-];
+/** The three lists people leave for. */
+const listLinks = (repo) =>
+  ['issues', 'pulls', 'milestones'].map((p) => ({ text: p, href: `${repo}/${p}` }));
+
+/** The repository itself, as its own line rather than a link in the row. */
+const repoCrumb = (repo) => ({ href: repo, slug: repoName(repo) });
 
 /**
  * The same way out, for the pane that has no pull request to build it from.
@@ -373,9 +386,15 @@ const repoLinks = (repo) => [
  * URL to read one off -- `nameWithOwner` is all `gh repo view` was asked for.
  * That makes this the third of the github.com assumptions #53 is about, not a
  * new kind of one; the head's is still the part not to undo.
+ *
+ * Same shape as headLinks minus the pull request, and rendered by the same two
+ * calls -- before this the two panes laid the same links out differently.
  */
-export const noPrLinks = ({ nameWithOwner }) =>
-  nameWithOwner ? repoLinks(`https://github.com/${nameWithOwner}`) : [];
+export const noPrLinks = ({ nameWithOwner }) => {
+  if (!nameWithOwner) return { links: [], repo: null };
+  const repo = `https://github.com/${nameWithOwner}`;
+  return { links: listLinks(repo), repo: repoCrumb(repo) };
+};
 
 /**
  * One row of links, dot-separated.
@@ -391,6 +410,10 @@ const linkRow = (list, className) => h('div', { className },
     i ? h('span', { className: 'sep' }, '·') : null,
     ext(l.href, l.text),
   ]));
+
+/** The repository, alone on the line under that row. */
+const repoRow = (crumb, className) => h('div', { className },
+  ext(crumb.href, crumb.slug));
 
 /**
  * The pull request pane, in two roots.
@@ -424,6 +447,7 @@ function renderPrHead(pr, handlers) {
   };
   const tabBtn = (name, label) =>
     btn(label, () => switchTo(name), { className: tab === name ? 'tab on' : 'tab' });
+  const ways = headLinks(pr);
 
   document.getElementById('pr-head').replaceChildren(...kids([
     h('h2', { className: 'pr-title' }, pr.title),
@@ -435,7 +459,10 @@ function renderPrHead(pr, handlers) {
       h('span', { className: 'del' }, `−${pr.deletions}`),
     ),
     checks(pr.checks),
-    linkRow(headLinks(pr), 'meta pr-links'),
+    // Two lines, and `pr-links` carries no style of its own -- it is the hook
+    // tools/browser.mjs measures the row by, so it is not dead CSS to clean up.
+    linkRow(ways.links, 'meta pr-ways pr-links'),
+    repoRow(ways.repo, 'meta pr-repo'),
     h('div', { className: 'tabs' },
       tabBtn('detail', tabLabel('Detail', taskCount(pr.body))),
       tabBtn('files', tabLabel('Files', viewedCount(pr.files)))),
