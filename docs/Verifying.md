@@ -232,6 +232,14 @@ Some things can only be checked against the real thing, so they are:
   there" passed on macOS and failed on Linux, and the assertion was about a font rather than about
   the CSS. The two spans are compared with each other instead, which is the claim anyway.
 
+  The chip the slug is drawn in came after those four and changes what "stays inside the pane" is
+  measured on. `test/browser.test.js` read the name span's right edge against the head's content
+  edge, which was the line's own last glyph until there was a border outside it; it reads the
+  chip's now, so a pill whose right edge has crossed the pane cannot pass on a name that ends a
+  pixel inside its padding. What the chip *is* is pinned as a contrast rather than as a pill --
+  a border and no underline against the row above, which keeps both -- because "not a fifth link"
+  is the whole claim and the markup is identical either way.
+
   The dotfile column's `direction: rtl` is the obvious one-declaration alternative and was measured
   against this: it works, with or without `<bdi>`, and stays inside the pane in all three cases. It
   is not what shipped, because the two cut opposite ends. A path wants its tail -- the filename --

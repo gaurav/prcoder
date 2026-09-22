@@ -92,7 +92,11 @@ window, on two lines: this pull request on GitHub with its issues, pulls and
 milestones, and below them the repository they are all in. The repository is on
 its own line because it is the only one of them whose length has no bound, and
 it truncates rather than wraps -- a long owner is clipped and the repository's
-own name kept, since that is the half that says which checkout you are in.
+own name kept, since that is the half that says which checkout you are in. It
+is drawn as a chip rather than a fifth link, because a line of its own said
+where it was without saying it was anything else: the row above is the list of
+places to go, and the chip under it is the one line in the head that answers
+which checkout this is.
 Below that are two tabs, because reading the argument and working the files are
 two different things and each wants the whole pane.
 

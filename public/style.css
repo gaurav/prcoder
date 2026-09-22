@@ -155,11 +155,10 @@ a { color: var(--accent); }
    row of dim 12px text between the badges and the tabs, and people looked for
    it to the right of the title or under the badges and never found it at the
    top; pushing it to the right edge was what made it a thing rather than part
-   of the pane's prose. Two lines, the second of them a bare repository slug,
-   do that on their own -- the block has a shape now. Left is also where the
-   pane with no pull request has always drawn the same links, so the two panes
-   agree for the first time, and a line that clips is easier to read from an
-   edge that does not move with its content.
+   of the pane's prose. Left is also where the pane with no pull request has
+   always drawn the same links, so the two panes agree for the first time, and
+   a line that clips is easier to read from an edge that does not move with its
+   content.
 
    The repository, on the line under that row rather than in the middle of it.
    It is the only link there whose width has no bound -- a real
@@ -171,6 +170,34 @@ a { color: var(--accent); }
    The two are one block, so the gap between them is 2px rather than the 8px
    `.meta` gives every other row. `.pr-repo` keeps the 8px, which is the gap to
    the tabs and is unchanged.
+
+   And the repository is a chip rather than a fifth link, which is what the
+   move down the page did not by itself fix. Giving it its own line said where
+   it was, not that it was different: both rows are 12px, and every link in
+   both is `--accent` and underlined, so the head read as five blue links in
+   two rows and the eye had no reason to stop on the second. The border, the
+   radius and the dropped underline are the same three the queue's `#N` tag
+   wears (`.item .tag`) -- this window's word for a small thing you can click
+   that is an object rather than a phrase -- so it is the vocabulary already
+   here and not a new one. What it buys: the row above stays a list of places
+   to go, and the line below is the one fact in the head that says which
+   checkout you are in.
+
+   Two things deliberately not done. A logo or an emoji ahead of the slug, the
+   other way to mark it: no other glyph in this window earns its place that way
+   -- the `↗` that used to sit on these links was dropped for raising the
+   question of what the unmarked ones did -- and a mark says "look here"
+   without saying what kind of thing it is, where a chip does both. And the row
+   above is still plain text, not a button group: the tabs two rows down are
+   the head's one group of bordered controls, and a second one over them would
+   make the four links look like the thing that switches the pane.
+
+   The chip's padding puts the slug 8px in from the margin the rest of the head
+   starts at. That is the treatment the tabs under it already have -- `.tab` is
+   `padding: 2px 8px` inside a `.tabs` row that sits on the margin -- so the
+   indent is the head's existing answer for a control with a box, not a break
+   in its alignment. The driver's `head:` check measures `.pr-repo` itself,
+   which is the full-width row and still starts where the title does.
 
    Which half of the slug gets clipped is the point of the two spans. A pane
    too narrow for `heal-data-stewards/heal-non-data-dictionaries` shows
@@ -195,6 +222,12 @@ a { color: var(--accent); }
      cannot reach -- the pane's own floor is 180px and no real name is that
      wide at 12px -- so it was checked by hand against a 60-character one.
 
+   The chip's own two add nothing to that list and are not load-bearing for
+   it: `padding` and `border` shrink the content box the spans divide up, and
+   the clipping behaves the same with less of it to work in. What they do move
+   is the right edge the line must stay inside -- it is the chip's border now,
+   not the name's last glyph, which is what test/browser.test.js measures.
+
    The owner needs no `min-width: 0` of its own. `overflow: hidden` already
    makes a flex item's automatic minimum size zero, and the pair passed every
    check with the declaration removed.
@@ -206,7 +239,12 @@ a { color: var(--accent); }
    and rtl leaves `…tewards` where the spans leave `heal-dat…`.
    docs/Verifying.md has the comparison. */
 .pr-ways { margin-bottom: 2px; }
-.pr-repo a { display: inline-flex; min-width: 0; }
+.pr-repo a {
+  display: inline-flex; min-width: 0;
+  text-decoration: none; padding: 1px 7px;
+  border: 1px solid var(--line); border-radius: 9px;
+}
+.pr-repo a:hover { border-color: var(--dim); background: var(--bg); }
 .pr-repo .owner { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pr-repo .name { flex: none; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 

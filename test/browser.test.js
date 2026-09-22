@@ -231,6 +231,25 @@ test('the repository is a line of its own, not a link in the row', { skip }, asy
   assert.equal(await repo.getAttribute('title'), 'heal-data-stewards/heal-non-data-dictionaries');
 });
 
+// A line of its own said where the repository was, not that it was anything
+// but a fifth link -- same size, same accent, same underline as the four above
+// it. The chip is what tells them apart, so what is asserted is the contrast
+// and not the pill: a border where the row has none, and no underline where
+// the row keeps one. Read off computed style because that is the whole change;
+// there is no markup here to assert against.
+test('the repository is drawn as a chip, not as a fifth link', { skip }, async () => {
+  const styles = (sel) => page.$eval(sel, (el) => {
+    const s = getComputedStyle(el);
+    return { border: parseFloat(s.borderTopWidth), line: s.textDecorationLine };
+  });
+  const repo = await styles('#pr-head .pr-repo a');
+  const way = await styles('#pr-head .pr-links a');
+  assert.ok(repo.border > 0, `the chip should have a border, ${JSON.stringify(repo)}`);
+  assert.equal(repo.line, 'none', `the chip should not be underlined, ${JSON.stringify(repo)}`);
+  assert.equal(way.border, 0, `the row's links should stay plain, ${JSON.stringify(way)}`);
+  assert.equal(way.line, 'underline', `the row's links should stay underlined, ${JSON.stringify(way)}`);
+});
+
 // The point of the two spans, and the one thing here no unit test can see:
 // which half of the slug survives a pane too narrow for it. The owner clips and
 // the name does not, so what is left says which checkout this is -- the owner
@@ -256,9 +275,15 @@ test('a slug wider than the pane clips the owner and keeps the name whole', { sk
   assert.equal(name.scroll, name.client, `the name should be whole, ${JSON.stringify(name)}`);
   // And the clipped line stays inside the pane rather than merely wearing an
   // ellipsis: a flex item that refuses to shrink overflows with one on.
+  //
+  // Measured on the chip rather than on the name inside it. The slug is drawn
+  // in a bordered pill, so the edge that can cross the pane's is the border --
+  // a name that ends 1px inside the padding with the border already outside
+  // would pass this read off the span and be wrong on screen.
   const edge = () => fresh.$eval('#pr-head', (el) =>
     el.getBoundingClientRect().right - parseFloat(getComputedStyle(el).paddingRight));
-  assert.ok(name.right <= Math.ceil(await edge()), `line ends at ${name.right}, head content edge ${await edge()}`);
+  const chip = await box('#pr-head .pr-repo a');
+  assert.ok(chip.right <= Math.ceil(await edge()), `chip ends at ${chip.right}, head content edge ${await edge()}`);
 
   // At the stylesheet's 180px floor the ordering still holds: the owner has
   // given up everything before the name gives up anything.
@@ -274,7 +299,8 @@ test('a slug wider than the pane clips the owner and keeps the name whole', { sk
   const [lastOwner, lastName] = [await box('#pr-head .pr-repo .owner'), await box('#pr-head .pr-repo .name')];
   assert.ok(lastOwner.client < lastName.client,
     `the owner should yield first, ${JSON.stringify({ lastOwner, lastName })}`);
-  assert.ok(lastName.right <= Math.ceil(await edge()), `line ends at ${lastName.right}, head content edge ${await edge()}`);
+  const lastChip = await box('#pr-head .pr-repo a');
+  assert.ok(lastChip.right <= Math.ceil(await edge()), `chip ends at ${lastChip.right}, head content edge ${await edge()}`);
   await fresh.close();
 });
 
