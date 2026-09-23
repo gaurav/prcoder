@@ -12,7 +12,7 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import { WebSocket } from 'ws';
-import { server, sessionArgs } from '../server.js';
+import { server, sessionArgs, missingVendor } from '../server.js';
 import { grammars } from '../public/diff.js';
 
 let base;
@@ -184,4 +184,15 @@ test('a /pty socket with settings that are not allowed is closed unspawned', asy
   const ws = new WebSocket(`ws://127.0.0.1:${port}/pty?model=--help`);
   const [code] = await new Promise((res) => ws.on('close', (...a) => res(a)));
   assert.equal(code, 1008);
+});
+
+// What startup warns about. Empty here, because this checkout has been
+// installed; and a directory with no node_modules is missing every file,
+// Prism's grammars included, so none of the map is skipped.
+test('missingVendor names the vendor files that are not installed', () => {
+  assert.deepEqual(missingVendor(), []);
+  const all = missingVendor(import.meta.dirname);
+  assert.ok(all.includes('@xterm/xterm/lib/xterm.mjs'));
+  assert.ok(all.includes('prismjs/prism.js'));
+  assert.equal(all.length, 5 + grammars.length);
 });

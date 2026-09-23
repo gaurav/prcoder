@@ -23,7 +23,8 @@
     "ws": "^8.21.3"
   },
   "allowScripts": {
-    "node-pty@1.1.0": true
+    "node-pty@1.1.0": true,
+    "fsevents": false
   },
   "devDependencies": {
     "playwright": "^1.62.1"
