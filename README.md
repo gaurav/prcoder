@@ -82,9 +82,17 @@ row of prcoder tabs stays readable at tab width.
 
 ## The panes
 
-Every line between the panes is a splitter: drag it to resize, double-click it
-to drop back to the default. The sizes are remembered per browser, so the
-layout you settle on is the one the next `prcoder` opens with.
+Every line between the panes is a splitter, and so is the diff outline's left
+edge: drag it to resize, double-click it to drop back to the default. The sizes
+are remembered per repo and per browser, so the layout you settle on is the one
+the next `prcoder` in that repo opens with. They live in the browser's
+`localStorage`, which is kept per origin -- and the origin includes the port,
+which is `.prcoder/port.json`'s. So each repo and each worktree has a layout of
+its own, and so does each browser or profile. Whether the outline is shown, and
+which way the queue adds, are stored the same way. A repo whose port changes
+(`port.json` deleted, its port busy at startup, or `PRCODER_PORT` set) opens
+with the default layout, and gets the old one back once it is on the old port
+again.
 
 **Pull request** — which pull request you are in stays at the top: the title,
 the state, the branch it targets, the checks. Under those is the way out of the
