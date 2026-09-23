@@ -134,7 +134,7 @@ const fold = document.getElementById('term-fold');
 function foldTerm(off, save = true) {
   document.querySelector('main').classList.toggle('term-off', off);
   fold.setAttribute('aria-expanded', String(!off));
-  fold.textContent = off ? '▸' : '▾';
+  fold.textContent = off ? '▶\uFE0E' : '▼';   // FE0E: text, never macOS's emoji ▶
   fold.title = `${off ? 'expand' : 'collapse'} the coding agent pane`;
   if (save) try { localStorage.setItem(TERM_KEY, off ? 'off' : 'on'); } catch { /* this session only */ }
   if (!off) term.focus();   // expanding it is to talk to it
