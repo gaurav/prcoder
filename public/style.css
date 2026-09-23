@@ -73,6 +73,9 @@ main.term-off #term-host,
 main.term-off:not(.diff-open) #gut-queue,
 main.term-off #gut-diff { display: none; }
 #term > header { user-select: none; }   /* a double-click folds it, not selects the title */
+/* Before the title, like a disclosure triangle. The line-height is the h1's, so the bigger
+   glyph does not make this header taller than the others. */
+#term-fold { margin-left: 0; padding: 0; font-size: 22px; line-height: 18px; }
 
 #gut-pr { grid-area: gpr; } #gut-queue { grid-area: gqueue; } #gut-diff { grid-area: gdiff; }
 /* Only the diff-open template has a slot for it; left displayed it would
