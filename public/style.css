@@ -87,6 +87,13 @@ main.diff-open #gut-diff { display: block; }
 .scroll { overflow: auto; padding: 10px; flex: 1; min-height: 0; }
 
 #term-host { flex: 1; min-height: 0; padding: 4px 0 0 8px; }
+#term-exit {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px;
+  padding: 8px 10px; border-top: 1px solid var(--line); font-size: 13px;
+}
+#term-exit[hidden] { display: none; }
+#term-exit > span { color: var(--del); }
+#term-exit button { cursor: pointer; }
 a { color: var(--accent); }
 
 /* --- Tabs and the small buttons beside them ---

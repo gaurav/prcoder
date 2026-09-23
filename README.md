@@ -166,6 +166,11 @@ slash commands still work, permission prompts still appear, and typing while
 Claude is mid-turn queues the message the way it always has. Links Claude prints
 are clickable.
 
+When Claude exits, a bar under its last output offers to start it again --
+continuing the same conversation by default (`--continue`), and optionally with
+a different model or effort, which win over any given on prcoder's command line.
+Or quit prcoder from there, which asks what the terminal's quit asks.
+
 **Queue** — throw an item in, drag to reorder, tick it off. Each item can be
 sent to Claude, mirrored into the PR description, or turned into a GitHub issue.
 An item that is in the PR description *and* becomes an issue has its PR line
@@ -259,6 +264,8 @@ level, which is the only way to see startup itself. `o` reopens the browser.
 Claude session in the browser. It says what that costs — tabs open, unpushed
 commits, uncommitted files, and a queue change GitHub never received. A second
 Ctrl-C at the prompt goes immediately; nothing here can make prcoder unkillable.
+The Quit button on the Claude pane, once Claude has exited, is the same quit and
+asks the same question in the browser.
 
 None of this happens when stdout is not a terminal. Piped or redirected, you
 get plain lines and errors on stderr, which is what a script wants.

@@ -18,7 +18,8 @@ term.loadAddon(new WebLinksAddon((_e, uri) => window.open(uri, '_blank', 'noopen
 term.open(document.getElementById('term-host'));
 
 const PTY_SEEN = 'prcoder:pty';
-const ws = new WebSocket(`ws://${location.host}/pty`);
+// Replaced, not reopened, by the exit panel's Restart: one socket is one PTY.
+let ws;
 const send = (msg) => {
   if (ws.readyState !== WebSocket.OPEN) return false;
   ws.send(JSON.stringify(msg));
@@ -94,33 +95,73 @@ const turn = (on) => {
   // which is the same wall from the other side.
   if (on) quiet = setTimeout(() => icon(IDLE), 2000);
 };
-ws.onmessage = (e) => {
-  term.write(e.data);
-  if (PROBE.test(e.data)) return;
-  if (shown === BUSY) turn(true);   // holds an open turn open; cannot start one
+// `query` is the exit panel's settings, which the server turns into claude's
+// flags (sessionArgs in server.js). The first socket sends none.
+let sockets = 0;
+function connect(query = '') {
+  sockets++;
+  ws = new WebSocket(`ws://${location.host}/pty${query && `?${query}`}`);
+  ws.onmessage = (e) => {
+    term.write(e.data);
+    if (PROBE.test(e.data)) return;
+    if (shown === BUSY) turn(true);   // holds an open turn open; cannot start one
+  };
+  // A tab the browser unloaded in the background comes back as a fresh page, and
+  // the socket it closed on the way out has already killed the PTY — so this is a
+  // new Claude session nobody asked for. sessionStorage is per-tab and survives
+  // the restore, which is exactly what tells that apart from a first open. A
+  // deliberate reload lands here too, and the message is just as true there.
+  // A Restart does not: you asked for that one, and chose whether to continue.
+  ws.onopen = () => {
+    sent = '';   // a new PTY starts at 80x24, whatever the last one was told
+    sync();
+    term.focus();
+    if (sockets > 1) return;
+    try {
+      if (sessionStorage.getItem(PTY_SEEN)) {
+        // Not the error style: the session did end, but on a deliberate reload
+        // that is the answer to what you just did, not something that went wrong.
+        toast('Claude was restarted — this tab\'s previous session ended when it disconnected. '
+          + '/resume picks it back up, or start prcoder with --continue.');
+      }
+      sessionStorage.setItem(PTY_SEEN, '1');
+    } catch { /* private mode: no memory, so no claim about a previous session */ }
+  };
+  ws.onclose = () => {
+    turn(false);
+    term.write('\r\n\x1b[31m[coding agent exited]\x1b[0m\r\n');
+    exitForm.hidden = false;
+    // Refit now rather than waiting on the ResizeObserver: in a page that isn't
+    // in front it never delivered the shrink, and the terminal went on
+    // covering the bar -- Playwright could not click Quit (2026-09-23).
+    sync();
+    exitForm.querySelector('button').focus();
+  };
+}
+
+// What to do once Claude is gone: start it again, perhaps differently, or stop
+// prcoder from here rather than from the terminal it was started in.
+const exitForm = document.getElementById('term-exit');
+exitForm.onsubmit = (e) => {
+  e.preventDefault();
+  exitForm.hidden = true;
+  term.reset();
+  connect(new URLSearchParams(new FormData(exitForm)).toString());
 };
-// A tab the browser unloaded in the background comes back as a fresh page, and
-// the socket it closed on the way out has already killed the PTY — so this is a
-// new Claude session nobody asked for. sessionStorage is per-tab and survives
-// the restore, which is exactly what tells that apart from a first open. A
-// deliberate reload lands here too, and the message is just as true there.
-ws.onopen = () => {
-  sync();
-  term.focus();
+document.getElementById('term-quit').onclick = async () => {
   try {
-    if (sessionStorage.getItem(PTY_SEEN)) {
-      // Not the error style: the session did end, but on a deliberate reload
-      // that is the answer to what you just did, not something that went wrong.
-      toast('Claude was restarted — this tab\'s previous session ended when it disconnected. '
-        + '/resume picks it back up, or start prcoder with --continue.');
+    let r = await api('/api/quit', {});
+    // The same question the terminal's q asks, put where you are.
+    if (r.risk) {
+      if (!confirm(`Quit prcoder? ${r.risk.join('; ')}.`)) return;
+      r = await api('/api/quit', { force: true });
     }
-    sessionStorage.setItem(PTY_SEEN, '1');
-  } catch { /* private mode: no memory, so no claim about a previous session */ }
+    exitForm.replaceChildren('prcoder has quit — this tab can be closed.');
+  } catch (e) {
+    toast(e.message, true);
+  }
 };
-ws.onclose = () => {
-  turn(false);
-  term.write('\r\n\x1b[31m[claude exited — reload to restart]\x1b[0m\r\n');
-};
+connect();
 
 term.onData((d) => send({ type: 'input', data: d }));
 new ResizeObserver(sync).observe(document.getElementById('term-host'));

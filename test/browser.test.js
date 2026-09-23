@@ -43,6 +43,12 @@ import { server } from '../server.js';
 import { groupFiles } from '../files.js';
 import { rollup } from '../github.js';
 
+// If a socket ever gets past the mock, the in-process server spawns this (read
+// at connect time) rather than a real `claude` in this repo -- which is what the
+// first draft of the exit bar's test did, over a glob that missed a query
+// string (2026-09-23).
+process.env.CLAUDE_BIN = '/usr/bin/false';
+
 let chromium;
 try { ({ chromium } = await import('playwright')); } catch { /* not installed */ }
 const skip = !chromium ? 'playwright is not installed (npm ci without --omit=dev)'
@@ -123,10 +129,13 @@ let page;
 const posted = [];
 
 // A page with every route answered, so a test that needs a module map of its
-// own -- Prism loads once per page -- can open a second one.
-async function newPage() {
+// own -- Prism loads once per page -- can open a second one. `pty` is the mock
+// socket's handler, for a test that needs the agent to do something. A regex,
+// not `**/pty`: a glob has to match the whole URL, so the exit bar's
+// `/pty?model=...` slipped past it to the real server.
+async function newPage(pty = () => {}) {
   const p = await browser.newPage();
-  await p.routeWebSocket('**/pty', () => {});
+  await p.routeWebSocket(/\/pty(\?|$)/, pty);
   await p.route('**/api/status', (r) => r.fulfill({ json: status }));
   await p.route('**/api/prs', (r) => r.fulfill({ json: [] }));
   await p.route('**/api/queue', (r) => r.fulfill({ json: [] }));
@@ -374,4 +383,41 @@ test('a .tsx file loads the grammars tsx extends, in order, before tsx', { skip 
   assert.equal(await fresh.locator('#diff-body .tok-attr-name').count(), 1, 'className is an attribute');
   assert.deepEqual(await fresh.$$eval('#diff-body .dl', (els) => els.map((el) => el.textContent)), [TSX]);
   await fresh.close();
+});
+
+// The bar is the one way back once the agent is gone, so what it sends is what
+// matters: Restart is a new socket carrying the settings (sessionArgs in
+// server.js turns them into flags), and Quit asks before a quit that costs
+// something. The mock closes each socket the way an exiting agent does.
+test('when the agent exits, Restart reconnects with the chosen settings, and Quit asks first', { skip }, async () => {
+  const urls = [];
+  let second;
+  const p = await newPage((ws) => {
+    urls.push(new URL(ws.url()).search);
+    if (urls.length === 1) ws.close();
+    else second = ws;
+  });
+  const bar = p.locator('#term-exit');
+  await bar.waitFor({ state: 'visible' });
+  await p.fill('#term-exit [name=model]', 'opus');
+  await p.selectOption('#term-exit [name=effort]', 'high');
+  await p.click('#term-exit button:not([type])');
+  // Hidden on the click, before the new socket reaches the mock -- so wait on the socket.
+  for (let i = 0; urls.length < 2 && i < 100; i++) await p.waitForTimeout(50);
+  assert.equal(await bar.isHidden(), true);
+  assert.deepEqual(urls, ['', '?model=opus&effort=high&continue=on']);
+
+  second.close();
+  await bar.waitFor({ state: 'visible' });
+  const asked = [];
+  await p.route('**/api/quit', (r) => {
+    const body = r.request().postDataJSON();
+    asked.push(body);
+    return r.fulfill({ json: body.force ? { quit: true } : { risk: ['2 uncommitted files'] } });
+  });
+  p.once('dialog', (d) => { asked.push(d.message()); d.accept(); });
+  await p.click('#term-quit');
+  await bar.getByText('prcoder has quit').waitFor();
+  assert.deepEqual(asked, [{}, 'Quit prcoder? 2 uncommitted files.', { force: true }]);
+  await p.close();
 });

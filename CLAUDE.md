@@ -178,12 +178,22 @@ options are written down.
 And Claude Code owns that viewport. With `"tui": "fullscreen"` it is on the
 alternate screen, repainting frames over whatever is there; anything prcoder
 writes survives until the next one. The exception is `ws.onclose`, which writes
-`[claude exited]` precisely because the PTY is dead and nothing will repaint.
+`[coding agent exited]` precisely because the PTY is dead and nothing will repaint.
 
 Notices for the human go to `toast()`, which sits over the panes and is nothing
 to do with the terminal. Pass `sticky` for one that stays true until acted on
 rather than reporting something already finished -- it waits for a click instead
 of timing out.
+
+## The UI says "coding agent", not Claude
+
+prcoder already runs agents other than Claude Code -- `CLAUDE_BIN` picks the
+executable, and the drivers run a stub -- so any new text in the UI that refers
+to the agent (page copy, toasts, tooltips, lines written to the terminal) says
+"coding agent", or names the running agent once the page knows it. The docs can
+keep saying Claude Code until a second agent is fully supported, and code names
+like `sendToClaude` and `CLAUDE_BIN` wait for that too (#30). The owner asked
+for this on 2026-09-23. The UI strings that still say Claude are listed in #76.
 
 ## One engine is not "a real browser"
 
@@ -275,8 +285,12 @@ no error, no closed socket. Three runs of a driver investigating an
 always-busy tab icon came back green because the instrumentation had switched
 off the traffic causing it. Copy `CONNECTING`/`OPEN`/`CLOSING`/`CLOSED` onto
 the wrapper, or listen without wrapping. To keep the page from opening a PTY at
-all, `page.routeWebSocket('**/pty', () => {})` mocks the socket without touching
-the constructor -- `test/browser.test.js` runs the whole page that way.
+all, `page.routeWebSocket(/\/pty(\?|$)/, () => {})` mocks the socket without
+touching the constructor -- `test/browser.test.js` runs the whole page that way.
+A regex, because a glob has to match the whole URL: `'**/pty'` misses the exit
+bar's `/pty?model=...`, which then reaches the in-process server and spawns a
+real `claude --continue` in this repo (2026-09-23). That test file also sets
+`CLAUDE_BIN=/usr/bin/false` so a socket that slips past spawns nothing.
 
 Same shape in reverse: a `MutationObserver` in `addInitScript` has no
 `document.head` to observe yet, and the throw takes the rest of the init script

@@ -454,6 +454,17 @@ const routes = {
 
   'GET /api/prs': () => listPrs(repo),
 
+  // The exit panel's Quit button, asking what the terminal's q asks. Without
+  // `force`, a quit that would cost something only says what it would cost, so
+  // the page can put the same question to you there.
+  'POST /api/quit': ({ force } = {}) => {
+    const risk = quitRisk();
+    if (risk.length && !force) return { risk };
+    // Deferred so the reply goes out first: process.exit doesn't wait for it.
+    setTimeout(quit, 100);
+    return { quit: true };
+  },
+
   'POST /api/pr/switch': async ({ number }) => {
     await checkoutPr(repo, number);
     term.verbose(`checked out PR #${number}`);
@@ -692,12 +703,40 @@ export const server = http.createServer(async (req, res) => {
 // prompt know whether anyone is looking, and `ptys` is how a deliberate quit
 // takes the Claude sessions with it instead of orphaning them.
 const ptys = new Set();
+
+/**
+ * Pure: the /pty query string -> extra arguments for this `claude`, or null to
+ * refuse the socket. The exit panel's Restart sends it; a first open sends
+ * nothing and gets [].
+ *
+ * Allowlisted rather than passed through, because this is the page choosing a
+ * spawn's argv. A model has to be a name, not something starting with a dash:
+ * `--model --dangerously-skip-permissions` must not reach claude as two flags.
+ */
+const EFFORTS = new Set(['low', 'medium', 'high', 'xhigh', 'max']);
+export function sessionArgs(params) {
+  const model = params.get('model');
+  const effort = params.get('effort');
+  if (model && !/^\w[\w.:[\]-]*$/.test(model)) return null;
+  if (effort && !EFFORTS.has(effort)) return null;
+  return [
+    ...(params.has('continue') ? ['--continue'] : []),
+    ...(model ? ['--model', model] : []),
+    ...(effort ? ['--effort', effort] : []),
+  ];
+}
+
 const wss = new WebSocketServer({ server, path: '/pty' }).on('error', () => {}).on('connection', (ws, req) => {
   // Before the spawn, not after: the PTY is the thing being protected, and one
   // that has already started has already read the repo.
   if (!sameOrigin(req)) return ws.close(1008, 'cross-origin connection refused');
 
-  const pty = ptySpawn(process.env.CLAUDE_BIN || 'claude', claudeArgs, {
+  const extra = sessionArgs(new URL(req.url, 'http://localhost').searchParams);
+  if (!extra) return ws.close(1008, 'bad session settings');
+
+  // After prcoder's own arguments, so a setting chosen in the page overrides
+  // the one prcoder was started with.
+  const pty = ptySpawn(process.env.CLAUDE_BIN || 'claude', [...claudeArgs, ...extra], {
     name: 'xterm-256color',
     cols: 80,
     rows: 24,
@@ -923,8 +962,8 @@ async function listenOnRepoPort() {
  * An empty list is not a question worth asking, so it is not asked: no tab open,
  * nothing unmirrored, nothing in the working tree that quitting could lose.
  */
-function askToQuit() {
-  const risk = [
+function quitRisk() {
+  return [
     wss.clients.size && (wss.clients.size > 1
       ? `${wss.clients.size} browser tabs — their Claude sessions end`
       : '1 browser tab — the Claude session ends'),
@@ -934,15 +973,20 @@ function askToQuit() {
     last?.ahead && `${last.ahead} unpushed commit${last.ahead > 1 ? 's' : ''}`,
     last?.dirtyFiles?.length && `${last.dirtyFiles.length} uncommitted file${last.dirtyFiles.length > 1 ? 's' : ''}`,
   ].filter(Boolean);
-  // Killed here rather than left to the close handlers: process.exit does not
-  // wait for them, and an orphaned `claude` outlives the terminal it was
-  // started from.
-  const quit = () => {
-    for (const pty of ptys) pty.kill();
-    wss.close();
-    server.close();
-    process.exit(0);
-  };
+}
+
+// Kills the PTYs itself rather than leaving that to the close handlers:
+// process.exit doesn't wait for them, and an orphaned `claude` outlives the
+// terminal it was started from.
+function quit() {
+  for (const pty of ptys) pty.kill();
+  wss.close();
+  server.close();
+  process.exit(0);
+}
+
+function askToQuit() {
+  const risk = quitRisk();
   if (!risk.length) return quit();
   term.confirm(`quit? ${risk.join('; ')}  [y/N] `, quit);
 }
