@@ -285,8 +285,12 @@ no error, no closed socket. Three runs of a driver investigating an
 always-busy tab icon came back green because the instrumentation had switched
 off the traffic causing it. Copy `CONNECTING`/`OPEN`/`CLOSING`/`CLOSED` onto
 the wrapper, or listen without wrapping. To keep the page from opening a PTY at
-all, `page.routeWebSocket('**/pty', () => {})` mocks the socket without touching
-the constructor -- `test/browser.test.js` runs the whole page that way.
+all, `page.routeWebSocket(/\/pty(\?|$)/, () => {})` mocks the socket without
+touching the constructor -- `test/browser.test.js` runs the whole page that way.
+A regex, because a glob has to match the whole URL: `'**/pty'` misses the exit
+bar's `/pty?model=...`, which then reaches the in-process server and spawns a
+real `claude --continue` in this repo (2026-09-23). That test file also sets
+`CLAUDE_BIN=/usr/bin/false` so a socket that slips past spawns nothing.
 
 Same shape in reverse: a `MutationObserver` in `addInitScript` has no
 `document.head` to observe yet, and the throw takes the rest of the init script
