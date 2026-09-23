@@ -51,6 +51,8 @@ const PR_FIELDS = [
   // headRefOid is GitHub's view of the branch head, which is what lets the sync
   // light work without a fetch. updatedAt gates the expensive full reload.
   'headRefOid', 'updatedAt', 'isCrossRepository',
+  // What /api/diff diffs from when GitHub sends a file no patch.
+  'baseRefOid',
 ].join(',');
 
 /** `gh pr view`, or null when there is no PR to view. */

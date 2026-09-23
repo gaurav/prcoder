@@ -98,7 +98,9 @@ those grammars are built on — is the list the vendor map in `server.js` is bui
 server serves what the page can ask for and nothing else, and `test/api.test.js` fetches every one
 of them. What is left is a grammar's regular expressions
 backtracking on a crafted file, which no escaping helps with. It is bounded by GitHub, which sends no
-`patch` for a large diff, and it is the reason the tokenizer runs in the page and not in `/api/diff`:
+`patch` for a large diff, and by `PATCH_LIMIT` in `git.js` for the patch local git makes when GitHub
+sent none -- a path the page sends there is diffed only if the pull request has that file, and as a
+literal pathspec. It is the reason the tokenizer runs in the page and not in `/api/diff`:
 a stall there freezes one browser tab, a stall in the server freezes the process that owns the PTY.
 A modified file's diff is not highlighted at all, and
 [#68](https://github.com/gaurav/prcoder/issues/68) has what changes before it can be.

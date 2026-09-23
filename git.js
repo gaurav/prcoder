@@ -164,6 +164,38 @@ export async function remoteBranchHead(cwd, branch) {
   return out.trim().split(/\s/)[0] || null;
 }
 
+// ponytail: a fixed cap. GitHub's own per-file patches run to ~50 KB on a big
+// PR; past this the pane's DOM and the page's tokenizer are what pay for it.
+// Raise it if a real file is refused.
+const PATCH_LIMIT = 512 * 1024;
+
+/**
+ * One file's patch from local git, in the shape of GitHub's `patch` (from the
+ * first @@, no trailing newline) -- for a file GitHub sent none for. It stops
+ * sending them partway through a large pull request: on one with 73 files every
+ * patch after the first ~860 KB came back missing, `+0` and all, while GraphQL
+ * still counted the file's lines (checked 2026-09-23).
+ *
+ * The base is GitHub's `baseRefOid` when this clone has it, else its own
+ * memory of the base branch, and `...` diffs from the merge base -- which is
+ * what a pull request shows. Null when a commit is missing, the file is binary,
+ * the patch is over PATCH_LIMIT, or a rename came apart into two files: this
+ * stands in for GitHub's view, so it shows that or nothing.
+ */
+export async function localPatch(cwd, { baseOid, baseRef, head, path, from }) {
+  const known = (rev) => asks(['rev-parse', '--verify', '--quiet', `${rev}^{commit}`], cwd);
+  const base = await known(baseOid) ? baseOid
+    : await known(`refs/remotes/origin/${baseRef}`) ? `refs/remotes/origin/${baseRef}` : null;
+  if (!base || !await known(head)) return null;
+  // --literal-pathspecs because the path comes from the page: `:(glob)**` is
+  // otherwise every file. The rest keep a user's diff config out of it.
+  const out = await git(['--literal-pathspecs', 'diff', '--no-color', '--no-ext-diff', '--no-textconv',
+    '-U3', '--diff-algorithm=myers', '-M', `${base}...${head}`, '--', ...(from ? [from] : []), path], cwd);
+  const at = out.search(/^@@/m);
+  if (at < 0 || out.length > PATCH_LIMIT || out.match(/^diff --git /gm).length > 1) return null;
+  return out.slice(at).replace(/\n$/, '');
+}
+
 export const checkoutPr = (cwd, number) =>
   run('gh', ['pr', 'checkout', String(number)], { cwd, timeout: 120_000 });
 

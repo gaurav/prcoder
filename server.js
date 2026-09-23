@@ -12,7 +12,7 @@ import { text as readBody } from 'node:stream/consumers';
 import { spawn as ptySpawn } from 'node-pty';
 import { WebSocketServer } from 'ws';
 import { loadPr, prHeads, prBody, listPrs, setViewed, setBody, createIssue, fetchPatches, runCount } from './github.js';
-import { snapshot, currentBranch, repoInfo, prScope, compareUrl, checkoutPr, pushBranch, remoteBranchHead, trackingHead } from './git.js';
+import { snapshot, currentBranch, repoInfo, prScope, compareUrl, checkoutPr, pushBranch, remoteBranchHead, trackingHead, localPatch } from './git.js';
 import { groupFiles, fileUrl, fileViews } from './files.js';
 import { parseFuture, renderPrBlock, syncFromPrBlock, toggleTask } from './queue.js';
 import { readStore, writeStore, readPort, writePort, replaceItems } from './store.js';
@@ -524,7 +524,13 @@ const routes = {
     const cur = requirePr();
     const key = cur.url + cur.headRefOid;
     if (patches.key !== key) patches = { key, map: await fetchPatches(repo, cur.url) };
-    return { path: p, ...(patches.map.get(p) ?? { patch: null }) };
+    const got = patches.map.get(p) ?? { patch: null };
+    // Only for a path the pull request has: the path is the page's to send, and
+    // a file GitHub sent no patch for is one git can usually still make here.
+    if (got.patch != null || !cur.files.some((f) => f.path === p)) return { path: p, ...got };
+    return { path: p, ...got, patch: await localPatch(repo, {
+      baseOid: cur.baseRefOid, baseRef: cur.baseRefName, head: cur.headRefOid, path: p, from: got.from,
+    }) };
   },
 
   'GET /api/queue': () => readQueue(),

@@ -138,9 +138,11 @@ from you while you are in the other.
 
 **Diff** — the selected file's patch, rendered plainly above the terminal so
 select → read → tick viewed → ask Claude never leaves the window. It shows the
-same hunks GitHub does (fetched once per push and cached), refreshes itself when
-the branch head moves, and links out to GitHub for anything the plain rendering
-can't do — comments, binary and oversized files, highlighting of a changed file. A
+same hunks GitHub does (fetched once per push and cached) -- or, for a file GitHub
+sent no patch for, the same change as local git sees it. GitHub stops sending
+patches partway through a large pull request, and git in this clone can
+usually still make them. It refreshes itself when the branch head moves, and
+links out to GitHub for anything the plain rendering can't do — comments, binary and oversized files, highlighting of a changed file. A
 file the pull request adds or deletes is shown as its own text under a green **NEW**
 or red **DELETED** title rather than as a wall of `+` or `-`: a patch that is all one
 sign has nothing to contrast. A **NEW** file is syntax-highlighted when its

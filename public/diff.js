@@ -256,7 +256,7 @@ export async function openDiff(f) {
 
   if (patch == null && !from) {
     body.replaceChildren(h('p', { className: 'empty' },
-      'No local diff for this file (binary, too large, or unavailable) — ',
+      'No diff to show for this file (binary, too large, or not in this clone) — ',
       ext(f.url, 'view it on GitHub')));
     return;
   }
