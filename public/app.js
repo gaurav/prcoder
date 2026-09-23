@@ -131,6 +131,10 @@ function connect(query = '') {
     turn(false);
     term.write('\r\n\x1b[31m[coding agent exited]\x1b[0m\r\n');
     exitForm.hidden = false;
+    // Refit now rather than waiting on the ResizeObserver: in a page that isn't
+    // in front it never delivered the shrink, and the terminal went on
+    // covering the bar -- Playwright could not click Quit (2026-09-23).
+    sync();
     exitForm.querySelector('button').focus();
   };
 }
