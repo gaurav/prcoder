@@ -146,7 +146,8 @@ test('a branch name that is the tail of another branch is not mistaken for it', 
 // The stand-in for a patch GitHub stopped sending, against a real repo because
 // the claims are about git's output: that it comes out in GitHub's shape, from
 // the merge base rather than the base's tip, and not at all for a binary file,
-// a commit this clone lacks, or a pathspec the page made up.
+// a commit this clone lacks, a pathspec the page made up, or a patch whose line
+// counts are not the ones GitHub has for the file.
 test('a local patch is GitHub-shaped, from the merge base, and null when git cannot say', async () => {
   const git = promisify(execFile);
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'prcoder-patch-'));
@@ -155,42 +156,61 @@ test('a local patch is GitHub-shaped, from the merge base, and null when git can
     '-c', 'commit.gpgsign=false', ...args,
   ], { cwd: dir });
   const oid = async (rev) => (await run('rev-parse', rev)).stdout.trim();
+  const write = (name, body) => fs.writeFile(path.join(dir, name), body);
+  // GitHub's counts for a one-line change, which is what a.js is throughout.
+  const oneLine = { additions: 1, deletions: 1 };
   try {
     await git('git', ['init', '-q', '-b', 'main', dir]);
-    await fs.writeFile(path.join(dir, 'a.js'), 'one\ntwo\n');
+    await write('a.js', 'one\ntwo\n');
     await run('add', '.');
     await run('commit', '-q', '-m', 'base');
     await run('checkout', '-q', '-b', 'topic');
-    await fs.writeFile(path.join(dir, 'a.js'), 'one\n2\n');
-    await fs.writeFile(path.join(dir, 'new.js'), 'x');
-    await fs.writeFile(path.join(dir, 'blob.bin'), Buffer.from([0, 1, 2, 0]));
+    await write('a.js', 'one\n2\n');
+    await write('new.js', 'x');
+    await write('blob.bin', Buffer.from([0, 1, 2, 0]));
     await run('add', '.');
     await run('commit', '-q', '-m', 'topic');
     const head = await oid('HEAD');
     // The base moves on after the branch left it; the pull request still shows
     // only the branch's own change.
     await run('checkout', '-q', 'main');
-    await fs.writeFile(path.join(dir, 'a.js'), 'zero\none\ntwo\n');
+    await write('a.js', 'zero\none\ntwo\n');
     await run('commit', '-q', '-am', 'later');
     const pr = { baseOid: await oid('main'), baseRef: 'main', head };
 
-    assert.equal(await localPatch(dir, { ...pr, path: 'a.js' }), '@@ -1,2 +1,2 @@\n one\n-two\n+2');
-    assert.equal(await localPatch(dir, { ...pr, path: 'new.js' }), '@@ -0,0 +1 @@\n+x\n\\ No newline at end of file');
-    assert.equal(await localPatch(dir, { ...pr, path: 'blob.bin' }), null);
-    assert.equal(await localPatch(dir, { ...pr, path: '*.js' }), null, 'a glob is a name, not a pattern');
-    assert.equal(await localPatch(dir, { ...pr, head: 'f'.repeat(40), path: 'a.js' }), null);
+    assert.equal(await localPatch(dir, { ...pr, ...oneLine, path: 'a.js' }), '@@ -1,2 +1,2 @@\n one\n-two\n+2');
+    assert.equal(await localPatch(dir, { ...pr, additions: 1, deletions: 0, path: 'new.js' }),
+      '@@ -0,0 +1 @@\n+x\n\\ No newline at end of file');
+    assert.equal(await localPatch(dir, { ...pr, additions: 0, deletions: 0, path: 'blob.bin' }), null);
+    assert.equal(await localPatch(dir, { ...pr, ...oneLine, path: '*.js' }), null, 'a glob is a name, not a pattern');
+    assert.equal(await localPatch(dir, { ...pr, ...oneLine, head: 'f'.repeat(40), path: 'a.js' }), null);
     // A base tip this clone never fetched falls back to its own record of the
     // base branch -- none yet, so nothing to fall back to, and then one.
-    const unfetched = { ...pr, baseOid: 'e'.repeat(40), path: 'a.js' };
+    const unfetched = { ...pr, ...oneLine, baseOid: 'e'.repeat(40), path: 'a.js' };
     assert.equal(await localPatch(dir, unfetched), null);
     await run('update-ref', 'refs/remotes/origin/main', 'main');
     assert.equal(await localPatch(dir, unfetched), '@@ -1,2 +1,2 @@\n one\n-two\n+2');
+
+    // And the case the counts are for. A branch built on a base commit this
+    // clone's record of the base does not have yet: GitHub diffs from that
+    // commit and shows c.txt gaining a line, but the fallback's merge base is
+    // older, and shows c.txt being added whole. Same file, a different change.
+    await write('c.txt', 'c\n');
+    await run('add', '.');
+    await run('commit', '-q', '-m', 'newer base, not fetched');
+    await run('checkout', '-q', '-b', 'rebased');
+    await write('c.txt', 'c\nmore\n');
+    await run('commit', '-q', '-am', 'on the newer base');
+    const stale = { ...unfetched, head: await oid('HEAD'), path: 'c.txt' };
+    assert.equal(await localPatch(dir, { ...stale, additions: 1, deletions: 0 }), null);
+    assert.equal(await localPatch(dir, { ...stale, additions: 2, deletions: 0 }), '@@ -0,0 +1,2 @@\n+c\n+more',
+      'the counts, and nothing else, are what refused it');
 
     // A rename is one patch between the two paths, the way GitHub sends it.
     await run('checkout', '-q', 'topic');
     await run('mv', 'a.js', 'b.js');
     await run('commit', '-q', '-m', 'rename');
-    const renamed = { ...pr, head: await oid('HEAD'), path: 'b.js', from: 'a.js' };
+    const renamed = { ...pr, ...oneLine, head: await oid('HEAD'), path: 'b.js', from: 'a.js' };
     assert.equal(await localPatch(dir, renamed), '@@ -1,2 +1,2 @@\n one\n-two\n+2');
   } finally {
     await fs.rm(dir, { recursive: true, force: true });

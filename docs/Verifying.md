@@ -218,9 +218,14 @@ Some things can only be checked against the real thing, so they are:
   52 were identical, 8 differed only in the context after the `@@`, and 4 put a few hunk boundaries
   somewhere else. It took `--diff-algorithm=myers` to get that close. The clone had
   `diff.algorithm histogram` set, and a user's diff config reaches every `git diff` prcoder runs.
-  So a comparison like this has to pin every option GitHub doesn't honour, and the 4 are the ones
-  still unexplained after ruling out the indent heuristic. `test/git.test.js` pins the shape against
-  a scratch repo, and the route glue in `server.js` is checked only by clicking such a file.
+  So a comparison like this has to pin every option GitHub doesn't honour. The 4 are still
+  unexplained after ruling out the indent heuristic, but they show the same change: at the PR's
+  head at the time (`e7a79e1`, 76 files), every text file's local patch added and removed exactly
+  the lines GraphQL counts for it. That match is also the check `localPatch` itself runs before
+  anything is shown. Without it, falling back to a stale copy of the base branch can show base
+  commits the branch merged in as the PR's own changes. `test/git.test.js` pins the shape, and that
+  refusal, against a scratch repo. The route glue in `server.js` is checked only by clicking such a
+  file.
 - **Which CSS stops a dotfile's leading dot migrating to the end of its path**, decided by measuring
   four candidates in both engines rather than by reasoning about the bidi algorithm. The column is
   `direction: rtl` so a long path is cut at the head and keeps its filename; the first guess,

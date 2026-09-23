@@ -181,8 +181,15 @@ const PATCH_LIMIT = 512 * 1024;
  * what a pull request shows. Null when a commit is missing, the file is binary,
  * the patch is over PATCH_LIMIT, or a rename came apart into two files: this
  * stands in for GitHub's view, so it shows that or nothing.
+ *
+ * And null when its line counts are not GitHub's. The base's fallback is where
+ * that bites: a branch that merged base commits this clone never fetched would
+ * diff from an older merge base, and show those commits as the pull request's
+ * own. Nothing else here would notice, and what is on screen would not be what
+ * is under review. The counts come from GraphQL, which still has them when
+ * REST has dropped the patch.
  */
-export async function localPatch(cwd, { baseOid, baseRef, head, path, from }) {
+export async function localPatch(cwd, { baseOid, baseRef, head, path, from, additions, deletions }) {
   const known = (rev) => asks(['rev-parse', '--verify', '--quiet', `${rev}^{commit}`], cwd);
   const base = await known(baseOid) ? baseOid
     : await known(`refs/remotes/origin/${baseRef}`) ? `refs/remotes/origin/${baseRef}` : null;
@@ -193,7 +200,9 @@ export async function localPatch(cwd, { baseOid, baseRef, head, path, from }) {
     '-U3', '--diff-algorithm=myers', '-M', `${base}...${head}`, '--', ...(from ? [from] : []), path], cwd);
   const at = out.search(/^@@/m);
   if (at < 0 || out.length > PATCH_LIMIT || out.match(/^diff --git /gm).length > 1) return null;
-  return out.slice(at).replace(/\n$/, '');
+  const patch = out.slice(at).replace(/\n$/, '');
+  const count = (sign) => patch.split('\n').filter((l) => l[0] === sign).length;
+  return count('+') === additions && count('-') === deletions ? patch : null;
 }
 
 export const checkoutPr = (cwd, number) =>

@@ -527,9 +527,11 @@ const routes = {
     const got = patches.map.get(p) ?? { patch: null };
     // Only for a path the pull request has: the path is the page's to send, and
     // a file GitHub sent no patch for is one git can usually still make here.
-    if (got.patch != null || !cur.files.some((f) => f.path === p)) return { path: p, ...got };
+    const file = cur.files.find((f) => f.path === p);
+    if (got.patch != null || !file) return { path: p, ...got };
     return { path: p, ...got, patch: await localPatch(repo, {
       baseOid: cur.baseRefOid, baseRef: cur.baseRefName, head: cur.headRefOid, path: p, from: got.from,
+      additions: file.additions, deletions: file.deletions,
     }) };
   },
 
