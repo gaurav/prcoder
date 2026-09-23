@@ -129,7 +129,7 @@ function connect(query = '') {
   };
   ws.onclose = () => {
     turn(false);
-    term.write('\r\n\x1b[31m[claude exited]\x1b[0m\r\n');
+    term.write('\r\n\x1b[31m[coding agent exited]\x1b[0m\r\n');
     exitForm.hidden = false;
     exitForm.querySelector('button').focus();
   };

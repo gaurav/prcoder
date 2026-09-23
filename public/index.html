@@ -73,7 +73,7 @@
            repaint the terminal by then, so prcoder is free to draw here.
            Blank fields keep whatever prcoder was started with. -->
       <form id="term-exit" hidden>
-        <span>Claude has exited.</span>
+        <span>Coding agent has exited.</span>
         <label>Model <input name="model" list="term-models" placeholder="as started" size="10"
                             autocomplete="off" spellcheck="false"></label>
         <datalist id="term-models">
@@ -84,9 +84,9 @@
           <option value="">as started</option><option>low</option><option>medium</option>
           <option>high</option><option>xhigh</option><option>max</option>
         </select></label>
-        <label title="claude --continue: the most recent conversation in this repo">
+        <label title="--continue: the most recent conversation in this repo">
           <input type="checkbox" name="continue" checked> Continue the conversation</label>
-        <button>Restart Claude</button>
+        <button>Restart</button>
         <button type="button" id="term-quit">Quit prcoder</button>
       </form>
     </section>

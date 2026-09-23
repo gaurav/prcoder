@@ -178,7 +178,7 @@ options are written down.
 And Claude Code owns that viewport. With `"tui": "fullscreen"` it is on the
 alternate screen, repainting frames over whatever is there; anything prcoder
 writes survives until the next one. The exception is `ws.onclose`, which writes
-`[claude exited]` precisely because the PTY is dead and nothing will repaint.
+`[coding agent exited]` precisely because the PTY is dead and nothing will repaint.
 
 Notices for the human go to `toast()`, which sits over the panes and is nothing
 to do with the terminal. Pass `sticky` for one that stays true until acted on
