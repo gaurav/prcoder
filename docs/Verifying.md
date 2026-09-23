@@ -82,6 +82,13 @@ Its ✕ and the header's *Outline* button were checked the same way on 2026-09-2
 (`data/outline-toggle.mjs`, Chromium): hidden, shown, focus handed across, the choice surviving a
 reload, and the Outline button absent while there is no outline to bring back.
 
+Folding the terminal to its header is pinned in `test/browser.test.js` (the diff grows into the room,
+the fold survives a reload, a double-click on the header unfolds it). What that test cannot see is
+the PTY, because its socket is mocked: `data/fold-check.mjs` ran against this repo's PR with
+`tools/claude-stub.mjs` on 2026-09-23 and read the frames sent, and folding sent no `resize`. So
+the agent keeps its size while folded and is not reflowed to one row, and unfolding sent none
+either, because the grid came back the size it was.
+
 The pane with **no** pull request is out of that driver's reach for the same reason — it follows the
 branch it runs on, that branch has PR #1, and `PRCODER_PR` only pins a different one — so
 `node tools/no-pr.mjs` is the third driver. It clones the remote into `data/main-clone`, which

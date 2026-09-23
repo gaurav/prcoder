@@ -61,6 +61,18 @@ main.diff-open {
 }
 #diff { grid-area: diff; }
 #diff[hidden] { display: none; }
+/* The terminal folded to its header row, for reading a diff by eye: whatever
+   sits above or below it takes the room. Its gutter to that pane goes too --
+   the pane is 1fr now, so there is nothing for a drag to set -- and the empty
+   1px track still draws the line. */
+main.term-off { grid-template-rows: auto 1px 1fr; }
+main.diff-open.term-off {
+  grid-template-rows: 1fr 1px auto 1px clamp(120px, var(--h-queue, 227px), 40%);
+}
+main.term-off #term-host,
+main.term-off:not(.diff-open) #gut-queue,
+main.term-off #gut-diff { display: none; }
+#term > header { user-select: none; }   /* a double-click folds it, not selects the title */
 
 #gut-pr { grid-area: gpr; } #gut-queue { grid-area: gqueue; } #gut-diff { grid-area: gdiff; }
 /* Only the diff-open template has a slot for it; left displayed it would

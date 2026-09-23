@@ -375,3 +375,30 @@ test('a .tsx file loads the grammars tsx extends, in order, before tsx', { skip 
   assert.deepEqual(await fresh.$$eval('#diff-body .dl', (els) => els.map((el) => el.textContent)), [TSX]);
   await fresh.close();
 });
+
+// Folding the terminal is for reading a diff, so the diff is what has to take
+// the room -- a fold that only hid the terminal's body would leave a blank pane
+// where it was. Its own page, because a fold is stored and survives a reload.
+test('the terminal folds to its header, the diff takes the room, and it stays folded', { skip }, async () => {
+  const fresh = await newPage();
+  const height = (sel) => fresh.$eval(sel, (el) => el.getBoundingClientRect().height);
+  await fresh.locator('#pr-head .tab', { hasText: 'Files' }).click();
+  await fresh.locator('.file[data-path="evil.js"] .path').click();
+  await fresh.waitForSelector('#diff-body .dl');
+  const open = await height('#diff');
+
+  await fresh.click('#term-fold');
+  assert.equal(await fresh.locator('#term-host').isVisible(), false);
+  assert.equal(await height('#term'), await height('#term > header'));
+  assert.ok(await height('#diff') > open, `diff was ${open}px, is ${await height('#diff')}px`);
+  assert.equal(await fresh.getAttribute('#term-fold', 'aria-expanded'), 'false');
+
+  await fresh.reload();
+  await fresh.waitForSelector('#pr-head .pr-title');
+  assert.equal(await fresh.locator('#term-host').isVisible(), false, 'folded after a reload');
+
+  await fresh.dblclick('#term > header h1');
+  assert.equal(await fresh.locator('#term-host').isVisible(), true);
+  assert.equal(await fresh.getAttribute('#term-fold', 'aria-expanded'), 'true');
+  await fresh.close();
+});
