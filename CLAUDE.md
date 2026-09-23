@@ -185,6 +185,16 @@ to do with the terminal. Pass `sticky` for one that stays true until acted on
 rather than reporting something already finished -- it waits for a click instead
 of timing out.
 
+## The UI says "coding agent", not Claude
+
+prcoder already runs agents other than Claude Code -- `CLAUDE_BIN` picks the
+executable, and the drivers run a stub -- so any new text in the UI that refers
+to the agent (page copy, toasts, tooltips, lines written to the terminal) says
+"coding agent", or names the running agent once the page knows it. The docs can
+keep saying Claude Code until a second agent is fully supported, and code names
+like `sendToClaude` and `CLAUDE_BIN` wait for that too (#30). The owner asked
+for this on 2026-09-23. The UI strings that still say Claude are listed in #76.
+
 ## One engine is not "a real browser"
 
 `tools/browser.mjs` ran Chromium only, and a Firefox-only bug survived every
