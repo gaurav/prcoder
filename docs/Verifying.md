@@ -78,6 +78,9 @@ script in `data/` against the prcoder already running on this repo: rows injecte
 the line dragged, and the outline's width read back against the cursor's own position, which is what
 says the number written is a distance from the right edge rather than a drift. The gutter is hidden
 before the injection and shown after, which is the empty case the running app is always in here.
+Its ✕ and the header's *Outline* button were checked the same way on 2026-09-23
+(`data/outline-toggle.mjs`, Chromium): hidden, shown, focus handed across, the choice surviving a
+reload, and the Outline button absent while there is no outline to bring back.
 
 The pane with **no** pull request is out of that driver's reach for the same reason — it follows the
 branch it runs on, that branch has PR #1, and `PRCODER_PR` only pins a different one — so

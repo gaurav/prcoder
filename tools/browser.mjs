@@ -338,8 +338,10 @@ await page.waitForSelector('main.diff-open');
 // PR #1 is one the PR adds, so it should read NEW there and DIFF nowhere.
 await page.waitForFunction(() => document.querySelectorAll('#diff-body .dl').length > 0);
 console.log('diff title:', await page.locator('#diff h1').innerText(), ' (want NEW: every file in PR #1 is added)');
-console.log('outline:', await page.locator('#diff-outline').evaluate((n) => `${n.children.length} rows, ${getComputedStyle(n).display}`),
-  ' (want 0 rows, none: a whole file has no hunks to list)');
+console.log('outline:', await page.evaluate(() => {
+  const d = (id) => getComputedStyle(document.getElementById(id)).display;
+  return `${document.getElementById('diff-outline').children.length} rows, ${d('diff-side')}, show button ${d('diff-outline-show')}`;
+}), ' (want 0 rows, none, show button none: a whole file has no hunks to list, or to bring back)');
 
 // The NEW view is the highlighted one, and the colours are the whole of what
 // says so -- a regression to plain text is a screenshot that looks ordinary.
