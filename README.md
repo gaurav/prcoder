@@ -141,7 +141,8 @@ a tokenizer sees a whole file rather than a hunk that starts in the middle of on
 first line, and a rename with no other change says only that. A diff with more
 than one hunk gets an outline down its right edge -- one row per hunk, named by
 the context git puts after the `@@` (the enclosing function, a heading) -- and a
-click scrolls the body to it. Four links, because they answer different
+click scrolls the body to it. Its ✕ hides it for every file until *Outline* in
+the header brings it back, and the browser remembers which you chose. Four links, because they answer different
 questions. *Diff* comes first because it is what the pane itself shows: this
 file's patch in GitHub's viewer. The other three are the whole file as this pull
 request leaves it: *File* for what it became — the untouched parts a hunk
