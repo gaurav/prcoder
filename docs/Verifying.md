@@ -211,6 +211,16 @@ Some things can only be checked against the real thing, so they are:
 - **The `git` exit codes the sync verdict depends on**, because a non-zero exit is often an answer
   rather than a failure and git's codes differ per command — see [CLAUDE.md](../CLAUDE.md), which
   records which command returns what and why `asks()` exists.
+- **That a patch from local git stands in for one GitHub stopped sending** (`localPatch` in
+  `git.js`), checked 2026-09-23 against NCATSTranslator/translator-diagram#32. There GitHub's
+  `pulls/N/files` sent no patch, and `+0`, for every file after about 860 KB of patch text. The
+  check ran `localPatch` over the 64 files GitHub *did* send and compared the results byte for byte:
+  52 were identical, 8 differed only in the context after the `@@`, and 4 put a few hunk boundaries
+  somewhere else. It took `--diff-algorithm=myers` to get that close. The clone had
+  `diff.algorithm histogram` set, and a user's diff config reaches every `git diff` prcoder runs.
+  So a comparison like this has to pin every option GitHub doesn't honour, and the 4 are the ones
+  still unexplained after ruling out the indent heuristic. `test/git.test.js` pins the shape against
+  a scratch repo, and the route glue in `server.js` is checked only by clicking such a file.
 - **Which CSS stops a dotfile's leading dot migrating to the end of its path**, decided by measuring
   four candidates in both engines rather than by reasoning about the bidi algorithm. The column is
   `direction: rtl` so a long path is cut at the head and keeps its filename; the first guess,

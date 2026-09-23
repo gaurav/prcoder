@@ -180,8 +180,18 @@ test('a local patch is GitHub-shaped, from the merge base, and null when git can
     assert.equal(await localPatch(dir, { ...pr, path: '*.js' }), null, 'a glob is a name, not a pattern');
     assert.equal(await localPatch(dir, { ...pr, head: 'f'.repeat(40), path: 'a.js' }), null);
     // A base tip this clone never fetched falls back to its own record of the
-    // base branch -- here there is no origin, so nothing to fall back to.
-    assert.equal(await localPatch(dir, { ...pr, baseOid: 'e'.repeat(40), path: 'a.js' }), null);
+    // base branch -- none yet, so nothing to fall back to, and then one.
+    const unfetched = { ...pr, baseOid: 'e'.repeat(40), path: 'a.js' };
+    assert.equal(await localPatch(dir, unfetched), null);
+    await run('update-ref', 'refs/remotes/origin/main', 'main');
+    assert.equal(await localPatch(dir, unfetched), '@@ -1,2 +1,2 @@\n one\n-two\n+2');
+
+    // A rename is one patch between the two paths, the way GitHub sends it.
+    await run('checkout', '-q', 'topic');
+    await run('mv', 'a.js', 'b.js');
+    await run('commit', '-q', '-m', 'rename');
+    const renamed = { ...pr, head: await oid('HEAD'), path: 'b.js', from: 'a.js' };
+    assert.equal(await localPatch(dir, renamed), '@@ -1,2 +1,2 @@\n one\n-two\n+2');
   } finally {
     await fs.rm(dir, { recursive: true, force: true });
   }
