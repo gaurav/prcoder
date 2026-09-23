@@ -190,7 +190,9 @@ through both walks; two callers of one function can still be handed different bo
 
 The routes are tested over real HTTP. `test/api.test.js` listens on port 0 in-process rather than
 spawning anything — everything that listens in `server.js` is behind `import.meta.main`, so
-importing the module starts nothing, and a PTY comes only from a `/pty` websocket no test opens. It
+importing the module starts nothing, and a PTY comes only from a `/pty` websocket. The one test
+that opens one sends settings `sessionArgs` refuses, so it is closed with 1008 before the spawn --
+which is the claim, since a guard after the spawn would already have started a `claude`. It
 pins `/api/whoami`'s cache-only contract, the 404 and 500 shapes, static serving, the four
 hand-written `vendor` paths into `node_modules` (which break silently on an xterm upgrade and
 surface as a blank page), and the origin refusal: an `Origin` that is not ours is a 403 before any
@@ -199,6 +201,17 @@ is refused rather than parsed into a pass. A `Host` that is not a loopback name 
 without an `Origin`, which is the DNS-rebinding case; that test sends its requests with `node:http`,
 because `fetch` will not set `Host`. Only the handlers that answer without `gh` — the rest
 would be testing this machine's GitHub auth.
+
+The Claude pane's exit bar is `test/browser.test.js`'s, against a mock socket that closes the way an
+exiting agent does: Restart is a second socket whose query carries the chosen model, effort and
+`continue`, and Quit posts without `force`, puts the returned risk in a `confirm()`, and only then
+posts with it. The mock is matched by a regex, not `'**/pty'`, since a glob misses the query string
+and the restart went to the real server -- which spawned a real `claude --continue` until the file
+set `CLAUDE_BIN=/usr/bin/false` (2026-09-23). Clicking Quit is also what found that the terminal went
+on covering the bar in a page that is not in front, because the `ResizeObserver` never delivered the
+shrink; `onclose` refits itself now. The real spawn was driven once by hand, against a stub that
+prints its argv: `[]` on the first open, then `[--continue --model opus --effort high]`, and the
+server exiting 0 after Quit.
 
 Some things can only be checked against the real thing, so they are:
 
