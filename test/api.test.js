@@ -11,7 +11,8 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
-import { server } from '../server.js';
+import { WebSocket } from 'ws';
+import { server, sessionArgs } from '../server.js';
 import { grammars } from '../public/diff.js';
 
 let base;
@@ -159,4 +160,28 @@ test('a queue write of the wrong shape says so, rather than throwing from inside
   assert.deepEqual(await put([{ text: 'a task' }]), [500, want]);
   assert.deepEqual(await put({ branch: 'work' }), [500, want]);
   assert.deepEqual(await put({ items: 'not an array', branch: 'work' }), [500, want]);
+});
+
+// The exit panel's Restart sends its settings as the /pty query, and they
+// become part of a spawn's argv -- so only names and levels get through, and a
+// model that is really a flag is refused rather than handed to claude.
+test('session settings become claude flags, and nothing else does', () => {
+  const args = (q) => sessionArgs(new URLSearchParams(q));
+  assert.deepEqual(args(''), []);
+  assert.deepEqual(args('model=&effort='), []);
+  assert.deepEqual(args('model=opus&effort=high&continue=on'),
+    ['--continue', '--model', 'opus', '--effort', 'high']);
+  assert.deepEqual(args('model=claude-opus-5-5[1m]'), ['--model', 'claude-opus-5-5[1m]']);
+  assert.equal(args('model=--dangerously-skip-permissions'), null);
+  assert.equal(args('model=opus --verbose'), null);
+  assert.equal(args('effort=extreme'), null);
+});
+
+// Refused before the spawn, like a foreign origin: this opens a real /pty and
+// would start a `claude` if the guard were after it.
+test('a /pty socket with settings that are not allowed is closed unspawned', async () => {
+  const { port } = server.address();
+  const ws = new WebSocket(`ws://127.0.0.1:${port}/pty?model=--help`);
+  const [code] = await new Promise((res) => ws.on('close', (...a) => res(a)));
+  assert.equal(code, 1008);
 });
