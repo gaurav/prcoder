@@ -219,12 +219,12 @@ test('the head links point at the repository the pull request is in', () => {
 
 // The line clips on purpose, and the two spans are what decide which half goes.
 // The slash belongs to the name: clipping a span that ended with it would give
-// `heal-data-...heal-non-data-dictionaries`, with nothing to say a level was
+// `heal-data-...heal-vlmd-AI-pipeline`, with nothing to say a level was
 // dropped. A repository name can hold slashes in other forges, so the split is
 // at the first one and the rest is one piece.
 test('the repository line splits at the first slash, keeping the slash with the name', () => {
-  const { repo } = headLinks({ number: 1, url: 'https://github.com/heal-data-stewards/heal-non-data-dictionaries/pull/1' });
-  assert.deepEqual([repo.owner, repo.rest], ['heal-data-stewards', '/heal-non-data-dictionaries']);
+  const { repo } = headLinks({ number: 1, url: 'https://github.com/heal-data-stewards/heal-vlmd-AI-pipeline/pull/1' });
+  assert.deepEqual([repo.owner, repo.rest], ['heal-data-stewards', '/heal-vlmd-AI-pipeline']);
   assert.equal(repo.owner + repo.rest, repo.slug);
 });
 

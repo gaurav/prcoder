@@ -162,7 +162,7 @@ a { color: var(--accent); }
 
    The repository, on the line under that row rather than in the middle of it.
    It is the only link there whose width has no bound -- a real
-   `heal-data-stewards/heal-non-data-dictionaries` is most of the pane at its
+   `heal-data-stewards/heal-vlmd-AI-pipeline` is most of the pane at its
    375px default -- so in the row it wrapped, and dragged where issues, pulls
    and milestones sat along with it. Alone on a line it can overflow instead:
    the row above keeps one predictable shape, and this line clips.
@@ -200,8 +200,8 @@ a { color: var(--accent); }
    which is the full-width row and still starts where the title does.
 
    Which half of the slug gets clipped is the point of the two spans. A pane
-   too narrow for `heal-data-stewards/heal-non-data-dictionaries` shows
-   `heal-data-…/heal-non-data-dictionaries`: the owner gives way, because it is
+   too narrow for `heal-data-stewards/heal-vlmd-AI-pipeline` shows
+   `heal-data-…/heal-vlmd-AI-pipeline`: the owner gives way, because it is
    the same all day, and the name is the half that says which checkout this is.
    `title` on the link (see repoRow) is the way back to the whole slug.
 

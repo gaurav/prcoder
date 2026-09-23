@@ -223,8 +223,8 @@ Some things can only be checked against the real thing, so they are:
   declarations each checked by dropping it (2026-09-21, Chromium; the Firefox pass is owed on
   [#61](https://github.com/gaurav/prcoder/issues/61), and flex shrink is a place the engines have
   disagreed). The head's repository line is one link in two spans -- the owner shrinks and
-  ellipsises, the name is `flex: none` -- and `heal-data-stewards/heal-non-data-dictionaries`
-  becomes `heal-dat…/heal-non-data-dictionaries` in a narrow pane. Three of the four are pinned in
+  ellipsises, the name is `flex: none` -- and `heal-data-stewards/heal-vlmd-AI-pipeline`
+  becomes `heal-dat…/heal-vlmd-AI-pipeline` in a narrow pane. Three of the four are pinned in
   `test/browser.test.js`, which narrows the pane by writing `--w-pr` the way a drag does; the
   fourth, `max-width` on the name, is for a name that alone will not fit and the pane's own 180px
   floor is too wide to reach it, so it was checked by hand against a 60-character one.

@@ -345,7 +345,7 @@ const repoName = (repoUrl) => repoUrl.replace(/^https?:\/\/[^/]+\//, '');
  *
  * The repository used to sit in the middle of that row, between `PR #62` and
  * `issues`, and it is the only part of it whose width has no bound.
- * `heal-data-stewards/heal-non-data-dictionaries` is a real one, and at 12px it
+ * `heal-data-stewards/heal-vlmd-AI-pipeline` is a real one, and at 12px it
  * is most of the pane at its 375px default -- so the row wrapped, and where
  * `issues`/`pulls`/`milestones` were moved from one repository to the next. The
  * four links you aim at are the four that are always the same length; keeping
@@ -382,7 +382,7 @@ const listLinks = (repo) =>
  *
  * `rest` carries the slash. The owner is the half that gives way when the slug
  * will not fit -- it is the same all day, where the name is what tells you
- * which checkout you are looking at -- and `heal-data-…heal-non-data-dictionaries`
+ * which checkout you are looking at -- and `heal-data-…heal-vlmd-AI-pipeline`
  * would be the result of clipping a span that ended with the separator.
  *
  * A slug with no slash at all should not reach here, but if one does it is all

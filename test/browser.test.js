@@ -86,7 +86,7 @@ const BODY = [
 
 // A long slug on purpose: the head's repository line is built to be clipped,
 // and `example/repo` fits any pane this ever opens at. This one is real.
-const REPO = 'https://github.com/heal-data-stewards/heal-non-data-dictionaries';
+const REPO = 'https://github.com/heal-data-stewards/heal-vlmd-AI-pipeline';
 // One added file, with markup in it: the diff pane highlights a NEW file from
 // Prism's tokens, and this is the source that shows if any of it is ever built
 // as HTML rather than text.
@@ -113,7 +113,7 @@ const pr = {
 };
 const status = {
   branch: 'topic', head: 'b'.repeat(40), detached: false, dirtyFiles: [], sync: 'synced', ahead: 0,
-  defaultBranch: 'main', nameWithOwner: 'heal-data-stewards/heal-non-data-dictionaries',
+  defaultBranch: 'main', nameWithOwner: 'heal-data-stewards/heal-vlmd-AI-pipeline',
   scope: 'current', mirrorFailed: false,
   pr, queue: [],
 };
@@ -226,9 +226,9 @@ test('the repository is a line of its own, not a link in the row', { skip }, asy
   assert.deepEqual(await page.locator('#pr-head .pr-links a').allTextContents(),
     ['PR #12', 'issues', 'pulls', 'milestones']);
   const repo = page.locator('#pr-head .pr-repo a');
-  assert.equal(await repo.textContent(), 'heal-data-stewards/heal-non-data-dictionaries');
+  assert.equal(await repo.textContent(), 'heal-data-stewards/heal-vlmd-AI-pipeline');
   assert.equal(await repo.getAttribute('href'), REPO);
-  assert.equal(await repo.getAttribute('title'), 'heal-data-stewards/heal-non-data-dictionaries');
+  assert.equal(await repo.getAttribute('title'), 'heal-data-stewards/heal-vlmd-AI-pipeline');
 });
 
 // A line of its own said where the repository was, not that it was anything
