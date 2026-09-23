@@ -55,7 +55,10 @@ For the diff pane: under Files, a `.js` or `.md` file opens under **NEW** with
 coloured tokens, and a `.txt` (any extension `language` in `public/diff.js`
 does not list) opens plain. Prism loads on that first click, so a 404 in the
 vendor map shows as a plain file and a `highlight` line in the console, not as
-an error anywhere prcoder shows.
+an error anywhere prcoder shows. The exception is a package missing from
+`node_modules` -- a pull that added a dependency with no `npm install` after it,
+which is what plain files were on 2026-09-23 -- and startup says so:
+`not in node_modules, so npm install first: prismjs`.
 
 Then look at it. `docs/Verifying.md` is the standing account of the three
 drivers -- what each reaches, which engine, the stub, the Firefox situation --

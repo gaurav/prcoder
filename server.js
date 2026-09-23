@@ -5,6 +5,7 @@
 import http from 'node:http';
 import { spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
@@ -634,6 +635,15 @@ const vendor = {
     .map((l) => [`/vendor/prism/${l}.js`, `prismjs/components/prism-${l}.min.js`])),
 };
 
+/**
+ * The vendor files not on disk under `dir`'s node_modules. Nothing else says
+ * so: a missing xterm is a blank page and a missing Prism is a plain file with a
+ * line in the browser console. A pull that adds a dependency and no `npm
+ * install` after it was exactly that on 2026-09-23.
+ */
+export const missingVendor = (dir = root) =>
+  Object.values(vendor).filter((f) => !existsSync(path.join(dir, 'node_modules', f)));
+
 // A second line of defence for the page that holds the PTY. A hole in the
 // description renderer loads no script, and no other page can frame prcoder and
 // turn a click on its own content into a click on ▶. style-src stays loose
@@ -959,6 +969,10 @@ if (import.meta.main) {
   // so the age above stays honest, and term.status() writes nothing at all
   // while the rendered lines are unchanged.
   setInterval(repaint, 30_000).unref();
+
+  // By package: a missing Prism is eleven files and one fix.
+  const missing = new Set(missingVendor().map((f) => f.split('/').slice(0, f.startsWith('@') ? 2 : 1).join('/')));
+  if (missing.size) console.error(`not in node_modules, so npm install first: ${[...missing].join(', ')}`);
 
   // ready() needs the port we meant to be on, so it is settled before the
   // socket is up rather than recomputed from the path afterwards.

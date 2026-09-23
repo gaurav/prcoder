@@ -11,7 +11,7 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
-import { server } from '../server.js';
+import { server, missingVendor } from '../server.js';
 import { grammars } from '../public/diff.js';
 
 let base;
@@ -159,4 +159,15 @@ test('a queue write of the wrong shape says so, rather than throwing from inside
   assert.deepEqual(await put([{ text: 'a task' }]), [500, want]);
   assert.deepEqual(await put({ branch: 'work' }), [500, want]);
   assert.deepEqual(await put({ items: 'not an array', branch: 'work' }), [500, want]);
+});
+
+// What startup warns about. Empty here, because this checkout has been
+// installed; and a directory with no node_modules is missing every file,
+// Prism's grammars included, so none of the map is skipped.
+test('missingVendor names the vendor files that are not installed', () => {
+  assert.deepEqual(missingVendor(), []);
+  const all = missingVendor(import.meta.dirname);
+  assert.ok(all.includes('@xterm/xterm/lib/xterm.mjs'));
+  assert.ok(all.includes('prismjs/prism.js'));
+  assert.equal(all.length, 5 + grammars.length);
 });
