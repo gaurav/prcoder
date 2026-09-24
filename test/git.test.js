@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { syncState, compareUrl, prScope, userDirt, remoteBranchHead, trackingHead, snapshot, localPatch } from '../git.js';
+import { syncState, compareUrl, originOwner, prScope, userDirt, remoteBranchHead, trackingHead, snapshot, localPatch } from '../git.js';
 
 // The four inputs come from `git rev-parse --verify` and `git merge-base
 // --is-ancestor`; the exit codes those return are checked in git.js, not here.
@@ -42,6 +42,31 @@ test('the compare URL opens GitHub with the form already expanded', () => {
   assert.equal(
     compareUrl('gaurav/prcoder', 'main', 'my-branch'),
     'https://github.com/gaurav/prcoder/compare/main...my-branch?expand=1');
+});
+
+// In a fork clone gh's base repo is upstream's, and the branch is only on
+// origin: a bare name there was GitHub's 404.
+test('the compare URL names the fork the branch was pushed to', () => {
+  assert.equal(
+    compareUrl('uc-cdis/heal-platform-sdk', 'master', 'my-branch', 'gaurav'),
+    'https://github.com/uc-cdis/heal-platform-sdk/compare/master...gaurav:my-branch?expand=1');
+});
+
+test("origin's owner comes off every shape of GitHub remote URL", async () => {
+  const git = promisify(execFile);
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'prcoder-origin-'));
+  try {
+    await git('git', ['init', '-q', dir]);
+    for (const url of ['git@github.com:gaurav/heal-platform-sdk.git',
+      'https://github.com/gaurav/heal-platform-sdk', 'https://github.com/gaurav/heal-platform-sdk.git/',
+      'ssh://git@github.com/gaurav/heal-platform-sdk.git']) {
+      await git('git', ['remote', 'remove', 'origin'], { cwd: dir }).catch(() => {});
+      await git('git', ['remote', 'add', 'origin', url], { cwd: dir });
+      assert.equal(await originOwner(dir), 'gaurav', url);
+    }
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
 });
 
 const here = { branch: 'feature', nameWithOwner: 'gaurav/prcoder' };

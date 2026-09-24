@@ -70,9 +70,26 @@ export function syncState({ head, remoteHead, remoteKnownLocally, remoteIsAncest
 export const userDirt = (status) =>
   status.split('\n').filter(Boolean).map((l) => l.slice(3));
 
-/** GitHub's "open a PR for this branch" page. */
-export const compareUrl = (nameWithOwner, base, branch) =>
-  `https://github.com/${nameWithOwner}/compare/${base}...${branch}?expand=1`;
+/**
+ * GitHub's "open a PR for this branch" page. `nameWithOwner` is gh's base repo,
+ * which in a fork clone is `upstream`'s -- but the branch was pushed to origin,
+ * and a bare branch name is looked up in the base repo: a 404. `owner:branch`
+ * finds it in the owner's fork, and means the same branch when origin is the
+ * base repo itself (checked 2026-09-24 against uc-cdis/heal-platform-sdk).
+ */
+export const compareUrl = (nameWithOwner, base, branch, owner) =>
+  `https://github.com/${nameWithOwner}/compare/${base}...${owner ? `${owner}:` : ''}${branch}?expand=1`;
+
+/**
+ * Who owns origin, read off its URL -- `git@github.com:o/r.git`,
+ * `https://github.com/o/r`, `ssh://git@github.com/o/r.git` alike. Null for a
+ * URL with no `owner/repo` tail. get-url applies `insteadOf`, so this is the
+ * URL a push actually goes to.
+ */
+export async function originOwner(cwd) {
+  const url = await text(['remote', 'get-url', 'origin'], cwd);
+  return url.match(/[:/]([^/:]+)\/[^/:]+?\/?$/)?.[1] ?? null;
+}
 
 /**
  * How the PR on screen relates to the checkout. A boolean would collapse these:

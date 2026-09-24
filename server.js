@@ -13,7 +13,7 @@ import { text as readBody } from 'node:stream/consumers';
 import { spawn as ptySpawn } from 'node-pty';
 import { WebSocketServer } from 'ws';
 import { loadPr, prHeads, prBody, listPrs, setViewed, setBody, createIssue, fetchPatches, runCount } from './github.js';
-import { snapshot, currentBranch, repoInfo, prScope, compareUrl, checkoutPr, pushBranch, remoteBranchHead, trackingHead, localPatch } from './git.js';
+import { snapshot, currentBranch, repoInfo, prScope, compareUrl, originOwner, checkoutPr, pushBranch, remoteBranchHead, trackingHead, localPatch } from './git.js';
 import { groupFiles, fileUrl, fileViews } from './files.js';
 import { parseFuture, renderPrBlock, syncFromPrBlock, toggleTask } from './queue.js';
 import { readStore, writeStore, readPort, writePort, replaceItems } from './store.js';
@@ -476,7 +476,7 @@ const routes = {
     // rather than trusting a sync verdict computed without a remote head.
     const pushed = !(await remoteBranchHead(repo, branch));
     if (pushed) await pushBranch(repo);
-    return { url: compareUrl(info.nameWithOwner, info.defaultBranch, branch), pushed };
+    return { url: compareUrl(info.nameWithOwner, info.defaultBranch, branch, await originOwner(repo)), pushed };
   },
 
   'POST /api/pr/viewed': async ({ path: p, viewed }) => {
