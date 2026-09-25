@@ -101,7 +101,7 @@ with the default layout, and gets the old one back once it is on the old port
 again.
 
 **Pull request** — which pull request you are in stays at the top: the title,
-the state, the branch it targets, the checks. Under those is the way out of the
+the state, the branch it targets. Under those is the way out of the
 window, on two lines: this pull request on GitHub with its issues, pulls and
 milestones, and below them the repository they are all in. The repository is on
 its own line because it is the only one of them whose length has no bound, and
@@ -111,9 +111,10 @@ is drawn as a chip rather than a fifth link, because a line of its own said
 where it was without saying it was anything else: the row above is the list of
 places to go, and the chip under it is the one line in the head that answers
 which checkout this is.
-Below that are three tabs, because reading the argument and working the files are
-two different things and each wants the whole pane -- and the third, *Stack*, is
-the pull requests built on this one's branch, laid out like the list above.
+Below that are the tabs, because reading the argument, working the files and
+watching CI are three different things and each wants the whole pane -- and the
+last, *Stack*, is the pull requests built on this one's branch, laid out like
+the list above.
 
 *Detail* is the description. It opens as the lead paragraph and then one folded
 line per section, so a long one is an outline you scan rather than a wall you
@@ -139,10 +140,15 @@ file is GitHub's own "viewed" checkbox: tick it here and it's ticked on
 github.com. Clicking a file opens its diff in the **Diff** pane;
 cmd/ctrl-clicking opens GitHub's diff viewer at that file instead.
 
+*Checks* is CI, one row per check, each linking to its run. The tab is there
+only when the pull request has any.
+
 Each tab carries the count the others cannot show you — how many description
-boxes are still unticked, how many files are still unviewed, how many pull
-requests are stacked on this one — so none hides from you while you are in
-another.
+boxes are still unticked, how many files are still unviewed, how many checks
+have gone green, how many pull requests are stacked on this one — so none of
+them hides from you while you are in another. The Checks tab also carries a
+dot: green when everything passed, yellow while something is still running, red
+as soon as anything fails, which is the part a fraction alone can't tell you.
 
 **Diff** — the selected file's patch, rendered plainly above the terminal so
 select → read → tick viewed → ask Claude never leaves the window. It shows the

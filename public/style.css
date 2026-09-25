@@ -115,6 +115,23 @@ a { color: var(--accent); }
   font: inherit; font-size: 12px; padding: 2px 8px; border-radius: 4px; cursor: pointer;
 }
 .tab.on { color: var(--fg); border-color: var(--line); background: var(--bg); }
+/* The checks, as a dot rather than the row of badges they used to be above the
+   title: three counts in colour, at the top of the pane, read as the loudest
+   thing about a pull request when they are mostly a thing to glance at. The
+   same dot marks each row inside the tab, so the colour means one thing in both
+   places. `.light` has a dot of its own and is a whole labelled control; this is
+   just the mark. */
+.dot::before {
+  content: ''; display: inline-block; flex: none;
+  width: 7px; height: 7px; border-radius: 50%;
+  margin-right: 5px; vertical-align: baseline;
+  background: var(--line);
+}
+.dot.pass::before { background: #7fd88f; }
+.dot.fail::before { background: #f5a3a3; }
+.dot.pend::before { background: #f0dc9a; }
+.check { display: flex; align-items: center; font-size: 13px; padding: 3px 0; }
+.check a, .check span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tab:hover, .bulk:hover { color: var(--fg); }
 .bulk { border-color: var(--line); }
 .spacer { flex: 1; }

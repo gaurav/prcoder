@@ -364,7 +364,7 @@ const prRow = (p, { blocked, onSwitch }, kids) => h('li', {},
  */
 let tab = 'detail';
 let shownFor = null;
-const scrolled = { detail: 0, files: 0, stack: 0 };
+const scrolled = { detail: 0, files: 0, checks: 0, stack: 0 };
 const openSections = new Set();
 // Whether the single-section description below is still allowed to open itself.
 let autoOpen = true;
@@ -518,10 +518,15 @@ export function renderPr(pr, handlers) {
     shownFor = pr.number;
     scrolled.detail = 0;
     scrolled.files = 0;
+    scrolled.checks = 0;
     scrolled.stack = 0;
     openSections.clear();
     autoOpen = true;
   }
+  // A poll can take the tab out from under the reader: checks that have been
+  // deleted from the workflow, or a force-push that has not queued any yet,
+  // leave nothing for the Checks tab to show and no tab to leave it by.
+  if (tab === 'checks' && !pr.checks.list.length) tab = 'detail';
   renderPrHead(pr, handlers);
   renderPrTab(pr, handlers);
 }
@@ -532,8 +537,8 @@ function renderPrHead(pr, handlers) {
     renderPrHead(pr, handlers);
     renderPrTab(pr, handlers);
   };
-  const tabBtn = (name, label) =>
-    btn(label, () => switchTo(name), { className: tab === name ? 'tab on' : 'tab' });
+  const tabBtn = (name, label, extra = '') =>
+    btn(label, () => switchTo(name), { className: `tab${extra}${tab === name ? ' on' : ''}` });
   const ways = headLinks(pr);
 
   document.getElementById('pr-head').replaceChildren(...kids([
@@ -545,7 +550,6 @@ function renderPrHead(pr, handlers) {
       h('span', { className: 'add' }, `+${pr.additions}`),
       h('span', { className: 'del' }, `−${pr.deletions}`),
     ),
-    checks(pr.checks),
     // Two lines, and `pr-links` carries no style of its own -- it is the hook
     // tools/browser.mjs measures the row by, so it is not dead CSS to clean up.
     linkRow(ways.links, 'meta pr-ways pr-links'),
@@ -553,6 +557,9 @@ function renderPrHead(pr, handlers) {
     h('div', { className: 'tabs' },
       tabBtn('detail', tabLabel('Detail', taskCount(pr.body))),
       tabBtn('files', tabLabel('Files', viewedCount(pr.files))),
+      pr.checks.list.length
+        ? tabBtn('checks', tabLabel('Checks', checkCount(pr.checks)), ` dot ${worst(pr.checks)}`)
+        : null,
       tabBtn('stack', stackLabel(stackOn(pr, handlers.prs)))),
   ]));
 }
@@ -605,6 +612,24 @@ export const stackLabel = (nodes) => (nodes.length ? `Stack (${stackSize(nodes)}
 export const viewedCount = (files = []) =>
   ({ done: files.filter((f) => f.viewed).length, total: files.length });
 
+/**
+ * The checks as the same done-over-total the other two tabs carry, so a run in
+ * progress reads as `Checks (1/3)` and a green one as `Checks ✓`.
+ *
+ * A failure is not "done": it is counted in the total and not in the done, so
+ * the fraction stays short of the total for as long as something is red. The
+ * colour beside it is what tells those two apart -- a pending 1/3 and a failed
+ * 1/3 are the same fraction.
+ */
+export const checkCount = ({ passed, failed, pending }) =>
+  ({ done: passed, total: passed + failed + pending });
+
+/**
+ * The one state a row of checks is worth reporting as. Red beats yellow beats
+ * green: a single failure is the thing to know about, whatever else passed.
+ */
+export const worst = ({ failed, pending }) => (failed ? 'fail' : pending ? 'pend' : 'pass');
+
 function renderPrTab(pr, handlers) {
   const host = document.getElementById('pr-body');
   // Recorded as it happens rather than read before the replace: a tab switch
@@ -627,6 +652,12 @@ function renderPrTab(pr, handlers) {
         h('span', { className: 'pr-into-label' }, `Pull requests built on ${pr.headRefName}`),
         stackList(stack, handlers))
       : h('p', { className: 'empty' }, stackEmpty(pr, handlers.prs)),
+  ] : tab === 'checks' ? [
+    ...pr.checks.list.map((c) => h('div', { className: 'check' },
+      h('span', { className: `dot ${c.state}` }),
+      // A check GitHub gave no URL for is rare and not worth a dead link, so it
+      // stays plain text rather than becoming an <a> to nowhere.
+      c.url ? ext(c.url, c.name) : h('span', {}, c.name))),
   ] : tab === 'files' ? [
     ...GROUPS.map(([key, label]) => fileGroup(label, pr.groups[key], handlers)),
     h('div', { className: 'meta' },
@@ -646,15 +677,6 @@ function renderPrTab(pr, handlers) {
 }
 
 const badge = (text, kind) => h('span', { className: `badge ${kind}` }, text);
-
-function checks({ passed, failed, pending }) {
-  if (!passed && !failed && !pending) return null;
-  return h('div', { className: 'meta' },
-    failed ? badge(`${failed} failing`, 'fail') : null,
-    pending ? badge(`${pending} pending`, 'pend') : null,
-    passed ? badge(`${passed} passing`, 'pass') : null,
-  );
-}
 
 /**
  * One list of issues, labelled with what this pull request does about them.

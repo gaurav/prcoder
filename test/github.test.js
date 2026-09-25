@@ -5,16 +5,34 @@ import { taskLines } from '../public/tasks.js';
 import { syncFromPrBlock } from '../queue.js';
 
 test('check states collapse into passed, failed and pending', () => {
-  assert.deepEqual(rollup([
+  const { list, ...counts } = rollup([
     { conclusion: 'SUCCESS' }, { conclusion: 'SKIPPED' }, { conclusion: 'NEUTRAL' },
     { conclusion: 'FAILURE' }, { conclusion: 'TIMED_OUT' },
     { state: 'PENDING' }, { conclusion: '' },
-  ]), { passed: 3, failed: 2, pending: 2 });
+  ]);
+  assert.deepEqual(counts, { passed: 3, failed: 2, pending: 2 });
+  assert.deepEqual(list.map((c) => c.state),
+    ['pass', 'pass', 'pass', 'fail', 'fail', 'pend', 'pend']);
 });
 
 test('a PR with no checks reports nothing rather than zeroes everywhere', () => {
-  assert.deepEqual(rollup(undefined), { passed: 0, failed: 0, pending: 0 });
-  assert.deepEqual(rollup([]), { passed: 0, failed: 0, pending: 0 });
+  assert.deepEqual(rollup(undefined), { passed: 0, failed: 0, pending: 0, list: [] });
+  assert.deepEqual(rollup([]), { passed: 0, failed: 0, pending: 0, list: [] });
+});
+
+// The two shapes GitHub answers with for the same thing: a CheckRun from
+// Actions, and the StatusContext an external service posts. The pane is given
+// one row shape and never learns which it came from.
+test('a check run and a status context flatten to the same row', () => {
+  assert.deepEqual(rollup([
+    { workflowName: 'CI', name: 'test (26.x)', conclusion: 'SUCCESS', detailsUrl: 'https://gh/run/1' },
+    { context: 'netlify/deploy', state: 'FAILURE', targetUrl: 'https://netlify/deploy/2' },
+    { name: 'no link', status: 'IN_PROGRESS' },
+  ]).list, [
+    { name: 'CI / test (26.x)', state: 'pass', url: 'https://gh/run/1' },
+    { name: 'netlify/deploy', state: 'fail', url: 'https://netlify/deploy/2' },
+    { name: 'no link', state: 'pend', url: null },
+  ]);
 });
 
 const pr = (body, closing = []) => ({
