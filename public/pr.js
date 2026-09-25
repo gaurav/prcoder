@@ -148,17 +148,23 @@ export function renderHeader(status, prs, { onSwitch, onCommit }) {
   // gh pr list is open PRs only, so a merged or closed one has no option of its
   // own — without this the select falls to selectedIndex -1 and renders blank
   // while the pane below it is showing that very PR.
-  const shown = status.pr && !prs.some((p) => p.number === status.pr.number)
-    ? [{ number: status.pr.number, title: status.pr.title, isDraft: false }, ...prs]
-    : prs;
+  //
+  // Stacked PRs sit under the one they build on. An <option> cannot nest and an
+  // <optgroup> cannot be chosen, so the indent is in the label, in non-breaking
+  // spaces because a plain leading one is collapsed.
+  const shown = [
+    ...(status.pr && !prs.some((p) => p.number === status.pr.number)
+      ? [{ pr: { number: status.pr.number, title: status.pr.title, isDraft: false }, depth: 0 }] : []),
+    ...stackOrder(prs),
+  ];
 
-  const keys = shown.map((p) => p.number).join(',');
+  const keys = shown.map(({ pr, depth }) => `${pr.number}:${depth}`).join(',');
   if (sel.dataset.keys !== keys) {
     sel.dataset.keys = keys;
     sel.replaceChildren(
       h('option', { value: '' }, shown.length ? 'no pull request' : 'no open pull requests'),
-      ...shown.map((p) => h('option', { value: String(p.number) },
-        `#${p.number} ${p.isDraft ? '(draft) ' : ''}${p.title}`)),
+      ...shown.map(({ pr: p, depth }) => h('option', { value: String(p.number) },
+        `${depth ? `${'\u00a0\u00a0'.repeat(depth)}└\u00a0` : ''}#${p.number} ${p.isDraft ? '(draft) ' : ''}${p.title}`)),
     );
     sel.onchange = () => sel.value && onSwitch(Number(sel.value));
   }
@@ -224,6 +230,40 @@ export const renderQueueSync = (status) => paintLight('queue-sync', queueSync(st
 export const prsInto = (prs, branch) =>
   (branch ? prs.filter((p) => p.baseRefName === branch) : []);
 
+/**
+ * The same, with every pull request stacked on each one nested under it:
+ * `[{ pr, kids }]`, where a kid's base is its parent's head.
+ *
+ * Still the one list, so a stack costs no call of its own. `seen` is there
+ * because two open pull requests can name each other's branches as their bases,
+ * and GitHub doesn't stop them.
+ */
+export function prTree(prs, branch, seen = new Set()) {
+  // A fork's head branch lives in the fork, so nothing here can be based on it,
+  // whatever it is called -- and it is very often called `main`.
+  return prsInto(prs, branch).filter((p) => !seen.has(p.number) && seen.add(p.number))
+    .map((pr) => ({ pr, kids: pr.isCrossRepository ? [] : prTree(prs, pr.headRefName, seen) }));
+}
+
+/**
+ * Every open pull request in switcher order, `[{ pr, depth }]`: each one
+ * followed by the ones stacked on it.
+ *
+ * The roots are the ones whose base is no other open PR's head, grouped by
+ * that base. A cycle of bases has no root at all, so whatever the walk didn't
+ * reach goes on the end, unnested. Otherwise it would drop out of the switcher.
+ */
+export function stackOrder(prs) {
+  const heads = new Set(prs.filter((p) => !p.isCrossRepository).map((p) => p.headRefName));
+  const bases = new Set(prs.map((p) => p.baseRefName).filter((b) => !heads.has(b)));
+  const seen = new Set();
+  const walk = (nodes, depth) => nodes.flatMap(({ pr, kids }) => [{ pr, depth }, ...walk(kids, depth + 1)]);
+  return [
+    ...[...bases].flatMap((b) => walk(prTree(prs, b, seen), 0)),
+    ...prs.filter((p) => !seen.has(p.number)).map((pr) => ({ pr, depth: 0 })),
+  ];
+}
+
 /** The pane with no PR to show: why, what merges into here, and the one thing
  *  worth doing about it. */
 export function renderNoPr(status, prs, { onCreate, onSwitch }) {
@@ -266,28 +306,48 @@ export function renderNoPr(status, prs, { onCreate, onSwitch }) {
 }
 
 /**
- * The pull requests into this branch, each a row that checks it out.
+ * The pull requests into this branch, each a row you can read or check out.
  *
  * This is the branch-only pane's reason to exist: on `main` there is nothing to
  * create and nothing to read, and what you actually want to know is which pull
- * requests land here. A row goes through the same `gh pr checkout` the switcher
- * above does, and is named the way the switcher names one.
+ * requests land here.
  *
- * Dimmed rather than dropped on a dirty tree, where that checkout would fail --
- * the header has already swapped the switcher for a Commit button, and which
- * pull requests target this branch is still worth reading while you cannot move
- * to one.
+ * Reading and moving are two controls because they are two different things.
+ * The row used to be one button that ran `gh pr checkout`, so a cmd-click to
+ * compare a few pull requests in other tabs moved the working copy instead. The
+ * `#N` is a real link now, and Switch goes through the same checkout the header's
+ * switcher does.
+ *
+ * On a dirty tree only Switch is disabled, because that checkout would fail.
+ * The header has already swapped the switcher for a Commit button, and the link
+ * still works: you don't need a clean tree to read a pull request.
  */
 function intoRow(status, prs, onSwitch) {
-  const into = prsInto(prs, status.branch);
-  if (!into.length) return null;
-  const blocked = status.dirtyFiles.length > 0;
+  const tree = prTree(prs, status.branch);
+  if (!tree.length) return null;
   return h('div', { className: 'pr-into' },
     h('span', { className: 'pr-into-label' }, `Pull requests into ${status.branch}`),
-    ...into.map((p) => btn(`#${p.number} ${p.isDraft ? '(draft) ' : ''}${p.title}`,
-      () => onSwitch(p.number),
-      { disabled: blocked, title: blocked ? 'Commit or stash your changes first' : '' })));
+    stackList(tree, { blocked: status.dirtyFiles.length > 0, onSwitch }));
 }
+
+/**
+ * A prTree as nested lists. Each pull request's stack sits under it, so the
+ * size of a stack is how far its indent runs.
+ */
+const stackList = (nodes, opts) => h('ul', {},
+  ...nodes.map(({ pr, kids }) => prRow(pr, opts, kids.length ? stackList(kids, opts) : null)));
+
+/** One open pull request: the link to it, what it is called, and the checkout. */
+const prRow = (p, { blocked, onSwitch }, kids) => h('li', {},
+  h('div', { className: 'pr-row' },
+    ext(p.url, `#${p.number}`, { className: 'pr-num' }),
+    p.isDraft ? badge('draft', 'draft') : null,
+    h('span', { className: 'pr-row-title', title: p.title }, p.title),
+    btn('Switch', () => onSwitch(p.number), {
+      className: 'pr-go', disabled: blocked,
+      title: blocked ? 'Commit or stash your changes first' : `Check out #${p.number} here`,
+    })),
+  kids);
 
 /**
  * Which half of the pane is showing, where each half was scrolled to, and which
@@ -304,7 +364,7 @@ function intoRow(status, prs, onSwitch) {
  */
 let tab = 'detail';
 let shownFor = null;
-const scrolled = { detail: 0, files: 0 };
+const scrolled = { detail: 0, files: 0, stack: 0 };
 const openSections = new Set();
 // Whether the single-section description below is still allowed to open itself.
 let autoOpen = true;
@@ -458,6 +518,7 @@ export function renderPr(pr, handlers) {
     shownFor = pr.number;
     scrolled.detail = 0;
     scrolled.files = 0;
+    scrolled.stack = 0;
     openSections.clear();
     autoOpen = true;
   }
@@ -491,7 +552,8 @@ function renderPrHead(pr, handlers) {
     repoRow(ways.repo, 'meta pr-repo'),
     h('div', { className: 'tabs' },
       tabBtn('detail', tabLabel('Detail', taskCount(pr.body))),
-      tabBtn('files', tabLabel('Files', viewedCount(pr.files)))),
+      tabBtn('files', tabLabel('Files', viewedCount(pr.files))),
+      tabBtn('stack', stackLabel(stackOn(pr, handlers.prs)))),
   ]));
 }
 
@@ -516,6 +578,30 @@ export const taskCount = (body) => {
   return { done: tasks.filter((b) => b.done).length, total: tasks.length };
 };
 
+/**
+ * The open pull requests built on this one's branch, from the switcher's list.
+ * None for a fork: its head branch is in another repository, so a base here
+ * with the same name -- a fork's `main`, often -- is not it.
+ */
+export const stackOn = (pr, prs) => (!prs || pr.isCrossRepository ? [] : prTree(prs, pr.headRefName));
+
+/**
+ * What the Stack tab says when it has no rows, which is three different facts:
+ * nothing is built on this branch, nothing *can* be (a fork's branch), or
+ * prcoder has no list to look in (`prs` is null for a pull request in another
+ * repository -- see paint() in app.js).
+ */
+export const stackEmpty = (pr, prs) => (!prs
+  ? 'Stacks are listed only for pull requests in this repository.'
+  : pr.isCrossRepository
+    ? `Nothing here can be built on ${pr.headRefName}: it is a branch in a fork.`
+    : `Nothing is stacked on ${pr.headRefName}.`);
+
+const stackSize = (nodes) => nodes.reduce((n, k) => n + 1 + stackSize(k.kids), 0);
+
+/** `Stack (5)`, counting the whole tree, since it is the whole tree the tab shows. */
+export const stackLabel = (nodes) => (nodes.length ? `Stack (${stackSize(nodes)})` : 'Stack');
+
 export const viewedCount = (files = []) =>
   ({ done: files.filter((f) => f.viewed).length, total: files.length });
 
@@ -534,7 +620,14 @@ function renderPrTab(pr, handlers) {
   // it instead.
   const focused = document.activeElement?.closest?.('.md-section')?.dataset.key;
 
-  host.replaceChildren(...kids(tab === 'files' ? [
+  const stack = tab === 'stack' ? stackOn(pr, handlers.prs) : null;
+  host.replaceChildren(...kids(stack ? [
+    stack.length
+      ? h('div', { className: 'pr-into' },
+        h('span', { className: 'pr-into-label' }, `Pull requests built on ${pr.headRefName}`),
+        stackList(stack, handlers))
+      : h('p', { className: 'empty' }, stackEmpty(pr, handlers.prs)),
+  ] : tab === 'files' ? [
     ...GROUPS.map(([key, label]) => fileGroup(label, pr.groups[key], handlers)),
     h('div', { className: 'meta' },
       ext(`${pr.url}#issuecomment`, `${pr.counts.comments} comments · ${pr.counts.reviews} reviews`)),

@@ -123,12 +123,14 @@ let page;
 const posted = [];
 
 // A page with every route answered, so a test that needs a module map of its
-// own -- Prism loads once per page -- can open a second one.
-async function newPage() {
+// own -- Prism loads once per page -- can open a second one. `prs` is the
+// switcher's list, empty unless a test is about it; `st` and `ready` are for a
+// page with no pull request, which has no title to wait on.
+async function newPage({ prs = [], st = status, ready = '#pr-head .pr-title' } = {}) {
   const p = await browser.newPage();
   await p.routeWebSocket('**/pty', () => {});
-  await p.route('**/api/status', (r) => r.fulfill({ json: status }));
-  await p.route('**/api/prs', (r) => r.fulfill({ json: [] }));
+  await p.route('**/api/status', (r) => r.fulfill({ json: st }));
+  await p.route('**/api/prs', (r) => r.fulfill({ json: prs }));
   await p.route('**/api/queue', (r) => r.fulfill({ json: [] }));
   await p.route('**/api/diff', (r) => {
     const { path } = r.request().postDataJSON();
@@ -151,7 +153,7 @@ async function newPage() {
     return r.fulfill({ json: { body: BODY.replace(`- [${task.done ? ' ' : 'x'}] ${task.text}`, box + task.text) } });
   });
   await p.goto(`http://127.0.0.1:${server.address().port}/`);
-  await p.waitForSelector('#pr-head .pr-title');
+  await p.waitForSelector(ready);
   return p;
 }
 
@@ -401,4 +403,73 @@ test('the terminal folds to its header, the diff takes the room, and it stays fo
   assert.equal(await fresh.locator('#term-host').isVisible(), true);
   assert.equal(await fresh.getAttribute('#term-fold', 'aria-expanded'), 'true');
   await fresh.close();
+});
+
+// The fixture PR, one built on its branch, and one built on that. The switcher
+// and the Stack tab both have to show the chain as a chain, and a row's #N has
+// to be a link out while its Switch is the checkout -- one control each.
+const STACK = [
+  { number: 12, title: pr.title, headRefName: 'topic', baseRefName: 'main', isDraft: false, url: pr.url },
+  { number: 13, title: 'Built on the fixture', headRefName: 'topic-2', baseRefName: 'topic', isDraft: true, url: `${REPO}/pull/13` },
+  { number: 14, title: 'Built on that', headRefName: 'topic-3', baseRefName: 'topic-2', isDraft: false, url: `${REPO}/pull/14` },
+];
+
+test('stacked PRs nest in the switcher and the Stack tab, each linked and switchable', { skip }, async () => {
+  const fresh = await newPage({ prs: STACK });
+  const switched = [];
+  await fresh.route('**/api/pr/switch', (r) => {
+    switched.push(r.request().postDataJSON().number);
+    return r.fulfill({ json: status });
+  });
+  await fresh.waitForSelector('#pr-switch option[value="14"]', { state: 'attached' });
+  assert.deepEqual(await fresh.$$eval('#pr-switch option', (os) => os.map((o) => o.textContent.replaceAll('\u00a0', ' '))), [
+    'no pull request',
+    '#12 A fixture pull request',
+    '  └ #13 (draft) Built on the fixture',
+    '    └ #14 Built on that',
+  ]);
+
+  const tab = fresh.locator('#pr-head .tab', { hasText: 'Stack' });
+  assert.equal(await tab.textContent(), 'Stack (2)');
+  await tab.click();
+  assert.deepEqual(await fresh.locator('#pr-body .pr-into > ul > li > .pr-row .pr-num').allTextContents(), ['#13']);
+  assert.deepEqual(await fresh.locator('#pr-body .pr-into ul ul .pr-num').allTextContents(), ['#14']);
+  const link = fresh.locator('#pr-body .pr-num', { hasText: '#14' });
+  assert.equal(await link.getAttribute('href'), `${REPO}/pull/14`);
+  assert.equal(await link.getAttribute('target'), '_blank');
+
+  const sent = fresh.waitForResponse('**/api/pr/switch');
+  await fresh.locator('#pr-body .pr-row', { hasText: '#14' }).locator('.pr-go').click();
+  await sent;
+  assert.deepEqual(switched, [14]);
+  await fresh.close();
+});
+
+// The pane with no pull request, on the branch the fixture PR merges into.
+// tools/no-pr.mjs drives this against the real remote; this is the part of it
+// that needs no clone, so it runs on every `npm test`.
+const onMain = { ...status, branch: 'main', pr: null };
+
+test('with no PR, the PRs into this branch nest their stacks, and a dirty tree blocks only Switch', { skip }, async () => {
+  const clean = await newPage({ prs: STACK, st: onMain, ready: '#pr-body .pr-into .pr-go' });
+  assert.deepEqual(await clean.locator('#pr-body .pr-into > ul > li > .pr-row .pr-num').allTextContents(), ['#12']);
+  assert.deepEqual(await clean.locator('#pr-body .pr-into ul ul .pr-num').allTextContents(), ['#13', '#14']);
+  assert.equal(await clean.locator('#pr-body .pr-num', { hasText: '#12' }).getAttribute('href'), pr.url);
+  const switched = [];
+  await clean.route('**/api/pr/switch', (r) => {
+    switched.push(r.request().postDataJSON().number);
+    return r.fulfill({ json: status });
+  });
+  const sent = clean.waitForResponse('**/api/pr/switch');
+  await clean.locator('#pr-body .pr-row', { hasText: '#13' }).locator('.pr-go').click();
+  await sent;
+  assert.deepEqual(switched, [13]);
+  await clean.close();
+
+  const dirty = await newPage({ prs: STACK, st: { ...onMain, dirtyFiles: ['README.md'] }, ready: '#pr-body .pr-into .pr-go' });
+  const go = await dirty.$$eval('#pr-body .pr-go', (bs) => bs.map((b) => [b.disabled, b.title]));
+  assert.deepEqual(go, Array(3).fill([true, 'Commit or stash your changes first']));
+  assert.deepEqual(await dirty.$$eval('#pr-body .pr-num', (as) => as.map((a) => a.getAttribute('href'))),
+    STACK.map((p) => p.url));
+  await dirty.close();
 });

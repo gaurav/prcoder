@@ -26,7 +26,8 @@ checked out, and re-derives that every 60 seconds, so a `git checkout` in
 another terminal -- or by Claude in the middle pane -- is picked up on its own.
 Nothing is remembered between polls; every fact comes back from `git` and `gh`.
 
-The switcher in the PR pane header lists open pull requests and runs
+The switcher in the PR pane header lists open pull requests, each followed by
+the ones stacked on its branch and indented under it, and runs
 `gh pr checkout` to move between them. Uncommitted work hides it behind a
 Commit button, because the checkout would fail anyway. On a branch with no pull
 request the pane says so, disables the editing controls, and offers to create
@@ -35,9 +36,11 @@ way out of the window that the pull request head does, laid out the same way:
 the issues, pulls and milestones, and the repository on the line below them.
 
 It also lists the open pull requests that merge *into* the branch you are on,
-which on `main` is the question that branch is interesting for. Clicking one
-checks it out, the same way the switcher does; uncommitted work dims the rows
-for the same reason it hides the switcher.
+which on `main` is the question that branch is interesting for, with each one's
+stack nested under it. A row's `#N` opens that pull request on GitHub, so you
+can compare a few in other tabs; its **Switch** checks it out, the same way the
+switcher does. Uncommitted work disables Switch for the same reason it hides the
+switcher, and leaves the links alone.
 
 Next to it, a light for the one thing prcoder cannot fix for you: whether the
 branch and the remote agree. It reads `unpushed`, `N unpushed`, `pull needed`
@@ -108,8 +111,9 @@ is drawn as a chip rather than a fifth link, because a line of its own said
 where it was without saying it was anything else: the row above is the list of
 places to go, and the chip under it is the one line in the head that answers
 which checkout this is.
-Below that are two tabs, because reading the argument and working the files are
-two different things and each wants the whole pane.
+Below that are three tabs, because reading the argument and working the files are
+two different things and each wants the whole pane -- and the third, *Stack*, is
+the pull requests built on this one's branch, laid out like the list above.
 
 *Detail* is the description. It opens as the lead paragraph and then one folded
 line per section, so a long one is an outline you scan rather than a wall you
@@ -135,9 +139,10 @@ file is GitHub's own "viewed" checkbox: tick it here and it's ticked on
 github.com. Clicking a file opens its diff in the **Diff** pane;
 cmd/ctrl-clicking opens GitHub's diff viewer at that file instead.
 
-Each tab carries the count the other one cannot show you — how many description
-boxes are still unticked, how many files are still unviewed — so neither hides
-from you while you are in the other.
+Each tab carries the count the others cannot show you — how many description
+boxes are still unticked, how many files are still unviewed, how many pull
+requests are stacked on this one — so none hides from you while you are in
+another.
 
 **Diff** — the selected file's patch, rendered plainly above the terminal so
 select → read → tick viewed → ask Claude never leaves the window. It shows the

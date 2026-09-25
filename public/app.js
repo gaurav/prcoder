@@ -218,8 +218,17 @@ function paint(status) {
   renderHeader(status, prs, handlers);
   renderQueueSync(status);
   if (status.pr) {
-    renderPr({ ...status.pr, note: NOTES[status.scope] },
-      { ...fileHandlers, selected: selectedPath() });
+    // The Stack tab reads `prs`, which is this repository's list: against a pull
+    // request in another one it would name strangers, and Switch would check
+    // out whichever PR here has the same number. Null rather than empty, so the
+    // tab says it has no list instead of saying the list is empty.
+    renderPr({ ...status.pr, note: NOTES[status.scope] }, {
+      ...fileHandlers,
+      selected: selectedPath(),
+      prs: status.scope === 'other-repo' ? null : prs,
+      onSwitch: switchPr,
+      blocked: status.dirtyFiles.length > 0,
+    });
   } else renderNoPr(status, prs, { onCreate: createPr, onSwitch: switchPr });
   if (switched) loadPrs();
   // Mirroring needs the PR to be *this* branch's: prcoder will not write our
