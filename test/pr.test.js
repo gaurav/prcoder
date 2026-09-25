@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  pageTitle, withoutHtml, inline, headLinks, noPrLinks, prsInto, prTree, stackOn, stackLabel, stackOrder, queueSync, HEADING, blocks, sectionize,
+  pageTitle, withoutHtml, inline, headLinks, noPrLinks, prsInto, prTree, stackOn, stackLabel, stackOrder, stackEmpty, queueSync, HEADING, blocks, sectionize,
   tabLabel, taskCount, viewedCount, byPath, byDir, nums,
 } from '../public/pr.js';
 import { fences, TASK, taskLines } from '../public/tasks.js';
@@ -305,6 +305,17 @@ test('the Stack tab counts the whole tree, and a fork has no stack here', () => 
   // A fork's head is often `main`, which every PR here is into -- none of them
   // is built on the fork's branch.
   assert.deepEqual(stackOn({ headRefName: 'main', isCrossRepository: true }, OPEN), []);
+});
+
+// Three empties, three sentences. The other-repo one used to say "Nothing is
+// stacked", which was a claim about a repository prcoder had not looked in.
+test('an empty Stack tab says why it is empty', () => {
+  const here = { headRefName: 'queue-tabs' };
+  assert.equal(stackEmpty(here, OPEN), 'Nothing is stacked on queue-tabs.');
+  assert.equal(stackEmpty({ headRefName: 'main', isCrossRepository: true }, OPEN),
+    'Nothing here can be built on main: it is a branch in a fork.');
+  assert.equal(stackEmpty(here, null), 'Stacks are listed only for pull requests in this repository.');
+  assert.deepEqual(stackOn(here, null), []);
 });
 
 const order = (prs) => stackOrder(prs).map(({ pr, depth }) => `${'-'.repeat(depth)}${pr.number}`);

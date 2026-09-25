@@ -583,7 +583,19 @@ export const taskCount = (body) => {
  * None for a fork: its head branch is in another repository, so a base here
  * with the same name -- a fork's `main`, often -- is not it.
  */
-export const stackOn = (pr, prs = []) => (pr.isCrossRepository ? [] : prTree(prs, pr.headRefName));
+export const stackOn = (pr, prs) => (!prs || pr.isCrossRepository ? [] : prTree(prs, pr.headRefName));
+
+/**
+ * What the Stack tab says when it has no rows, which is three different facts:
+ * nothing is built on this branch, nothing *can* be (a fork's branch), or
+ * prcoder has no list to look in (`prs` is null for a pull request in another
+ * repository -- see paint() in app.js).
+ */
+export const stackEmpty = (pr, prs) => (!prs
+  ? 'Stacks are listed only for pull requests in this repository.'
+  : pr.isCrossRepository
+    ? `Nothing here can be built on ${pr.headRefName}: it is a branch in a fork.`
+    : `Nothing is stacked on ${pr.headRefName}.`);
 
 const stackSize = (nodes) => nodes.reduce((n, k) => n + 1 + stackSize(k.kids), 0);
 
@@ -614,7 +626,7 @@ function renderPrTab(pr, handlers) {
       ? h('div', { className: 'pr-into' },
         h('span', { className: 'pr-into-label' }, `Pull requests built on ${pr.headRefName}`),
         stackList(stack, handlers))
-      : h('p', { className: 'empty' }, `Nothing is stacked on ${pr.headRefName}.`),
+      : h('p', { className: 'empty' }, stackEmpty(pr, handlers.prs)),
   ] : tab === 'files' ? [
     ...GROUPS.map(([key, label]) => fileGroup(label, pr.groups[key], handlers)),
     h('div', { className: 'meta' },
