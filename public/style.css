@@ -199,6 +199,14 @@ a { color: var(--accent); }
    to go, and the line below is the one fact in the head that says which
    checkout you are in.
 
+   The chip's colour is where it leaves the tag. A `--line` border on the
+   panel is about 1.2:1, which is enough to notice once you know it is there and
+   not enough to make you look (2026-09-25). So the border and a faint fill are
+   the chip's own `--accent`, mixed toward transparent: the chip stands out from
+   the prose while being the same blue as its text, and it stops well short of
+   the solid fills and uppercase text the `.badge`s use for status. A brighter
+   grey ring was the other candidate, and it read as one more `.tab`.
+
    Two things deliberately not done. A logo or an emoji ahead of the slug, the
    other way to mark it: no other glyph in this window earns its place that way
    -- the `↗` that used to sit on these links was dropped for raising the
@@ -258,9 +266,13 @@ a { color: var(--accent); }
 .pr-repo a {
   display: inline-flex; min-width: 0;
   text-decoration: none; padding: 1px 7px;
-  border: 1px solid var(--line); border-radius: 9px;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent); border-radius: 9px;
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
 }
-.pr-repo a:hover { border-color: var(--dim); background: var(--bg); }
+.pr-repo a:hover {
+  border-color: color-mix(in srgb, var(--accent) 60%, transparent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
 .pr-repo .owner { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pr-repo .name { flex: none; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
