@@ -265,8 +265,9 @@ console.log('scroll:  ', `Files opened at ${filesFresh}, Detail came back to ${a
 
 // The third tab, which lists the open PRs built on this one's branch. They are
 // nested by base, each with a #N link out and a Switch. Back to Detail after
-// it, since everything below expects the default tab.
-await page.locator('#pr-head .tab').nth(2).click();
+// it, since everything below expects the default tab. By name, not position:
+// #60 adds a Checks tab to the same row.
+await page.locator('#pr-head .tab', { hasText: 'Stack' }).click();
 await page.waitForSelector('#pr-body .pr-into, #pr-body .empty');
 console.log('stack:   ', await page.$$eval('#pr-body .pr-row .pr-num', (as) => as.map((a) => a.textContent).join(' ')
   || document.querySelector('#pr-body .empty')?.textContent),
