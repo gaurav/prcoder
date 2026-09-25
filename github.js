@@ -90,10 +90,11 @@ export async function prBody(cwd, prUrl) {
  * shows. That field is not spare: it is free here, where a `gh pr list --base`
  * of its own would be a call on a poll that already has seven. `url` is for the
  * pane's links, read off GitHub rather than built from a host (#53).
+ * `isCrossRepository` is what stops a fork's `main` looking like a base here.
  */
 export async function listPrs(cwd) {
   const args = ['pr', 'list', '--state', 'open', '--json',
-    'number,title,headRefName,baseRefName,isDraft,url'];
+    'number,title,headRefName,baseRefName,isDraft,url,isCrossRepository'];
   return JSON.parse(await gh(args, { cwd }));
 }
 

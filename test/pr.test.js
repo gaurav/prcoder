@@ -307,6 +307,12 @@ test('the Stack tab counts the whole tree, and a fork has no stack here', () => 
   assert.deepEqual(stackOn({ headRefName: 'main', isCrossRepository: true }, OPEN), []);
 });
 
+// A fork PR from `someone:main` into main is not the parent of every PR into main.
+test('a fork has no stack under it', () => {
+  const fork = [{ number: 80, headRefName: 'main', baseRefName: 'main', isCrossRepository: true }, ...OPEN];
+  assert.deepEqual(shape(prTree(fork, 'main')), [80, 1, [27, 60]]);
+});
+
 // GitHub lets two open pull requests base on each other's heads.
 test('a cycle of bases ends instead of recursing forever', () => {
   const loop = [

@@ -233,8 +233,10 @@ export const prsInto = (prs, branch) =>
  * and GitHub doesn't stop them.
  */
 export function prTree(prs, branch, seen = new Set()) {
+  // A fork's head branch lives in the fork, so nothing here can be based on it,
+  // whatever it is called -- and it is very often called `main`.
   return prsInto(prs, branch).filter((p) => !seen.has(p.number) && seen.add(p.number))
-    .map((pr) => ({ pr, kids: prTree(prs, pr.headRefName, seen) }));
+    .map((pr) => ({ pr, kids: pr.isCrossRepository ? [] : prTree(prs, pr.headRefName, seen) }));
 }
 
 /** The pane with no PR to show: why, what merges into here, and the one thing
