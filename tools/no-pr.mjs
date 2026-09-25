@@ -14,7 +14,7 @@
 // all `repo = process.cwd()` in it means. Nothing is installed in the clone --
 // every import resolves from the directory server.js is in.
 //
-// Chromium, not Firefox: this pane is a sentence, a list of buttons and a link
+// Chromium, not Firefox: this pane is a sentence, a list of rows and a link
 // row, with none of the draggable text the engine split in browser.mjs is about.
 import { spawn, spawnSync } from 'node:child_process';
 import { createServer } from 'node:net';
@@ -81,11 +81,14 @@ for (let i = 0; i < 30; i++) {
   try { await page.goto(`http://localhost:${port}/`); break; } catch { await page.waitForTimeout(500); }
 }
 await page.waitForSelector('#pr-body .empty', { timeout: 60_000 });
-await page.waitForSelector('#pr-body .pr-into button', { timeout: 60_000 });
+await page.waitForSelector('#pr-body .pr-into .pr-go', { timeout: 60_000 });
 
-const rows = () => page.$$eval('#pr-body .pr-into button', (bs) => bs.map((b) => b.textContent));
+const rows = () => page.$$eval('#pr-body .pr-into .pr-row', (rs) => rs.map((r) =>
+  `${r.querySelector('.pr-num').textContent} ${r.querySelector('.pr-row-title').textContent}`));
 console.log('says:   ', await page.$eval('#pr-body .empty', (e) => e.textContent));
 console.log('into:   ', (await rows()).join(' | '), ' (want every open PR whose base is main, titled)');
+console.log('link:   ', await page.$eval('#pr-body .pr-into .pr-num', (a) => `${a.href} target=${a.target}`),
+  ' (want the first row\'s #N to open its PR on GitHub in a new tab)');
 await page.locator('#pr').screenshot({ path: path.join(shots, 'no-pr.png') });
 
 // A dirty tree would fail the checkout the rows perform, so they say so instead
@@ -94,19 +97,20 @@ await page.locator('#pr').screenshot({ path: path.join(shots, 'no-pr.png') });
 // be a tracked file to test anything.
 await fs.appendFile(path.join(clone, 'README.md'), '\ndriver scratch\n');
 await page.reload();
-await page.waitForSelector('#pr-body .pr-into button');
-console.log('dirty:  ', await page.$eval('#pr-body .pr-into button',
-  (b) => `row disabled=${b.disabled} title="${b.title}"`),
+await page.waitForSelector('#pr-body .pr-into .pr-go');
+console.log('dirty:  ', await page.$eval('#pr-body .pr-into .pr-row',
+  (r) => `switch disabled=${r.querySelector('.pr-go').disabled} title="${r.querySelector('.pr-go').title}"`
+    + ` link=${Boolean(r.querySelector('.pr-num').href)}`),
 '|', await page.$eval('#pr-commit', (b) => `commit hidden=${b.hidden}`),
 '|', await page.$eval('#pr-switch', (s) => `switch hidden=${s.hidden}`),
-' (want disabled with a reason, commit shown, switcher hidden)');
+' (want Switch disabled with a reason, the link kept, commit shown, switcher hidden)');
 await page.locator('#pr').screenshot({ path: path.join(shots, 'no-pr-dirty.png') });
 
 git(['checkout', '--quiet', '--', 'README.md']);
 await page.reload();
-await page.waitForSelector('#pr-body .pr-into button:not([disabled])');
+await page.waitForSelector('#pr-body .pr-into .pr-go:not([disabled])');
 const took = (await rows())[0];
-await page.locator('#pr-body .pr-into button').first().click();
+await page.locator('#pr-body .pr-into .pr-go').first().click();
 await page.waitForSelector('#pr-head .pr-title', { timeout: 120_000 });
 console.log('clicked:', JSON.stringify(took?.slice(0, 40)));
 console.log('landed: ', git(['branch', '--show-current']).stdout.trim(),

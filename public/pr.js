@@ -266,17 +266,21 @@ export function renderNoPr(status, prs, { onCreate, onSwitch }) {
 }
 
 /**
- * The pull requests into this branch, each a row that checks it out.
+ * The pull requests into this branch, each a row you can read or check out.
  *
  * This is the branch-only pane's reason to exist: on `main` there is nothing to
  * create and nothing to read, and what you actually want to know is which pull
- * requests land here. A row goes through the same `gh pr checkout` the switcher
- * above does, and is named the way the switcher names one.
+ * requests land here.
  *
- * Dimmed rather than dropped on a dirty tree, where that checkout would fail --
- * the header has already swapped the switcher for a Commit button, and which
- * pull requests target this branch is still worth reading while you cannot move
- * to one.
+ * Reading and moving are two controls because they are two different things.
+ * The row used to be one button that ran `gh pr checkout`, so a cmd-click to
+ * compare a few pull requests in other tabs moved the working copy instead. The
+ * `#N` is a real link now, and Switch goes through the same checkout the header's
+ * switcher does.
+ *
+ * On a dirty tree only Switch is disabled, because that checkout would fail.
+ * The header has already swapped the switcher for a Commit button, and the link
+ * still works: you don't need a clean tree to read a pull request.
  */
 function intoRow(status, prs, onSwitch) {
   const into = prsInto(prs, status.branch);
@@ -284,10 +288,19 @@ function intoRow(status, prs, onSwitch) {
   const blocked = status.dirtyFiles.length > 0;
   return h('div', { className: 'pr-into' },
     h('span', { className: 'pr-into-label' }, `Pull requests into ${status.branch}`),
-    ...into.map((p) => btn(`#${p.number} ${p.isDraft ? '(draft) ' : ''}${p.title}`,
-      () => onSwitch(p.number),
-      { disabled: blocked, title: blocked ? 'Commit or stash your changes first' : '' })));
+    h('ul', {}, ...into.map((p) => prRow(p, { blocked, onSwitch }))));
 }
+
+/** One open pull request: the link to it, what it is called, and the checkout. */
+const prRow = (p, { blocked, onSwitch }) => h('li', {},
+  h('div', { className: 'pr-row' },
+    ext(p.url, `#${p.number}`, { className: 'pr-num' }),
+    p.isDraft ? badge('draft', 'draft') : null,
+    h('span', { className: 'pr-row-title', title: p.title }, p.title),
+    btn('Switch', () => onSwitch(p.number), {
+      className: 'pr-go', disabled: blocked,
+      title: blocked ? 'Commit or stash your changes first' : `Check out #${p.number} here`,
+    })));
 
 /**
  * Which half of the pane is showing, where each half was scrolled to, and which

@@ -95,8 +95,9 @@ branch it runs on, that branch has PR #1, and `PRCODER_PR` only pins a different
 arrives on `main`, and runs *this* working tree's `server.js` with the clone as its working
 directory: `repo` in there is only `process.cwd()`, and nothing is installed in the clone because
 every import resolves from the directory `server.js` is in. It drives the list of pull requests
-that merge into the branch, its dimmed state on a dirty tree (a tracked file, since `userDirt` reads
-`--untracked-files=no`), and the checkout a row performs — which is the other reason for the clone:
+that merge into the branch -- each row's `#N` link out to GitHub and its Switch button -- the
+dirty-tree state where Switch is disabled and the link is not (a tracked file, since `userDirt` reads
+`--untracked-files=no`), and the checkout a Switch performs — which is the other reason for the clone:
 that checkout has to land somewhere that is not your own working copy. The clone is left behind and
 reset on the next run; deleting it is safe.
 

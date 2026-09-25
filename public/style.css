@@ -637,18 +637,19 @@ a { color: var(--accent); }
 #toast.sticky::after { content: '✕'; margin-left: 8px; color: var(--dim); }
 #toast.sticky:hover::after { color: var(--fg); }
 
-/* A row per pull request that merges into this branch. Buttons, not links: the
-   click checks one out rather than going anywhere, so they are styled down to
-   the line of text they read as. */
+/* A row per pull request that merges into this branch: the #N is a link out,
+   Switch is the checkout, and the title sits between them and gives way first. */
 .pr-into { margin: 0 0 10px; font-size: 12px; }
 .pr-into-label { display: block; color: var(--dim); }
-.pr-into button {
-  display: block; width: 100%; text-align: left; padding: 1px 0 1px 10px;
-  font: inherit; font-size: 12px; color: var(--accent);
-  background: none; border: 0; cursor: pointer;
+.pr-into ul { list-style: none; margin: 0; padding: 0 0 0 10px; }
+.pr-row { display: flex; align-items: baseline; gap: 6px; padding: 1px 0; }
+.pr-row-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pr-go {
+  font: inherit; font-size: 11px; padding: 0 6px; cursor: pointer;
+  color: var(--accent); background: none; border: 1px solid var(--line); border-radius: 3px;
 }
-.pr-into button:hover:not(:disabled) { text-decoration: underline; }
-.pr-into button:disabled { color: var(--dim); cursor: not-allowed; }
+.pr-go:hover:not(:disabled) { border-color: var(--accent); }
+.pr-go:disabled { color: var(--dim); cursor: not-allowed; }
 
 .pr-note { color: var(--dim); font-size: 12px; margin: 0 0 8px; }
 .pr-create {
