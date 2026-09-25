@@ -143,7 +143,7 @@ const drag = async (sel, x, y) => {
   await page.mouse.up();
 };
 
-// The two tabs, and what each says about the other. `Detail (3/10)` /
+// The tabs, and what each says about the others. `Detail (3/10)` /
 // `Files (7/23)` is the whole reason the counts are on the labels -- they are
 // what you can see while you are looking at the other half.
 const tabs = await page.locator('#pr-head .tab').allInnerTexts();
@@ -260,6 +260,17 @@ await page.waitForTimeout(100);
 await page.locator('#pr-head .tab').nth(0).click();
 console.log('scroll:  ', `Files opened at ${filesFresh}, Detail came back to ${await scrollNow()}`,
   `  (want 0, then ${onDetail})`);
+
+// The third tab, which lists the open PRs built on this one's branch. They are
+// nested by base, each with a #N link out and a Switch. Back to Detail after
+// it, since everything below expects the default tab.
+await page.locator('#pr-head .tab').nth(2).click();
+await page.waitForSelector('#pr-body .pr-into, #pr-body .empty');
+console.log('stack:   ', await page.$$eval('#pr-body .pr-row .pr-num', (as) => as.map((a) => a.textContent).join(' ')
+  || document.querySelector('#pr-body .empty')?.textContent),
+'  (want every open PR based on this head, as #N links)');
+await page.locator('#pr').screenshot({ path: path.join(out, 'pr-stack.png') });
+await page.locator('#pr-head .tab').nth(0).click();
 
 // The measure, which is inert at the pane's 375px default and is the whole
 // reason for the cap at the other end of its range.

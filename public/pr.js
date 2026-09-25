@@ -337,7 +337,7 @@ const prRow = (p, { blocked, onSwitch }, kids) => h('li', {},
  */
 let tab = 'detail';
 let shownFor = null;
-const scrolled = { detail: 0, files: 0 };
+const scrolled = { detail: 0, files: 0, stack: 0 };
 const openSections = new Set();
 // Whether the single-section description below is still allowed to open itself.
 let autoOpen = true;
@@ -491,6 +491,7 @@ export function renderPr(pr, handlers) {
     shownFor = pr.number;
     scrolled.detail = 0;
     scrolled.files = 0;
+    scrolled.stack = 0;
     openSections.clear();
     autoOpen = true;
   }
@@ -524,7 +525,8 @@ function renderPrHead(pr, handlers) {
     repoRow(ways.repo, 'meta pr-repo'),
     h('div', { className: 'tabs' },
       tabBtn('detail', tabLabel('Detail', taskCount(pr.body))),
-      tabBtn('files', tabLabel('Files', viewedCount(pr.files)))),
+      tabBtn('files', tabLabel('Files', viewedCount(pr.files))),
+      tabBtn('stack', stackLabel(stackOn(pr, handlers.prs)))),
   ]));
 }
 
@@ -549,6 +551,18 @@ export const taskCount = (body) => {
   return { done: tasks.filter((b) => b.done).length, total: tasks.length };
 };
 
+/**
+ * The open pull requests built on this one's branch, from the switcher's list.
+ * None for a fork: its head branch is in another repository, so a base here
+ * with the same name -- a fork's `main`, often -- is not it.
+ */
+export const stackOn = (pr, prs = []) => (pr.isCrossRepository ? [] : prTree(prs, pr.headRefName));
+
+const stackSize = (nodes) => nodes.reduce((n, k) => n + 1 + stackSize(k.kids), 0);
+
+/** `Stack (5)`, counting the whole tree, since it is the whole tree the tab shows. */
+export const stackLabel = (nodes) => (nodes.length ? `Stack (${stackSize(nodes)})` : 'Stack');
+
 export const viewedCount = (files = []) =>
   ({ done: files.filter((f) => f.viewed).length, total: files.length });
 
@@ -567,7 +581,14 @@ function renderPrTab(pr, handlers) {
   // it instead.
   const focused = document.activeElement?.closest?.('.md-section')?.dataset.key;
 
-  host.replaceChildren(...kids(tab === 'files' ? [
+  const stack = tab === 'stack' ? stackOn(pr, handlers.prs) : null;
+  host.replaceChildren(...kids(stack ? [
+    stack.length
+      ? h('div', { className: 'pr-into' },
+        h('span', { className: 'pr-into-label' }, `Pull requests built on ${pr.headRefName}`),
+        stackList(stack, handlers))
+      : h('p', { className: 'empty' }, `Nothing is stacked on ${pr.headRefName}.`),
+  ] : tab === 'files' ? [
     ...GROUPS.map(([key, label]) => fileGroup(label, pr.groups[key], handlers)),
     h('div', { className: 'meta' },
       ext(`${pr.url}#issuecomment`, `${pr.counts.comments} comments · ${pr.counts.reviews} reviews`)),

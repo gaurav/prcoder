@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  pageTitle, withoutHtml, inline, headLinks, noPrLinks, prsInto, prTree, queueSync, HEADING, blocks, sectionize,
+  pageTitle, withoutHtml, inline, headLinks, noPrLinks, prsInto, prTree, stackOn, stackLabel, queueSync, HEADING, blocks, sectionize,
   tabLabel, taskCount, viewedCount, byPath, byDir, nums,
 } from '../public/pr.js';
 import { fences, TASK, taskLines } from '../public/tasks.js';
@@ -295,6 +295,16 @@ test('each pull request carries the ones stacked on its branch', () => {
   const deeper = [...OPEN, { number: 61, headRefName: 'tabs-2', baseRefName: 'checks-tab' }];
   assert.deepEqual(shape(prTree(deeper, 'main')), [1, [27, 60, [61]]]);
   assert.deepEqual(prTree(OPEN, null), []);
+});
+
+test('the Stack tab counts the whole tree, and a fork has no stack here', () => {
+  assert.equal(stackLabel(stackOn({ headRefName: 'initial-implementation' }, OPEN)), 'Stack (2)');
+  const deeper = [...OPEN, { number: 61, headRefName: 'tabs-2', baseRefName: 'checks-tab' }];
+  assert.equal(stackLabel(stackOn({ headRefName: 'initial-implementation' }, deeper)), 'Stack (3)');
+  assert.equal(stackLabel(stackOn({ headRefName: 'queue-tabs' }, OPEN)), 'Stack');
+  // A fork's head is often `main`, which every PR here is into -- none of them
+  // is built on the fork's branch.
+  assert.deepEqual(stackOn({ headRefName: 'main', isCrossRepository: true }, OPEN), []);
 });
 
 // GitHub lets two open pull requests base on each other's heads.
