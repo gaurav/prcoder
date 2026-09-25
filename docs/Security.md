@@ -25,12 +25,18 @@ and `Host` agree. So a `Host` that is not `localhost`, `127.0.0.1` or `[::1]` is
 `sameOrigin` in [`server.js`](../server.js) carries the rest, including why it compares against
 `Host` rather than a computed URL. `test/api.test.js` pins both refusals.
 
-**What it does not stop: a frame.** A page on the web can load prcoder in an `<iframe>`, and the
+**A frame is not a foreign origin.** A page on the web can load prcoder in an `<iframe>`, and the
 framed page's own requests are same-origin, so they pass. The outer page cannot type into the
 terminal, but it can lay something over the frame and turn a click on its own content into a click
-on ▶, Commit, Create PR or a checkbox. `frame-ancestors 'none'` in a Content-Security-Policy closes
-it. prcoder sends no CSP yet; that is the first item of
-[#49](https://github.com/gaurav/prcoder/issues/49).
+on ▶, Commit, Create PR or a checkbox — and the origin check never sees that click, because there is
+nothing foreign about it. What refuses the frame is `frame-ancestors 'none'`, in the
+Content-Security-Policy `serveFile` sends with every static response. `test/api.test.js` pins it.
+
+That header is also the second line of defence for the section below. `script-src 'self'` allows
+only prcoder's own files, so script that reaches the page some other way does not run, and
+`object-src 'none'` and `base-uri 'none'` close the two ways round it. `style-src` keeps
+`'unsafe-inline'` — xterm injects its own `<style>` — and `img-src` is left unset so the `data:`
+favicon still loads; both are deliberate, and neither runs script.
 
 ## Other programs on this machine
 
@@ -51,9 +57,10 @@ Two functions in [`public/pr.js`](../public/pr.js) keep it out. `escape()` escap
 angle brackets, because a link's URL is interpolated into `href="..."` and a raw `"` closes the
 attribute and opens an event handler, which `innerHTML` does fire. `target()` lets through only
 `http(s)` and repository-relative links, so `javascript:` and `data:` hrefs stay as their own source.
-`test/pr.test.js` pins both. They are the only line of defence: with no CSP, a hole in either runs
-as script. [#49](https://github.com/gaurav/prcoder/issues/49) holds that and the rest of what is open
-around the renderer.
+`test/pr.test.js` pins both, and the CSP stands behind them rather than instead of them: a hole in
+either loads no script under `script-src 'self'`, but the two functions are still what keeps the
+markup honest in the first place. [#49](https://github.com/gaurav/prcoder/issues/49) holds the rest
+of what is open around the renderer.
 
 This is also why the renderer is an allowlist ([Design.md](Design.md) argues the scope side of
 that): every construct it learns is new markup built from untrusted text, and has to go through
@@ -72,9 +79,31 @@ to Claude *without* a click removes the only check there is.
 
 ## Static files
 
-Everything outside `/api/` and the four `vendor` paths is served from `public/`, and a path that
-resolves outside it is a 403 (`server.js`, beside `serveFile`). `new URL` has already collapsed `..`
-by then, so the check is a backstop, and nothing tests it.
+Everything outside `/api/` and the `vendor` paths — xterm's four files, Prism's core and one file
+per grammar — is served from `public/`, and a path that resolves outside it is a 403 (`server.js`,
+beside `serveFile`). `new URL` has already collapsed `..` by then, so the check is a backstop, and
+nothing tests it.
+
+## A file the pull request adds
+
+The diff pane highlights a **NEW** file, and the highlighter is a third piece of untrusted text
+handled in the page: the whole of a file someone else committed, run through Prism's grammars.
+What keeps it in the same shape as the renderer above is in `highlightLines` in
+[`public/diff.js`](../public/diff.js). Prism is asked for its *tokens*, never its HTML, and each token
+becomes a `<span>` through `h()` with the file's text as a text node — the same rule as every other
+string from GitHub, and `test/browser.test.js` opens a file made of `<script>` and `<img onerror>` to
+pin that it comes out as characters. The language is chosen from the extension alone: auto-detection
+would run every grammar over the file, and `grammars` in `diff.js` — that extension map plus what
+those grammars are built on — is the list the vendor map in `server.js` is built from, so the
+server serves what the page can ask for and nothing else, and `test/api.test.js` fetches every one
+of them. What is left is a grammar's regular expressions
+backtracking on a crafted file, which no escaping helps with. It is bounded by GitHub, which sends no
+`patch` for a large diff, and by `PATCH_LIMIT` in `git.js` for the patch local git makes when GitHub
+sent none -- a path the page sends there is diffed only if the pull request has that file, and as a
+literal pathspec. It is the reason the tokenizer runs in the page and not in `/api/diff`:
+a stall there freezes one browser tab, a stall in the server freezes the process that owns the PTY.
+A modified file's diff is not highlighted at all, and
+[#68](https://github.com/gaurav/prcoder/issues/68) has what changes before it can be.
 
 ## Checking new work
 
@@ -86,3 +115,7 @@ by then, so the check is a backstop, and nothing tests it.
   `h()` and text nodes. `innerHTML` only through `inline()`, and a new kind of link only through
   `target()`.
 - **Nothing sends to Claude without a click** on text the user can see.
+- **A new kind of asset** — a font, an image, a worker, anything loaded rather than inlined — has to
+  be allowed by the CSP beside `serveFile`, which is otherwise silent about what it blocks. The
+  Prism grammars under `/vendor/prism/` are same-origin script, which `script-src 'self'` already
+  allows; a highlighter loaded from a CDN would not be.

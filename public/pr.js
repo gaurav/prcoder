@@ -148,17 +148,23 @@ export function renderHeader(status, prs, { onSwitch, onCommit }) {
   // gh pr list is open PRs only, so a merged or closed one has no option of its
   // own — without this the select falls to selectedIndex -1 and renders blank
   // while the pane below it is showing that very PR.
-  const shown = status.pr && !prs.some((p) => p.number === status.pr.number)
-    ? [{ number: status.pr.number, title: status.pr.title, isDraft: false }, ...prs]
-    : prs;
+  //
+  // Stacked PRs sit under the one they build on. An <option> cannot nest and an
+  // <optgroup> cannot be chosen, so the indent is in the label, in non-breaking
+  // spaces because a plain leading one is collapsed.
+  const shown = [
+    ...(status.pr && !prs.some((p) => p.number === status.pr.number)
+      ? [{ pr: { number: status.pr.number, title: status.pr.title, isDraft: false }, depth: 0 }] : []),
+    ...stackOrder(prs),
+  ];
 
-  const keys = shown.map((p) => p.number).join(',');
+  const keys = shown.map(({ pr, depth }) => `${pr.number}:${depth}`).join(',');
   if (sel.dataset.keys !== keys) {
     sel.dataset.keys = keys;
     sel.replaceChildren(
       h('option', { value: '' }, shown.length ? 'no pull request' : 'no open pull requests'),
-      ...shown.map((p) => h('option', { value: String(p.number) },
-        `#${p.number} ${p.isDraft ? '(draft) ' : ''}${p.title}`)),
+      ...shown.map(({ pr: p, depth }) => h('option', { value: String(p.number) },
+        `${depth ? `${'\u00a0\u00a0'.repeat(depth)}└\u00a0` : ''}#${p.number} ${p.isDraft ? '(draft) ' : ''}${p.title}`)),
     );
     sel.onchange = () => sel.value && onSwitch(Number(sel.value));
   }
@@ -213,8 +219,54 @@ export function queueSync(status) {
 /** The queue pane's header, like the PR pane's, survives polls. */
 export const renderQueueSync = (status) => paintLight('queue-sync', queueSync(status));
 
-/** The pane with no PR to show: why, and the one thing worth doing about it. */
-export function renderNoPr(status, { onCreate }) {
+/**
+ * The open pull requests that merge *into* this branch.
+ *
+ * Filtered from the list the switcher already fetches rather than asked for:
+ * `gh pr list` carries `baseRefName` for free, where a `--base` query of its own
+ * would be another call in the one state that already makes an extra one (#19).
+ * A detached HEAD is no branch to merge into, not every pull request.
+ */
+export const prsInto = (prs, branch) =>
+  (branch ? prs.filter((p) => p.baseRefName === branch) : []);
+
+/**
+ * The same, with every pull request stacked on each one nested under it:
+ * `[{ pr, kids }]`, where a kid's base is its parent's head.
+ *
+ * Still the one list, so a stack costs no call of its own. `seen` is there
+ * because two open pull requests can name each other's branches as their bases,
+ * and GitHub doesn't stop them.
+ */
+export function prTree(prs, branch, seen = new Set()) {
+  // A fork's head branch lives in the fork, so nothing here can be based on it,
+  // whatever it is called -- and it is very often called `main`.
+  return prsInto(prs, branch).filter((p) => !seen.has(p.number) && seen.add(p.number))
+    .map((pr) => ({ pr, kids: pr.isCrossRepository ? [] : prTree(prs, pr.headRefName, seen) }));
+}
+
+/**
+ * Every open pull request in switcher order, `[{ pr, depth }]`: each one
+ * followed by the ones stacked on it.
+ *
+ * The roots are the ones whose base is no other open PR's head, grouped by
+ * that base. A cycle of bases has no root at all, so whatever the walk didn't
+ * reach goes on the end, unnested. Otherwise it would drop out of the switcher.
+ */
+export function stackOrder(prs) {
+  const heads = new Set(prs.filter((p) => !p.isCrossRepository).map((p) => p.headRefName));
+  const bases = new Set(prs.map((p) => p.baseRefName).filter((b) => !heads.has(b)));
+  const seen = new Set();
+  const walk = (nodes, depth) => nodes.flatMap(({ pr, kids }) => [{ pr, depth }, ...walk(kids, depth + 1)]);
+  return [
+    ...[...bases].flatMap((b) => walk(prTree(prs, b, seen), 0)),
+    ...prs.filter((p) => !seen.has(p.number)).map((pr) => ({ pr, depth: 0 })),
+  ];
+}
+
+/** The pane with no PR to show: why, what merges into here, and the one thing
+ *  worth doing about it. */
+export function renderNoPr(status, prs, { onCreate, onSwitch }) {
   const host = document.getElementById('pr-body');
   // The head is a whole pull request's worth of identity -- title, badges,
   // tabs -- and nothing else clears it, so without this the last PR's heading
@@ -236,20 +288,66 @@ export function renderNoPr(status, { onCreate }) {
 
   // The same way out of the window the head carries, which is the one thing
   // this pane can still offer: there is no pull request, but the repository and
-  // its lists are where you would go to find out why. Left-aligned, unlike the
-  // head's: that one is a line in a block of pull request facts and has to be
-  // told apart from them, where this sits alone between a sentence and a button.
+  // its lists are where you would go to find out why. Laid out exactly as the
+  // head lays it out, down to the class names -- the two panes used to disagree
+  // about where it went, and there was never a reason for them to.
   const out = noPrLinks(status);
 
   host.replaceChildren(...kids([
     h('p', { className: 'empty' }, why),
-    out.length ? linkRow(out, 'meta') : null,
+    intoRow(status, prs, onSwitch),
+    out.repo ? linkRow(out.links, 'meta pr-ways') : null,
+    out.repo ? repoRow(out.repo, 'meta pr-repo') : null,
     status.sync === 'unpushed' && can
       ? h('p', { className: 'pr-note' }, 'This branch is not on GitHub yet; it will be pushed first.')
       : null,
     create,
   ]));
 }
+
+/**
+ * The pull requests into this branch, each a row you can read or check out.
+ *
+ * This is the branch-only pane's reason to exist: on `main` there is nothing to
+ * create and nothing to read, and what you actually want to know is which pull
+ * requests land here.
+ *
+ * Reading and moving are two controls because they are two different things.
+ * The row used to be one button that ran `gh pr checkout`, so a cmd-click to
+ * compare a few pull requests in other tabs moved the working copy instead. The
+ * `#N` is a real link now, and Switch goes through the same checkout the header's
+ * switcher does.
+ *
+ * On a dirty tree only Switch is disabled, because that checkout would fail.
+ * The header has already swapped the switcher for a Commit button, and the link
+ * still works: you don't need a clean tree to read a pull request.
+ */
+function intoRow(status, prs, onSwitch) {
+  const tree = prTree(prs, status.branch);
+  if (!tree.length) return null;
+  return h('div', { className: 'pr-into' },
+    h('span', { className: 'pr-into-label' }, `Pull requests into ${status.branch}`),
+    stackList(tree, { blocked: status.dirtyFiles.length > 0, onSwitch }));
+}
+
+/**
+ * A prTree as nested lists. Each pull request's stack sits under it, so the
+ * size of a stack is how far its indent runs.
+ */
+const stackList = (nodes, opts) => h('ul', {},
+  ...nodes.map(({ pr, kids }) => prRow(pr, opts, kids.length ? stackList(kids, opts) : null)));
+
+/** One open pull request: the link to it, what it is called, and the checkout. */
+const prRow = (p, { blocked, onSwitch }, kids) => h('li', {},
+  h('div', { className: 'pr-row' },
+    ext(p.url, `#${p.number}`, { className: 'pr-num' }),
+    p.isDraft ? badge('draft', 'draft') : null,
+    h('span', { className: 'pr-row-title', title: p.title }, p.title),
+    btn('Switch', () => onSwitch(p.number), {
+      className: 'pr-go', disabled: blocked,
+      title: blocked ? 'Commit or stash your changes first' : `Check out #${p.number} here`,
+    })),
+  kids);
 
 /**
  * Which half of the pane is showing, where each half was scrolled to, and which
@@ -266,7 +364,7 @@ export function renderNoPr(status, { onCreate }) {
  */
 let tab = 'detail';
 let shownFor = null;
-const scrolled = { detail: 0, files: 0, checks: 0 };
+const scrolled = { detail: 0, files: 0, checks: 0, stack: 0 };
 const openSections = new Set();
 // Whether the single-section description below is still allowed to open itself.
 let autoOpen = true;
@@ -301,9 +399,18 @@ const linkBase = (pr) => ({
 const repoName = (repoUrl) => repoUrl.replace(/^https?:\/\/[^/]+\//, '');
 
 /**
- * The head's way out of the pane: this pull request on GitHub, then the repo it
- * is in and the three lists people leave for -- issues, pull requests,
- * milestones.
+ * The head's way out of the pane, in two parts: a row of links -- this pull
+ * request on GitHub and the three lists people leave for -- and the repository
+ * they are all in, which gets a line to itself.
+ *
+ * The repository used to sit in the middle of that row, between `PR #62` and
+ * `issues`, and it is the only part of it whose width has no bound.
+ * `heal-data-stewards/heal-vlmd-AI-pipeline` is a real one, and at 12px it
+ * is most of the pane at its 375px default -- so the row wrapped, and where
+ * `issues`/`pulls`/`milestones` were moved from one repository to the next. The
+ * four links you aim at are the four that are always the same length; keeping
+ * them on a line of their own is what makes them findable, and lets the line
+ * below them truncate instead of wrap (see .pr-repo in the stylesheet).
  *
  * Built from the PR's own URL rather than from the `nameWithOwner` the status
  * carries, which says nothing about the host. That keeps these links right for
@@ -313,21 +420,41 @@ const repoName = (repoUrl) => repoUrl.replace(/^https?:\/\/[^/]+\//, '');
  * calls and two hard-coded github.com URLs all assume it (#53) -- so this is
  * the part not to undo, not proof that the whole works.
  *
- * The arrow is on the first link only. That is the one that means "what you are
- * looking at, on GitHub"; the rest read as a menu, and five arrows in a row
- * read as decoration.
+ * No ↗ on any of them. Every link out of prcoder opens a new tab, so marking
+ * one (it used to be the first of each row) only raised the question of what
+ * the unmarked ones did.
  */
 export const headLinks = (pr) => {
   const { repo } = linkBase(pr);
-  return [{ text: `PR #${pr.number} ↗`, href: pr.url }, ...repoLinks(repo)];
+  return {
+    links: [{ text: `PR #${pr.number}`, href: pr.url }, ...listLinks(repo)],
+    repo: repoCrumb(repo),
+  };
 };
 
-/** The repository and the three lists: the tail of the head's row, and the
- *  whole of the one in the pane with no pull request to head. */
-const repoLinks = (repo) => [
-  { text: repoName(repo), href: repo },
-  ...['issues', 'pulls', 'milestones'].map((p) => ({ text: p, href: `${repo}/${p}` })),
-];
+/** The three lists people leave for. */
+const listLinks = (repo) =>
+  ['issues', 'pulls', 'milestones'].map((p) => ({ text: p, href: `${repo}/${p}` }));
+
+/**
+ * The repository itself, as its own line rather than a link in the row, split
+ * at the first slash so the line can be truncated on purpose.
+ *
+ * `rest` carries the slash. The owner is the half that gives way when the slug
+ * will not fit -- it is the same all day, where the name is what tells you
+ * which checkout you are looking at -- and `heal-data-…heal-vlmd-AI-pipeline`
+ * would be the result of clipping a span that ended with the separator.
+ *
+ * A slug with no slash at all should not reach here, but if one does it is all
+ * name and no owner, which clips the way any other unsplittable name does.
+ */
+const repoCrumb = (repo) => {
+  const slug = repoName(repo);
+  const cut = slug.indexOf('/');
+  return cut < 0
+    ? { href: repo, slug, owner: '', rest: slug }
+    : { href: repo, slug, owner: slug.slice(0, cut), rest: slug.slice(cut) };
+};
 
 /**
  * The same way out, for the pane that has no pull request to build it from.
@@ -337,14 +464,13 @@ const repoLinks = (repo) => [
  * That makes this the third of the github.com assumptions #53 is about, not a
  * new kind of one; the head's is still the part not to undo.
  *
- * The arrow lands on the repository for the same reason it lands on the PR
- * above: it is the "what you are looking at, on GitHub" link, and here that is
- * the repository itself.
+ * Same shape as headLinks minus the pull request, and rendered by the same two
+ * calls -- before this the two panes laid the same links out differently.
  */
 export const noPrLinks = ({ nameWithOwner }) => {
-  if (!nameWithOwner) return [];
-  const [self, ...rest] = repoLinks(`https://github.com/${nameWithOwner}`);
-  return [{ ...self, text: `${self.text} ↗` }, ...rest];
+  if (!nameWithOwner) return { links: [], repo: null };
+  const repo = `https://github.com/${nameWithOwner}`;
+  return { links: listLinks(repo), repo: repoCrumb(repo) };
 };
 
 /**
@@ -361,6 +487,19 @@ const linkRow = (list, className) => h('div', { className },
     i ? h('span', { className: 'sep' }, '·') : null,
     ext(l.href, l.text),
   ]));
+
+/**
+ * The repository, alone on the line under that row.
+ *
+ * One link in two spans, because the CSS shrinks them differently: the owner
+ * ellipsises and the name is held whole. `title` is the slug uncut, which is
+ * the only way back to an owner the pane has clipped.
+ */
+const repoRow = (crumb, className) => h('div', { className },
+  ext(crumb.href, [
+    crumb.owner ? h('span', { className: 'owner' }, crumb.owner) : null,
+    h('span', { className: 'name' }, crumb.rest),
+  ], { title: crumb.slug }));
 
 /**
  * The pull request pane, in two roots.
@@ -380,6 +519,7 @@ export function renderPr(pr, handlers) {
     scrolled.detail = 0;
     scrolled.files = 0;
     scrolled.checks = 0;
+    scrolled.stack = 0;
     openSections.clear();
     autoOpen = true;
   }
@@ -399,6 +539,7 @@ function renderPrHead(pr, handlers) {
   };
   const tabBtn = (name, label, extra = '') =>
     btn(label, () => switchTo(name), { className: `tab${extra}${tab === name ? ' on' : ''}` });
+  const ways = headLinks(pr);
 
   document.getElementById('pr-head').replaceChildren(...kids([
     h('h2', { className: 'pr-title' }, pr.title),
@@ -409,13 +550,17 @@ function renderPrHead(pr, handlers) {
       h('span', { className: 'add' }, `+${pr.additions}`),
       h('span', { className: 'del' }, `−${pr.deletions}`),
     ),
-    linkRow(headLinks(pr), 'meta pr-links'),
+    // Two lines, and `pr-links` carries no style of its own -- it is the hook
+    // tools/browser.mjs measures the row by, so it is not dead CSS to clean up.
+    linkRow(ways.links, 'meta pr-ways pr-links'),
+    repoRow(ways.repo, 'meta pr-repo'),
     h('div', { className: 'tabs' },
       tabBtn('detail', tabLabel('Detail', taskCount(pr.body))),
       tabBtn('files', tabLabel('Files', viewedCount(pr.files))),
       pr.checks.list.length
         ? tabBtn('checks', tabLabel('Checks', checkCount(pr.checks)), ` dot ${worst(pr.checks)}`)
-        : null),
+        : null,
+      tabBtn('stack', stackLabel(stackOn(pr, handlers.prs)))),
   ]));
 }
 
@@ -439,6 +584,30 @@ export const taskCount = (body) => {
   const tasks = blocks(body).filter((b) => b.kind === 'task');
   return { done: tasks.filter((b) => b.done).length, total: tasks.length };
 };
+
+/**
+ * The open pull requests built on this one's branch, from the switcher's list.
+ * None for a fork: its head branch is in another repository, so a base here
+ * with the same name -- a fork's `main`, often -- is not it.
+ */
+export const stackOn = (pr, prs) => (!prs || pr.isCrossRepository ? [] : prTree(prs, pr.headRefName));
+
+/**
+ * What the Stack tab says when it has no rows, which is three different facts:
+ * nothing is built on this branch, nothing *can* be (a fork's branch), or
+ * prcoder has no list to look in (`prs` is null for a pull request in another
+ * repository -- see paint() in app.js).
+ */
+export const stackEmpty = (pr, prs) => (!prs
+  ? 'Stacks are listed only for pull requests in this repository.'
+  : pr.isCrossRepository
+    ? `Nothing here can be built on ${pr.headRefName}: it is a branch in a fork.`
+    : `Nothing is stacked on ${pr.headRefName}.`);
+
+const stackSize = (nodes) => nodes.reduce((n, k) => n + 1 + stackSize(k.kids), 0);
+
+/** `Stack (5)`, counting the whole tree, since it is the whole tree the tab shows. */
+export const stackLabel = (nodes) => (nodes.length ? `Stack (${stackSize(nodes)})` : 'Stack');
 
 export const viewedCount = (files = []) =>
   ({ done: files.filter((f) => f.viewed).length, total: files.length });
@@ -476,7 +645,14 @@ function renderPrTab(pr, handlers) {
   // it instead.
   const focused = document.activeElement?.closest?.('.md-section')?.dataset.key;
 
-  host.replaceChildren(...kids(tab === 'checks' ? [
+  const stack = tab === 'stack' ? stackOn(pr, handlers.prs) : null;
+  host.replaceChildren(...kids(stack ? [
+    stack.length
+      ? h('div', { className: 'pr-into' },
+        h('span', { className: 'pr-into-label' }, `Pull requests built on ${pr.headRefName}`),
+        stackList(stack, handlers))
+      : h('p', { className: 'empty' }, stackEmpty(pr, handlers.prs)),
+  ] : tab === 'checks' ? [
     ...pr.checks.list.map((c) => h('div', { className: 'check' },
       h('span', { className: `dot ${c.state}` }),
       // A check GitHub gave no URL for is rare and not worth a dead link, so it
@@ -485,11 +661,11 @@ function renderPrTab(pr, handlers) {
   ] : tab === 'files' ? [
     ...GROUPS.map(([key, label]) => fileGroup(label, pr.groups[key], handlers)),
     h('div', { className: 'meta' },
-      ext(`${pr.url}#issuecomment`, `${pr.counts.comments} comments · ${pr.counts.reviews} reviews ↗`)),
+      ext(`${pr.url}#issuecomment`, `${pr.counts.comments} comments · ${pr.counts.reviews} reviews`)),
   ] : [
-    issueRow(pr.issues, true, 'Closes:'),
     h('div', { className: 'body md' }, ...description(pr.body, handlers.onTask)),
-    issueRow(pr.issues, false, 'Mentions:'),
+    issueRow(pr.issues, true, 'Closes'),
+    issueRow(pr.issues, false, 'Mentions'),
   ]));
 
   // Assigning forces layout, so this lands against the new content rather than
@@ -503,23 +679,37 @@ function renderPrTab(pr, handlers) {
 const badge = (text, kind) => h('span', { className: `badge ${kind}` }, text);
 
 /**
- * One row of issue chips. The row label says which kind, so the chips stay bare
- * numbers.
+ * One list of issues, labelled with what this pull request does about them.
  *
- * The two kinds mean different things and are placed differently because of it.
- * `Closes:` is a handful of issues this pull request answers, and it belongs
- * above the description as part of what the pull request *is*. `Mentions:` is
- * every bare `#N` linkedIssues() could find in the body, which on a description
- * that discusses its own backlog is dozens -- six rows of chips between the
- * title and the first sentence, which is the burial this pane is being fixed
- * for. It goes underneath.
+ * Both lists sit below the description, `Closes:` first. The closing ones were
+ * above it, from before a description reliably said which issues it closed:
+ * they are now named in the abstract's own prose -- and inline() links every
+ * `#N` in it -- so a row of the same numbers a line above that sentence was
+ * saying it twice, in the one place the pane is trying to keep clear.
+ *
+ * A line per issue, titled, rather than a wrapped row of bare-number chips:
+ * `#41` says nothing about what it is, and a description that discusses its own
+ * backlog carries a dozen of them. The title is what makes the list readable,
+ * and it is also what makes a chip the wrong shape -- a pill does not hold a
+ * sentence. A number with no title left is still a link.
+ *
+ * The number and the title are separate spans inside the one link so the
+ * stylesheet can treat them apart: thirteen rows that were one colour and one
+ * weight end to end gave the eye nowhere to land, and a wrapped title came back
+ * to the margin under the `#` and read as a fourteenth. The row is still the
+ * whole link -- the split is for the grid and the colour, not the click. The
+ * space between them is what keeps `textContent` reading `#27 Make the …`, which
+ * is how tools/browser.mjs finds a row; the grid never renders it.
  */
 function issueRow(list, closes, label) {
   const kind = list.filter((i) => i.closes === closes);
   if (!kind.length) return null;
   return h('div', { className: 'issues' },
     h('span', { className: 'issues-label' }, label),
-    ...kind.map((i) => ext(i.url, `#${i.number}`, { title: i.title ?? '' })));
+    ...kind.map((i) => ext(i.url, [
+      h('span', { className: 'num' }, `#${i.number}`),
+      ...(i.title ? [' ', h('span', { className: 'ttl' }, i.title)] : []),
+    ])));
 }
 
 /**
@@ -534,31 +724,67 @@ function issueRow(list, closes, label) {
 function fileGroup(label, files, handlers) {
   if (!files?.length) return null;
   const { done, total } = viewedCount(files);
+  const { root, dirs } = byDir(files);
   return fold({
     className: 'group', dataset: { group: label }, title: label, count: `${done}/${total}`,
     open: !closedGroups.has(label),
     onToggle: (open) => { if (open) closedGroups.delete(label); else closedGroups.add(label); },
-  }, [...byDir(files)].map(([dir, list]) => dirGroup(label, dir, list, handlers)));
+  }, [
+    ...root.map((f) => fileRow(f, handlers)),
+    ...dirs.map(([dir, list]) => dirGroup(label, dir, list, handlers)),
+  ]);
 }
 
 /**
- * The files of one group, split by the directory they are in.
+ * Two paths, ordered the way a tree is: a directory ahead of what is inside it,
+ * siblings alphabetical.
  *
- * A Map because the order is the answer: `gh` returns the files sorted by path,
- * so one pass leaves the directories in that order and the files inside them in
- * it too. Files at the top of the repository have no directory to be named
- * after, and `(root)` is the one label that cannot collide with a real one --
- * a directory's key here always ends in `/`.
+ * Segment by segment, and it has to be -- comparing the whole strings is the
+ * obvious version and it splits a directory from its children. `alpha-x/` and
+ * `alpha/beta/` first differ at `-` (45) against `/` (47), so a string compare
+ * puts `alpha-x/` *between* `alpha/` and `alpha/beta/`. Segment 0 is `alpha`
+ * against `alpha-x` here, which cannot go wrong that way.
+ *
+ * Running out of segments is the answer for a prefix: `alpha/` and
+ * `alpha/beta/` agree on segment 0, and the trailing `/` every directory key
+ * carries leaves `alpha/` with an empty final segment, which sorts below any
+ * real name. The length return is what catches a key without the slash.
  */
-const byDir = (files) => {
-  const dirs = new Map();
+export const byPath = (a, b) => {
+  const A = a.split('/'), B = b.split('/');
+  for (let i = 0; i < Math.min(A.length, B.length); i++) {
+    if (A[i] !== B[i]) return A[i] < B[i] ? -1 : 1;
+  }
+  return A.length - B.length;
+};
+
+/**
+ * The files of one group, split into the ones at the top of the repository and
+ * one entry per directory below it.
+ *
+ * The order is this pane's own, not `gh`'s. It used to be inherited -- `gh`
+ * returns the files sorted by path, so one pass left the directories in
+ * whatever order their *first* file happened to fall in, which is not an order
+ * over the directories at all: a group here drew `.claude/skills/run-prcoder/`,
+ * `.github/workflows/`, the root, `docs/`, with the repo's own README buried in
+ * the middle. The Map is an accumulator now; `byPath` decides.
+ *
+ * Root files come back separately because they are not a fold. They have no
+ * directory to be named after and nothing to strip off their rows, so they draw
+ * as the group's first rows and each group reads like a tree.
+ */
+export const byDir = (files) => {
+  const root = [], dirs = new Map();
   for (const f of files) {
     const cut = f.path.lastIndexOf('/');
-    const dir = cut === -1 ? '(root)' : f.path.slice(0, cut + 1);
+    if (cut === -1) { root.push(f); continue; }
+    const dir = f.path.slice(0, cut + 1);
     if (!dirs.has(dir)) dirs.set(dir, []);
     dirs.get(dir).push(f);
   }
-  return dirs;
+  const byFilePath = (x, y) => byPath(x.path, y.path);
+  for (const list of dirs.values()) list.sort(byFilePath);
+  return { root: root.sort(byFilePath), dirs: [...dirs].sort(([a], [b]) => byPath(a, b)) };
 };
 
 /**
@@ -567,7 +793,8 @@ const byDir = (files) => {
  * The fold state is keyed by group *and* directory: `public/` under Code and
  * `public/` under Tests are two different folds, and a single key would close
  * both. Both keys live in the one `closedGroups` set -- a group's label never
- * ends in `/`, so the two kinds cannot collide.
+ * ends in `/` and a directory's key always does, so the two kinds cannot
+ * collide.
  */
 function dirGroup(group, dir, files, handlers) {
   const key = `${group}/${dir}`;
@@ -578,6 +805,18 @@ function dirGroup(group, dir, files, handlers) {
     onToggle: (open) => { if (open) closedGroups.delete(key); else closedGroups.add(key); },
   }, files.map((f) => fileRow(f, handlers, dir)));
 }
+
+/**
+ * The +/− counts for one file, as [class, text] pairs. A side that changed
+ * nothing is left out rather than shown as a zero: `+101` reads as an addition
+ * at a glance where `+101 −0` does not. A file with neither (a rename, a mode
+ * change) gets no counts at all. The header's totals above keep both sides on
+ * purpose -- `+400 −0` there says the shape of the whole PR at a glance.
+ */
+export const nums = ({ additions, deletions }) => [
+  additions ? ['add', `+${additions}`] : null,
+  deletions ? ['del', `−${deletions}`] : null,
+].filter(Boolean);
 
 /**
  * A <details> fold with a heading and an optional count, the shape both the file
@@ -592,7 +831,7 @@ function fold({ className, dataset, title, count, open, onToggle }, children) {
   return d;
 }
 
-function fileRow(f, { onViewed, onOpen, selected }, dir = '(root)') {
+function fileRow(f, { onViewed, onOpen, selected }, dir = '') {
   const box = h('input', { type: 'checkbox', checked: f.viewed, title: 'mark viewed on GitHub' });
   writeThrough(box, (v) => onViewed(f.path, v), (v) => row.classList.toggle('viewed', v));
   // The path goes inside a <bdi>. Its container is `direction: rtl` so that a
@@ -608,7 +847,8 @@ function fileRow(f, { onViewed, onOpen, selected }, dir = '(root)') {
   // The name the fold above it does not already say. `title` stays the whole
   // path: the row is what you point at when you want to know where a file is,
   // and the directory heading may have scrolled off the top of a long group.
-  const shown = dir === '(root)' ? f.path : f.path.slice(dir.length);
+  // A root row has no fold above it and passes no `dir`, which slices nothing.
+  const shown = f.path.slice(dir.length);
   const link = ext(f.url, h('bdi', {}, shown), { className: 'path', title: f.path });
   link.addEventListener('click', (e) => {
     if (e.metaKey || e.ctrlKey) return;   // GitHub stays one modifier away
@@ -622,8 +862,7 @@ function fileRow(f, { onViewed, onOpen, selected }, dir = '(root)') {
     box,
     link,
     h('span', { className: 'nums' },
-      h('span', { className: 'add' }, `+${f.additions}`), ' ',
-      h('span', { className: 'del' }, `−${f.deletions}`)),
+      ...nums(f).map(([cls, text], i) => [i ? ' ' : null, h('span', { className: cls }, text)])),
   );
   return row;
 }

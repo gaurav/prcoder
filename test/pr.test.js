@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  pageTitle, withoutHtml, inline, headLinks, noPrLinks, queueSync, HEADING, blocks, sectionize,
-  tabLabel, taskCount, viewedCount, checkCount, worst,
+  pageTitle, withoutHtml, inline, headLinks, noPrLinks, prsInto, prTree, stackOn, stackLabel, stackOrder, stackEmpty, queueSync, HEADING, blocks, sectionize,
+  tabLabel, taskCount, viewedCount, checkCount, worst, byPath, byDir, nums,
 } from '../public/pr.js';
 import { fences, TASK, taskLines } from '../public/tasks.js';
 
@@ -202,45 +202,158 @@ test('a bare #N becomes a link to the issue of that number', () => {
 // The row under the badges. Derived from the PR's own URL rather than from the
 // status's nameWithOwner, which carries no host -- so this is also the test that
 // a GitHub Enterprise install is not quietly sent to github.com.
+//
+// The repository is not in the row. It is the one link with no bound on its
+// width, and it wrapped the row; it comes back separately for the line below.
 test('the head links point at the repository the pull request is in', () => {
   const pr = { number: 7, url: 'https://github.test/o/r/pull/7', headRefName: 'topic', baseRefName: 'main' };
-  assert.deepEqual(headLinks(pr).map((l) => [l.text, l.href]), [
-    ['PR #7 ↗', 'https://github.test/o/r/pull/7'],
-    ['o/r', 'https://github.test/o/r'],
+  const { links, repo } = headLinks(pr);
+  assert.deepEqual(links.map((l) => [l.text, l.href]), [
+    ['PR #7', 'https://github.test/o/r/pull/7'],
     ['issues', 'https://github.test/o/r/issues'],
     ['pulls', 'https://github.test/o/r/pulls'],
     ['milestones', 'https://github.test/o/r/milestones'],
   ]);
+  assert.deepEqual(repo, { href: 'https://github.test/o/r', slug: 'o/r', owner: 'o', rest: '/r' });
+});
+
+// The line clips on purpose, and the two spans are what decide which half goes.
+// The slash belongs to the name: clipping a span that ended with it would give
+// `heal-data-...heal-vlmd-AI-pipeline`, with nothing to say a level was
+// dropped. A repository name can hold slashes in other forges, so the split is
+// at the first one and the rest is one piece.
+test('the repository line splits at the first slash, keeping the slash with the name', () => {
+  const { repo } = headLinks({ number: 1, url: 'https://github.com/heal-data-stewards/heal-vlmd-AI-pipeline/pull/1' });
+  assert.deepEqual([repo.owner, repo.rest], ['heal-data-stewards', '/heal-vlmd-AI-pipeline']);
+  assert.equal(repo.owner + repo.rest, repo.slug);
 });
 
 // A fork's pull request is opened *against* this repository, and its issues and
 // milestones are here rather than in the fork. The URL is the base repo's
-// either way, which is the whole reason these are derived from it.
+// either way, which is the whole reason these are derived from it. The repo
+// line is in this too -- it is the same derivation, off to one side.
 test('a pull request from a fork links to the repository it was opened against', () => {
   const fork = {
     number: 9, url: 'https://github.test/o/r/pull/9', isCrossRepository: true,
     headRefName: 'contributor:patch', baseRefName: 'main',
   };
-  for (const l of headLinks(fork)) assert.match(l.href, /^https:\/\/github\.test\/o\/r(\/|$)/);
+  const { links, repo } = headLinks(fork);
+  for (const l of [...links, repo]) assert.match(l.href, /^https:\/\/github\.test\/o\/r(\/|$)/);
 });
 
 // The pane with no pull request offers the same lists, minus the pull request
-// itself -- and the arrow moves onto the repository, which is what you are
-// looking at when there is nothing else to be looking at.
+// itself -- and in the same shape, because both panes render it with the same
+// two calls.
 test('with no pull request the repository and its lists are still linked', () => {
-  assert.deepEqual(noPrLinks(status()).map((l) => [l.text, l.href]), [
-    ['ggvaidya/prcoder ↗', 'https://github.com/ggvaidya/prcoder'],
+  const { links, repo } = noPrLinks(status());
+  assert.deepEqual(links.map((l) => [l.text, l.href]), [
     ['issues', 'https://github.com/ggvaidya/prcoder/issues'],
     ['pulls', 'https://github.com/ggvaidya/prcoder/pulls'],
     ['milestones', 'https://github.com/ggvaidya/prcoder/milestones'],
   ]);
+  assert.deepEqual(repo,
+    { href: 'https://github.com/ggvaidya/prcoder', slug: 'ggvaidya/prcoder', owner: 'ggvaidya', rest: '/prcoder' });
 });
 
 // Before `gh repo view` has answered -- or outside a GitHub remote entirely --
 // there is nothing to build a URL from, and a row of links to
-// `https://github.com/undefined` is worse than no row at all.
+// `https://github.com/undefined` is worse than no row at all. A null repo is
+// what both panes check before drawing either line.
 test('no repository means no links rather than links to nowhere', () => {
-  assert.deepEqual(noPrLinks(status({ nameWithOwner: undefined })), []);
+  assert.deepEqual(noPrLinks(status({ nameWithOwner: undefined })), { links: [], repo: null });
+});
+
+// The list the switcher fetches, which carries every open pull request in the
+// repository -- the pane wants the ones that land on the branch you are on.
+const OPEN = [
+  { number: 1, headRefName: 'initial-implementation', baseRefName: 'main', title: 'The one into main' },
+  { number: 27, headRefName: 'queue-tabs', baseRefName: 'initial-implementation', title: 'One of three' },
+  { number: 60, headRefName: 'checks-tab', baseRefName: 'initial-implementation', title: 'Another' },
+];
+
+test('the pane lists the pull requests that merge into this branch, and no others', () => {
+  assert.deepEqual(prsInto(OPEN, 'main').map((p) => p.number), [1]);
+  assert.deepEqual(prsInto(OPEN, 'initial-implementation').map((p) => p.number), [27, 60]);
+  assert.deepEqual(prsInto(OPEN, 'a-branch-nothing-targets'), []);
+});
+
+// A detached HEAD is no branch to merge into. Falsy rather than absent is the
+// case that matters: `p.baseRefName === undefined` is false for every real pull
+// request, but the guard says so instead of relying on it.
+test('a detached HEAD lists nothing, not everything', () => {
+  assert.deepEqual(prsInto(OPEN, null), []);
+  assert.deepEqual(prsInto(OPEN, undefined), []);
+});
+
+// Numbers only, so a failure reads as the tree it got: [1, [27, 60]].
+const shape = (nodes) => nodes.flatMap(({ pr, kids }) => (kids.length ? [pr.number, shape(kids)] : [pr.number]));
+
+// This repository's own shape on 2026-09-25: #1 into main, the rest stacked on it.
+test('each pull request carries the ones stacked on its branch', () => {
+  assert.deepEqual(shape(prTree(OPEN, 'main')), [1, [27, 60]]);
+  assert.deepEqual(shape(prTree(OPEN, 'initial-implementation')), [27, 60]);
+  const deeper = [...OPEN, { number: 61, headRefName: 'tabs-2', baseRefName: 'checks-tab' }];
+  assert.deepEqual(shape(prTree(deeper, 'main')), [1, [27, 60, [61]]]);
+  assert.deepEqual(prTree(OPEN, null), []);
+});
+
+test('the Stack tab counts the whole tree, and a fork has no stack here', () => {
+  assert.equal(stackLabel(stackOn({ headRefName: 'initial-implementation' }, OPEN)), 'Stack (2)');
+  const deeper = [...OPEN, { number: 61, headRefName: 'tabs-2', baseRefName: 'checks-tab' }];
+  assert.equal(stackLabel(stackOn({ headRefName: 'initial-implementation' }, deeper)), 'Stack (3)');
+  assert.equal(stackLabel(stackOn({ headRefName: 'queue-tabs' }, OPEN)), 'Stack');
+  // A fork's head is often `main`, which every PR here is into -- none of them
+  // is built on the fork's branch.
+  assert.deepEqual(stackOn({ headRefName: 'main', isCrossRepository: true }, OPEN), []);
+});
+
+// Three empties, three sentences. The other-repo one used to say "Nothing is
+// stacked", which was a claim about a repository prcoder had not looked in.
+test('an empty Stack tab says why it is empty', () => {
+  const here = { headRefName: 'queue-tabs' };
+  assert.equal(stackEmpty(here, OPEN), 'Nothing is stacked on queue-tabs.');
+  assert.equal(stackEmpty({ headRefName: 'main', isCrossRepository: true }, OPEN),
+    'Nothing here can be built on main: it is a branch in a fork.');
+  assert.equal(stackEmpty(here, null), 'Stacks are listed only for pull requests in this repository.');
+  assert.deepEqual(stackOn(here, null), []);
+});
+
+const order = (prs) => stackOrder(prs).map(({ pr, depth }) => `${'-'.repeat(depth)}${pr.number}`);
+
+test('the switcher lists each pull request with its stack under it', () => {
+  const deeper = [...OPEN, { number: 61, headRefName: 'tabs-2', baseRefName: 'checks-tab' },
+    { number: 9, headRefName: 'elsewhere', baseRefName: 'release' }];
+  assert.deepEqual(order(deeper), ['1', '-27', '-60', '--61', '9']);
+});
+
+// A fork's head is a branch in the fork. Named `main`, it would otherwise make
+// every PR into main look stacked on it and leave the switcher with no roots.
+test('a fork does not parent the PRs into a branch of the same name', () => {
+  const fork = [{ number: 80, headRefName: 'main', baseRefName: 'main', isCrossRepository: true }, ...OPEN];
+  assert.deepEqual(order(fork), ['80', '1', '-27', '-60']);
+});
+
+test('a cycle of bases still lands in the switcher', () => {
+  const loop = [
+    { number: 2, headRefName: 'a', baseRefName: 'b' },
+    { number: 3, headRefName: 'b', baseRefName: 'a' },
+  ];
+  assert.deepEqual(order([...OPEN, ...loop]), ['1', '-27', '-60', '2', '3']);
+});
+
+// A fork PR from `someone:main` into main is not the parent of every PR into main.
+test('a fork has no stack under it', () => {
+  const fork = [{ number: 80, headRefName: 'main', baseRefName: 'main', isCrossRepository: true }, ...OPEN];
+  assert.deepEqual(shape(prTree(fork, 'main')), [80, 1, [27, 60]]);
+});
+
+// GitHub lets two open pull requests base on each other's heads.
+test('a cycle of bases ends instead of recursing forever', () => {
+  const loop = [
+    { number: 2, headRefName: 'a', baseRefName: 'b' },
+    { number: 3, headRefName: 'b', baseRefName: 'a' },
+  ];
+  assert.deepEqual(shape(prTree(loop, 'a')), [3, [2]]);
 });
 
 test('without a repository to resolve against, neither becomes a link', () => {
@@ -511,4 +624,52 @@ test('the file count is files viewed on GitHub, over files changed', () => {
   // than throw at it -- renderPrHead runs on the first paint either way.
   assert.deepEqual(viewedCount(), { done: 0, total: 0 });
   assert.deepEqual(viewedCount([]), { done: 0, total: 0 });
+});
+
+test('paths order like a tree, a directory ahead of what is inside it', () => {
+  assert.deepEqual(['gamma/', 'alpha/beta/', 'alpha/', '.github/'].sort(byPath),
+    ['.github/', 'alpha/', 'alpha/beta/', 'gamma/']);
+  // The case the obvious implementation gets wrong. `-` is 45 and `/` is 47, so
+  // comparing the whole strings sorts `alpha-x/` *between* a directory and its
+  // own child; comparing segment by segment puts it after both.
+  assert.deepEqual(['alpha-x/', 'alpha/beta/', 'alpha/'].sort(byPath),
+    ['alpha/', 'alpha/beta/', 'alpha-x/']);
+  // And the contrast, pinned so the claim above stays checkable: the default
+  // sort does put it between them.
+  assert.deepEqual(['alpha/beta/', 'alpha-x/', 'alpha/'].sort(),
+    ['alpha-x/', 'alpha/', 'alpha/beta/']);
+  // Every key a fold carries ends in `/`, but the comparator is handed bare
+  // file paths too, and two files in one directory are decided by the name.
+  assert.deepEqual(['a/z.js', 'a/b.js'].sort(byPath), ['a/b.js', 'a/z.js']);
+});
+
+test('a group splits into its root files and its directories, both in path order', () => {
+  // Deliberately unsorted: the order is the pane's own now, not whatever order
+  // `gh` handed the files over in.
+  const f = (path) => ({ path });
+  const { root, dirs } = byDir([
+    f('docs/Verifying.md'), f('server.js'), f('alpha/beta/two.js'),
+    f('CLAUDE.md'), f('alpha/one.js'), f('docs/Design.md'),
+  ]);
+  assert.deepEqual(root.map((x) => x.path), ['CLAUDE.md', 'server.js']);
+  assert.deepEqual(dirs.map(([dir]) => dir), ['alpha/', 'alpha/beta/', 'docs/']);
+  assert.deepEqual(dirs.map(([, list]) => list.map((x) => x.path)),
+    [['alpha/one.js'], ['alpha/beta/two.js'], ['docs/Design.md', 'docs/Verifying.md']]);
+});
+
+test('a root file is never a directory of its own', () => {
+  const { root, dirs } = byDir([{ path: 'README.md' }, { path: '.gitignore' }]);
+  // The old shape gave them a `(root)` fold that sorted wherever their first
+  // file fell. They are rows now, and nothing below is left to fold.
+  assert.deepEqual(root.map((x) => x.path), ['.gitignore', 'README.md']);
+  assert.deepEqual(dirs, []);
+});
+
+test('a file row leaves out the side that did not change', () => {
+  assert.deepEqual(nums({ additions: 101, deletions: 0 }), [['add', '+101']]);
+  assert.deepEqual(nums({ additions: 0, deletions: 101 }), [['del', '−101']]);
+  assert.deepEqual(nums({ additions: 2, deletions: 3 }),
+    [['add', '+2'], ['del', '−3']]);
+  // A rename or a mode change touches no lines and gets no counts.
+  assert.deepEqual(nums({ additions: 0, deletions: 0 }), []);
 });

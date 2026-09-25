@@ -1,0 +1,61 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Firefox caret-in-draggable check</title>
+<style>
+  body { font: 16px/1.5 system-ui, sans-serif; margin: 3rem auto; max-width: 40rem; }
+  .row { display: flex; gap: .5rem; border: 1px solid #999; border-radius: 6px;
+         padding: .6rem; margin: .8rem 0; background: #fafafa; }
+  .grip { cursor: grab; user-select: none; color: #888; }
+  .text { flex: 1; outline: none; }
+  b { font-variant-numeric: tabular-nums; }
+  .verdict { margin-top: 1.5rem; padding: .8rem; border-left: 4px solid #666; background: #f0f0f0; }
+</style>
+
+<h1>Where does the caret land?</h1>
+<p>Click into the middle of each sentence below — not at its start. The number is
+   where Firefox actually put the caret.</p>
+
+<!-- No grip: the whole row is draggable, which is the shape that had the bug. -->
+<div class="row" draggable="true">
+  <span class="grip">⠿</span>
+  <span class="text" contenteditable>Click into the middle of this sentence, in a row that is draggable throughout.</span>
+</div>
+<p>plain draggable row: caret landed at <b id="a">—</b></p>
+
+<!-- prcoder's fix: draggable is switched off while the pointer is over the text. -->
+<div class="row" draggable="true" id="fixed">
+  <span class="grip">⠿</span>
+  <span class="text" contenteditable>Click into the middle of this sentence, in a row using prcoder's grip fix.</span>
+</div>
+<p>grip fix applied: caret landed at <b id="b">—</b></p>
+
+<div class="verdict" id="verdict">Waiting for both clicks.</div>
+
+<script>
+  const out = { a: document.getElementById('a'), b: document.getElementById('b') };
+  const rows = document.querySelectorAll('.row');
+  const seen = {};
+
+  // The fix under test: the row stops being draggable while the pointer is on
+  // its text, and goes back to draggable when the pointer leaves.
+  const fixed = document.getElementById('fixed');
+  fixed.querySelector('.text').addEventListener('pointerenter', () => fixed.draggable = false);
+  fixed.querySelector('.text').addEventListener('pointerleave', () => fixed.draggable = true);
+
+  rows.forEach((row, i) => row.querySelector('.text').addEventListener('click', () => {
+    // Read after the browser has placed the caret.
+    setTimeout(() => {
+      const offset = window.getSelection().anchorOffset;
+      const key = i === 0 ? 'a' : 'b';
+      out[key].textContent = offset;
+      seen[key] = offset;
+      if (seen.a !== undefined && seen.b !== undefined) {
+        document.getElementById('verdict').textContent = seen.a === 0 && seen.b > 0
+          ? 'Bug is STILL LIVE: the plain row sent the caret to 0, the grip fix did not. Keep the grip.'
+          : seen.a > 0 && seen.b > 0
+            ? 'Bug looks FIXED: the caret landed where you clicked even without the grip.'
+            : 'Inconclusive — click the middle of each sentence, not its first character.';
+      }
+    }, 0);
+  }));
+</script>

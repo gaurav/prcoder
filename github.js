@@ -29,7 +29,10 @@ export function run(bin, args, { input, ...opts } = {}) {
         debug(`${line.length > 110 ? `${line.slice(0, 109)}…` : line}` +
           `  ${err ? `exit ${err.code}` : 'ok'} ${Date.now() - started}ms`);
         if (!err) return resolve(stdout);
+        // stdout goes the same way -- and a gh api graphql call that exits 1
+        // over a NOT_FOUND still prints the response, partial data and all.
         err.stderr = stderr;
+        err.stdout = stdout;
         // What the tool said, rather than Node's `Command failed: <argv>` -- which
         // for an issue title is the whole title. Every catch reads e.message.
         err.message = stderr.trim() || err.message;
@@ -48,6 +51,8 @@ const PR_FIELDS = [
   // headRefOid is GitHub's view of the branch head, which is what lets the sync
   // light work without a fetch. updatedAt gates the expensive full reload.
   'headRefOid', 'updatedAt', 'isCrossRepository',
+  // What /api/diff diffs from when GitHub sends a file no patch.
+  'baseRefOid',
 ].join(',');
 
 /** `gh pr view`, or null when there is no PR to view. */
@@ -79,9 +84,17 @@ export async function prBody(cwd, prUrl) {
   return lf(body);
 }
 
-/** Open PRs, for the switcher. */
+/**
+ * Open PRs, for the switcher -- and, filtered by `baseRefName`, for the list of
+ * pull requests into the branch you are on that the pane with no pull request
+ * shows. That field is not spare: it is free here, where a `gh pr list --base`
+ * of its own would be a call on a poll that already has seven. `url` is for the
+ * pane's links, read off GitHub rather than built from a host (#53).
+ * `isCrossRepository` is what stops a fork's `main` looking like a base here.
+ */
 export async function listPrs(cwd) {
-  const args = ['pr', 'list', '--state', 'open', '--json', 'number,title,headRefName,isDraft'];
+  const args = ['pr', 'list', '--state', 'open', '--json',
+    'number,title,headRefName,baseRefName,isDraft,url,isCrossRepository'];
   return JSON.parse(await gh(args, { cwd }));
 }
 
@@ -105,7 +118,7 @@ export async function loadPr(cwd, target) {
     files: pr.files.map((f) => ({ ...f, viewed: viewed.get(f.path) === 'VIEWED' })),
     nodeId,
     checks: rollup(statusCheckRollup),
-    issues: linkedIssues(pr),
+    issues: await withLinks(cwd, pr.url, linkedIssues(pr)),
     counts: { comments: comments?.length ?? 0, reviews: reviews?.length ?? 0 },
   };
 }
@@ -146,18 +159,24 @@ export async function setViewed(cwd, nodeId, path, viewed) {
 }
 
 /**
- * Per-file patch text, keyed by path. Shape confirmed against this repo's PR #1
- * on 2026-08-26: --slurp wraps the pages in one array, the REST field is
+ * Per-file `{patch, from}`, keyed by path. Shape confirmed against this repo's
+ * PR #1 on 2026-08-26: --slurp wraps the pages in one array, the REST field is
  * `filename` where `gh pr view` says `path` (same string), and `patch` starts
  * at the first @@ with no file header. It is absent for binary and oversized
  * files, and files past GitHub's 300-file cap are missing entirely — both read
  * back as null/undefined and the client falls through to the GitHub link.
+ *
+ * `from` is `previous_filename`, set only when GitHub saw the file as renamed
+ * (cli/cli#14116, checked 2026-09-18: `status: "renamed"`, a patch when it was
+ * edited too). Without it a pure rename is a file with no patch, and the pane
+ * would call it binary.
  */
 export async function fetchPatches(cwd, prUrl) {
   const { owner, repo, number } = parsePrUrl(prUrl);
   const out = await gh(['api', '--paginate', '--slurp',
     `repos/${owner}/${repo}/pulls/${number}/files`], { cwd });
-  return new Map(JSON.parse(out).flat().map((f) => [f.filename, f.patch ?? null]));
+  return new Map(JSON.parse(out).flat().map((f) =>
+    [f.filename, { patch: f.patch ?? null, from: f.previous_filename }]));
 }
 
 export function parsePrUrl(url) {
@@ -229,7 +248,7 @@ export function rollup(checks) {
 export function linkedIssues(pr) {
   const seen = new Map();
   for (const i of pr.closingIssuesReferences ?? []) {
-    seen.set(i.number, { number: i.number, title: i.title, url: i.url, closes: true });
+    seen.set(i.number, { number: i.number, url: i.url, closes: true });
   }
   const repoUrl = pr.url.replace(/\/pull\/\d+$/, '');
   for (const [, n] of (pr.body ?? '').matchAll(/(?:^|[\s(])#(\d+)\b/g)) {
@@ -237,4 +256,77 @@ export function linkedIssues(pr) {
     if (!seen.has(number)) seen.set(number, { number, url: `${repoUrl}/issues/${number}`, closes: false });
   }
   return [...seen.values()].sort((a, b) => a.number - b.number);
+}
+
+/**
+ * The same list with GitHub's own title and URL on every entry it could get
+ * them for, falling back to the number and the derived URL for the rest.
+ *
+ * They are their own call because no `gh pr view --json` field carries a title:
+ * `closingIssuesReferences` gives number, url and repository and nothing else
+ * (checked 2026-09-18), and a bare `#N` out of the body is only ever a number.
+ * It rides on loadPr, which status() runs on a reload rather than on every
+ * poll, so the poll's call count is unchanged and a reload costs one more.
+ *
+ * `issueOrPullRequest`, not `issue`: a `#N` in a description is as often a pull
+ * request as an issue -- #27 in this repo's own -- and `issue(number:)` on one
+ * resolves to nothing.
+ */
+async function withLinks(cwd, prUrl, issues) {
+  // ponytail: 50 aliases is plenty for a description; if a body ever needs more,
+  // chunk the numbers rather than growing one query.
+  const numbers = issues.map((i) => i.number).slice(0, 50);
+  const links = numbers.length ? await issueLinks(cwd, prUrl, numbers) : new Map();
+  for (const i of issues) {
+    const found = links.get(i.number);
+    i.title = found?.title ?? null;
+    // linkedIssues can only guess `/issues/N` from the repository URL, and half
+    // the numbers in a description like this one are pull requests. GitHub
+    // redirects, so the guess works -- but it is a guess, and the answer is
+    // already in the response the title came out of.
+    if (found?.url) i.url = found.url;
+  }
+  return issues;
+}
+
+/**
+ * What GitHub knows about a list of numbers in the PR's own repository, as
+ * number -> { title, url }.
+ *
+ * One aliased query for the lot, so a description mentioning a dozen issues is
+ * still one subprocess. Only the numbers are interpolated into it; owner and
+ * repo go through variables, as VIEWED_QUERY's do.
+ *
+ * A number that resolves to nothing -- a typo, or an issue that lives in
+ * another repo -- comes back as a NOT_FOUND *error* beside the data rather than
+ * a null inside it, and gh exits 1 over it with the whole response still on
+ * stdout. Confirmed against the real API on 2026-09-18. So the failure is read
+ * for its data: one bad number must not cost every other title.
+ */
+export async function issueLinks(cwd, prUrl, numbers) {
+  const { owner, repo } = parsePrUrl(prUrl);
+  const query = `query($owner:String!,$repo:String!){ repository(owner:$owner,name:$repo){ ` +
+    numbers.map((n) => `i${n}: issueOrPullRequest(number:${n})` +
+      `{ ... on Issue { title url } ... on PullRequest { title url } }`).join(' ') + ` } }`;
+  const args = ['api', 'graphql', '-f', `query=${query}`, '-F', `owner=${owner}`, '-F', `repo=${repo}`];
+  try {
+    return linksFrom(await gh(args, { cwd }));
+  } catch (e) {
+    return linksFrom(e.stdout);
+  }
+}
+
+/** The `iN: { title, url }` aliases of a response, whether or not it also
+ *  carried errors. Anything unparseable is nothing -- these are decoration and
+ *  a redirect, and a lookup that fails may not fail the pane. */
+export function linksFrom(out) {
+  let repo;
+  try {
+    repo = JSON.parse(out || '{}')?.data?.repository;
+  } catch {
+    return new Map();
+  }
+  return new Map(Object.entries(repo ?? {})
+    .filter(([, v]) => v?.title)
+    .map(([alias, v]) => [Number(alias.slice(1)), { title: v.title, url: v.url ?? null }]));
 }

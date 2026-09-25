@@ -29,27 +29,48 @@
         <h1>Diff</h1>
         <span id="diff-path"></span>
         <label id="diff-viewed-label"><input id="diff-viewed" type="checkbox" title="mark viewed on GitHub"> viewed</label>
-        <!-- The three that need the PR's head commit, hidden together when a
-             payload has none; the diff link below needs only the PR. -->
+        <!-- Diff first: it is what the pane itself shows. The other three need
+             the PR's head commit and hide together, separators included, when a
+             payload has none. -->
+        <a id="diff-gh" target="_blank" rel="noopener" title="this file's diff in GitHub's viewer">Diff</a>
         <span id="diff-out">
-          <a id="diff-file" target="_blank" rel="noopener" title="the whole file at this pull request's head, on GitHub">File ↗</a>
+          <span class="sep">·</span>
+          <a id="diff-file" target="_blank" rel="noopener" title="the whole file at this pull request's head, on GitHub">File</a>
           <span class="sep">·</span>
           <a id="diff-blame" target="_blank" rel="noopener" title="who last touched each line of it">Blame</a>
           <span class="sep">·</span>
           <a id="diff-history" target="_blank" rel="noopener" title="the commits that have touched this file">History</a>
-          <span class="sep">·</span>
         </span>
-        <a id="diff-gh" target="_blank" rel="noopener" title="this file's diff in GitHub's viewer">Diff</a>
+        <!-- Only while the outline is hidden and this file has one: style.css
+             decides, so nothing has to repaint it per file. -->
+        <button id="diff-outline-show" title="show the hunk outline">Outline</button>
         <button id="diff-close" title="close diff">✕</button>
       </header>
-      <div id="diff-body" class="scroll"></div>
+      <div id="diff-main">
+        <div id="diff-body" class="scroll"></div>
+        <!-- Inside the pane rather than between two of them, but the same
+             gutter: it writes a distance from <main>'s right edge, which is the
+             outline's own right edge, so the number is its width. -->
+        <div id="gut-outline" class="gut col" role="separator" aria-orientation="vertical"
+             tabindex="0" aria-label="resize the hunk outline" aria-valuemin="0" aria-valuemax="100"
+             data-var="--w-outline" data-from="right"></div>
+        <!-- One row per hunk, from the context git puts after the @@; a click
+             scrolls the body to that hunk. Empty, and so hidden, for a whole file. -->
+        <aside id="diff-side">
+          <button id="diff-outline-hide" title="hide the outline">✕</button>
+          <nav id="diff-outline" aria-label="hunks in this diff"></nav>
+        </aside>
+      </div>
     </section>
     <div id="gut-diff" class="gut row" role="separator" aria-orientation="horizontal"
          tabindex="0" aria-label="resize the diff pane" aria-valuemin="0" aria-valuemax="100"
          data-var="--h-diff" data-from="top"></div>
 
     <section id="term" class="pane">
-      <header><h1>Claude Code</h1></header>
+      <header>
+        <button id="term-fold" aria-expanded="true" aria-controls="term-host" title="collapse the coding agent pane">▼</button>
+        <h1>Claude Code</h1>
+      </header>
       <div id="term-host"></div>
     </section>
     <div id="gut-queue" class="gut row" role="separator" aria-orientation="horizontal"

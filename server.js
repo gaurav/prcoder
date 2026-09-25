@@ -5,6 +5,7 @@
 import http from 'node:http';
 import { spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
@@ -12,12 +13,13 @@ import { text as readBody } from 'node:stream/consumers';
 import { spawn as ptySpawn } from 'node-pty';
 import { WebSocketServer } from 'ws';
 import { loadPr, prHeads, prBody, listPrs, setViewed, setBody, createIssue, fetchPatches, runCount } from './github.js';
-import { snapshot, currentBranch, repoInfo, prScope, compareUrl, checkoutPr, pushBranch, remoteBranchHead } from './git.js';
+import { snapshot, currentBranch, repoInfo, prScope, compareUrl, originOwner, checkoutPr, pushBranch, remoteBranchHead, trackingHead, localPatch } from './git.js';
 import { groupFiles, fileUrl, fileViews } from './files.js';
 import { parseFuture, renderPrBlock, syncFromPrBlock, toggleTask } from './queue.js';
 import { readStore, writeStore, readPort, writePort, replaceItems } from './store.js';
 import * as term from './term.js';
 import { syncPhrase } from './public/pr.js';
+import { grammars } from './public/diff.js';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const repo = process.cwd();
@@ -396,8 +398,12 @@ async function status({ full = false } = {}) {
     await refreshPr(detached);
   }
 
-  // With no PR there is no headRefOid to compare against, so ask origin.
-  const oid = pr?.headRefOid ?? heads?.headRefOid ?? await remoteBranchHead(repo, branch);
+  // With no PR there is no headRefOid to compare against, so read git's own
+  // record of origin's head -- not origin: that was a `git ls-remote` a minute
+  // per visible tab, on the one branch state where nothing has changed until
+  // you push (#19). The create route is the one place that still asks origin,
+  // because it pushes on the answer.
+  const oid = pr?.headRefOid ?? heads?.headRefOid ?? await trackingHead(repo, branch);
   const snap = await snapshot(repo, oid, branch);
   const scope = prScope(pr, { branch: snap.branch, nameWithOwner: info.nameWithOwner });
   const tracked = scope === 'current' || scope === 'none';
@@ -470,7 +476,7 @@ const routes = {
     // rather than trusting a sync verdict computed without a remote head.
     const pushed = !(await remoteBranchHead(repo, branch));
     if (pushed) await pushBranch(repo);
-    return { url: compareUrl(info.nameWithOwner, info.defaultBranch, branch), pushed };
+    return { url: compareUrl(info.nameWithOwner, info.defaultBranch, branch, await originOwner(repo)), pushed };
   },
 
   'POST /api/pr/viewed': async ({ path: p, viewed }) => {
@@ -519,7 +525,15 @@ const routes = {
     const cur = requirePr();
     const key = cur.url + cur.headRefOid;
     if (patches.key !== key) patches = { key, map: await fetchPatches(repo, cur.url) };
-    return { path: p, patch: patches.map.get(p) ?? null };
+    const got = patches.map.get(p) ?? { patch: null };
+    // Only for a path the pull request has: the path is the page's to send, and
+    // a file GitHub sent no patch for is one git can usually still make here.
+    const file = cur.files.find((f) => f.path === p);
+    if (got.patch != null || !file) return { path: p, ...got };
+    return { path: p, ...got, patch: await localPatch(repo, {
+      baseOid: cur.baseRefOid, baseRef: cur.baseRefName, head: cur.headRefOid, path: p, from: got.from,
+      additions: file.additions, deletions: file.deletions,
+    }) };
   },
 
   'GET /api/queue': () => readQueue(),
@@ -610,14 +624,42 @@ const vendor = {
   '/vendor/xterm.css': '@xterm/xterm/css/xterm.css',
   '/vendor/addon-fit.mjs': '@xterm/addon-fit/lib/addon-fit.mjs',
   '/vendor/addon-web-links.mjs': '@xterm/addon-web-links/lib/addon-web-links.mjs',
+  // Prism core ships markup, css, clike and javascript, and the page asks for
+  // one file per grammar on top of it. *Which* grammars is the page's own
+  // business -- `grammars` in public/diff.js is its extension map plus what
+  // those grammars are built on (tsx extends jsx and typescript) -- so a new
+  // language is added there alone and served here without being named twice.
+  // The paths stay literal, because they are a fact about node_modules.
+  '/vendor/prism.js': 'prismjs/prism.js',
+  ...Object.fromEntries(grammars
+    .map((l) => [`/vendor/prism/${l}.js`, `prismjs/components/prism-${l}.min.js`])),
 };
+
+/**
+ * The vendor files not on disk under `dir`'s node_modules. Nothing else says
+ * so: a missing xterm is a blank page and a missing Prism is a plain file with a
+ * line in the browser console. A pull that adds a dependency and no `npm
+ * install` after it was exactly that on 2026-09-23.
+ */
+export const missingVendor = (dir = root) =>
+  Object.values(vendor).filter((f) => !existsSync(path.join(dir, 'node_modules', f)));
+
+// A second line of defence for the page that holds the PTY. A hole in the
+// description renderer loads no script, and no other page can frame prcoder and
+// turn a click on its own content into a click on ▶. style-src stays loose
+// because xterm injects its own <style>; img-src is left unset so the data:
+// favicon still loads. docs/Security.md argues the frame; #49 is the rest.
+const csp = "script-src 'self'; style-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'";
 
 const mime = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css' };
 
 async function serveFile(res, file) {
   try {
     const body = await fs.readFile(file);
-    res.writeHead(200, { 'content-type': mime[path.extname(file)] ?? 'application/octet-stream' });
+    res.writeHead(200, {
+      'content-type': mime[path.extname(file)] ?? 'application/octet-stream',
+      'content-security-policy': csp,
+    });
     res.end(body);
   } catch {
     res.writeHead(404).end('not found');
@@ -927,6 +969,10 @@ if (import.meta.main) {
   // so the age above stays honest, and term.status() writes nothing at all
   // while the rendered lines are unchanged.
   setInterval(repaint, 30_000).unref();
+
+  // By package: a missing Prism is eleven files and one fix.
+  const missing = new Set(missingVendor().map((f) => f.split('/').slice(0, f.startsWith('@') ? 2 : 1).join('/')));
+  if (missing.size) console.error(`not in node_modules, so npm install first: ${[...missing].join(', ')}`);
 
   // ready() needs the port we meant to be on, so it is settled before the
   // socket is up rather than recomputed from the path afterwards.

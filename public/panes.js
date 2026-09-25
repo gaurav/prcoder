@@ -1,6 +1,11 @@
 // Dragging the lines between the panes. Each gutter owns one CSS length that
 // style.css reads out of <main>, so the whole feature is: write a number, let
 // the grid do the layout.
+//
+// Every length is a distance from one edge of <main>, including the diff
+// outline's, which is a flex item rather than a grid track: the property is set
+// on <main> and inherits down to it, so a gutter inside a pane needs nothing
+// here beyond its direction.
 
 const main = document.querySelector('main');
 const KEY = 'prcoder:panes';
@@ -21,6 +26,7 @@ const save = () => {
 /** Pointer position as a distance from the edge of <main> the pane grows from. */
 const px = (r, from, e) => ({
   left: e.clientX - r.left,
+  right: r.right - e.clientX,
   top: e.clientY - r.top,
   bottom: r.bottom - e.clientY,
 }[from]);
@@ -35,14 +41,17 @@ const px = (r, from, e) => ({
  */
 const at = (r, from, g) => {
   const b = g.getBoundingClientRect();
-  return { left: b.left - r.left, top: b.top - r.top, bottom: r.bottom - b.bottom }[from];
+  return {
+    left: b.left - r.left, right: r.right - b.right,
+    top: b.top - r.top, bottom: r.bottom - b.bottom,
+  }[from];
 };
 
 const reports = [];
 
 for (const g of document.querySelectorAll('.gut')) {
   const { var: name, from } = g.dataset;
-  const along = from === 'left' ? 'width' : 'height';
+  const along = from === 'left' || from === 'right' ? 'width' : 'height';
 
   // What a screen reader can say about a line that has no text: how far along
   // <main> it sits. The clamp() bounds are a percentage and two pixel values in
@@ -82,8 +91,9 @@ for (const g of document.querySelectorAll('.gut')) {
   //
   // `grows` is which way the pane's own edge runs: the queue grows *upward*
   // from the bottom of <main>, so pressing Down there has to make its number
-  // smaller, or the separator would walk the wrong way from under the key.
-  const grows = from === 'bottom' ? -1 : 1;
+  // smaller, or the separator would walk the wrong way from under the key. The
+  // outline grows leftward from the right edge and reads the same way.
+  const grows = from === 'bottom' || from === 'right' ? -1 : 1;
   g.addEventListener('keydown', (e) => {
     if (e.key === 'Home') {
       e.preventDefault();

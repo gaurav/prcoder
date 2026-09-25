@@ -125,22 +125,52 @@ ws.onclose = () => {
 term.onData((d) => send({ type: 'input', data: d }));
 new ResizeObserver(sync).observe(document.getElementById('term-host'));
 
+// Folding the terminal to its header, stored like the outline's ✕ in diff.js.
+// The PTY keeps its size while folded: a display:none host has no height, so
+// fit() gets NaN rows and returns without resizing, and the ResizeObserver
+// above re-fits it on the way back out.
+const TERM_KEY = 'prcoder:term';
+const fold = document.getElementById('term-fold');
+function foldTerm(off, save = true) {
+  document.querySelector('main').classList.toggle('term-off', off);
+  fold.setAttribute('aria-expanded', String(!off));
+  fold.textContent = off ? '▶\uFE0E' : '▼';   // FE0E: text, never macOS's emoji ▶
+  fold.title = `${off ? 'expand' : 'collapse'} the coding agent pane`;
+  if (save) try { localStorage.setItem(TERM_KEY, off ? 'off' : 'on'); } catch { /* this session only */ }
+  if (!off) term.focus();   // expanding it is to talk to it
+}
+try { if (localStorage.getItem(TERM_KEY) === 'off') foldTerm(true, false); } catch { /* shown */ }
+const folded = () => document.querySelector('main').classList.contains('term-off');
+fold.addEventListener('click', () => foldTerm(!folded()));
+// Not from the button, whose two clicks have already toggled twice.
+document.querySelector('#term > header').addEventListener('dblclick', (e) => {
+  if (!e.target.closest('button')) foldTerm(!folded());
+});
+
 // Type an item into Claude's prompt. If Claude is mid-turn it queues the
 // message itself, which is exactly the behaviour we want.
-function sendToClaude(text) {
-  send({ type: 'input', data: text + '\r' });
+// `submit` false types the text and stops there: the prompt is left ready to
+// edit and send by hand, which is what the queue's ▶ wants. Trailing
+// whitespace is cut either way -- a newline in the text *is* the Enter that
+// would have sent it half-written.
+function sendToClaude(text, submit = true) {
+  send({ type: 'input', data: text.replace(/\s+$/, '') + (submit ? '\r' : '') });
   term.focus();
 }
 
 // The switcher only changes when PRs are opened or closed, so it is not worth a
-// call every minute — page load and opening the dropdown are enough.
+// call every minute — page load, opening the dropdown, and a checkout are
+// enough. The branch-only pane's list of what merges into this branch comes out
+// of the same array, and is as fresh as that.
 let prs = [];
 let last = null;
 const loadPrs = () => api('/api/prs', undefined, 'GET')
   .catch(() => [])   // the switcher is a convenience; a failure is not a banner
   // Repaint, or a PR opened since page load stays invisible until the next
-  // poll — the switcher only rebuilds its options when the set changes.
-  .then((l) => { prs = l; if (last) renderHeader(last, prs, handlers); });
+  // poll — the switcher only rebuilds its options when the set changes. The
+  // whole status, because the branch-only pane reads this list too; `last` is
+  // already the branch this fetch was for, so nothing asks for it again.
+  .then((l) => { prs = l; if (last) paint(last); });
 document.getElementById('pr-switch').addEventListener('mousedown', loadPrs);
 
 const NOTES = {
@@ -174,6 +204,12 @@ const fileHandlers = {
 
 function paint(status) {
   const moved = last?.pr?.headRefOid !== status.pr?.headRefOid;
+  // A checkout is the one thing that changes which pull requests merge into the
+  // branch under you, and the branch-only pane lists them. Refreshed here rather
+  // than on the poll, which is the whole reason that list is affordable.
+  // `last &&`, or the first paint counts as a change and fetches the list a
+  // second time behind the one the page load already asked for.
+  const switched = last && last.branch !== status.branch;
   last = status;
   // Named for the tab strip, not the page: which PR, in which repo. A poll
   // that fails leaves the last good name up rather than reverting to
@@ -182,9 +218,19 @@ function paint(status) {
   renderHeader(status, prs, handlers);
   renderQueueSync(status);
   if (status.pr) {
-    renderPr({ ...status.pr, note: NOTES[status.scope] },
-      { ...fileHandlers, selected: selectedPath() });
-  } else renderNoPr(status, { onCreate: createPr });
+    // The Stack tab reads `prs`, which is this repository's list: against a pull
+    // request in another one it would name strangers, and Switch would check
+    // out whichever PR here has the same number. Null rather than empty, so the
+    // tab says it has no list instead of saying the list is empty.
+    renderPr({ ...status.pr, note: NOTES[status.scope] }, {
+      ...fileHandlers,
+      selected: selectedPath(),
+      prs: status.scope === 'other-repo' ? null : prs,
+      onSwitch: switchPr,
+      blocked: status.dirtyFiles.length > 0,
+    });
+  } else renderNoPr(status, prs, { onCreate: createPr, onSwitch: switchPr });
+  if (switched) loadPrs();
   // Mirroring needs the PR to be *this* branch's: prcoder will not write our
   // items into a PR we are only looking at, so the controls that would ask it
   // to must disable themselves rather than silently do nothing.

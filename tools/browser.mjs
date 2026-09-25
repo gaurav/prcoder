@@ -2,7 +2,8 @@
 // change is otherwise verified by reading the CSS, which is how three of them
 // shipped unseen.
 //
-//   node tools/browser.mjs [outdir]        # default: ./data/shots (gitignored)
+//   node tools/browser.mjs [label]         # PNGs to ./data/shots/<label>/ (gitignored)
+//                                         # the label says what the run was for; default `latest`
 //   PRCODER_BROWSER=firefox node tools/browser.mjs
 //
 // Firefox is a separate download: `npx playwright install firefox` once.
@@ -26,16 +27,19 @@
 
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:net';
-import fs from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium, firefox } from 'playwright';
+import { openShots, pruneShots } from './shots.mjs';
 
 const repo = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 // data/, not a new top-level shots/: this repo's scratch space is data/, and it
-// is gitignored precisely so driver output has somewhere to live.
-const out = path.resolve(process.argv[2] ?? path.join(repo, 'data', 'shots'));
+// is gitignored precisely so driver output has somewhere to live. The argument
+// is a label for this run rather than a path -- what you were looking at, so
+// the PNGs still say so a week later -- and tools/shots.mjs is what it means.
+const shotsRoot = path.join(repo, 'data', 'shots');
+const label = process.argv[2] ?? 'latest';
 const port = Number(process.env.PRCODER_PORT) || 17434;
 
 // server.js falls back to a free port when the one it is given is taken, and
@@ -52,7 +56,8 @@ const free = (p) => new Promise((res, rej) => {
 });
 await free(port);
 
-await fs.mkdir(out, { recursive: true });
+// Before the server starts: a bad label should fail while nothing is running.
+const out = await openShots(shotsRoot, label);
 // Everything below is written against this repo's PR #1 -- its sections, its
 // file groups, its issue chips -- and the server follows the current branch, so
 // a run from any other branch drives a pull request the assertions do not fit.
@@ -78,8 +83,8 @@ for (const sig of ['SIGTERM', 'SIGHUP', 'SIGINT']) process.on(sig, () => process
 // `npx playwright install firefox` has been run -- not whether the machine has
 // Firefox. Chromium is the fallback, and PRCODER_BROWSER=chromium|firefox is
 // the override; which one ran matters for reading the output, so it is logged.
-const engine = { chromium, firefox }[process.env.PRCODER_BROWSER]
-  ?? (existsSync(firefox.executablePath()) ? firefox : chromium);
+const forced = { chromium, firefox }[process.env.PRCODER_BROWSER];
+const engine = forced ?? (existsSync(firefox.executablePath()) ? firefox : chromium);
 console.log('engine: ', engine.name());
 // Which of the server's two ways of finding a pull request this run is about to
 // exercise. Worth saying out loud: pinning one is the only way to drive the
@@ -90,8 +95,25 @@ console.log('engine: ', engine.name());
 console.log('pr:     ', process.env.PRCODER_PR
   ? `pinned to #${process.env.PRCODER_PR} (branch-following not exercised)`
   : "following the current branch");
-const browser = await engine.launch();
-// The PR pane defaults to its 375px floor at any width, so 1440 is simply a
+// existsSync above says the build was downloaded, not that it starts, and on
+// macOS 27 Firefox does not -- see tools/firefox-runner. So the fallback has to
+// survive a launch that fails as well as one that was never installed, or the
+// default run waits out Playwright's 180s timeout and dies with no browser at
+// all. The wait is 45s here because this is the unattended path and a browser
+// that has not started by then is not starting; a forced engine keeps the full
+// timeout and is left to fail, since falling back is the wrong answer to
+// someone who asked for Firefox by name.
+const browser = await (async () => {
+  try {
+    return await engine.launch(forced ? {} : { timeout: 45_000 });
+  } catch (err) {
+    if (forced || engine === chromium) throw err;
+    console.log(`engine:  ${engine.name()} would not start, falling back to chromium`);
+    console.log('        ', String(err).split('\n')[0]);
+    return chromium.launch();
+  }
+})();
+// The PR pane opens at 375px at any window width, so 1440 is simply a
 // common laptop size with room for all three panes.
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
 page.on('pageerror', (e) => console.log('PAGE EXCEPTION:', e.message));
@@ -126,6 +148,8 @@ const drag = async (sel, x, y) => {
 // what you can see while you are looking at another one.
 const tabs = await page.locator('#pr-head .tab').allInnerTexts();
 console.log('tabs:    ', tabs.join('  |  '), '  (want a count on each)');
+console.log('switch:  ', (await page.$$eval('#pr-switch option', (os) => os.slice(1, 4)
+  .map((o) => o.textContent.slice(0, 12)))).join('  |  '), '  (want #1, then its stack indented under it)');
 
 // The checks, which are a tab and a coloured dot rather than the badges they
 // used to be above the title. The colour is a computed background rather than a
@@ -166,22 +190,47 @@ console.log('still open after a refresh:',
   JSON.stringify(await page.locator('.md-section[open] > summary h3').allInnerTexts()),
   ' (want the one clicked above)');
 
-// The head's way out of the pane, which is only right-aligned on screen: the
-// stylesheet says `justify-content: flex-end` on a row that is `.meta` as well,
-// and whether those two agree is a fact about the browser. Measured against the
-// head's own content box, with the title's left edge as the control -- the row
-// moved, the rest of the head did not.
+// The head's way out of the pane, which is two lines and only on screen: both
+// of them are `.meta`, neither has an alignment rule any more, and whether that
+// leaves them at the same left edge as everything else in the head is a fact
+// about the browser rather than about the stylesheet. The title is the control
+// -- it never moved, and these two are now supposed to agree with it. (They did
+// not until 2026-09-21: the row was `justify-content: flex-end`, and this check
+// measured its right edge instead. The stylesheet says why it moved back.)
 console.log('head:   ', await page.evaluate(() => {
   const row = document.querySelector('#pr-head .pr-links');
-  const head = document.getElementById('pr-head');
-  const pad = parseFloat(getComputedStyle(head).paddingRight);
-  const edge = Math.round(head.getBoundingClientRect().right - pad);
-  const title = document.querySelector('#pr-head .pr-title').getBoundingClientRect();
-  return `${[...row.querySelectorAll('a')].map((a) => a.textContent).join(' ')} | row right ${
-    Math.round(row.getBoundingClientRect().right)} of ${edge}, title left ${Math.round(title.left)}`;
-}), ' (want the row flush with the head edge, the title still at the margin)');
+  const repo = document.querySelector('#pr-head .pr-repo');
+  const at = (el) => Math.round(el.getBoundingClientRect().left);
+  const title = at(document.querySelector('#pr-head .pr-title'));
+  return `${[...row.querySelectorAll('a')].map((a) => a.textContent).join(' ')} | row left ${
+    at(row)}, repo left ${at(repo)}, title left ${title}`;
+}), ' (want all three the same)');
 console.log('out:    ', await page.evaluate(() =>
   [...document.querySelectorAll('#pr-head .pr-links a')].map((a) => a.href).join(' ')));
+// The repository is the line under that row because it is the one link with no
+// bound on its width, and it clips rather than wraps.
+//
+// Both lines say `whole` against this repository and that is the right answer:
+// `gaurav/prcoder` is 14 characters and fits the 180px floor with room over.
+// The clipping itself is pinned in test/browser.test.js, whose fixture carries
+// a 44-character slug; what a driver run adds is the shape of the block at a
+// width a drag can really reach, which is pr-head-narrow.png -- the links row
+// wraps there, and the repository line under it does not.
+//
+// So this is a check that goes quiet on a long slug: `owner ... clipped` here
+// means the run was against a repository whose name this pane cannot hold, and
+// what to look at then is whether the *name* is still whole beside it.
+const repoLine = async () => page.evaluate(() => {
+  const state = (sel) => { const e = document.querySelector(sel);
+    return `${JSON.stringify(e.textContent)} ${e.scrollWidth > e.clientWidth ? 'clipped' : 'whole'}`; };
+  return `owner ${state('#pr-head .pr-repo .owner')}, name ${state('#pr-head .pr-repo .name')}`;
+});
+console.log('repo:   ', await repoLine(), ' (want both whole -- this repo\'s slug is short)');
+await page.evaluate(() => document.querySelector('main').style.setProperty('--w-pr', '180px'));
+console.log('repo180:', await repoLine(),
+  ' (want the name whole; the owner clips only where the slug is long)');
+await page.locator('#pr').screenshot({ path: path.join(out, 'pr-head-narrow.png') });
+await page.evaluate(() => document.querySelector('main').style.removeProperty('--w-pr'));
 // The dots between them are delimiters, and were an `a::before` -- which is
 // inside the link's box, so they were underlined with it and a press on one
 // followed the link to its right. Hit-tested rather than read off the DOM: that
@@ -202,6 +251,24 @@ console.log('links:  ', await page.evaluate(() => {
   return `${find(/^README$/)?.href} | ${find(/^#\d+$/)?.href}`;
 }), ' (want a /blob/<head>/README.md URL, and an /issues/N one)');
 
+// The issue lists' titles. Where the lists sit and how a row is shaped is
+// test/browser.test.js's now, against a fixture -- what a fixture cannot say is
+// whether the real title lookup (a second gh call, github.js issueLinks) came
+// back with anything, and an untitled row is the only thing on screen that shows
+// it did not.
+console.log('titled: ', await page.evaluate(() => {
+  const rows = [...document.querySelectorAll('#pr-body .issues a')];
+  return `${rows.filter((a) => a.querySelector('.ttl')).length} of ${rows.length}`;
+}), ' (want every row titled: a bare number is a lookup that returned nothing)');
+
+// A number in a description is as often a pull request as an issue, and only
+// GitHub can say which: the chip's URL is the one the titles query returned, not
+// `/issues/<n>` built from the number. #27 is this repo's queue-tabs PR, so it is
+// the one that says whether that held -- /issues/27 redirects, and a redirect is
+// exactly what this stops being the answer.
+console.log('chip 27:', await page.evaluate(() => [...document.querySelectorAll('#pr-body .issues a')]
+  .find((a) => a.textContent.startsWith('#27 '))?.href), ' (want /pull/27, not /issues/27)');
+
 // Where each tab was left. The two offsets are kept apart in module state, and
 // the switch is what used to lose them: renderPrTab read scrollTop *after*
 // switchTo had already moved `tab`, so Detail's offset was filed under Files
@@ -221,8 +288,20 @@ await page.locator('#pr-head .tab').nth(0).click();
 console.log('scroll:  ', `Files opened at ${filesFresh}, Detail came back to ${await scrollNow()}`,
   `  (want 0, then ${onDetail})`);
 
-// The measure, which is inert at the pane's 375px floor and is the whole reason
-// for the cap at the other end of its range.
+// The third tab, which lists the open PRs built on this one's branch. They are
+// nested by base, each with a #N link out and a Switch. Back to Detail after
+// it, since everything below expects the default tab. By name, not position:
+// #60 adds a Checks tab to the same row.
+await page.locator('#pr-head .tab', { hasText: 'Stack' }).click();
+await page.waitForSelector('#pr-body .pr-into, #pr-body .empty');
+console.log('stack:   ', await page.$$eval('#pr-body .pr-row .pr-num', (as) => as.map((a) => a.textContent).join(' ')
+  || document.querySelector('#pr-body .empty')?.textContent),
+'  (want every open PR based on this head, as #N links)');
+await page.locator('#pr').screenshot({ path: path.join(out, 'pr-stack.png') });
+await page.locator('#pr-head .tab').nth(0).click();
+
+// The measure, which is inert at the pane's 375px default and is the whole
+// reason for the cap at the other end of its range.
 await drag('#gut-pr', 900, 450);
 await page.waitForTimeout(300);
 await page.locator('#pr').screenshot({ path: path.join(out, 'pr-wide.png') });
@@ -244,11 +323,27 @@ await page.locator('#pr').screenshot({ path: path.join(out, 'pr-files.png') });
 console.log('groups open on arrival:', await page.locator('.group[open]').count(),
   'of', await page.locator('.group').count(), ' (want all of them)');
 // The second level: one fold per directory inside each group, and rows that say
-// only what the fold above them does not.
+// only what the fold above them does not. The order is the pane's own -- a
+// directory ahead of what is inside it, siblings alphabetical -- so this is
+// where a comparator that has quietly become a string compare shows up.
 console.log('dirs:    ', (await page.locator('.dir > summary h3').allInnerTexts()).join(' '),
-  ' (want a directory per group, each ending in / or named (root))');
+  ' (want each ending in /, a parent before its children, alphabetical)');
 console.log('rows:    ', (await page.locator('.dir').first().locator('.file .path').allInnerTexts()).join(' '),
   ' (want names without the directory above them)');
+// Files at the top of the repository are not a fold: they are the group's first
+// rows, above every directory in it. Counted per group rather than over the
+// pane, because "before the first .dir" is only a claim within one group.
+console.log('root rows lead their group:', await page.evaluate(() => {
+  const groups = [...document.querySelectorAll('.group > .sec-body')];
+  const say = groups.map((b) => {
+    const kids = [...b.children];
+    const rows = kids.filter((k) => k.classList.contains('file'));
+    const firstDir = kids.findIndex((k) => k.classList.contains('dir'));
+    const late = rows.some((r) => firstDir !== -1 && kids.indexOf(r) > firstDir);
+    return `${rows.length}${late ? ' AFTER A DIR' : ''}`;
+  });
+  return `${say.join(', ')} across ${groups.length} groups`;
+}), ' (want a count per group and no AFTER A DIR)');
 await page.locator('.group > summary').first().click();
 await page.waitForTimeout(200);
 console.log('after collapsing one:', await page.locator('.group[open]').count(), 'open');
@@ -278,6 +373,27 @@ await page.waitForTimeout(200);
 
 await page.locator('.file .path').first().click();   // opens the diff pane (Files tab)
 await page.waitForSelector('main.diff-open');
+// The title says whether the pane holds a change or a whole file; every file in
+// PR #1 is one the PR adds, so it should read NEW there and DIFF nowhere.
+await page.waitForFunction(() => document.querySelectorAll('#diff-body .dl').length > 0);
+console.log('diff title:', await page.locator('#diff h1').innerText(), ' (want NEW: every file in PR #1 is added)');
+console.log('outline:', await page.evaluate(() => {
+  const d = (id) => getComputedStyle(document.getElementById(id)).display;
+  return `${document.getElementById('diff-outline').children.length} rows, ${d('diff-side')}, show button ${d('diff-outline-show')}`;
+}), ' (want 0 rows, none, show button none: a whole file has no hunks to list, or to bring back)');
+
+// The NEW view is the highlighted one, and the colours are the whole of what
+// says so -- a regression to plain text is a screenshot that looks ordinary.
+// So the classes are printed too: they are prcoder's own `tok-` names over
+// Prism's token tree, and the file open here is a .js one the PR adds.
+const tokens = () => page.evaluate(() => {
+  const spans = [...document.querySelectorAll('#diff-body .dl span')];
+  return { n: spans.length, names: [...new Set(spans.flatMap((s) => [...s.classList]))].sort().join(' ') };
+});
+const hi = await tokens();
+console.log('highlight:', `${hi.n} spans:`, hi.names || '(none)',
+  '\n           (want spans in tok- classes: comment, keyword, string at least)');
+await page.locator('#diff').screenshot({ path: path.join(out, 'diff.png') });
 
 // The diff pane's two ways out: the file itself at this PR's head, and the
 // patch in GitHub's diff viewer. Both hrefs are read rather than assumed
@@ -286,8 +402,25 @@ await page.waitForSelector('main.diff-open');
 const diffLinks = await page.locator('#diff header a').evaluateAll(
   (as) => as.map((a) => `${a.innerText} ${a.href}`));
 console.log('diff out:', diffLinks.join('\n          '),
-  '\n           (want File/Blame/History at /blob|blame|commits/<40-hex>/<path>,',
-  'Diff at /pull/N/files#diff-<64-hex>)');
+  '\n           (want Diff at /pull/N/files#diff-<64-hex> first, then',
+  'File/Blame/History at /blob|blame|commits/<40-hex>/<path>; no ↗ on any)');
+// The same path with `language` answering null: an extension with no grammar
+// is not a file that fails to highlight, it is one that is never handed to
+// Prism at all, and the two look identical until you count the spans.
+const plain = page.locator('.file[data-path=".gitignore"] .path');
+if (await plain.count()) {
+  await plain.click();
+  await page.waitForFunction(() => document.getElementById('diff-path').textContent === '.gitignore'
+    && document.querySelectorAll('#diff-body .dl').length > 0);
+  const none = await tokens();
+  console.log('plain:    ', `${none.n} spans`, none.names, ' (want 0 spans: .gitignore has no grammar)');
+  // Back to the highlighted file, which is what the screenshots below hold.
+  await page.locator('.file .path').first().click();
+  await page.waitForFunction(() => document.querySelectorAll('#diff-body .dl span').length > 0);
+} else {
+  console.log('plain:     no extensionless file in this PR to check');
+}
+
 await drag('#gut-pr', 520, 450);
 await drag('#gut-diff', 720, 300);
 await drag('#gut-queue', 720, 640);
@@ -334,7 +467,7 @@ console.log('home:    ', JSON.stringify(homed), '  (want "" -- back to the templ
 console.log('valuenow:', `${nowBefore} -> ${nowShoved} -> ${await valuenow()} after Home`,
   ' (want a percentage of <main> that moves with the keys and again with Home)');
 
-// Home just put the pane back on its 375px floor, which is the one width where
+// Home just put the pane back to its 375px default, which is the one width where
 // the balanced wrap does anything: a real title runs to three lines there, and
 // a greedy wrap leaves the last of them holding a word or two. Range rectangles
 // rather than a screenshot -- the claim is about how wide the lines come out,
@@ -483,3 +616,5 @@ console.log('shots: ', out);
 
 await browser.close();
 server.kill();
+// Last, so this run's label is the newest and is never its own candidate.
+await pruneShots(shotsRoot);

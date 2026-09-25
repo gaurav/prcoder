@@ -75,8 +75,10 @@ holds now.
 
 ## What it deliberately does not do
 
-Review comment threads (counts and a link only), syntax highlighting in the diff pane,
-multi-session and worktree management, and any agent-writable queue API. No auto-pull, and nothing
+Review comment threads (counts and a link only), syntax highlighting of a modified file's diff (a
+file the PR adds is highlighted, because a whole file is what a tokenizer can read from its first
+line and a hunk is not; [#68](https://github.com/gaurav/prcoder/issues/68) has the safe way for the
+rest), multi-session and worktree management, and any agent-writable queue API. No auto-pull, and nothing
 parses the terminal. The tab icon does read whether Claude is working, but from the *timing* of the
 PTY's output rather than its content — blue while frames are arriving, green two seconds after they
 stop — and that is the whole of prcoder's idea of what the session is doing.

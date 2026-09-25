@@ -26,19 +26,29 @@ checked out, and re-derives that every 60 seconds, so a `git checkout` in
 another terminal -- or by Claude in the middle pane -- is picked up on its own.
 Nothing is remembered between polls; every fact comes back from `git` and `gh`.
 
-The switcher in the PR pane header lists open pull requests and runs
+The switcher in the PR pane header lists open pull requests, each followed by
+the ones stacked on its branch and indented under it, and runs
 `gh pr checkout` to move between them. Uncommitted work hides it behind a
 Commit button, because the checkout would fail anyway. On a branch with no pull
 request the pane says so, disables the editing controls, and offers to create
 one -- pushing the branch first if GitHub has not seen it. It still carries the
-way out of the window that the pull request head does: the repository and its
-issues, pulls and milestones.
+way out of the window that the pull request head does, laid out the same way:
+the issues, pulls and milestones, and the repository on the line below them.
+
+It also lists the open pull requests that merge *into* the branch you are on,
+which on `main` is the question that branch is interesting for, with each one's
+stack nested under it. A row's `#N` opens that pull request on GitHub, so you
+can compare a few in other tabs; its **Switch** checks it out, the same way the
+switcher does. Uncommitted work disables Switch for the same reason it hides the
+switcher, and leaves the links alone.
 
 Next to it, a light for the one thing prcoder cannot fix for you: whether the
 branch and the remote agree. It reads `unpushed`, `N unpushed`, `pull needed`
 or `diverged`, and it needs no `git fetch` -- GitHub's view of the branch head
-comes back with the pull request metadata. That does mean it is only as fresh
-as the last poll.
+comes back with the pull request metadata. On a branch with no pull request it
+is git's own record of origin's head from the last push or fetch, the one
+`git status` reads, so a push from another machine shows only after a fetch.
+Either way it is only as fresh as the last poll.
 
 ## Arguments
 
@@ -75,15 +85,36 @@ row of prcoder tabs stays readable at tab width.
 
 ## The panes
 
-Every line between the panes is a splitter: drag it to resize, double-click it
-to drop back to the default. The sizes are remembered per browser, so the
-layout you settle on is the one the next `prcoder` opens with.
+Every line between the panes is a splitter, and so is the diff outline's left
+edge: drag it to resize, double-click it to drop back to the default. The sizes
+are remembered per repo and per browser, so the layout you settle on is the one
+the next `prcoder` in that repo opens with. They live in the browser's
+`localStorage`, which is kept per origin -- and the origin includes the port,
+which is `.prcoder/port.json`'s. So each repo and each worktree has a layout of
+its own, and so does each browser or profile. The terminal folds to its header
+line with the ▼ before its title, or a double-click on the header, and the diff
+(or the queue, with no diff open) takes the room; the same again unfolds it.
+Whether the terminal is folded, whether the outline is shown, and which way the
+queue adds are stored the same way. A repo whose port changes
+(`port.json` deleted, its port busy at startup, or `PRCODER_PORT` set) opens
+with the default layout, and gets the old one back once it is on the old port
+again.
 
 **Pull request** — which pull request you are in stays at the top: the title,
-the state, the branch it targets. Under those, right-aligned, is the way out of
-the window: this pull request on GitHub, the repo, and its issues, pulls and
-milestones. Below that are the tabs, because reading the argument, working the
-files and watching CI are three different things and each wants the whole pane.
+the state, the branch it targets. Under those is the way out of the
+window, on two lines: this pull request on GitHub with its issues, pulls and
+milestones, and below them the repository they are all in. The repository is on
+its own line because it is the only one of them whose length has no bound, and
+it truncates rather than wraps -- a long owner is clipped and the repository's
+own name kept, since that is the half that says which checkout you are in. It
+is drawn as a chip rather than a fifth link, because a line of its own said
+where it was without saying it was anything else: the row above is the list of
+places to go, and the chip under it is the one line in the head that answers
+which checkout this is.
+Below that are the tabs, because reading the argument, working the files and
+watching CI are three different things and each wants the whole pane -- and the
+last, *Stack*, is the pull requests built on this one's branch, laid out like
+the list above.
 
 *Detail* is the description. It opens as the lead paragraph and then one folded
 line per section, so a long one is an outline you scan rather than a wall you
@@ -92,40 +123,57 @@ The prose is set in serif at a reading size and capped to a comfortable line
 length, because it is the one thing in the window that is read rather than
 operated. Checklists in it are real checkboxes and write straight back to the
 description -- ticking one inside prcoder's own TODO block ticks the queue item
-it came from.
+it came from. It ends with the issues the description points at, each one a
+line carrying its title: the ones this pull request closes, then the ones it
+only mentions. A bare `#41` in the prose is a link but says nothing about what
+it is, and the titles are the whole point of the list.
 
 *Files* is every changed file grouped as *Tests* / *Code* / *Config & docs*,
 tests first, because tests are the fastest way to see what functionality
-actually changed. Inside each of those, the files are folded by the directory
-they are in, and a row says only the name the directory above it does not --
-so a path is read once per directory rather than once per file. Both levels
-fold, and both remember what you closed. The checkbox on each file is GitHub's
-own "viewed" checkbox: tick it here and it's ticked on github.com. Clicking a
-file opens its diff in the **Diff** pane; cmd/ctrl-clicking opens GitHub's diff
-viewer at that file instead.
+actually changed. Inside each of those, a group reads like a tree: the files at
+the top of the repository are its first rows, and below them the rest are folded
+by the directory they are in, a directory ahead of what is inside it and
+siblings alphabetical. A row inside a fold says only the name the directory
+above it does not -- so a path is read once per directory rather than once per
+file -- and both levels fold and remember what you closed. The checkbox on each
+file is GitHub's own "viewed" checkbox: tick it here and it's ticked on
+github.com. Clicking a file opens its diff in the **Diff** pane;
+cmd/ctrl-clicking opens GitHub's diff viewer at that file instead.
 
 *Checks* is CI, one row per check, each linking to its run. The tab is there
 only when the pull request has any.
 
 Each tab carries the count the others cannot show you — how many description
 boxes are still unticked, how many files are still unviewed, how many checks
-have gone green — so none of them hides from you while you are in another. The
-Checks tab also carries a dot: green when everything passed, yellow while
-something is still running, red as soon as anything fails, which is the part a
-fraction alone can't tell you.
+have gone green, how many pull requests are stacked on this one — so none of
+them hides from you while you are in another. The Checks tab also carries a
+dot: green when everything passed, yellow while something is still running, red
+as soon as anything fails, which is the part a fraction alone can't tell you.
 
 **Diff** — the selected file's patch, rendered plainly above the terminal so
 select → read → tick viewed → ask Claude never leaves the window. It shows the
-same hunks GitHub does (fetched once per push and cached), refreshes itself when
-the branch head moves, and links out to GitHub for anything the plain rendering
-can't do — syntax highlighting, comments, binary and oversized files. Four links,
-because they answer different questions. *Diff* is this file's patch in GitHub's
-viewer. The other three are the whole file as this pull request leaves it:
-*File ↗* for what it became — the untouched parts a hunk doesn't show, and a
-Markdown file rendered rather than as source — *Blame* for who last touched the
-lines around a hunk, and *History* for what else has landed in it. Those three
-are pinned to the head commit, so they go on saying what you were looking at
-after the next push.
+same hunks GitHub does (fetched once per push and cached) -- or, for a file GitHub
+sent no patch for, the same change as local git sees it. GitHub stops sending
+patches partway through a large pull request, and git in this clone can
+usually still make them. It refreshes itself when the branch head moves, and
+links out to GitHub for anything the plain rendering can't do — comments, binary and oversized files, highlighting of a changed file. A
+file the pull request adds or deletes is shown as its own text under a green **NEW**
+or red **DELETED** title rather than as a wall of `+` or `-`: a patch that is all one
+sign has nothing to contrast. A **NEW** file is syntax-highlighted when its
+extension names a language prcoder ships a grammar for; it is the one view where
+a tokenizer sees a whole file rather than a hunk that starts in the middle of one. A renamed file says where it came from on its
+first line, and a rename with no other change says only that. A diff with more
+than one hunk gets an outline down its right edge -- one row per hunk, named by
+the context git puts after the `@@` (the enclosing function, a heading) -- and a
+click scrolls the body to it. Its ✕ hides it for every file until *Outline* in
+the header brings it back, and the browser remembers which you chose. Four links, because they answer different
+questions. *Diff* comes first because it is what the pane itself shows: this
+file's patch in GitHub's viewer. The other three are the whole file as this pull
+request leaves it: *File* for what it became — the untouched parts a hunk
+doesn't show, and a Markdown file rendered rather than as source — *Blame* for
+who last touched the lines around a hunk, and *History* for what else has landed
+in it. Those three are pinned to the head commit, so they go on saying what you
+were looking at after the next push.
 
 **Claude Code** — the real `claude` binary in a PTY, so Escape still interrupts,
 slash commands still work, permission prompts still appear, and typing while
@@ -251,7 +299,9 @@ are a separate download -- `npx playwright install firefox chromium`. The driver
 prefers Firefox and falls back to Chromium, because Firefox is what catches
 anything to do with selection, focus or dragging, which Chromium is happy to
 render correctly and Firefox is not. `PRCODER_BROWSER=chromium|firefox` forces
-one.
+one -- and on macOS 27 that is currently the flag you want, because Firefox does
+not start there at all; [tools/firefox-runner](tools/firefox-runner/README.md)
+is what is known about it.
 
 ## Finding it again
 
@@ -296,7 +346,7 @@ management listed below, deliberately not built yet.
 
 ## Not here
 
-Syntax-highlighted diffs, review threads, multi-session management. [docs/Design.md](docs/Design.md) has the full list and the reasoning behind
+Syntax-highlighted diffs of modified files, review threads, multi-session management. [docs/Design.md](docs/Design.md) has the full list and the reasoning behind
 it, along with why prcoder exists at all; [docs/Security.md](docs/Security.md) has what a
 localhost server is exposed to.
 

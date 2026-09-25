@@ -209,7 +209,10 @@ function row(item, above, below) {
     text,
     item.issue ? ext(item.issueUrl ?? '#', `#${item.issue}`, { className: 'tag issue' }) : null,
     h('span', { className: 'actions' },
-      btn('▶', () => deps.sendToClaude(item.text), { title: 'send to Claude' }),
+      // Typed, not sent -- and done, because handing it over is the last thing
+      // the queue has to say about it. The Completed tab still has it.
+      btn('▶', () => { deps.sendToClaude(item.text, false); item.done = true; save(); },
+        { title: 'type into Claude, and mark done' }),
       btn(item.inPr ? '◆' : '◇', () => { item.inPr = !item.inPr; save(); }, {
         // Which PR, now that items record it: the queue is one list, so a ◆ can
         // be an item that is in another PR's description and not this one's.
