@@ -642,6 +642,8 @@ a { color: var(--accent); }
 .pr-into { margin: 0 0 10px; font-size: 12px; }
 .pr-into-label { display: block; color: var(--dim); }
 .pr-into ul { list-style: none; margin: 0; padding: 0 0 0 10px; }
+/* A stack under the pull request it builds on: the rule is the branch. */
+.pr-into ul ul { margin-left: 4px; padding-left: 10px; border-left: 1px solid var(--line); }
 .pr-row { display: flex; align-items: baseline; gap: 6px; padding: 1px 0; }
 .pr-row-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pr-go {

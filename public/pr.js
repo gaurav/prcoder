@@ -224,6 +224,19 @@ export const renderQueueSync = (status) => paintLight('queue-sync', queueSync(st
 export const prsInto = (prs, branch) =>
   (branch ? prs.filter((p) => p.baseRefName === branch) : []);
 
+/**
+ * The same, with every pull request stacked on each one nested under it:
+ * `[{ pr, kids }]`, where a kid's base is its parent's head.
+ *
+ * Still the one list, so a stack costs no call of its own. `seen` is there
+ * because two open pull requests can name each other's branches as their bases,
+ * and GitHub doesn't stop them.
+ */
+export function prTree(prs, branch, seen = new Set()) {
+  return prsInto(prs, branch).filter((p) => !seen.has(p.number) && seen.add(p.number))
+    .map((pr) => ({ pr, kids: prTree(prs, pr.headRefName, seen) }));
+}
+
 /** The pane with no PR to show: why, what merges into here, and the one thing
  *  worth doing about it. */
 export function renderNoPr(status, prs, { onCreate, onSwitch }) {
@@ -283,16 +296,22 @@ export function renderNoPr(status, prs, { onCreate, onSwitch }) {
  * still works: you don't need a clean tree to read a pull request.
  */
 function intoRow(status, prs, onSwitch) {
-  const into = prsInto(prs, status.branch);
-  if (!into.length) return null;
-  const blocked = status.dirtyFiles.length > 0;
+  const tree = prTree(prs, status.branch);
+  if (!tree.length) return null;
   return h('div', { className: 'pr-into' },
     h('span', { className: 'pr-into-label' }, `Pull requests into ${status.branch}`),
-    h('ul', {}, ...into.map((p) => prRow(p, { blocked, onSwitch }))));
+    stackList(tree, { blocked: status.dirtyFiles.length > 0, onSwitch }));
 }
 
+/**
+ * A prTree as nested lists. Each pull request's stack sits under it, so the
+ * size of a stack is how far its indent runs.
+ */
+const stackList = (nodes, opts) => h('ul', {},
+  ...nodes.map(({ pr, kids }) => prRow(pr, opts, kids.length ? stackList(kids, opts) : null)));
+
 /** One open pull request: the link to it, what it is called, and the checkout. */
-const prRow = (p, { blocked, onSwitch }) => h('li', {},
+const prRow = (p, { blocked, onSwitch }, kids) => h('li', {},
   h('div', { className: 'pr-row' },
     ext(p.url, `#${p.number}`, { className: 'pr-num' }),
     p.isDraft ? badge('draft', 'draft') : null,
@@ -300,7 +319,8 @@ const prRow = (p, { blocked, onSwitch }) => h('li', {},
     btn('Switch', () => onSwitch(p.number), {
       className: 'pr-go', disabled: blocked,
       title: blocked ? 'Commit or stash your changes first' : `Check out #${p.number} here`,
-    })));
+    })),
+  kids);
 
 /**
  * Which half of the pane is showing, where each half was scrolled to, and which

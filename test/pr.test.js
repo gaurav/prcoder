@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  pageTitle, withoutHtml, inline, headLinks, noPrLinks, prsInto, queueSync, HEADING, blocks, sectionize,
+  pageTitle, withoutHtml, inline, headLinks, noPrLinks, prsInto, prTree, queueSync, HEADING, blocks, sectionize,
   tabLabel, taskCount, viewedCount, byPath, byDir, nums,
 } from '../public/pr.js';
 import { fences, TASK, taskLines } from '../public/tasks.js';
@@ -266,9 +266,9 @@ test('no repository means no links rather than links to nowhere', () => {
 // The list the switcher fetches, which carries every open pull request in the
 // repository -- the pane wants the ones that land on the branch you are on.
 const OPEN = [
-  { number: 1, baseRefName: 'main', title: 'The one into main' },
-  { number: 27, baseRefName: 'initial-implementation', title: 'One of three' },
-  { number: 60, baseRefName: 'initial-implementation', title: 'Another' },
+  { number: 1, headRefName: 'initial-implementation', baseRefName: 'main', title: 'The one into main' },
+  { number: 27, headRefName: 'queue-tabs', baseRefName: 'initial-implementation', title: 'One of three' },
+  { number: 60, headRefName: 'checks-tab', baseRefName: 'initial-implementation', title: 'Another' },
 ];
 
 test('the pane lists the pull requests that merge into this branch, and no others', () => {
@@ -283,6 +283,27 @@ test('the pane lists the pull requests that merge into this branch, and no other
 test('a detached HEAD lists nothing, not everything', () => {
   assert.deepEqual(prsInto(OPEN, null), []);
   assert.deepEqual(prsInto(OPEN, undefined), []);
+});
+
+// Numbers only, so a failure reads as the tree it got: [1, [27, 60]].
+const shape = (nodes) => nodes.flatMap(({ pr, kids }) => (kids.length ? [pr.number, shape(kids)] : [pr.number]));
+
+// This repository's own shape on 2026-09-25: #1 into main, the rest stacked on it.
+test('each pull request carries the ones stacked on its branch', () => {
+  assert.deepEqual(shape(prTree(OPEN, 'main')), [1, [27, 60]]);
+  assert.deepEqual(shape(prTree(OPEN, 'initial-implementation')), [27, 60]);
+  const deeper = [...OPEN, { number: 61, headRefName: 'tabs-2', baseRefName: 'checks-tab' }];
+  assert.deepEqual(shape(prTree(deeper, 'main')), [1, [27, 60, [61]]]);
+  assert.deepEqual(prTree(OPEN, null), []);
+});
+
+// GitHub lets two open pull requests base on each other's heads.
+test('a cycle of bases ends instead of recursing forever', () => {
+  const loop = [
+    { number: 2, headRefName: 'a', baseRefName: 'b' },
+    { number: 3, headRefName: 'b', baseRefName: 'a' },
+  ];
+  assert.deepEqual(shape(prTree(loop, 'a')), [3, [2]]);
 });
 
 test('without a repository to resolve against, neither becomes a link', () => {
