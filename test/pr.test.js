@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  pageTitle, withoutHtml, inline, headLinks, noPrLinks, prsInto, prTree, stackOn, stackLabel, queueSync, HEADING, blocks, sectionize,
+  pageTitle, withoutHtml, inline, headLinks, noPrLinks, prsInto, prTree, stackOn, stackLabel, stackOrder, queueSync, HEADING, blocks, sectionize,
   tabLabel, taskCount, viewedCount, byPath, byDir, nums,
 } from '../public/pr.js';
 import { fences, TASK, taskLines } from '../public/tasks.js';
@@ -305,6 +305,29 @@ test('the Stack tab counts the whole tree, and a fork has no stack here', () => 
   // A fork's head is often `main`, which every PR here is into -- none of them
   // is built on the fork's branch.
   assert.deepEqual(stackOn({ headRefName: 'main', isCrossRepository: true }, OPEN), []);
+});
+
+const order = (prs) => stackOrder(prs).map(({ pr, depth }) => `${'-'.repeat(depth)}${pr.number}`);
+
+test('the switcher lists each pull request with its stack under it', () => {
+  const deeper = [...OPEN, { number: 61, headRefName: 'tabs-2', baseRefName: 'checks-tab' },
+    { number: 9, headRefName: 'elsewhere', baseRefName: 'release' }];
+  assert.deepEqual(order(deeper), ['1', '-27', '-60', '--61', '9']);
+});
+
+// A fork's head is a branch in the fork. Named `main`, it would otherwise make
+// every PR into main look stacked on it and leave the switcher with no roots.
+test('a fork does not parent the PRs into a branch of the same name', () => {
+  const fork = [{ number: 80, headRefName: 'main', baseRefName: 'main', isCrossRepository: true }, ...OPEN];
+  assert.deepEqual(order(fork), ['80', '1', '-27', '-60']);
+});
+
+test('a cycle of bases still lands in the switcher', () => {
+  const loop = [
+    { number: 2, headRefName: 'a', baseRefName: 'b' },
+    { number: 3, headRefName: 'b', baseRefName: 'a' },
+  ];
+  assert.deepEqual(order([...OPEN, ...loop]), ['1', '-27', '-60', '2', '3']);
 });
 
 // A fork PR from `someone:main` into main is not the parent of every PR into main.

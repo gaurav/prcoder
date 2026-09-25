@@ -148,17 +148,23 @@ export function renderHeader(status, prs, { onSwitch, onCommit }) {
   // gh pr list is open PRs only, so a merged or closed one has no option of its
   // own — without this the select falls to selectedIndex -1 and renders blank
   // while the pane below it is showing that very PR.
-  const shown = status.pr && !prs.some((p) => p.number === status.pr.number)
-    ? [{ number: status.pr.number, title: status.pr.title, isDraft: false }, ...prs]
-    : prs;
+  //
+  // Stacked PRs sit under the one they build on. An <option> cannot nest and an
+  // <optgroup> cannot be chosen, so the indent is in the label, in non-breaking
+  // spaces because a plain leading one is collapsed.
+  const shown = [
+    ...(status.pr && !prs.some((p) => p.number === status.pr.number)
+      ? [{ pr: { number: status.pr.number, title: status.pr.title, isDraft: false }, depth: 0 }] : []),
+    ...stackOrder(prs),
+  ];
 
-  const keys = shown.map((p) => p.number).join(',');
+  const keys = shown.map(({ pr, depth }) => `${pr.number}:${depth}`).join(',');
   if (sel.dataset.keys !== keys) {
     sel.dataset.keys = keys;
     sel.replaceChildren(
       h('option', { value: '' }, shown.length ? 'no pull request' : 'no open pull requests'),
-      ...shown.map((p) => h('option', { value: String(p.number) },
-        `#${p.number} ${p.isDraft ? '(draft) ' : ''}${p.title}`)),
+      ...shown.map(({ pr: p, depth }) => h('option', { value: String(p.number) },
+        `${depth ? `${'\u00a0\u00a0'.repeat(depth)}└\u00a0` : ''}#${p.number} ${p.isDraft ? '(draft) ' : ''}${p.title}`)),
     );
     sel.onchange = () => sel.value && onSwitch(Number(sel.value));
   }
@@ -237,6 +243,25 @@ export function prTree(prs, branch, seen = new Set()) {
   // whatever it is called -- and it is very often called `main`.
   return prsInto(prs, branch).filter((p) => !seen.has(p.number) && seen.add(p.number))
     .map((pr) => ({ pr, kids: pr.isCrossRepository ? [] : prTree(prs, pr.headRefName, seen) }));
+}
+
+/**
+ * Every open pull request in switcher order, `[{ pr, depth }]`: each one
+ * followed by the ones stacked on it.
+ *
+ * The roots are the ones whose base is no other open PR's head, grouped by
+ * that base. A cycle of bases has no root at all, so whatever the walk didn't
+ * reach goes on the end, unnested. Otherwise it would drop out of the switcher.
+ */
+export function stackOrder(prs) {
+  const heads = new Set(prs.filter((p) => !p.isCrossRepository).map((p) => p.headRefName));
+  const bases = new Set(prs.map((p) => p.baseRefName).filter((b) => !heads.has(b)));
+  const seen = new Set();
+  const walk = (nodes, depth) => nodes.flatMap(({ pr, kids }) => [{ pr, depth }, ...walk(kids, depth + 1)]);
+  return [
+    ...[...bases].flatMap((b) => walk(prTree(prs, b, seen), 0)),
+    ...prs.filter((p) => !seen.has(p.number)).map((pr) => ({ pr, depth: 0 })),
+  ];
 }
 
 /** The pane with no PR to show: why, what merges into here, and the one thing

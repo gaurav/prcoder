@@ -148,6 +148,8 @@ const drag = async (sel, x, y) => {
 // what you can see while you are looking at the other half.
 const tabs = await page.locator('#pr-head .tab').allInnerTexts();
 console.log('tabs:    ', tabs.join('  |  '), '  (want a count on each)');
+console.log('switch:  ', (await page.$$eval('#pr-switch option', (os) => os.slice(1, 4)
+  .map((o) => o.textContent.slice(0, 12)))).join('  |  '), '  (want #1, then its stack indented under it)');
 
 // The folds. A description this long is ten collapsed lines until you open
 // one, which is the point -- and the open one has to survive the poll, because
