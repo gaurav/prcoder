@@ -123,12 +123,13 @@ let page;
 const posted = [];
 
 // A page with every route answered, so a test that needs a module map of its
-// own -- Prism loads once per page -- can open a second one.
-async function newPage() {
+// own -- Prism loads once per page -- can open a second one. `prs` is the
+// switcher's list, empty unless a test is about it.
+async function newPage(prs = []) {
   const p = await browser.newPage();
   await p.routeWebSocket('**/pty', () => {});
   await p.route('**/api/status', (r) => r.fulfill({ json: status }));
-  await p.route('**/api/prs', (r) => r.fulfill({ json: [] }));
+  await p.route('**/api/prs', (r) => r.fulfill({ json: prs }));
   await p.route('**/api/queue', (r) => r.fulfill({ json: [] }));
   await p.route('**/api/diff', (r) => {
     const { path } = r.request().postDataJSON();
@@ -400,5 +401,45 @@ test('the terminal folds to its header, the diff takes the room, and it stays fo
   await fresh.dblclick('#term > header h1');
   assert.equal(await fresh.locator('#term-host').isVisible(), true);
   assert.equal(await fresh.getAttribute('#term-fold', 'aria-expanded'), 'true');
+  await fresh.close();
+});
+
+// The fixture PR, one built on its branch, and one built on that. The switcher
+// and the Stack tab both have to show the chain as a chain, and a row's #N has
+// to be a link out while its Switch is the checkout -- one control each.
+const STACK = [
+  { number: 12, title: pr.title, headRefName: 'topic', baseRefName: 'main', isDraft: false, url: pr.url },
+  { number: 13, title: 'Built on the fixture', headRefName: 'topic-2', baseRefName: 'topic', isDraft: true, url: `${REPO}/pull/13` },
+  { number: 14, title: 'Built on that', headRefName: 'topic-3', baseRefName: 'topic-2', isDraft: false, url: `${REPO}/pull/14` },
+];
+
+test('stacked PRs nest in the switcher and the Stack tab, each linked and switchable', { skip }, async () => {
+  const fresh = await newPage(STACK);
+  const switched = [];
+  await fresh.route('**/api/pr/switch', (r) => {
+    switched.push(r.request().postDataJSON().number);
+    return r.fulfill({ json: status });
+  });
+  await fresh.waitForSelector('#pr-switch option[value="14"]', { state: 'attached' });
+  assert.deepEqual(await fresh.$$eval('#pr-switch option', (os) => os.map((o) => o.textContent.replaceAll('\u00a0', ' '))), [
+    'no pull request',
+    '#12 A fixture pull request',
+    '  └ #13 (draft) Built on the fixture',
+    '    └ #14 Built on that',
+  ]);
+
+  const tab = fresh.locator('#pr-head .tab', { hasText: 'Stack' });
+  assert.equal(await tab.textContent(), 'Stack (2)');
+  await tab.click();
+  assert.deepEqual(await fresh.locator('#pr-body .pr-into > ul > li > .pr-row .pr-num').allTextContents(), ['#13']);
+  assert.deepEqual(await fresh.locator('#pr-body .pr-into ul ul .pr-num').allTextContents(), ['#14']);
+  const link = fresh.locator('#pr-body .pr-num', { hasText: '#14' });
+  assert.equal(await link.getAttribute('href'), `${REPO}/pull/14`);
+  assert.equal(await link.getAttribute('target'), '_blank');
+
+  const sent = fresh.waitForResponse('**/api/pr/switch');
+  await fresh.locator('#pr-body .pr-row', { hasText: '#14' }).locator('.pr-go').click();
+  await sent;
+  assert.deepEqual(switched, [14]);
   await fresh.close();
 });
