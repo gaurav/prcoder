@@ -135,8 +135,9 @@ ls: /Users/gaurav/Library/Application Support/Firefox/: Operation not permitted
   to Playwright, which has to spawn the binary itself.
 - **Firefox 158 or later**, once it ships, for anything that passes `-profile`.
 
-`tools/browser.mjs` uses the first: every Firefox launch gets both variables,
-pointed under `data/firefox-appdata/`, which `probe.mjs` shares. Nothing in it
+`tools/browser.mjs` and `test/browser/suite.js` use the first: every Firefox
+launch gets both variables, pointed under `data/firefox-appdata/`, which
+`probe.mjs` shares. Nothing in it
 checks the macOS version, because the variables are harmless where they are not
 needed. Leaving them unconditional is also what keeps #80's removal down to
 deleting lines.
@@ -150,8 +151,8 @@ microsoft/playwright#42768 -- and this repo's `package.json` moving to it. After
 that, the no-env half of `probe.mjs` confirms the workaround is dead code.
 
 **The Firefox pass under #61** was run on 2026-09-26 with the workaround in
-place; docs/Verifying.md has what it covered. Only the Claude pane's exit bar,
-on #75's branch, is left. The other half of that issue -- whether the caret bug that made Firefox
+place; docs/Verifying.md has what it covered. The Claude pane's exit bar, on
+#75's branch, passed too, and #61 is closed. The other half of that issue -- whether the caret bug that made Firefox
 mandatory is still live -- is answered above and needs no driver.
 [CLAUDE.md](../../CLAUDE.md) has that bug and the three fixes to it that do not
 work.

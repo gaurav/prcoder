@@ -91,7 +91,7 @@ handled in the page: the whole of a file someone else committed, run through Pri
 What keeps it in the same shape as the renderer above is in `highlightLines` in
 [`public/diff.js`](../public/diff.js). Prism is asked for its *tokens*, never its HTML, and each token
 becomes a `<span>` through `h()` with the file's text as a text node — the same rule as every other
-string from GitHub, and `test/browser.test.js` opens a file made of `<script>` and `<img onerror>` to
+string from GitHub, and `test/browser/suite.js` opens a file made of `<script>` and `<img onerror>` to
 pin that it comes out as characters. The language is chosen from the extension alone: auto-detection
 would run every grammar over the file, and `grammars` in `diff.js` — that extension map plus what
 those grammars are built on — is the list the vendor map in `server.js` is built from, so the

@@ -5,13 +5,14 @@ Node 26 resolves a directory argument as a module and dies with `Cannot find mod
 either, because that walks the whole working directory and runs any scratch checkout under `data/`
 as a second suite ([CLAUDE.md](../CLAUDE.md) has the rest, including why the quotes are
 load-bearing and why that puts the drivers in `tools/`). That covers everything that can be checked
-without a browser or a tty, plus one test that needs a browser: `test/browser.test.js` opens the real
+without a browser or a tty, plus one test that needs a browser: `test/browser/suite.js` opens the real
 page from the server started in-process, with the API routes and the `/pty` socket answered by
 Playwright from a fixture, so it needs no `gh`, no `claude` and no PTY, and asserts the things this
 pane has shipped broken -- raw markup as text, headings, checkbox write-back, the issue lists, the
 tab count -- and a quoted section, which is in its fixture because neither of this repo's own
-descriptions contains a `>` and so no driver run has ever shown one. It skips with a note when Playwright or Chromium is missing; CI installs Chromium so it
-runs there. Its blind spot is its fixture, shaped by hand from what `/api/status` answers today, so a
+descriptions contains a `>` and so no driver run has ever shown one. It runs twice, from `chromium.test.js` and
+`firefox.test.js` beside it, which each set the engine and import the suite. Each skips with a note
+when Playwright or its engine is missing, and CI installs both so both run there. Its blind spot is its fixture, shaped by hand from what `/api/status` answers today, so a
 field the server renames and the client follows still passes; the `gh` stub issue is what closes that.
 This file is about the rest, and about the rule that produced it.
 
@@ -55,9 +56,9 @@ is the cause and the one-command re-check, and #80 is when the workaround comes 
 build was uninstalled on 2026-09-19 and reinstalled on 2026-09-26; `npx playwright install firefox`
 is what brings it back if it goes again. The Firefox pass #61 owed was run on 2026-09-26:
 `tools/browser.mjs` against PR #1 and `tools/no-pr.mjs` (through a scratch Firefox copy under
-`data/`) in both engines, which agreed on every figure but a 1px measure; and the 16 tests of
-`test/browser.test.js` through a scratch Firefox copy, all passing. What #61 still owes is the Claude
-pane's exit bar, which lives on #75's branch.
+`data/`) in both engines, which agreed on every figure but a 1px measure; and the browser suite
+in Firefox, all passing, which is what made it a standing Firefox run under `npm test`. The Claude pane's exit bar, on #75's
+branch, passed the same way from a worktree, which closed #61.
 
 Its assertions are written against this repo's own PR #1 — that description's sections, file groups
 and issue chips — and the server follows whatever branch you are on, so a run from a feature branch
@@ -74,7 +75,7 @@ token spans the open `.js` file drew and which `tok-` classes they carry — and
 `.gitignore`, whose extension has no grammar and which must therefore draw none; `diff.png` is the
 pane itself, and `dragged.png` holds it in context. The printed counts are the point: a regression
 to plain text is a screenshot that looks perfectly ordinary. Whether a markup-shaped file comes out
-as text in spans rather than as elements is `test/browser.test.js`, not the driver, and so is the
+as text in spans rather than as elements is `test/browser/suite.js`, not the driver, and so is the
 `.tsx` grammar — no `.tsx` file has ever been committed here, so no real PR can exercise it.
 
 The hunk outline is out of reach for the same reason -- no hunks, so `#diff-outline` is empty and
@@ -87,7 +88,7 @@ Its ✕ and the header's *Outline* button were checked the same way on 2026-09-2
 (`data/outline-toggle.mjs`, Chromium): hidden, shown, focus handed across, the choice surviving a
 reload, and the Outline button absent while there is no outline to bring back.
 
-Folding the terminal to its header is pinned in `test/browser.test.js` (the diff grows into the room,
+Folding the terminal to its header is pinned in `test/browser/suite.js` (the diff grows into the room,
 the fold survives a reload, a double-click on the header unfolds it), and so is the header's ▁,
 which folds the same way, shows only while a diff is open, hides while folded, and must not change
 the header's height as it goes
@@ -259,7 +260,7 @@ Some things can only be checked against the real thing, so they are:
   [#61](https://github.com/gaurav/prcoder/issues/61)). The head's repository line is one link in two spans -- the owner shrinks and
   ellipsises, the name is `flex: none` -- and `heal-data-stewards/heal-vlmd-AI-pipeline`
   becomes `heal-dat…/heal-vlmd-AI-pipeline` in a narrow pane. Three of the four are pinned in
-  `test/browser.test.js`, which narrows the pane by writing `--w-pr` the way a drag does; the
+  `test/browser/suite.js`, which narrows the pane by writing `--w-pr` the way a drag does; the
   fourth, `max-width` on the name, is for a name that alone will not fit and the pane's own 180px
   floor is too wide to reach it, so it was checked by hand against a 60-character one.
 
@@ -270,7 +271,7 @@ Some things can only be checked against the real thing, so they are:
   the CSS. The two spans are compared with each other instead, which is the claim anyway.
 
   The chip the slug is drawn in came after those four and changes what "stays inside the pane" is
-  measured on. `test/browser.test.js` read the name span's right edge against the head's content
+  measured on. `test/browser/suite.js` read the name span's right edge against the head's content
   edge, which was the line's own last glyph until there was a border outside it; it reads the
   chip's now, so a pill whose right edge has crossed the pane cannot pass on a name that ends a
   pixel inside its padding. What the chip *is* is pinned as a contrast rather than as a pill --

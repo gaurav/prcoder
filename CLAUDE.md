@@ -50,11 +50,12 @@ to whatever one directory it matches — that run reported 1 test and passed. Th
 quotes are double for the same reason the postinstall script is Node: single
 quotes are not quotes to cmd.exe.
 
-Discovery still treats *everything* under `test/` as a test file, which is why
-the drivers live in `tools/` — `browser.mjs` for the UI, `cli.mjs` for the
-terminal, `no-pr.mjs` for the pane the first one cannot reach. Any of them under
-`test/` would run on every `npm test`, spawn a server and drive a browser or a
-PTY.
+Discovery takes every `*.test.js` under `test/`, at any depth; anything else
+there runs only when a test file imports it, which is how `test/browser/suite.js`
+runs once per engine and never bare. The drivers still live in `tools/` —
+`browser.mjs` for the UI, `cli.mjs` for the terminal, `no-pr.mjs` for the pane
+the first one cannot reach — so none of them is one rename from running on every
+`npm test`, spawning a server and driving a browser or a PTY.
 
 `node:test` is a preference, not a constraint. If it ever gets in the way —
 maintainability, a matcher you keep hand-rolling, watch mode, anything — the
@@ -168,14 +169,16 @@ so the check is `existsSync(firefox.executablePath())` and the fix for a miss is
 BiDi with `channel: 'moz-firefox'`; `tools/firefox-runner/` has what came of
 trying it.) Running both is worth the second minute: the
 caret bug is invisible in Chromium and fatal in Firefox, and it is the one thing
-here that only one engine can tell you about.
+here that only one engine can tell you about. `test/browser/` runs its suite in
+both for the same reason: a header-height test written against Chromium failed
+in Firefox (2026-09-26).
 
 Installed is not the same as working, and the check cannot tell them apart.
 From 2026-09-16 to 2026-09-26 Firefox did not start at all on this machine,
 while `existsSync(firefox.executablePath())` was true throughout. The cause
 was macOS 27 denying a terminal-launched Firefox its own `~/Library/Application
 Support/Firefox`, which Firefox reads even when `-profile` points elsewhere.
-Every Firefox launch in `tools/` now sets `MOZ_APP_DATA` and
+Every Firefox launch in `tools/` and `test/` now sets `MOZ_APP_DATA` and
 `MOZ_LOCAL_APP_DATA` under `data/firefox-appdata/`, and with them it starts in
 about two seconds. A launch that leaves them out hangs until the timeout, with
 nothing in the output to say why -- so a new driver that launches Firefox
@@ -183,8 +186,8 @@ needs them too. The workaround is temporary, and #80 is when it comes out
 (Firefox 158 fixes this upstream). The 45-second timeout and the fall-back to
 Chromium stay until then, in case the workaround stops working;
 `tools/firefox-runner/` is the whole story, and `probe.mjs` there is the
-re-check. The Firefox pass #61 owed was run on 2026-09-26, except for the exit bar
-on #75's branch; docs/Verifying.md has what it covered.
+re-check. The Firefox pass #61 owed was run on 2026-09-26, the exit bar on #75's branch
+included, and #61 is closed; docs/Verifying.md has what it covered.
 
 One thing about running the driver at all, which reads as a hung server: it
 takes minutes, so `node tools/browser.mjs | tail` shows nothing at all until the
@@ -246,7 +249,7 @@ always-busy tab icon came back green because the instrumentation had switched
 off the traffic causing it. Copy `CONNECTING`/`OPEN`/`CLOSING`/`CLOSED` onto
 the wrapper, or listen without wrapping. To keep the page from opening a PTY at
 all, `page.routeWebSocket('**/pty', () => {})` mocks the socket without touching
-the constructor -- `test/browser.test.js` runs the whole page that way.
+the constructor -- `test/browser/suite.js` runs the whole page that way.
 
 Same shape in reverse: a `MutationObserver` in `addInitScript` has no
 `document.head` to observe yet, and the throw takes the rest of the init script
