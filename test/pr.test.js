@@ -434,8 +434,8 @@ test('a bullet inside a fence is a sample, not a list', () => {
 //
 // A description is folded by section so that ten sections of agent-written
 // prose do not bury the rest of the pane. The fold level comes from the body
-// rather than being fixed here, because prcoder's own mirrored block writes
-// `## TODO` while a description someone typed may well start at `#`.
+// rather than being fixed here, because one description uses `##` for its
+// sections while another someone typed may well start at `#`.
 
 const fold = (body) => sectionize(blocks(body));
 const titles = (body) => fold(body).sections.map((s) => s.title);
