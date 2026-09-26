@@ -128,7 +128,7 @@ const pr = {
 const status = {
   branch: 'topic', head: 'b'.repeat(40), detached: false, dirtyFiles: [], sync: 'synced', ahead: 0,
   defaultBranch: 'main', nameWithOwner: 'heal-data-stewards/heal-vlmd-AI-pipeline',
-  scope: 'current',
+  scope: 'current', mirrorFailed: false,
   pr, queue: [],
 };
 
@@ -151,9 +151,13 @@ async function newPage() {
       path, patch: `@@ -0,0 +1,${lines.length} @@\n` + lines.map((l) => '+' + l).join('\n'),
     } });
   });
-  // Answered in the route's own shape -- the body GitHub now holds. A mock
-  // written in some other shape is the trap at the head of this file: it
-  // merges without a murmur and blanks the pane at runtime.
+  // Answered in the shape the route uses on `queue-tabs` -- the body GitHub now
+  // holds -- rather than this branch's `{queue}`, because both are right here
+  // and only one is right there. toggleTask reads `queue` off the response and
+  // finds none, which is what `{queue: null}` said; the branch that reads
+  // `body` repaints its checkboxes from it. A mock written for one branch is
+  // the trap at the head of this file: it merges without a murmur and blanks
+  // the pane at runtime.
   await p.route('**/api/pr/task', (r) => {
     const task = r.request().postDataJSON();
     posted.push(task);
@@ -556,7 +560,7 @@ test('folds show progress as a pie named by its figure', { skip }, async () => {
 // set, the tab has no grip and no drag; Active keeps both.
 test('Completed lists the most recently finished first, and cannot be reordered', { skip }, async () => {
   const fresh = await newPage();
-  const it = (text, over) => ({ text, done: true, issue: null, deleted: false, ...over });
+  const it = (text, over) => ({ text, done: true, inPr: false, pr: null, issue: null, deleted: false, ...over });
   const queue = [
     it('never stamped', { doneAt: null }),
     it('finished first', { doneAt: 1000 }),

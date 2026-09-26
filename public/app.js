@@ -1,7 +1,7 @@
 import { Terminal } from '/vendor/xterm.mjs';
 import { FitAddon } from '/vendor/addon-fit.mjs';
 import { WebLinksAddon } from '/vendor/addon-web-links.mjs';
-import { renderPr, renderNoPr, renderHeader, pageTitle, api, toast } from './pr.js';
+import { renderPr, renderNoPr, renderHeader, renderQueueSync, pageTitle, api, toast } from './pr.js';
 import { openDiff, closeDiff, selectedPath, setViewed } from './diff.js';
 import { initQueue, addItem, setItems, freeze } from './queue.js';
 import './panes.js';   // draggable pane gutters; nothing here calls into it
@@ -180,14 +180,16 @@ const NOTES = {
 };
 
 /**
- * A checkbox in the description, ticked through to GitHub -- the one edit to a
- * description prcoder makes, on your click. Rethrown so the box snaps back, and
- * the status reload is for the one error that matters: the description moved
- * under us, and the pane is now showing a stale copy of it.
+ * A checkbox in the description, ticked through to GitHub. Rethrown so the box
+ * snaps back, and the status reload is for the one error that matters: the
+ * description moved under us, and the pane is now showing a stale copy of it.
  */
 async function toggleTask(task) {
   try {
-    await api('/api/pr/task', task);
+    const { queue } = await api('/api/pr/task', task);
+    // Only when the line was one of the queue's own, so the two panes agree
+    // without waiting for the poll.
+    if (queue) setItems(queue, true);
   } catch (e) {
     toast(e.message, true);
     loadStatus();
@@ -215,12 +217,16 @@ function paint(status) {
   // "prcoder", which is why this is here and not in loadStatus's catch.
   document.title = pageTitle(status);
   renderHeader(status, prs, handlers);
+  renderQueueSync(status);
   if (status.pr) {
     renderPr({ ...status.pr, note: NOTES[status.scope] },
       { ...fileHandlers, selected: selectedPath() });
   } else renderNoPr(status, prs, { onCreate: createPr, onSwitch: switchPr });
   if (switched) loadPrs();
-  if (status.queue) setItems(status.queue);
+  // Mirroring needs the PR to be *this* branch's: prcoder will not write our
+  // items into a PR we are only looking at, so the controls that would ask it
+  // to must disable themselves rather than silently do nothing.
+  if (status.queue) setItems(status.queue, status.scope === 'current');
 
   // Keep an open diff honest: close it if its file left the PR (or the PR
   // switched away), refresh it if the branch moved — the server cache is
@@ -244,6 +250,7 @@ async function loadStatus() {
   } catch (e) {
     const failed = { error: e.message, dirtyFiles: [], pr: null };
     renderHeader(failed, prs, handlers);
+    renderQueueSync(failed);
   }
 }
 
