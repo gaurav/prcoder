@@ -27,7 +27,7 @@
 
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:net';
-import { existsSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium, firefox } from 'playwright';
@@ -95,8 +95,16 @@ console.log('engine: ', engine.name());
 console.log('pr:     ', process.env.PRCODER_PR
   ? `pinned to #${process.env.PRCODER_PR} (branch-following not exercised)`
   : "following the current branch");
-// existsSync above says the build was downloaded, not that it starts, and on
-// macOS 27 Firefox does not -- see tools/firefox-runner. So the fallback has to
+// macOS 27 denies a Firefox launched from a terminal its own
+// ~/Library/Application Support/Firefox. Firefox reads that directory even
+// when -profile points elsewhere, so without somewhere else to keep its app
+// data it hangs until the timeout (tools/firefox-runner). Firefox 158 fixes
+// this upstream; #80 is when to take this out.
+const appData = path.join(repo, 'data', 'firefox-appdata');
+const firefoxEnv = { MOZ_APP_DATA: path.join(appData, 'roaming'), MOZ_LOCAL_APP_DATA: path.join(appData, 'local') };
+for (const dir of Object.values(firefoxEnv)) mkdirSync(dir, { recursive: true });
+// existsSync above says the build was downloaded, not that it starts -- which
+// the env above is only the latest answer to (#80). So the fallback has to
 // survive a launch that fails as well as one that was never installed, or the
 // default run waits out Playwright's 180s timeout and dies with no browser at
 // all. The wait is 45s here because this is the unattended path and a browser
@@ -105,7 +113,8 @@ console.log('pr:     ', process.env.PRCODER_PR
 // someone who asked for Firefox by name.
 const browser = await (async () => {
   try {
-    return await engine.launch(forced ? {} : { timeout: 45_000 });
+    const env = engine === firefox ? { env: { ...process.env, ...firefoxEnv } } : {};
+    return await engine.launch({ ...env, ...(forced ? {} : { timeout: 45_000 }) });
   } catch (err) {
     if (forced || engine === chromium) throw err;
     console.log(`engine:  ${engine.name()} would not start, falling back to chromium`);

@@ -289,8 +289,9 @@ are a separate download -- `npx playwright install firefox chromium`. The driver
 prefers Firefox and falls back to Chromium, because Firefox is what catches
 anything to do with selection, focus or dragging, which Chromium is happy to
 render correctly and Firefox is not. `PRCODER_BROWSER=chromium|firefox` forces
-one -- and on macOS 27 that is currently the flag you want, because Firefox does
-not start there at all; [tools/firefox-runner](tools/firefox-runner/README.md)
+one. On macOS 27 the driver gives Firefox an app-data directory of its own,
+because the system's protection of the real one keeps a Firefox launched from a
+terminal from starting at all (`MOZ_APP_DATA`, until #80); [tools/firefox-runner](tools/firefox-runner/README.md)
 is what is known about it.
 
 ## Finding it again

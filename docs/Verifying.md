@@ -46,13 +46,15 @@ alone, and so are loose PNGs directly under `data/shots`. `tools/shots.mjs` is t
 Firefox by default, because a Firefox-only bug — a click into a draggable row's text
 putting the caret at offset 0 — survived every Chromium screenshot; see [CLAUDE.md](../CLAUDE.md)
 for the rest, and for the three fixes to it that do **not** work.
-`PRCODER_BROWSER=chromium` forces the other; running both is worth the second minute — when both
-run. Firefox has not started on this machine since 2026-09-16, and on 2026-09-19 that build was
-uninstalled rather than left to time out, so `existsSync(firefox.executablePath())` is false and a
-default run now picks Chromium at once: no 45-second wait, no fallback line, and an `engine:` line
-that says chromium. Nothing here has had a Firefox pass since, which #61 is where to say so;
-[tools/firefox-runner](../tools/firefox-runner/README.md) is why it fails and is the one-command
-re-check, and `npx playwright install firefox` is what brings the build back.
+`PRCODER_BROWSER=chromium` forces the other; running both is worth the second minute.
+Firefox did not start on this machine from 2026-09-16 to 2026-09-26: macOS 27 denies a Firefox
+launched from a terminal its own app-data directory. The driver now points `MOZ_APP_DATA` and
+`MOZ_LOCAL_APP_DATA` under `data/firefox-appdata/`, and a default run on 2026-09-26 said
+`engine: firefox` with no fallback line and exited 0. [tools/firefox-runner](../tools/firefox-runner/README.md)
+is the cause and the one-command re-check, and #80 is when the workaround comes out. The Playwright
+build was uninstalled on 2026-09-19 and reinstalled on 2026-09-26; `npx playwright install firefox`
+is what brings it back if it goes again. The pane work since 2026-09-16 still owes its Firefox pass,
+which #61 is where to say so.
 
 Its assertions are written against this repo's own PR #1 — that description's sections, file groups
 and issue chips — and the server follows whatever branch you are on, so a run from a feature branch
@@ -143,8 +145,10 @@ already takes one.
 question — can anything on this machine drive Firefox — by trying Playwright's own build and the
 Firefox in `/Applications` over WebDriver BiDi, headless and headed, and then the bare binary with
 no Playwright in the way. That last one is what says whose bug a failure is, and it is why the
-ad-hoc signature on Playwright's build is ruled out rather than suspected. Every line has said
-FAIL since 2026-09-17; the run that matters is the one after a macOS or Firefox update, and
+ad-hoc signature on Playwright's build is ruled out rather than suspected. Each launch runs with
+and without `MOZ_APP_DATA`. The lines with it say the driver's workaround still works (all OK on
+2026-09-26); the lines without it say whether the fix upstream has reached us, and are #80's check
+for removing it. The run that matters is the one after a macOS, Firefox or Playwright update, and
 [the directory's README](../tools/firefox-runner/README.md) is what to read before adding a case.
 
 ## The measured figures
