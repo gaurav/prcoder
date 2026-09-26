@@ -2,6 +2,7 @@
 
 import { execFile } from 'node:child_process';
 import { debug } from './term.js';
+import { mention, repoUrl } from './public/tasks.js';
 
 // Every gh call and every git call comes through run(), so this is the whole
 // count. What it is for: two browser tabs each poll on their own timer against
@@ -228,10 +229,10 @@ export function linkedIssues(pr) {
   for (const i of pr.closingIssuesReferences ?? []) {
     seen.set(i.number, { number: i.number, url: i.url, closes: true });
   }
-  const repoUrl = pr.url.replace(/\/pull\/\d+$/, '');
-  for (const [, n] of (pr.body ?? '').matchAll(/(?:^|[\s(])#(\d+)\b/g)) {
+  const repo = repoUrl(pr.url);
+  for (const [, , n] of (pr.body ?? '').matchAll(mention())) {
     const number = Number(n);
-    if (!seen.has(number)) seen.set(number, { number, url: `${repoUrl}/issues/${number}`, closes: false });
+    if (!seen.has(number)) seen.set(number, { number, url: `${repo}/issues/${number}`, closes: false });
   }
   return [...seen.values()].sort((a, b) => a.number - b.number);
 }

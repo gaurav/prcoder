@@ -1,10 +1,20 @@
-// The markdown checklist grammar, shared by the pane that renders a PR
-// description and the server that writes back to it.
+// The markdown grammar of a PR description -- checklists, fences, mentions --
+// shared by the pane that renders one and the server that reads and writes it.
 //
 // It lives in one file because a tick is sent as a *position* in the body's
 // list of checklist lines. If the two sides disagree about which lines count,
 // every index past the first difference addresses the wrong line -- and they
 // did disagree, for as long as each walked the body with its own fence rule.
+
+/**
+ * A bare `#N` mention: group 2 is the number. The server lists these in the
+ * Mentions row and the pane links them in the text, so the two agree by
+ * construction. A factory for the same lastIndex reason as fence() below.
+ */
+export const mention = () => /(^|[\s(])#(\d+)\b/g;
+
+/** The repository a pull request's URL is under, on any host. */
+export const repoUrl = (prUrl) => prUrl.replace(/\/pull\/\d+$/, '');
 
 /** The same checklist line GitHub renders as a checkbox. */
 export const TASK = /^\s*[-*]\s*\[( |x|X)\]\s*(.*)$/;
@@ -75,18 +85,18 @@ export function fences(body) {
  * all. Blanked rather than removed, so the indices still address the raw body.
  */
 export function taskLines(body = '') {
-  const visible = hideComments(body, ' ').replace(summary(), (s) => s.replace(/[^\n]/g, ' '));
-  const fenced = fencedLines(body);
+  const uncommented = hideComments(body, ' ');
+  const visible = uncommented.replace(summary(), (s) => s.replace(/[^\n]/g, ' '));
+  const fenced = fencedLines(uncommented);
   return visible.split('\n').flatMap((line, i) => (!fenced.has(i) && TASK.test(line) ? [i] : []));
 }
 
 /**
- * The numbers of the body's lines that sit inside a fence, fence lines included.
- * Comments are blanked first, the order the pane uses, so a ``` inside a comment
- * opens nothing.
+ * The numbers of the lines that sit inside a fence, fence lines included. Takes
+ * the body with comments already blanked, the order the pane uses, so a ```
+ * inside a comment opens nothing.
  */
-export function fencedLines(body = '') {
-  const visible = hideComments(body, ' ');
+function fencedLines(visible) {
   const fenced = new Set();
   const lineAt = (index) => visible.slice(0, index).split('\n').length - 1;
   // The same expression fences() matches with, so the two agree by

@@ -1,4 +1,4 @@
-import { TASK, fences, hideComments, summary } from './tasks.js';
+import { TASK, fences, hideComments, summary, mention, repoUrl } from './tasks.js';
 
 // Skips absent sections; DOM append() would render them as the text "null".
 const kids = (list) => list.flat().filter((k) => k != null);
@@ -311,7 +311,7 @@ let links = null;
  * so it has to resolve them itself and may as well resolve them usefully.
  */
 const linkBase = (pr) => ({
-  repo: pr.url.replace(/\/pull\/\d+$/, ''),
+  repo: repoUrl(pr.url),
   ref: pr.isCrossRepository ? pr.baseRefName : pr.headRefName,
 });
 
@@ -1079,9 +1079,9 @@ export const inline = (s, where = links) => {
     .replace(/(^|[\s(])(https?:\/\/[^\s)]+)/g, (_, pre, url) => pre + a(url, url))
     // After the two link rules, so a `#` inside an href this just built is not
     // a mention: those are preceded by a path character, and a mention has to
-    // start a word. Same match as linkedIssues() in github.js, which is what
-    // puts the same numbers in the Mentions row.
-    .replace(/(^|[\s(])#(\d+)\b/g, (m, pre, n) =>
+    // start a word. The same mention() linkedIssues() in github.js reads, which
+    // is what puts the same numbers in the Mentions row.
+    .replace(mention(), (m, pre, n) =>
       (where ? `${pre}${a(`${where.repo}/issues/${n}`, `#${n}`)}` : m))
     .replace(/\n/g, '<br>')
     .replace(/\u0000(\d+)\u0000/g, (_, i) => `<code>${code[i]}</code>`);

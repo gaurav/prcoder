@@ -2,6 +2,7 @@
 // diff viewer.
 
 import { createHash } from 'node:crypto';
+import { repoUrl } from './public/tasks.js';
 
 const TEST = /(^|\/)(tests?|spec|__tests__)\/|(^|\/)test_[^/]+$|[._-](test|spec)\.[^./]+$/i;
 const DOC_EXT = /\.(md|mdx|rst|txt|json|ya?ml|toml|ini|cfg|lock)$/i;
@@ -48,7 +49,7 @@ export function fileUrl(prUrl, p) {
  * PR -- `/cli/cli/blob/682398a/docs/install_linux.md` answered 200.
  */
 export function fileViews(prUrl, sha, p) {
-  const repo = prUrl.replace(/\/pull\/\d+$/, '');
+  const repo = repoUrl(prUrl);
   return {
     blob: `${repo}/blob/${sha}/${p}`,
     blame: `${repo}/blame/${sha}/${p}`,
