@@ -170,7 +170,9 @@ Every Firefox launch in `tools/` and `test/` now sets `MOZ_APP_DATA` and
 `MOZ_LOCAL_APP_DATA` under `data/firefox-appdata/`, and with them it starts in
 about two seconds. A launch that leaves them out hangs until the timeout, with
 nothing in the output to say why -- so a new driver that launches Firefox
-needs them too. The workaround is temporary, and #80 is when it comes out
+passes `firefoxEnv()` from `tools/driver.mjs`, which is also where the port
+check, the stubbed server environment and the kill-on-exit every driver needs
+live. The workaround is temporary, and #80 is when it comes out
 (Firefox 158 fixes this upstream). The 45-second timeout and the fall-back to
 Chromium stay until then, in case the workaround stops working;
 `tools/firefox-runner/` is the whole story, and `probe.mjs` there is the

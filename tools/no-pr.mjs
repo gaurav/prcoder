@@ -17,15 +17,12 @@
 // Chromium, not Firefox: this pane is a sentence, a list of buttons and a link
 // row, with none of the draggable text the engine split in browser.mjs is about.
 import { spawn, spawnSync } from 'node:child_process';
-import { createServer } from 'node:net';
 import fs from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 import { openShots, pruneShots } from './shots.mjs';
-
-const repo = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
+import { repo, free, serverEnv, killOnExit, openPage } from './driver.mjs';
 const clone = path.join(repo, 'data', 'main-clone');
 // A label under data/shots, not a path -- see tools/shots.mjs. Its own default,
 // because this driver's three shots are of a state the other two cannot reach
@@ -34,14 +31,6 @@ const shotsRoot = path.join(repo, 'data', 'shots');
 const label = process.argv[2] ?? 'no-pr';
 const port = Number(process.env.PRCODER_PORT) || 17491;
 
-// Same reason as the other two: server.js quietly takes a free port when its own
-// is held, so a driver that did not check would drive whatever is already there.
-const free = (p) => new Promise((res, rej) => {
-  const probe = createServer();
-  probe.once('error', () => rej(new Error(`port ${p} is taken -- something else would be driven instead of this run's server. Stop it, or set PRCODER_PORT.`)));
-  probe.once('listening', () => probe.close(res));
-  probe.listen(p, '127.0.0.1');
-});
 await free(port);
 const shots = await openShots(shotsRoot, label);
 
@@ -64,22 +53,13 @@ console.log('on:     ', git(['branch', '--show-current']).stdout.trim(), ' (want
 const log = await fs.open(path.join(repo, 'data', 'no-pr-server.log'), 'w');
 const server = spawn('node', [path.join(repo, 'server.js')], {
   cwd: clone,
-  env: { ...process.env,
-    PRCODER_PORT: String(port), PRCODER_NO_OPEN: '1', PRCODER_VERBOSE: '2',
-    CLAUDE_BIN: path.join(repo, 'tools', 'claude-stub.mjs') },
+  env: serverEnv(port, { PRCODER_VERBOSE: '2' }),
   stdio: ['ignore', log.fd, log.fd],
 });
-// Load-bearing twice, as in browser.mjs: a live child keeps the event loop open,
-// and a throw in between would otherwise leave a server polling gh every minute.
-process.on('exit', () => server.kill());
-for (const sig of ['SIGTERM', 'SIGHUP', 'SIGINT']) process.on(sig, () => process.exit(130));
+killOnExit(server);
 
 const browser = await chromium.launch();
-const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
-page.on('pageerror', (e) => console.log('PAGE EXCEPTION:', e.message));
-for (let i = 0; i < 30; i++) {
-  try { await page.goto(`http://localhost:${port}/`); break; } catch { await page.waitForTimeout(500); }
-}
+const page = await openPage(browser, port);
 await page.waitForSelector('#pr-body .empty', { timeout: 60_000 });
 await page.waitForSelector('#pr-body .pr-into button', { timeout: 60_000 });
 

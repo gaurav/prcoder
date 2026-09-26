@@ -43,11 +43,11 @@
 // enforced.
 import { test as nodeTest, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { existsSync } from 'node:fs';
 import { server } from '../../server.js';
 import { groupFiles } from '../../files.js';
 import { rollup } from '../../github.js';
+import { firefoxEnv } from '../../tools/driver.mjs';
 
 const engineName = process.env.PRCODER_TEST_BROWSER;
 let engine;
@@ -57,11 +57,6 @@ const skip = !engine ? 'playwright is not installed (npm ci without --omit=dev)'
     : false;
 // Each run's names carry its engine, so a CI log says which one broke.
 const test = (name, ...rest) => nodeTest(`${name} [${engineName}]`, ...rest);
-// macOS 27 keeps a Firefox launched from a terminal out of its own app data, and
-// it hangs until the timeout; this is the drivers' way round it
-// (tools/firefox-runner), harmless elsewhere, and #80 is when it comes out.
-const appData = fileURLToPath(new URL('../../data/firefox-appdata/', import.meta.url));
-const firefoxEnv = { MOZ_APP_DATA: appData + 'roaming', MOZ_LOCAL_APP_DATA: appData + 'local' };
 
 // Each line here is a regression: `_for_` showed its underscores, the comment
 // and prcoder's own markers showed as text, `##` rendered literally, and a
@@ -168,8 +163,9 @@ async function newPage() {
 before(async () => {
   if (skip) return;
   await new Promise((res) => server.listen(0, '127.0.0.1', res));
-  if (engineName === 'firefox') for (const dir of Object.values(firefoxEnv)) mkdirSync(dir, { recursive: true });
-  browser = await engine.launch(engineName === 'firefox' ? { env: { ...process.env, ...firefoxEnv } } : {});
+  // The drivers' way round macOS 27 keeping a terminal-launched Firefox out of
+  // its own app data (tools/driver.mjs); #80 is when it comes out.
+  browser = await engine.launch(engineName === 'firefox' ? { env: { ...process.env, ...firefoxEnv() } } : {});
   page = await newPage();
 });
 

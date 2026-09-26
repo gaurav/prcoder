@@ -136,8 +136,8 @@ ls: /Users/gaurav/Library/Application Support/Firefox/: Operation not permitted
 - **Firefox 158 or later**, once it ships, for anything that passes `-profile`.
 
 `tools/browser.mjs` and `test/browser/suite.js` use the first: every Firefox
-launch gets both variables, pointed under `data/firefox-appdata/`, which
-`probe.mjs` shares. Nothing in it
+launch gets both variables, pointed under `data/firefox-appdata/` by
+`firefoxEnv()` in `tools/driver.mjs`, which `probe.mjs` imports too. Nothing in it
 checks the macOS version, because the variables are harmless where they are not
 needed. Leaving them unconditional is also what keeps #80's removal down to
 deleting lines.
