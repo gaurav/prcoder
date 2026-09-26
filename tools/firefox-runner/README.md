@@ -53,53 +53,19 @@ it was clicked. The bug is live, the grip is load-bearing, and the run worth
 repeating is the one after a Firefox update rather than the next time someone
 wonders.
 
-## What fails
+## How it was found
 
-| What | How |
-| --- | --- |
-| Playwright build 1471 (Firefox 134) | `Can't find profile directory` |
-| Playwright build 1538 (Firefox 153, currently pinned) | hangs until the caller's timeout |
-| Playwright build 1543 (Firefox 155, Playwright 1.63.0) | exits 1, `Could not find profile folder` |
-| `/Applications/Firefox.app` 155.0.1, Mozilla-signed | exits 1, `Could not find profile folder` |
-| `/Applications/Firefox.app` 156.0.1, bare, 2026-09-26 | exits 1 in 98ms, `Could not find profile folder` |
+The launch failures, one row per build and version, and the six hypotheses
+eliminated on 2026-09-17 are in #61, along with a correction: one of the six,
+"TCC grants an agent session lacks", was the cause. It looked ruled out
+because a Terminal launch failed too, but Terminal lacks the same grant. That
+is worth remembering about any "fails for a human as well" test: it rules out
+a difference between the two, not a thing they share.
 
-Build 1538 hanging rather than exiting is why a default `node tools/browser.mjs`
-run sat for Playwright's full three-minute timeout and read as a hung server.
-`existsSync(firefox.executablePath())` is true throughout, so that check cannot
-tell installed from working; the driver now gives an unforced Firefox 45 seconds
-and falls back to Chromium, printing an `engine:` line when it does.
-
-## What it is not
-
-Each of these looked likely enough to cost an hour on 2026-09-17, and each is
-eliminated. Don't re-run them.
-
-- **Playwright's build being `adhoc, linker-signed`.** The Mozilla-signed
-  Firefox in `/Applications` fails headless the same way, from a bare shell with
-  no Playwright anywhere near it. That is the single most useful result here: it
-  moves the bug from Playwright to Firefox.
-- **The profile directory.** Fails for a `-profile` path that exists, for one
-  inside the repo, and for no `-profile` at all.
-- **A different Firefox version.** Ten months older fails the same way as
-  current. Each attempt is a ~100MB download.
-- ~~**TCC grants an agent session lacks.** All of it fails from a Terminal window
-  too, run by hand.~~ **Wrong -- this is the cause.** Terminal lacks the same
-  grant. What was ruled out was "the agent session has less access than a
-  human", not TCC itself, and the test could not tell the two apart. See
-  [What it is](#what-it-is).
-- **The Claude Code shell sandbox.** Identical with it on and off, so
-  `dangerouslyDisableSandbox` buys nothing and a hung launch is not evidence of
-  it.
-- **Playwright being unable to drive a stock build.** It can:
-  `channel: 'moz-firefox'` drives one over WebDriver BiDi and is supported by
-  the pinned 1.62.1. It finds and launches `/Applications/Firefox.app`, then
-  fails headless and headed like the rest.
-
-Two things that mislead while reading the output.
-`sandbox_extension_issue_file_to_process` is not the smoking gun it reads as --
-it prints for the signed Firefox too. And Playwright 1.50's installer is broken
-here in its own right: it reports downloading 83MB and leaves an 852K stub,
-where `curl` and `unzip` on the same URL give a correct tree.
+One line of output still misleads, because the probe prints it on every
+no-env `FAIL`. `sandbox_extension_issue_file_to_process ... Operation not
+permitted` reads like the cause and is not: it prints for a Firefox that starts
+normally, too.
 
 ## What it is
 
@@ -113,15 +79,14 @@ mention it in two sentences under System Integrity Protection;
 is where the list is. Access is judged against the *responsible process*.
 Launched through LaunchServices (the Dock, Finder, `open -a`), that is Firefox,
 and it may read its own directory. Launched as a bare binary from a shell, it is
-the terminal, and the terminal is denied -- which is every automation tool, and
-every row in the table above.
+the terminal, and the terminal is denied -- which is every automation tool.
 
 Firefox resolves that directory for `profiles.ini` and `installs.ini` even when
 `-profile` names a profile somewhere else. The read fails, the profile service
 does not initialise, and Firefox exits with `Could not find profile folder`, or
 headed, puts up a "Profile Missing" dialog. Headless there is nothing to show
-the dialog on, and that is build 1538's hang. It is also why every `-profile`
-path failed in the list above: the profile was never the thing being read.
+the dialog on, and that is build 1538's hang. It is also why no `-profile`
+path made a difference: the profile was never the thing being read.
 
 It is visible from a shell here, with no Firefox involved:
 
@@ -149,8 +114,8 @@ ls: /Users/gaurav/Library/Application Support/Firefox/: Operation not permitted
   maintainer's reply points at the Mozilla fix above.
 - [microsoft/playwright#42082](https://github.com/microsoft/playwright/issues/42082),
   closed not-planned. It is the same failure, blamed on the
-  `sandbox_extension_issue_file_to_process` line. That is the red herring this
-  README warns about above, and #42768 says so too.
+  `sandbox_extension_issue_file_to_process` line -- the red herring above, which
+  #42768 also calls out.
 
 ### Workarounds
 
