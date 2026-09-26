@@ -69,9 +69,10 @@ that): every construct it learns is new markup built from untrusted text, and ha
 ## Text that becomes a turn
 
 Some text reaches Claude as a turn without any script involved, because a person clicked. A queue
-item's ▶ sends its text verbatim, and an item can arrive from a line added to the description's
-prcoder block (`syncFromPrBlock` in [`queue.js`](../queue.js)) — so whoever can edit that
-description can write the words. Commit sends a message built from the names of the working tree's uncommitted files.
+item's ▶ sends its text verbatim, and an item can arrive by ↓ from the PR tab, which copies a
+checklist line of the description, or from the Issues tab, which copies an issue's title (`pull` in
+[`public/queue.js`](../public/queue.js)) — so whoever can edit that description or that issue can
+write the words. Commit sends a message built from the names of the working tree's uncommitted files.
 
 The guard here is the click, and the text being visible before it. There is no filter on what the
 words say, and there should not be one pretending to be a guard. A feature that sends GitHub text
