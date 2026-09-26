@@ -2,7 +2,7 @@
 // appended to a PR description, and one checkbox flipped in it.
 //
 // The queue itself lives in .prcoder/queue.json (see store.js) and an item is
-// { text, done, doneAt, issue, deleted }. It is yours and it stays local: moving an item
+// { text, done, doneAt, issue, deleted, deletedAt }. It is yours and it stays local: moving an item
 // to the PR description or an issue is one-way, written there and taken off the
 // list (moveOut in server.js), and nothing here reads a description back into
 // the queue. `deleted` is a tombstone, so nothing typed disappears without

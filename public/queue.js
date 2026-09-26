@@ -161,11 +161,12 @@ function render() {
       : items.filter(TABS[name]).length);
   const label = (n) => `${LABELS[n]} (${count(n)})`;
   const shown = TABS[tab] ? items.filter(TABS[tab]) : [];
-  // Most recently finished first, so the item you just ticked by mistake is on
-  // top to be unticked. The store stamps doneAt; one it has not stamped yet
-  // (done before the field existed) goes last, and the sort is stable, so ties
-  // keep the queue's own order.
-  if (tab === 'done') shown.sort((a, b) => (b.doneAt ?? -Infinity) - (a.doneAt ?? -Infinity));
+  // Most recent first on Completed and Deleted, so the item you just ticked or
+  // deleted by mistake is on top to be taken back. The store stamps the times;
+  // one it has not stamped yet (from before the field existed) goes last, and
+  // the sort is stable, so ties keep the queue's own order.
+  const at = { done: 'doneAt', deleted: 'deletedAt' }[tab];
+  if (at) shown.sort((a, b) => (b[at] ?? -Infinity) - (a[at] ?? -Infinity));
 
   host.replaceChildren(
     h('div', { className: 'tabs' },

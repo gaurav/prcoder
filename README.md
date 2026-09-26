@@ -189,7 +189,7 @@ not handed over yet. A session you finished tidily ends with it empty.
 first and with a delete-all for clearing it out; unticking one there puts it
 back on Local, which is the way back if Claude did not do it -- or if the tick
 was a slip, which is why the latest is on top. Only Local is yours to reorder.
-**Deleted** holds tombstones
+**Deleted** holds tombstones, the latest on top
 until you empty it — nothing you typed disappears without somewhere to get it
 back. Every item is on exactly one of those, and Deleted hides when it holds
 nothing.

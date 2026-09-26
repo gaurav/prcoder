@@ -145,9 +145,9 @@ green run. Add a `page.on('console')` line for the run that changes the header; 
 
 No driver touches the **queue pane** at all. Its row actions, the grip's arrow-key reorder, drag and
 drop and the tabs are checked by hand or not at all -- the grip exists because of a Firefox-only
-caret bug found that way. The exception is Completed's order, most recently finished first with
-no grip, which `test/browser/suite.js` pins against a mocked queue; the `doneAt` stamp it sorts on
-is `test/store.test.js`'s. [#65](https://github.com/gaurav/prcoder/issues/65) is the fourth driver,
+caret bug found that way. The exceptions are the order of Completed and Deleted, most recent first
+with no grip, which `test/browser/suite.js` pins against a mocked queue; the `doneAt` and
+`deletedAt` stamps they sort on are `test/store.test.js`'s. [#65](https://github.com/gaurav/prcoder/issues/65) is the fourth driver,
 and what it needs first: a queue of its own, which a clone gives for free the way `tools/no-pr.mjs`
 already takes one.
 

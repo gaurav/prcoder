@@ -557,6 +557,23 @@ test('folds show progress as a pie named by its figure', { skip }, async () => {
   await fresh.close();
 });
 
+// Deleted is newest first too, so a delete you did not mean is at the top to be
+// restored. Its own page: the queue here is one with tombstones in it.
+test('Deleted lists the most recently deleted first', { skip }, async () => {
+  const fresh = await newPage();
+  const gone = (text, deletedAt) => ({ text, done: false, issue: null, deleted: true, deletedAt });
+  const queue = [gone('never stamped', null), gone('deleted first', 1000), gone('deleted last', 3000),
+    { text: 'still here', done: false, issue: null, deleted: false }];
+  await fresh.route('**/api/queue', (r) => r.fulfill({ json: queue }));
+  await fresh.route('**/api/status', (r) => r.fulfill({ json: { ...status, queue } }));
+  await fresh.reload();
+  await fresh.waitForSelector('#queue-body .item');
+  await fresh.locator('#queue-body .tab', { hasText: 'Deleted' }).click();
+  assert.deepEqual(await fresh.locator('#queue-body .item .text').allTextContents(),
+    ['deleted last', 'deleted first', 'never stamped']);
+  await fresh.close();
+});
+
 // Completed is sorted by when each item was finished, so the one just ticked by
 // mistake is on top to be unticked -- whatever order the queue holds them in.
 // One the store has not stamped yet goes last. With the order not the user's to
