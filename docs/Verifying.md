@@ -143,13 +143,13 @@ the thing that did not load — the icon check covers xterm, the pane figures co
 That is real coverage, but it is indirect: a directive that nothing exercises can be wrong through a
 green run. Add a `page.on('console')` line for the run that changes the header; #62 is making that permanent.
 
-No driver touches the **queue pane** at all. Its row actions, the grip's arrow-key reorder, drag and
-drop and the tabs are checked by hand or not at all -- the grip exists because of a Firefox-only
-caret bug found that way. The exceptions are the order of Completed and Deleted, most recent first
-with no grip, which `test/browser/suite.js` pins against a mocked queue; the `doneAt` and
-`deletedAt` stamps they sort on are `test/store.test.js`'s. [#65](https://github.com/gaurav/prcoder/issues/65) is the fourth driver,
-and what it needs first: a queue of its own, which a clone gives for free the way `tools/no-pr.mjs`
-already takes one.
+The **queue pane** is driven against this repo's own queue: `tools/browser.mjs` swaps it for a
+fixture with an item in every tab and puts it back at the end, and what it does there is listed with
+the rest of that driver's checks below. [#65](https://github.com/gaurav/prcoder/issues/65) is the
+queue of its own a driver should have instead, which a clone gives for free the way
+`tools/no-pr.mjs` already takes one. The order of Completed and Deleted, most recent first with no
+grip, is `test/browser/suite.js`'s, against a mocked queue; the `doneAt` and `deletedAt` stamps they
+sort on are `test/store.test.js`'s.
 
 `node tools/firefox-runner/probe.mjs` is not a driver and boots no server. It asks a narrower
 question — can anything on this machine drive Firefox — by trying Playwright's own build and the
