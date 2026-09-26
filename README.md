@@ -176,11 +176,11 @@ are clickable.
 
 **Queue** — your own TODO list for this working copy. Throw an item in, drag it
 (or focus its grip and use the arrow keys) to reorder, tick it off. Each item can
-be sent to Claude, or moved somewhere permanent: ▶ types it into the session and
-ticks it off in the same click, ◇ appends it to the PR description as a
-checkbox, ◎ files it as a new GitHub issue. A move is one-way —
-the item is written there and leaves the queue — so the description or the issue
-is where it lives from then on.
+be sent to Claude, or moved into a new GitHub issue: ▶ types it into the session
+and ticks it off in the same click, and ◎ files it as an issue and takes it off
+the queue, so the issue is where it lives from then on. Nothing from the queue
+is ever written into the PR description: the only thing prcoder writes there is
+a checkbox you tick.
 
 **Local** is the working list, and it drains as you move and finish things — so
 handing an item to Claude takes it off the list, and Local stays what you have
@@ -236,13 +236,17 @@ put its unfinished items out of reach for good. An older file's `branch` fields
 are dropped on the next write and those items come back.
 
 The queue is machine-local, which is the trade for not writing your files, and
-moving an item out is how you carry it to another machine. ◇ writes only into
-the pull request for the branch you have checked out: a PR you are merely
-looking at is never written to. An earlier prcoder mirrored items into a block
-in the description instead; that file's `inPr` and `pr` fields are dropped too,
-and those items stay in the queue as ordinary ones rather than being taken for
-already moved. Separate worktrees keep separate queues, since each has its own
-`.prcoder/`.
+filing an item as an issue is how you carry it to another machine. An earlier
+prcoder mirrored items into a block in the description instead; that file's
+`inPr` and `pr` fields are dropped too, those items stay in the queue as
+ordinary ones, and an old description's block is an ordinary checklist now.
+Separate worktrees keep separate queues, since each has its own `.prcoder/`.
+
+The file is safe for something else to edit -- prcoder writes it through a temp
+file and a rename, and re-reads it on every poll -- but the server is the
+better way in while prcoder is running: `GET /api/queue`, then `PUT /api/queue`
+with `{items}`. [docs/Design.md](docs/Design.md#the-queue-is-yours) has the
+rest.
 
 Quitting with items still on Local says how many, since nothing but this
 machine has them.

@@ -1,25 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { appendTasks, toggleTask } from '../queue.js';
+import { toggleTask } from '../queue.js';
 import { taskLines } from '../public/tasks.js';
 import { reorder } from '../public/queue.js';
 import { blocks, sectionize } from '../public/pr.js';
-
-// --- items moved into the description ---
-
-// A move is one-way and has nothing to reconcile afterwards, so the one thing
-// that has to be right is that the lines land as checkboxes. Under a checklist
-// that already ends the body they join it; under prose they need a blank line,
-// or the first one reads as part of the paragraph above.
-test('moved items are appended as checklist lines, joining a list that ends the body', () => {
-  assert.equal(appendTasks('Why this change.', ['first', 'second']),
-    'Why this change.\n\n- [ ] first\n- [ ] second\n');
-  assert.equal(appendTasks('- [x] done already\n\n', ['next']), '- [x] done already\n- [ ] next\n');
-  assert.equal(appendTasks('', ['only']), '- [ ] only\n');
-  // Shift-Enter puts a newline in an item, and a checklist line cannot hold one.
-  assert.equal(appendTasks('Desc.', ['one\n  two']), 'Desc.\n\n- [ ] one two\n');
-  assert.deepEqual(taskLines(appendTasks('Desc.', ['a', 'b'])), [2, 3]);
-});
 
 // --- checkboxes in the description ---
 

@@ -15,7 +15,7 @@ import { WebSocketServer } from 'ws';
 import { loadPr, prHeads, prBody, listPrs, listIssues, setViewed, setBody, createIssue, fetchPatches, runCount } from './github.js';
 import { snapshot, currentBranch, repoInfo, prScope, compareUrl, originOwner, checkoutPr, pushBranch, remoteBranchHead, trackingHead, localPatch } from './git.js';
 import { groupFiles, fileUrl, fileViews } from './files.js';
-import { appendTasks, toggleTask } from './queue.js';
+import { toggleTask } from './queue.js';
 import { readStore, writeStore, readPort, writePort, replaceItems } from './store.js';
 import { counts } from './public/items.js';
 import * as term from './term.js';
@@ -66,9 +66,8 @@ let { target, claudeArgs } = splitArgs(process.argv.slice(2));
 // The PR is fetched once and reused; the queue routes need its body and node id.
 let pr = null;
 // owner/repo and default branch: constant while we run, and loaded at startup
-// rather than lazily, because two things need it before the first poll -- the
-// issue links decorate() derives, and ours(), which refuses a move into the PR
-// description while it is still null.
+// rather than lazily, because the issue links decorate() derives need it before
+// the first poll.
 let info = null;
 
 // ponytail: patches fetched lazily on the first diff click, keyed by head oid
@@ -159,15 +158,6 @@ function withUrls(p) {
   }
   return groups;
 }
-
-/**
- * Whether the PR on screen is this branch's own -- the only description a queue
- * item may be moved into. `prcoder <pr-url>` pins a PR that is not the
- * checkout's, and appending your list to a stranger's description is not a move
- * anybody asked for. Fails closed while `pr` or `info` is still loading.
- */
-const ours = (branch) => Boolean(pr)
-  && prScope(pr, { branch, nameWithOwner: info?.nameWithOwner }) === 'current';
 
 /**
  * The queue is yours and lives only in `.prcoder/queue.json`: nothing here reads
@@ -435,19 +425,6 @@ const routes = {
 
   'PUT /api/queue': ({ items }) => writeQueue(items),
 
-  /** Appended to the description as checklist lines, one per item. */
-  'POST /api/queue/to-pr': async ({ items, indices }) => {
-    if (!ours(await currentBranch(repo))) {
-      throw new Error('the pull request on screen is not this branch\'s — check it out to move items into it');
-    }
-    return moveOut(items, indices, async (moving) => {
-      await editBody((current) => appendTasks(current, moving.map((i) => i.text)));
-      const where = `PR #${pr.number}'s description`;
-      term.verbose(`moved ${moving.length === 1 ? quote(moving[0].text) : `${moving.length} items`} into ${where}`);
-      return where;
-    });
-  },
-
   /** Filed as an issue, one item at a time: each is its own issue. */
   'POST /api/queue/to-issue': async ({ items, index }) => {
     info ??= await repoInfo(repo);
@@ -465,7 +442,7 @@ const routes = {
  * localhost is where the same-origin policy stops helping, in two ways this
  * server is exposed by. Any page on the web can send a simple cross-origin POST
  * to a predictable port: it cannot read the answer, but switching branches,
- * rewriting the PR description and filing issues all happen on the way out.
+ * ticking a box in the PR description and filing issues all happen on the way out.
  * And WebSockets are not subject to the policy at all -- that same page can
  * open /pty, get a `claude` PTY in this repo, read what it prints and type at
  * it, approvals included.
@@ -682,10 +659,9 @@ async function ready() {
   };
 
   // Through the serial chain, so a request arriving before this finishes waits
-  // rather than running against a half-loaded process: ours() refuses a move
-  // into the description while `pr` and `info` are still null, which would read
-  // as the PR not being this branch's. `listening` fires before any connection
-  // is handled, so this is always first in the chain.
+  // rather than running against a half-loaded process: an issue filed before
+  // `info` loads would have no repository to link to. `listening` fires before
+  // any connection is handled, so this is always first in the chain.
   await serial(async () => {
     info ??= await repoInfo(repo).catch((e) => {
       console.error('repo:', e.message);
@@ -801,9 +777,9 @@ function askToQuit() {
     last?.ahead && `${last.ahead} unpushed commit${last.ahead > 1 ? 's' : ''}`,
     last?.dirtyFiles?.length && `${last.dirtyFiles.length} uncommitted file${last.dirtyFiles.length > 1 ? 's' : ''}`,
     // The queue is what you meant to finish this time round, and it lives only
-    // on this machine: an item still in it reached neither the PR nor an issue,
-    // and nobody working anywhere else will ever see it.
-    localOnly() && `${localOnly()} queue item${localOnly() > 1 ? 's' : ''} not moved anywhere — move them to the PR or an issue to keep them past this machine`,
+    // on this machine: an item still in it never became an issue, and nobody
+    // working anywhere else will ever see it.
+    localOnly() && `${localOnly()} queue item${localOnly() > 1 ? 's' : ''} only on this machine — file them as issues to keep them past it`,
   ].filter(Boolean);
   // Killed here rather than left to the close handlers: process.exit does not
   // wait for them, and an orphaned `claude` outlives the terminal it was

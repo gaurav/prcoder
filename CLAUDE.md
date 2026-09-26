@@ -9,9 +9,11 @@ last two for an agent about to run the thing: how to launch, what to stub, what
 not to write. Keep all of them true when you change what they describe -- the
 skill drifts first, because nothing else links to it.
 
-**The queue is yours, and moves out one way.** It no longer mirrors into the PR
-description; "The queue is yours" in `docs/Design.md` says what replaced that and
-what is still to come. Don't bring a sync back without reading it.
+**The queue is yours, and prcoder writes no description but a box you tick.**
+The queue lives only in `.prcoder/queue.json`: it no longer mirrors into the PR
+description, nothing moves into one, and FUTURE.md is gone. "The queue is yours"
+in `docs/Design.md` says what replaced them and what is still to come. The
+mirror is parked in PR #82; don't bring a sync back without reading both.
 
 ## Scratch work goes in `data/`
 
@@ -106,9 +108,8 @@ None of it exists without a tty. `process.stdout.isTTY` gates the block and
 
 Descriptions written by an earlier prcoder hold a checklist between prcoder's
 own HTML-comment markers. Nothing reads or rewrites that block any more: it is
-an ordinary checklist now, ticked like any other from the PR pane, and a line
-moved in with ◇ is appended at the end of the body rather than into it. Leave
-old blocks alone; hand-editing them is safe.
+an ordinary checklist now, ticked like any other from the PR pane. Leave old
+blocks alone; hand-editing them is safe.
 
 ## The Claude pane is not prcoder's to draw on
 

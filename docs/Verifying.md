@@ -199,16 +199,14 @@ Every figure here was measured on `5f7d6cc`, in both engines.
 ## What gets checked, and where
 
 Unit tests cover the queue store, the port derivation, the description renderer, file grouping and
-the order the folds come out in, GitHub's diff anchors, the sync verdict, the checklist lines a
-move appends to a description, the queue's tabs and how an older store migrates, the status block's
-wording, the queue light's states, and the terminal's own erase bookkeeping — the last because a
+the order the folds come out in, GitHub's diff anchors, the sync verdict, ticking a description
+checkbox, the queue's tabs and how an older store migrates, the status block's wording, and the
+terminal's own erase bookkeeping — the last because a
 block that miscounts its rows either eats scrollback or leaves a smear, and both look like anything
 but an off-by-one.
 
-Two of them pin a *coupling* rather than a behaviour. The description wins on `done`, so a tick the
-description never received is reverted by the next merge — correct, and exactly why the store may
-never move without the body moving with it. And a tick is sent as a *position* in the body's list of
-checklist lines, so `public/tasks.js` holds that grammar for both sides and a test walks one body
+One of them pins a *coupling* rather than a behaviour. A tick is sent as a *position* in the body's
+list of checklist lines, so `public/tasks.js` holds that grammar for both sides and a test walks one body
 through both walks; two callers of one function can still be handed different bodies.
 
 The routes are tested over real HTTP. `test/api.test.js` listens on port 0 in-process rather than
@@ -222,6 +220,12 @@ is refused rather than parsed into a pass. A `Host` that is not a loopback name 
 without an `Origin`, which is the DNS-rebinding case; that test sends its requests with `node:http`,
 because `fetch` will not set `Host`. Only the handlers that answer without `gh` — the rest
 would be testing this machine's GitHub auth.
+
+`test/queue-writes.test.js` is the same server in a process of its own, moved into a scratch
+directory first and with `gh` and `git` on `PATH` as stubs that log and fail. It drives the queue
+routes through an add, a tick, a reorder, a delete and an older mirrored store, and asserts nothing
+was run: the queue lives in `.prcoder/` and no route that only reads or rewrites it reaches GitHub
+or git. Filing an item with ◎ is the one queue route that does, on purpose, and is not driven.
 
 Some things can only be checked against the real thing, so they are:
 

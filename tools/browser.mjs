@@ -27,9 +27,8 @@
 // run that dies in between leaves the fixture behind, and the next run drops it
 // rather than restoring it. The queue itself writes only `.prcoder/`.
 //
-// Nothing here clicks ◇ or ◎. Those move an item into the PR description or a
-// new issue, one-way: there is no queue to put back that would take the line
-// out of the description again, or close the issue. Anything added here that
+// Nothing here clicks ◎. It moves an item into a new issue, one-way: there is
+// no queue to put back that would close the issue again. Anything added here that
 // writes to GitHub needs its own undo, and needs to run against a repo you own.
 
 import { spawn } from 'node:child_process';

@@ -15,7 +15,7 @@ const GONE = item({ deleted: true });
 
 const on = (name, list) => list.filter(TABS[name]);
 
-// Moving an item to the PR or an issue takes it off the list, so the tabs are
+// Filing an item as an issue takes it off the list, so the tabs are
 // only ever your own list's states: still to do, done, thrown away. An item that
 // links an issue is still yours to do.
 test('every item is on exactly one tab', () => {

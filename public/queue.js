@@ -29,11 +29,10 @@ export const freeze = (on) => { frozen = on; render(); };
  * the pane can keep focus indefinitely -- a clicked tab does, in Chromium -- and
  * freezing on it leaves the queue stale with nothing to unstick it.
  */
-export function setItems(next, prAvailable, prOnScreen = null) {
+export function setItems(next, prOnScreen = null) {
   if (document.activeElement?.closest?.('#queue-body .text[contenteditable]')) return;
   if (document.querySelector('#queue-body .item.dragging')) return;
   items = next;
-  hasPr = prAvailable;
   pr = prOnScreen;
   render();
 }
@@ -44,11 +43,6 @@ export function setItems(next, prAvailable, prOnScreen = null) {
 // titles are fetched when that tab is opened, since nothing else needs them.
 let pr = null;
 let openIssues = null;
-
-// Moving an item into a PR description needs this branch's own PR on screen.
-// Filing an issue does not, so that control stays live on a branch that has none.
-let hasPr = true;
-const NO_PR = 'no pull request for this branch to move items into';
 
 // Which end the input adds to. The queue is two things at once -- a backlog in
 // the order you mean to work through it, and somewhere to put the thing you
@@ -194,14 +188,6 @@ function bulks() {
   const of = (name) => items.filter(TABS[name]);
   const many = (n) => `${n} item${n === 1 ? '' : 's'}`;
 
-  if (tab === 'local') {
-    return [bulk('→ all to PR', () => {
-      const local = of('local');
-      // Confirmed, because it writes to GitHub and empties the tab in one click.
-      if (!local.length || !confirm(`Move ${many(local.length)} into the PR description?\n\nThey are added there as checkboxes and leave the queue.`)) return;
-      toPr(local);
-    }, { disabled: !hasPr, title: hasPr ? 'move every item here into the PR description' : NO_PR })];
-  }
   if (tab === 'done') {
     return [bulk('delete all', () => {
       const done = of('done');
@@ -224,12 +210,6 @@ function bulks() {
   }
   return [];
 }
-
-/**
- * Out of the queue and into somewhere permanent. The server writes there first
- * and answers the list without them, so a failure leaves them where they were.
- */
-const toPr = (moving) => save('/api/queue/to-pr', 'POST', { items, indices: moving.map((i) => items.indexOf(i)) });
 
 // The button is static markup in the pane header, which render()'s
 // replaceChildren never reaches, so only the two things that change addTo have
@@ -391,11 +371,9 @@ function row(item, above, below) {
         item.done = true;
         save();
       }, { title: 'type into Claude, and check it off' }),
-      // Both are moves, not flags: the item is written there and leaves the queue.
-      btn('◇', () => toPr([item]), {
-        title: hasPr ? 'move into the PR description' : NO_PR,
-        disabled: !hasPr,
-      }),
+      // A move, not a flag: the issue is filed and the item leaves the queue.
+      // Nothing moves into the PR description -- prcoder does not write one,
+      // bar a box you tick on the PR tab.
       item.issue ? null : btn('◎', () => save('/api/queue/to-issue', 'POST', { items, index: idx }),
         { title: 'move into a new issue' }),
       item.deleted

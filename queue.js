@@ -1,33 +1,14 @@
-// The markdown checklist a queue item leaves for and the PR pane ticks: lines
-// appended to a PR description, and one checkbox flipped in it.
+// One checkbox flipped in a PR description: the only edit prcoder makes to one,
+// and only when you tick a box in the PR pane or on the queue's PR tab.
 //
 // The queue itself lives in .prcoder/queue.json (see store.js) and an item is
-// { text, done, doneAt, issue, deleted, deletedAt }. It is yours and it stays local: moving an item
-// to the PR description or an issue is one-way, written there and taken off the
-// list (moveOut in server.js), and nothing here reads a description back into
-// the queue. `deleted` is a tombstone, so nothing typed disappears without
-// somewhere to get it back.
+// { text, done, doneAt, issue, deleted, deletedAt }. It is yours and it stays
+// local: nothing here reads a description into the queue or writes the queue
+// into a description. Filing an item as an issue is one-way, written there and
+// taken off the list (moveOut in server.js). `deleted` is a tombstone, so
+// nothing typed disappears without somewhere to get it back.
 
 import { TASK, taskLines, hideComments } from './public/tasks.js';
-
-/**
- * An item's text as one checklist line. A line cannot hold a newline, and the
- * queue input takes one on Shift-Enter -- written raw, the rest of the item would
- * become lines of prose under the checkbox.
- */
-const oneLine = (text) => text.replace(/\s+/g, ' ').trim();
-
-/**
- * `texts` appended to a description as unticked checklist lines. Directly under
- * a checklist that already ends the body, so the two read as one list; after a
- * blank line otherwise, so a line of prose above does not swallow the first.
- */
-export function appendTasks(body, texts) {
-  const lines = texts.map((t) => `- [ ] ${oneLine(t)}`).join('\n');
-  const trimmed = (body ?? '').trimEnd();
-  if (!trimmed) return `${lines}\n`;
-  return `${trimmed}${TASK.test(trimmed.split('\n').at(-1)) ? '\n' : '\n\n'}${lines}\n`;
-}
 
 /**
  * Flip one checkbox in a PR description, so the boxes rendered in the PR pane

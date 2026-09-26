@@ -232,11 +232,8 @@ function paint(status) {
       { ...fileHandlers, selected: selectedPath() });
   } else renderNoPr(status, prs, { onCreate: createPr, onSwitch: switchPr });
   if (switched) loadPrs();
-  // Moving an item in needs the PR to be *this* branch's: prcoder will not write
-  // into a PR we are only looking at, so the controls that would ask it to must
-  // disable themselves rather than silently do nothing. Reading its checklist
-  // into the PR tab needs only a PR on screen.
-  if (status.queue) setItems(status.queue, status.scope === 'current', status.pr);
+  // Reading its checklist into the PR tab needs only a PR on screen.
+  if (status.queue) setItems(status.queue, status.pr);
 
   // Keep an open diff honest: close it if its file left the PR (or the PR
   // switched away), refresh it if the branch moved — the server cache is
