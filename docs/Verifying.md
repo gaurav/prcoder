@@ -53,8 +53,11 @@ launched from a terminal its own app-data directory. The driver now points `MOZ_
 `engine: firefox` with no fallback line and exited 0. [tools/firefox-runner](../tools/firefox-runner/README.md)
 is the cause and the one-command re-check, and #80 is when the workaround comes out. The Playwright
 build was uninstalled on 2026-09-19 and reinstalled on 2026-09-26; `npx playwright install firefox`
-is what brings it back if it goes again. The pane work since 2026-09-16 still owes its Firefox pass,
-which #61 is where to say so.
+is what brings it back if it goes again. The Firefox pass #61 owed was run on 2026-09-26:
+`tools/browser.mjs` against PR #1 and `tools/no-pr.mjs` (through a scratch Firefox copy under
+`data/`) in both engines, which agreed on every figure but a 1px measure; and the 16 tests of
+`test/browser.test.js` through a scratch Firefox copy, all passing. What #61 still owes is the Claude
+pane's exit bar, which lives on #75's branch.
 
 Its assertions are written against this repo's own PR #1 — that description's sections, file groups
 and issue chips — and the server follows whatever branch you are on, so a run from a feature branch
@@ -172,7 +175,8 @@ them; it does now.
 That last row is the one figure here that is about GitHub's data rather than about this code: it is
 the *current* PR title, wrapped, so it moves when the title is rewritten and says nothing about a
 regression when it does. It was 285, 263, 236 in both engines under the title this PR carried on
-`5f7d6cc`. Re-measured in Chromium on 2026-09-18 (`4879171`); Firefox is the pass #61 owes.
+`5f7d6cc`. Re-measured in both engines on 2026-09-26 (`23b192f`): 251, 257, 318 in each, under the
+title PR #1 carries now.
 
 A poll costs **seven subprocess calls**, clean tree and dirty alike. `PRCODER_VERBOSE=2` prints the
 count on every poll, so a change that adds a call is visible rather than inferred. The pull requests
@@ -248,9 +252,9 @@ Some things can only be checked against the real thing, so they are:
   driver measures the dot's position with range rectangles rather than screenshotting it, because at
   13px a misplaced leading dot reads as a full stop and is invisible either way.
 - **Which CSS keeps a repository's name when its owner will not fit**, same method, four
-  declarations each checked by dropping it (2026-09-21, Chromium; the Firefox pass is owed on
-  [#61](https://github.com/gaurav/prcoder/issues/61), and flex shrink is a place the engines have
-  disagreed). The head's repository line is one link in two spans -- the owner shrinks and
+  declarations each checked by dropping it (2026-09-21, Chromium; flex shrink is a place the
+  engines have disagreed, and the three pinned in the test pass in Firefox too, 2026-09-26 under
+  [#61](https://github.com/gaurav/prcoder/issues/61)). The head's repository line is one link in two spans -- the owner shrinks and
   ellipsises, the name is `flex: none` -- and `heal-data-stewards/heal-vlmd-AI-pipeline`
   becomes `heal-dat…/heal-vlmd-AI-pipeline` in a narrow pane. Three of the four are pinned in
   `test/browser.test.js`, which narrows the pane by writing `--w-pr` the way a drag does; the

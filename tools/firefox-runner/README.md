@@ -149,8 +149,9 @@ whose bundled Firefox is 158 or later, or one that closes
 microsoft/playwright#42768 -- and this repo's `package.json` moving to it. After
 that, the no-env half of `probe.mjs` confirms the workaround is dead code.
 
-**The Firefox pass owed under #61:** the pane work driven in Firefox, which the
-workaround makes possible again. The other half of that issue -- whether the caret bug that made Firefox
+**The Firefox pass under #61** was run on 2026-09-26 with the workaround in
+place; docs/Verifying.md has what it covered. Only the Claude pane's exit bar,
+on #75's branch, is left. The other half of that issue -- whether the caret bug that made Firefox
 mandatory is still live -- is answered above and needs no driver.
 [CLAUDE.md](../../CLAUDE.md) has that bug and the three fixes to it that do not
 work.
