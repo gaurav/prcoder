@@ -88,7 +88,7 @@ Its ✕ and the header's *Outline* button were checked the same way on 2026-09-2
 reload, and the Outline button absent while there is no outline to bring back.
 
 Folding the terminal to its header is pinned in `test/browser.test.js` (the diff grows into the room,
-the fold survives a reload, a double-click on the header unfolds it), and so is the header's ✕,
+the fold survives a reload, a double-click on the header unfolds it), and so is the header's ▁,
 which folds the same way, hides while folded, and must not change the header's height as it goes
 (it did, by 5px, before it took the ▼'s metrics). What that test cannot see is
 the PTY, because its socket is mocked: `data/fold-check.mjs` ran against this repo's PR with

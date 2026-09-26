@@ -433,23 +433,23 @@ test('no button is named by a glyph alone', { skip }, async () => {
   assert.deepEqual(bare, []);
 });
 
-// The ✕ is the ▼ again at the header's other end, not a close: it folds, and
+// The ▁ is the ▼ again at the header's other end, not a close: it folds, and
 // while folded it is gone, so the ▶ is the only control that says what a click
 // does. Its own page for the same reason as the test above.
-test('the terminal\'s ✕ folds it like the ▼, and hides until it is unfolded', { skip }, async () => {
+test('the terminal\'s ▁ folds it like the ▼, and hides until it is unfolded', { skip }, async () => {
   const fresh = await newPage();
-  // A header that changes height as the ✕ goes jumps the whole layout.
+  // A header that changes height as the ▁ goes jumps the whole layout.
   const height = () => fresh.$eval('#term > header', (el) => el.getBoundingClientRect().height);
   const open = await height();
-  await fresh.click('#term-close');
-  assert.equal(await height(), open, 'the header should keep its height when the ✕ goes');
+  await fresh.click('#term-min');
+  assert.equal(await height(), open, 'the header should keep its height when the ▁ goes');
   assert.equal(await fresh.locator('#term-host').isVisible(), false);
-  assert.equal(await fresh.locator('#term-close').isVisible(), false, 'the ✕ has nothing left to fold');
+  assert.equal(await fresh.locator('#term-min').isVisible(), false, 'the ▁ has nothing left to fold');
   assert.equal(await fresh.getAttribute('#term-fold', 'aria-expanded'), 'false');
   assert.equal(await fresh.getAttribute('#term-fold', 'aria-label'), 'expand the coding agent pane');
 
   await fresh.click('#term-fold');
   assert.equal(await fresh.locator('#term-host').isVisible(), true);
-  assert.equal(await fresh.locator('#term-close').isVisible(), true);
+  assert.equal(await fresh.locator('#term-min').isVisible(), true);
   await fresh.close();
 });
