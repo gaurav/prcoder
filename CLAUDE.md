@@ -13,7 +13,8 @@ skill drifts first, because nothing else links to it.
 The queue lives only in `.prcoder/queue.json`; it no longer mirrors into the PR
 description, and prcoder no longer reads FUTURE.md. "What prcoder writes" in
 `docs/Design.md` says why, what the one exception is, and where the source tabs
-are going (`queue-tabs`, PR #27). Don't bring a sync back without reading it.
+are going (`queue-tabs`, PR #27). The mirror is parked in PR #82; don't bring a
+sync back without reading both.
 
 ## Scratch work goes in `data/`
 

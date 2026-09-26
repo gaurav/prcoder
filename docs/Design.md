@@ -28,8 +28,8 @@ the line has changed under it. Nothing else is written into a description, by th
 - **No other list is read into it, and it is written nowhere else.** An earlier prcoder mirrored
   items two ways into a `<!-- prcoder:todo -->` block in the PR description, with two guards and a
   per-PR latch to stop the sync burying items, and imported FUTURE.md once. Both are gone. The
-  mirror is kept in a draft PR of its own for reference, since it was the one thing that carried
-  items between machines; an old description's block is an ordinary checklist now. FUTURE.md is not
+  mirror is parked in [#82](https://github.com/gaurav/prcoder/pull/82), a draft kept for reference,
+  since it was the one thing that carried items between machines; an old description's block is an ordinary checklist now. FUTURE.md is not
   a source and will not be one (retired 2026-09-26): its items were all either done or already
   issues.
 - **Something else may edit `.prcoder/queue.json`.** Every write is a temp file and a rename, so a
