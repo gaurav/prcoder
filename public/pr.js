@@ -50,8 +50,8 @@ export const api = async (url, body, method = 'POST') => {
  *
  * `sticky` is for a notice that stays true until you act on it, rather than one
  * that reports something already finished -- it waits to be clicked instead of
- * timing out. Every toast is click-to-dismiss; only a sticky one says so, with
- * the ✕ its CSS adds.
+ * timing out. Every toast is click-to-dismiss, and says so with the ✕ its CSS
+ * adds; a sticky one also has a border of its own.
  */
 let toastTimer;
 export function toast(msg, bad = false, sticky = false) {

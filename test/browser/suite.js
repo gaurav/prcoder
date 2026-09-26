@@ -498,26 +498,29 @@ test('a click anywhere on the terminal\'s header folds and unfolds it, the ▼ i
   await fresh.close();
 });
 
-// A sticky toast's ✕ is where a close button is looked for: the top right
-// corner. After the text, it ended whichever line the text wrapped to. It is a
-// pseudo-element, which has no box to measure, so this reads the rule -- and
-// that the text is padded clear of it.
-test('a sticky toast has its ✕ in the top right corner, clear of the text', { skip }, async () => {
+// Every toast closes on a click, so every one has a ✕, where a close button is
+// looked for: the top right corner. After the text, it ended whichever line the
+// text wrapped to. It is a pseudo-element, which has no box to measure, so this
+// reads the rule -- and that the text is padded clear of it -- for each kind.
+test('every toast has its ✕ in the top right corner, clear of the text', { skip }, async () => {
   const fresh = await newPage();
-  const x = await fresh.evaluate(async () => {
-    const { toast } = await import('/pr.js');
-    toast('Switched to add-retries (#123). Claude still has the old branch\'s files in mind '
-      + '— tell it to re-read anything it had open.', false, true);
-    const el = document.getElementById('toast');
-    const after = getComputedStyle(el, '::after');
-    return { content: after.content, position: after.position, top: parseFloat(after.top),
-      right: parseFloat(after.right), pad: parseFloat(getComputedStyle(el).paddingTop),
-      padRight: parseFloat(getComputedStyle(el).paddingRight), fontSize: parseFloat(after.fontSize) };
-  });
-  assert.equal(x.content, '"✕"');
-  assert.equal(x.position, 'absolute');
-  assert.equal(x.top, x.pad, 'level with the first line');
-  assert.ok(x.padRight >= x.right + x.fontSize, `text padded ${x.padRight}px, ✕ needs ${x.right + x.fontSize}px`);
+  for (const [bad, sticky] of [[false, false], [true, false], [false, true]]) {
+    const x = await fresh.evaluate(async ([b, s]) => {
+      const { toast } = await import('/pr.js');
+      toast('Switched to add-retries (#123). Claude still has the old branch\'s files in mind '
+        + '— tell it to re-read anything it had open.', b, s);
+      const el = document.getElementById('toast');
+      const after = getComputedStyle(el, '::after');
+      return { content: after.content, position: after.position, top: parseFloat(after.top),
+        right: parseFloat(after.right), pad: parseFloat(getComputedStyle(el).paddingTop),
+        padRight: parseFloat(getComputedStyle(el).paddingRight), fontSize: parseFloat(after.fontSize) };
+    }, [bad, sticky]);
+    const kind = `bad ${bad}, sticky ${sticky}`;
+    assert.equal(x.content, '"✕"', kind);
+    assert.equal(x.position, 'absolute', kind);
+    assert.equal(x.top, x.pad, `level with the first line (${kind})`);
+    assert.ok(x.padRight >= x.right + x.fontSize, `text padded ${x.padRight}px, ✕ needs ${x.right + x.fontSize}px (${kind})`);
+  }
   await fresh.close();
 });
 

@@ -680,15 +680,19 @@ a { color: var(--accent); }
 }
 #toast[hidden] { display: none; }
 #toast.bad { background: #4d1f24; color: #f5a3a3; border-color: #f5a3a3; }
-/* A sticky toast waits to be clicked, so it has to look like it can be. The
+/* Every toast closes on a click, so every one says so -- a sticky one most of
+   all, since it waits for that click, which is what its border marks. The
    glyph is a pseudo-element because toast() sets textContent. In the top right
    corner, where a close button is looked for: after the text, a toast that
    wrapped put it at the end of its last line, mid-box. The padding keeps the
    text from running under it; top matches the toast's own, so it sits on the
    first line. */
-#toast.sticky { border-color: #f0dc9a; padding-right: 30px; }
-#toast.sticky::after { content: '✕'; position: absolute; top: 7px; right: 10px; color: var(--dim); }
-#toast.sticky:hover::after { color: var(--fg); }
+#toast { padding-right: 30px; }
+#toast::after { content: '✕'; position: absolute; top: 7px; right: 10px; color: var(--dim); }
+#toast:hover::after { color: var(--fg); }
+#toast.bad::after { color: inherit; opacity: .7; }
+#toast.bad:hover::after { opacity: 1; }
+#toast.sticky { border-color: #f0dc9a; }
 
 /* A row per pull request that merges into this branch. Buttons, not links: the
    click checks one out rather than going anywhere, so they are styled down to
