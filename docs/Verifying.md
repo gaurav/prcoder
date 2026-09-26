@@ -198,13 +198,16 @@ Every figure here was measured on `5f7d6cc`, in both engines.
 
 ## What gets checked, and where
 
-Unit tests cover the queue store and how an older one migrates, the port derivation, the description
-renderer, file grouping and the order the folds come out in, GitHub's diff anchors, the sync verdict,
-ticking a description checkbox, the status block's wording, and the terminal's own erase bookkeeping — the last because a block that miscounts its rows either eats scrollback or
+Unit tests cover the queue store, the port derivation, the description renderer, file grouping and
+the order the folds come out in, GitHub's diff anchors, the sync verdict, every queue ↔
+PR-description transition, the status block's wording, the queue light's states, and the terminal's
+own erase bookkeeping — the last because a block that miscounts its rows either eats scrollback or
 leaves a smear, and both look like anything but an off-by-one.
 
-One of them pins a *coupling* rather than a behaviour. A tick is sent as a *position* in the body's
-list of checklist lines, so `public/tasks.js` holds that grammar for both sides and a test walks one body
+Two of them pin a *coupling* rather than a behaviour. The description wins on `done`, so a tick the
+description never received is reverted by the next merge — correct, and exactly why the store may
+never move without the body moving with it. And a tick is sent as a *position* in the body's list of
+checklist lines, so `public/tasks.js` holds that grammar for both sides and a test walks one body
 through both walks; two callers of one function can still be handed different bodies.
 
 The routes are tested over real HTTP. `test/api.test.js` listens on port 0 in-process rather than
@@ -218,12 +221,6 @@ is refused rather than parsed into a pass. A `Host` that is not a loopback name 
 without an `Origin`, which is the DNS-rebinding case; that test sends its requests with `node:http`,
 because `fetch` will not set `Host`. Only the handlers that answer without `gh` — the rest
 would be testing this machine's GitHub auth.
-
-`test/queue-writes.test.js` is the same server in a process of its own, moved into a scratch
-directory first and with `gh` and `git` on `PATH` as stubs that log and fail. It drives the queue
-routes through an add, a tick, a reorder, a delete and an older mirrored store, and asserts nothing
-was run: the queue lives in `.prcoder/` and no route that touches it reaches GitHub or git. Run
-against the code that still mirrored, it fails on the branch lookup every queue write made first.
 
 Some things can only be checked against the real thing, so they are:
 
@@ -298,7 +295,7 @@ focus lands, an arrow moves the line by ten and shift-arrow by fifty, `Home` res
 `aria-valuenow` reports the position as a percentage of the window and changes when the line moves
 (it was a ResizeObserver on the 1px gutter, which a move never resizes); the switcher, both sync-light
 states, the Deleted tab (which needed a tombstone put in through the API before it would render at
-all), the description's checkboxes and the disabled states; and both
+all), the queue's synced light, the description's checkboxes and the disabled states; and both
 toasts, the four-second one watched to fade and the sticky one clicked away; the head's links out, whose left edges are measured against the title's -- they were right-aligned until
 2026-09-21, and the check that they line up with everything else in the head is what replaced the
 one that proved they did not -- and the repository line, printed whole or clipped at the

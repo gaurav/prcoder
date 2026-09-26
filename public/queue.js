@@ -26,11 +26,17 @@ export const freeze = (on) => { frozen = on; render(); };
  * the pane can keep focus indefinitely -- a clicked tab does, in Chromium -- and
  * freezing on it leaves the queue stale with nothing to unstick it.
  */
-export function setItems(next) {
+export function setItems(next, prAvailable) {
   if (document.activeElement?.closest?.('#queue-body .text[contenteditable]')) return;
   items = next;
+  hasPr = prAvailable;
   render();
 }
+
+// Mirroring into a PR description needs a PR. Creating an issue does not, so
+// that control stays live on a branch that has none.
+let hasPr = true;
+const NO_PR = 'no pull request on this branch to push to';
 
 // Which end the input adds to. The queue is two things at once -- a backlog in
 // the order you mean to work through it, and somewhere to put the thing you
@@ -117,8 +123,12 @@ function render() {
         // you what you are about to lose.
         ? [bulk('empty', () => { items = items.filter((i) => !i.deleted); save(); })]
         : [
-          // Same tombstone the row's own delete writes.
-          bulk('clear done', () => { items.forEach((i) => { if (i.done) i.deleted = true; }); save(); }),
+          bulk('→ all to PR', () => { items.forEach((i) => { if (!i.done && !i.deleted) i.inPr = true; }); save(); },
+            { disabled: !hasPr, title: hasPr ? '' : NO_PR }),
+          // Same tombstone the row's own delete writes, inPr and all: an item
+          // restored from the Deleted tab must not walk back into the PR
+          // description just because it was cleared in bulk.
+          bulk('clear done', () => { items.forEach((i) => { if (i.done) { i.deleted = true; i.inPr = false; } }); save(); }),
         ]),
     ),
     h('ul', { className: 'items' }, ...shown.map((i, n) => row(i, shown[n - 1], shown[n + 1]))),
@@ -212,12 +222,19 @@ function row(item, above, below) {
       // the queue has to say about it. The Completed tab still has it.
       btn('▶', () => { deps.sendToClaude(item.text, false); item.done = true; save(); },
         { title: 'type into Claude, and mark done' }),
+      btn(item.inPr ? '◆' : '◇', () => { item.inPr = !item.inPr; save(); }, {
+        // Which PR, now that items record it: the queue is one list, so a ◆ can
+        // be an item that is in another PR's description and not this one's.
+        title: item.inPr ? `in ${item.pr ? `PR #${item.pr}'s` : 'the PR'} description`
+          : hasPr ? 'add to PR description' : NO_PR,
+        disabled: !hasPr,
+      }),
       item.issue ? null : btn('◎', () => save('/api/queue/issue', 'POST', { items, index: idx }),
         { title: 'create an issue' }),
       item.deleted
         ? btn('↩', () => { item.deleted = false; save(); }, { title: 'restore' })
         // A tombstone, not a splice: the Deleted tab is where it goes.
-        : btn('✕', () => { item.deleted = true; save(); }, { title: 'delete' }),
+        : btn('✕', () => { item.deleted = true; item.inPr = false; save(); }, { title: 'delete' }),
     ),
   );
 
@@ -247,7 +264,7 @@ function row(item, above, below) {
 /** True once the server has it, so the caller knows whether to clear the input. */
 export async function addItem(text) {
   if (!text.trim()) return false;
-  const item = { text: text.trim(), done: false, issue: null, deleted: false };
+  const item = { text: text.trim(), done: false, inPr: false, issue: null, deleted: false };
   // The end of the whole array, past any done or deleted rows: the Active tab
   // filters without reordering, so it still shows last there.
   if (addTo === 'top') items.unshift(item); else items.push(item);

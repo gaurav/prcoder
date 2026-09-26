@@ -21,9 +21,9 @@
 // running. The stub is `tools/claude-stub.mjs` rather than /bin/cat: it echoes
 // as cat does, and it also sends the cursor-position probe a real session sends
 // between turns, which is the half the icon check needs. And the UI's controls hit the live PR: ticking a description
-// checkbox edits the description on GitHub, and ◎ files a real issue. The queue
-// itself is safe -- it writes only `.prcoder/`, which is gitignored. Undo what
-// you write, or stay read-only as this does.
+// checkbox edits the description on GitHub, and so does mirroring a queue item
+// with the diamond. The queue itself is safe -- it writes only `.prcoder/`,
+// which is gitignored. Undo what you write, or stay read-only as this does.
 
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:net';
@@ -487,8 +487,9 @@ console.log('clicked:', JSON.stringify(await toastText()), '  (want null)');
 // queue is legitimately empty the moment the last item has been finished or
 // filed -- which it was, on 2026-09-06, and the driver then failed on a missing
 // locator rather than on the bug it exists to catch. So seed one and put the
-// queue back exactly as it was. The queue writes `.prcoder/` and nothing else,
-// so this never reaches GitHub.
+// queue back exactly as it was. A local-only item leaves the rendered block
+// unchanged, and writeQueue calls setBody only when the block differs, so this
+// writes `.prcoder/` and never GitHub.
 const queue = await page.evaluate(() => fetch('/api/queue').then((r) => r.json()));
 // The route takes `{items}` and replaces the list wholesale -- one queue for the
 // repo, whatever is checked out.

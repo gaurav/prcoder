@@ -83,7 +83,7 @@ export function writeThrough(box, run, settle = () => {}) {
   };
 }
 
-/** The light itself, for the pane header that survives a poll. */
+/** The light itself, for the two pane headers that survive a poll. */
 function paintLight(id, state) {
   const light = document.getElementById(id);
   light.hidden = !state;
@@ -192,6 +192,26 @@ function headerSync(status) {
   if (status.detached) return { className: 'light', text: 'detached HEAD' };
   return null;
 }
+
+/**
+ * Pure: the status -> the queue pane's light. Named states rather than a
+ * boolean, because "nothing to mirror" and "GitHub has it" are both fine and
+ * only one of them is worth a dot.
+ *
+ * `mirrorFailed` is the state this exists for. The store took the change and
+ * GitHub did not, so prcoder has stopped trusting the description it can see --
+ * and until now the only sign of that was a line on the server's stderr.
+ */
+export function queueSync(status) {
+  if (status.error) return { className: 'light unknown', text: 'unavailable' };
+  if (status.mirrorFailed) return { className: 'light bad', text: 'not saved to the PR' };
+  if (!status.queue?.some((i) => i.inPr && !i.deleted)) return null;
+  if (status.scope !== 'current') return { className: 'light unknown', text: 'not mirroring' };
+  return { className: 'light ok', text: 'in the PR' };
+}
+
+/** The queue pane's header, like the PR pane's, survives polls. */
+export const renderQueueSync = (status) => paintLight('queue-sync', queueSync(status));
 
 /**
  * The open pull requests that merge *into* this branch.
@@ -928,8 +948,8 @@ const blockNode = (b, onTask) => ({
  *
  * Deriving that level from the body rather than fixing one here is what lets a
  * description written with `#` and one written with `##` each fold at their own
- * top level -- one description uses `##` for its sections, and another someone
- * typed may well start at `#`. Anything deeper stays a plain heading
+ * top level -- prcoder's own mirrored block writes `## TODO`, and a description
+ * someone typed may well start at `#`. Anything deeper stays a plain heading
  * inside the section it belongs to.
  *
  * Regrouping only. Every block comes out exactly once, in the order it went in,
