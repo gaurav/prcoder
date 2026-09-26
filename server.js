@@ -15,7 +15,7 @@ import { WebSocketServer } from 'ws';
 import { loadPr, prHeads, prBody, listPrs, setViewed, setBody, createIssue, fetchPatches, runCount } from './github.js';
 import { snapshot, currentBranch, repoInfo, prScope, compareUrl, originOwner, checkoutPr, pushBranch, remoteBranchHead, trackingHead, localPatch } from './git.js';
 import { groupFiles, fileUrl, fileViews } from './files.js';
-import { parseFuture, renderPrBlock, syncFromPrBlock, toggleTask } from './queue.js';
+import { renderPrBlock, syncFromPrBlock, toggleTask } from './queue.js';
 import { readStore, writeStore, readPort, writePort, replaceItems } from './store.js';
 import * as term from './term.js';
 import { syncPhrase } from './public/pr.js';
@@ -740,37 +740,6 @@ const wss = new WebSocketServer({ server, path: '/pty' }).on('error', () => {}).
 });
 
 /**
- * FUTURE.md's queue, once, for a repo that has no store yet.
- *
- * Not left to the PR description to recover: an item that is both mirrored and
- * an issue renders as a bare `- [ ] #42`, which parses back with no text at
- * all, and items never mirrored are not there to recover. Ordering goes too.
- *
- * It runs at startup rather than inside readQueue so it lands before the first
- * merge against the PR body — otherwise the body's lines match nothing, and
- * every mirrored item arrives a second time as a new one. FUTURE.md is left
- * byte-identical: rewriting it would be prcoder's last write to a tracked
- * file, done unasked, on the way to never writing one again.
- *
- * Once per repo: the file existing is the whole record of it.
- */
-async function importFuture() {
-  // Any queue file at all means this has run, or a queue was kept without it. An
-  // empty one is a queue somebody emptied: testing for items here brought every
-  // FUTURE.md item back on the next start after the last one was cleared.
-  const { store, exists } = await readStore(repo);
-  if (exists) return;
-
-  const text = await fs.readFile(path.join(repo, 'FUTURE.md'), 'utf8').catch(() => '');
-  const items = parseFuture(text);
-  if (!items.length) return;
-
-  await writeStore(repo, replaceItems(store, items));
-  console.log(`imported ${items.length} items from FUTURE.md into .prcoder/queue.json`);
-  console.log('prcoder no longer reads or writes FUTURE.md; your copy is untouched');
-}
-
-/**
  * Who has the port we wanted. Worth asking rather than guessing: the likely
  * cause is a second prcoder in the same repo, and then the useful answer is not
  * "the port is busy" but "the window you are looking for is over there".
@@ -821,7 +790,6 @@ async function ready() {
       return null;
     });
     await refreshPr().catch((e) => console.error('pr:', e.message));
-    await importFuture().catch((e) => console.error('import:', e.message));
     await status().catch((e) => console.error('status:', e.message));
   });
   console.log(`prcoder: ${repo}`);

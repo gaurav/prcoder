@@ -1,5 +1,5 @@
 // The PR description's half of the queue: the `<!-- prcoder:todo -->` block,
-// and the markdown checklist grammar it shares with FUTURE.md.
+// and one checkbox flipped in a description.
 //
 // The queue itself lives in .prcoder/queue.json (see store.js) and an item is
 // { text, done, doneAt, inPr, pr, issue, deleted }. `inPr` mirrors it into a PR
@@ -8,47 +8,12 @@
 // to an issue replaces the PR line" rule. `deleted` is a tombstone: deleting an
 // item here or on github.com keeps the record, so nothing the user typed
 // disappears without somewhere to get it back.
-//
-// parseFuture is the one thing here that still reads FUTURE.md, for the
-// one-time import in server.js. Nothing writes that file.
 
 import { TASK, taskLines, hideComments, fencedLines } from './public/tasks.js';
 
-const HEADING = '## Queue';
 const OPEN = '<!-- prcoder:todo -->';
 const CLOSE = '<!-- /prcoder:todo -->';
 
-
-// Anchored, so the first token it cannot match ends the marker run and
-// everything from there -- including any later markers -- becomes visible task
-// text. It fails quietly rather than throwing, and it has caught two things:
-// a new marker has to be added to this alternation before it can be read, and
-// a malformed value like `@issue#NaN` does not match `@issue#\d+` and so turns
-// into part of the item's text. Anything written into a marker must be a value
-// this pattern accepts; see issueNumber() in github.js.
-const MARKERS = /^((?:@pr\b|@deleted\b|@issue#\d+\b|\s)*)/;
-
-function parseItem(line) {
-  const m = TASK.exec(line);
-  if (!m) return null;
-  const done = m[1].toLowerCase() === 'x';
-  const rest = m[2].trim();
-
-  const markers = MARKERS.exec(rest)[1];
-  const text = rest.slice(markers.length).trim();
-  const issue = /@issue#(\d+)/.exec(markers);
-
-  // A PR-body line for an item that became an issue is just "#42".
-  const bare = /^#(\d+)$/.exec(text);
-  if (bare) return { text: '', done, inPr: true, issue: Number(bare[1]), deleted: false };
-
-  return {
-    text, done,
-    inPr: /@pr\b/.test(markers),
-    issue: issue ? Number(issue[1]) : null,
-    deleted: /@deleted\b/.test(markers),
-  };
-}
 
 /**
  * An item's text as one line of the block. A checklist line cannot hold a
@@ -59,20 +24,15 @@ function parseItem(line) {
  */
 const oneLine = (text) => text.replace(/\s+/g, ' ').trim();
 
-/**
- * One line of the PR description's block. Markers (`@pr`, `@issue#42`) are only
- * ever read from FUTURE.md, never written: they were how that file encoded the
- * fields the store keeps as fields, and the block itself has never carried them.
- */
+/** One line of the PR description's block: the item's text, or `#N` for an issue. */
 function renderItem(item) {
   return `- [${item.done ? 'x' : ' '}] ${item.issue ? `#${item.issue}` : oneLine(item.text)}`;
 }
 
 /**
- * One line of the block, read back. No markers: the block never has any, and
- * reading them here turned an item whose text starts with `@pr` or `@deleted`
- * into an item with different text, which the next sync then buried. A bare
- * `#N` is still an issue, because that is how renderItem writes one.
+ * One line of the block, read back as written: text is text, so an item whose
+ * text starts with `@pr` or `@deleted` keeps it. A bare `#N` is an issue,
+ * because that is how renderItem writes one.
  */
 function parseBlockLine(line) {
   const m = TASK.exec(line);
@@ -86,22 +46,6 @@ function parseBlockLine(line) {
     issue: bare ? Number(bare[1]) : null,
     deleted: false,
   };
-}
-
-/**
- * Items out of FUTURE.md, for the one-time import into the store. Anything
- * outside the `## Queue` section is ignored, and the file is never written.
- */
-export function parseFuture(text) {
-  const items = [];
-  let inSection = false;
-  for (const line of (text ?? '').split('\n')) {
-    if (/^##\s/.test(line)) { inSection = line.trim() === HEADING; continue; }
-    if (!inSection) continue;
-    const item = parseItem(line);
-    if (item && (item.text || item.issue)) items.push(item);
-  }
-  return items;
 }
 
 /**
@@ -139,9 +83,9 @@ export function renderPrBlock(items, body = '', number) {
  * and then checked against the text the client saw, so a body that moved on
  * fails loudly instead of ticking the line next door.
  *
- * `inBlock` says whether the line is one of ours: those are a projection of
- * FUTURE.md and the tick has to be folded back into it, and the caller is the
- * only one that can write files.
+ * `inBlock` says whether the line is one of ours: those are a projection of the
+ * queue and the tick has to be folded back into it, and the caller is the only
+ * one that can write the store.
  */
 export function toggleTask(body, index, done, expected) {
   const lines = (body ?? '').split('\n');

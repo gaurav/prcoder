@@ -1,41 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseFuture, renderPrBlock, syncFromPrBlock, toggleTask } from '../queue.js';
+import { renderPrBlock, syncFromPrBlock, toggleTask } from '../queue.js';
 import { taskLines } from '../public/tasks.js';
 import { reorder } from '../public/queue.js';
 import { blocks, sectionize } from '../public/pr.js';
-
-const FUTURE = `# Notes
-
-Some longhand thinking that must survive.
-
-## Queue
-
-- [ ] Add retry to the fetch path
-- [ ] @pr Docs for the new flag
-- [ ] @pr @issue#42 Refactor the parser
-- [x] Fix the flaky worktree test
-
-## Ideas
-
-Keep me too.
-`;
-
-// parseFuture outlived the format it was written for: FUTURE.md is no longer
-// the queue, and these markers are read exactly once, by the import in
-// server.js that moves an old queue into .prcoder/queue.json.
-test('parses every item state out of FUTURE.md, for the one-time import', () => {
-  assert.deepEqual(parseFuture(FUTURE), [
-    { text: 'Add retry to the fetch path', done: false, inPr: false, issue: null, deleted: false },
-    { text: 'Docs for the new flag', done: false, inPr: true, issue: null, deleted: false },
-    { text: 'Refactor the parser', done: false, inPr: true, issue: 42, deleted: false },
-    { text: 'Fix the flaky worktree test', done: true, inPr: false, issue: null, deleted: false },
-  ]);
-});
-
-test('checklist lines outside the queue section are left alone', () => {
-  assert.deepEqual(parseFuture('## Other\n\n- [ ] not mine\n'), []);
-});
 
 test('only inPr items reach the PR body, and issues render as links', () => {
   const body = renderPrBlock([
@@ -118,22 +86,6 @@ test('a PR body with no block leaves the queue untouched', () => {
   assert.deepEqual(syncFromPrBlock(items, 'Just a description.'), items);
 });
 
-test('malformed lines are skipped rather than dropping the rest', () => {
-  const items = parseFuture('## Queue\n\n- [ ] good\nnot an item\n- [] bad checkbox\n- [x] also good\n');
-  assert.deepEqual(items.map((i) => i.text), ['good', 'also good']);
-});
-
-// `@deleted` had to join the marker alternation, not just be tested for. The
-// regex is anchored, so an unknown marker matches zero characters and every
-// other marker on the line silently becomes part of the visible text.
-// An item can be tombstoned and mirrored and an issue at once, and the import
-// has to bring all three across -- a dropped @deleted resurrects something the
-// user threw away.
-test('every marker on one line survives the import', () => {
-  assert.deepEqual(parseFuture('## Queue\n\n- [ ] @pr @deleted @issue#7 buried\n'),
-    [{ text: 'buried', done: false, inPr: true, issue: 7, deleted: true }]);
-});
-
 test('a deleted item never goes back into the PR body', () => {
   const body = renderPrBlock([
     { text: 'live', done: false, inPr: true, issue: null, deleted: false },
@@ -211,7 +163,7 @@ test('an item with no PR recorded is claimed by the block it is found in', () =>
 });
 
 // Queue text is free text, and three kinds of it did not survive a trip through
-// the block: a leading `@pr` or `@deleted` was read as a FUTURE.md marker, text
+// the block: a leading `@pr` or `@deleted` was read as a marker, text
 // that is exactly `#42` read as issue 42, and a Shift-Enter newline split the
 // item across lines. Each came back with text that matched nothing, and the
 // sync buried the item it had just written.
@@ -228,16 +180,6 @@ test('item text that looks like markup survives a round trip through the block',
   assert.deepEqual(syncFromPrBlock(items, body), items);
   // And a tick there reaches each of them.
   assert.ok(syncFromPrBlock(items, body.replaceAll('- [ ]', '- [x]')).every((i) => i.done));
-});
-
-// The consequence that makes issueNumber() throw rather than pass NaN through.
-// MARKERS is anchored, so a value it cannot match ends the marker run: the
-// text is corrupted and @pr is lost with it, quietly and on the way back in.
-test('a malformed marker value degrades into the task text and drops the rest', () => {
-  const [item] = parseFuture('## Queue\n\n- [ ] @issue#NaN @pr Real text\n');
-  assert.equal(item.text, '@issue#NaN @pr Real text');
-  assert.equal(item.issue, null);
-  assert.equal(item.inPr, false);
 });
 
 // --- checkboxes in the description ---

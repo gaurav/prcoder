@@ -266,8 +266,7 @@ export async function addItem(text) {
   if (!text.trim()) return false;
   const item = { text: text.trim(), done: false, inPr: false, issue: null, deleted: false };
   // The end of the whole array, past any done or deleted rows: the Active tab
-  // filters without reordering, so it still shows last there, and FUTURE.md
-  // reads newest-last.
+  // filters without reordering, so it still shows last there.
   if (addTo === 'top') items.unshift(item); else items.push(item);
   tab = 'active';
   if (!await save()) {

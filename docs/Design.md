@@ -31,19 +31,21 @@ The direction, decided 2026-09-14 and carried by [#27](https://github.com/gaurav
   that you have not asked to hide, and nothing unreachable because a ref was deleted
   ([#48](https://github.com/gaurav/prcoder/issues/48)).
 - **Each permanent source gets a tab of its own**, read straight from the source: the PR
-  description's checklist, issues (grouped by milestone), and later FUTURE.md. The question a tab
+  description's checklist, and issues (grouped by milestone). The question a tab
   answers is "what does this PR's description still need?", and pulling an item from it adds it to
   your queue.
-- **Moving an item to a source is one-way.** It is appended to the description, filed as an issue,
-  or written to FUTURE.md, and it leaves the queue. No mirror, no sync, and so none of the guards
+- **Moving an item to a source is one-way.** It is appended to the description or filed as an
+  issue, and it leaves the queue. No mirror, no sync, and so none of the guards
   below: no `syncFromPrBlock`, no `ours()`/`belongs()`, no `mirrorFailed` latch, no `pr` field.
   Items already mirrored stay in the queue as local items rather than being dropped.
 - **Quitting with local items still in the queue** asks whether to move them somewhere durable, so
   the work can be picked up on another machine.
 
 The order of work: #27 first gets the base merged in, then replaces mirroring with move routes, then
-turns its flag-filtered PR and Issues tabs into views of the sources. FUTURE.md as a source, the
-interactive quit prompt and a milestone filter are follow-ups of their own. Until #27 merges, the
+turns its flag-filtered PR and Issues tabs into views of the sources. The interactive quit prompt
+and a milestone filter are follow-ups of their own. FUTURE.md is not a source and will not be one
+(retired 2026-09-26): its items were all either done or already issues, and prcoder neither reads
+nor writes it. Until #27 merges, the
 mirror in this branch is correct but frozen: fix it if it loses work, and otherwise leave it.
 
 ## Two guards, because the obvious version loses work

@@ -229,9 +229,6 @@ written to. An item records which PR it went into (`pr`), so it stays in that
 description when you move to another PR and is not taken for deleted there. Separate worktrees keep separate queues, since each has its own
 `.prcoder/`.
 
-If you have a `FUTURE.md` from an earlier version, its `## Queue` section is
-imported once, on the first run, and the file is never read or written again.
-
 Next to the pane's title is the queue's own light: whether the items you have
 mirrored are actually on GitHub. It reads `in the PR` when they are, and
 `not saved to the PR` when a write failed — prcoder keeps the change locally

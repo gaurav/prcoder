@@ -22,7 +22,7 @@ const NAMES = ['quiet', 'verbose', 'debug'];
 
 // Set before the first key can be pressed, which is the only way to see what
 // happens during startup -- by the time there is a prompt to press `v` at, the
-// repo has been read, the PR loaded and FUTURE.md imported.
+// repo has been read, and the PR loaded.
 let level = Math.min(DEBUG, Math.max(QUIET, Number(process.env.PRCODER_VERBOSE) || 0));
 
 let out = process.stdout;
