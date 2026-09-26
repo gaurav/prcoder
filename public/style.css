@@ -675,9 +675,13 @@ a { color: var(--accent); }
 #toast[hidden] { display: none; }
 #toast.bad { background: #4d1f24; color: #f5a3a3; border-color: #f5a3a3; }
 /* A sticky toast waits to be clicked, so it has to look like it can be. The
-   glyph is a pseudo-element because toast() sets textContent. */
-#toast.sticky { border-color: #f0dc9a; }
-#toast.sticky::after { content: '✕'; margin-left: 8px; color: var(--dim); }
+   glyph is a pseudo-element because toast() sets textContent. In the top right
+   corner, where a close button is looked for: after the text, a toast that
+   wrapped put it at the end of its last line, mid-box. The padding keeps the
+   text from running under it; top matches the toast's own, so it sits on the
+   first line. */
+#toast.sticky { border-color: #f0dc9a; padding-right: 30px; }
+#toast.sticky::after { content: '✕'; position: absolute; top: 7px; right: 10px; color: var(--dim); }
 #toast.sticky:hover::after { color: var(--fg); }
 
 /* A row per pull request that merges into this branch. Buttons, not links: the
