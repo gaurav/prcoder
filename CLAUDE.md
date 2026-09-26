@@ -207,14 +207,16 @@ so the check is `existsSync(firefox.executablePath())` and the fix for a miss is
 BiDi with `channel: 'moz-firefox'`; `tools/firefox-runner/` has what came of
 trying it.) Running both is worth the second minute: the
 caret bug is invisible in Chromium and fatal in Firefox, and it is the one thing
-here that only one engine can tell you about.
+here that only one engine can tell you about. `test/browser.test.js` runs in both
+for the same reason, as `test/browser-firefox.test.js`: a header-height test
+written against Chromium failed in Firefox (2026-09-26).
 
 Installed is not the same as working, and the check cannot tell them apart.
 From 2026-09-16 to 2026-09-26 Firefox did not start at all on this machine,
 while `existsSync(firefox.executablePath())` was true throughout. The cause
 was macOS 27 denying a terminal-launched Firefox its own `~/Library/Application
 Support/Firefox`, which Firefox reads even when `-profile` points elsewhere.
-Every Firefox launch in `tools/` now sets `MOZ_APP_DATA` and
+Every Firefox launch in `tools/` and `test/` now sets `MOZ_APP_DATA` and
 `MOZ_LOCAL_APP_DATA` under `data/firefox-appdata/`, and with them it starts in
 about two seconds. A launch that leaves them out hangs until the timeout, with
 nothing in the output to say why -- so a new driver that launches Firefox

@@ -10,8 +10,9 @@ page from the server started in-process, with the API routes and the `/pty` sock
 Playwright from a fixture, so it needs no `gh`, no `claude` and no PTY, and asserts the things this
 pane has shipped broken -- raw markup as text, headings, checkbox write-back, the issue lists, the
 tab count -- and a quoted section, which is in its fixture because neither of this repo's own
-descriptions contains a `>` and so no driver run has ever shown one. It skips with a note when Playwright or Chromium is missing; CI installs Chromium so it
-runs there. Its blind spot is its fixture, shaped by hand from what `/api/status` answers today, so a
+descriptions contains a `>` and so no driver run has ever shown one. It runs in Chromium, and again in Firefox as
+`test/browser-firefox.test.js`, which sets the engine and imports it. Each skips with a note when
+Playwright or its engine is missing, and CI installs both so both run there. Its blind spot is its fixture, shaped by hand from what `/api/status` answers today, so a
 field the server renames and the client follows still passes; the `gh` stub issue is what closes that.
 This file is about the rest, and about the rule that produced it.
 
@@ -55,8 +56,8 @@ is the cause and the one-command re-check, and #80 is when the workaround comes 
 build was uninstalled on 2026-09-19 and reinstalled on 2026-09-26; `npx playwright install firefox`
 is what brings it back if it goes again. The Firefox pass #61 owed was run on 2026-09-26:
 `tools/browser.mjs` against PR #1 and `tools/no-pr.mjs` (through a scratch Firefox copy under
-`data/`) in both engines, which agreed on every figure but a 1px measure; and the 16 tests of
-`test/browser.test.js` through a scratch Firefox copy, all passing. The Claude pane's exit bar, on #75's
+`data/`) in both engines, which agreed on every figure but a 1px measure; and `test/browser.test.js`
+in Firefox, all passing, which is what made it a standing Firefox run under `npm test`. The Claude pane's exit bar, on #75's
 branch, passed the same way from a worktree, which closed #61.
 
 Its assertions are written against this repo's own PR #1 — that description's sections, file groups
