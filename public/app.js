@@ -1,7 +1,7 @@
 import { Terminal } from '/vendor/xterm.mjs';
 import { FitAddon } from '/vendor/addon-fit.mjs';
 import { WebLinksAddon } from '/vendor/addon-web-links.mjs';
-import { renderPr, renderNoPr, renderHeader, renderQueueSync, pageTitle, api, toast } from './pr.js';
+import { renderPr, renderNoPr, renderHeader, pageTitle, api, toast } from './pr.js';
 import { openDiff, closeDiff, selectedPath, setViewed } from './diff.js';
 import { initQueue, addItem, setItems, freeze } from './queue.js';
 import './panes.js';   // draggable pane gutters; nothing here calls into it
@@ -149,13 +149,20 @@ document.querySelector('#term > header').addEventListener('dblclick', (e) => {
 
 // Type an item into Claude's prompt. If Claude is mid-turn it queues the
 // message itself, which is exactly the behaviour we want.
+//
 // `submit` false types the text and stops there: the prompt is left ready to
 // edit and send by hand, which is what the queue's ▶ wants. Trailing
 // whitespace is cut either way -- a newline in the text *is* the Enter that
 // would have sent it half-written.
+//
+// Whether it went is the return value, because the queue ticks an item off on
+// the strength of it: `send` refuses on a socket that is not open -- a dead PTY,
+// a reload in flight -- and an item checked off after a refused send is one
+// nobody has done and nobody is going to be reminded of.
 function sendToClaude(text, submit = true) {
-  send({ type: 'input', data: text.replace(/\s+$/, '') + (submit ? '\r' : '') });
+  const sent = send({ type: 'input', data: text.replace(/\s+$/, '') + (submit ? '\r' : '') });
   term.focus();
+  return sent;
 }
 
 // The switcher only changes when PRs are opened or closed, so it is not worth a
@@ -185,10 +192,13 @@ const NOTES = {
  */
 async function toggleTask(task) {
   try {
-    const { queue } = await api('/api/pr/task', task);
-    // Only when the line was one of the queue's own, so the two panes agree
-    // without waiting for the poll.
-    if (queue) setItems(queue, true);
+    const { body } = await api('/api/pr/task', task);
+    // The PR pane and the queue's PR tab both draw these boxes; a tick in one
+    // has to show in the other without waiting for the poll.
+    if (last?.pr) {
+      last.pr.body = body;
+      paint(last);
+    }
   } catch (e) {
     toast(e.message, true);
     loadStatus();
@@ -216,16 +226,16 @@ function paint(status) {
   // "prcoder", which is why this is here and not in loadStatus's catch.
   document.title = pageTitle(status);
   renderHeader(status, prs, handlers);
-  renderQueueSync(status);
   if (status.pr) {
     renderPr({ ...status.pr, note: NOTES[status.scope] },
       { ...fileHandlers, selected: selectedPath() });
   } else renderNoPr(status, prs, { onCreate: createPr, onSwitch: switchPr });
   if (switched) loadPrs();
-  // Mirroring needs the PR to be *this* branch's: prcoder will not write our
-  // items into a PR we are only looking at, so the controls that would ask it
-  // to must disable themselves rather than silently do nothing.
-  if (status.queue) setItems(status.queue, status.scope === 'current');
+  // Moving an item in needs the PR to be *this* branch's: prcoder will not write
+  // into a PR we are only looking at, so the controls that would ask it to must
+  // disable themselves rather than silently do nothing. Reading its checklist
+  // into the PR tab needs only a PR on screen.
+  if (status.queue) setItems(status.queue, status.scope === 'current', status.pr);
 
   // Keep an open diff honest: close it if its file left the PR (or the PR
   // switched away), refresh it if the branch moved — the server cache is
@@ -249,7 +259,6 @@ async function loadStatus() {
   } catch (e) {
     const failed = { error: e.message, dirtyFiles: [], pr: null };
     renderHeader(failed, prs, handlers);
-    renderQueueSync(failed);
   }
 }
 
@@ -334,5 +343,5 @@ input.addEventListener('input', grow);
 // needs it — renderHeader synthesises an option for the current PR until it
 // lands, and loadPrs repaints the header itself when it does.
 loadPrs();
-await initQueue({ sendToClaude });
+await initQueue({ sendToClaude, onTask: toggleTask });
 loadStatus();

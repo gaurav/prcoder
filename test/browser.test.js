@@ -137,13 +137,10 @@ async function newPage() {
       path, patch: `@@ -0,0 +1,${lines.length} @@\n` + lines.map((l) => '+' + l).join('\n'),
     } });
   });
-  // Answered in the shape the route uses on `queue-tabs` -- the body GitHub now
-  // holds -- rather than this branch's `{queue}`, because both are right here
-  // and only one is right there. toggleTask reads `queue` off the response and
-  // finds none, which is what `{queue: null}` said; the branch that reads
-  // `body` repaints its checkboxes from it. A mock written for one branch is
-  // the trap at the head of this file: it merges without a murmur and blanks
-  // the pane at runtime.
+  // The route answers with the body GitHub now holds, and the client paints
+  // both sets of checkboxes from it -- so a mock that returns anything else
+  // blanks the description on the first tick, and every later assertion about
+  // this page is against an empty pane.
   await p.route('**/api/pr/task', (r) => {
     const task = r.request().postDataJSON();
     posted.push(task);
@@ -213,9 +210,15 @@ test('the issues the description mentions are listed below it, titled', { skip }
   assert.equal(await row.getAttribute('href'), `${REPO}/issues/7`);
 });
 
+// Read off the page rather than hard-coded, because the tick above is real now:
+// the task route answers with the new body and both sets of boxes repaint from
+// it, so whether this runs before or after that test changes the numerator.
 test('the tab carries the task count', { skip }, async () => {
+  const total = await page.locator('#pr-body .task').count();
+  const done = await page.locator('#pr-body .task.done').count();
+  assert.equal(total, 3, 'the fixture body has three checkboxes');
   const tabs = await page.locator('#pr-head .tab').allTextContents();
-  assert.ok(tabs.includes('Detail (1/3)'), JSON.stringify(tabs));
+  assert.ok(tabs.includes(`Detail (${done}/${total})`), `${JSON.stringify(tabs)} with ${done}/${total} ticked`);
 });
 
 // The repository is the one link in the head with no bound on its width, which

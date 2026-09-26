@@ -83,7 +83,7 @@ export function writeThrough(box, run, settle = () => {}) {
   };
 }
 
-/** The light itself, for the two pane headers that survive a poll. */
+/** The PR pane header's sync light, which survives a poll. */
 function paintLight(id, state) {
   const light = document.getElementById(id);
   light.hidden = !state;
@@ -192,26 +192,6 @@ function headerSync(status) {
   if (status.detached) return { className: 'light', text: 'detached HEAD' };
   return null;
 }
-
-/**
- * Pure: the status -> the queue pane's light. Named states rather than a
- * boolean, because "nothing to mirror" and "GitHub has it" are both fine and
- * only one of them is worth a dot.
- *
- * `mirrorFailed` is the state this exists for. The store took the change and
- * GitHub did not, so prcoder has stopped trusting the description it can see --
- * and until now the only sign of that was a line on the server's stderr.
- */
-export function queueSync(status) {
-  if (status.error) return { className: 'light unknown', text: 'unavailable' };
-  if (status.mirrorFailed) return { className: 'light bad', text: 'not saved to the PR' };
-  if (!status.queue?.some((i) => i.inPr && !i.deleted)) return null;
-  if (status.scope !== 'current') return { className: 'light unknown', text: 'not mirroring' };
-  return { className: 'light ok', text: 'in the PR' };
-}
-
-/** The queue pane's header, like the PR pane's, survives polls. */
-export const renderQueueSync = (status) => paintLight('queue-sync', queueSync(status));
 
 /**
  * The open pull requests that merge *into* this branch.

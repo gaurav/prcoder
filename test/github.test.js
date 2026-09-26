@@ -2,7 +2,6 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { rollup, linkedIssues, linksFrom, parsePrUrl, run, issueNumber, lf } from '../github.js';
 import { taskLines } from '../public/tasks.js';
-import { syncFromPrBlock } from '../queue.js';
 
 test('check states collapse into passed, failed and pending', () => {
   assert.deepEqual(rollup([
@@ -124,9 +123,8 @@ test('run() puts the child stdout on the error too, where a partial answer lives
     (e) => e.stdout.includes('the-partial-answer') && e.stderr.includes('NOT_FOUND'));
 });
 
-// The number goes into FUTURE.md as `@issue#N`. `@issue#NaN` does not match the
-// marker pattern coming back, so it silently becomes part of the task text --
-// which is why an unreadable number has to throw rather than pass through.
+// A move to an issue takes the item off the queue, so output prcoder cannot
+// read a number from has to throw rather than pass through as a success.
 test('the issue number is read from the last line gh prints', () => {
   assert.deepEqual(issueNumber('https://github.com/o/r/issues/42\n'),
     { url: 'https://github.com/o/r/issues/42', number: 42 });
@@ -143,12 +141,10 @@ test('output with no issue number throws instead of yielding NaN', () => {
 
 // A description saved from github.com's editor arrives CRLF, and every line
 // pattern ends in `(.*)$`, which stops at the `\r`. Unconverted, the body has no
-// checkboxes at all, so a box ticked on GitHub never reached the queue.
+// checkboxes at all, and the pane showed none to tick.
 test('a CRLF description reads as the same checklist as an LF one', () => {
-  const crlf = ['<!-- prcoder:todo -->', '## TODO', '', '- [x] ticked on github.com', '<!-- /prcoder:todo -->'].join('\r\n');
+  const crlf = ['## TODO', '', '- [x] ticked on github.com', '- [ ] not yet', ''].join('\r\n');
   assert.deepEqual(taskLines(crlf), [], 'the bug this guards against');
-  assert.deepEqual(taskLines(lf(crlf)), [3]);
-  const [item] = syncFromPrBlock([{ text: 'ticked on github.com', done: false, inPr: true, issue: null, deleted: false }], lf(crlf));
-  assert.equal(item.done, true);
+  assert.deepEqual(taskLines(lf(crlf)), [2, 3]);
   assert.equal(lf(null), '');
 });

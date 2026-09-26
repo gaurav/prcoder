@@ -85,6 +85,17 @@ export async function prBody(cwd, prUrl) {
 }
 
 /**
+ * Open issues, for the titles on the queue's Issues tab.
+ *
+ * ponytail: the first 200, fetched whole and filtered by the pane. A repo past
+ * that, or a tab that wants milestones or search, is a query of its own.
+ */
+export async function listIssues(cwd) {
+  const args = ['issue', 'list', '--state', 'open', '--limit', '200', '--json', 'number,title'];
+  return JSON.parse(await gh(args, { cwd }));
+}
+
+/**
  * Open PRs, for the switcher -- and, filtered by `baseRefName`, for the list of
  * pull requests into the branch you are on that the pane with no pull request
  * shows. That field is not spare: it is free here, where a `gh pr list --base`
@@ -191,9 +202,9 @@ export async function setBody(cwd, prUrl, body) {
  * The issue number out of what `gh issue create` prints. It can emit notices
  * before the URL, so the last line is the one that matters.
  *
- * Failing here rather than returning NaN is the point: the number is written
- * into FUTURE.md as `@issue#N`, and `@issue#NaN` does not match the marker
- * pattern on the way back in, so it silently becomes part of the task text.
+ * Failing here rather than returning NaN is the point: output with no issue
+ * URL at the end is a filing prcoder cannot vouch for, and reporting it as a
+ * move would take the item off the queue on the strength of a link to nothing.
  */
 export function issueNumber(out) {
   const url = out.trim().split('\n').pop()?.trim() ?? '';

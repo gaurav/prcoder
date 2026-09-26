@@ -95,11 +95,14 @@ Two rules for them, and for any script after them:
   only -- anything that reads the PTY's timing passes against it for the wrong
   reason (CLAUDE.md).
 - **No writes you do not undo.** The queue is safe: it writes only `.prcoder/`,
-  which is gitignored. The PR is not -- ticking a description checkbox edits the
-  description on GitHub, and so does mirroring a queue item with ◆. Snapshot the
-  body with `gh pr view <n> --json body -q .body` before, and diff after. Folding
-  a description's section is browser state, never a write, so the driver clicks
-  them freely.
+  which is gitignored and needs no cleanup. The PR is not — ticking a
+  description checkbox — in the PR pane or the queue's PR tab — edits the
+  description on GitHub. Moving a queue item with
+  ◇ or ◎ writes to GitHub too, and one-way: putting the queue back does not take
+  the line out of the description or close the issue. Snapshot the body with `gh pr view <n> --json body -q
+  .body` before, and diff after. Opening and closing a description's sections
+  is not a write — the fold is browser state and never reaches GitHub — so the
+  driver clicks them freely.
 
 If every PTY spawn dies with a bare `posix_spawnp failed`, the `postinstall`
 script was skipped: `npm install` again, and see CLAUDE.md for why.
