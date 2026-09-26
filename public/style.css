@@ -406,8 +406,17 @@ a { color: var(--accent); }
 .fold > summary:hover, .fold > summary:hover::before { color: var(--accent); }
 .fold > summary:focus-visible { outline: 1px solid var(--accent); border-radius: 3px; }
 .fold > summary h3 { display: inline; margin: 0; font: inherit; flex: 1; min-width: 0; }
-/* What is still outstanding inside, so a fold never hides work silently. */
-.fold > summary .count { flex: none; font-weight: 400; color: var(--dim); }
+/* What is still outstanding inside, so a fold never hides work silently: a pie
+   that fills green as its items are done (pie() in pr.js says why not `3/5`).
+   The ring is what an empty one is -- without it, nothing done is nothing
+   drawn. 10px, under every summary's line box, so the row keeps its height. */
+.fold > summary .pie {
+  flex: none; width: 10px; height: 10px; border-radius: 50%;
+  align-self: center;   /* the row is baseline-aligned, and a box with no text sits on it by its bottom */
+  background: conic-gradient(var(--add) calc(var(--p) * 1turn), transparent 0);
+  box-shadow: inset 0 0 0 1px var(--dim);
+}
+.fold > summary .pie.full { box-shadow: none; }
 /* Indented under the title, not under the triangle. */
 .fold > .sec-body { padding: 2px 0 12px 18px; }
 
@@ -419,7 +428,6 @@ a { color: var(--accent); }
   padding: 8px 2px;
   font: 600 15px/1.35 ui-sans-serif, system-ui, sans-serif; color: var(--fg);
 }
-.md-section > summary .count { font-size: 12px; }
 
 /* A quote is marked by a rule and a colour, not by an indent: at 375px the pane
    has no width to give away, and the rule alone is what GitHub uses too. */
@@ -473,7 +481,6 @@ a { color: var(--accent); }
   text-transform: uppercase; letter-spacing: .06em; color: var(--dim);
 }
 .group > summary:hover { color: var(--fg); }
-.group > summary .count { font-size: 12px; letter-spacing: 0; opacity: .7; }
 /* Less than a description's sections: a file path is already short, and the
    rows have to stay wide enough to ellipsize from the left. */
 .group > .sec-body { padding: 2px 0 0 10px; }
@@ -487,7 +494,6 @@ a { color: var(--accent); }
 .dir { margin-bottom: 2px; }
 .dir > summary { padding: 1px 0; font: 400 12px/1.5 ui-sans-serif, system-ui, sans-serif; color: var(--dim); }
 .dir > summary:hover { color: var(--fg); }
-.dir > summary .count { font-size: 11px; opacity: .7; }
 .dir > .sec-body { padding: 0 0 4px 9px; }
 /* The seam between a group's two runs. Files at the top of the repository are
    the group's first rows and the directories follow them at the same indent, so

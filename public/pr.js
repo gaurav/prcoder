@@ -626,10 +626,9 @@ function issueRow(list, closes, label) {
  */
 function fileGroup(label, files, handlers) {
   if (!files?.length) return null;
-  const { done, total } = viewedCount(files);
   const { root, dirs } = byDir(files);
   return fold({
-    className: 'group', dataset: { group: label }, title: label, count: `${done}/${total}`,
+    className: 'group', dataset: { group: label }, title: label, progress: { ...viewedCount(files), what: 'viewed' },
     open: !closedGroups.has(label),
     onToggle: (open) => { if (open) closedGroups.delete(label); else closedGroups.add(label); },
   }, [
@@ -701,9 +700,8 @@ export const byDir = (files) => {
  */
 function dirGroup(group, dir, files, handlers) {
   const key = `${group}/${dir}`;
-  const { done, total } = viewedCount(files);
   return fold({
-    className: 'dir', dataset: { dir }, title: dir, count: `${done}/${total}`,
+    className: 'dir', dataset: { dir }, title: dir, progress: { ...viewedCount(files), what: 'viewed' },
     open: !closedGroups.has(key),
     onToggle: (open) => { if (open) closedGroups.delete(key); else closedGroups.add(key); },
   }, files.map((f) => fileRow(f, handlers, dir)));
@@ -721,14 +719,32 @@ export const nums = ({ additions, deletions }) => [
   deletions ? ['del', `−${deletions}`] : null,
 ].filter(Boolean);
 
+/** `done` of `total`, as a pie that fills; the figure is its name. */
+function pie({ done, total, what }) {
+  const label = `${done} of ${total} ${what}`;
+  const p = h('span', { className: `pie${done === total ? ' full' : ''}`, title: label });
+  p.setAttribute('role', 'img');
+  p.setAttribute('aria-label', label);   // a shape is no name, as with the glyph buttons
+  p.style.setProperty('--p', String(total ? done / total : 0));
+  return p;
+}
+
 /**
- * A <details> fold with a heading and an optional count, the shape both the file
- * groups and the description's sections take. `onToggle` fires for a click and
- * for the initial `open`, so it has to be idempotent.
+ * A <details> fold with a heading and an optional progress pie, the shape both
+ * the file groups and the description's sections take. `onToggle` fires for a
+ * click and for the initial `open`, so it has to be idempotent.
+ *
+ * A pie rather than `3/5`: a fraction in small dim type beside a dim title had
+ * to be read and worked out, and a finished one looked like any other. A pie is
+ * one size at any count and says "how far" at a glance, and full is a disc.
+ * What it gives up is the exact figure -- one of twelve left looks nearly done
+ * -- so that is its name and its tooltip, and the tab label keeps the numbers.
+ * Not a dot per item, which is exact but grows with the count: a 35-file group
+ * would be a row of dots.
  */
-function fold({ className, dataset, title, count, open, onToggle }, children) {
+function fold({ className, dataset, title, progress, open, onToggle }, children) {
   const d = h('details', { className: `fold ${className}`, open, dataset },
-    h('summary', {}, h('h3', {}, title), count ? h('span', { className: 'count' }, count) : null),
+    h('summary', {}, h('h3', {}, title), progress ? pie(progress) : null),
     h('div', { className: 'sec-body' }, ...children));
   d.addEventListener('toggle', () => onToggle(d.open));
   return d;
@@ -982,7 +998,7 @@ function sectionNode(s, onTask) {
   return fold({
     className: 'md-section', dataset: { key: s.key }, title: s.title,
     // So a fold never hides work without saying so.
-    count: tasks.length ? `${tasks.filter((b) => b.done).length}/${tasks.length}` : null,
+    progress: tasks.length ? { done: tasks.filter((b) => b.done).length, total: tasks.length, what: 'done' } : null,
     open: openSections.has(s.key),
     onToggle: (open) => { if (open) openSections.add(s.key); else openSections.delete(s.key); },
   }, s.nodes.map((b) => blockNode(b, onTask)));

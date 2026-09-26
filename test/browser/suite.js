@@ -521,6 +521,36 @@ test('a sticky toast has its ✕ in the top right corner, clear of the text', { 
   await fresh.close();
 });
 
+// A fold's progress is a pie, not `3/5`: one size at any count, and full is a
+// disc. The figure it gives up is its accessible name. A directory is needed
+// for a directory's pie, and the fixture has none, so this page adds two: one
+// half viewed, one all viewed.
+test('folds show progress as a pie named by its figure', { skip }, async () => {
+  const fresh = await newPage();
+  const extra = [['src/a.js', true], ['src/b.js', false], ['src/sub/c.js', true]]
+    .map(([path, viewed]) => ({ ...files[0], path, viewed }));
+  const all = [...files, ...extra];
+  await fresh.route('**/api/status', (r) => r.fulfill({ json: {
+    ...status, pr: { ...pr, files: all, groups: groupFiles(all) },
+  } }));
+  await fresh.reload();
+  await fresh.waitForSelector('#pr-head .pr-title');
+  const pie = (sel) => fresh.locator(`${sel} > summary .pie`).evaluate((el) => ({
+    label: el.getAttribute('aria-label'), role: el.getAttribute('role'),
+    p: el.style.getPropertyValue('--p'), full: el.classList.contains('full'),
+  }));
+
+  // The description's section holding the queue's unticked line.
+  assert.deepEqual(await pie('.md-section:has(h3:text-is("Before merging"))'),
+    { label: '0 of 1 done', role: 'img', p: '0', full: false });
+
+  await fresh.locator('#pr-head .tab', { hasText: 'Files' }).click();
+  assert.deepEqual(await pie('.dir[data-dir="src/"]'), { label: '1 of 2 viewed', role: 'img', p: '0.5', full: false });
+  assert.deepEqual(await pie('.dir[data-dir="src/sub/"]'), { label: '1 of 1 viewed', role: 'img', p: '1', full: true });
+  assert.equal(await fresh.locator('#pr-body .count').count(), 0, 'no fraction left beside a fold');
+  await fresh.close();
+});
+
 // Completed is sorted by when each item was finished, so the one just ticked by
 // mistake is on top to be unticked -- whatever order the queue holds them in.
 // One the store has not stamped yet goes last. With the order not the user's to

@@ -133,7 +133,9 @@ the top of the repository are its first rows, and below them the rest are folded
 by the directory they are in, a directory ahead of what is inside it and
 siblings alphabetical. A row inside a fold says only the name the directory
 above it does not -- so a path is read once per directory rather than once per
-file -- and both levels fold and remember what you closed. The checkbox on each
+file -- and both levels fold and remember what you closed. Each fold's pie
+fills green as its files are viewed (hover it for the figure), and a
+description section's fills as its boxes are ticked. The checkbox on each
 file is GitHub's own "viewed" checkbox: tick it here and it's ticked on
 github.com. Clicking a file opens its diff in the **Diff** pane;
 cmd/ctrl-clicking opens GitHub's diff viewer at that file instead.
