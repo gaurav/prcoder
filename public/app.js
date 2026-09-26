@@ -142,6 +142,9 @@ function foldTerm(off, save = true) {
 try { if (localStorage.getItem(TERM_KEY) === 'off') foldTerm(true, false); } catch { /* shown */ }
 const folded = () => document.querySelector('main').classList.contains('term-off');
 fold.addEventListener('click', () => foldTerm(!folded()));
+// A second way to fold it, where the diff pane keeps its ✕. It only folds: the
+// PTY is untouched, and while folded it is hidden and the ▶ is the way back.
+document.getElementById('term-close').addEventListener('click', () => foldTerm(true));
 // Not from the button, whose two clicks have already toggled twice.
 document.querySelector('#term > header').addEventListener('dblclick', (e) => {
   if (!e.target.closest('button')) foldTerm(!folded());
