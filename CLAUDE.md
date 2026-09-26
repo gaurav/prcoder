@@ -171,16 +171,20 @@ caret bug is invisible in Chromium and fatal in Firefox, and it is the one thing
 here that only one engine can tell you about.
 
 Installed is not the same as working, and the check cannot tell them apart.
-Firefox has not started at all on this machine since 2026-09-16 --
-`existsSync(firefox.executablePath())` is true throughout, so that check never
-catches it; what does is the driver's 45-second launch timeout, after which it
-falls back to Chromium and prints an `engine:` line saying so. A default run
-therefore costs 45 seconds of nothing before the screenshots start, and
-`PRCODER_BROWSER=chromium` skips the wait. `tools/firefox-runner/` is the
-whole story: what fails, the six hypotheses already eliminated (reinstalling and
-changing the Firefox version are two of them), and the one command that
-re-checks it after a macOS or Firefox update. #61 is where the owed Firefox pass
-lives.
+From 2026-09-16 to 2026-09-26 Firefox did not start at all on this machine,
+while `existsSync(firefox.executablePath())` was true throughout. The cause
+was macOS 27 denying a terminal-launched Firefox its own `~/Library/Application
+Support/Firefox`, which Firefox reads even when `-profile` points elsewhere.
+Every Firefox launch in `tools/` now sets `MOZ_APP_DATA` and
+`MOZ_LOCAL_APP_DATA` under `data/firefox-appdata/`, and with them it starts in
+about two seconds. A launch that leaves them out hangs until the timeout, with
+nothing in the output to say why -- so a new driver that launches Firefox
+needs them too. The workaround is temporary, and #80 is when it comes out
+(Firefox 158 fixes this upstream). The 45-second timeout and the fall-back to
+Chromium stay until then, in case the workaround stops working;
+`tools/firefox-runner/` is the whole story, and `probe.mjs` there is the
+re-check. The Firefox pass #61 owed was run on 2026-09-26, except for the exit bar
+on #75's branch; docs/Verifying.md has what it covered.
 
 One thing about running the driver at all, which reads as a hung server: it
 takes minutes, so `node tools/browser.mjs | tail` shows nothing at all until the

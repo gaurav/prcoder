@@ -16,8 +16,8 @@
 //
 // The one thing it cannot see: the status fixture below is shaped by hand from
 // what /api/status answers today. A field the server renames and the client
-// follows would still pass here. The gh stub (the issue after #6) is what puts
-// the server's own shaping in front of this test; until then, groups and checks
+// follows would still pass here. A stub gh (#54) is what puts the server's own
+// shaping in front of this test; until then, groups and checks
 // at least come from the server's shapers.
 //
 // Two things about the shape of this file, both of which have cost a debugging
@@ -423,5 +423,63 @@ test('the terminal folds to its header, the diff takes the room, and it stays fo
   await fresh.dblclick('#term > header h1');
   assert.equal(await fresh.locator('#term-host').isVisible(), true);
   assert.equal(await fresh.getAttribute('#term-fold', 'aria-expanded'), 'true');
+  await fresh.close();
+});
+
+// The ⟳ is drawn larger than the header's text, because at the same size this
+// font makes it a speck -- and a glyph at a bigger size is how a header grows.
+// So the header has to be the height it is with the ⟳ at the header's own
+// size. Not the height without the button: in Firefox the button at any size
+// is what sets the header's 36px (34 without it), where in Chromium the
+// dropdown does.
+test('the ⟳ is drawn large without making the pull request header taller', { skip }, async () => {
+  const height = () => page.$eval('#pr > header', (el) => el.getBoundingClientRect().height);
+  const px = (sel, prop) => page.$eval(sel, (el, p) => parseFloat(getComputedStyle(el)[p]), prop);
+  assert.ok(await px('#pr-refresh', 'fontSize') > await px('#pr > header', 'fontSize'), 'the ⟳ should be larger than the header text');
+  const large = await height();
+  await page.$eval('#pr-refresh', (el) => { el.style.fontSize = 'inherit'; el.style.lineHeight = 'inherit'; });
+  const plain = await height();
+  await page.$eval('#pr-refresh', (el) => { el.style.fontSize = ''; el.style.lineHeight = ''; });
+  assert.equal(large, plain, 'the ⟳ should not make the header taller than it is at the header\'s size');
+});
+
+// A button drawn as a glyph -- ✕, ⟳, ▼ -- is read out by a screen reader as
+// that glyph, which names no action. Every button on the page, as it first
+// renders, has words to be read by: its text, or an aria-label.
+test('no button is named by a glyph alone', { skip }, async () => {
+  const bare = await page.$$eval('button', (els) => els
+    .filter((b) => !b.getAttribute('aria-label') && !/[\p{L}\p{N}]/u.test(b.textContent))
+    .map((b) => b.id || b.outerHTML.slice(0, 80)));
+  assert.deepEqual(bare, []);
+});
+
+// The ▁ is the ▼ again at the header's other end, not a close: it folds, and
+// while folded it is gone, so the ▶ is the only control that says what a click
+// does. It is also gone while no diff is open, because then there is no pane
+// for it to hand the room to. Its own page for the same reason as the test
+// above.
+test('the terminal\'s ▁ shows only beside a diff, folds it like the ▼, and hides until it is unfolded', { skip }, async () => {
+  const fresh = await newPage();
+  assert.equal(await fresh.locator('#term-min').isVisible(), false, 'no diff open, so nothing to hand the room to');
+  await fresh.locator('#pr-head .tab', { hasText: 'Files' }).click();
+  await fresh.locator('.file[data-path="evil.js"] .path').click();
+  await fresh.waitForSelector('#diff-body .dl');
+  assert.equal(await fresh.locator('#term-min').isVisible(), true, 'a diff is open');
+  // A header that changes height as the ▁ goes jumps the whole layout.
+  const height = () => fresh.$eval('#term > header', (el) => el.getBoundingClientRect().height);
+  const open = await height();
+  await fresh.click('#term-min');
+  assert.equal(await height(), open, 'the header should keep its height when the ▁ goes');
+  assert.equal(await fresh.locator('#term-host').isVisible(), false);
+  assert.equal(await fresh.locator('#term-min').isVisible(), false, 'the ▁ has nothing left to fold');
+  assert.equal(await fresh.getAttribute('#term-fold', 'aria-expanded'), 'false');
+  assert.equal(await fresh.getAttribute('#term-fold', 'aria-label'), 'expand the coding agent pane');
+
+  await fresh.click('#term-fold');
+  assert.equal(await fresh.locator('#term-host').isVisible(), true);
+  assert.equal(await fresh.locator('#term-min').isVisible(), true);
+
+  await fresh.click('#diff-close');
+  assert.equal(await fresh.locator('#term-min').isVisible(), false, 'the diff closed, so it goes with it');
   await fresh.close();
 });

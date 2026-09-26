@@ -136,12 +136,17 @@ function foldTerm(off, save = true) {
   fold.setAttribute('aria-expanded', String(!off));
   fold.textContent = off ? '▶\uFE0E' : '▼';   // FE0E: text, never macOS's emoji ▶
   fold.title = `${off ? 'expand' : 'collapse'} the coding agent pane`;
+  fold.setAttribute('aria-label', fold.title);   // a glyph is no name, as in queue.js
   if (save) try { localStorage.setItem(TERM_KEY, off ? 'off' : 'on'); } catch { /* this session only */ }
   if (!off) term.focus();   // expanding it is to talk to it
 }
 try { if (localStorage.getItem(TERM_KEY) === 'off') foldTerm(true, false); } catch { /* shown */ }
 const folded = () => document.querySelector('main').classList.contains('term-off');
 fold.addEventListener('click', () => foldTerm(!folded()));
+// A second way to fold it, at the header's far end. A minimize bar and not a ✕,
+// because a ✕ on a terminal reads as ending the session. It only folds: the
+// PTY is untouched, and while folded it is hidden and the ▶ is the way back.
+document.getElementById('term-min').addEventListener('click', () => foldTerm(true));
 // Not from the button, whose two clicks have already toggled twice.
 document.querySelector('#term > header').addEventListener('dblclick', (e) => {
   if (!e.target.closest('button')) foldTerm(!folded());

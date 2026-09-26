@@ -46,13 +46,18 @@ alone, and so are loose PNGs directly under `data/shots`. `tools/shots.mjs` is t
 Firefox by default, because a Firefox-only bug — a click into a draggable row's text
 putting the caret at offset 0 — survived every Chromium screenshot; see [CLAUDE.md](../CLAUDE.md)
 for the rest, and for the three fixes to it that do **not** work.
-`PRCODER_BROWSER=chromium` forces the other; running both is worth the second minute — when both
-run. Firefox has not started on this machine since 2026-09-16, and on 2026-09-19 that build was
-uninstalled rather than left to time out, so `existsSync(firefox.executablePath())` is false and a
-default run now picks Chromium at once: no 45-second wait, no fallback line, and an `engine:` line
-that says chromium. Nothing here has had a Firefox pass since, which #61 is where to say so;
-[tools/firefox-runner](../tools/firefox-runner/README.md) is why it fails and is the one-command
-re-check, and `npx playwright install firefox` is what brings the build back.
+`PRCODER_BROWSER=chromium` forces the other; running both is worth the second minute.
+Firefox did not start on this machine from 2026-09-16 to 2026-09-26: macOS 27 denies a Firefox
+launched from a terminal its own app-data directory. The driver now points `MOZ_APP_DATA` and
+`MOZ_LOCAL_APP_DATA` under `data/firefox-appdata/`, and a default run on 2026-09-26 said
+`engine: firefox` with no fallback line and exited 0. [tools/firefox-runner](../tools/firefox-runner/README.md)
+is the cause and the one-command re-check, and #80 is when the workaround comes out. The Playwright
+build was uninstalled on 2026-09-19 and reinstalled on 2026-09-26; `npx playwright install firefox`
+is what brings it back if it goes again. The Firefox pass #61 owed was run on 2026-09-26:
+`tools/browser.mjs` against PR #1 and `tools/no-pr.mjs` (through a scratch Firefox copy under
+`data/`) in both engines, which agreed on every figure but a 1px measure; and the 16 tests of
+`test/browser.test.js` through a scratch Firefox copy, all passing. What #61 still owes is the Claude
+pane's exit bar, which lives on #75's branch.
 
 Its assertions are written against this repo's own PR #1 — that description's sections, file groups
 and issue chips — and the server follows whatever branch you are on, so a run from a feature branch
@@ -83,7 +88,10 @@ Its ✕ and the header's *Outline* button were checked the same way on 2026-09-2
 reload, and the Outline button absent while there is no outline to bring back.
 
 Folding the terminal to its header is pinned in `test/browser.test.js` (the diff grows into the room,
-the fold survives a reload, a double-click on the header unfolds it). What that test cannot see is
+the fold survives a reload, a double-click on the header unfolds it), and so is the header's ▁,
+which folds the same way, shows only while a diff is open, hides while folded, and must not change
+the header's height as it goes
+(it did, by 5px, before it took the ▼'s metrics). What that test cannot see is
 the PTY, because its socket is mocked: `data/fold-check.mjs` ran against this repo's PR with
 `tools/claude-stub.mjs` on 2026-09-23 and read the frames sent, and folding sent no `resize`. So
 the agent keeps its size while folded and is not reflowed to one row, and unfolding sent none
@@ -143,8 +151,10 @@ already takes one.
 question — can anything on this machine drive Firefox — by trying Playwright's own build and the
 Firefox in `/Applications` over WebDriver BiDi, headless and headed, and then the bare binary with
 no Playwright in the way. That last one is what says whose bug a failure is, and it is why the
-ad-hoc signature on Playwright's build is ruled out rather than suspected. Every line has said
-FAIL since 2026-09-17; the run that matters is the one after a macOS or Firefox update, and
+ad-hoc signature on Playwright's build is ruled out rather than suspected. Each launch runs with
+and without `MOZ_APP_DATA`. The lines with it say the driver's workaround still works (all OK on
+2026-09-26); the lines without it say whether the fix upstream has reached us, and are #80's check
+for removing it. The run that matters is the one after a macOS, Firefox or Playwright update, and
 [the directory's README](../tools/firefox-runner/README.md) is what to read before adding a case.
 
 ## The measured figures
@@ -166,7 +176,8 @@ them; it does now.
 That last row is the one figure here that is about GitHub's data rather than about this code: it is
 the *current* PR title, wrapped, so it moves when the title is rewritten and says nothing about a
 regression when it does. It was 285, 263, 236 in both engines under the title this PR carried on
-`5f7d6cc`. Re-measured in Chromium on 2026-09-18 (`4879171`); Firefox is the pass #61 owes.
+`5f7d6cc`. Re-measured in both engines on 2026-09-26 (`23b192f`): 251, 257, 318 in each, under the
+title PR #1 carries now.
 
 A poll costs **seven subprocess calls**, clean tree and dirty alike. `PRCODER_VERBOSE=2` prints the
 count on every poll, so a change that adds a call is visible rather than inferred. The pull requests
@@ -243,9 +254,9 @@ Some things can only be checked against the real thing, so they are:
   driver measures the dot's position with range rectangles rather than screenshotting it, because at
   13px a misplaced leading dot reads as a full stop and is invisible either way.
 - **Which CSS keeps a repository's name when its owner will not fit**, same method, four
-  declarations each checked by dropping it (2026-09-21, Chromium; the Firefox pass is owed on
-  [#61](https://github.com/gaurav/prcoder/issues/61), and flex shrink is a place the engines have
-  disagreed). The head's repository line is one link in two spans -- the owner shrinks and
+  declarations each checked by dropping it (2026-09-21, Chromium; flex shrink is a place the
+  engines have disagreed, and the three pinned in the test pass in Firefox too, 2026-09-26 under
+  [#61](https://github.com/gaurav/prcoder/issues/61)). The head's repository line is one link in two spans -- the owner shrinks and
   ellipsises, the name is `flex: none` -- and `heal-data-stewards/heal-vlmd-AI-pipeline`
   becomes `heal-dat…/heal-vlmd-AI-pipeline` in a narrow pane. Three of the four are pinned in
   `test/browser.test.js`, which narrows the pane by writing `--w-pr` the way a drag does; the

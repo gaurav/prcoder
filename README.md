@@ -89,8 +89,11 @@ the next `prcoder` in that repo opens with. They live in the browser's
 `localStorage`, which is kept per origin -- and the origin includes the port,
 which is `.prcoder/port.json`'s. So each repo and each worktree has a layout of
 its own, and so does each browser or profile. The terminal folds to its header
-line with the ▼ before its title, or a double-click on the header, and the diff
-(or the queue, with no diff open) takes the room; the same again unfolds it.
+line with the ▼ before its title, the ▁ at the header's other end (there only
+while a diff is open, since that is what takes the room), or a double-click on
+the header, and the diff (or the queue, with no diff open) takes
+the room; the ▶ or another double-click unfolds it. None of the three touches
+the session, which keeps running folded.
 Whether the terminal is folded, whether the outline is shown, and which way the
 queue adds are stored the same way. A repo whose port changes
 (`port.json` deleted, its port busy at startup, or `PRCODER_PORT` set) opens
@@ -300,8 +303,9 @@ are a separate download -- `npx playwright install firefox chromium`. The driver
 prefers Firefox and falls back to Chromium, because Firefox is what catches
 anything to do with selection, focus or dragging, which Chromium is happy to
 render correctly and Firefox is not. `PRCODER_BROWSER=chromium|firefox` forces
-one -- and on macOS 27 that is currently the flag you want, because Firefox does
-not start there at all; [tools/firefox-runner](tools/firefox-runner/README.md)
+one. On macOS 27 the driver gives Firefox an app-data directory of its own,
+because the system's protection of the real one keeps a Firefox launched from a
+terminal from starting at all (`MOZ_APP_DATA`, until #80); [tools/firefox-runner](tools/firefox-runner/README.md)
 is what is known about it.
 
 ## Finding it again
