@@ -182,6 +182,10 @@ mean to work through it. The arrow next to the input flips that to the top for
 the other way of using a queue -- the thing you must not forget to do next --
 and stays flipped.
 
+Only Active is yours to order. Completed lists the most recently finished
+first, so something ticked off by mistake is at the top to be unticked, and
+neither it nor Deleted can be dragged.
+
 ## Scratch space
 
 `data/` is gitignored and is where throwaway output goes -- driver screenshots,

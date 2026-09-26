@@ -7,7 +7,7 @@ import { normalise, pick, readStore, writeStore, readPort, writePort, replaceIte
 
 const repo = () => fs.mkdtemp(path.join(os.tmpdir(), 'prcoder-store-'));
 const item = (over = {}) =>
-  ({ text: 'a task', done: false, inPr: false, pr: null, issue: null, deleted: false, ...over });
+  ({ text: 'a task', done: false, doneAt: null, inPr: false, pr: null, issue: null, deleted: false, ...over });
 
 // The client PUTs back the array it was handed, which decorate() has added an
 // issueUrl to. The markdown writer dropped unknown fields for free; JSON would
@@ -15,7 +15,7 @@ const item = (over = {}) =>
 test('only the fields we own are stored', () => {
   const stored = pick({ ...item(), issueUrl: 'https://github.com/o/r/issues/1', junk: 1 });
   assert.deepEqual(Object.keys(stored).sort(),
-    ['deleted', 'done', 'inPr', 'issue', 'pr', 'text']);
+    ['deleted', 'done', 'doneAt', 'inPr', 'issue', 'pr', 'text']);
 });
 
 // The queue was scoped per branch for a while, so a file written then has a
@@ -23,7 +23,7 @@ test('only the fields we own are stored', () => {
 // come back into view on the next read, which is the point of #48.
 test('a branch left on an item by an older prcoder is dropped', () => {
   assert.deepEqual(Object.keys(pick(item({ branch: 'merged-and-gone' }))).sort(),
-    ['deleted', 'done', 'inPr', 'issue', 'pr', 'text']);
+    ['deleted', 'done', 'doneAt', 'inPr', 'issue', 'pr', 'text']);
   const { store } = normalise(JSON.stringify(
     { version: 1, items: [item({ branch: 'work' }), item({ text: 'b', branch: 'other' })] }));
   assert.deepEqual(store.items.map((i) => i.text), ['a task', 'b']);
@@ -32,7 +32,31 @@ test('a branch left on an item by an older prcoder is dropped', () => {
 test('fields are coerced, so a hand-edited file cannot make a half-item', () => {
   const out = pick({ text: 42, done: 'yes', issue: '7' });
   assert.deepEqual(out,
-    { text: '42', done: true, inPr: false, pr: null, issue: null, deleted: false });
+    { text: '42', done: true, doneAt: null, inPr: false, pr: null, issue: null, deleted: false });
+});
+
+// The Completed tab sorts on it, so it has to mean "when this was ticked": set
+// by the write that ticks it, carried through every write after, and gone with
+// the tick. The client never sets it -- it only sends back what it was given.
+test('an item is stamped when it is ticked, keeps the stamp, and loses it when unticked', () => {
+  const store = { version: 1, items: [] };
+  const [ticked] = replaceItems(store, [item({ done: true })], 1000).items;
+  assert.equal(ticked.doneAt, 1000, 'a newly done item is stamped');
+  const [kept] = replaceItems(store, [ticked], 2000).items;
+  assert.equal(kept.doneAt, 1000, 'a later write keeps the time it was ticked');
+  const [unticked] = replaceItems(store, [{ ...kept, done: false }], 3000).items;
+  assert.equal(unticked.doneAt, null, 'unticking clears it');
+  const [again] = replaceItems(store, [{ ...unticked, done: true }], 4000).items;
+  assert.equal(again.doneAt, 4000, 'and ticking it again is a new time');
+  assert.equal(replaceItems(store, [item()], 5000).items[0].doneAt, null, 'an active item has none');
+});
+
+// Reading is not a write: a store from before the field existed reads with no
+// times, and the page puts those last until something writes the queue.
+test('reading does not stamp', () => {
+  const { store } = normalise(JSON.stringify({ version: 1, items: [item({ done: true })] }));
+  assert.equal(store.items[0].doneAt, null);
+  assert.equal(pick(item({ done: false, doneAt: 1000 })).doneAt, null, 'a stamp on an active item is dropped');
 });
 
 // Which PR an item is mirrored into is only a fact while it is mirrored. Kept
@@ -93,7 +117,7 @@ test('a store from a newer version is not guessed at', () => {
 test('a missing field takes its default instead of failing the read', () => {
   const { store, stale } = normalise(JSON.stringify({ version: 1, items: [{ text: 'bare' }] }));
   assert.equal(stale, false);
-  assert.deepEqual(store.items, [{ text: 'bare', done: false, inPr: false, pr: null, issue: null, deleted: false }]);
+  assert.deepEqual(store.items, [{ text: 'bare', done: false, doneAt: null, inPr: false, pr: null, issue: null, deleted: false }]);
 });
 
 // One list, whatever is checked out. The branch scoping this replaces is what

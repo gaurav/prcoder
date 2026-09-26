@@ -106,6 +106,11 @@ function render() {
   if (tab === 'deleted' && live.length === items.length) tab = 'active';
   const shown = tab === 'deleted' ? items.filter((i) => i.deleted)
     : live.filter((i) => (tab === 'done' ? i.done : !i.done));
+  // Most recently finished first, so the item you just ticked by mistake is on
+  // top to be unticked. The store stamps doneAt; one it has not stamped yet
+  // (done before the field existed) goes last, and the sort is stable, so ties
+  // keep the queue's own order.
+  if (tab === 'done') shown.sort((a, b) => (b.doneAt ?? -Infinity) - (a.doneAt ?? -Infinity));
 
   host.replaceChildren(
     h('div', { className: 'tabs' },
@@ -178,6 +183,10 @@ const bulk = (label, fn, props = {}) => btn(label, fn, { className: 'bulk', ...p
 
 function row(item, above, below) {
   const idx = items.indexOf(item);
+  // Order is the backlog's meaning, and only Active is a backlog -- Completed
+  // is sorted by when each item was finished, and Deleted is a filtered view
+  // where a drop would splice the item to a position nobody on it can see.
+  const ordered = tab === 'active';
 
   // The keyboard's way to reorder, which a drag has no equivalent of. Moves
   // past the next row *shown*, not the next in the array: the tab filters, so
@@ -203,8 +212,8 @@ function row(item, above, below) {
   text.onblur = () => { if (text.textContent.trim() !== item.text) { item.text = text.textContent.trim(); save(); } };
   text.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); text.blur(); } };
 
-  const li = h('li', { className: 'item', draggable: true },
-    grip,
+  const li = h('li', { className: 'item', draggable: ordered },
+    ordered ? grip : null,
     box,
     text,
     item.issue ? ext(item.issueUrl ?? '#', `#${item.issue}`, { className: 'tag issue' }) : null,
@@ -236,7 +245,7 @@ function row(item, above, below) {
   // the span, and -moz-user-select, both leave the caret at 0 — so the row
   // gives up being draggable for exactly as long as the pointer is on its text,
   // and the grip above is the handle that always drags.
-  li.addEventListener('pointerdown', (e) => { li.draggable = !text.contains(e.target); });
+  li.addEventListener('pointerdown', (e) => { li.draggable = ordered && !text.contains(e.target); });
   li.addEventListener('dragstart', (e) => { e.dataTransfer.setData(ROW, idx); li.classList.add('dragging'); });
   li.addEventListener('dragend', () => li.classList.remove('dragging'));
   li.addEventListener('dragover', (e) => e.preventDefault());

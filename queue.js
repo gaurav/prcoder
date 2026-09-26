@@ -2,7 +2,7 @@
 // and the markdown checklist grammar it shares with FUTURE.md.
 //
 // The queue itself lives in .prcoder/queue.json (see store.js) and an item is
-// { text, done, inPr, pr, issue, deleted }. `inPr` mirrors it into a PR
+// { text, done, doneAt, inPr, pr, issue, deleted }. `inPr` mirrors it into a PR
 // description and `pr` is which one; `issue` links it to a GitHub issue. An item can be both, in
 // which case the PR line becomes a bare #N reference — that is the "converting
 // to an issue replaces the PR line" rule. `deleted` is a tombstone: deleting an

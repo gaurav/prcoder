@@ -497,3 +497,30 @@ test('a click anywhere on the terminal\'s header folds and unfolds it, the ▼ i
   assert.equal(await shown(), true);
   await fresh.close();
 });
+
+// Completed is sorted by when each item was finished, so the one just ticked by
+// mistake is on top to be unticked -- whatever order the queue holds them in.
+// One the store has not stamped yet goes last. With the order not the user's to
+// set, the tab has no grip and no drag; Active keeps both.
+test('Completed lists the most recently finished first, and cannot be reordered', { skip }, async () => {
+  const fresh = await newPage();
+  const it = (text, over) => ({ text, done: true, inPr: false, pr: null, issue: null, deleted: false, ...over });
+  const queue = [
+    it('never stamped', { doneAt: null }),
+    it('finished first', { doneAt: 1000 }),
+    it('still to do', { done: false, doneAt: null }),
+    it('finished last', { doneAt: 3000 }),
+  ];
+  // Both: the pane loads from /api/queue and every status poll replaces it.
+  await fresh.route('**/api/queue', (r) => r.fulfill({ json: queue }));
+  await fresh.route('**/api/status', (r) => r.fulfill({ json: { ...status, queue } }));
+  await fresh.reload();
+  await fresh.waitForSelector('#queue-body .item');
+  assert.equal(await fresh.locator('#queue-body .item .grip').count(), 1, 'Active reorders');
+  await fresh.locator('#queue-body .tab', { hasText: 'Completed' }).click();
+  assert.deepEqual(await fresh.locator('#queue-body .item .text').allTextContents(),
+    ['finished last', 'finished first', 'never stamped']);
+  assert.equal(await fresh.locator('#queue-body .item .grip').count(), 0, 'no grip on Completed');
+  assert.equal(await fresh.locator('#queue-body .item[draggable="true"]').count(), 0, 'and no drag');
+  await fresh.close();
+});

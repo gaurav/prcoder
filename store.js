@@ -46,6 +46,9 @@ export const pick = (i) => ({
   pr: i?.inPr && Number.isInteger(i?.pr) ? i.pr : null,
   issue: Number.isInteger(i?.issue) ? i.issue : null,
   deleted: !!i?.deleted,
+  // When it was ticked, for the Completed tab's order. Meaningless once it is
+  // not done, so an untick clears it and a re-tick is stamped afresh.
+  doneAt: i?.done && Number.isFinite(i?.doneAt) ? i.doneAt : null,
 });
 
 /**
@@ -154,5 +157,16 @@ export async function readPort(repo) {
 /** Written like the queue: temp file, then a rename, which is atomic in one directory. */
 export const writePort = (repo, port) => writeJson(repo, portFile(repo), { version: VERSION, port });
 
-/** The whole list replaced, coerced on the way in. */
-export const replaceItems = (store, items) => ({ ...store, items: items.map(pick) });
+/**
+ * The whole list replaced, coerced on the way in -- and where `doneAt` is
+ * stamped, because every write passes through here: a PUT from the pane and a
+ * tick merged from the description alike. An item arriving done with no time
+ * has just been ticked; one already done carries the time it was handed back.
+ * That needs no item identity, which the queue does not have. Items done before
+ * the field existed are stamped by the first write, together, and so sit below
+ * anything ticked after it.
+ */
+export const replaceItems = (store, items, now = Date.now()) => ({
+  ...store,
+  items: items.map(pick).map((i) => (i.done && i.doneAt == null ? { ...i, doneAt: now } : i)),
+});
