@@ -512,10 +512,11 @@ test('a tab with something to count carries done over total', () => {
 });
 
 test('the description count walks the body, fences and all', () => {
-  assert.deepEqual(taskCount('- [x] a\n- [ ] b\n- [x] c'), { done: 2, total: 3 });
+  const count = (body) => taskCount(blocks(body));
+  assert.deepEqual(count('- [x] a\n- [ ] b\n- [x] c'), { done: 2, total: 3 });
   // The same rule the tick uses: a checklist line inside a fence is a sample.
-  assert.deepEqual(taskCount('```\n- [ ] sample\n```\n\n- [x] real'), { done: 1, total: 1 });
-  assert.deepEqual(taskCount('Just prose.'), { done: 0, total: 0 });
+  assert.deepEqual(count('```\n- [ ] sample\n```\n\n- [x] real'), { done: 1, total: 1 });
+  assert.deepEqual(count('Just prose.'), { done: 0, total: 0 });
 });
 
 test('the file count is files viewed on GitHub, over files changed', () => {

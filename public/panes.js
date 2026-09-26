@@ -7,21 +7,18 @@
 // on <main> and inherits down to it, so a gutter inside a pane needs nothing
 // here beyond its direction.
 
+import { pref, setPref } from './pr.js';
+
 const main = document.querySelector('main');
 const KEY = 'prcoder:panes';
 
 // The inline style *is* the state — nothing else writes to it, so persisting it
 // whole needs no parallel copy and no parsing. A garbled stored value costs
-// nothing either: the CSS parser drops declarations it cannot read. Both ends
-// are wrapped because a browser can refuse the store outright (Safari's private
-// mode throws on write), and a pane preference must not take the terminal with
-// it — the import in app.js is what would fail.
-let stored = null;
-try { stored = localStorage.getItem(KEY); } catch { /* no store, no memory */ }
-main.style.cssText = stored ?? '';
-const save = () => {
-  try { localStorage.setItem(KEY, main.style.cssText); } catch { /* as above */ }
-};
+// nothing either: the CSS parser drops declarations it cannot read. Through
+// pref(), because a refused store must not take the terminal with it -- the
+// import in app.js is what would fail.
+main.style.cssText = pref(KEY) ?? '';
+const save = () => setPref(KEY, main.style.cssText);
 
 /** Pointer position as a distance from the edge of <main> the pane grows from. */
 const px = (r, from, e) => ({

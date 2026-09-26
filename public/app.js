@@ -1,7 +1,7 @@
 import { Terminal } from '/vendor/xterm.mjs';
 import { FitAddon } from '/vendor/addon-fit.mjs';
 import { WebLinksAddon } from '/vendor/addon-web-links.mjs';
-import { renderPr, renderNoPr, renderHeader, pageTitle, api, toast } from './pr.js';
+import { renderPr, renderNoPr, renderHeader, pageTitle, api, toast, pref, setPref } from './pr.js';
 import { openDiff, closeDiff, selectedPath, setViewed } from './diff.js';
 import { initQueue, addItem, setItems, freeze } from './queue.js';
 import './panes.js';   // draggable pane gutters; nothing here calls into it
@@ -137,10 +137,10 @@ function foldTerm(off, save = true) {
   fold.textContent = off ? '▶\uFE0E' : '▼';   // FE0E: text, never macOS's emoji ▶
   fold.title = `${off ? 'expand' : 'collapse'} the coding agent pane`;
   fold.setAttribute('aria-label', fold.title);   // a glyph is no name, as in queue.js
-  if (save) try { localStorage.setItem(TERM_KEY, off ? 'off' : 'on'); } catch { /* this session only */ }
+  if (save) setPref(TERM_KEY, off ? 'off' : 'on');
   if (!off) term.focus();   // expanding it is to talk to it
 }
-try { if (localStorage.getItem(TERM_KEY) === 'off') foldTerm(true, false); } catch { /* shown */ }
+if (pref(TERM_KEY) === 'off') foldTerm(true, false);
 const folded = () => document.querySelector('main').classList.contains('term-off');
 // The whole header is the toggle, and the ▼ is only the part of it that says
 // so -- and the part a keyboard can reach, since a button's Enter is a click
@@ -310,8 +310,8 @@ input.addEventListener('keydown', async (e) => {
   e.preventDefault();
   // Cleared only once the server has the item. addItem is async and save()
   // reports a refusal with a toast rather than a throw, so clearing on the way
-  // past threw the text away on a stale-branch refusal, on any API failure, and
-  // on an Enter pressed during a branch switch.
+  // past threw the text away on any API failure, and on an Enter pressed
+  // during a branch switch.
   if (await addItem(input.value)) {
     input.value = '';
     grow();

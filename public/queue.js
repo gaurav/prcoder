@@ -1,4 +1,4 @@
-import { h, btn, ext, api, toast } from './pr.js';
+import { h, btn, ext, api, toast, pref, setPref, tabBtn } from './pr.js';
 
 // The client owns the list; every change persists the whole array. Single user,
 // single repo — no ids, no diffing.
@@ -43,9 +43,7 @@ export function setItems(next) {
 // and starts again from the default. Losing it costs a click.
 const ADD_TO_KEY = 'prcoder:add-to';
 let addTo = 'bottom';
-const readAddTo = () => {
-  try { return localStorage.getItem(ADD_TO_KEY) === 'top' ? 'top' : 'bottom'; } catch { return 'bottom'; }
-};
+const readAddTo = () => (pref(ADD_TO_KEY) === 'top' ? 'top' : 'bottom');
 
 export async function initQueue(d) {
   deps = d;
@@ -55,7 +53,7 @@ export async function initQueue(d) {
   addTo = readAddTo();
   document.getElementById('queue-where').onclick = () => {
     addTo = addTo === 'bottom' ? 'top' : 'bottom';
-    try { localStorage.setItem(ADD_TO_KEY, addTo); } catch { /* honoured for this session anyway */ }
+    setPref(ADD_TO_KEY, addTo);
     paintWhere();
   };
   // Before the fetch, so a remembered ↑ is not shown as the markup's ↓ for as
@@ -108,18 +106,16 @@ function render() {
 
   host.replaceChildren(
     h('div', { className: 'tabs' },
-      tabBtn('active', `Active (${live.filter((i) => !i.done).length})`),
-      tabBtn('done', `Completed (${live.filter((i) => i.done).length})`),
-      ...(items.some((i) => i.deleted) ? [tabBtn('deleted', `Deleted (${items.filter((i) => i.deleted).length})`)] : []),
+      queueTab('active', `Active (${live.filter((i) => !i.done).length})`),
+      queueTab('done', `Completed (${live.filter((i) => i.done).length})`),
+      items.some((i) => i.deleted) ? queueTab('deleted', `Deleted (${items.filter((i) => i.deleted).length})`) : null,
       h('span', { className: 'spacer' }),
-      ...(tab === 'deleted'
+      tab === 'deleted'
         // The only hard delete in the app, and it is behind the tab that shows
         // you what you are about to lose.
-        ? [bulk('empty', () => { items = items.filter((i) => !i.deleted); save(); })]
-        : [
-          // Same tombstone the row's own delete writes.
-          bulk('clear done', () => { items.forEach((i) => { if (i.done) i.deleted = true; }); save(); }),
-        ]),
+        ? bulk('empty', () => { items = items.filter((i) => !i.deleted); save(); })
+        // Same tombstone the row's own delete writes.
+        : bulk('clear done', () => { items.forEach((i) => { if (i.done) i.deleted = true; }); save(); }),
     ),
     h('ul', { className: 'items' }, ...shown.map((i, n) => row(i, shown[n - 1], shown[n + 1]))),
   );
@@ -159,8 +155,7 @@ export function reorder(list, from, to) {
   return list;
 }
 
-const tabBtn = (name, label) =>
-  btn(label, () => { tab = name; render(); }, { className: tab === name ? 'tab on' : 'tab' });
+const queueTab = (name, label) => tabBtn(label, tab === name, () => { tab = name; render(); });
 
 /**
  * What a row's drag carries. Its own type, not text/plain: a link or a text
@@ -169,7 +164,7 @@ const tabBtn = (name, label) =>
  */
 const ROW = 'application/x-prcoder-row';
 
-const bulk = (label, fn, props = {}) => btn(label, fn, { className: 'bulk', ...props });
+const bulk = (label, fn) => btn(label, fn, { className: 'bulk' });
 
 function row(item, above, below) {
   const idx = items.indexOf(item);

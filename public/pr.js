@@ -67,6 +67,20 @@ export function toast(msg, bad = false, sticky = false) {
 }
 
 /**
+ * localStorage, best effort. A browser can refuse the store outright -- Safari's
+ * private mode throws on write -- and a remembered preference must never take a
+ * pane down with it: a refused read is nothing stored, a refused write holds for
+ * this session only. Every stored preference goes through these two.
+ */
+export const pref = (key) => { try { return localStorage.getItem(key); } catch { return null; } };
+export const setPref = (key, value) => {
+  try { localStorage.setItem(key, value); } catch { /* this session only */ }
+};
+
+/** One of a pane's tabs; `on` is the one showing. */
+export const tabBtn = (label, on, onClick) => btn(label, onClick, { className: on ? 'tab on' : 'tab' });
+
+/**
  * A checkbox that writes through to GitHub. The browser has already flipped it
  * by the time we hear about it, so a failure puts it back rather than
  * repainting -- the poll would take up to a minute to disagree. `settle` runs
@@ -83,9 +97,9 @@ export function writeThrough(box, run, settle = () => {}) {
   };
 }
 
-/** The light itself, for the pane header that survives a poll. */
-function paintLight(id, state) {
-  const light = document.getElementById(id);
+/** The PR pane's sync light, in the part of the header that survives a poll. */
+function paintLight(state) {
+  const light = document.getElementById('pr-sync');
   light.hidden = !state;
   if (!state) return;
   light.className = state.className;
@@ -173,7 +187,7 @@ export function renderHeader(status, prs, { onSwitch, onCommit }) {
   commit.onclick = () => onCommit(status.dirtyFiles);
   commit.textContent = `Commit ${status.dirtyFiles.length} file${status.dirtyFiles.length === 1 ? '' : 's'}…`;
 
-  paintLight('pr-sync', headerSync(status));
+  paintLight(headerSync(status));
 }
 
 // `ahead` is not in the table because it counts.
@@ -449,19 +463,21 @@ export function renderPr(pr, handlers) {
     openSections.clear();
     autoOpen = true;
   }
-  renderPrHead(pr, handlers);
-  renderPrTab(pr, handlers);
+  // Parsed once for both: the Detail tab's count and the description itself.
+  const parsed = blocks(pr.body);
+  renderPrHead(pr, parsed, handlers);
+  renderPrTab(pr, parsed, handlers);
 }
 
-function renderPrHead(pr, handlers) {
+function renderPrHead(pr, parsed, handlers) {
   const switchTo = (name) => {
     tab = name;
-    renderPrHead(pr, handlers);
-    renderPrTab(pr, handlers);
+    renderPrHead(pr, parsed, handlers);
+    renderPrTab(pr, parsed, handlers);
   };
-  const tabBtn = (name, label) =>
-    btn(label, () => switchTo(name), { className: tab === name ? 'tab on' : 'tab' });
+  const paneTab = (name, label) => tabBtn(label, tab === name, () => switchTo(name));
   const ways = headLinks(pr);
+  const state = pr.isDraft ? 'draft' : pr.state.toLowerCase();
 
   // Each row stands alone -- no row's spacing depends on which one is above it
   // -- so the order is HEAD_ORDER and nothing else.
@@ -472,7 +488,7 @@ function renderPrHead(pr, handlers) {
     // measures the row by, so it is not dead CSS to clean up.
     links: linkRow(ways.links, 'meta pr-ways pr-links'),
     state: h('div', { className: 'meta pr-state' },
-      badge(pr.isDraft ? 'draft' : pr.state.toLowerCase(), pr.isDraft ? 'draft' : pr.state.toLowerCase()),
+      badge(state, state),
       h('span', {}, `${pr.headRefName} → ${pr.baseRefName}`),
       h('span', { className: 'add' }, `+${pr.additions}`),
       h('span', { className: 'del' }, `−${pr.deletions}`),
@@ -480,8 +496,8 @@ function renderPrHead(pr, handlers) {
     checks: checks(pr.checks),
     repo: repoRow(ways.repo, 'meta pr-repo'),
     tabs: h('div', { className: 'tabs' },
-      tabBtn('detail', tabLabel('Detail', taskCount(pr.body))),
-      tabBtn('files', tabLabel('Files', viewedCount(pr.files)))),
+      paneTab('detail', tabLabel('Detail', taskCount(parsed))),
+      paneTab('files', tabLabel('Files', viewedCount(pr.files)))),
   };
   document.getElementById('pr-head').replaceChildren(...kids(HEAD_ORDER.map((k) => rows[k])));
 }
@@ -509,15 +525,16 @@ export const tabLabel = (name, { done, total }) => {
   return done === total ? `${name} ✓` : `${name} (${done}/${total})`;
 };
 
-export const taskCount = (body) => {
-  const tasks = blocks(body).filter((b) => b.kind === 'task');
+/** Over blocks() rather than the body, so a caller that has parsed it once reuses that. */
+export const taskCount = (list) => {
+  const tasks = list.filter((b) => b.kind === 'task');
   return { done: tasks.filter((b) => b.done).length, total: tasks.length };
 };
 
 export const viewedCount = (files = []) =>
   ({ done: files.filter((f) => f.viewed).length, total: files.length });
 
-function renderPrTab(pr, handlers) {
+function renderPrTab(pr, parsed, handlers) {
   const host = document.getElementById('pr-body');
   // Recorded as it happens rather than read before the replace: a tab switch
   // sets `tab` to the tab being switched *to* before it re-renders, so reading
@@ -537,7 +554,7 @@ function renderPrTab(pr, handlers) {
     h('div', { className: 'meta' },
       ext(`${pr.url}#issuecomment`, `${pr.counts.comments} comments · ${pr.counts.reviews} reviews`)),
   ] : [
-    h('div', { className: 'body md' }, ...description(pr.body, handlers.onTask)),
+    h('div', { className: 'body md' }, ...description(parsed, handlers.onTask)),
     issueRow(pr.issues, true, 'Closes'),
     issueRow(pr.issues, false, 'Mentions'),
   ]));
@@ -609,8 +626,7 @@ function fileGroup(label, files, handlers) {
   const { root, dirs } = byDir(files);
   return fold({
     className: 'group', dataset: { group: label }, title: label, progress: { ...viewedCount(files), what: 'viewed' },
-    open: !closedGroups.has(label),
-    onToggle: (open) => { if (open) closedGroups.delete(label); else closedGroups.add(label); },
+    ...kept(closedGroups, label, 'closed'),
   }, [
     ...root.map((f) => fileRow(f, handlers)),
     ...dirs.map(([dir, list]) => dirGroup(label, dir, list, handlers)),
@@ -682,8 +698,7 @@ function dirGroup(group, dir, files, handlers) {
   const key = `${group}/${dir}`;
   return fold({
     className: 'dir', dataset: { dir }, title: dir, progress: { ...viewedCount(files), what: 'viewed' },
-    open: !closedGroups.has(key),
-    onToggle: (open) => { if (open) closedGroups.delete(key); else closedGroups.add(key); },
+    ...kept(closedGroups, key, 'closed'),
   }, files.map((f) => fileRow(f, handlers, dir)));
 }
 
@@ -722,6 +737,16 @@ function pie({ done, total, what }) {
  * Not a dot per item, which is exact but grows with the count: a 35-file group
  * would be a row of dots.
  */
+/**
+ * A fold's `open` and `onToggle`, remembered in `set` -- which holds the keys
+ * that are `holds`: the file groups record what was closed (they open by
+ * default), the description's sections what was opened (they do not).
+ */
+const kept = (set, key, holds) => ({
+  open: set.has(key) === (holds === 'open'),
+  onToggle: (open) => { if (open === (holds === 'open')) set.add(key); else set.delete(key); },
+});
+
 function fold({ className, dataset, title, progress, open, onToggle }, children) {
   const d = h('details', { className: `fold ${className}`, open, dataset },
     h('summary', {}, h('h3', {}, title), progress ? pie(progress) : null),
@@ -974,13 +999,12 @@ export function sectionize(list) {
  * because they opened the next one is worse than either.
  */
 function sectionNode(s, onTask) {
-  const tasks = s.nodes.filter((b) => b.kind === 'task');
+  const count = taskCount(s.nodes);
   return fold({
     className: 'md-section', dataset: { key: s.key }, title: s.title,
     // So a fold never hides work without saying so.
-    progress: tasks.length ? { done: tasks.filter((b) => b.done).length, total: tasks.length, what: 'done' } : null,
-    open: openSections.has(s.key),
-    onToggle: (open) => { if (open) openSections.add(s.key); else openSections.delete(s.key); },
+    progress: count.total ? { ...count, what: 'done' } : null,
+    ...kept(openSections, s.key, 'open'),
   }, s.nodes.map((b) => blockNode(b, onTask)));
 }
 
@@ -991,8 +1015,8 @@ function sectionNode(s, onTask) {
  * description you finished reading yesterday reopening itself today is how the
  * pane becomes what this was written to fix.
  */
-function description(body, onTask) {
-  const { lead, sections } = sectionize(blocks(body));
+function description(parsed, onTask) {
+  const { lead, sections } = sectionize(parsed);
   // A description that is one heading and nothing else would fold to a single
   // line showing nothing at all.
   // Once per pull request, not once per poll. renderPr runs every 60s, and
