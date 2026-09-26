@@ -11,8 +11,8 @@ follows is what still can.
 ## Other pages in your browser
 
 Listening on loopback is not the boundary it looks like. A page on the web cannot read localhost's
-answers, but it can send a request that takes effect on the way out — switching branches, rewriting
-the PR description, filing an issue — and WebSockets are not subject to the same-origin policy at
+answers, but it can send a request that takes effect on the way out — switching branches, ticking
+a box in the PR description, filing an issue — and WebSockets are not subject to the same-origin policy at
 all, so that page could open `/pty`, get a `claude` PTY in this repo, read what it printed and type
 at it.
 

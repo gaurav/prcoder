@@ -423,7 +423,7 @@ const routes = {
  * localhost is where the same-origin policy stops helping, in two ways this
  * server is exposed by. Any page on the web can send a simple cross-origin POST
  * to a predictable port: it cannot read the answer, but switching branches,
- * rewriting the PR description and filing issues all happen on the way out.
+ * ticking a box in the PR description and filing issues all happen on the way out.
  * And WebSockets are not subject to the policy at all -- that same page can
  * open /pty, get a `claude` PTY in this repo, read what it prints and type at
  * it, approvals included.
