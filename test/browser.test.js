@@ -435,9 +435,16 @@ test('no button is named by a glyph alone', { skip }, async () => {
 
 // The ▁ is the ▼ again at the header's other end, not a close: it folds, and
 // while folded it is gone, so the ▶ is the only control that says what a click
-// does. Its own page for the same reason as the test above.
-test('the terminal\'s ▁ folds it like the ▼, and hides until it is unfolded', { skip }, async () => {
+// does. It is also gone while no diff is open, because then there is no pane
+// for it to hand the room to. Its own page for the same reason as the test
+// above.
+test('the terminal\'s ▁ shows only beside a diff, folds it like the ▼, and hides until it is unfolded', { skip }, async () => {
   const fresh = await newPage();
+  assert.equal(await fresh.locator('#term-min').isVisible(), false, 'no diff open, so nothing to hand the room to');
+  await fresh.locator('#pr-head .tab', { hasText: 'Files' }).click();
+  await fresh.locator('.file[data-path="evil.js"] .path').click();
+  await fresh.waitForSelector('#diff-body .dl');
+  assert.equal(await fresh.locator('#term-min').isVisible(), true, 'a diff is open');
   // A header that changes height as the ▁ goes jumps the whole layout.
   const height = () => fresh.$eval('#term > header', (el) => el.getBoundingClientRect().height);
   const open = await height();
@@ -451,5 +458,8 @@ test('the terminal\'s ▁ folds it like the ▼, and hides until it is unfolded'
   await fresh.click('#term-fold');
   assert.equal(await fresh.locator('#term-host').isVisible(), true);
   assert.equal(await fresh.locator('#term-min').isVisible(), true);
+
+  await fresh.click('#diff-close');
+  assert.equal(await fresh.locator('#term-min').isVisible(), false, 'the diff closed, so it goes with it');
   await fresh.close();
 });
