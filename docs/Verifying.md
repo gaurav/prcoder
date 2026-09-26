@@ -56,8 +56,8 @@ build was uninstalled on 2026-09-19 and reinstalled on 2026-09-26; `npx playwrig
 is what brings it back if it goes again. The Firefox pass #61 owed was run on 2026-09-26:
 `tools/browser.mjs` against PR #1 and `tools/no-pr.mjs` (through a scratch Firefox copy under
 `data/`) in both engines, which agreed on every figure but a 1px measure; and the 16 tests of
-`test/browser.test.js` through a scratch Firefox copy, all passing. What #61 still owes is the Claude
-pane's exit bar, which lives on #75's branch.
+`test/browser.test.js` through a scratch Firefox copy, all passing. The Claude pane's exit bar, on #75's
+branch, passed the same way from a worktree, which closed #61.
 
 Its assertions are written against this repo's own PR #1 — that description's sections, file groups
 and issue chips — and the server follows whatever branch you are on, so a run from a feature branch

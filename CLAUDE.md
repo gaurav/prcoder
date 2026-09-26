@@ -222,8 +222,8 @@ needs them too. The workaround is temporary, and #80 is when it comes out
 (Firefox 158 fixes this upstream). The 45-second timeout and the fall-back to
 Chromium stay until then, in case the workaround stops working;
 `tools/firefox-runner/` is the whole story, and `probe.mjs` there is the
-re-check. The Firefox pass #61 owed was run on 2026-09-26, except for the exit bar
-on #75's branch; docs/Verifying.md has what it covered.
+re-check. The Firefox pass #61 owed was run on 2026-09-26, the exit bar on #75's branch
+included, and #61 is closed; docs/Verifying.md has what it covered.
 
 One thing about running the driver at all, which reads as a hung server: it
 takes minutes, so `node tools/browser.mjs | tail` shows nothing at all until the
