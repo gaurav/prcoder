@@ -423,6 +423,20 @@ test('the terminal folds to its header, the diff takes the room, and it stays fo
   await fresh.close();
 });
 
+// The ⟳ is drawn larger than the header's text, because at the same size this
+// font makes it a speck -- and a glyph at a bigger size is how a header grows.
+// So the header has to be the height it is without the button.
+test('the ⟳ is drawn large without making the pull request header taller', { skip }, async () => {
+  const height = () => page.$eval('#pr > header', (el) => el.getBoundingClientRect().height);
+  const px = (sel, prop) => page.$eval(sel, (el, p) => parseFloat(getComputedStyle(el)[p]), prop);
+  assert.ok(await px('#pr-refresh', 'fontSize') > await px('#pr > header', 'fontSize'), 'the ⟳ should be larger than the header text');
+  const withIt = await height();
+  await page.$eval('#pr-refresh', (el) => { el.style.display = 'none'; });
+  const without = await height();
+  await page.$eval('#pr-refresh', (el) => { el.style.display = ''; });
+  assert.equal(withIt, without, 'the ⟳ should not set the header height');
+});
+
 // A button drawn as a glyph -- ✕, ⟳, ▼ -- is read out by a screen reader as
 // that glyph, which names no action. Every button on the page, as it first
 // renders, has words to be read by: its text, or an aria-label.

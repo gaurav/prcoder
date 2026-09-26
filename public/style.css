@@ -129,6 +129,10 @@ a { color: var(--accent); }
 .spacer { flex: 1; }
 
 /* --- PR pane --- */
+/* This font draws ⟳ well under the text beside it -- at the header's 14px it
+   was a speck. The line-height stays at what 14px computes to, or the unitless
+   one scales with the glyph and the header grows 6px. */
+#pr-refresh { font-size: 18px; line-height: 21px; }
 .pane > header button, .pane > header input {
   background: none; border: 0; color: var(--dim); font: inherit;
 }
