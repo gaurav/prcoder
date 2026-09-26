@@ -1,0 +1,692 @@
+:root {
+  --bg: #14161a; --panel: #1c1f26; --line: #2c313c;
+  --fg: #d5d9e0; --dim: #8c93a1; --accent: #7aa2f7;
+  --add: #7fd88f; --del: #f08b8b;   /* the file rows' +/- counts and the diff pane's NEW / DELETED */
+  color-scheme: dark;
+  /* The description and the pull request's title -- the two things in this
+     window that are read rather than operated. Every face here ships with an OS
+     -- no webfont, deliberately: one arriving late would move every line under
+     a scroll position renderPrTab had already restored. */
+  --serif: ui-serif, Charter, "Bitstream Charter", "Iowan Old Style",
+           "Source Serif 4", Georgia, "Liberation Serif", "Times New Roman", serif;
+  /* `1ch` is the width of `0`, which in a serif is narrower than average
+     lowercase -- so this measures nearer 75 rendered characters than 68, which
+     is where it was wanted. Checked at a 900px pane: 568px of prose in Firefox,
+     567px in Chromium. If a future face throws that off, `34em` is the
+     font-size-relative alternative (two alphabets, ~66 characters). */
+  --measure: 68ch;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; height: 100vh; overflow: hidden;
+  background: var(--bg); color: var(--fg);
+  font: 14px/1.5 ui-sans-serif, system-ui, sans-serif;
+}
+/* The 1px gutter tracks are the lines between the panes — there is no `gap`,
+   because every line in this layout is draggable. Each gutter writes one length
+   back onto <main> as a variable (see panes.js); the clamps are what keep a
+   drag from squeezing a pane to nothing, so the maxima must leave #term room
+   even when both row gutters are pushed as far as they go.
+
+   The defaults for the PR and queue panes are pixels, not percentages. The PR
+   pane holds prose set to a fixed measure and the queue holds rows of a fixed
+   height, so a percentage only pads them out on a big screen and leaves the
+   terminal less room. The % maxima still stop a pixel default from starving
+   #term in a small window. The values are the ones the owner had dragged to
+   and kept (2026-09-15).
+
+   A pane's default is its var() fallback, not the clamp minimum -- they are
+   only the same number for #pr by coincidence. The 180px floor is there so the
+   PR pane can be dragged down to a stub when the terminal wants the window;
+   #pr opens at 375px regardless. */
+main {
+  height: 100%; display: grid; background: var(--line);
+  grid-template-columns: clamp(180px, var(--w-pr, 375px), 60%) 1px 1fr;
+  grid-template-rows: 1fr 1px clamp(120px, var(--h-queue, 227px), 40%);
+  grid-template-areas:
+    "pr gpr term"
+    "pr gpr gqueue"
+    "pr gpr queue";
+}
+#pr { grid-area: pr; } #term { grid-area: term; } #queue { grid-area: queue; }
+main.diff-open {
+  grid-template-rows:
+    clamp(140px, var(--h-diff, 40%), 50%) 1px 1fr 1px clamp(120px, var(--h-queue, 227px), 40%);
+  grid-template-areas:
+    "pr gpr diff"
+    "pr gpr gdiff"
+    "pr gpr term"
+    "pr gpr gqueue"
+    "pr gpr queue";
+}
+#diff { grid-area: diff; }
+#diff[hidden] { display: none; }
+/* The terminal folded to its header row, for reading a diff by eye: whatever
+   sits above or below it takes the room. Its gutter to that pane goes too --
+   the pane is 1fr now, so there is nothing for a drag to set -- and the empty
+   1px track still draws the line. */
+main.term-off { grid-template-rows: auto 1px 1fr; }
+main.diff-open.term-off {
+  grid-template-rows: 1fr 1px auto 1px clamp(120px, var(--h-queue, 227px), 40%);
+}
+main.term-off #term-host,
+main.term-off:not(.diff-open) #gut-queue,
+main.term-off #gut-diff { display: none; }
+#term > header { user-select: none; }   /* a double-click folds it, not selects the title */
+/* Before the title, like a disclosure triangle, at the title's own size and
+   line-height so the two centre together. ▼/▶ rather than the small ▾/▸, which
+   sit low and needed a bigger font that then sat lower still. */
+#term-fold { margin-left: 0; padding: 0; font-size: 12px; line-height: 18px; }
+
+#gut-pr { grid-area: gpr; } #gut-queue { grid-area: gqueue; } #gut-diff { grid-area: gdiff; }
+/* Only the diff-open template has a slot for it; left displayed it would
+   auto-place itself into a row of its own and shove the layout sideways. */
+#gut-diff { display: none; }
+main.diff-open #gut-diff { display: block; }
+/* 1px of line, ±3px of grab, above the panes so the cursor changes over it. */
+.gut { position: relative; z-index: 3; touch-action: none; }
+.gut::after { content: ''; position: absolute; }
+.gut.col::after { inset: 0 -3px; cursor: col-resize; }
+.gut.row::after { inset: -3px 0; cursor: row-resize; }
+/* The line is 1px, so the ring goes on the grab area -- there is nowhere else
+   to put it. focus-visible, because a gutter you have just dragged should not
+   keep one. */
+.gut:focus { outline: none; }
+.gut:focus-visible::after { outline: 2px solid var(--accent); }
+
+.pane { background: var(--panel); display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+.pane > header {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 10px; border-bottom: 1px solid var(--line);
+}
+.pane h1 { margin: 0; font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--dim); }
+.scroll { overflow: auto; padding: 10px; flex: 1; min-height: 0; }
+
+#term-host { flex: 1; min-height: 0; padding: 4px 0 0 8px; }
+a { color: var(--accent); }
+
+/* --- Tabs and the small buttons beside them ---
+   Two panes have tabs now: the queue's Active/Completed, and the pull request's
+   Detail/Files. These moved up out of the queue pane's own section when the
+   second pane grew a row of them; nothing here changed but where it sits. */
+.tabs { display: flex; gap: 4px; align-items: center; margin-bottom: 8px; }
+.tab, .bulk {
+  background: none; border: 1px solid transparent; color: var(--dim);
+  font: inherit; font-size: 12px; padding: 2px 8px; border-radius: 4px; cursor: pointer;
+}
+.tab.on { color: var(--fg); border-color: var(--line); background: var(--bg); }
+.tab:hover, .bulk:hover { color: var(--fg); }
+.bulk { border-color: var(--line); }
+.spacer { flex: 1; }
+
+/* --- PR pane --- */
+.pane > header button, .pane > header input {
+  background: none; border: 0; color: var(--dim); font: inherit;
+}
+.pane > header button { cursor: pointer; margin-left: auto; }
+.pane > header button:hover { color: var(--fg); }
+/* A textarea rather than an input so a long item can be read while it is being
+   typed; app.js grows it to fit. `font: inherit` is spelled out because the
+   header's `input` rule no longer reaches it, and browsers give textareas a
+   monospace default. */
+#queue-input {
+  flex: 1; margin-left: 8px; padding: 3px 6px; color: var(--fg); font: inherit;
+  background: var(--bg); border: 1px solid var(--line); border-radius: 4px;
+  resize: none; overflow-y: auto; line-height: 1.4;
+}
+#queue-input:focus { outline: 1px solid var(--accent); }
+
+/* Which pull request you are in, above whichever half of it you are reading.
+   `flex: none` because the pane is a flex column and would otherwise shrink the
+   head before the body.
+
+   Two shorter-looking versions of this were tried and are not worth retrying.
+
+   The tabs in `.pane > header`, beside the switcher: `.pane > header button`
+   sets `margin-left: auto`, shared by all four panes, so a tab button lands
+   hard against the right edge -- that rule already carries two exceptions
+   (`.commit`, `.where`) and this would be the third. And at the pane's 375px
+   default the header holds an <h1>, a flex:1 <select>, the light and the
+   refresh glyph, so two more buttons squeeze the select to nothing.
+
+   A sticky tab row as the first child of #pr-body, keeping one scroller: this
+   is the one that looks right and is not. Two views in one scroller share one
+   scrollTop. Read to the bottom of a 7,000-word description, switch to Files,
+   and the browser clamps you to the bottom of a short list -- with nothing on
+   screen to say you were moved. A separate head is what gives each tab an
+   offset of its own to be restored to (see renderPrTab). */
+#pr-head { flex: none; padding: 10px 10px 8px; border-bottom: 1px solid var(--line); }
+#pr-head:empty { display: none; }
+#pr-head .tabs { margin-bottom: 0; }
+#pr-head > :last-child { margin-bottom: 0; }
+
+.empty { color: var(--dim); }
+/* The head's way out -- this pull request on GitHub, the lists you leave for,
+   and the repository further down -- starts at the left margin, like the title,
+   the badges and the tabs. It has no alignment rule of its own; `.meta` is
+   already flex-start, and `.pr-links` is kept only as a hook for the driver.
+
+   It was `justify-content: flex-end` for a while, and the reason is worth
+   knowing before moving it back. As one line of five links it read as one more
+   row of dim 12px text between the badges and the tabs, and people looked for
+   it to the right of the title or under the badges and never found it at the
+   top; pushing it to the right edge was what made it a thing rather than part
+   of the pane's prose. Left is also where the pane with no pull request has
+   always drawn the same links, so the two panes agree for the first time, and
+   a line that clips is easier to read from an edge that does not move with its
+   content.
+
+   The row sits directly under the title, above the state and the branches,
+   because that is the order it is used in (2026-09-26): the title says what
+   this is, and the next thing wanted is nearly always the pull request on
+   GitHub. Which row goes where is HEAD_ORDER in pr.js, and no row's spacing
+   depends on its neighbour -- each is a `.meta` with the same 8px under it --
+   so moving one is moving one word. Keep it that way: the repository used to
+   sit 2px under this row as "one block" with it, which was a margin that only
+   made sense in one order.
+
+   The pull request is a filled button, `.primary`, and the lists beside it
+   stay plain links. Of everything in the head it is the link actually
+   clicked, and as a fifth underlined `--accent` word it was no easier to find
+   than `milestones`. A solid fill is the one treatment nothing else in the
+   head has: the chip below is a faint outline, the badges are pastel,
+   uppercase and not links, and the tabs are grey. One button is not the
+   button group the paragraph further down warns against -- the three lists
+   stay text, so nothing here looks like it switches the pane. No dot beside
+   it; its box is the separator (see linkRow).
+
+   The repository, on a line of its own rather than in the middle of the row.
+   It is the only link there whose width has no bound -- a real
+   `heal-data-stewards/heal-vlmd-AI-pipeline` is most of the pane at its
+   375px default -- so in the row it wrapped, and dragged where issues, pulls
+   and milestones sat along with it. Alone on a line it can overflow instead:
+   the row keeps one predictable shape, and this line clips.
+
+   And the repository is a chip rather than a fifth link, which is what the
+   move down the page did not by itself fix. Giving it its own line said where
+   it was, not that it was different: both rows are 12px, and every link in
+   both is `--accent` and underlined, so the head read as five blue links in
+   two rows and the eye had no reason to stop on the second. The border, the
+   radius and the dropped underline are the same three the queue's `#N` tag
+   wears (`.item .tag`) -- this window's word for a small thing you can click
+   that is an object rather than a phrase -- so it is the vocabulary already
+   here and not a new one. What it buys: the links row stays a list of places
+   to go, and the chip is the one fact in the head that says which checkout
+   you are in.
+
+   The chip's colour is where it leaves the tag. A `--line` border on the
+   panel is about 1.2:1, which is enough to notice once you know it is there and
+   not enough to make you look (2026-09-25). So the border and a faint fill are
+   the chip's own `--accent`, mixed toward transparent: the chip stands out from
+   the prose while being the same blue as its text, and it stops well short of
+   the solid fills and uppercase text the `.badge`s use for status. A brighter
+   grey ring was the other candidate, and it read as one more `.tab`.
+
+   Two things deliberately not done. A logo or an emoji ahead of the slug, the
+   other way to mark it: no other glyph in this window earns its place that way
+   -- the `↗` that used to sit on these links was dropped for raising the
+   question of what the unmarked ones did -- and a mark says "look here"
+   without saying what kind of thing it is, where a chip does both. And the links
+   row is still plain text, not a button group: the tabs are the head's one
+   group of bordered controls, and a second one over them would make the four
+   links look like the thing that switches the pane. The pull request's single
+   filled button is the exception, argued above.
+
+   The chip's padding puts the slug 8px in from the margin the rest of the head
+   starts at. That is the treatment the tabs under it already have -- `.tab` is
+   `padding: 2px 8px` inside a `.tabs` row that sits on the margin -- so the
+   indent is the head's existing answer for a control with a box, not a break
+   in its alignment. The driver's `head:` check measures `.pr-repo` itself,
+   which is the full-width row and still starts where the title does.
+
+   Which half of the slug gets clipped is the point of the two spans. A pane
+   too narrow for `heal-data-stewards/heal-vlmd-AI-pipeline` shows
+   `heal-data-…/heal-vlmd-AI-pipeline`: the owner gives way, because it is
+   the same all day, and the name is the half that says which checkout this is.
+   `title` on the link (see repoRow) is the way back to the whole slug.
+
+   Every declaration below is load-bearing, each checked by dropping it on
+   2026-09-21 (Chromium; #61 is the owed Firefox pass, and flex shrink is
+   exactly the kind of thing engines have disagreed about). The first three
+   are pinned by test/browser.test.js, which fails on each:
+
+   - `inline-flex` on the link, or none of the rest applies and the line simply
+     overflows the pane.
+   - `min-width: 0` on the link, which is what lets a flex item shrink past its
+     own content. `max-width: 100%` in its place works identically.
+   - `flex: none` on the name, or the two spans shrink together and the name is
+     clipped alongside the owner -- which is the whole thing this avoids.
+   - `max-width: 100%` on the name, the floor for a repository whose name alone
+     will not fit: without it that name overflows the pane with the ellipsis
+     still on it, owner already collapsed to nothing. This is the one the test
+     cannot reach -- the pane's own floor is 180px and no real name is that
+     wide at 12px -- so it was checked by hand against a 60-character one.
+
+   The chip's own two add nothing to that list and are not load-bearing for
+   it: `padding` and `border` shrink the content box the spans divide up, and
+   the clipping behaves the same with less of it to work in. What they do move
+   is the right edge the line must stay inside -- it is the chip's border now,
+   not the name's last glyph, which is what test/browser.test.js measures.
+
+   The owner needs no `min-width: 0` of its own. `overflow: hidden` already
+   makes a flex item's automatic minimum size zero, and the pair passed every
+   check with the declaration removed.
+
+   `direction: rtl` -- what the dotfile column two panes over uses to clip a
+   long path and keep its filename -- is one declaration instead of four and
+   was measured against this. It works. It is not here because the two cut
+   opposite ends: a path is recognised from its tail, an owner from its front,
+   and rtl leaves `…tewards` where the spans leave `heal-dat…`.
+   docs/Verifying.md has the comparison. */
+.pr-links a.primary {
+  padding: 1px 8px; border-radius: 9px; text-decoration: none; font-weight: 600;
+  background: var(--accent); color: var(--bg);
+}
+.pr-links a.primary:hover { background: color-mix(in srgb, var(--accent) 80%, white); }
+.pr-repo a {
+  display: inline-flex; min-width: 0;
+  text-decoration: none; padding: 1px 7px;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent); border-radius: 9px;
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+.pr-repo a:hover {
+  border-color: color-mix(in srgb, var(--accent) 60%, transparent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+.pr-repo .owner { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pr-repo .name { flex: none; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Serif, like the description under it: the title is the first sentence of the
+   argument, not a label on the pane. Everything else in this header -- the
+   branch names, the badges, the tabs -- stays sans, so the split is the same
+   one the description makes between structure and prose.
+
+   21px is about 16pt, and is a display size rather than a bumped body size: a
+   serif reads smaller than the system sans at the same pixels, and the pane is
+   26% of the window, so the title is read at a glance across a screen it only
+   occupies a quarter of. The line-height comes down as the size goes up, the
+   way it does for any heading.
+
+   `text-wrap: balance` is what makes it quick to read rather than merely big.
+   The pane opens at 375px, where a real title runs to three lines, and the
+   default greedy wrap leaves the last one holding a word or two -- the ragged
+   edge is what a glance lands on, so an orphan costs more here than the same
+   orphan would in prose. Balancing evens the lines instead. It is a no-op at a
+   wide pane, where the title fits on one, and a browser without it wraps
+   greedily, which is where this started. No `font-weight`: the <h2> is bold
+   already, and 600 against 700 was indistinguishable in this stack when both
+   were photographed. */
+.pr-title { margin: 0 0 8px; font-family: var(--serif); font-size: 21px; line-height: 1.25; text-wrap: balance; }
+.meta { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; color: var(--dim); font-size: 12px; margin-bottom: 8px; }
+.add { color: var(--add); } .del { color: var(--del); }
+
+.badge { padding: 1px 6px; border-radius: 9px; background: var(--line); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; }
+.badge.open { background: #1f4d2e; color: #9ae6b4; }
+.badge.merged { background: #3d2a56; color: #d0b0f5; }
+.badge.closed, .badge.fail { background: #4d1f24; color: #f5a3a3; }
+.badge.pass { background: #1f4d2e; color: #9ae6b4; }
+.badge.pend { background: #4d411f; color: #f0dc9a; }
+
+/* A pull request description is prose, and with the title above it the only
+   part of this window that is read rather than operated. It gets a reading
+   face, a reading size and a measure; everything around it -- the file rows,
+   the tabs, its own headings and code -- stays sans, so the difference between
+   structure and argument is visible without reading either.
+
+   The measure is not decoration. #pr goes to 60% of the window (see `main`), and
+   an unbroken 15px serif line 900px wide is worse than the 13px it replaces.
+   Left-aligned rather than centred: a centred column with a wide right gutter
+   reads as a broken layout where a left one reads as a measure. */
+.md {
+  font-family: var(--serif);
+  font-size: 15px; line-height: 1.6; color: var(--fg);
+  max-width: var(--measure);
+  margin-bottom: 8px;
+}
+/* A checklist line in the description, as the checkbox GitHub renders. */
+.md .task { display: flex; align-items: baseline; gap: 7px; padding: 1px 0; }
+.md .task input { flex: none; margin: 0; accent-color: var(--accent); cursor: pointer; }
+.md .task.done > span { color: var(--dim); text-decoration: line-through; }
+.md .task input:disabled { opacity: .5; cursor: wait; }
+.md p { margin: 0 0 10px; }
+/* The description's own headings, which are sans over a serif body -- that
+   contrast is the whole hierarchy, so they need no scale of their own. They used
+   to be sized by weight and colour for a different reason: the body was 13px
+   sans too, and at 375px a 1.5em heading read as another pane's title. Against
+   serif prose there is nothing left to confuse them with. */
+.md h3, .md h4, .md h5, .md h6 {
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  margin: 16px 0 6px; font-size: 14px; font-weight: 600; color: var(--fg);
+}
+.md > :first-child { margin-top: 0; }
+/* Up one step, to sit level with 15px serif rather than under it. */
+.md code { background: var(--bg); padding: 0 4px; border-radius: 3px; font-size: 13px; }
+.md em { font-style: italic; color: var(--fg); }
+/* A fence scrolls on its own rather than widening the pane, which at 375px it
+   would do at the first long command line. */
+.md pre {
+  margin: 6px 0; padding: 6px 8px; overflow-x: auto;
+  background: var(--bg); border: 1px solid var(--line); border-radius: 4px;
+}
+.md pre code { background: none; padding: 0; font-size: 11px; line-height: 1.45; }
+/* The marker sits in the padding, so a wrapped item hangs under its own text
+   rather than under the bullet. */
+/* --- Folds ---
+   Two things fold, for opposite reasons and so with opposite defaults. A
+   description's sections start closed, because ten sections of prose is what
+   buries everything under it. A file group starts open, because the Files tab
+   is the working surface and a list you have to open is a list in the way.
+   Everything they share is here; only the defaults and the type differ. */
+.fold > summary {
+  display: flex; align-items: baseline; gap: 7px;
+  cursor: pointer; list-style: none;
+}
+.fold > summary::-webkit-details-marker { display: none; }
+/* Our own triangle rather than ::marker, whose support on a summary is patchy
+   across exactly the two engines this has to work in. */
+.fold > summary::before {
+  content: '▶'; flex: none; color: var(--dim); font-size: 9px;
+  /* A fixed box so the glyph turns about its own middle rather than drifting,
+     and so every summary's text starts at the same x whichever way it points. */
+  width: 10px; text-align: center;
+  transition: transform .12s ease; transform-origin: 50% 50%;
+}
+.fold[open] > summary::before { transform: rotate(90deg); }
+.fold > summary:hover, .fold > summary:hover::before { color: var(--accent); }
+.fold > summary:focus-visible { outline: 1px solid var(--accent); border-radius: 3px; }
+.fold > summary h3 { display: inline; margin: 0; font: inherit; flex: 1; min-width: 0; }
+/* What is still outstanding inside, so a fold never hides work silently. */
+.fold > summary .count { flex: none; font-weight: 400; color: var(--dim); }
+/* Indented under the title, not under the triangle. */
+.fold > .sec-body { padding: 2px 0 12px 18px; }
+
+/* A section of the description. The summary is the one place its structure
+   lives now, so it is sized and weighted to be scanned down: ten of these is
+   the outline of a description you have not read yet. */
+.md-section { border-top: 1px solid var(--line); }
+.md-section > summary {
+  padding: 8px 2px;
+  font: 600 15px/1.35 ui-sans-serif, system-ui, sans-serif; color: var(--fg);
+}
+.md-section > summary .count { font-size: 12px; }
+
+/* A quote is marked by a rule and a colour, not by an indent: at 375px the pane
+   has no width to give away, and the rule alone is what GitHub uses too. */
+.md blockquote {
+  margin: 10px 0; padding-left: 12px;
+  border-left: 3px solid var(--line); color: var(--dim);
+}
+
+.md ul, .md ol { margin: 6px 0; padding-left: 1.35em; }
+.md li { margin: 3px 0; }
+.md li::marker { color: var(--dim); }
+
+/* A line per issue, because each one carries its title now: the pill these used
+   to be held a bare #N and nothing longer.
+
+   Two columns, number and title, so a wrapped title stays under its own first
+   line instead of returning to the margin and reading as another issue. The
+   link is a subgrid row rather than `display: contents`: both would put the
+   spans in the parent's columns, but `contents` leaves the <a> with no box, so
+   a focus ring has nothing to draw on and hover misses the gap. The column is
+   max-content on the parent and shared down, so it fits the widest number in
+   either list and the digits line up on the right.
+
+   Serif, one step under the description, and the title dim: these lists are an
+   appendix to the prose above them and should weigh less than it, in colour as
+   well as position. The number is the one thing in accent, so the column still
+   scans; hover brings a title back to full colour. The label stays sans because
+   it is a heading, in the same voice as the file groups and the sections. */
+.issues {
+  display: grid; grid-template-columns: max-content 1fr;
+  column-gap: 8px; row-gap: 3px; margin: 14px 0 0;
+  font-family: var(--serif); font-size: 13px; line-height: 1.4;
+}
+.issues-label {
+  grid-column: 1 / -1;
+  font: 600 12px/1.5 ui-sans-serif, system-ui, sans-serif;
+  text-transform: uppercase; letter-spacing: .06em; color: var(--dim);
+}
+.issues a {
+  display: grid; grid-template-columns: subgrid; grid-column: 1 / -1;
+  text-decoration: none;
+}
+.issues .num { color: var(--accent); text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.issues .ttl { color: var(--dim); }
+.issues a:hover .ttl { color: var(--fg); text-decoration: underline; }
+
+.group { margin-bottom: 10px; }
+.group > summary {
+  padding: 2px 0;
+  font: 600 12px/1.5 ui-sans-serif, system-ui, sans-serif;
+  text-transform: uppercase; letter-spacing: .06em; color: var(--dim);
+}
+.group > summary:hover { color: var(--fg); }
+.group > summary .count { font-size: 12px; letter-spacing: 0; opacity: .7; }
+/* Less than a description's sections: a file path is already short, and the
+   rows have to stay wide enough to ellipsize from the left. */
+.group > .sec-body { padding: 2px 0 0 10px; }
+
+/* The directory inside a group: the same fold, quieter. A group's label is a
+   category and is set as one -- small caps, letter-spaced; a directory is a
+   name, so it keeps its own case and its trailing slash, which is what tells it
+   apart from the category above it at a glance. The indent is the fold's own
+   18px, halved: two levels of it would leave a 375px pane with a column of
+   arrows and nowhere to draw a path. */
+.dir { margin-bottom: 2px; }
+.dir > summary { padding: 1px 0; font: 400 12px/1.5 ui-sans-serif, system-ui, sans-serif; color: var(--dim); }
+.dir > summary:hover { color: var(--fg); }
+.dir > summary .count { font-size: 11px; opacity: .7; }
+.dir > .sec-body { padding: 0 0 4px 9px; }
+/* The seam between a group's two runs. Files at the top of the repository are
+   the group's first rows and the directories follow them at the same indent, so
+   without this the last root file and the first fold are one row apart and read
+   as one list. A `.dir` after another `.dir` needs nothing -- it has its own
+   margin-bottom above it. */
+.sec-body > .file + .dir { margin-top: 7px; }
+
+.file { display: flex; align-items: center; gap: 6px; padding: 2px 0; font-size: 13px; }
+.file.viewed .path { opacity: .45; text-decoration: line-through; }
+/* `direction: rtl` puts the ellipsis at the *head*, so a path too long for the
+   column loses its directories rather than its filename. The <bdi> the markup
+   puts inside is what stops that reordering the path itself -- see fileRow in
+   pr.js. Both are load-bearing; neither works alone. */
+.file .path {
+  flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; direction: rtl; text-align: left; text-decoration: none;
+}
+/* The UA stylesheet says this already. Spelled out because it is the whole
+   reason the element is there, and a bdi that lost it would look like a
+   pointless wrapper worth deleting. */
+.file .path bdi, #diff-path bdi { unicode-bidi: isolate; }
+.file .path:hover { text-decoration: underline; }
+.file .nums { font-size: 11px; white-space: nowrap; }
+
+/* --- Diff pane --- */
+#diff-path {
+  flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; direction: rtl; text-align: left; font-size: 12px; color: var(--dim);
+}
+#diff-viewed-label { font-size: 12px; color: var(--dim); white-space: nowrap; }
+/* The ways out of the pane, as one menu rather than four buttons, and none
+   marked ↗ -- see headLinks. `nowrap` on the group keeps a separator from
+   starting a line. */
+#diff-out, #diff-gh { font-size: 12px; white-space: nowrap; }
+#diff header a { text-decoration: none; }
+#diff header a:hover { text-decoration: underline; }
+#diff header .sep { color: var(--dim); margin: 0 2px; }
+/* 14px to match the terminal under it (app.js sets xterm to 14), which is the
+   other monospace pane and the one this is read against. */
+#diff-body { font: 14px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; padding: 6px 0; }
+/* `max-content`: a block div is as wide as the pane, not as its line, so the
+   +/- tint used to stop at the first viewport's edge once a wide diff was
+   scrolled right. `min-width` keeps a short line's tint reaching the edge. */
+/* `min-height`: a blank line is a row with an empty text node, which lays out
+   no line box at all, so a NEW file's blank lines collapsed to nothing (seen
+   2026-09-19, measured at 0px against the 21px of a line with text). */
+.dl { white-space: pre; padding: 0 10px; width: max-content; min-width: 100%; min-height: 1lh; }
+/* The body and, beside it, the outline: a column of hunk names that stays put
+   while the body scrolls. `:empty` hides it, so a whole file (no hunks) and a
+   single hunk (nothing to choose between) get the full width back. */
+#diff-main { display: flex; flex: 1; min-height: 0; }
+#diff-body { flex: 1; min-width: 0; }
+/* The other gutters are 1px grid tracks that let <main>'s background through.
+   This one is a flex item inside a pane, so it has to be the line itself -- and
+   say its width, or an empty flex item shrinks to nothing. */
+#gut-outline { flex: none; width: 1px; background: var(--line); }
+/* `auto` until the first drag, so the default is still whatever the longest
+   hunk label needs. The gutter writes a px width after that, and the max-width
+   is what keeps a drag from eating the diff. */
+#diff-side { flex: none; width: var(--w-outline, auto); max-width: 60%; overflow: auto; padding: 6px 0; }
+/* Its own row, stuck to the top so it is still there once the hunks scroll. */
+#diff-outline-hide {
+  display: block; margin-left: auto; position: sticky; top: 0; background: var(--panel);
+  border: 0; cursor: pointer; color: var(--dim); font-size: 12px; padding: 0 8px;
+}
+#diff-outline-hide:hover { color: var(--fg); }
+/* Nothing to point at for a whole-file diff: the outline hides itself, and the
+   line and its ±3px of grab area would otherwise be left behind in mid-air.
+   Hidden by its ✕ is the same two elements; the header's Outline button is the
+   way back, and shows only when there is an outline to bring back. */
+#diff-main:has(#diff-outline:empty) :is(#diff-side, #gut-outline),
+#diff.outline-off :is(#diff-side, #gut-outline) { display: none; }
+#diff > header #diff-outline-show { display: none; font-size: 12px; }
+#diff.outline-off:has(#diff-outline:not(:empty)) > header #diff-outline-show { display: inline; }
+#diff-outline button {
+  display: block; width: 100%; max-width: 100%; text-align: left; background: none; border: 0; cursor: pointer;
+  font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--dim); padding: 2px 10px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+#diff-outline button:hover { color: var(--fg); }
+.dl.add { color: #9ae6b4; background: #1f4d2e33; }
+.dl.del { color: #f5a3a3; background: #4d1f2433; }
+.dl.hunk { color: var(--accent); margin-top: 4px; }
+/* Token colours for a highlighted NEW file (highlightLines in diff.js). The
+   classes are prcoder's own `tok-` names, not Prism's, so nothing else on the
+   page can pick them up; a token with no rule here reads in the body colour. */
+#diff-body .tok-comment, #diff-body .tok-prolog, #diff-body .tok-doctype, #diff-body .tok-cdata { color: var(--dim); font-style: italic; }
+#diff-body .tok-string, #diff-body .tok-char, #diff-body .tok-attr-value, #diff-body .tok-url { color: var(--add); }
+#diff-body .tok-keyword, #diff-body .tok-important, #diff-body .tok-atrule, #diff-body .tok-tag { color: #bb9af7; }
+#diff-body .tok-function, #diff-body .tok-class-name, #diff-body .tok-selector, #diff-body .tok-title { color: var(--accent); }
+#diff-body .tok-number, #diff-body .tok-boolean, #diff-body .tok-constant, #diff-body .tok-symbol { color: #ff9e64; }
+#diff-body .tok-property, #diff-body .tok-attr-name, #diff-body .tok-builtin, #diff-body .tok-variable { color: #7dcfff; }
+#diff-body .tok-operator, #diff-body .tok-punctuation { color: var(--dim); }
+#diff-body .tok-deleted { color: var(--del); } #diff-body .tok-inserted { color: var(--add); }
+#diff-body .tok-bold { font-weight: bold; } #diff-body .tok-italic { font-style: italic; }
+/* NEW / DELETED; written out because `.pane h1` outranks a bare `.add`. */
+.pane h1.add { color: var(--add); } .pane h1.del { color: var(--del); }
+.file.sel { background: var(--bg); border-radius: 4px; }
+
+/* --- Queue pane --- */
+
+.items { list-style: none; margin: 0; padding: 0; }
+.item {
+  display: flex; align-items: baseline; gap: 6px;
+  padding: 3px 4px; border-radius: 4px; font-size: 13px;
+}
+.item:hover { background: var(--bg); }
+.item.dragging { opacity: .4; }
+.item .text { flex: 1; min-width: 0; outline: none; }
+.item .text:focus { box-shadow: 0 0 0 1px var(--accent); border-radius: 2px; }
+.item input[type=checkbox]:checked ~ .text { color: var(--dim); text-decoration: line-through; }
+.item .tag { font-size: 11px; text-decoration: none; padding: 0 5px; border: 1px solid var(--line); border-radius: 8px; }
+
+/* The row's only reliable drag handle: the text gives up draggable while it is
+   being clicked, so the caret can land where you aimed. Unlike .actions it does
+   not start invisible — those repeat what the row already offers, this is the
+   only way to reorder, and a control nobody can find is one that is not there. */
+.item .grip { flex: none; cursor: grab; color: var(--dim); font-size: 11px; opacity: .25; }
+.item .grip:active { cursor: grabbing; }
+.actions { display: flex; gap: 2px; opacity: 0; }
+.item:hover .grip, .item .grip:focus-visible, .item:hover .actions, .item:focus-within .actions { opacity: 1; }
+.item .grip:hover { color: var(--accent); }
+.actions button {
+  background: none; border: 0; color: var(--dim);
+  font-size: 12px; padding: 0 3px; cursor: pointer; line-height: 1;
+}
+.actions button:hover:not(:disabled) { color: var(--accent); }
+.actions button:disabled, .bulk:disabled { opacity: .35; cursor: not-allowed; }
+.bulk:disabled:hover { color: var(--dim); }
+
+/* --- PR pane header: switcher, sync light --- */
+.pane > header select {
+  /* Takes the header's spare width; min-width:0 lets a long PR title ellipsize
+     instead of pushing the sync light and refresh glyph off the edge. */
+  flex: 1; min-width: 0; padding: 2px 4px; font: inherit; font-size: 12px;
+  color: var(--dim); background: var(--bg);
+  border: 1px solid var(--line); border-radius: 4px;
+}
+.pane > header select:hover:not(:disabled) { color: var(--fg); }
+.pane > header select:disabled, .pane > header button:disabled {
+  opacity: .4; cursor: not-allowed;
+}
+.pane > header select[hidden], .light[hidden], .pane > header button[hidden] { display: none; }
+/* margin-left:auto belongs to the refresh glyph alone, not to every header
+   button -- these two are the ones that have had to say so. */
+.pane > header button.commit {
+  margin-left: 0; font-size: 12px; padding: 2px 8px;
+  border: 1px solid var(--line); border-radius: 4px;
+}
+/* Which end the queue input adds to. The arrow is the whole indicator, so it
+   is a box you can read at a glance rather than a bare glyph. */
+.pane > header button.where {
+  margin-left: 0; flex: none; font-size: 13px; line-height: 1.35; padding: 3px 8px;
+  color: var(--fg); background: var(--bg);
+  border: 1px solid var(--line); border-radius: 4px;
+}
+.pane > header button.where:hover { color: var(--accent); border-color: var(--accent); }
+.pane > header button.where.top { color: var(--accent); border-color: var(--accent); }
+
+/* The dot carries the state; the text next to it says what to do about it.
+   Two panes have one now: the PR's is about the branch and the remote, the
+   queue's is about whether GitHub has the items you typed. */
+.light { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--dim); white-space: nowrap; }
+.light::before {
+  content: ''; width: 7px; height: 7px; border-radius: 50%;
+  background: var(--line); flex: none;
+}
+.light.ok::before { background: #7fd88f; }
+.light.warn { color: #f0dc9a; }
+.light.warn::before { background: #f0dc9a; }
+.light.bad { color: #f5a3a3; }
+.light.bad::before { background: #f5a3a3; }
+.light.unknown::before { background: transparent; box-shadow: inset 0 0 0 1px var(--dim); }
+
+/* Sits over the panes so it never reflows them. Above the terminal pane rather
+   than inside it: the Claude session owns that viewport and repaints over
+   anything written into it. */
+#toast {
+  position: fixed; bottom: 14px; left: 50%; transform: translateX(-50%);
+  max-width: 60ch; padding: 7px 14px; border-radius: 6px; font-size: 13px;
+  background: var(--line); color: var(--fg); border: 1px solid var(--dim);
+  box-shadow: 0 3px 14px #0008; z-index: 10; cursor: pointer;
+}
+#toast[hidden] { display: none; }
+#toast.bad { background: #4d1f24; color: #f5a3a3; border-color: #f5a3a3; }
+/* A sticky toast waits to be clicked, so it has to look like it can be. The
+   glyph is a pseudo-element because toast() sets textContent. */
+#toast.sticky { border-color: #f0dc9a; }
+#toast.sticky::after { content: '✕'; margin-left: 8px; color: var(--dim); }
+#toast.sticky:hover::after { color: var(--fg); }
+
+/* A row per pull request that merges into this branch. Buttons, not links: the
+   click checks one out rather than going anywhere, so they are styled down to
+   the line of text they read as. */
+.pr-into { margin: 0 0 10px; font-size: 12px; }
+.pr-into-label { display: block; color: var(--dim); }
+.pr-into button {
+  display: block; width: 100%; text-align: left; padding: 1px 0 1px 10px;
+  font: inherit; font-size: 12px; color: var(--accent);
+  background: none; border: 0; cursor: pointer;
+}
+.pr-into button:hover:not(:disabled) { text-decoration: underline; }
+.pr-into button:disabled { color: var(--dim); cursor: not-allowed; }
+
+.pr-note { color: var(--dim); font-size: 12px; margin: 0 0 8px; }
+.pr-create {
+  font: inherit; font-size: 13px; margin-top: 6px; padding: 4px 10px; cursor: pointer;
+  color: var(--fg); background: var(--bg);
+  border: 1px solid var(--line); border-radius: 4px;
+}
+.pr-create:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.pr-create:disabled { opacity: .4; cursor: not-allowed; }

@@ -1,2 +1,346 @@
 # prcoder
-(GitHub) PR-based coding agent framework
+
+A PR-focused shell around Claude Code. Run it in a repo, get four panes in your
+browser: the pull request you're working on, the diff of whichever file you
+clicked, a live Claude Code session, and a task queue that stays out of your
+files.
+
+```sh
+npm install
+npm link                   # once, to run it from any repo; edits here go live
+
+prcoder                    # the PR for the current branch
+prcoder 123                # a specific PR
+prcoder <pr-url>           # any PR, anywhere
+prcoder --model opus       # ...with flags for the Claude session
+```
+
+It prints the URL to open, and opens it for you unless `PRCODER_NO_OPEN` is
+set. The port is per-repo and stays the same across runs -- see *A URL that
+stays put* below.
+
+## Where the repo is
+
+prcoder follows the branch. It resolves the pull request for whatever is
+checked out, and re-derives that every 60 seconds, so a `git checkout` in
+another terminal -- or by Claude in the middle pane -- is picked up on its own.
+Nothing is remembered between polls; every fact comes back from `git` and `gh`.
+
+The switcher in the PR pane header lists open pull requests and runs
+`gh pr checkout` to move between them. Uncommitted work hides it behind a
+Commit button, because the checkout would fail anyway. On a branch with no pull
+request the pane says so, disables the editing controls, and offers to create
+one -- pushing the branch first if GitHub has not seen it. It still carries the
+way out of the window that the pull request head does, laid out the same way:
+the issues, pulls and milestones, and the repository on the line below them.
+
+It also lists the open pull requests that merge *into* the branch you are on,
+which on `main` is the question that branch is interesting for. Clicking one
+checks it out, the same way the switcher does; uncommitted work dims the rows
+for the same reason it hides the switcher.
+
+Next to it, a light for the one thing prcoder cannot fix for you: whether the
+branch and the remote agree. It reads `unpushed`, `N unpushed`, `pull needed`
+or `diverged`, and it needs no `git fetch` -- GitHub's view of the branch head
+comes back with the pull request metadata. On a branch with no pull request it
+is git's own record of origin's head from the last push or fetch, the one
+`git status` reads, so a push from another machine shows only after a fetch.
+Either way it is only as fresh as the last poll.
+
+## Arguments
+
+The first argument, if it isn't a flag, is prcoder's: the PR to open. Everything
+from the first flag onward is handed to `claude` untouched, so
+`prcoder 123 --effort high --model opus` opens PR 123 with that session. There is
+no list of Claude's flags here to fall out of date, and nothing to arbitrate when
+Claude gains a flag prcoder also wants.
+
+prcoder's own settings are environment variables — `PRCODER_PORT`, `PRCODER_NO_OPEN`,
+`PRCODER_VERBOSE`, `CLAUDE_BIN` — which cannot collide with a flag at all.
+
+The first run in a repo picks a port -- seeded from a hash of the path, and
+stepped along if that one is busy -- and records it in `.prcoder/port.json`.
+Every run after that reads the file, so a repo gets the same URL forever: one
+you can bookmark, add to the Dock or point an IDE pane at (see *Finding it
+again*), and one that survives renaming the directory. Different repos, and
+different worktrees, get different ports, so several sessions run at once. A
+busy port falls back to a free one with a note on stderr.
+
+Ports come from 10240-14335 because browsers refuse a list of well-known ones
+outright -- Firefox answers *"This address is restricted"*, with nothing on
+screen to connect it to prcoder. The list is the
+[WHATWG fetch standard's](https://fetch.spec.whatwg.org/#port-blocking) and
+10080 is its highest entry, so nothing derived here can land on one. Edit
+`port.json` to pin a port permanently (avoid that list), or set `PRCODER_PORT`
+to pin one for a single run; `PRCODER_NO_OPEN=1` to be left with just the URL
+on stdout, or `PRCODER_OPEN` to a command of your own that gets the URL
+appended.
+
+Each tab names itself `owner/repo#N · pull request title` -- the branch and
+`(no PR)` when there isn't one -- and re-names itself as the branch moves, so a
+row of prcoder tabs stays readable at tab width.
+
+## The panes
+
+Every line between the panes is a splitter, and so is the diff outline's left
+edge: drag it to resize, double-click it to drop back to the default. The sizes
+are remembered per repo and per browser, so the layout you settle on is the one
+the next `prcoder` in that repo opens with. They live in the browser's
+`localStorage`, which is kept per origin -- and the origin includes the port,
+which is `.prcoder/port.json`'s. So each repo and each worktree has a layout of
+its own, and so does each browser or profile. The terminal folds to its header
+line with the ▼ before its title, or a double-click on the header, and the diff
+(or the queue, with no diff open) takes the room; the same again unfolds it.
+Whether the terminal is folded, whether the outline is shown, and which way the
+queue adds are stored the same way. A repo whose port changes
+(`port.json` deleted, its port busy at startup, or `PRCODER_PORT` set) opens
+with the default layout, and gets the old one back once it is on the old port
+again.
+
+**Pull request** — which pull request you are in stays at the top, in the
+order it is used: the title; then the way out of the window, with this pull
+request on GitHub drawn as a button beside plain links to the repository's
+issues, pulls and milestones; then the state, the branch it targets and the
+checks; and last the repository they are all in. The repository is on its own
+line because it is the only one of them whose length has no bound, and it
+truncates rather than wraps -- a long owner is clipped and the repository's own
+name kept, since that is the half that says which checkout you are in. It is
+drawn as a chip rather than a fifth link, because a line of its own said where
+it was without saying it was anything else: the links row is the list of places
+to go, and the chip is the one line in the head that answers which checkout
+this is.
+Below that are two tabs, because reading the argument and working the files are
+two different things and each wants the whole pane.
+
+*Detail* is the description. It opens as the lead paragraph and then one folded
+line per section, so a long one is an outline you scan rather than a wall you
+scroll; a section that contains checklist items says how many are still open.
+The prose is set in serif at a reading size and capped to a comfortable line
+length, because it is the one thing in the window that is read rather than
+operated. Checklists in it are real checkboxes and write straight back to the
+description -- ticking one inside prcoder's own TODO block ticks the queue item
+it came from. It ends with the issues the description points at, each one a
+line carrying its title: the ones this pull request closes, then the ones it
+only mentions. A bare `#41` in the prose is a link but says nothing about what
+it is, and the titles are the whole point of the list.
+
+*Files* is every changed file grouped as *Tests* / *Code* / *Config & docs*,
+tests first, because tests are the fastest way to see what functionality
+actually changed. Inside each of those, a group reads like a tree: the files at
+the top of the repository are its first rows, and below them the rest are folded
+by the directory they are in, a directory ahead of what is inside it and
+siblings alphabetical. A row inside a fold says only the name the directory
+above it does not -- so a path is read once per directory rather than once per
+file -- and both levels fold and remember what you closed. The checkbox on each
+file is GitHub's own "viewed" checkbox: tick it here and it's ticked on
+github.com. Clicking a file opens its diff in the **Diff** pane;
+cmd/ctrl-clicking opens GitHub's diff viewer at that file instead.
+
+Each tab carries the count the other one cannot show you — how many description
+boxes are still unticked, how many files are still unviewed — so neither hides
+from you while you are in the other.
+
+**Diff** — the selected file's patch, rendered plainly above the terminal so
+select → read → tick viewed → ask Claude never leaves the window. It shows the
+same hunks GitHub does (fetched once per push and cached) -- or, for a file GitHub
+sent no patch for, the same change as local git sees it. GitHub stops sending
+patches partway through a large pull request, and git in this clone can
+usually still make them. It refreshes itself when the branch head moves, and
+links out to GitHub for anything the plain rendering can't do — comments, binary and oversized files, highlighting of a changed file. A
+file the pull request adds or deletes is shown as its own text under a green **NEW**
+or red **DELETED** title rather than as a wall of `+` or `-`: a patch that is all one
+sign has nothing to contrast. A **NEW** file is syntax-highlighted when its
+extension names a language prcoder ships a grammar for; it is the one view where
+a tokenizer sees a whole file rather than a hunk that starts in the middle of one. A renamed file says where it came from on its
+first line, and a rename with no other change says only that. A diff with more
+than one hunk gets an outline down its right edge -- one row per hunk, named by
+the context git puts after the `@@` (the enclosing function, a heading) -- and a
+click scrolls the body to it. Its ✕ hides it for every file until *Outline* in
+the header brings it back, and the browser remembers which you chose. Four links, because they answer different
+questions. *Diff* comes first because it is what the pane itself shows: this
+file's patch in GitHub's viewer. The other three are the whole file as this pull
+request leaves it: *File* for what it became — the untouched parts a hunk
+doesn't show, and a Markdown file rendered rather than as source — *Blame* for
+who last touched the lines around a hunk, and *History* for what else has landed
+in it. Those three are pinned to the head commit, so they go on saying what you
+were looking at after the next push.
+
+**Claude Code** — the real `claude` binary in a PTY, so Escape still interrupts,
+slash commands still work, permission prompts still appear, and typing while
+Claude is mid-turn queues the message the way it always has. Links Claude prints
+are clickable.
+
+**Queue** — throw an item in, drag to reorder, tick it off. Each item can be
+sent to Claude, mirrored into the PR description, or turned into a GitHub issue.
+An item that is in the PR description *and* becomes an issue has its PR line
+replaced by a link to the issue.
+
+New items go to the bottom, so typing them in builds a list in the order you
+mean to work through it. The arrow next to the input flips that to the top for
+the other way of using a queue -- the thing you must not forget to do next --
+and stays flipped.
+
+## Scratch space
+
+`data/` is gitignored and is where throwaway output goes -- driver screenshots,
+a snapshot of a PR body taken before a write, anything you want next to the code
+without committing it. Nothing reads it; it exists so that neither you nor an
+agent working in this repo has to reach for `/tmp`.
+
+## Where the queue lives
+
+`.prcoder/queue.json`, in a directory that ignores itself -- it holds a
+`.gitignore` of one line, `*`, so nothing is added to your own and nothing
+shows up in `git status`. **prcoder does not write anything you own unless you
+ask it to.** The only other file there is `port.json`, which is one line and
+the port this working copy listens on.
+
+```json
+{
+  "version": 1,
+  "items": [
+    { "text": "Add retry to the fetch path",
+      "done": false, "inPr": false, "pr": null, "issue": null, "deleted": false }
+  ]
+}
+```
+
+One list for the repo, whatever is checked out. Items were scoped to the branch
+you added them on for a while; that hid them rather than organising them --
+moving to an unrelated branch mid-task took the list away, and merging a branch
+put its unfinished items out of reach for good. An older file's `branch` fields
+are dropped on the next write and those items come back.
+
+The queue is machine-local, which is the trade for not writing your files.
+The way to carry an item elsewhere is the ◆ button, which mirrors it into a
+`<!-- prcoder:todo -->` block in the PR description. Edits you make to that
+block on github.com — ticking a box, adding a line from your phone, deleting
+one — are folded back in on refresh. prcoder only mirrors into the pull request
+for the branch you have checked out: a PR you are merely looking at is never
+written to. An item records which PR it went into (`pr`), so it stays in that
+description when you move to another PR and is not taken for deleted there. Separate worktrees keep separate queues, since each has its own
+`.prcoder/`.
+
+If you have a `FUTURE.md` from an earlier version, its `## Queue` section is
+imported once, on the first run, and the file is never read or written again.
+
+Next to the pane's title is the queue's own light: whether the items you have
+mirrored are actually on GitHub. It reads `in the PR` when they are, and
+`not saved to the PR` when a write failed — prcoder keeps the change locally
+and stops trusting the description it can see until a write succeeds, so the
+light is how you know to stay open a moment longer.
+
+## The terminal you started it from
+
+The window prcoder was launched in is not finished once it has printed a URL.
+It keeps a status block pinned under a scrolling log:
+
+```
+prcoder  gaurav/prcoder   initial-implementation → main   2 unpushed · 8 uncommitted
+PR #1    A browser workspace around a live Claude Code session
+         https://github.com/gaurav/prcoder/pull/1
+queue    19 active · 1 done · 10 in the PR · 1 issue   queue mirrored
+serving  http://localhost:17455   1 tab   q quit · r refresh · v verbose · o open
+```
+
+All of it is what the browser's poll worked out anyway, so it costs no extra
+`git` or `gh` calls. That also means it only moves when the browser does — and
+the browser polls only while its tab is *visible*, so switching away stops the
+clock while the socket stays open and the tab count keeps saying `1 tab`. Once
+the numbers are more than two minutes old the block says `checked 7m ago` next
+to that count, rather than presenting them as current. The block is redrawn in
+place and the log scrolls above it, so what happened stays in the scrollback.
+
+**Keys.** `r` polls now, which is the way to move the block without going back
+to the browser. `v` cycles quiet → verbose → debug. Verbose narrates the things
+that change something you care about — an item queued, ticked, mirrored into
+the description, filed as an issue, a PR checked out. Debug adds every `git` and
+`gh` subprocess with its timing, the per-poll count of them, route timings, and
+a line when the PR has moved upstream. `PRCODER_VERBOSE=1` or `=2` starts at a
+level, which is the only way to see startup itself. `o` reopens the browser.
+
+**Quitting.** Ctrl-C asks first, because quitting kills the PTY and with it the
+Claude session in the browser. It says what that costs — tabs open, unpushed
+commits, uncommitted files, and a queue change GitHub never received. A second
+Ctrl-C at the prompt goes immediately; nothing here can make prcoder unkillable.
+
+None of this happens when stdout is not a terminal. Piped or redirected, you
+get plain lines and errors on stderr, which is what a script wants.
+
+If the port was busy, the block keeps saying so for the whole session, with the
+URL prcoder *wanted* — the one your bookmark and Dock icon point at, or the one
+you named in `PRCODER_PORT`, which the line tells apart. It asks
+whoever holds it who they are, so the line tells you whether the window you are
+looking for is another prcoder on this repo, another worktree, or nothing to do
+with prcoder at all.
+
+## Requirements
+
+Node 22.18 or later in the 22 line, or 24.2 or later. `server.js` starts only
+under `import.meta.main`, which older versions do not have: there it is
+undefined, and prcoder exits at once having done nothing and said nothing. CI
+runs 26.
+
+The [`gh` CLI](https://cli.github.com/), authenticated. All GitHub access goes
+through it, so there is no token to configure.
+
+`npm install` brings Playwright for `tools/browser.mjs`; the engines themselves
+are a separate download -- `npx playwright install firefox chromium`. The driver
+prefers Firefox and falls back to Chromium, because Firefox is what catches
+anything to do with selection, focus or dragging, which Chromium is happy to
+render correctly and Firefox is not. `PRCODER_BROWSER=chromium|firefox` forces
+one -- and on macOS 27 that is currently the flag you want, because Firefox does
+not start there at all; [tools/firefox-runner](tools/firefox-runner/README.md)
+is what is known about it.
+
+## Finding it again
+
+One prcoder per repo, each a browser tab, soon lost among the pull requests and
+diffs you opened while working. Cheapest first:
+
+**In the tabs.** The favicon is a green *PR* square -- blue while that tab's
+Claude is working, so a turn you walked away from says whether it is still
+going -- and every title ends in `· prcoder`, so in Firefox typing `% prcoder`
+in the address bar lists every instance and nothing from github.com. Amber is
+free on purpose, held for a third state prcoder cannot see yet: Claude stopped
+to ask you something.
+
+**A window per repo.** `PRCODER_OPEN` replaces the platform opener with your
+own command, URL appended. Firefox hands the arguments to the running copy, so
+
+```sh
+export PRCODER_OPEN='/Applications/Firefox.app/Contents/MacOS/firefox -new-window'
+```
+
+gives each prcoder its own window, listed by title in the Window menu and
+Mission Control.
+
+**A Dock icon per repo.** This works because the port is fixed: a repo records
+its port in `.prcoder/port.json` on the first run and listens on it every run
+after (`prcoder` prints it). In Safari, open that URL and choose *File → Add to Dock*. The app
+it makes keeps the page title as its window title, so it reads `owner/repo#N ·
+…` in Cmd-Tab. From then on start prcoder with `PRCODER_NO_OPEN=1` and click
+the icon. The one time the port moves is when a second prcoder is already
+running in the same repo; that one says so on stderr and takes a free port.
+
+**Inside IntelliJ.** A stable URL is all an embedded browser needs. There is no
+built-in tool window for one, but a JCEF browser plugin such as
+[intellij-webbrowser](https://github.com/dervism/intellij-webbrowser) will show
+it in a pane. Untested; the terminal's key handling inside JCEF is where to
+expect trouble.
+
+There is no single instance with a repo switcher. The server is one repo per
+process all the way down, and the Claude session dies with its tab, so a
+switcher would mean keeping sessions alive out of view -- the multi-session
+management listed below, deliberately not built yet.
+
+## Not here
+
+Syntax-highlighted diffs of modified files, review threads, multi-session management. [docs/Design.md](docs/Design.md) has the full list and the reasoning behind
+it, along with why prcoder exists at all; [docs/Security.md](docs/Security.md) has what a
+localhost server is exposed to.
+
+`npm test` covers the parts worth pinning down: the queue store, file grouping, GitHub's diff
+anchors, every queue ↔ PR-description transition, and the routes that answer without `gh`. What
+cannot be unit-tested is driven in a real browser and a real PTY —
+[docs/Verifying.md](docs/Verifying.md).
