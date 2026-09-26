@@ -14,27 +14,29 @@ const git = (args, cwd) => run('git', args, {
   env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
 });
 
-/** Exit status only. `ok` is the answer; anything else is a real failure. */
-async function asks(args, cwd, ok = 1) {
+const text = async (args, cwd) => (await git(args, cwd)).trim();
+
+/** Trimmed stdout, or null when git exits `ok`; any other failure is a real one. */
+async function answer(args, cwd, ok = 1) {
   try {
-    await git(args, cwd);
-    return true;
+    return await text(args, cwd);
   } catch (e) {
     // execFile reports a spawn failure as a string code (ENOENT), an exit as a
     // number. Only the expected number is an answer.
-    if (e.code === ok) return false;
+    if (e.code === ok) return null;
     throw e;
   }
 }
 
-const text = async (args, cwd) => (await git(args, cwd)).trim();
+/** Exit status only. `ok` is the answer; anything else is a real failure. */
+const asks = async (args, cwd, ok) => (await answer(args, cwd, ok)) !== null;
+
+/** Whether this clone has `rev` as a commit. 1 is "no"; 128 would be a bad name. */
+const hasCommit = (rev, cwd) => asks(['rev-parse', '--verify', '--quiet', `${rev}^{commit}`], cwd);
 
 /**
  * Empty on a detached HEAD, which happens mid-rebase and mid-bisect. `gh pr
  * view` fails there in a way loadPr does not recognise, so callers skip it.
- *
- * Its own function because the queue needs the branch on routes that have no
- * reason to take a whole snapshot — the store is keyed by it.
  */
 export const currentBranch = (cwd) =>
   text(['symbolic-ref', '--quiet', '--short', 'HEAD'], cwd).catch(() => '');
@@ -55,14 +57,9 @@ export function syncState({ head, remoteHead, remoteKnownLocally, remoteIsAncest
 
 /**
  * The changed files that are the user's problem, from `git status --porcelain`.
- *
- * There is no longer an exception for FUTURE.md. It was here because prcoder
- * rewrote that file within seconds of normal use, so counting it left the
- * branch switcher permanently disabled — the queue now lives in an ignored
- * .prcoder/, prcoder writes nothing tracked, and an edit to FUTURE.md is
- * ordinary work that *should* block a checkout. The store never reaches this
- * function at all: it is ignored, and untracked files are excluded by the
- * caller's --untracked-files=no since they never block a checkout.
+ * Every one counts: prcoder writes nothing tracked (the store is in an ignored
+ * .prcoder/), and the caller's --untracked-files=no leaves out what never
+ * blocks a checkout. test/git.test.js has why FUTURE.md is no exception.
  *
  * Porcelain v1 lines are `XY path`, and the status letters are significant, so
  * the prefix is sliced rather than trimmed.
@@ -120,7 +117,7 @@ export async function snapshot(cwd, remoteHead, branch) {
   const [head, status, known] = await Promise.all([
     text(['rev-parse', 'HEAD'], cwd),
     git(['status', '--porcelain', '--untracked-files=no'], cwd),
-    remoteHead && asks(['rev-parse', '--verify', '--quiet', `${remoteHead}^{commit}`], cwd),
+    remoteHead && hasCommit(remoteHead, cwd),
   ]);
   const dirty = userDirt(status);
 
@@ -152,13 +149,7 @@ export async function snapshot(cwd, remoteHead, branch) {
  */
 export async function trackingHead(cwd, branch) {
   if (!branch) return null;
-  try {
-    return await text(['rev-parse', '--verify', '--quiet', `refs/remotes/origin/${branch}`], cwd);
-  } catch (e) {
-    // 1 is "no such ref"; anything else is a real failure.
-    if (e.code === 1) return null;
-    throw e;
-  }
+  return answer(['rev-parse', '--verify', '--quiet', `refs/remotes/origin/${branch}`], cwd);
 }
 
 /**
@@ -207,7 +198,7 @@ const PATCH_LIMIT = 512 * 1024;
  * REST has dropped the patch.
  */
 export async function localPatch(cwd, { baseOid, baseRef, head, path, from, additions, deletions }) {
-  const known = (rev) => asks(['rev-parse', '--verify', '--quiet', `${rev}^{commit}`], cwd);
+  const known = (rev) => hasCommit(rev, cwd);
   const base = await known(baseOid) ? baseOid
     : await known(`refs/remotes/origin/${baseRef}`) ? `refs/remotes/origin/${baseRef}` : null;
   if (!base || !await known(head)) return null;
