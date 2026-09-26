@@ -46,9 +46,9 @@ so one slow call delays the rest.
 
 ```bash
 npm test                   # node --test "test/**/*.test.js"; see CLAUDE.md for the quotes.
-                           # Includes test/browser.test.js in Chromium, and again in Firefox as
-                           # browser-firefox.test.js; each skips with a note when its browser
-                           # is missing (npx playwright install chromium firefox)
+                           # Includes test/browser/, one suite run in Chromium and in Firefox;
+                           # each run skips with a note when its browser is missing
+                           # (npx playwright install chromium firefox)
 node --check public/*.js   # the client files the tests do not import
 ```
 

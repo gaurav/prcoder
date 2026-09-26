@@ -194,7 +194,7 @@ console.log('out:    ', await page.evaluate(() =>
 //
 // Both lines say `whole` against this repository and that is the right answer:
 // `gaurav/prcoder` is 14 characters and fits the 180px floor with room over.
-// The clipping itself is pinned in test/browser.test.js, whose fixture carries
+// The clipping itself is pinned in test/browser/suite.js, whose fixture carries
 // a 44-character slug; what a driver run adds is the shape of the block at a
 // width a drag can really reach, which is pr-head-narrow.png -- the links row
 // wraps there, and the repository line under it does not.
@@ -234,7 +234,7 @@ console.log('links:  ', await page.evaluate(() => {
 }), ' (want a /blob/<head>/README.md URL, and an /issues/N one)');
 
 // The issue lists' titles. Where the lists sit and how a row is shaped is
-// test/browser.test.js's now, against a fixture -- what a fixture cannot say is
+// test/browser/suite.js's now, against a fixture -- what a fixture cannot say is
 // whether the real title lookup (a second gh call, github.js issueLinks) came
 // back with anything, and an untitled row is the only thing on screen that shows
 // it did not.

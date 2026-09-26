@@ -52,11 +52,12 @@ to whatever one directory it matches — that run reported 1 test and passed. Th
 quotes are double for the same reason the postinstall script is Node: single
 quotes are not quotes to cmd.exe.
 
-Discovery still treats *everything* under `test/` as a test file, which is why
-the drivers live in `tools/` — `browser.mjs` for the UI, `cli.mjs` for the
-terminal, `no-pr.mjs` for the pane the first one cannot reach. Any of them under
-`test/` would run on every `npm test`, spawn a server and drive a browser or a
-PTY.
+Discovery takes every `*.test.js` under `test/`, at any depth; anything else
+there runs only when a test file imports it, which is how `test/browser/suite.js`
+runs once per engine and never bare. The drivers still live in `tools/` —
+`browser.mjs` for the UI, `cli.mjs` for the terminal, `no-pr.mjs` for the pane
+the first one cannot reach — so none of them is one rename from running on every
+`npm test`, spawning a server and driving a browser or a PTY.
 
 `node:test` is a preference, not a constraint. If it ever gets in the way —
 maintainability, a matcher you keep hand-rolling, watch mode, anything — the
@@ -207,9 +208,9 @@ so the check is `existsSync(firefox.executablePath())` and the fix for a miss is
 BiDi with `channel: 'moz-firefox'`; `tools/firefox-runner/` has what came of
 trying it.) Running both is worth the second minute: the
 caret bug is invisible in Chromium and fatal in Firefox, and it is the one thing
-here that only one engine can tell you about. `test/browser.test.js` runs in both
-for the same reason, as `test/browser-firefox.test.js`: a header-height test
-written against Chromium failed in Firefox (2026-09-26).
+here that only one engine can tell you about. `test/browser/` runs its suite in
+both for the same reason: a header-height test written against Chromium failed
+in Firefox (2026-09-26).
 
 Installed is not the same as working, and the check cannot tell them apart.
 From 2026-09-16 to 2026-09-26 Firefox did not start at all on this machine,
@@ -282,7 +283,7 @@ always-busy tab icon came back green because the instrumentation had switched
 off the traffic causing it. Copy `CONNECTING`/`OPEN`/`CLOSING`/`CLOSED` onto
 the wrapper, or listen without wrapping. To keep the page from opening a PTY at
 all, `page.routeWebSocket('**/pty', () => {})` mocks the socket without touching
-the constructor -- `test/browser.test.js` runs the whole page that way.
+the constructor -- `test/browser/suite.js` runs the whole page that way.
 
 Same shape in reverse: a `MutationObserver` in `addInitScript` has no
 `document.head` to observe yet, and the throw takes the rest of the init script

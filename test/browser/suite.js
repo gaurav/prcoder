@@ -33,33 +33,34 @@
 // 2026-09-19, where /api/pr/task answers with the new body and the old mock's
 // `{queue: null}` assigned undefined over it.
 //
-// Chromium here, and Firefox when test/browser-firefox.test.js loads this file
-// with PRCODER_TEST_BROWSER=firefox: one suite, run once per engine, each in a
-// process of its own. Both, because a test written against one engine's layout
-// has been wrong in the other. Skipped rather than failed when Playwright or the
-// engine is missing: `npm test` on a machine without either stays green with a
-// note, and CI, which installs both, is where this is enforced.
+// One suite, run once per engine: chromium.test.js and firefox.test.js beside
+// this file each set PRCODER_TEST_BROWSER and import it, and `node --test` runs
+// each in a process of its own. Not itself a .test.js, so the glob in `npm test`
+// never runs it bare. Both engines, because a test written against one engine's
+// layout has been wrong in the other. Skipped rather than failed when
+// Playwright or the engine is missing: `npm test` on a machine without either
+// stays green with a note, and CI, which installs both, is where this is
+// enforced.
 import { test as nodeTest, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { server } from '../server.js';
-import { groupFiles } from '../files.js';
-import { rollup } from '../github.js';
+import { server } from '../../server.js';
+import { groupFiles } from '../../files.js';
+import { rollup } from '../../github.js';
 
-const engineName = process.env.PRCODER_TEST_BROWSER ?? 'chromium';
+const engineName = process.env.PRCODER_TEST_BROWSER;
 let engine;
 try { engine = (await import('playwright'))[engineName]; } catch { /* not installed */ }
 const skip = !engine ? 'playwright is not installed (npm ci without --omit=dev)'
   : !existsSync(engine.executablePath()) ? `${engineName} is not installed: npx playwright install ${engineName}`
     : false;
-// The Firefox run's names carry the engine, so a CI log says which one broke.
-const test = engineName === 'chromium' ? nodeTest
-  : (name, ...rest) => nodeTest(`${name} [${engineName}]`, ...rest);
+// Each run's names carry its engine, so a CI log says which one broke.
+const test = (name, ...rest) => nodeTest(`${name} [${engineName}]`, ...rest);
 // macOS 27 keeps a Firefox launched from a terminal out of its own app data, and
 // it hangs until the timeout; this is the drivers' way round it
 // (tools/firefox-runner), harmless elsewhere, and #80 is when it comes out.
-const appData = fileURLToPath(new URL('../data/firefox-appdata/', import.meta.url));
+const appData = fileURLToPath(new URL('../../data/firefox-appdata/', import.meta.url));
 const firefoxEnv = { MOZ_APP_DATA: appData + 'roaming', MOZ_LOCAL_APP_DATA: appData + 'local' };
 
 // Each line here is a regression: `_for_` showed its underscores, the comment

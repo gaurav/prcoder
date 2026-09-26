@@ -261,7 +261,7 @@ a { color: var(--accent); }
    Every declaration below is load-bearing, each checked by dropping it on
    2026-09-21 (Chromium; #61 is the owed Firefox pass, and flex shrink is
    exactly the kind of thing engines have disagreed about). The first three
-   are pinned by test/browser.test.js, which fails on each:
+   are pinned by test/browser/suite.js, which fails on each:
 
    - `inline-flex` on the link, or none of the rest applies and the line simply
      overflows the pane.
@@ -279,7 +279,7 @@ a { color: var(--accent); }
    it: `padding` and `border` shrink the content box the spans divide up, and
    the clipping behaves the same with less of it to work in. What they do move
    is the right edge the line must stay inside -- it is the chip's border now,
-   not the name's last glyph, which is what test/browser.test.js measures.
+   not the name's last glyph, which is what test/browser/suite.js measures.
 
    The owner needs no `min-width: 0` of its own. `overflow: hidden` already
    makes a flex item's automatic minimum size zero, and the pair passed every
