@@ -1,67 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseFuture, appendTasks, toggleTask } from '../queue.js';
+import { appendTasks, toggleTask } from '../queue.js';
 import { taskLines } from '../public/tasks.js';
 import { reorder } from '../public/queue.js';
 import { blocks, sectionize } from '../public/pr.js';
-
-const FUTURE = `# Notes
-
-Some longhand thinking that must survive.
-
-## Queue
-
-- [ ] Add retry to the fetch path
-- [ ] @pr Docs for the new flag
-- [ ] @pr @issue#42 Refactor the parser
-- [x] Fix the flaky worktree test
-
-## Ideas
-
-Keep me too.
-`;
-
-// parseFuture outlived the format it was written for: FUTURE.md is no longer
-// the queue, but its `## Queue` section is still what a FUTURE.md tab would
-// show, markers and all.
-test('parses every item state out of FUTURE.md', () => {
-  assert.deepEqual(parseFuture(FUTURE), [
-    { text: 'Add retry to the fetch path', done: false, inPr: false, issue: null, deleted: false },
-    { text: 'Docs for the new flag', done: false, inPr: true, issue: null, deleted: false },
-    { text: 'Refactor the parser', done: false, inPr: true, issue: 42, deleted: false },
-    { text: 'Fix the flaky worktree test', done: true, inPr: false, issue: null, deleted: false },
-  ]);
-});
-
-test('checklist lines outside the queue section are left alone', () => {
-  assert.deepEqual(parseFuture('## Other\n\n- [ ] not mine\n'), []);
-});
-
-test('malformed lines are skipped rather than dropping the rest', () => {
-  const items = parseFuture('## Queue\n\n- [ ] good\nnot an item\n- [] bad checkbox\n- [x] also good\n');
-  assert.deepEqual(items.map((i) => i.text), ['good', 'also good']);
-});
-
-// `@deleted` had to join the marker alternation, not just be tested for. The
-// regex is anchored, so an unknown marker matches zero characters and every
-// other marker on the line silently becomes part of the visible text.
-// An item can be tombstoned and mirrored and an issue at once, and the import
-// has to bring all three across -- a dropped @deleted resurrects something the
-// user threw away.
-test('every marker on one line survives the import', () => {
-  assert.deepEqual(parseFuture('## Queue\n\n- [ ] @pr @deleted @issue#7 buried\n'),
-    [{ text: 'buried', done: false, inPr: true, issue: 7, deleted: true }]);
-});
-
-// The consequence that makes issueNumber() throw rather than pass NaN through.
-// MARKERS is anchored, so a value it cannot match ends the marker run: the
-// text is corrupted and @pr is lost with it, quietly and on the way back in.
-test('a malformed marker value degrades into the task text and drops the rest', () => {
-  const [item] = parseFuture('## Queue\n\n- [ ] @issue#NaN @pr Real text\n');
-  assert.equal(item.text, '@issue#NaN @pr Real text');
-  assert.equal(item.issue, null);
-  assert.equal(item.inPr, false);
-});
 
 // --- items moved into the description ---
 

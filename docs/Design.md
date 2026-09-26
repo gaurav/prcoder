@@ -38,8 +38,10 @@ description is not a move anybody asked for. It fails closed while the PR is sti
 Issues is the issues the description mentions without closing; pulling from either copies the item
 into Local and leaves the source alone, since a checkbox is the PR's record and an issue is the
 project's. Issues is deliberately that narrow for now: an upcoming milestone to focus on, search, and
-showing an issue in the pane are a design still to be settled. FUTURE.md as a source, and quitting
-with items still on Local offering to move them somewhere durable, are follow-ups of their own.
+showing an issue in the pane are a design still to be settled. Quitting with items still on Local
+offering to move them somewhere durable is a follow-up of its own. FUTURE.md is not a source and
+will not be one (retired 2026-09-26): its items were all either done or already issues, and a
+tracked file of TODOs is a third place for work to live where the queue and issues cover it.
 
 The queue was scoped per branch once, with a guard refusing a write from a branch the tab had left.
 That is gone too, and [#48](https://github.com/gaurav/prcoder/issues/48) holds why: scoping the list

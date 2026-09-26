@@ -200,9 +200,9 @@ export async function setBody(cwd, prUrl, body) {
  * The issue number out of what `gh issue create` prints. It can emit notices
  * before the URL, so the last line is the one that matters.
  *
- * Failing here rather than returning NaN is the point: the number is written
- * into FUTURE.md as `@issue#N`, and `@issue#NaN` does not match the marker
- * pattern on the way back in, so it silently becomes part of the task text.
+ * Failing here rather than returning NaN is the point: output with no issue
+ * URL at the end is a filing prcoder cannot vouch for, and reporting it as a
+ * move would take the item off the queue on the strength of a link to nothing.
  */
 export function issueNumber(out) {
   const url = out.trim().split('\n').pop()?.trim() ?? '';

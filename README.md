@@ -213,7 +213,7 @@ looking at is never written to. An earlier prcoder mirrored items into a block
 in the description instead; that file's `inPr` and `pr` fields are dropped too,
 and those items stay in the queue as ordinary ones rather than being taken for
 already moved. Separate worktrees keep separate queues, since each has its own
-`.prcoder/`. FUTURE.md is neither read nor written.
+`.prcoder/`.
 
 Quitting with items still on Local says how many, since nothing but this
 machine has them.

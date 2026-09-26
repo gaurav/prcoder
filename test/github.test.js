@@ -123,9 +123,8 @@ test('run() puts the child stdout on the error too, where a partial answer lives
     (e) => e.stdout.includes('the-partial-answer') && e.stderr.includes('NOT_FOUND'));
 });
 
-// The number goes into FUTURE.md as `@issue#N`. `@issue#NaN` does not match the
-// marker pattern coming back, so it silently becomes part of the task text --
-// which is why an unreadable number has to throw rather than pass through.
+// A move to an issue takes the item off the queue, so output prcoder cannot
+// read a number from has to throw rather than pass through as a success.
 test('the issue number is read from the last line gh prints', () => {
   assert.deepEqual(issueNumber('https://github.com/o/r/issues/42\n'),
     { url: 'https://github.com/o/r/issues/42', number: 42 });
