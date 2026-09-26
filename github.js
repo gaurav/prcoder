@@ -73,8 +73,8 @@ export const prHeads = (cwd, target) => viewPr(cwd, target, 'number,headRefOid,u
  * A description with LF line endings. One saved from github.com's editor comes
  * back CRLF -- 9 of cli/cli's last 30 on 2026-09-13 -- and every line pattern
  * here ends in `(.*)$`, where `.` stops at the `\r`: no line is a checkbox, a
- * heading or a list, and a tick made on GitHub never reaches the queue. Both
- * reads come through this, so nothing downstream has to know.
+ * heading or a list, and toggleTask cannot find the box a click in the PR pane
+ * means. Both reads come through this, so nothing downstream has to know.
  */
 export const lf = (body) => (body ?? '').replace(/\r\n/g, '\n');
 
@@ -106,7 +106,11 @@ export async function loadPr(cwd, target) {
   if (!pr) return null;
   pr.body = lf(pr.body);
 
-  const { nodeId, viewed } = await viewedState(cwd, pr.url);
+  // Both need only the PR, so they run together: each is a GitHub round trip.
+  const [{ nodeId, viewed }, issues] = await Promise.all([
+    viewedState(cwd, pr.url),
+    withLinks(cwd, pr.url, linkedIssues(pr)),
+  ]);
   // The raw lists are summarised here and not sent on: every poll carries this
   // object to every tab, and nothing reads them past this point.
   const { statusCheckRollup, closingIssuesReferences, comments, reviews, ...rest } = pr;
@@ -116,7 +120,7 @@ export async function loadPr(cwd, target) {
     files: pr.files.map((f) => ({ ...f, viewed: viewed.get(f.path) === 'VIEWED' })),
     nodeId,
     checks: rollup(statusCheckRollup),
-    issues: await withLinks(cwd, pr.url, linkedIssues(pr)),
+    issues,
     counts: { comments: comments?.length ?? 0, reviews: reviews?.length ?? 0 },
   };
 }

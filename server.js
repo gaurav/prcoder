@@ -61,12 +61,14 @@ export function splitArgs(argv) {
 }
 
 let { target, claudeArgs } = splitArgs(process.argv.slice(2));
-// The PR is fetched once and reused; the queue routes need its body and node id.
+// The PR is fetched once and reused, with its files already grouped and linked
+// (withUrls); the PR routes need its body, node id and head.
 let pr = null;
 // owner/repo and default branch: constant while we run, and loaded at startup
 // rather than lazily, because the issue links decorate() derives need it before
 // the first poll.
 let info = null;
+const repoFacts = async () => (info ??= await repoInfo(repo));
 
 // ponytail: patches fetched lazily on the first diff click, keyed by head oid
 // so a push or PR switch invalidates for free. Eager prefetch in refreshPr if
@@ -138,8 +140,10 @@ const requirePr = () => {
 async function refreshPr(detached) {
   // gh pr view fails on a detached HEAD in a way loadPr does not recognise, so
   // it would throw rather than report "no PR" — and 500 the poll every minute.
-  detached ??= !(await currentBranch(repo));
   pr = !target && detached ? null : await loadPr(repo, target);
+  // Once per load rather than per poll: nothing it reads changes until the PR
+  // is reloaded, and a viewed tick flips `viewed` on these same objects.
+  if (pr) pr.groups = withUrls(pr);
 }
 
 /**
@@ -263,7 +267,6 @@ export function statusLines(s, u = {}) {
  */
 async function status({ full = false } = {}) {
   const calls = runCount();
-  info ??= await repoInfo(repo);
 
   // Taken once and threaded through: the remote head is not known yet, and
   // asking git the same four questions three times a minute is just noise.
@@ -279,6 +282,8 @@ async function status({ full = false } = {}) {
     if (!full && pr) term.debug(`PR #${pr.number} changed upstream — reloading into the UI`);
     await refreshPr(detached);
   }
+  // After the PR, so a startup whose repo lookup fails still has the PR to report.
+  const facts = await repoFacts();
 
   // With no PR there is no headRefOid to compare against, so read git's own
   // record of origin's head -- not origin: that was a `git ls-remote` a minute
@@ -287,12 +292,12 @@ async function status({ full = false } = {}) {
   // because it pushes on the answer.
   const oid = pr?.headRefOid ?? heads?.headRefOid ?? await trackingHead(repo, branch);
   const snap = await snapshot(repo, oid, branch);
-  const scope = prScope(pr, { branch: snap.branch, nameWithOwner: info.nameWithOwner });
+  const scope = prScope(pr, { branch: snap.branch, nameWithOwner: facts.nameWithOwner });
   const tracked = scope === 'current' || scope === 'none';
 
   last = {
     ...snap,
-    ...info,
+    ...facts,
     scope,
     // A PR we have not checked out can never be in sync with this working
     // tree, so its verdict is meaningless. With no PR at all the branch still
@@ -303,7 +308,7 @@ async function status({ full = false } = {}) {
     // say "N unpushed commits", which for a pinned PR on another branch was a
     // count against a branch you are not on.
     ahead: tracked ? snap.ahead : null,
-    pr: pr ? { ...pr, groups: withUrls(pr) } : null,
+    pr,
     queue: await readQueue(),
   };
   checkedAt = Date.now();
@@ -323,10 +328,24 @@ const repaint = () => term.status(last
  * who took its port, and a probe queued behind a slow `gh` would time out and
  * report the wrong thing.
  */
-const UNLOCKED = new Set(['GET /api/whoami']);
+const UNLOCKED = new Set(['GET /api/whoami', 'GET /api/status']);
+
+/**
+ * Status polls that arrive while one is still waiting for the lock share it:
+ * two tabs, or a tab's timer landing on its own visibilitychange, would
+ * otherwise each queue the full set of gh and git calls. Cleared as the run
+ * *starts*, so a poll arriving mid-run gets a fresh one rather than an answer
+ * from before whatever it queued behind.
+ */
+let queuedPoll = null;
+const poll = () => (queuedPoll ??= serial(() => {
+  queuedPoll = null;
+  return status();
+}));
 
 const routes = {
-  'GET /api/status': () => status(),
+  // Unlocked only because poll() takes the lock itself.
+  'GET /api/status': poll,
 
   'GET /api/whoami': () => ({ prcoder: true, repo, branch: last?.branch ?? null,
     nameWithOwner: info?.nameWithOwner ?? null }),
@@ -339,23 +358,20 @@ const routes = {
     // Clear rather than pin: the checkout put us on the branch, so following it
     // gives the same answer and self-heals when Claude switches branches later.
     target = undefined;
-    // The queue is keyed by branch, and status() reloads the PR first, so the
-    // new branch's items are merged against the new branch's PR and not the
-    // one we just left.
     return status({ full: true });
   },
 
   'POST /api/pr/create': async () => {
-    info ??= await repoInfo(repo);
+    const facts = await repoFacts();
     const branch = await currentBranch(repo);
     if (!branch) throw new Error('detached HEAD — check out a branch first');
-    if (branch === info.defaultBranch) throw new Error(`on ${branch} — make a branch first`);
+    if (branch === facts.defaultBranch) throw new Error(`on ${branch} — make a branch first`);
 
     // GitHub's compare page only knows about branches it has seen. Ask origin
     // rather than trusting a sync verdict computed without a remote head.
     const pushed = !(await remoteBranchHead(repo, branch));
     if (pushed) await pushBranch(repo);
-    return { url: compareUrl(info.nameWithOwner, info.defaultBranch, branch, await originOwner(repo)), pushed };
+    return { url: compareUrl(facts.nameWithOwner, facts.defaultBranch, branch, await originOwner(repo)), pushed };
   },
 
   'POST /api/pr/viewed': async ({ path: p, viewed }) => {
@@ -403,8 +419,7 @@ const routes = {
   'PUT /api/queue': ({ items }) => writeQueue(items),
 
   'POST /api/queue/issue': async ({ items, index }) => {
-    info ??= await repoInfo(repo);
-    const { url, number } = await createIssue(repo, info.nameWithOwner, items[index].text);
+    const { url, number } = await createIssue(repo, (await repoFacts()).nameWithOwner, items[index].text);
     items[index].issue = number;
     term.verbose(`filed ${quote(items[index].text)} as ${url}`);
     try {
@@ -643,14 +658,9 @@ async function ready() {
   // rather than running against a half-loaded process: an issue filed before
   // `info` loads would have no repository to link to. `listening` fires before
   // any connection is handled, so this is always first in the chain.
-  await serial(async () => {
-    info ??= await repoInfo(repo).catch((e) => {
-      console.error('repo:', e.message);
-      return null;
-    });
-    await refreshPr().catch((e) => console.error('pr:', e.message));
-    await status().catch((e) => console.error('status:', e.message));
-  });
+  // A full status rather than a PR load followed by a poll: the poll would only
+  // ask GitHub again whether the PR it just loaded had changed.
+  await serial(() => status({ full: true })).catch((e) => console.error('status:', e.message));
   console.log(`prcoder: ${repo}`);
   console.log(pr ? `PR #${pr.number}: ${pr.title}` : 'no pull request for this branch');
   if (pr) console.log(pr.url);
