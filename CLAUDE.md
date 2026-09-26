@@ -9,11 +9,11 @@ last two for an agent about to run the thing: how to launch, what to stub, what
 not to write. Keep all of them true when you change what they describe -- the
 skill drifts first, because nothing else links to it.
 
-**The queue is being redesigned.** Before touching anything under the queue --
-the description mirror, `.prcoder/queue.json`, the queue pane -- read "Where the
-queue is going" in `docs/Design.md`: the mirror is frozen, and the new design
-(a local list plus a tab per source, with one-way moves) lives on `queue-tabs`,
-PR #27.
+**The queue is yours, and prcoder writes no description but a box you tick.**
+The queue lives only in `.prcoder/queue.json`; it no longer mirrors into the PR
+description, and prcoder no longer reads FUTURE.md. "What prcoder writes" in
+`docs/Design.md` says why, what the one exception is, and where the source tabs
+are going (`queue-tabs`, PR #27). Don't bring a sync back without reading it.
 
 ## Scratch work goes in `data/`
 
@@ -104,64 +104,12 @@ None of it exists without a tty. `process.stdout.isTTY` gates the block and
 -- which is what `tools/browser.mjs` (`stdio: 'ignore'`) is standing proof of.
 `tools/cli.mjs` drives the other half, in a real PTY.
 
-## A marker alone on its own line is a block
+## Old descriptions still carry the mirror's block
 
-`splitPrBlock` in `queue.js` takes prcoder's block to start at the first line
-that is exactly `<!-- prcoder:todo -->`, outside a fence, and to end at the
-next line that is exactly the closer. A marker quoted in a sentence or a code
-span is inert -- that was the old trap, where the *first* occurrence anywhere
-opened the block and the next queue write deleted everything from that sentence
-to the real closing marker (#9, caught one edit before a push on 2026-09-01).
-
-What is still live: put either marker on a line by itself, unfenced, anywhere
-in a description -- a pasted sample of the block, say -- and that line is the
-block. This repo describes prcoder in its own PRs, so show a sample inside a
-fence, and check the body still has exactly one unfenced line of each marker
-before writing it.
-
-A running prcoder rewrites that block from its store on every poll of a visible
-tab, so a `gh pr edit` against this repo's own PR can be silently reverted within
-a minute -- it happened on 2026-09-06, mid-edit, and the two versions disagreed
-about which items were ticked. Check the repo's port (`.prcoder/port.json`)
-before hand-editing the block, and re-read the body afterwards rather than
-assuming the write stuck.
-
-`tools/browser.mjs` is a second writer of that block, and a quieter one. It
-spawns its own prcoder and drives the queue -- dragging a row is one of the
-things it checks -- so a run from the branch whose PR it drives mirrors the
-result and leaves the PR's description holding those lines in a different
-order. It reordered three of PR #1's on 2026-09-19, caught only by diffing the
-body against a snapshot taken before the run. Pinned to a PR that is *not* the
-checkout's branch it writes nothing at all, because `ours(branch)` gates the
-mirror -- which is why this never showed while the driver was pinned to #1 from
-a feature branch, and why it started the day the branch became #1's own.
-Snapshot the body before a run, and put it back through `PUT /api/queue`, never
-`gh pr edit`.
-
-Inside the block, `done` is the only field the description owns: a `- [ ]` to
-`- [x]` is exactly what the pane writes, so it is safe. Nothing else is.
-`syncFromPrBlock` matches a line to an item by issue number when the line has
-one and by exact text otherwise, then tombstones every `inPr` item whose line
-has gone -- so editing an item's text or dropping a line buries the item. To
-change anything else, edit `.prcoder/queue.json` and regenerate the block with
-`renderPrBlock(items, body, prNumber)`, then check the round trip:
-`syncFromPrBlock(items, newBody, prNumber)` should give back the items you
-started with. The number matters -- an item records the PR it was mirrored
-into, and a block leaves every other PR's items alone.
-
-When a prcoder is already running on this repo, none of that is the way in: it
-rewrites the block from its store on the next poll and your edit is gone. Talk
-to the server instead -- `GET /api/queue` for the items, `PUT /api/queue` with
-`{items}` to write them -- and it updates the store and the description together.
-Adding an item that way is clean, and so is taking one back out: flip `inPr` to
-false with the text untouched and the line goes, the item stays in the queue as
-a finished one, and `renderPrBlock` removes the markers and the `## TODO`
-heading with the last item rather than leaving an empty block (done 2026-09-18).
-Changing an existing item's text is not: the old text is what the block's line
-still says, so the write tombstones that item and adds a new one, and the store
-ends up holding both. Same rule as above -- text is identity -- and the
-tombstone is by design, but a checkbox you edited twice is two rows in
-`queue.json` and one line in the PR.
+Descriptions written by an earlier prcoder hold a checklist between prcoder's
+own HTML-comment markers. Nothing reads or rewrites that block any more: it is
+an ordinary checklist now, ticked like any other from the PR pane. Leave old
+blocks alone; hand-editing them is safe.
 
 ## The Claude pane is not prcoder's to draw on
 

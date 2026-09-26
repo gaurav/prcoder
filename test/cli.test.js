@@ -57,9 +57,9 @@ test('the candidates are the whole range, starting at the seed', () => {
 // The block under the log. Pure, so the wording is checked without a terminal.
 const STATUS = {
   nameWithOwner: 'gaurav/prcoder', defaultBranch: 'main', branch: 'initial-implementation',
-  sync: 'ahead', ahead: 2, dirtyFiles: ['a.js', 'b.js'], scope: 'current', mirrorFailed: false,
+  sync: 'ahead', ahead: 2, dirtyFiles: ['a.js', 'b.js'], scope: 'current',
   pr: { number: 1, title: 'Drag the panes', url: 'https://github.com/gaurav/prcoder/pull/1', baseRefName: 'main' },
-  queue: [{ text: 'a', inPr: true }, { text: 'b', done: true }, { text: 'c', deleted: true }],
+  queue: [{ text: 'a', issue: 4 }, { text: 'b', done: true }, { text: 'c', deleted: true }],
 };
 const block = (over = {}) =>
   statusLines({ ...STATUS, ...over }, { local: 'http://localhost:1618' }).join('\n');
@@ -73,14 +73,7 @@ test('the block says where the branch, the PR and the queue stand', () => {
   // The PR's URL, which the CLI never used to print at all.
   assert.match(out, /https:\/\/github\.com\/gaurav\/prcoder\/pull\/1/);
   // Tombstoned items count as neither active nor done.
-  assert.match(out, /1 active · 1 done · 1 in the PR · 0 issues/);
-  assert.match(out, /queue mirrored/);
-});
-
-// The state the light exists for: the store took the change and GitHub did not.
-test('a failed mirror is the loudest thing in the block', () => {
-  assert.match(block({ mirrorFailed: true }), /PR description behind/);
-  assert.doesNotMatch(block({ mirrorFailed: true }), /queue mirrored/);
+  assert.match(out, /1 active · 1 done · 1 issue/);
 });
 
 test('with no PR there is no PR line to print', () => {
@@ -92,14 +85,12 @@ test('with no PR there is no PR line to print', () => {
 // What the verbose log says happened. Every branch, because the whole value of
 // the line is that it names the right change.
 test('each way an item can change gets its own line', () => {
-  const was = [{ text: 'a' }, { text: 'b', done: true }, { text: 'c', inPr: true }];
+  const was = [{ text: 'a' }, { text: 'b', done: true }, { text: 'c' }];
   const one = (now) => queueChanges(was, now);
 
   assert.deepEqual(one([...was, { text: 'd' }]), ["queued 'd'"]);
   assert.deepEqual(one([{ text: 'a', done: true }, was[1], was[2]]), ["ticked 'a'"]);
   assert.deepEqual(one([was[0], { text: 'b' }, was[2]]), ["unticked 'b'"]);
-  assert.deepEqual(one([was[0], was[1], { text: 'c' }]),
-    ["removed 'c' from the PR description"]);
   assert.deepEqual(one([{ text: 'a', deleted: true }, was[1], was[2]]), ["deleted 'a'"]);
   assert.deepEqual(one([was[1], was[2]]), ["dropped 'a'"]);
   assert.deepEqual(one(was), []);

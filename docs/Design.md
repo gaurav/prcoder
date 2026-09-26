@@ -1,7 +1,7 @@
 # Why prcoder looks like this
 
 What the panes do is in [the README](../README.md). This file is the *why*: the argument for
-building it at all, the two guards that shape the queue, and what it deliberately does not do. What
+building it at all, what it writes and where, and what it deliberately does not do. What
 the server is exposed to, and the checks that close it, is in [Security.md](Security.md). Where a
 decision is a property of one function, the docstring at that function argues it in full and this
 file only says which one to read.
@@ -13,74 +13,44 @@ fits that loop. Claude Code Desktop, Conductor and Nimbalyst are session manager
 worktrees. PR-Agent and CodeRabbit review *for* you, which is the opposite end of the problem.
 Agent HQ is a cloud fleet dashboard. None of them treats the pull request as the workspace.
 
-## Where the queue is going
+## What prcoder writes
 
-The queue below is on its way out, and nothing new should be built on it. It was started on the idea
-that one list could *be* every place work lives — the PR description, FUTURE.md, issues — and move
-items between them, and keeping that two-way mirror correct is what the guards in the next section
-are for. In use, the queue works best as something smaller: your own TODO list for this working copy,
-kept in `.prcoder/`.
+prcoder does not edit a pull request's title or description, and it keeps no list anywhere but
+`.prcoder/`. The one exception is a checkbox you tick in the PR pane: that flips its one line in the
+description (`toggleTask` in [`queue.js`](../queue.js)), re-reading the body first and refusing if
+the line has changed under it. Nothing else is written into a description, by the server or the page.
 
-The direction, decided 2026-09-14 and carried by [#27](https://github.com/gaurav/prcoder/pull/27)
-(`queue-tabs`):
-
-- **The queue is yours.** Local, done and deleted items, stored in `.prcoder/queue.json` and nowhere
-  else. It is one list for the repo, not scoped to the checked-out branch: a per-branch queue was
-  built and reverted, because switching branches mid-task took the list away and merging a branch
-  put its unfinished items out of reach for good. Whatever organises it has to keep nothing hidden
-  that you have not asked to hide, and nothing unreachable because a ref was deleted
-  ([#48](https://github.com/gaurav/prcoder/issues/48)).
-- **Each permanent source gets a tab of its own**, read straight from the source: the PR
-  description's checklist, and issues (grouped by milestone). The question a tab
-  answers is "what does this PR's description still need?", and pulling an item from it adds it to
-  your queue.
-- **Moving an item to a source is one-way.** It is appended to the description or filed as an
-  issue, and it leaves the queue. No mirror, no sync, and so none of the guards
-  below: no `syncFromPrBlock`, no `ours()`/`belongs()`, no `mirrorFailed` latch, no `pr` field.
-  Items already mirrored stay in the queue as local items rather than being dropped.
-- **Quitting with local items still in the queue** asks whether to move them somewhere durable, so
-  the work can be picked up on another machine.
-
-The order of work: #27 first gets the base merged in, then replaces mirroring with move routes, then
-turns its flag-filtered PR and Issues tabs into views of the sources. The interactive quit prompt
-and a milestone filter are follow-ups of their own. FUTURE.md is not a source and will not be one
-(retired 2026-09-26): its items were all either done or already issues, and prcoder neither reads
-nor writes it. Until #27 merges, the
-mirror in this branch is correct but frozen: fix it if it loses work, and otherwise leave it.
-
-## Two guards, because the obvious version loses work
-
-The queue lives in `.prcoder/queue.json` and the PR description is a *projection* of it, never the
-other way round. Two guards keep that one-directional, and each closes a path where an item
-disappears with nobody noticing. Each is a few lines; each is argued at its own function.
-
-**Mirror only the checked-out branch's PR** — `ours()` in [`server.js`](../server.js).
-`syncFromPrBlock` tombstones any mirrored item missing from the description's block, which is only
-safe when the queue and the description came from the same branch — and, now that the queue is one
-list for the repo, only for the items that were mirrored into *that* PR. Each item records its PR in
-`pr`, and `belongs()` in [`queue.js`](../queue.js) keeps another PR's items out of this block in both
-directions: not written into it, and not buried for being absent from it. `prcoder <pr-url>` pins a PR that
-is not the checkout's, and without this gate prcoder merges your items against a stranger's block,
-burying all of them, *and* writes your queue into their description. It fails closed: a missed merge
-is recovered by the next poll, where a wrong one is not.
-
-**Don't trust a description we failed to write** — the `mirrorFailed` latch in `writeQueue`. When
-`setBody` fails, the store already has the change and GitHub is behind; treating that stale body as
-evidence on the next poll buries the item that failed to go out. The latch suspends the *merge* and
-only the merge, because the only thing that can clear it is a successful write of the queue's block —
-a latch that also stopped writing would be one nothing could open. A checkbox ticked elsewhere in the
-description does not count: that write sends GitHub's stale block straight back. It is held per pull request, because only a write
-to *that* description is evidence that it caught up: one flag for all of them was cleared by a write
-to another PR, and the description still behind was trusted again. Neither side of that write falls
-back to a body it failed to read: a read that did not happen says nothing about what the description
-holds now.
+- **The queue is yours**, stored in `.prcoder/queue.json` and nowhere else. It is one list for the
+  repo, not scoped to the checked-out branch: a per-branch queue was built and reverted, because
+  switching branches mid-task took the list away and merging a branch put its unfinished items out
+  of reach for good ([#48](https://github.com/gaurav/prcoder/issues/48)). Its tabs are states of
+  that list — Active, Completed, Deleted — and nothing else.
+- **No other list is read into it, and it is written nowhere else.** An earlier prcoder mirrored
+  items two ways into a `<!-- prcoder:todo -->` block in the PR description, with two guards and a
+  per-PR latch to stop the sync burying items, and imported FUTURE.md once. Both are gone. The
+  mirror is kept in a draft PR of its own for reference, since it was the one thing that carried
+  items between machines; an old description's block is an ordinary checklist now. FUTURE.md is not
+  a source and will not be one (retired 2026-09-26): its items were all either done or already
+  issues.
+- **Something else may edit `.prcoder/queue.json`.** Every write is a temp file and a rename, so a
+  reader never sees half a file, and every poll re-reads it, so an outside edit shows up within a
+  minute. Last write wins over the whole list, as it does between two tabs (below). For an agent the
+  safer route is the server — `GET /api/queue`, then `PUT /api/queue` with `{items}` — because that
+  goes through the same coercion the page's writes do; whether Claude should get a channel of its
+  own into prcoder is [#21](https://github.com/gaurav/prcoder/issues/21)'s question.
+- **What else reaches GitHub, and only on a click:** ◎ files an item as a new issue, a file's
+  checkbox marks it viewed, and creating a pull request pushes the branch and opens GitHub's compare
+  page. None of them writes a description.
+- **Where it is going.** [#27](https://github.com/gaurav/prcoder/pull/27) adds tabs read straight
+  from other sources — the description's checklist, the issues it mentions, later a search over
+  issues — where pulling an item copies it into your list and leaves the source alone.
 
 ## What it deliberately does not do
 
 Review comment threads (counts and a link only), syntax highlighting of a modified file's diff (a
 file the PR adds is highlighted, because a whole file is what a tokenizer can read from its first
 line and a hunk is not; [#68](https://github.com/gaurav/prcoder/issues/68) has the safe way for the
-rest), multi-session and worktree management, and any agent-writable queue API. No auto-pull, and nothing
+rest), multi-session and worktree management, and a queue API made for an agent (#21 decides that). No auto-pull, and nothing
 parses the terminal. The tab icon does read whether Claude is working, but from the *timing* of the
 PTY's output rather than its content — blue while frames are arriving, green two seconds after they
 stop — and that is the whole of prcoder's idea of what the session is doing.
@@ -108,9 +78,9 @@ alerts are not alerts here. Everything past that is
 argument for settling it rather than for continuing. It is a security boundary as well as a scope
 one — [Security.md](Security.md) says why.
 
-**The queue is machine-local**, which is the trade for not writing your files. Mirroring an item
-into the PR description is how you carry it to another machine, and separate worktrees keep separate
-queues. There is no conflict detection between two tabs racing on one repo — last write wins on the
+**The queue is machine-local**, which is the trade for not writing your files. Nothing carries it to
+another machine; an item that has to outlive this one can be filed as an issue with ◎. Separate
+worktrees keep separate queues. There is no conflict detection between two tabs racing on one repo — last write wins on the
 whole list. A write-side guard was written and cut: it misses the case that actually
 happens (two tabs on one server, where the mtime matches because the same process wrote it), and
 merging on conflict needs item identity, which text is not. The upgrade, if a lost item is ever

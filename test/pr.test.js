@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  pageTitle, withoutHtml, inline, headLinks, noPrLinks, prsInto, queueSync, HEADING, blocks, sectionize,
+  pageTitle, withoutHtml, inline, headLinks, noPrLinks, prsInto, HEADING, blocks, sectionize,
   tabLabel, taskCount, viewedCount, byPath, byDir, nums,
 } from '../public/pr.js';
 import { fences, TASK, taskLines } from '../public/tasks.js';
@@ -330,19 +330,6 @@ test('a fence that is never closed is left as text', () => {
   assert.match(out[0].text, /still prose/);
 });
 
-// The queue pane's light. "Nothing to mirror" and "GitHub has it" are both
-// fine, and only one of them earns a dot.
-test('the queue light shows only what is worth acting on', () => {
-  const q = [{ text: 'a', inPr: true }];
-  assert.equal(queueSync({ queue: [{ text: 'a', inPr: false }], scope: 'current' }), null);
-  assert.equal(queueSync({ queue: q, scope: 'current' }).text, 'in the PR');
-  // A tombstoned item is not evidence of anything still mirrored.
-  assert.equal(queueSync({ queue: [{ text: 'a', inPr: true, deleted: true }], scope: 'current' }), null);
-  // The one that matters: the store took it, GitHub did not.
-  assert.match(queueSync({ queue: q, scope: 'current', mirrorFailed: true }).className, /bad/);
-  assert.equal(queueSync({ queue: q, scope: 'other-branch' }).text, 'not mirroring');
-});
-
 // --- lists ---
 //
 // The renderer had no list rule at all until this: every `- item` line fell
@@ -447,8 +434,8 @@ test('a bullet inside a fence is a sample, not a list', () => {
 //
 // A description is folded by section so that ten sections of agent-written
 // prose do not bury the rest of the pane. The fold level comes from the body
-// rather than being fixed here, because prcoder's own mirrored block writes
-// `## TODO` while a description someone typed may well start at `#`.
+// rather than being fixed here, because one description uses `##` for its
+// sections while another someone typed may well start at `#`.
 
 const fold = (body) => sectionize(blocks(body));
 const titles = (body) => fold(body).sections.map((s) => s.title);
