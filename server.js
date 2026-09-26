@@ -5,6 +5,7 @@
 import http from 'node:http';
 import { spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
@@ -12,7 +13,7 @@ import { text as readBody } from 'node:stream/consumers';
 import { spawn as ptySpawn } from 'node-pty';
 import { WebSocketServer } from 'ws';
 import { loadPr, prHeads, prBody, listPrs, listIssues, setViewed, setBody, createIssue, fetchPatches, runCount } from './github.js';
-import { snapshot, currentBranch, repoInfo, prScope, compareUrl, checkoutPr, pushBranch, remoteBranchHead, trackingHead } from './git.js';
+import { snapshot, currentBranch, repoInfo, prScope, compareUrl, originOwner, checkoutPr, pushBranch, remoteBranchHead, trackingHead, localPatch } from './git.js';
 import { groupFiles, fileUrl, fileViews } from './files.js';
 import { appendTasks, toggleTask } from './queue.js';
 import { readStore, writeStore, readPort, writePort, replaceItems } from './store.js';
@@ -386,7 +387,7 @@ const routes = {
     // rather than trusting a sync verdict computed without a remote head.
     const pushed = !(await remoteBranchHead(repo, branch));
     if (pushed) await pushBranch(repo);
-    return { url: compareUrl(info.nameWithOwner, info.defaultBranch, branch), pushed };
+    return { url: compareUrl(info.nameWithOwner, info.defaultBranch, branch, await originOwner(repo)), pushed };
   },
 
   'POST /api/pr/viewed': async ({ path: p, viewed }) => {
@@ -419,7 +420,15 @@ const routes = {
     const cur = requirePr();
     const key = cur.url + cur.headRefOid;
     if (patches.key !== key) patches = { key, map: await fetchPatches(repo, cur.url) };
-    return { path: p, ...(patches.map.get(p) ?? { patch: null }) };
+    const got = patches.map.get(p) ?? { patch: null };
+    // Only for a path the pull request has: the path is the page's to send, and
+    // a file GitHub sent no patch for is one git can usually still make here.
+    const file = cur.files.find((f) => f.path === p);
+    if (got.patch != null || !file) return { path: p, ...got };
+    return { path: p, ...got, patch: await localPatch(repo, {
+      baseOid: cur.baseRefOid, baseRef: cur.baseRefName, head: cur.headRefOid, path: p, from: got.from,
+      additions: file.additions, deletions: file.deletions,
+    }) };
   },
 
   'GET /api/queue': () => readQueue(),
@@ -529,6 +538,15 @@ const vendor = {
   ...Object.fromEntries(grammars
     .map((l) => [`/vendor/prism/${l}.js`, `prismjs/components/prism-${l}.min.js`])),
 };
+
+/**
+ * The vendor files not on disk under `dir`'s node_modules. Nothing else says
+ * so: a missing xterm is a blank page and a missing Prism is a plain file with a
+ * line in the browser console. A pull that adds a dependency and no `npm
+ * install` after it was exactly that on 2026-09-23.
+ */
+export const missingVendor = (dir = root) =>
+  Object.values(vendor).filter((f) => !existsSync(path.join(dir, 'node_modules', f)));
 
 // A second line of defence for the page that holds the PTY. A hole in the
 // description renderer loads no script, and no other page can frame prcoder and
@@ -822,6 +840,10 @@ if (import.meta.main) {
   // so the age above stays honest, and term.status() writes nothing at all
   // while the rendered lines are unchanged.
   setInterval(repaint, 30_000).unref();
+
+  // By package: a missing Prism is eleven files and one fix.
+  const missing = new Set(missingVendor().map((f) => f.split('/').slice(0, f.startsWith('@') ? 2 : 1).join('/')));
+  if (missing.size) console.error(`not in node_modules, so npm install first: ${[...missing].join(', ')}`);
 
   // ready() needs the port we meant to be on, so it is settled before the
   // socket is up rather than recomputed from the path afterwards.

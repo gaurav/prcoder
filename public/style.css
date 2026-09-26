@@ -61,6 +61,22 @@ main.diff-open {
 }
 #diff { grid-area: diff; }
 #diff[hidden] { display: none; }
+/* The terminal folded to its header row, for reading a diff by eye: whatever
+   sits above or below it takes the room. Its gutter to that pane goes too --
+   the pane is 1fr now, so there is nothing for a drag to set -- and the empty
+   1px track still draws the line. */
+main.term-off { grid-template-rows: auto 1px 1fr; }
+main.diff-open.term-off {
+  grid-template-rows: 1fr 1px auto 1px clamp(120px, var(--h-queue, 227px), 40%);
+}
+main.term-off #term-host,
+main.term-off:not(.diff-open) #gut-queue,
+main.term-off #gut-diff { display: none; }
+#term > header { user-select: none; }   /* a double-click folds it, not selects the title */
+/* Before the title, like a disclosure triangle, at the title's own size and
+   line-height so the two centre together. ▼/▶ rather than the small ▾/▸, which
+   sit low and needed a bigger font that then sat lower still. */
+#term-fold { margin-left: 0; padding: 0; font-size: 12px; line-height: 18px; }
 
 #gut-pr { grid-area: gpr; } #gut-queue { grid-area: gqueue; } #gut-diff { grid-area: gdiff; }
 /* Only the diff-open template has a slot for it; left displayed it would
@@ -145,17 +161,140 @@ a { color: var(--accent); }
 #pr-head > :last-child { margin-bottom: 0; }
 
 .empty { color: var(--dim); }
-/* The head's way out: this pull request on GitHub, the repo, and the lists you
-   leave for. Right-aligned because it is a way *out* of the pane rather than
-   part of what the pane says -- the title, the badges and the tabs all start at
-   the left margin, and this line started there too, where it was looked for to
-   the right of the title or under the badges and never found at the top.
+/* The head's way out -- this pull request on GitHub, the lists you leave for,
+   and the repository further down -- starts at the left margin, like the title,
+   the badges and the tabs. It has no alignment rule of its own; `.meta` is
+   already flex-start, and `.pr-links` is kept only as a hook for the driver.
 
-   `justify-content` rather than `text-align`: at the pane's 375px default the
-   row wraps, and this is what keeps the wrapped half against the right edge. It
-   reuses `.meta` for the flex, the wrap, the gap and the 12px dim type, so the
-   only thing said twice would be the alignment. */
-.pr-links { justify-content: flex-end; }
+   It was `justify-content: flex-end` for a while, and the reason is worth
+   knowing before moving it back. As one line of five links it read as one more
+   row of dim 12px text between the badges and the tabs, and people looked for
+   it to the right of the title or under the badges and never found it at the
+   top; pushing it to the right edge was what made it a thing rather than part
+   of the pane's prose. Left is also where the pane with no pull request has
+   always drawn the same links, so the two panes agree for the first time, and
+   a line that clips is easier to read from an edge that does not move with its
+   content.
+
+   The row sits directly under the title, above the state and the branches,
+   because that is the order it is used in (2026-09-26): the title says what
+   this is, and the next thing wanted is nearly always the pull request on
+   GitHub. Which row goes where is HEAD_ORDER in pr.js, and no row's spacing
+   depends on its neighbour -- each is a `.meta` with the same 8px under it --
+   so moving one is moving one word. Keep it that way: the repository used to
+   sit 2px under this row as "one block" with it, which was a margin that only
+   made sense in one order.
+
+   The pull request is a filled button, `.primary`, and the lists beside it
+   stay plain links. Of everything in the head it is the link actually
+   clicked, and as a fifth underlined `--accent` word it was no easier to find
+   than `milestones`. A solid fill is the one treatment nothing else in the
+   head has: the chip below is a faint outline, the badges are pastel,
+   uppercase and not links, and the tabs are grey. One button is not the
+   button group the paragraph further down warns against -- the three lists
+   stay text, so nothing here looks like it switches the pane. No dot beside
+   it; its box is the separator (see linkRow).
+
+   The repository, on a line of its own rather than in the middle of the row.
+   It is the only link there whose width has no bound -- a real
+   `heal-data-stewards/heal-vlmd-AI-pipeline` is most of the pane at its
+   375px default -- so in the row it wrapped, and dragged where issues, pulls
+   and milestones sat along with it. Alone on a line it can overflow instead:
+   the row keeps one predictable shape, and this line clips.
+
+   And the repository is a chip rather than a fifth link, which is what the
+   move down the page did not by itself fix. Giving it its own line said where
+   it was, not that it was different: both rows are 12px, and every link in
+   both is `--accent` and underlined, so the head read as five blue links in
+   two rows and the eye had no reason to stop on the second. The border, the
+   radius and the dropped underline are the same three the queue's `#N` tag
+   wears (`.item .tag`) -- this window's word for a small thing you can click
+   that is an object rather than a phrase -- so it is the vocabulary already
+   here and not a new one. What it buys: the links row stays a list of places
+   to go, and the chip is the one fact in the head that says which checkout
+   you are in.
+
+   The chip's colour is where it leaves the tag. A `--line` border on the
+   panel is about 1.2:1, which is enough to notice once you know it is there and
+   not enough to make you look (2026-09-25). So the border and a faint fill are
+   the chip's own `--accent`, mixed toward transparent: the chip stands out from
+   the prose while being the same blue as its text, and it stops well short of
+   the solid fills and uppercase text the `.badge`s use for status. A brighter
+   grey ring was the other candidate, and it read as one more `.tab`.
+
+   Two things deliberately not done. A logo or an emoji ahead of the slug, the
+   other way to mark it: no other glyph in this window earns its place that way
+   -- the `↗` that used to sit on these links was dropped for raising the
+   question of what the unmarked ones did -- and a mark says "look here"
+   without saying what kind of thing it is, where a chip does both. And the links
+   row is still plain text, not a button group: the tabs are the head's one
+   group of bordered controls, and a second one over them would make the four
+   links look like the thing that switches the pane. The pull request's single
+   filled button is the exception, argued above.
+
+   The chip's padding puts the slug 8px in from the margin the rest of the head
+   starts at. That is the treatment the tabs under it already have -- `.tab` is
+   `padding: 2px 8px` inside a `.tabs` row that sits on the margin -- so the
+   indent is the head's existing answer for a control with a box, not a break
+   in its alignment. The driver's `head:` check measures `.pr-repo` itself,
+   which is the full-width row and still starts where the title does.
+
+   Which half of the slug gets clipped is the point of the two spans. A pane
+   too narrow for `heal-data-stewards/heal-vlmd-AI-pipeline` shows
+   `heal-data-…/heal-vlmd-AI-pipeline`: the owner gives way, because it is
+   the same all day, and the name is the half that says which checkout this is.
+   `title` on the link (see repoRow) is the way back to the whole slug.
+
+   Every declaration below is load-bearing, each checked by dropping it on
+   2026-09-21 (Chromium; #61 is the owed Firefox pass, and flex shrink is
+   exactly the kind of thing engines have disagreed about). The first three
+   are pinned by test/browser.test.js, which fails on each:
+
+   - `inline-flex` on the link, or none of the rest applies and the line simply
+     overflows the pane.
+   - `min-width: 0` on the link, which is what lets a flex item shrink past its
+     own content. `max-width: 100%` in its place works identically.
+   - `flex: none` on the name, or the two spans shrink together and the name is
+     clipped alongside the owner -- which is the whole thing this avoids.
+   - `max-width: 100%` on the name, the floor for a repository whose name alone
+     will not fit: without it that name overflows the pane with the ellipsis
+     still on it, owner already collapsed to nothing. This is the one the test
+     cannot reach -- the pane's own floor is 180px and no real name is that
+     wide at 12px -- so it was checked by hand against a 60-character one.
+
+   The chip's own two add nothing to that list and are not load-bearing for
+   it: `padding` and `border` shrink the content box the spans divide up, and
+   the clipping behaves the same with less of it to work in. What they do move
+   is the right edge the line must stay inside -- it is the chip's border now,
+   not the name's last glyph, which is what test/browser.test.js measures.
+
+   The owner needs no `min-width: 0` of its own. `overflow: hidden` already
+   makes a flex item's automatic minimum size zero, and the pair passed every
+   check with the declaration removed.
+
+   `direction: rtl` -- what the dotfile column two panes over uses to clip a
+   long path and keep its filename -- is one declaration instead of four and
+   was measured against this. It works. It is not here because the two cut
+   opposite ends: a path is recognised from its tail, an owner from its front,
+   and rtl leaves `…tewards` where the spans leave `heal-dat…`.
+   docs/Verifying.md has the comparison. */
+.pr-links a.primary {
+  padding: 1px 8px; border-radius: 9px; text-decoration: none; font-weight: 600;
+  background: var(--accent); color: var(--bg);
+}
+.pr-links a.primary:hover { background: color-mix(in srgb, var(--accent) 80%, white); }
+.pr-repo a {
+  display: inline-flex; min-width: 0;
+  text-decoration: none; padding: 1px 7px;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent); border-radius: 9px;
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+.pr-repo a:hover {
+  border-color: color-mix(in srgb, var(--accent) 60%, transparent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+.pr-repo .owner { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pr-repo .name { flex: none; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* Serif, like the description under it: the title is the first sentence of the
    argument, not a label on the pane. Everything else in this header -- the
@@ -398,10 +537,21 @@ a { color: var(--accent); }
 /* `auto` until the first drag, so the default is still whatever the longest
    hunk label needs. The gutter writes a px width after that, and the max-width
    is what keeps a drag from eating the diff. */
-#diff-outline { flex: none; width: var(--w-outline, auto); max-width: 60%; overflow: auto; padding: 6px 0; }
+#diff-side { flex: none; width: var(--w-outline, auto); max-width: 60%; overflow: auto; padding: 6px 0; }
+/* Its own row, stuck to the top so it is still there once the hunks scroll. */
+#diff-outline-hide {
+  display: block; margin-left: auto; position: sticky; top: 0; background: var(--panel);
+  border: 0; cursor: pointer; color: var(--dim); font-size: 12px; padding: 0 8px;
+}
+#diff-outline-hide:hover { color: var(--fg); }
 /* Nothing to point at for a whole-file diff: the outline hides itself, and the
-   line and its ±3px of grab area would otherwise be left behind in mid-air. */
-#diff-outline:empty, #diff-main:has(#diff-outline:empty) #gut-outline { display: none; }
+   line and its ±3px of grab area would otherwise be left behind in mid-air.
+   Hidden by its ✕ is the same two elements; the header's Outline button is the
+   way back, and shows only when there is an outline to bring back. */
+#diff-main:has(#diff-outline:empty) :is(#diff-side, #gut-outline),
+#diff.outline-off :is(#diff-side, #gut-outline) { display: none; }
+#diff > header #diff-outline-show { display: none; font-size: 12px; }
+#diff.outline-off:has(#diff-outline:not(:empty)) > header #diff-outline-show { display: inline; }
 #diff-outline button {
   display: block; width: 100%; max-width: 100%; text-align: left; background: none; border: 0; cursor: pointer;
   font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--dim); padding: 2px 10px;

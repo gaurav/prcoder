@@ -78,6 +78,16 @@ script in `data/` against the prcoder already running on this repo: rows injecte
 the line dragged, and the outline's width read back against the cursor's own position, which is what
 says the number written is a distance from the right edge rather than a drift. The gutter is hidden
 before the injection and shown after, which is the empty case the running app is always in here.
+Its ✕ and the header's *Outline* button were checked the same way on 2026-09-23
+(`data/outline-toggle.mjs`, Chromium): hidden, shown, focus handed across, the choice surviving a
+reload, and the Outline button absent while there is no outline to bring back.
+
+Folding the terminal to its header is pinned in `test/browser.test.js` (the diff grows into the room,
+the fold survives a reload, a double-click on the header unfolds it). What that test cannot see is
+the PTY, because its socket is mocked: `data/fold-check.mjs` ran against this repo's PR with
+`tools/claude-stub.mjs` on 2026-09-23 and read the frames sent, and folding sent no `resize`. So
+the agent keeps its size while folded and is not reflowed to one row, and unfolding sent none
+either, because the grid came back the size it was.
 
 The pane with **no** pull request is out of that driver's reach for the same reason — it follows the
 branch it runs on, that branch has PR #1, and `PRCODER_PR` only pins a different one — so
@@ -209,6 +219,21 @@ Some things can only be checked against the real thing, so they are:
 - **The `git` exit codes the sync verdict depends on**, because a non-zero exit is often an answer
   rather than a failure and git's codes differ per command — see [CLAUDE.md](../CLAUDE.md), which
   records which command returns what and why `asks()` exists.
+- **That a patch from local git stands in for one GitHub stopped sending** (`localPatch` in
+  `git.js`), checked 2026-09-23 against NCATSTranslator/translator-diagram#32. There GitHub's
+  `pulls/N/files` sent no patch, and `+0`, for every file after about 860 KB of patch text. The
+  check ran `localPatch` over the 64 files GitHub *did* send and compared the results byte for byte:
+  52 were identical, 8 differed only in the context after the `@@`, and 4 put a few hunk boundaries
+  somewhere else. It took `--diff-algorithm=myers` to get that close. The clone had
+  `diff.algorithm histogram` set, and a user's diff config reaches every `git diff` prcoder runs.
+  So a comparison like this has to pin every option GitHub doesn't honour. The 4 are still
+  unexplained after ruling out the indent heuristic, but they show the same change: at the PR's
+  head at the time (`e7a79e1`, 76 files), every text file's local patch added and removed exactly
+  the lines GraphQL counts for it. That match is also the check `localPatch` itself runs before
+  anything is shown. Without it, falling back to a stale copy of the base branch can show base
+  commits the branch merged in as the PR's own changes. `test/git.test.js` pins the shape, and that
+  refusal, against a scratch repo. The route glue in `server.js` is checked only by clicking such a
+  file.
 - **Which CSS stops a dotfile's leading dot migrating to the end of its path**, decided by measuring
   four candidates in both engines rather than by reasoning about the bidi algorithm. The column is
   `direction: rtl` so a long path is cut at the head and keeps its filename; the first guess,
@@ -217,6 +242,35 @@ Some things can only be checked against the real thing, so they are:
   characters into text people copy. `<bdi>` needs no styles of its own and is what shipped. The
   driver measures the dot's position with range rectangles rather than screenshotting it, because at
   13px a misplaced leading dot reads as a full stop and is invisible either way.
+- **Which CSS keeps a repository's name when its owner will not fit**, same method, four
+  declarations each checked by dropping it (2026-09-21, Chromium; the Firefox pass is owed on
+  [#61](https://github.com/gaurav/prcoder/issues/61), and flex shrink is a place the engines have
+  disagreed). The head's repository line is one link in two spans -- the owner shrinks and
+  ellipsises, the name is `flex: none` -- and `heal-data-stewards/heal-vlmd-AI-pipeline`
+  becomes `heal-dat…/heal-vlmd-AI-pipeline` in a narrow pane. Three of the four are pinned in
+  `test/browser.test.js`, which narrows the pane by writing `--w-pr` the way a drag does; the
+  fourth, `max-width` on the name, is for a name that alone will not fit and the pane's own 180px
+  floor is too wide to reach it, so it was checked by hand against a 60-character one.
+
+  One shape to avoid in that test, which cost a red CI run: **do not compare a rendered text width
+  against a pane width.** The fixture's name is 156px in this machine's 12px system font and 162px
+  in the runner's, against 160px of content at the pane's floor -- so "the name is still whole
+  there" passed on macOS and failed on Linux, and the assertion was about a font rather than about
+  the CSS. The two spans are compared with each other instead, which is the claim anyway.
+
+  The chip the slug is drawn in came after those four and changes what "stays inside the pane" is
+  measured on. `test/browser.test.js` read the name span's right edge against the head's content
+  edge, which was the line's own last glyph until there was a border outside it; it reads the
+  chip's now, so a pill whose right edge has crossed the pane cannot pass on a name that ends a
+  pixel inside its padding. What the chip *is* is pinned as a contrast rather than as a pill --
+  a border and no underline against the row above, which keeps both -- because "not a fifth link"
+  is the whole claim and the markup is identical either way.
+
+  The dotfile column's `direction: rtl` is the obvious one-declaration alternative and was measured
+  against this: it works, with or without `<bdi>`, and stays inside the pane in all three cases. It
+  is not what shipped, because the two cut opposite ends. A path wants its tail -- the filename --
+  and rtl keeps it. An owner is recognised from its front, and rtl leaves `…tewards`, which is not
+  the organisation to anyone reading it; the two spans leave `heal-dat…`, which is.
 
 And some only on screen. Driven in the browser: the two tabs and the folded description, including a
 forced poll to prove a fold survives `renderPr` replacing the whole pane, and each tab's scroll
@@ -228,10 +282,12 @@ focus lands, an arrow moves the line by ten and shift-arrow by fifty, `Home` res
 (it was a ResizeObserver on the 1px gutter, which a move never resizes); the switcher, both sync-light
 states, the Deleted tab (which needed a tombstone put in through the API before it would render at
 all), the queue's synced light, the description's checkboxes and the disabled states; and both
-toasts, the four-second one watched to fade and the sticky one clicked away; the head's row of links out, whose right
-alignment is measured against the head's own content edge with the title's left edge as the control,
-because `justify-content` on a row that is also `.meta` is an agreement between two rules that only
-the browser settles, and whose separators are hit-tested at their own centres -- they were an
+toasts, the four-second one watched to fade and the sticky one clicked away; the head's links out, whose left edges are measured against the title's -- they were right-aligned until
+2026-09-21, and the check that they line up with everything else in the head is what replaced the
+one that proved they did not -- and the repository line, printed whole or clipped at the
+default width and again at the pane's 180px floor (both `whole` against `gaurav/prcoder`, which is
+short enough to fit either; the clipping is a test's job, and what the run adds is the shape of the
+block in `pr-head-narrow.png`), and whose separators are hit-tested at their own centres -- they were an
 `a::before`, which lives inside the link's box, so each dot was underlined with its link and a press
 on one followed the link to its right, and that a separator is now its own element says nothing
 about where a click lands; the description's two

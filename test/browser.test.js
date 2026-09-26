@@ -20,6 +20,19 @@
 // the server's own shaping in front of this test; until then, groups and checks
 // at least come from the server's shapers.
 //
+// Two things about the shape of this file, both of which have cost a debugging
+// session. The tests below share one page, so a tick in one is still ticked in
+// the next -- assert a count against what the page shows rather than against a
+// number written here, or the test that changes it breaks the test that reads
+// it. And every `route` mock is this repo's own copy of a route's contract: the
+// server can change its answer and nothing here will fail, because no test
+// calls the real handler. When a route's response shape changes, the mock is
+// not optional follow-up -- it is part of that change, and a merge that carries
+// this file to a branch whose routes have moved on will pass its own diff and
+// blank the pane at runtime. That happened merging into queue-tabs on
+// 2026-09-19, where /api/pr/task answers with the new body and the old mock's
+// `{queue: null}` assigned undefined over it.
+//
 // Chromium only, like tools/no-pr.mjs, and skipped rather than failed when
 // Playwright or its browser is missing: `npm test` on a machine without either
 // stays green with a note, and CI is where this is enforced.
@@ -71,7 +84,9 @@ const BODY = [
   '<!-- /prcoder:todo -->',
 ].join('\n');
 
-const REPO = 'https://github.com/example/repo';
+// A long slug on purpose: the head's repository line is built to be clipped,
+// and `example/repo` fits any pane this ever opens at. This one is real.
+const REPO = 'https://github.com/heal-data-stewards/heal-vlmd-AI-pipeline';
 // One added file, with markup in it: the diff pane highlights a NEW file from
 // Prism's tokens, and this is the source that shows if any of it is ever built
 // as HTML rather than text.
@@ -98,7 +113,8 @@ const pr = {
 };
 const status = {
   branch: 'topic', head: 'b'.repeat(40), detached: false, dirtyFiles: [], sync: 'synced', ahead: 0,
-  defaultBranch: 'main', nameWithOwner: 'example/repo', scope: 'current', mirrorFailed: false,
+  defaultBranch: 'main', nameWithOwner: 'heal-data-stewards/heal-vlmd-AI-pipeline',
+  scope: 'current', mirrorFailed: false,
   pr, queue: [],
 };
 
@@ -205,6 +221,112 @@ test('the tab carries the task count', { skip }, async () => {
   assert.ok(tabs.includes(`Detail (${done}/${total})`), `${JSON.stringify(tabs)} with ${done}/${total} ticked`);
 });
 
+// The repository is the one link in the head with no bound on its width, which
+// is why it is no longer in the row: it wrapped the row and moved the three
+// lists around with it. Asserted as a place in the DOM rather than as a
+// rendered width, because that is what the truncation below hangs off.
+test('the repository is a line of its own, not a link in the row', { skip }, async () => {
+  assert.deepEqual(await page.locator('#pr-head .pr-links a').allTextContents(),
+    ['PR #12', 'issues', 'pulls', 'milestones']);
+  const repo = page.locator('#pr-head .pr-repo a');
+  assert.equal(await repo.textContent(), 'heal-data-stewards/heal-vlmd-AI-pipeline');
+  assert.equal(await repo.getAttribute('href'), REPO);
+  assert.equal(await repo.getAttribute('title'), 'heal-data-stewards/heal-vlmd-AI-pipeline');
+});
+
+// A line of its own said where the repository was, not that it was anything
+// but a fifth link -- same size, same accent, same underline as the four above
+// it. The chip is what tells them apart, so what is asserted is the contrast
+// and not the pill: a border where the row has none, and no underline where
+// the row keeps one. Read off computed style because that is the whole change;
+// there is no markup here to assert against.
+test('the repository is drawn as a chip, not as a fifth link', { skip }, async () => {
+  const styles = (sel) => page.$eval(sel, (el) => {
+    const s = getComputedStyle(el);
+    return { border: parseFloat(s.borderTopWidth), line: s.textDecorationLine };
+  });
+  const repo = await styles('#pr-head .pr-repo a');
+  const way = await styles('#pr-head .pr-links a:not(.primary)');
+  assert.ok(repo.border > 0, `the chip should have a border, ${JSON.stringify(repo)}`);
+  assert.equal(repo.line, 'none', `the chip should not be underlined, ${JSON.stringify(repo)}`);
+  assert.equal(way.border, 0, `the row's links should stay plain, ${JSON.stringify(way)}`);
+  assert.equal(way.line, 'underline', `the row's links should stay underlined, ${JSON.stringify(way)}`);
+});
+
+// The pull request is the link in the head that gets clicked, so it is the one
+// drawn as a filled button, and its row comes straight after the title -- ahead
+// of the state and the branches. Order is asserted by position in the DOM,
+// which is HEAD_ORDER in pr.js; change the two together.
+test('the pull request is a filled button on the row under the title', { skip }, async () => {
+  const pr = page.locator('#pr-head .pr-links a.primary');
+  assert.equal(await pr.textContent(), 'PR #12');
+  const s = await pr.evaluate((el) => {
+    const c = getComputedStyle(el);
+    return { bg: c.backgroundColor, line: c.textDecorationLine };
+  });
+  assert.notEqual(s.bg, 'rgba(0, 0, 0, 0)', `the button should be filled, ${JSON.stringify(s)}`);
+  assert.equal(s.line, 'none');
+  const order = await page.$$eval('#pr-head > *', (els) => els.map((e) => e.className));
+  const at = (cls) => order.findIndex((c) => c.split(' ').includes(cls));
+  assert.ok(at('pr-title') < at('pr-links') && at('pr-links') < at('pr-state'), order.join(' | '));
+  // No dot hangs off the button: the first separator follows `issues`.
+  assert.equal(await page.locator('#pr-head .pr-links .sep').count(), 2);
+});
+
+// The point of the two spans, and the one thing here no unit test can see:
+// which half of the slug survives a pane too narrow for it. The owner clips and
+// the name does not, so what is left says which checkout this is -- the owner
+// is the same all day.
+//
+// Narrowed by writing `--w-pr` on <main>, which is exactly what dragging the
+// gutter writes (see panes.js): 200px is a pane someone has pulled in to give
+// the terminal the window, and the stylesheet's clamp floor is 180px, so this
+// is a width the app really reaches. The default 375px is checked first, both
+// as the control and because a line that clips when it did not need to would
+// pass every assertion below.
+test('a slug wider than the pane clips the owner and keeps the name whole', { skip }, async () => {
+  const fresh = await newPage();
+  const box = (sel) => fresh.$eval(sel, (el) =>
+    ({ scroll: el.scrollWidth, client: el.clientWidth, right: el.getBoundingClientRect().right }));
+  const whole = await box('#pr-head .pr-repo a');
+  assert.equal(whole.scroll, whole.client, `the pane opens wide enough for the slug, ${JSON.stringify(whole)}`);
+
+  await fresh.evaluate(() => document.querySelector('main').style.setProperty('--w-pr', '200px'));
+  const owner = await box('#pr-head .pr-repo .owner');
+  const name = await box('#pr-head .pr-repo .name');
+  assert.ok(owner.scroll > owner.client, `the owner should be clipped, ${JSON.stringify(owner)}`);
+  assert.equal(name.scroll, name.client, `the name should be whole, ${JSON.stringify(name)}`);
+  // And the clipped line stays inside the pane rather than merely wearing an
+  // ellipsis: a flex item that refuses to shrink overflows with one on.
+  //
+  // Measured on the chip rather than on the name inside it. The slug is drawn
+  // in a bordered pill, so the edge that can cross the pane's is the border --
+  // a name that ends 1px inside the padding with the border already outside
+  // would pass this read off the span and be wrong on screen.
+  const edge = () => fresh.$eval('#pr-head', (el) =>
+    el.getBoundingClientRect().right - parseFloat(getComputedStyle(el).paddingRight));
+  const chip = await box('#pr-head .pr-repo a');
+  assert.ok(chip.right <= Math.ceil(await edge()), `chip ends at ${chip.right}, head content edge ${await edge()}`);
+
+  // At the stylesheet's 180px floor the ordering still holds: the owner has
+  // given up everything before the name gives up anything.
+  //
+  // What this does *not* assert is that the name survives whole, which is how
+  // it was written first and how it went red on CI. The name is 156px in this
+  // machine's 12px system font and 162px in the runner's, against 160px of
+  // content at the floor -- so the same page clips on Linux and does not on
+  // macOS, and the assertion was really about a font. Anything here that
+  // compares a text width against a pane width has that problem; compare the
+  // two spans with each other instead, which is the claim anyway.
+  await fresh.evaluate(() => document.querySelector('main').style.setProperty('--w-pr', '180px'));
+  const [lastOwner, lastName] = [await box('#pr-head .pr-repo .owner'), await box('#pr-head .pr-repo .name')];
+  assert.ok(lastOwner.client < lastName.client,
+    `the owner should yield first, ${JSON.stringify({ lastOwner, lastName })}`);
+  const lastChip = await box('#pr-head .pr-repo a');
+  assert.ok(lastChip.right <= Math.ceil(await edge()), `chip ends at ${lastChip.right}, head content edge ${await edge()}`);
+  await fresh.close();
+});
+
 // The tokenizer runs in the page over whatever a pull request adds, so the file
 // is markup-shaped on purpose: it has to come out as the same characters in
 // coloured spans, never as elements. A switch to innerHTML, Prism's HTML
@@ -274,5 +396,32 @@ test('a .tsx file loads the grammars tsx extends, in order, before tsx', { skip 
   assert.equal(await fresh.$eval('#diff-body .tok-tag', (el) => el.textContent), 'div');
   assert.equal(await fresh.locator('#diff-body .tok-attr-name').count(), 1, 'className is an attribute');
   assert.deepEqual(await fresh.$$eval('#diff-body .dl', (els) => els.map((el) => el.textContent)), [TSX]);
+  await fresh.close();
+});
+
+// Folding the terminal is for reading a diff, so the diff is what has to take
+// the room -- a fold that only hid the terminal's body would leave a blank pane
+// where it was. Its own page, because a fold is stored and survives a reload.
+test('the terminal folds to its header, the diff takes the room, and it stays folded', { skip }, async () => {
+  const fresh = await newPage();
+  const height = (sel) => fresh.$eval(sel, (el) => el.getBoundingClientRect().height);
+  await fresh.locator('#pr-head .tab', { hasText: 'Files' }).click();
+  await fresh.locator('.file[data-path="evil.js"] .path').click();
+  await fresh.waitForSelector('#diff-body .dl');
+  const open = await height('#diff');
+
+  await fresh.click('#term-fold');
+  assert.equal(await fresh.locator('#term-host').isVisible(), false);
+  assert.equal(await height('#term'), await height('#term > header'));
+  assert.ok(await height('#diff') > open, `diff was ${open}px, is ${await height('#diff')}px`);
+  assert.equal(await fresh.getAttribute('#term-fold', 'aria-expanded'), 'false');
+
+  await fresh.reload();
+  await fresh.waitForSelector('#pr-head .pr-title');
+  assert.equal(await fresh.locator('#term-host').isVisible(), false, 'folded after a reload');
+
+  await fresh.dblclick('#term > header h1');
+  assert.equal(await fresh.locator('#term-host').isVisible(), true);
+  assert.equal(await fresh.getAttribute('#term-fold', 'aria-expanded'), 'true');
   await fresh.close();
 });

@@ -343,22 +343,47 @@ console.log('still open after a refresh:',
   JSON.stringify(await page.locator('.md-section[open] > summary h3').allInnerTexts()),
   ' (want the one clicked above)');
 
-// The head's way out of the pane, which is only right-aligned on screen: the
-// stylesheet says `justify-content: flex-end` on a row that is `.meta` as well,
-// and whether those two agree is a fact about the browser. Measured against the
-// head's own content box, with the title's left edge as the control -- the row
-// moved, the rest of the head did not.
+// The head's way out of the pane, which is two lines and only on screen: both
+// of them are `.meta`, neither has an alignment rule any more, and whether that
+// leaves them at the same left edge as everything else in the head is a fact
+// about the browser rather than about the stylesheet. The title is the control
+// -- it never moved, and these two are now supposed to agree with it. (They did
+// not until 2026-09-21: the row was `justify-content: flex-end`, and this check
+// measured its right edge instead. The stylesheet says why it moved back.)
 console.log('head:   ', await page.evaluate(() => {
   const row = document.querySelector('#pr-head .pr-links');
-  const head = document.getElementById('pr-head');
-  const pad = parseFloat(getComputedStyle(head).paddingRight);
-  const edge = Math.round(head.getBoundingClientRect().right - pad);
-  const title = document.querySelector('#pr-head .pr-title').getBoundingClientRect();
-  return `${[...row.querySelectorAll('a')].map((a) => a.textContent).join(' ')} | row right ${
-    Math.round(row.getBoundingClientRect().right)} of ${edge}, title left ${Math.round(title.left)}`;
-}), ' (want the row flush with the head edge, the title still at the margin)');
+  const repo = document.querySelector('#pr-head .pr-repo');
+  const at = (el) => Math.round(el.getBoundingClientRect().left);
+  const title = at(document.querySelector('#pr-head .pr-title'));
+  return `${[...row.querySelectorAll('a')].map((a) => a.textContent).join(' ')} | row left ${
+    at(row)}, repo left ${at(repo)}, title left ${title}`;
+}), ' (want all three the same)');
 console.log('out:    ', await page.evaluate(() =>
   [...document.querySelectorAll('#pr-head .pr-links a')].map((a) => a.href).join(' ')));
+// The repository is the line under that row because it is the one link with no
+// bound on its width, and it clips rather than wraps.
+//
+// Both lines say `whole` against this repository and that is the right answer:
+// `gaurav/prcoder` is 14 characters and fits the 180px floor with room over.
+// The clipping itself is pinned in test/browser.test.js, whose fixture carries
+// a 44-character slug; what a driver run adds is the shape of the block at a
+// width a drag can really reach, which is pr-head-narrow.png -- the links row
+// wraps there, and the repository line under it does not.
+//
+// So this is a check that goes quiet on a long slug: `owner ... clipped` here
+// means the run was against a repository whose name this pane cannot hold, and
+// what to look at then is whether the *name* is still whole beside it.
+const repoLine = async () => page.evaluate(() => {
+  const state = (sel) => { const e = document.querySelector(sel);
+    return `${JSON.stringify(e.textContent)} ${e.scrollWidth > e.clientWidth ? 'clipped' : 'whole'}`; };
+  return `owner ${state('#pr-head .pr-repo .owner')}, name ${state('#pr-head .pr-repo .name')}`;
+});
+console.log('repo:   ', await repoLine(), ' (want both whole -- this repo\'s slug is short)');
+await page.evaluate(() => document.querySelector('main').style.setProperty('--w-pr', '180px'));
+console.log('repo180:', await repoLine(),
+  ' (want the name whole; the owner clips only where the slug is long)');
+await page.locator('#pr').screenshot({ path: path.join(out, 'pr-head-narrow.png') });
+await page.evaluate(() => document.querySelector('main').style.removeProperty('--w-pr'));
 // The dots between them are delimiters, and were an `a::before` -- which is
 // inside the link's box, so they were underlined with it and a press on one
 // followed the link to its right. Hit-tested rather than read off the DOM: that
@@ -493,8 +518,10 @@ await page.waitForSelector('main.diff-open');
 // PR #1 is one the PR adds, so it should read NEW there and DIFF nowhere.
 await page.waitForFunction(() => document.querySelectorAll('#diff-body .dl').length > 0);
 console.log('diff title:', await page.locator('#diff h1').innerText(), ' (want NEW: every file in PR #1 is added)');
-console.log('outline:', await page.locator('#diff-outline').evaluate((n) => `${n.children.length} rows, ${getComputedStyle(n).display}`),
-  ' (want 0 rows, none: a whole file has no hunks to list)');
+console.log('outline:', await page.evaluate(() => {
+  const d = (id) => getComputedStyle(document.getElementById(id)).display;
+  return `${document.getElementById('diff-outline').children.length} rows, ${d('diff-side')}, show button ${d('diff-outline-show')}`;
+}), ' (want 0 rows, none, show button none: a whole file has no hunks to list, or to bring back)');
 
 // The NEW view is the highlighted one, and the colours are the whole of what
 // says so -- a regression to plain text is a screenshot that looks ordinary.

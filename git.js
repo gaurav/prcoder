@@ -70,9 +70,26 @@ export function syncState({ head, remoteHead, remoteKnownLocally, remoteIsAncest
 export const userDirt = (status) =>
   status.split('\n').filter(Boolean).map((l) => l.slice(3));
 
-/** GitHub's "open a PR for this branch" page. */
-export const compareUrl = (nameWithOwner, base, branch) =>
-  `https://github.com/${nameWithOwner}/compare/${base}...${branch}?expand=1`;
+/**
+ * GitHub's "open a PR for this branch" page. `nameWithOwner` is gh's base repo,
+ * which in a fork clone is `upstream`'s -- but the branch was pushed to origin,
+ * and a bare branch name is looked up in the base repo: a 404. `owner:branch`
+ * finds it in the owner's fork, and means the same branch when origin is the
+ * base repo itself (checked 2026-09-24 against uc-cdis/heal-platform-sdk).
+ */
+export const compareUrl = (nameWithOwner, base, branch, owner) =>
+  `https://github.com/${nameWithOwner}/compare/${base}...${owner ? `${owner}:` : ''}${branch}?expand=1`;
+
+/**
+ * Who owns origin, read off its URL -- `git@github.com:o/r.git`,
+ * `https://github.com/o/r`, `ssh://git@github.com/o/r.git` alike. Null for a
+ * URL with no `owner/repo` tail. get-url applies `insteadOf`, so this is the
+ * URL a push actually goes to.
+ */
+export async function originOwner(cwd) {
+  const url = await text(['remote', 'get-url', 'origin'], cwd);
+  return url.match(/[:/]([^/:]+)\/[^/:]+?\/?$/)?.[1] ?? null;
+}
 
 /**
  * How the PR on screen relates to the checkout. A boolean would collapse these:
@@ -162,6 +179,47 @@ export async function remoteBranchHead(cwd, branch) {
   // for it said "not pushed" -- which the create route acts on by pushing.
   const out = await git(['ls-remote', '--heads', 'origin', `refs/heads/${branch}`], cwd);
   return out.trim().split(/\s/)[0] || null;
+}
+
+// ponytail: a fixed cap. GitHub's own per-file patches run to ~50 KB on a big
+// PR; past this the pane's DOM and the page's tokenizer are what pay for it.
+// Raise it if a real file is refused.
+const PATCH_LIMIT = 512 * 1024;
+
+/**
+ * One file's patch from local git, in the shape of GitHub's `patch` (from the
+ * first @@, no trailing newline) -- for a file GitHub sent none for. It stops
+ * sending them partway through a large pull request: on one with 73 files every
+ * patch after the first ~860 KB came back missing, `+0` and all, while GraphQL
+ * still counted the file's lines (checked 2026-09-23).
+ *
+ * The base is GitHub's `baseRefOid` when this clone has it, else its own
+ * memory of the base branch, and `...` diffs from the merge base -- which is
+ * what a pull request shows. Null when a commit is missing, the file is binary,
+ * the patch is over PATCH_LIMIT, or a rename came apart into two files: this
+ * stands in for GitHub's view, so it shows that or nothing.
+ *
+ * And null when its line counts are not GitHub's. The base's fallback is where
+ * that bites: a branch that merged base commits this clone never fetched would
+ * diff from an older merge base, and show those commits as the pull request's
+ * own. Nothing else here would notice, and what is on screen would not be what
+ * is under review. The counts come from GraphQL, which still has them when
+ * REST has dropped the patch.
+ */
+export async function localPatch(cwd, { baseOid, baseRef, head, path, from, additions, deletions }) {
+  const known = (rev) => asks(['rev-parse', '--verify', '--quiet', `${rev}^{commit}`], cwd);
+  const base = await known(baseOid) ? baseOid
+    : await known(`refs/remotes/origin/${baseRef}`) ? `refs/remotes/origin/${baseRef}` : null;
+  if (!base || !await known(head)) return null;
+  // --literal-pathspecs because the path comes from the page: `:(glob)**` is
+  // otherwise every file. The rest keep a user's diff config out of it.
+  const out = await git(['--literal-pathspecs', 'diff', '--no-color', '--no-ext-diff', '--no-textconv',
+    '-U3', '--diff-algorithm=myers', '-M', `${base}...${head}`, '--', ...(from ? [from] : []), path], cwd);
+  const at = out.search(/^@@/m);
+  if (at < 0 || out.length > PATCH_LIMIT || out.match(/^diff --git /gm).length > 1) return null;
+  const patch = out.slice(at).replace(/\n$/, '');
+  const count = (sign) => patch.split('\n').filter((l) => l[0] === sign).length;
+  return count('+') === additions && count('-') === deletions ? patch : null;
 }
 
 export const checkoutPr = (cwd, number) =>

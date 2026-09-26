@@ -125,6 +125,28 @@ ws.onclose = () => {
 term.onData((d) => send({ type: 'input', data: d }));
 new ResizeObserver(sync).observe(document.getElementById('term-host'));
 
+// Folding the terminal to its header, stored like the outline's ✕ in diff.js.
+// The PTY keeps its size while folded: a display:none host has no height, so
+// fit() gets NaN rows and returns without resizing, and the ResizeObserver
+// above re-fits it on the way back out.
+const TERM_KEY = 'prcoder:term';
+const fold = document.getElementById('term-fold');
+function foldTerm(off, save = true) {
+  document.querySelector('main').classList.toggle('term-off', off);
+  fold.setAttribute('aria-expanded', String(!off));
+  fold.textContent = off ? '▶\uFE0E' : '▼';   // FE0E: text, never macOS's emoji ▶
+  fold.title = `${off ? 'expand' : 'collapse'} the coding agent pane`;
+  if (save) try { localStorage.setItem(TERM_KEY, off ? 'off' : 'on'); } catch { /* this session only */ }
+  if (!off) term.focus();   // expanding it is to talk to it
+}
+try { if (localStorage.getItem(TERM_KEY) === 'off') foldTerm(true, false); } catch { /* shown */ }
+const folded = () => document.querySelector('main').classList.contains('term-off');
+fold.addEventListener('click', () => foldTerm(!folded()));
+// Not from the button, whose two clicks have already toggled twice.
+document.querySelector('#term > header').addEventListener('dblclick', (e) => {
+  if (!e.target.closest('button')) foldTerm(!folded());
+});
+
 // Type an item into Claude's prompt. If Claude is mid-turn it queues the
 // message itself, which is exactly the behaviour we want.
 //

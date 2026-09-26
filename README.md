@@ -31,8 +31,8 @@ The switcher in the PR pane header lists open pull requests and runs
 Commit button, because the checkout would fail anyway. On a branch with no pull
 request the pane says so, disables the editing controls, and offers to create
 one -- pushing the branch first if GitHub has not seen it. It still carries the
-way out of the window that the pull request head does: the repository and its
-issues, pulls and milestones.
+way out of the window that the pull request head does, laid out the same way:
+the issues, pulls and milestones, and the repository on the line below them.
 
 It also lists the open pull requests that merge *into* the branch you are on,
 which on `main` is the question that branch is interesting for. Clicking one
@@ -82,15 +82,35 @@ row of prcoder tabs stays readable at tab width.
 
 ## The panes
 
-Every line between the panes is a splitter: drag it to resize, double-click it
-to drop back to the default. The sizes are remembered per browser, so the
-layout you settle on is the one the next `prcoder` opens with.
+Every line between the panes is a splitter, and so is the diff outline's left
+edge: drag it to resize, double-click it to drop back to the default. The sizes
+are remembered per repo and per browser, so the layout you settle on is the one
+the next `prcoder` in that repo opens with. They live in the browser's
+`localStorage`, which is kept per origin -- and the origin includes the port,
+which is `.prcoder/port.json`'s. So each repo and each worktree has a layout of
+its own, and so does each browser or profile. The terminal folds to its header
+line with the ▼ before its title, or a double-click on the header, and the diff
+(or the queue, with no diff open) takes the room; the same again unfolds it.
+Whether the terminal is folded, whether the outline is shown, and which way the
+queue adds are stored the same way. A repo whose port changes
+(`port.json` deleted, its port busy at startup, or `PRCODER_PORT` set) opens
+with the default layout, and gets the old one back once it is on the old port
+again.
 
-**Pull request** — which pull request you are in stays at the top: the title,
-the state, the branch it targets, the checks. Under those, right-aligned, is the
-way out of the window: this pull request on GitHub, the repo, and its issues,
-pulls and milestones. Below that are two tabs, because reading the argument and
-working the files are two different things and each wants the whole pane.
+**Pull request** — which pull request you are in stays at the top, in the
+order it is used: the title; then the way out of the window, with this pull
+request on GitHub drawn as a button beside plain links to the repository's
+issues, pulls and milestones; then the state, the branch it targets and the
+checks; and last the repository they are all in. The repository is on its own
+line because it is the only one of them whose length has no bound, and it
+truncates rather than wraps -- a long owner is clipped and the repository's own
+name kept, since that is the half that says which checkout you are in. It is
+drawn as a chip rather than a fifth link, because a line of its own said where
+it was without saying it was anything else: the links row is the list of places
+to go, and the chip is the one line in the head that answers which checkout
+this is.
+Below that are two tabs, because reading the argument and working the files are
+two different things and each wants the whole pane.
 
 *Detail* is the description. It opens as the lead paragraph and then one folded
 line per section, so a long one is an outline you scan rather than a wall you
@@ -122,9 +142,11 @@ from you while you are in the other.
 
 **Diff** — the selected file's patch, rendered plainly above the terminal so
 select → read → tick viewed → ask Claude never leaves the window. It shows the
-same hunks GitHub does (fetched once per push and cached), refreshes itself when
-the branch head moves, and links out to GitHub for anything the plain rendering
-can't do — comments, binary and oversized files, highlighting of a changed file. A
+same hunks GitHub does (fetched once per push and cached) -- or, for a file GitHub
+sent no patch for, the same change as local git sees it. GitHub stops sending
+patches partway through a large pull request, and git in this clone can
+usually still make them. It refreshes itself when the branch head moves, and
+links out to GitHub for anything the plain rendering can't do — comments, binary and oversized files, highlighting of a changed file. A
 file the pull request adds or deletes is shown as its own text under a green **NEW**
 or red **DELETED** title rather than as a wall of `+` or `-`: a patch that is all one
 sign has nothing to contrast. A **NEW** file is syntax-highlighted when its
@@ -133,7 +155,8 @@ a tokenizer sees a whole file rather than a hunk that starts in the middle of on
 first line, and a rename with no other change says only that. A diff with more
 than one hunk gets an outline down its right edge -- one row per hunk, named by
 the context git puts after the `@@` (the enclosing function, a heading) -- and a
-click scrolls the body to it. Four links, because they answer different
+click scrolls the body to it. Its ✕ hides it for every file until *Outline* in
+the header brings it back, and the browser remembers which you chose. Four links, because they answer different
 questions. *Diff* comes first because it is what the pane itself shows: this
 file's patch in GitHub's viewer. The other three are the whole file as this pull
 request leaves it: *File* for what it became — the untouched parts a hunk

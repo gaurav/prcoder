@@ -167,6 +167,20 @@ async function grammar(lang) {
 
 const el = (id) => document.getElementById(id);
 
+// Hiding the outline is a preference about the pane, not about one file, so it
+// is browser-wide and outlives a reload. Wrapped for the same reason as the
+// pane widths in panes.js: a refused store must not take the diff with it.
+const OUTLINE_KEY = 'prcoder:outline';
+const outlineOff = () => {
+  try { return localStorage.getItem(OUTLINE_KEY) === 'off'; } catch { return false; }
+};
+function showOutline(on) {
+  el('diff').classList.toggle('outline-off', !on);
+  try { localStorage.setItem(OUTLINE_KEY, on ? 'on' : 'off'); } catch { /* this session only */ }
+  // The clicked control has just vanished; keep focus on the one that undoes it.
+  el(on ? 'diff-outline-hide' : 'diff-outline-show').focus();
+}
+
 /** Ticking this here ticks the same checkbox on github.com; the file rows use it too. */
 export const setViewed = (path, viewed) => api('/api/pr/viewed', { path, viewed });
 
@@ -223,6 +237,9 @@ export async function openDiff(f) {
   });
 
   el('diff-close').onclick = closeDiff;
+  el('diff').classList.toggle('outline-off', outlineOff());
+  el('diff-outline-hide').onclick = () => showOutline(false);
+  el('diff-outline-show').onclick = () => showOutline(true);
 
   const body = el('diff-body');
   body.replaceChildren(h('div', { className: 'empty' }, 'Loading…'));
@@ -239,7 +256,7 @@ export async function openDiff(f) {
 
   if (patch == null && !from) {
     body.replaceChildren(h('p', { className: 'empty' },
-      'No local diff for this file (binary, too large, or unavailable) — ',
+      'No diff to show for this file (binary, too large, or not in this clone) — ',
       ext(f.url, 'view it on GitHub')));
     return;
   }

@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { syncState, compareUrl, prScope, userDirt, remoteBranchHead, trackingHead, snapshot } from '../git.js';
+import { syncState, compareUrl, originOwner, prScope, userDirt, remoteBranchHead, trackingHead, snapshot, localPatch } from '../git.js';
 
 // The four inputs come from `git rev-parse --verify` and `git merge-base
 // --is-ancestor`; the exit codes those return are checked in git.js, not here.
@@ -42,6 +42,31 @@ test('the compare URL opens GitHub with the form already expanded', () => {
   assert.equal(
     compareUrl('gaurav/prcoder', 'main', 'my-branch'),
     'https://github.com/gaurav/prcoder/compare/main...my-branch?expand=1');
+});
+
+// In a fork clone gh's base repo is upstream's, and the branch is only on
+// origin: a bare name there was GitHub's 404.
+test('the compare URL names the fork the branch was pushed to', () => {
+  assert.equal(
+    compareUrl('uc-cdis/heal-platform-sdk', 'master', 'my-branch', 'gaurav'),
+    'https://github.com/uc-cdis/heal-platform-sdk/compare/master...gaurav:my-branch?expand=1');
+});
+
+test("origin's owner comes off every shape of GitHub remote URL", async () => {
+  const git = promisify(execFile);
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'prcoder-origin-'));
+  try {
+    await git('git', ['init', '-q', dir]);
+    for (const url of ['git@github.com:gaurav/heal-platform-sdk.git',
+      'https://github.com/gaurav/heal-platform-sdk', 'https://github.com/gaurav/heal-platform-sdk.git/',
+      'ssh://git@github.com/gaurav/heal-platform-sdk.git']) {
+      await git('git', ['remote', 'remove', 'origin'], { cwd: dir }).catch(() => {});
+      await git('git', ['remote', 'add', 'origin', url], { cwd: dir });
+      assert.equal(await originOwner(dir), 'gaurav', url);
+    }
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
 });
 
 const here = { branch: 'feature', nameWithOwner: 'gaurav/prcoder' };
@@ -138,6 +163,80 @@ test('a branch name that is the tail of another branch is not mistaken for it', 
     const snap = await snapshot(work, await trackingHead(work, 'feature/topic'), 'feature/topic');
     assert.equal(snap.sync, 'ahead');
     assert.equal(snap.ahead, 1);
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
+
+// The stand-in for a patch GitHub stopped sending, against a real repo because
+// the claims are about git's output: that it comes out in GitHub's shape, from
+// the merge base rather than the base's tip, and not at all for a binary file,
+// a commit this clone lacks, a pathspec the page made up, or a patch whose line
+// counts are not the ones GitHub has for the file.
+test('a local patch is GitHub-shaped, from the merge base, and null when git cannot say', async () => {
+  const git = promisify(execFile);
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'prcoder-patch-'));
+  const run = (...args) => git('git', [
+    '-c', 'user.name=prcoder tests', '-c', 'user.email=tests@prcoder.invalid',
+    '-c', 'commit.gpgsign=false', ...args,
+  ], { cwd: dir });
+  const oid = async (rev) => (await run('rev-parse', rev)).stdout.trim();
+  const write = (name, body) => fs.writeFile(path.join(dir, name), body);
+  // GitHub's counts for a one-line change, which is what a.js is throughout.
+  const oneLine = { additions: 1, deletions: 1 };
+  try {
+    await git('git', ['init', '-q', '-b', 'main', dir]);
+    await write('a.js', 'one\ntwo\n');
+    await run('add', '.');
+    await run('commit', '-q', '-m', 'base');
+    await run('checkout', '-q', '-b', 'topic');
+    await write('a.js', 'one\n2\n');
+    await write('new.js', 'x');
+    await write('blob.bin', Buffer.from([0, 1, 2, 0]));
+    await run('add', '.');
+    await run('commit', '-q', '-m', 'topic');
+    const head = await oid('HEAD');
+    // The base moves on after the branch left it; the pull request still shows
+    // only the branch's own change.
+    await run('checkout', '-q', 'main');
+    await write('a.js', 'zero\none\ntwo\n');
+    await run('commit', '-q', '-am', 'later');
+    const pr = { baseOid: await oid('main'), baseRef: 'main', head };
+
+    assert.equal(await localPatch(dir, { ...pr, ...oneLine, path: 'a.js' }), '@@ -1,2 +1,2 @@\n one\n-two\n+2');
+    assert.equal(await localPatch(dir, { ...pr, additions: 1, deletions: 0, path: 'new.js' }),
+      '@@ -0,0 +1 @@\n+x\n\\ No newline at end of file');
+    assert.equal(await localPatch(dir, { ...pr, additions: 0, deletions: 0, path: 'blob.bin' }), null);
+    assert.equal(await localPatch(dir, { ...pr, ...oneLine, path: '*.js' }), null, 'a glob is a name, not a pattern');
+    assert.equal(await localPatch(dir, { ...pr, ...oneLine, head: 'f'.repeat(40), path: 'a.js' }), null);
+    // A base tip this clone never fetched falls back to its own record of the
+    // base branch -- none yet, so nothing to fall back to, and then one.
+    const unfetched = { ...pr, ...oneLine, baseOid: 'e'.repeat(40), path: 'a.js' };
+    assert.equal(await localPatch(dir, unfetched), null);
+    await run('update-ref', 'refs/remotes/origin/main', 'main');
+    assert.equal(await localPatch(dir, unfetched), '@@ -1,2 +1,2 @@\n one\n-two\n+2');
+
+    // And the case the counts are for. A branch built on a base commit this
+    // clone's record of the base does not have yet: GitHub diffs from that
+    // commit and shows c.txt gaining a line, but the fallback's merge base is
+    // older, and shows c.txt being added whole. Same file, a different change.
+    await write('c.txt', 'c\n');
+    await run('add', '.');
+    await run('commit', '-q', '-m', 'newer base, not fetched');
+    await run('checkout', '-q', '-b', 'rebased');
+    await write('c.txt', 'c\nmore\n');
+    await run('commit', '-q', '-am', 'on the newer base');
+    const stale = { ...unfetched, head: await oid('HEAD'), path: 'c.txt' };
+    assert.equal(await localPatch(dir, { ...stale, additions: 1, deletions: 0 }), null);
+    assert.equal(await localPatch(dir, { ...stale, additions: 2, deletions: 0 }), '@@ -0,0 +1,2 @@\n+c\n+more',
+      'the counts, and nothing else, are what refused it');
+
+    // A rename is one patch between the two paths, the way GitHub sends it.
+    await run('checkout', '-q', 'topic');
+    await run('mv', 'a.js', 'b.js');
+    await run('commit', '-q', '-m', 'rename');
+    const renamed = { ...pr, ...oneLine, head: await oid('HEAD'), path: 'b.js', from: 'a.js' };
+    assert.equal(await localPatch(dir, renamed), '@@ -1,2 +1,2 @@\n one\n-two\n+2');
   } finally {
     await fs.rm(dir, { recursive: true, force: true });
   }
