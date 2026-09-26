@@ -15,7 +15,7 @@
         <select id="pr-switch" title="switch to another open pull request"></select>
         <button id="pr-commit" class="commit" hidden title="uncommitted changes block a branch switch">Commit…</button>
         <span id="pr-sync" class="light"></span>
-        <button id="pr-refresh" title="reload from GitHub">⟳</button>
+        <button id="pr-refresh" title="reload from GitHub" aria-label="reload from GitHub">⟳</button>
       </header>
       <div id="pr-head"></div>
       <div id="pr-body" class="scroll">Loading…</div>
@@ -44,7 +44,7 @@
         <!-- Only while the outline is hidden and this file has one: style.css
              decides, so nothing has to repaint it per file. -->
         <button id="diff-outline-show" title="show the hunk outline">Outline</button>
-        <button id="diff-close" title="close diff">✕</button>
+        <button id="diff-close" title="close diff" aria-label="close diff">✕</button>
       </header>
       <div id="diff-main">
         <div id="diff-body" class="scroll"></div>
@@ -57,7 +57,7 @@
         <!-- One row per hunk, from the context git puts after the @@; a click
              scrolls the body to that hunk. Empty, and so hidden, for a whole file. -->
         <aside id="diff-side">
-          <button id="diff-outline-hide" title="hide the outline">✕</button>
+          <button id="diff-outline-hide" title="hide the outline" aria-label="hide the outline">✕</button>
           <nav id="diff-outline" aria-label="hunks in this diff"></nav>
         </aside>
       </div>
@@ -68,9 +68,10 @@
 
     <section id="term" class="pane">
       <header>
-        <button id="term-fold" aria-expanded="true" aria-controls="term-host" title="collapse the coding agent pane">▼</button>
+        <button id="term-fold" aria-expanded="true" aria-controls="term-host" title="collapse the coding agent pane" aria-label="collapse the coding agent pane">▼</button>
         <h1>Claude Code</h1>
-        <button id="term-close" aria-controls="term-host" title="collapse the coding agent pane — the session keeps running">✕</button>
+        <button id="term-close" aria-controls="term-host" title="collapse the coding agent pane — the session keeps running"
+                aria-label="collapse the coding agent pane — the session keeps running">✕</button>
       </header>
       <div id="term-host"></div>
     </section>

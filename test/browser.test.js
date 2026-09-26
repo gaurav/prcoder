@@ -423,6 +423,16 @@ test('the terminal folds to its header, the diff takes the room, and it stays fo
   await fresh.close();
 });
 
+// A button drawn as a glyph -- ✕, ⟳, ▼ -- is read out by a screen reader as
+// that glyph, which names no action. Every button on the page, as it first
+// renders, has words to be read by: its text, or an aria-label.
+test('no button is named by a glyph alone', { skip }, async () => {
+  const bare = await page.$$eval('button', (els) => els
+    .filter((b) => !b.getAttribute('aria-label') && !/[\p{L}\p{N}]/u.test(b.textContent))
+    .map((b) => b.id || b.outerHTML.slice(0, 80)));
+  assert.deepEqual(bare, []);
+});
+
 // The ✕ is the ▼ again at the header's other end, not a close: it folds, and
 // while folded it is gone, so the ▶ is the only control that says what a click
 // does. Its own page for the same reason as the test above.
@@ -436,6 +446,7 @@ test('the terminal\'s ✕ folds it like the ▼, and hides until it is unfolded'
   assert.equal(await fresh.locator('#term-host').isVisible(), false);
   assert.equal(await fresh.locator('#term-close').isVisible(), false, 'the ✕ has nothing left to fold');
   assert.equal(await fresh.getAttribute('#term-fold', 'aria-expanded'), 'false');
+  assert.equal(await fresh.getAttribute('#term-fold', 'aria-label'), 'expand the coding agent pane');
 
   await fresh.click('#term-fold');
   assert.equal(await fresh.locator('#term-host').isVisible(), true);

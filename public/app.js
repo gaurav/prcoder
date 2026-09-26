@@ -136,6 +136,7 @@ function foldTerm(off, save = true) {
   fold.setAttribute('aria-expanded', String(!off));
   fold.textContent = off ? '▶\uFE0E' : '▼';   // FE0E: text, never macOS's emoji ▶
   fold.title = `${off ? 'expand' : 'collapse'} the coding agent pane`;
+  fold.setAttribute('aria-label', fold.title);   // a glyph is no name, as in queue.js
   if (save) try { localStorage.setItem(TERM_KEY, off ? 'off' : 'on'); } catch { /* this session only */ }
   if (!off) term.focus();   // expanding it is to talk to it
 }
