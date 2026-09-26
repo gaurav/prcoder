@@ -425,16 +425,19 @@ test('the terminal folds to its header, the diff takes the room, and it stays fo
 
 // The ⟳ is drawn larger than the header's text, because at the same size this
 // font makes it a speck -- and a glyph at a bigger size is how a header grows.
-// So the header has to be the height it is without the button.
+// So the header has to be the height it is with the ⟳ at the header's own
+// size. Not the height without the button: in Firefox the button at any size
+// is what sets the header's 36px (34 without it), where in Chromium the
+// dropdown does.
 test('the ⟳ is drawn large without making the pull request header taller', { skip }, async () => {
   const height = () => page.$eval('#pr > header', (el) => el.getBoundingClientRect().height);
   const px = (sel, prop) => page.$eval(sel, (el, p) => parseFloat(getComputedStyle(el)[p]), prop);
   assert.ok(await px('#pr-refresh', 'fontSize') > await px('#pr > header', 'fontSize'), 'the ⟳ should be larger than the header text');
-  const withIt = await height();
-  await page.$eval('#pr-refresh', (el) => { el.style.display = 'none'; });
-  const without = await height();
-  await page.$eval('#pr-refresh', (el) => { el.style.display = ''; });
-  assert.equal(withIt, without, 'the ⟳ should not set the header height');
+  const large = await height();
+  await page.$eval('#pr-refresh', (el) => { el.style.fontSize = 'inherit'; el.style.lineHeight = 'inherit'; });
+  const plain = await height();
+  await page.$eval('#pr-refresh', (el) => { el.style.fontSize = ''; el.style.lineHeight = ''; });
+  assert.equal(large, plain, 'the ⟳ should not make the header taller than it is at the header\'s size');
 });
 
 // A button drawn as a glyph -- ✕, ⟳, ▼ -- is read out by a screen reader as
