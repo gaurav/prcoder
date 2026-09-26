@@ -89,11 +89,10 @@ the next `prcoder` in that repo opens with. They live in the browser's
 `localStorage`, which is kept per origin -- and the origin includes the port,
 which is `.prcoder/port.json`'s. So each repo and each worktree has a layout of
 its own, and so does each browser or profile. The terminal folds to its header
-line with the ▼ before its title, the ▁ at the header's other end (there only
-while a diff is open, since that is what takes the room), or a double-click on
-the header, and the diff (or the queue, with no diff open) takes
-the room; the ▶ or another double-click unfolds it. None of the three touches
-the session, which keeps running folded.
+line with a click anywhere on that line -- the ▼ before its title says so, and is
+the keyboard's way in -- and the diff (or the queue, with no diff open) takes
+the room; another click unfolds it. Folding never touches the session, which
+keeps running folded.
 Whether the terminal is folded, whether the outline is shown, and which way the
 queue adds are stored the same way. A repo whose port changes
 (`port.json` deleted, its port busy at startup, or `PRCODER_PORT` set) opens

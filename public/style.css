@@ -70,22 +70,20 @@ main.diff-open.term-off {
   grid-template-rows: 1fr 1px auto 1px clamp(120px, var(--h-queue, 227px), 40%);
 }
 main.term-off #term-host,
-main.term-off #term-min,
 main.term-off:not(.diff-open) #gut-queue,
 main.term-off #gut-diff { display: none; }
-#term > header { user-select: none; }   /* a double-click folds it, not selects the title */
+/* A click anywhere on it folds or unfolds, so it looks pressable across its
+   whole width: the pointer, and a hover that darkens the bar and brings the ▼
+   and the title up to full colour. user-select, or a quick second click
+   selects the title. Background only -- a border or padding here would make
+   the folded header a different height from the open one. */
+#term > header { user-select: none; cursor: pointer; }
+#term > header:hover { background: var(--bg); }
+#term > header:hover h1, #term > header:hover #term-fold { color: var(--fg); }
 /* Before the title, like a disclosure triangle, at the title's own size and
    line-height so the two centre together. ▼/▶ rather than the small ▾/▸, which
    sit low and needed a bigger font that then sat lower still. */
 #term-fold { margin-left: 0; padding: 0; font-size: 12px; line-height: 18px; }
-/* The ▁ at the far end, on the ▼'s metrics: at a button's own padding it made
-   the header 5px taller than the folded one, so folding jumped the layout. */
-#term-min { padding: 0; font-size: 14px; line-height: 18px; }   /* 14px: at 12 the bar is a speck */
-/* The ▁ is for handing the room to another pane, and with no diff open there
-   is none -- only the queue, and the ▼ already folds into that. Keyed on
-   diff-open because the diff is the only such pane today; one added later that
-   can take the room belongs in this selector too. */
-main:not(.diff-open) #term-min { display: none; }
 
 #gut-pr { grid-area: gpr; } #gut-queue { grid-area: gqueue; } #gut-diff { grid-area: gdiff; }
 /* Only the diff-open template has a slot for it; left displayed it would

@@ -89,10 +89,11 @@ Its ✕ and the header's *Outline* button were checked the same way on 2026-09-2
 reload, and the Outline button absent while there is no outline to bring back.
 
 Folding the terminal to its header is pinned in `test/browser/suite.js` (the diff grows into the room,
-the fold survives a reload, a double-click on the header unfolds it), and so is the header's ▁,
-which folds the same way, shows only while a diff is open, hides while folded, and must not change
-the header's height as it goes
-(it did, by 5px, before it took the ▼'s metrics). What that test cannot see is
+the fold survives a reload, a click on the header unfolds it), and so is the header being the
+toggle across its whole width: the title and the far end both fold and unfold it, a click on the ▼
+toggles it once rather than once for the button and again for the bar, and the header keeps its
+height folded. A ▁ at the far end once made it 5px taller until it took the ▼'s metrics; the bar
+replaced that button on 2026-09-26. What that test cannot see is
 the PTY, because its socket is mocked: `data/fold-check.mjs` ran against this repo's PR with
 `tools/claude-stub.mjs` on 2026-09-23 and read the frames sent, and folding sent no `resize`. So
 the agent keeps its size while folded and is not reflowed to one row, and unfolding sent none
