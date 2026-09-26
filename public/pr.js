@@ -363,11 +363,16 @@ const repoName = (repoUrl) => repoUrl.replace(/^https?:\/\/[^/]+\//, '');
  * No ↗ on any of them. Every link out of prcoder opens a new tab, so marking
  * one (it used to be the first of each row) only raised the question of what
  * the unmarked ones did.
+ *
+ * The pull request is the one marked `primary`, and drawn as a button: of
+ * everything in the head it is the link actually clicked, and it used to look
+ * exactly like `milestones`. The number on it is not what earns it the button
+ * -- it is kept because it is short and is how the PR gets named out loud.
  */
 export const headLinks = (pr) => {
   const { repo } = linkBase(pr);
   return {
-    links: [{ text: `PR #${pr.number}`, href: pr.url }, ...listLinks(repo)],
+    links: [{ text: `PR #${pr.number}`, href: pr.url, className: 'primary' }, ...listLinks(repo)],
     repo: repoCrumb(repo),
   };
 };
@@ -421,11 +426,14 @@ export const noPrLinks = ({ nameWithOwner }) => {
  * underlined with it and a click on the gap followed the link to its right.
  * `pointer-events: none` does not help -- the point is still over the <a>
  * itself once the pseudo-element declines it.
+ *
+ * No dot beside a link with a class of its own (the pull request's button):
+ * its box already separates it, and a dot hanging off a pill reads as debris.
  */
 const linkRow = (list, className) => h('div', { className },
   ...list.map((l, i) => [
-    i ? h('span', { className: 'sep' }, '·') : null,
-    ext(l.href, l.text),
+    i && !l.className && !list[i - 1].className ? h('span', { className: 'sep' }, '·') : null,
+    ext(l.href, l.text, l.className ? { className: l.className } : {}),
   ]));
 
 /**
@@ -475,25 +483,35 @@ function renderPrHead(pr, handlers) {
     btn(label, () => switchTo(name), { className: tab === name ? 'tab on' : 'tab' });
   const ways = headLinks(pr);
 
-  document.getElementById('pr-head').replaceChildren(...kids([
-    h('h2', { className: 'pr-title' }, pr.title),
-    pr.note ? h('p', { className: 'pr-note' }, pr.note) : null,
-    h('div', { className: 'meta' },
+  // Each row stands alone -- no row's spacing depends on which one is above it
+  // -- so the order is HEAD_ORDER and nothing else.
+  const rows = {
+    title: h('h2', { className: 'pr-title' }, pr.title),
+    note: pr.note ? h('p', { className: 'pr-note' }, pr.note) : null,
+    // `pr-links` carries no style of its own -- it is the hook tools/browser.mjs
+    // measures the row by, so it is not dead CSS to clean up.
+    links: linkRow(ways.links, 'meta pr-ways pr-links'),
+    state: h('div', { className: 'meta pr-state' },
       badge(pr.isDraft ? 'draft' : pr.state.toLowerCase(), pr.isDraft ? 'draft' : pr.state.toLowerCase()),
       h('span', {}, `${pr.headRefName} → ${pr.baseRefName}`),
       h('span', { className: 'add' }, `+${pr.additions}`),
       h('span', { className: 'del' }, `−${pr.deletions}`),
     ),
-    checks(pr.checks),
-    // Two lines, and `pr-links` carries no style of its own -- it is the hook
-    // tools/browser.mjs measures the row by, so it is not dead CSS to clean up.
-    linkRow(ways.links, 'meta pr-ways pr-links'),
-    repoRow(ways.repo, 'meta pr-repo'),
-    h('div', { className: 'tabs' },
+    checks: checks(pr.checks),
+    repo: repoRow(ways.repo, 'meta pr-repo'),
+    tabs: h('div', { className: 'tabs' },
       tabBtn('detail', tabLabel('Detail', taskCount(pr.body))),
       tabBtn('files', tabLabel('Files', viewedCount(pr.files)))),
-  ]));
+  };
+  document.getElementById('pr-head').replaceChildren(...kids(HEAD_ORDER.map((k) => rows[k])));
 }
+
+/**
+ * The head, top to bottom, in the order it is read: what this is, the way to
+ * it on GitHub and the lists beside it, whether it is open, what it changes,
+ * and which checkout it is in. Rearranging the head is reordering this.
+ */
+const HEAD_ORDER = ['title', 'note', 'links', 'state', 'checks', 'repo', 'tabs'];
 
 /**
  * The count each tab carries is what it can tell you while you are on the other

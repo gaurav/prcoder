@@ -243,11 +243,31 @@ test('the repository is drawn as a chip, not as a fifth link', { skip }, async (
     return { border: parseFloat(s.borderTopWidth), line: s.textDecorationLine };
   });
   const repo = await styles('#pr-head .pr-repo a');
-  const way = await styles('#pr-head .pr-links a');
+  const way = await styles('#pr-head .pr-links a:not(.primary)');
   assert.ok(repo.border > 0, `the chip should have a border, ${JSON.stringify(repo)}`);
   assert.equal(repo.line, 'none', `the chip should not be underlined, ${JSON.stringify(repo)}`);
   assert.equal(way.border, 0, `the row's links should stay plain, ${JSON.stringify(way)}`);
   assert.equal(way.line, 'underline', `the row's links should stay underlined, ${JSON.stringify(way)}`);
+});
+
+// The pull request is the link in the head that gets clicked, so it is the one
+// drawn as a filled button, and its row comes straight after the title -- ahead
+// of the state and the branches. Order is asserted by position in the DOM,
+// which is HEAD_ORDER in pr.js; change the two together.
+test('the pull request is a filled button on the row under the title', { skip }, async () => {
+  const pr = page.locator('#pr-head .pr-links a.primary');
+  assert.equal(await pr.textContent(), 'PR #12');
+  const s = await pr.evaluate((el) => {
+    const c = getComputedStyle(el);
+    return { bg: c.backgroundColor, line: c.textDecorationLine };
+  });
+  assert.notEqual(s.bg, 'rgba(0, 0, 0, 0)', `the button should be filled, ${JSON.stringify(s)}`);
+  assert.equal(s.line, 'none');
+  const order = await page.$$eval('#pr-head > *', (els) => els.map((e) => e.className));
+  const at = (cls) => order.findIndex((c) => c.split(' ').includes(cls));
+  assert.ok(at('pr-title') < at('pr-links') && at('pr-links') < at('pr-state'), order.join(' | '));
+  // No dot hangs off the button: the first separator follows `issues`.
+  assert.equal(await page.locator('#pr-head .pr-links .sep').count(), 2);
 });
 
 // The point of the two spans, and the one thing here no unit test can see:

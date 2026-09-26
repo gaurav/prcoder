@@ -162,7 +162,7 @@ a { color: var(--accent); }
 
 .empty { color: var(--dim); }
 /* The head's way out -- this pull request on GitHub, the lists you leave for,
-   and the repository under them -- starts at the left margin, like the title,
+   and the repository further down -- starts at the left margin, like the title,
    the badges and the tabs. It has no alignment rule of its own; `.meta` is
    already flex-start, and `.pr-links` is kept only as a hook for the driver.
 
@@ -176,16 +176,31 @@ a { color: var(--accent); }
    a line that clips is easier to read from an edge that does not move with its
    content.
 
-   The repository, on the line under that row rather than in the middle of it.
+   The row sits directly under the title, above the state and the branches,
+   because that is the order it is used in (2026-09-26): the title says what
+   this is, and the next thing wanted is nearly always the pull request on
+   GitHub. Which row goes where is HEAD_ORDER in pr.js, and no row's spacing
+   depends on its neighbour -- each is a `.meta` with the same 8px under it --
+   so moving one is moving one word. Keep it that way: the repository used to
+   sit 2px under this row as "one block" with it, which was a margin that only
+   made sense in one order.
+
+   The pull request is a filled button, `.primary`, and the lists beside it
+   stay plain links. Of everything in the head it is the link actually
+   clicked, and as a fifth underlined `--accent` word it was no easier to find
+   than `milestones`. A solid fill is the one treatment nothing else in the
+   head has: the chip below is a faint outline, the badges are pastel,
+   uppercase and not links, and the tabs are grey. One button is not the
+   button group the paragraph further down warns against -- the three lists
+   stay text, so nothing here looks like it switches the pane. No dot beside
+   it; its box is the separator (see linkRow).
+
+   The repository, on a line of its own rather than in the middle of the row.
    It is the only link there whose width has no bound -- a real
    `heal-data-stewards/heal-vlmd-AI-pipeline` is most of the pane at its
    375px default -- so in the row it wrapped, and dragged where issues, pulls
    and milestones sat along with it. Alone on a line it can overflow instead:
-   the row above keeps one predictable shape, and this line clips.
-
-   The two are one block, so the gap between them is 2px rather than the 8px
-   `.meta` gives every other row. `.pr-repo` keeps the 8px, which is the gap to
-   the tabs and is unchanged.
+   the row keeps one predictable shape, and this line clips.
 
    And the repository is a chip rather than a fifth link, which is what the
    move down the page did not by itself fix. Giving it its own line said where
@@ -195,9 +210,9 @@ a { color: var(--accent); }
    radius and the dropped underline are the same three the queue's `#N` tag
    wears (`.item .tag`) -- this window's word for a small thing you can click
    that is an object rather than a phrase -- so it is the vocabulary already
-   here and not a new one. What it buys: the row above stays a list of places
-   to go, and the line below is the one fact in the head that says which
-   checkout you are in.
+   here and not a new one. What it buys: the links row stays a list of places
+   to go, and the chip is the one fact in the head that says which checkout
+   you are in.
 
    The chip's colour is where it leaves the tag. A `--line` border on the
    panel is about 1.2:1, which is enough to notice once you know it is there and
@@ -211,10 +226,11 @@ a { color: var(--accent); }
    other way to mark it: no other glyph in this window earns its place that way
    -- the `↗` that used to sit on these links was dropped for raising the
    question of what the unmarked ones did -- and a mark says "look here"
-   without saying what kind of thing it is, where a chip does both. And the row
-   above is still plain text, not a button group: the tabs two rows down are
-   the head's one group of bordered controls, and a second one over them would
-   make the four links look like the thing that switches the pane.
+   without saying what kind of thing it is, where a chip does both. And the links
+   row is still plain text, not a button group: the tabs are the head's one
+   group of bordered controls, and a second one over them would make the four
+   links look like the thing that switches the pane. The pull request's single
+   filled button is the exception, argued above.
 
    The chip's padding puts the slug 8px in from the margin the rest of the head
    starts at. That is the treatment the tabs under it already have -- `.tab` is
@@ -262,7 +278,11 @@ a { color: var(--accent); }
    opposite ends: a path is recognised from its tail, an owner from its front,
    and rtl leaves `…tewards` where the spans leave `heal-dat…`.
    docs/Verifying.md has the comparison. */
-.pr-ways { margin-bottom: 2px; }
+.pr-links a.primary {
+  padding: 1px 8px; border-radius: 9px; text-decoration: none; font-weight: 600;
+  background: var(--accent); color: var(--bg);
+}
+.pr-links a.primary:hover { background: color-mix(in srgb, var(--accent) 80%, white); }
 .pr-repo a {
   display: inline-flex; min-width: 0;
   text-decoration: none; padding: 1px 7px;

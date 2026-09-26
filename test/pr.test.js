@@ -215,6 +215,8 @@ test('the head links point at the repository the pull request is in', () => {
     ['milestones', 'https://github.test/o/r/milestones'],
   ]);
   assert.deepEqual(repo, { href: 'https://github.test/o/r', slug: 'o/r', owner: 'o', rest: '/r' });
+  // The pull request is the one drawn as a button; the lists stay links.
+  assert.deepEqual(links.map((l) => l.className), ['primary', undefined, undefined, undefined]);
 });
 
 // The line clips on purpose, and the two spans are what decide which half goes.

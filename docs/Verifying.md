@@ -281,10 +281,9 @@ focus lands, an arrow moves the line by ten and shift-arrow by fifty, `Home` res
 (it was a ResizeObserver on the 1px gutter, which a move never resizes); the switcher, both sync-light
 states, the Deleted tab (which needed a tombstone put in through the API before it would render at
 all), the queue's synced light, the description's checkboxes and the disabled states; and both
-toasts, the four-second one watched to fade and the sticky one clicked away; the head's two lines of
-links out, whose left edges are measured against the title's -- they were right-aligned until
+toasts, the four-second one watched to fade and the sticky one clicked away; the head's links out, whose left edges are measured against the title's -- they were right-aligned until
 2026-09-21, and the check that they line up with everything else in the head is what replaced the
-one that proved they did not -- and the repository line under them, printed whole or clipped at the
+one that proved they did not -- and the repository line, printed whole or clipped at the
 default width and again at the pane's 180px floor (both `whole` against `gaurav/prcoder`, which is
 short enough to fit either; the clipping is a test's job, and what the run adds is the shape of the
 block in `pr-head-narrow.png`), and whose separators are hit-tested at their own centres -- they were an
