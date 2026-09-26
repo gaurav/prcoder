@@ -16,8 +16,8 @@
 //
 // The one thing it cannot see: the status fixture below is shaped by hand from
 // what /api/status answers today. A field the server renames and the client
-// follows would still pass here. The gh stub (the issue after #6) is what puts
-// the server's own shaping in front of this test; until then, groups and checks
+// follows would still pass here. A stub gh (#54) is what puts the server's own
+// shaping in front of this test; until then, groups and checks
 // at least come from the server's shapers.
 //
 // Two things about the shape of this file, both of which have cost a debugging
