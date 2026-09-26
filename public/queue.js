@@ -161,6 +161,11 @@ function render() {
       : items.filter(TABS[name]).length);
   const label = (n) => `${LABELS[n]} (${count(n)})`;
   const shown = TABS[tab] ? items.filter(TABS[tab]) : [];
+  // Most recently finished first, so the item you just ticked by mistake is on
+  // top to be unticked. The store stamps doneAt; one it has not stamped yet
+  // (done before the field existed) goes last, and the sort is stable, so ties
+  // keep the queue's own order.
+  if (tab === 'done') shown.sort((a, b) => (b.doneAt ?? -Infinity) - (a.doneAt ?? -Infinity));
 
   host.replaceChildren(
     h('div', { className: 'tabs' },
@@ -334,9 +339,9 @@ const bulk = (label, fn, props = {}) => btn(label, fn, { className: 'bulk', ...p
 
 function row(item, above, below) {
   const idx = items.indexOf(item);
-  // Order is the backlog's meaning, and only Local is a backlog -- Completed and
-  // Deleted are filtered views where a drop would splice the item to a position
-  // in the full array that nobody on this tab can see.
+  // Order is the backlog's meaning, and only Local is a backlog -- Completed is
+  // sorted by when each item was finished, and Deleted is a filtered view where
+  // a drop would splice the item to a position nobody on it can see.
   const ordered = tab === 'local';
 
   // The keyboard's way to reorder, which a drag has no equivalent of. Moves

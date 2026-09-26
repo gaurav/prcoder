@@ -142,15 +142,11 @@ function foldTerm(off, save = true) {
 }
 try { if (localStorage.getItem(TERM_KEY) === 'off') foldTerm(true, false); } catch { /* shown */ }
 const folded = () => document.querySelector('main').classList.contains('term-off');
-fold.addEventListener('click', () => foldTerm(!folded()));
-// A second way to fold it, at the header's far end. A minimize bar and not a ✕,
-// because a ✕ on a terminal reads as ending the session. It only folds: the
-// PTY is untouched, and while folded it is hidden and the ▶ is the way back.
-document.getElementById('term-min').addEventListener('click', () => foldTerm(true));
-// Not from the button, whose two clicks have already toggled twice.
-document.querySelector('#term > header').addEventListener('dblclick', (e) => {
-  if (!e.target.closest('button')) foldTerm(!folded());
-});
+// The whole header is the toggle, and the ▼ is only the part of it that says
+// so -- and the part a keyboard can reach, since a button's Enter is a click
+// and bubbles here. One listener for both, so a click on the ▼ toggles once.
+// No double-click: two clicks would already have folded and unfolded it.
+document.querySelector('#term > header').addEventListener('click', () => foldTerm(!folded()));
 
 // Type an item into Claude's prompt. If Claude is mid-turn it queues the
 // message itself, which is exactly the behaviour we want.

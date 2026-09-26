@@ -435,7 +435,7 @@ test('the terminal folds to its header, the diff takes the room, and it stays fo
   await fresh.waitForSelector('#pr-head .pr-title');
   assert.equal(await fresh.locator('#term-host').isVisible(), false, 'folded after a reload');
 
-  await fresh.dblclick('#term > header h1');
+  await fresh.click('#term > header h1');
   assert.equal(await fresh.locator('#term-host').isVisible(), true);
   assert.equal(await fresh.getAttribute('#term-fold', 'aria-expanded'), 'true');
   await fresh.close();
@@ -468,33 +468,118 @@ test('no button is named by a glyph alone', { skip }, async () => {
   assert.deepEqual(bare, []);
 });
 
-// The ▁ is the ▼ again at the header's other end, not a close: it folds, and
-// while folded it is gone, so the ▶ is the only control that says what a click
-// does. It is also gone while no diff is open, because then there is no pane
-// for it to hand the room to. Its own page for the same reason as the test
+// The whole header is the fold, and the ▼ is part of it: a click anywhere on
+// the bar toggles it, and a click on the ▼ toggles it once, not once for the
+// button and again for the bar. There is no second button at the far end any
+// more -- the far end is bar too. Its own page for the same reason as the test
 // above.
-test('the terminal\'s ▁ shows only beside a diff, folds it like the ▼, and hides until it is unfolded', { skip }, async () => {
+test('a click anywhere on the terminal\'s header folds and unfolds it, the ▼ included', { skip }, async () => {
   const fresh = await newPage();
-  assert.equal(await fresh.locator('#term-min').isVisible(), false, 'no diff open, so nothing to hand the room to');
-  await fresh.locator('#pr-head .tab', { hasText: 'Files' }).click();
-  await fresh.locator('.file[data-path="evil.js"] .path').click();
-  await fresh.waitForSelector('#diff-body .dl');
-  assert.equal(await fresh.locator('#term-min').isVisible(), true, 'a diff is open');
-  // A header that changes height as the ▁ goes jumps the whole layout.
+  const shown = () => fresh.locator('#term-host').isVisible();
+  // A header that changes height as it folds jumps the whole layout.
   const height = () => fresh.$eval('#term > header', (el) => el.getBoundingClientRect().height);
   const open = await height();
-  await fresh.click('#term-min');
-  assert.equal(await height(), open, 'the header should keep its height when the ▁ goes');
-  assert.equal(await fresh.locator('#term-host').isVisible(), false);
-  assert.equal(await fresh.locator('#term-min').isVisible(), false, 'the ▁ has nothing left to fold');
+  assert.equal(await fresh.locator('#term-min').count(), 0, 'the bar is the button now');
+
+  await fresh.click('#term > header h1');
+  assert.equal(await shown(), false, 'the title folds it');
+  assert.equal(await height(), open, 'the header should keep its height when folded');
   assert.equal(await fresh.getAttribute('#term-fold', 'aria-expanded'), 'false');
-  assert.equal(await fresh.getAttribute('#term-fold', 'aria-label'), 'expand the coding agent pane');
+  await fresh.click('#term > header h1');
+  assert.equal(await shown(), true, 'and unfolds it');
+
+  const box = await fresh.locator('#term > header').boundingBox();
+  await fresh.mouse.click(box.x + box.width - 5, box.y + box.height / 2);
+  assert.equal(await shown(), false, 'the far end folds it');
+  await fresh.mouse.click(box.x + box.width - 5, box.y + box.height / 2);
+  assert.equal(await shown(), true);
 
   await fresh.click('#term-fold');
-  assert.equal(await fresh.locator('#term-host').isVisible(), true);
-  assert.equal(await fresh.locator('#term-min').isVisible(), true);
+  assert.equal(await shown(), false, 'the ▼ toggles once, not once for itself and again for the bar');
+  await fresh.click('#term-fold');
+  assert.equal(await shown(), true);
+  await fresh.close();
+});
 
-  await fresh.click('#diff-close');
-  assert.equal(await fresh.locator('#term-min').isVisible(), false, 'the diff closed, so it goes with it');
+// Every toast closes on a click, so every one has a ✕, where a close button is
+// looked for: the top right corner. After the text, it ended whichever line the
+// text wrapped to. It is a pseudo-element, which has no box to measure, so this
+// reads the rule -- and that the text is padded clear of it -- for each kind.
+test('every toast has its ✕ in the top right corner, clear of the text', { skip }, async () => {
+  const fresh = await newPage();
+  for (const [bad, sticky] of [[false, false], [true, false], [false, true]]) {
+    const x = await fresh.evaluate(async ([b, s]) => {
+      const { toast } = await import('/pr.js');
+      toast('Switched to add-retries (#123). Claude still has the old branch\'s files in mind '
+        + '— tell it to re-read anything it had open.', b, s);
+      const el = document.getElementById('toast');
+      const after = getComputedStyle(el, '::after');
+      return { content: after.content, position: after.position, top: parseFloat(after.top),
+        right: parseFloat(after.right), pad: parseFloat(getComputedStyle(el).paddingTop),
+        padRight: parseFloat(getComputedStyle(el).paddingRight), fontSize: parseFloat(after.fontSize) };
+    }, [bad, sticky]);
+    const kind = `bad ${bad}, sticky ${sticky}`;
+    assert.equal(x.content, '"✕"', kind);
+    assert.equal(x.position, 'absolute', kind);
+    assert.equal(x.top, x.pad, `level with the first line (${kind})`);
+    assert.ok(x.padRight >= x.right + x.fontSize, `text padded ${x.padRight}px, ✕ needs ${x.right + x.fontSize}px (${kind})`);
+  }
+  await fresh.close();
+});
+
+// A fold's progress is a pie, not `3/5`: one size at any count, and full is a
+// disc. The figure it gives up is its accessible name. A directory is needed
+// for a directory's pie, and the fixture has none, so this page adds two: one
+// half viewed, one all viewed.
+test('folds show progress as a pie named by its figure', { skip }, async () => {
+  const fresh = await newPage();
+  const extra = [['src/a.js', true], ['src/b.js', false], ['src/sub/c.js', true]]
+    .map(([path, viewed]) => ({ ...files[0], path, viewed }));
+  const all = [...files, ...extra];
+  await fresh.route('**/api/status', (r) => r.fulfill({ json: {
+    ...status, pr: { ...pr, files: all, groups: groupFiles(all) },
+  } }));
+  await fresh.reload();
+  await fresh.waitForSelector('#pr-head .pr-title');
+  const pie = (sel) => fresh.locator(`${sel} > summary .pie`).evaluate((el) => ({
+    label: el.getAttribute('aria-label'), role: el.getAttribute('role'),
+    p: el.style.getPropertyValue('--p'), full: el.classList.contains('full'),
+  }));
+
+  // The description's section holding the queue's unticked line.
+  assert.deepEqual(await pie('.md-section:has(h3:text-is("Before merging"))'),
+    { label: '0 of 1 done', role: 'img', p: '0', full: false });
+
+  await fresh.locator('#pr-head .tab', { hasText: 'Files' }).click();
+  assert.deepEqual(await pie('.dir[data-dir="src/"]'), { label: '1 of 2 viewed', role: 'img', p: '0.5', full: false });
+  assert.deepEqual(await pie('.dir[data-dir="src/sub/"]'), { label: '1 of 1 viewed', role: 'img', p: '1', full: true });
+  assert.equal(await fresh.locator('#pr-body .count').count(), 0, 'no fraction left beside a fold');
+  await fresh.close();
+});
+
+// Completed is sorted by when each item was finished, so the one just ticked by
+// mistake is on top to be unticked -- whatever order the queue holds them in.
+// One the store has not stamped yet goes last. With the order not the user's to
+// set, the tab has no grip and no drag; Active keeps both.
+test('Completed lists the most recently finished first, and cannot be reordered', { skip }, async () => {
+  const fresh = await newPage();
+  const it = (text, over) => ({ text, done: true, inPr: false, pr: null, issue: null, deleted: false, ...over });
+  const queue = [
+    it('never stamped', { doneAt: null }),
+    it('finished first', { doneAt: 1000 }),
+    it('still to do', { done: false, doneAt: null }),
+    it('finished last', { doneAt: 3000 }),
+  ];
+  // Both: the pane loads from /api/queue and every status poll replaces it.
+  await fresh.route('**/api/queue', (r) => r.fulfill({ json: queue }));
+  await fresh.route('**/api/status', (r) => r.fulfill({ json: { ...status, queue } }));
+  await fresh.reload();
+  await fresh.waitForSelector('#queue-body .item');
+  assert.equal(await fresh.locator('#queue-body .item .grip').count(), 1, 'Active reorders');
+  await fresh.locator('#queue-body .tab', { hasText: 'Completed' }).click();
+  assert.deepEqual(await fresh.locator('#queue-body .item .text').allTextContents(),
+    ['finished last', 'finished first', 'never stamped']);
+  assert.equal(await fresh.locator('#queue-body .item .grip').count(), 0, 'no grip on Completed');
+  assert.equal(await fresh.locator('#queue-body .item[draggable="true"]').count(), 0, 'and no drag');
   await fresh.close();
 });

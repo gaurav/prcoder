@@ -89,11 +89,10 @@ the next `prcoder` in that repo opens with. They live in the browser's
 `localStorage`, which is kept per origin -- and the origin includes the port,
 which is `.prcoder/port.json`'s. So each repo and each worktree has a layout of
 its own, and so does each browser or profile. The terminal folds to its header
-line with the ▼ before its title, the ▁ at the header's other end (there only
-while a diff is open, since that is what takes the room), or a double-click on
-the header, and the diff (or the queue, with no diff open) takes
-the room; the ▶ or another double-click unfolds it. None of the three touches
-the session, which keeps running folded.
+line with a click anywhere on that line -- the ▼ before its title says so, and is
+the keyboard's way in -- and the diff (or the queue, with no diff open) takes
+the room; another click unfolds it. Folding never touches the session, which
+keeps running folded.
 Whether the terminal is folded, whether the outline is shown, and which way the
 queue adds are stored the same way. A repo whose port changes
 (`port.json` deleted, its port busy at startup, or `PRCODER_PORT` set) opens
@@ -134,7 +133,9 @@ the top of the repository are its first rows, and below them the rest are folded
 by the directory they are in, a directory ahead of what is inside it and
 siblings alphabetical. A row inside a fold says only the name the directory
 above it does not -- so a path is read once per directory rather than once per
-file -- and both levels fold and remember what you closed. The checkbox on each
+file -- and both levels fold and remember what you closed. Each fold's pie
+fills green as its files are viewed (hover it for the figure), and a
+description section's fills as its boxes are ticked. The checkbox on each
 file is GitHub's own "viewed" checkbox: tick it here and it's ticked on
 github.com. Clicking a file opens its diff in the **Diff** pane;
 cmd/ctrl-clicking opens GitHub's diff viewer at that file instead.
@@ -184,9 +185,11 @@ is where it lives from then on.
 **Local** is the working list, and it drains as you move and finish things — so
 handing an item to Claude takes it off the list, and Local stays what you have
 not handed over yet. A session you finished tidily ends with it empty.
-**Completed** is what you ticked off and what you sent, with a delete-all for
-clearing it out; unticking one there puts it back on Local, which is the way
-back if Claude did not do it, and **Deleted** holds tombstones
+**Completed** is what you ticked off and what you sent, most recently finished
+first and with a delete-all for clearing it out; unticking one there puts it
+back on Local, which is the way back if Claude did not do it -- or if the tick
+was a slip, which is why the latest is on top. Only Local is yours to reorder.
+**Deleted** holds tombstones
 until you empty it — nothing you typed disappears without somewhere to get it
 back. Every item is on exactly one of those, and Deleted hides when it holds
 nothing.
