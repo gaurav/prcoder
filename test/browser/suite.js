@@ -210,6 +210,9 @@ test('checkboxes render with their state, and a tick posts through', { skip }, a
   await boxes.first().click();
   await page.waitForFunction(() => document.querySelectorAll('.task.done').length === 2);
   assert.deepEqual(posted, [{ index: 0, done: true, text: 'first task' }]);
+  // The count moves with the box, from the body the route answered, rather
+  // than a poll up to a minute later.
+  assert.ok((await page.locator('#pr-head .tab').allTextContents()).includes('Detail (2/3)'));
 });
 
 test('the issues the description mentions are listed below it, titled', { skip }, async () => {
@@ -219,9 +222,12 @@ test('the issues the description mentions are listed below it, titled', { skip }
   assert.equal(await row.getAttribute('href'), `${REPO}/issues/7`);
 });
 
+// Its own page: the shared one has had a box ticked above.
 test('the tab carries the task count', { skip }, async () => {
-  const tabs = await page.locator('#pr-head .tab').allTextContents();
+  const fresh = await newPage();
+  const tabs = await fresh.locator('#pr-head .tab').allTextContents();
   assert.ok(tabs.includes('Detail (1/3)'), JSON.stringify(tabs));
+  await fresh.close();
 });
 
 // The repository is the one link in the head with no bound on its width, which
@@ -690,5 +696,53 @@ test('a folded terminal says it is working while a turn runs, and not after', { 
     await fresh.$eval('#term > header', (el) => el.getBoundingClientRect().height));
   await fresh.waitForFunction(() => document.getElementById('term-busy').hidden, null, { timeout: 5000 });
   assert.equal(await busy(), false, 'gone when the turn ends');
+  await fresh.close();
+});
+
+// A viewed tick changes every place that shows it: the row, its group's pie,
+// the Files tab's count, and the diff pane's own box when that file is open --
+// not the one box that was clicked, with the rest a poll behind.
+test('marking a file viewed moves the tab count and the open diff\'s box with it', { skip }, async () => {
+  const fresh = await newPage();
+  await fresh.route('**/api/pr/viewed', (r) => r.fulfill({ json: { ok: true } }));
+  await fresh.locator('#pr-head .tab', { hasText: 'Files' }).click();
+  await fresh.locator('.file[data-path="evil.js"] .path').click();
+  await fresh.waitForSelector('#diff-body .dl');
+  await fresh.locator('.file[data-path="evil.js"] input[type=checkbox]').check();
+  await fresh.waitForFunction(() => [...document.querySelectorAll('#pr-head .tab')]
+    .some((t) => t.textContent === 'Files (1/2)'));
+  assert.equal(await fresh.locator('#diff-viewed').isChecked(), true);
+  assert.equal(await fresh.locator('.file.viewed').count(), 1);
+  // And the other way: the diff pane's box moves the row.
+  await fresh.locator('#diff-viewed').uncheck();
+  await fresh.waitForFunction(() => document.querySelectorAll('.file.viewed').length === 0);
+  assert.ok((await fresh.locator('#pr-head .tab').allTextContents()).includes('Files (0/2)'));
+  await fresh.close();
+});
+
+// A push while a file is open re-opens it, so it shows the pushed version. The
+// path through paint() that does it runs only when the head moves, which no
+// other test here makes happen -- and it once called a helper a local variable
+// had shadowed, which would have thrown on every such poll.
+test('a poll that moves the head re-opens the open file without an error', { skip }, async () => {
+  const fresh = await newPage();
+  const errors = [];
+  fresh.on('pageerror', (e) => errors.push(e.message));
+  let diffs = 0;
+  await fresh.route('**/api/diff', (r) => {
+    diffs++;
+    return r.fulfill({ json: { path: 'evil.js', patch: '@@ -0,0 +1 @@\n+x' } });
+  });
+  await fresh.locator('#pr-head .tab', { hasText: 'Files' }).click();
+  await fresh.locator('.file[data-path="evil.js"] .path').click();
+  await fresh.waitForSelector('#diff-body .dl');
+  await fresh.route('**/api/status', (r) => r.fulfill({ json: {
+    ...status, pr: { ...pr, headRefOid: 'c'.repeat(40) },
+  } }));
+  await fresh.click('#pr-refresh');
+  await fresh.waitForFunction(() => document.getElementById('diff-path').textContent === 'evil.js');
+  await fresh.waitForTimeout(300);
+  assert.deepEqual(errors, []);
+  assert.equal(diffs, 2, 'the open file was fetched again');
   await fresh.close();
 });

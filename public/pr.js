@@ -85,18 +85,17 @@ export const tabBtn = (label, on, onClick) => btn(label, onClick, { className: o
 
 /**
  * A checkbox that writes through to GitHub. The browser has already flipped it
- * by the time we hear about it, so a failure puts it back rather than
- * repainting -- the poll would take up to a minute to disagree. `settle` runs
- * either way, against whatever the box ended up saying.
+ * by the time we hear about it, so a failure puts it back. A success is `run`'s
+ * to show: app.js updates the status the panes are drawn from and repaints, so
+ * every count, pie and row that shows the same fact changes with it.
  */
-export function writeThrough(box, run, settle = () => {}) {
+export function writeThrough(box, run) {
   // Assigned, not added: the diff pane's box is static markup and openDiff
   // rewires it on every file, where a listener per open would stack up.
   box.onchange = async () => {
     box.disabled = true;
     try { await run(box.checked); } catch { box.checked = !box.checked; }
     box.disabled = false;
-    settle(box.checked);
   };
 }
 
@@ -761,7 +760,7 @@ function fold({ className, dataset, title, progress, open, onToggle }, children)
 
 function fileRow(f, { onViewed, onOpen, selected }, dir = '') {
   const box = h('input', { type: 'checkbox', checked: f.viewed, title: 'mark viewed on GitHub' });
-  writeThrough(box, (v) => onViewed(f.path, v), (v) => row.classList.toggle('viewed', v));
+  writeThrough(box, (v) => onViewed(f.path, v));
   // The path goes inside a <bdi>. Its container is `direction: rtl` so that a
   // long path is cut at the *head* and the filename survives -- but that also
   // makes a leading `.` a neutral character at the start of an RTL run, which
@@ -1043,8 +1042,7 @@ function taskRow({ done, text, index }, onTask) {
   const box = h('input', { type: 'checkbox', checked: done, title: 'tick this on GitHub' });
   const row = h('label', { className: `task${done ? ' done' : ''}` },
     box, h('span', { innerHTML: inline(text) }));
-  writeThrough(box, (v) => onTask({ index, done: v, text }),
-    (v) => row.classList.toggle('done', v));
+  writeThrough(box, (v) => onTask({ index, done: v, text }));
   return row;
 }
 

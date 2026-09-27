@@ -189,23 +189,42 @@ const NOTES = {
 
 /**
  * A checkbox in the description, ticked through to GitHub -- the one edit to a
- * description prcoder makes, on your click. Rethrown so the box snaps back, and
- * the status reload is for the one error that matters: the description moved
- * under us, and the pane is now showing a stale copy of it.
+ * description prcoder makes, on your click. The route answers with the body
+ * GitHub now has, which becomes the pane's, so the Detail count and the
+ * section's pie move with the box rather than a poll later. Rethrown so the box
+ * snaps back, and the status reload is for the one error that matters: the
+ * description moved under us, and the pane is now showing a stale copy of it.
  */
 async function toggleTask(task) {
+  let body;
   try {
-    await api('/api/pr/task', task);
+    ({ body } = await api('/api/pr/task', task));
   } catch (e) {
     toast(e.message, true);
     loadStatus();
     throw e;
   }
+  if (last?.pr) {
+    last.pr.body = body;
+    paint(last);
+  }
 }
 
+/** A file marked viewed or not, on GitHub and then in every place that shows it. */
+async function markViewed(path, viewed) {
+  await setViewed(path, viewed);
+  const f = last?.pr?.files.find((x) => x.path === path);
+  if (!f) return;
+  f.viewed = viewed;
+  paint(last);
+  // The diff pane's box is static markup, outside anything paint() draws.
+  if (selectedPath() === path) document.getElementById('diff-viewed').checked = viewed;
+}
+
+const openFile = (f) => openDiff(f, markViewed);
 const fileHandlers = {
-  onViewed: setViewed,
-  onOpen: openDiff,
+  onViewed: markViewed,
+  onOpen: openFile,
   onTask: toggleTask,
 };
 
@@ -237,7 +256,7 @@ function paint(status) {
   if (!open) return;
   const f = status.pr?.files.find((x) => x.path === open);
   if (!f) closeDiff();
-  else if (moved) openDiff(f);
+  else if (moved) openFile(f);
 }
 
 /**

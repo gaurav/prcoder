@@ -195,7 +195,8 @@ function setTitle(kind) {
   title.className = kind ?? '';
 }
 
-export async function openDiff(f) {
+/** `onViewed` is what the viewed box calls: app.js's, which repaints the file rows too. */
+export async function openDiff(f, onViewed = setViewed) {
   openPath = f.path;
   // A <bdi>, for the reason spelled out at fileRow in pr.js: this element is
   // `direction: rtl` so a long path is cut at the head, and that alone would
@@ -219,16 +220,11 @@ export async function openDiff(f) {
   document.querySelector('main').classList.add('diff-open');
   markSelected(f.path);
 
-  // Same GraphQL round-trip the row checkboxes use; on success mirror the
-  // row so the two boxes never disagree without a repaint.
+  // The same write the row checkboxes make, through the same handler, so the
+  // row, its group's pie and the tab count follow it.
   const box = el('diff-viewed');
   box.checked = f.viewed;
-  writeThrough(box, (v) => setViewed(f.path, v), (v) => {
-    const row = document.querySelector(`.file[data-path="${CSS.escape(f.path)}"]`);
-    row?.classList.toggle('viewed', v);
-    const rowBox = row?.querySelector('input[type=checkbox]');
-    if (rowBox) rowBox.checked = v;
-  });
+  writeThrough(box, (v) => onViewed(f.path, v));
 
   el('diff-close').onclick = closeDiff;
   el('diff').classList.toggle('outline-off', outlineOff());
