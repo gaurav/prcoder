@@ -445,7 +445,7 @@ console.log('groups open on arrival:', await page.locator('.group[open]').count(
 console.log('dirs:    ', (await page.locator('.dir > summary h3').allInnerTexts()).join(' '),
   ' (want each ending in /, a parent before its children, alphabetical)');
 console.log('rows:    ', (await page.locator('.dir').first().locator('.file .path').allInnerTexts()).join(' '),
-  ' (want names without the directory above them)');
+  ' (want names without the directory above them, most lines changed first)');
 // Files at the top of the repository are not a fold: they are the group's first
 // rows, above every directory in it. Counted per group rather than over the
 // pane, because "before the first .dir" is only a claim within one group.

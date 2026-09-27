@@ -638,7 +638,8 @@ function fileGroup(label, files, handlers) {
 
 /**
  * Two paths, ordered the way a tree is: a directory ahead of what is inside it,
- * siblings alphabetical.
+ * siblings alphabetical. The folds are ordered by this; the files inside one are
+ * ordered by bySize, and fall back to this only on a tie.
  *
  * Segment by segment, and it has to be -- comparing the whole strings is the
  * obvious version and it splits a directory from its children. `alpha-x/` and
@@ -660,6 +661,14 @@ export const byPath = (a, b) => {
 };
 
 /**
+ * Two files, the one with more changed lines first -- additions plus deletions,
+ * so a file rewritten line for line counts both halves -- and by path on a tie.
+ * The largest change in a directory is usually the one to read first.
+ */
+export const bySize = (x, y) =>
+  ((y.additions ?? 0) + (y.deletions ?? 0)) - ((x.additions ?? 0) + (x.deletions ?? 0)) || byPath(x.path, y.path);
+
+/**
  * The files of one group, split into the ones at the top of the repository and
  * one entry per directory below it.
  *
@@ -668,7 +677,8 @@ export const byPath = (a, b) => {
  * whatever order their *first* file happened to fall in, which is not an order
  * over the directories at all: a group here drew `.claude/skills/run-prcoder/`,
  * `.github/workflows/`, the root, `docs/`, with the repo's own README buried in
- * the middle. The Map is an accumulator now; `byPath` decides.
+ * the middle. The Map is an accumulator now: `byPath` orders the directories,
+ * which keeps a parent ahead of its children, and `bySize` the files in each.
  *
  * Root files come back separately because they are not a fold. They have no
  * directory to be named after and nothing to strip off their rows, so they draw
@@ -683,9 +693,8 @@ export const byDir = (files) => {
     if (!dirs.has(dir)) dirs.set(dir, []);
     dirs.get(dir).push(f);
   }
-  const byFilePath = (x, y) => byPath(x.path, y.path);
-  for (const list of dirs.values()) list.sort(byFilePath);
-  return { root: root.sort(byFilePath), dirs: [...dirs].sort(([a], [b]) => byPath(a, b)) };
+  for (const list of dirs.values()) list.sort(bySize);
+  return { root: root.sort(bySize), dirs: [...dirs].sort(([a], [b]) => byPath(a, b)) };
 };
 
 /**
