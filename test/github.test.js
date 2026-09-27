@@ -37,6 +37,17 @@ test('a check run and a status context flatten to the same row', () => {
   ]);
 });
 
+// A status's URL is the poster's to choose, and the pane puts it in an href in
+// the page holding /pty: anything but http(s) is dropped, and the row is plain text.
+test('a check URL that is not http(s) is dropped', () => {
+  assert.deepEqual(rollup([
+    { context: 'a', state: 'SUCCESS', targetUrl: 'javascript:alert(1)' },
+    { context: 'b', state: 'SUCCESS', targetUrl: 'data:text/html,<script>x</script>' },
+    { context: 'c', state: 'SUCCESS', targetUrl: 'HTTPS://example.com' },
+    { context: 'd', state: 'SUCCESS', targetUrl: 'http://example.com/ok' },
+  ]).list.map((c) => c.url), [null, null, null, 'http://example.com/ok']);
+});
+
 const pr = (body, closing = []) => ({
   url: 'https://github.com/o/r/pull/7', body, closingIssuesReferences: closing,
 });

@@ -270,7 +270,14 @@ const state = (c) => {
  * name and somewhere to go and read it -- so both are flattened here and the
  * pane never sees which it got. The workflow name is kept in front of the job
  * name because `test` on its own says nothing when three workflows all have one.
+ *
+ * A StatusContext's `targetUrl` is whatever the integration that posted it
+ * said, on any repo opened with `prcoder <pr-url>`, so it is held to the rule
+ * target() in public/pr.js holds description links to: http(s) or nothing. A
+ * `javascript:` URL would otherwise be a live href in the page holding /pty.
  */
+const web = (url) => (/^https?:\/\//.test(url ?? '') ? url : null);
+
 export function rollup(checks) {
   const counts = { passed: 0, failed: 0, pending: 0 };
   const list = (checks ?? []).map((c) => {
@@ -279,7 +286,7 @@ export function rollup(checks) {
     return {
       name: [c.workflowName, c.name ?? c.context].filter(Boolean).join(' / '),
       state: s,
-      url: c.detailsUrl ?? c.targetUrl ?? null,
+      url: web(c.detailsUrl ?? c.targetUrl),
     };
   });
   return { ...counts, list };
