@@ -15,7 +15,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { bucket, groupFiles, diffAnchor, fileUrl, fileViews } from '../files.js';
+import { bucket, diffAnchor, fileUrl, fileViews } from '../files.js';
 
 test('tests are recognised across language conventions', () => {
   for (const p of [
@@ -39,14 +39,6 @@ test('everything else is code', () => {
 test('a path containing "test" as a word fragment is not a test', () => {
   assert.equal(bucket('src/latest.js'), 'code');
   assert.equal(bucket('src/contest/view.js'), 'code');
-});
-
-test('groupFiles keeps every file exactly once', () => {
-  const files = ['a.test.js', 'b.js', 'c.md'].map((path) => ({ path }));
-  const g = groupFiles(files);
-  assert.deepEqual(g.tests.map((f) => f.path), ['a.test.js']);
-  assert.deepEqual(g.code.map((f) => f.path), ['b.js']);
-  assert.deepEqual(g.docs.map((f) => f.path), ['c.md']);
 });
 
 // Verified against https://github.com/cli/cli/pull/9000/files on 2026-08-20.

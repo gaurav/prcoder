@@ -14,7 +14,7 @@ import { spawn as ptySpawn } from 'node-pty';
 import { WebSocketServer } from 'ws';
 import { loadPr, prHeads, prBody, listPrs, setViewed, setBody, createIssue, fetchPatches, runCount } from './github.js';
 import { snapshot, currentBranch, repoInfo, prScope, compareUrl, originOwner, checkoutPr, pushBranch, remoteBranchHead, trackingHead, localPatch } from './git.js';
-import { groupFiles, fileUrl, fileViews } from './files.js';
+import { bucket, fileUrl, fileViews } from './files.js';
 import { toggleTask } from './queue.js';
 import { readStore, writeStore, readPort, writePort, replaceItems } from './store.js';
 import * as term from './term.js';
@@ -140,23 +140,22 @@ const requirePr = () => {
 async function refreshPr() {
   pr = await loadPr(repo, target);
   // Once per load rather than per poll: nothing it reads changes until the PR
-  // is reloaded, and a viewed tick flips `viewed` on these same objects.
-  if (pr) pr.groups = withUrls(pr);
+  // is reloaded.
+  if (pr) decorateFiles(pr);
 }
 
 /**
- * Files bucketed for the pane, each carrying the two ways to read it on GitHub:
- * this file's patch in the diff viewer, and the whole file at the PR's head.
+ * Each file told which of the pane's groups it is in, and the ways to read it
+ * on GitHub: its patch in the diff viewer, and the whole file at the PR's head.
+ * The group is a key on the file rather than a second list of the same files:
+ * that list went to every tab on every poll beside `files`, each file twice.
  */
-function withUrls(p) {
-  const groups = groupFiles(p.files);
-  for (const list of Object.values(groups)) {
-    for (const f of list) {
-      f.url = fileUrl(p.url, f.path);
-      Object.assign(f, fileViews(p.url, p.headRefOid, f.path));
-    }
+function decorateFiles(p) {
+  for (const f of p.files) {
+    f.group = bucket(f.path);
+    f.url = fileUrl(p.url, f.path);
+    Object.assign(f, fileViews(p.url, p.headRefOid, f.path));
   }
-  return groups;
 }
 
 /**

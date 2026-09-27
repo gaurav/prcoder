@@ -554,7 +554,7 @@ function renderPrTab(pr, parsed, handlers) {
   const focused = document.activeElement?.closest?.('.md-section')?.dataset.key;
 
   host.replaceChildren(...kids(tab === 'files' ? [
-    ...GROUPS.map(([key, label]) => fileGroup(label, pr.groups[key], handlers)),
+    ...GROUPS.map(([key, label]) => fileGroup(label, pr.files.filter((f) => f.group === key), handlers)),
     h('div', { className: 'meta' },
       ext(`${pr.url}#issuecomment`, `${pr.counts.comments} comments · ${pr.counts.reviews} reviews`)),
   ] : [

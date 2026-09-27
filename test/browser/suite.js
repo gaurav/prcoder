@@ -45,7 +45,7 @@ import { test as nodeTest, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { server } from '../../server.js';
-import { groupFiles } from '../../files.js';
+import { bucket } from '../../files.js';
 import { rollup } from '../../github.js';
 import { firefoxEnv } from '../../tools/driver.mjs';
 
@@ -106,7 +106,7 @@ const SOURCE = 'const s = "<script>alert(1)</script>"; // <img src=x onerror=ale
 const TSX = 'const B = ({ n }: { n: number }) => <div className="b">{n}</div>;';
 const added = { 'evil.js': SOURCE, 'app.tsx': TSX };
 const files = Object.keys(added).map((p, i) => ({
-  path: p, additions: added[p].split('\n').length, deletions: 0, viewed: false,
+  path: p, group: bucket(p), additions: added[p].split('\n').length, deletions: 0, viewed: false,
   url: `${REPO}/pull/12/files#diff-${i}`, blob: `${REPO}/blob/aaaa/${p}`,
   blame: `${REPO}/blame/aaaa/${p}`, history: `${REPO}/commits/aaaa/${p}`,
 }));
@@ -118,7 +118,6 @@ const pr = {
   reviewDecision: '', nodeId: 'PR_fixture',
   checks: rollup([]), counts: { comments: 0, reviews: 0 },
   issues: [{ number: 7, url: `${REPO}/issues/7`, closes: false, title: 'Per-route locking' }],
-  groups: groupFiles(files),
 };
 const status = {
   branch: 'topic', head: 'b'.repeat(40), detached: false, dirtyFiles: [], sync: 'synced', ahead: 0,
@@ -526,7 +525,7 @@ test('folds show progress as a pie named by its figure', { skip }, async () => {
     .map(([path, viewed]) => ({ ...files[0], path, viewed }));
   const all = [...files, ...extra];
   await fresh.route('**/api/status', (r) => r.fulfill({ json: {
-    ...status, pr: { ...pr, files: all, groups: groupFiles(all) },
+    ...status, pr: { ...pr, files: all },
   } }));
   await fresh.reload();
   await fresh.waitForSelector('#pr-head .pr-title');
