@@ -80,41 +80,7 @@ own HTML-comment markers. Nothing reads or rewrites that block any more: it is
 an ordinary checklist now, ticked like any other from the PR pane. Leave old
 blocks alone; hand-editing them is safe.
 
-## The Claude pane is not prcoder's to draw on
-
-`term.write()` in `public/app.js` puts bytes into xterm's buffer without them
-ever reaching the PTY, which makes it look like the way to tell the user
-something in the middle pane. It is not, for two reasons.
-
-Claude never sees it. The only path to the session is `{type:'input'}` ->
-`pty.write` (`server.js`), which is what `sendToClaude` uses. So a notice
-written this way that is *addressed* to Claude -- "re-read any open files" was
-one, until 2026-09-05 -- is read by nobody. prcoder has no way to put anything
-into Claude's context that is not a typed user turn; issue #21 is where the
-options are written down.
-
-And Claude Code owns that viewport. With `"tui": "fullscreen"` it is on the
-alternate screen, repainting frames over whatever is there; anything prcoder
-writes survives until the next one. The exception is `ws.onclose`, which writes
-`[claude exited]` precisely because the PTY is dead and nothing will repaint.
-
-Notices for the human go to `toast()`, which sits over the panes and is nothing
-to do with the terminal. Pass `sticky` for one that stays true until acted on
-rather than reporting something already finished -- it waits for a click instead
-of timing out.
-
-## Check the UI in Firefox, not only Chromium
-
-`tools/browser.mjs` ran Chromium only, and a Firefox-only bug survived every
-screenshot it ever took: in Firefox a mousedown inside a `draggable` element
-goes to the drag machinery rather than to the caret, so clicking into a
-`contentEditable` child lands at offset 0 instead of where you clicked. Chromium
-places the caret correctly with the same markup, so there was nothing to see.
-
-Still live: checked by hand on 2026-09-17 in a real Firefox on this machine,
-with `tools/firefox-runner/caret-repro.html`. The plain draggable row put the
-caret at 0 and the row with a grip did not, so the grip stays and everything
-below about it still describes the browser you have.
+## Driving Firefox
 
 prcoder is used in Firefox, so `tools/browser.mjs` now defaults to it and falls
 back to Chromium only when it is not installed; `PRCODER_BROWSER=chromium|firefox`
@@ -146,12 +112,6 @@ Chromium stay until then, in case the workaround stops working;
 `tools/firefox-runner/` is the whole story, and `probe.mjs` there is the
 re-check. The Firefox pass #61 owed was run on 2026-09-26, the exit bar on #75's branch
 included, and #61 is closed; docs/Verifying.md has what it covered.
-
-Three fixes for that bug do not work, so they are not worth retrying:
-`draggable="false"` on the child, `-moz-user-select` on the child, and leaving
-it to the browser. All three leave the caret at 0. The row has to stop being
-draggable for as long as the pointer is on its text, which is why the queue
-rows have a grip.
 
 ## Running `tools/browser.mjs`
 
@@ -210,26 +170,6 @@ the constructor -- `test/browser/suite.js` runs the whole page that way.
 Same shape in reverse: a `MutationObserver` in `addInitScript` has no
 `document.head` to observe yet, and the throw takes the rest of the init script
 with it. Install observers after `goto`.
-
-## Three files under `public/` are the server's as well
-
-`server.js` imports `syncPhrase` from `public/pr.js` for the status block, and
-`grammars` from `public/diff.js` to build the Prism half of the vendor map -- so
-which grammars exist is stated once, by the page that asks for them.
-`public/tasks.js` is the description's grammar -- what a description shows
-(`withoutHtml`), its checklist lines, its `#N` mentions, and the URL helpers --
-and `queue.js`, `github.js`, `git.js` and `files.js` all import it, so the
-server and the pane read a description by the same rule rather than two that
-drift apart.
-
-All three modules therefore have to load in Node, and what keeps them loading is:
-nothing that touches the DOM at module scope. A `document.querySelector` beside
-the imports is ordinary in a browser file and stops the *server* from starting,
-with a stack trace naming a file under `public/` and nothing about why the
-server was reading it. Inside a function is where it goes -- `el()` in `diff.js`
-is the shape. A syntax error in any of them has that same reach, which is
-what `node --check public/*.js` is for; `test/api.test.js` imports all three by
-importing the server.
 
 ## Verifying against GitHub
 

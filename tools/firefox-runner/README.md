@@ -45,7 +45,7 @@ The point of the second row is that prcoder's fix -- the grip, which switches
 `draggable` off while the pointer is over the text -- hides the bug completely.
 So the app feeling fine in Firefox is not evidence the browser was fixed, and
 the plain row is the only one that answers the question. If both rows put the
-caret where you clicked, the bug is gone, and CLAUDE.md, docs/Verifying.md and
+caret where you clicked, the bug is gone, and public/CLAUDE.md, docs/Verifying.md and
 #61 all describe something that no longer exists.
 
 Run on 2026-09-17: the plain row put the caret at 0, the grip row put it where
@@ -154,5 +154,5 @@ that, the no-env half of `probe.mjs` confirms the workaround is dead code.
 place; docs/Verifying.md has what it covered. The Claude pane's exit bar, on
 #75's branch, passed too, and #61 is closed. The other half of that issue -- whether the caret bug that made Firefox
 mandatory is still live -- is answered above and needs no driver.
-[CLAUDE.md](../../CLAUDE.md) has that bug and the three fixes to it that do not
-work.
+[public/CLAUDE.md](../../public/CLAUDE.md) has that bug, and the comment on the
+`pointerdown` handler in `public/queue.js` has the fixes to it that do not work.

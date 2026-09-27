@@ -19,6 +19,10 @@ term.open(document.getElementById('term-host'));
 
 const PTY_SEEN = 'prcoder:pty';
 const ws = new WebSocket(`ws://${location.host}/pty`);
+// `WebSocket.OPEN` is read off the global constructor, so a Playwright init
+// script that wraps `window.WebSocket` without copying its four state statics
+// makes it undefined. Every send then returns false, and the page silently
+// stops talking to the PTY, with no error and no closed socket.
 const send = (msg) => {
   if (ws.readyState !== WebSocket.OPEN) return false;
   ws.send(JSON.stringify(msg));

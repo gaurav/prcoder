@@ -45,8 +45,9 @@ alone, and so are loose PNGs directly under `data/shots`. `tools/shots.mjs` is t
 `test/shots.test.js` is there because it is the one piece of driver code that deletes things.
 
 Firefox by default, because a Firefox-only bug — a click into a draggable row's text
-putting the caret at offset 0 — survived every Chromium screenshot; see [CLAUDE.md](../CLAUDE.md)
-for the rest, and for the three fixes to it that do **not** work.
+putting the caret at offset 0 — survived every Chromium screenshot; see
+[public/CLAUDE.md](../public/CLAUDE.md) for the rest, and the comment on the `pointerdown` handler in
+`public/queue.js` for the fixes to it that do **not** work.
 `PRCODER_BROWSER=chromium` forces the other; running both is worth the second minute.
 Firefox did not start on this machine from 2026-09-16 to 2026-09-26: macOS 27 denies a Firefox
 launched from a terminal its own app-data directory. The driver now points `MOZ_APP_DATA` and
@@ -332,7 +333,7 @@ one press with no prompt at all, and no `claude` left running afterwards.
 
 Narrower than it looks, and worth knowing before trusting it. The assertion is `caret > 0` — that a
 click into a queue item's text did not land at position 0, which is what the Firefox drag bug does
-([CLAUDE.md](../CLAUDE.md)). That is all it proves.
+([public/CLAUDE.md](../public/CLAUDE.md)). That is all it proves.
 
 The offset it prints is not a constant and is not evidence. `.item .text` is `flex: 1`, so its box
 runs to the end of the row and the middle of the box is past the end of the sentence — the click
