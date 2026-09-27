@@ -40,34 +40,20 @@ pane -- is picked up on its own. Nothing is remembered between polls; every fact
 [docs/Panes.md](docs/Panes.md) has each pane in detail: layout, ordering, grouping, and what
 every control does.
 
-## Arguments
+## Arguments and settings
 
-The first argument, if it isn't a flag, is prcoder's: the PR to open. Everything
-from the first flag onward is handed to `claude` untouched, so
-`prcoder 123 --effort high --model opus` opens PR 123 with that session. There is
-no list of Claude's flags here to fall out of date, and nothing to arbitrate when
-Claude gains a flag prcoder also wants.
+The first argument, if it isn't a flag, is prcoder's: the PR to open. Everything from the first
+flag onward is handed to `claude` untouched, so `prcoder 123 --effort high --model opus` opens
+PR 123 with that session. prcoder has no flags of its own, so its settings are environment
+variables:
 
-prcoder's own settings are environment variables — `PRCODER_PORT`, `PRCODER_NO_OPEN`,
-`PRCODER_VERBOSE`, `CLAUDE_BIN` — which cannot collide with a flag at all.
-
-The first run in a repo picks a port -- seeded from a hash of the path, and
-stepped along if that one is busy -- and records it in `.prcoder/port.json`.
-Every run after that reads the file, so a repo gets the same URL forever: one
-you can bookmark, add to the Dock or point an IDE pane at (see *Finding it
-again*), and one that survives renaming the directory. Different repos, and
-different worktrees, get different ports, so several sessions run at once. A
-busy port falls back to a free one with a note on stderr.
-
-Ports come from 10240-14335 because browsers refuse a list of well-known ones
-outright -- Firefox answers *"This address is restricted"*, with nothing on
-screen to connect it to prcoder. The list is the
-[WHATWG fetch standard's](https://fetch.spec.whatwg.org/#port-blocking) and
-10080 is its highest entry, so nothing derived here can land on one. Edit
-`port.json` to pin a port permanently (avoid that list), or set `PRCODER_PORT`
-to pin one for a single run; `PRCODER_NO_OPEN=1` to be left with just the URL
-on stdout, or `PRCODER_OPEN` to a command of your own that gets the URL
-appended.
+| Variable | What it does |
+| --- | --- |
+| `PRCODER_PORT` | Use this port for one run, instead of the repo's own ([docs/Ports.md](docs/Ports.md)). |
+| `PRCODER_NO_OPEN` | Don't open a browser; just print the URL. |
+| `PRCODER_OPEN` | Open the URL with this command instead of the platform's opener; the URL is appended. |
+| `PRCODER_VERBOSE` | Start the log at `1` (verbose) or `2` (debug) rather than quiet. |
+| `CLAUDE_BIN` | Run this instead of `claude`. |
 
 ## Scratch space
 
@@ -150,47 +136,6 @@ one. On macOS 27 the driver gives Firefox an app-data directory of its own,
 because the system's protection of the real one keeps a Firefox launched from a
 terminal from starting at all (`MOZ_APP_DATA`, until #80); [tools/firefox-runner](tools/firefox-runner/README.md)
 is what is known about it.
-
-## Finding it again
-
-One prcoder per repo, each a browser tab, soon lost among the pull requests and
-diffs you opened while working. Cheapest first:
-
-**In the tabs.** The favicon is a green *PR* square -- blue while that tab's
-Claude is working, so a turn you walked away from says whether it is still
-going -- and every title ends in `· prcoder`, so in Firefox typing `% prcoder`
-in the address bar lists every instance and nothing from github.com. Amber is
-free on purpose, held for a third state prcoder cannot see yet: Claude stopped
-to ask you something.
-
-**A window per repo.** `PRCODER_OPEN` replaces the platform opener with your
-own command, URL appended. Firefox hands the arguments to the running copy, so
-
-```sh
-export PRCODER_OPEN='/Applications/Firefox.app/Contents/MacOS/firefox -new-window'
-```
-
-gives each prcoder its own window, listed by title in the Window menu and
-Mission Control.
-
-**A Dock icon per repo.** This works because the port is fixed: a repo records
-its port in `.prcoder/port.json` on the first run and listens on it every run
-after (`prcoder` prints it). In Safari, open that URL and choose *File → Add to Dock*. The app
-it makes keeps the page title as its window title, so it reads `owner/repo#N ·
-…` in Cmd-Tab. From then on start prcoder with `PRCODER_NO_OPEN=1` and click
-the icon. The one time the port moves is when a second prcoder is already
-running in the same repo; that one says so on stderr and takes a free port.
-
-**Inside IntelliJ.** A stable URL is all an embedded browser needs. There is no
-built-in tool window for one, but a JCEF browser plugin such as
-[intellij-webbrowser](https://github.com/dervism/intellij-webbrowser) will show
-it in a pane. Untested; the terminal's key handling inside JCEF is where to
-expect trouble.
-
-There is no single instance with a repo switcher. The server is one repo per
-process all the way down, and the Claude session dies with its tab, so a
-switcher would mean keeping sessions alive out of view -- the multi-session
-management listed below, deliberately not built yet.
 
 ## Not here
 
