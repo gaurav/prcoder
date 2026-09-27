@@ -26,7 +26,7 @@ the line has changed under it. Nothing else is written into a description, by th
   of reach for good ([#48](https://github.com/gaurav/prcoder/issues/48)). Its tabs are states of
   that list — Active, Completed, Deleted — and nothing else.
 - **No other list is read into it, and it is written nowhere else.** An earlier prcoder mirrored
-  items two ways into a `<!-- prcoder:todo -->` block in the PR description, with two guards and a
+  items two ways into a block of the PR description between HTML-comment markers, with two guards and a
   per-PR latch to stop the sync burying items, and imported FUTURE.md once. Both are gone. The
   mirror is parked in [#82](https://github.com/gaurav/prcoder/pull/82), a draft kept for reference,
   since it was the one thing that carried items between machines; an old description's block is an ordinary checklist now. FUTURE.md is not
