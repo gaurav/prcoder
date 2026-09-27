@@ -25,6 +25,18 @@ test('a label that is not one directory name is refused', () => {
   assert.equal(labelPath('/root', 'pr-69-tsx'), path.join('/root', 'pr-69-tsx'));
 });
 
+// A symlink is not a directory the driver made, whatever it points at. readdir
+// follows one, so a label linked to a directory of PNGs elsewhere passed as the
+// driver's own, and the run emptied that directory and wrote into it.
+test('a label that is a symlink is refused, and what it points at is left alone', async () => {
+  const root = await tmp();
+  const elsewhere = await tmp();
+  await png(elsewhere, 'precious.png');
+  await fs.symlink(elsewhere, path.join(root, 'linked'));
+  await assert.rejects(openShots(root, 'linked'), /not a screenshot/);
+  assert.deepEqual(await names(elsewhere), ['precious.png']);
+});
+
 // Replaced, not added to: a shot the driver has stopped taking would otherwise
 // sit beside the ones it still takes, with nothing to say it is two runs old.
 test('opening a label empties it, and leaves every other label alone', async () => {

@@ -1,6 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { rollup, linkedIssues, linksFrom, parsePrUrl, run, issueNumber, lf } from '../github.js';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { rollup, linkedIssues, linksFrom, parsePrUrl, run, issueNumber, lf, setViewed, listPrs, loadPr, prHeads } from '../github.js';
 import { taskLines } from '../public/tasks.js';
 
 test('check states collapse into passed, failed and pending', () => {
@@ -45,6 +48,14 @@ test('an issue both closed and mentioned is listed once, as closing', () => {
 test('#N attached to a word is not a linked issue, but a parenthesised one is', () => {
   assert.deepEqual(linkedIssues(pr('abc#5 and colour#5')), []);
   assert.deepEqual(linkedIssues(pr('see (#5) and #6')).map((i) => i.number), [5, 6]);
+});
+
+// Only where the pane would link it. A PR template's `<!-- e.g. Fixes #123 -->`
+// put #123 in the Mentions row, titled with whatever issue that was, under a
+// description that never showed it.
+test('#N in a comment, a fence or a code span is not a mention', () => {
+  const body = '<!-- e.g. Fixes #1 -->\n```\n#2\n```\nsee `#3` and #4';
+  assert.deepEqual(linkedIssues(pr(body)).map((i) => i.number), [4]);
 });
 
 test('an empty body links nothing', () => {
@@ -147,4 +158,64 @@ test('a CRLF description reads as the same checklist as an LF one', () => {
   assert.deepEqual(taskLines(crlf), [], 'the bug this guards against');
   assert.deepEqual(taskLines(lf(crlf)), [2, 3]);
   assert.equal(lf(null), '');
+});
+
+// What reaches gh, from a stub on PATH that writes each argument on its own line
+// and answers `[]`. gh's -F converts a value by its shape -- an all-digit owner
+// went to GitHub as an Int and was refused, and a path starting with @ is read
+// as a file -- so every string has to go as -f. And `gh pr list` stops at 30
+// unless given a limit, which silently dropped the rest from the switcher.
+const withGh = async (script, fn) => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'prcoder-gh-stub-'));
+  await fs.writeFile(path.join(dir, 'gh'), `#!/bin/sh\n${script(dir)}\n`, { mode: 0o755 });
+  const saved = process.env.PATH;
+  process.env.PATH = `${dir}${path.delimiter}${saved}`;
+  try {
+    return await fn(dir);
+  } finally {
+    process.env.PATH = saved;
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+};
+const ghArgs = (fn) => withGh((dir) => `printf '%s\\n' "$@" > "${dir}/args"\necho '[]'`, async (dir) => {
+  await fn();
+  return (await fs.readFile(path.join(dir, 'args'), 'utf8')).trimEnd().split('\n');
+});
+const unix = process.platform === 'win32' ? 'the gh stub is a sh script' : false;
+
+test('a file path goes to gh as a string, whatever it looks like', { skip: unix }, async () => {
+  for (const p of ['404', '@types/x.d.ts']) {
+    const args = await ghArgs(() => setViewed(os.tmpdir(), 'PR_node', p, true));
+    assert.equal(args[args.indexOf(`path=${p}`) - 1], '-f', p);
+    assert.equal(args[args.indexOf('id=PR_node') - 1], '-f');
+  }
+});
+
+test('the PR list asks for more than gh\'s default 30', { skip: unix }, async () => {
+  const args = await ghArgs(() => listPrs(os.tmpdir()));
+  assert.ok(Number(args[args.indexOf('--limit') + 1]) > 30, args.join(' '));
+});
+
+// Everything runs behind one serial lock, so a call that waits holds every
+// route. A timeout stops it, with a message that says so rather than Node's
+// bare `Command failed`; and neither gh nor git may stop to ask for anything.
+test('run() stops a call that outlives its timeout, and says it did', { skip: unix }, async () => {
+  await assert.rejects(run('sleep', ['5'], { timeout: 100 }), /sleep 5 took over 0.1s and was stopped/);
+});
+
+test('run() turns gh and git prompts off, whatever env it is given', { skip: unix }, async () => {
+  const out = await run('sh', ['-c', 'echo "$GIT_TERMINAL_PROMPT $GH_PROMPT_DISABLED"'],
+    { env: { PATH: process.env.PATH, GIT_TERMINAL_PROMPT: '1' } });
+  assert.equal(out.trim(), '0 1');
+});
+
+// gh's answer on a detached HEAD with no target, verbatim from gh 2.x on
+// 2026-09-26. It is "no PR here", not a failure: thrown, it 500'd every poll
+// mid-rebase, which is why each caller used to check for a branch first.
+test('a detached HEAD is no pull request, not an error', { skip: unix }, async () => {
+  const detached = () => `echo 'could not determine current branch: failed to run git: not on any branch' >&2\nexit 1`;
+  await withGh(detached, async () => {
+    assert.equal(await loadPr(os.tmpdir()), null);
+    assert.equal(await prHeads(os.tmpdir()), null);
+  });
 });

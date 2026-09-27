@@ -1,37 +1,80 @@
-// One checkbox flipped in a PR description: the only edit prcoder makes to one,
-// and only when you tick a box in the PR pane or on the queue's PR tab.
+// The queue's server side: read it, write it, and say what changed.
 //
-// The queue itself lives in .prcoder/queue.json (see store.js) and an item is
-// { text, done, doneAt, issue, deleted, deletedAt }. It is yours and it stays
-// local: nothing here reads a description into the queue or writes the queue
-// into a description. Filing an item as an issue is one-way, written there and
-// taken off the list (moveOut in server.js). `deleted` is a tombstone, so
-// nothing typed disappears without somewhere to get it back.
+// The queue is yours and lives only in `.prcoder/queue.json` (store.js). This
+// file's imports are the evidence: nothing here reaches GitHub or git, and
+// test/queue-local.test.js checks the routes that call it the same way, from
+// outside.
 
-import { TASK, taskLines, hideComments } from './public/tasks.js';
+import { readStore, writeStore, replaceItems } from './store.js';
+import * as term from './term.js';
+
+/** Item text, cut to something a status line can hold. */
+export const quote = (t) => `'${t.length > 48 ? `${t.slice(0, 47)}…` : t}'`;
 
 /**
- * Flip one checkbox in a PR description, so the boxes rendered in the PR pane
- * are the real ones. The line is found by its position among the body's
- * checklist lines -- counted by the same taskLines() the pane counts with --
- * and then checked against the text the client saw, so a body that moved on
- * fails loudly instead of ticking the line next door. Answers the new body.
+ * What changed in the queue, said out loud. Matched on text because that is the
+ * only identity an item has -- so an edit reads as a delete and an add, which
+ * is honest: nothing here can tell those apart either (see the ponytail note on
+ * writeQueue).
+ *
+ * Returns the lines rather than printing them, which is the only reason the
+ * transitions below can be checked without a terminal.
  */
-export function toggleTask(body, index, done, expected) {
-  const lines = (body ?? '').split('\n');
-  const at = taskLines(body ?? '')[index];
-  if (at === undefined) throw new Error('that checkbox is no longer in the description -- refresh');
-
-  // Read through the same comment blanking the pane rendered from: its text for
-  // `- [ ] fix <!-- note -->` is `fix`, and the raw line's never would be.
-  const visible = hideComments(body ?? '', ' ').split('\n')[at];
-  const text = TASK.exec(visible)[2].trim();
-  if (text !== (expected ?? '').trim()) {
-    throw new Error(`the description changed under that checkbox (now "${text}") -- refresh`);
+export function queueChanges(was, now) {
+  const before = new Map(was.map((i) => [i.text, i]));
+  const lines = [];
+  for (const i of now) {
+    const p = before.get(i.text);
+    if (!p) lines.push(`queued ${quote(i.text)}`);
+    else if (p.done !== i.done) lines.push(`${i.done ? 'ticked' : 'unticked'} ${quote(i.text)}`);
+    else if (p.deleted !== i.deleted) lines.push(`${i.deleted ? 'deleted' : 'restored'} ${quote(i.text)}`);
   }
-  // TASK anchors the box at the start of the line, so the first [ ] outside a
-  // comment is it -- found in the blanked copy, whose offsets are the raw line's.
-  const box = visible.search(/\[( |x|X)\]/);
-  lines[at] = `${lines[at].slice(0, box)}${done ? '[x]' : '[ ]'}${lines[at].slice(box + 3)}`;
-  return lines.join('\n');
+  for (const i of was) {
+    if (!now.some((n) => n.text === i.text)) lines.push(`dropped ${quote(i.text)}`);
+  }
+  return lines;
+}
+
+/**
+ * Every item, as stored, with the link to its issue derived. Moving an item out
+ * is a separate, one-way route (moveOut in server.js), not a flag this list
+ * keeps in step with anything.
+ */
+export const readQueue = async (repo, nameWithOwner) =>
+  decorate((await readStore(repo)).store.items, nameWithOwner);
+
+/**
+ * ponytail: last write wins. The store is re-read on every poll so an outside
+ * edit is picked up, but two tabs racing means the slower one loses what it
+ * never saw. Fixing that needs item identity — text is not it, since an edit is
+ * indistinguishable from a delete plus an add — so if a lost item is ever
+ * actually observed, give pick() a crypto.randomUUID() and union by id.
+ */
+export async function writeQueue(repo, items, nameWithOwner) {
+  // The shape is the contract, and it has changed twice: the route took a bare
+  // array, then `{items, branch}`, and now `{items}` again. A client that
+  // missed a change -- an old tab, a curl copied from somewhere -- used to send
+  // something this function then indexed into, and the TypeError said nothing
+  // about what to send instead. Checked here rather than at the route, because
+  // every write goes through this function.
+  if (!Array.isArray(items)) {
+    throw new Error('the queue must be sent as {items}');
+  }
+  const { store, stale } = await readStore(repo);
+  for (const line of queueChanges(store.items, items)) term.verbose(line);
+  await writeStore(repo, replaceItems(store, items), { stale });
+  return decorate(items, nameWithOwner);
+}
+
+/**
+ * The store keeps only the issue number; the link is derived. From
+ * nameWithOwner rather than the PR's URL, because that is the repo createIssue
+ * actually files into — with a pinned foreign PR the two differ — and because
+ * a queue that now works with no PR loaded would otherwise render dead links.
+ */
+function decorate(items, nameWithOwner) {
+  return items.map((i) => ({
+    ...i,
+    issueUrl: i.issue && nameWithOwner ? `https://github.com/${nameWithOwner}/issues/${i.issue}` : null,
+  }));
 }

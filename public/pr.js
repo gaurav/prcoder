@@ -1,4 +1,7 @@
-import { TASK, fences, hideComments, summary } from './tasks.js';
+import { TASK, fences, withoutHtml, mention, repoUrl, urlPath } from './tasks.js';
+
+// Re-exported for the tests, which read the pane's view of a body through here.
+export { withoutHtml };
 
 // Skips absent sections; DOM append() would render them as the text "null".
 const kids = (list) => list.flat().filter((k) => k != null);
@@ -67,35 +70,49 @@ export function toast(msg, bad = false, sticky = false) {
 }
 
 /**
- * A checkbox that writes through to GitHub. The browser has already flipped it
- * by the time we hear about it, so a failure puts it back rather than
- * repainting -- the poll would take up to a minute to disagree. `settle` runs
- * either way, against whatever the box ended up saying.
+ * localStorage, best effort. A browser can refuse the store outright -- Safari's
+ * private mode throws on write -- and a remembered preference must never take a
+ * pane down with it: a refused read is nothing stored, a refused write holds for
+ * this session only. Every stored preference goes through these two.
  */
-export function writeThrough(box, run, settle = () => {}) {
+export const pref = (key) => { try { return localStorage.getItem(key); } catch { return null; } };
+export const setPref = (key, value) => {
+  try { localStorage.setItem(key, value); } catch { /* this session only */ }
+};
+
+/** One of a pane's tabs; `on` is the one showing. */
+export const tabBtn = (label, on, onClick) => btn(label, onClick, { className: on ? 'tab on' : 'tab' });
+
+/**
+ * A checkbox that writes through to GitHub. The browser has already flipped it
+ * by the time we hear about it, so a failure puts it back. A success is `run`'s
+ * to show: app.js updates the status the panes are drawn from and repaints, so
+ * every count, pie and row that shows the same fact changes with it.
+ */
+export function writeThrough(box, run) {
   // Assigned, not added: the diff pane's box is static markup and openDiff
   // rewires it on every file, where a listener per open would stack up.
   box.onchange = async () => {
     box.disabled = true;
     try { await run(box.checked); } catch { box.checked = !box.checked; }
     box.disabled = false;
-    settle(box.checked);
   };
 }
 
-/** The PR pane header's sync light, which survives a poll. */
-function paintLight(id, state) {
-  const light = document.getElementById(id);
+/** The PR pane's sync light, in the part of the header that survives a poll. */
+function paintLight(state) {
+  const light = document.getElementById('pr-sync');
   light.hidden = !state;
   if (!state) return;
   light.className = state.className;
   light.textContent = state.text;
 }
 
+// The Files tab's top-level order: config and docs, then tests, then code.
 const GROUPS = [
+  ['docs', 'Config & docs'],
   ['tests', 'Tests'],
   ['code', 'Code'],
-  ['docs', 'Config & docs'],
 ];
 
 /**
@@ -173,7 +190,7 @@ export function renderHeader(status, prs, { onSwitch, onCommit }) {
   commit.onclick = () => onCommit(status.dirtyFiles);
   commit.textContent = `Commit ${status.dirtyFiles.length} file${status.dirtyFiles.length === 1 ? '' : 's'}…`;
 
-  paintLight('pr-sync', headerSync(status));
+  paintLight(headerSync(status));
 }
 
 // `ahead` is not in the table because it counts.
@@ -311,7 +328,7 @@ let links = null;
  * so it has to resolve them itself and may as well resolve them usefully.
  */
 const linkBase = (pr) => ({
-  repo: pr.url.replace(/\/pull\/\d+$/, ''),
+  repo: repoUrl(pr.url),
   ref: pr.isCrossRepository ? pr.baseRefName : pr.headRefName,
 });
 
@@ -449,19 +466,21 @@ export function renderPr(pr, handlers) {
     openSections.clear();
     autoOpen = true;
   }
-  renderPrHead(pr, handlers);
-  renderPrTab(pr, handlers);
+  // Parsed once for both: the Detail tab's count and the description itself.
+  const parsed = blocks(pr.body);
+  renderPrHead(pr, parsed, handlers);
+  renderPrTab(pr, parsed, handlers);
 }
 
-function renderPrHead(pr, handlers) {
+function renderPrHead(pr, parsed, handlers) {
   const switchTo = (name) => {
     tab = name;
-    renderPrHead(pr, handlers);
-    renderPrTab(pr, handlers);
+    renderPrHead(pr, parsed, handlers);
+    renderPrTab(pr, parsed, handlers);
   };
-  const tabBtn = (name, label) =>
-    btn(label, () => switchTo(name), { className: tab === name ? 'tab on' : 'tab' });
+  const paneTab = (name, label) => tabBtn(label, tab === name, () => switchTo(name));
   const ways = headLinks(pr);
+  const state = pr.isDraft ? 'draft' : pr.state.toLowerCase();
 
   // Each row stands alone -- no row's spacing depends on which one is above it
   // -- so the order is HEAD_ORDER and nothing else.
@@ -472,7 +491,7 @@ function renderPrHead(pr, handlers) {
     // measures the row by, so it is not dead CSS to clean up.
     links: linkRow(ways.links, 'meta pr-ways pr-links'),
     state: h('div', { className: 'meta pr-state' },
-      badge(pr.isDraft ? 'draft' : pr.state.toLowerCase(), pr.isDraft ? 'draft' : pr.state.toLowerCase()),
+      badge(state, state),
       h('span', {}, `${pr.headRefName} → ${pr.baseRefName}`),
       h('span', { className: 'add' }, `+${pr.additions}`),
       h('span', { className: 'del' }, `−${pr.deletions}`),
@@ -480,8 +499,8 @@ function renderPrHead(pr, handlers) {
     checks: checks(pr.checks),
     repo: repoRow(ways.repo, 'meta pr-repo'),
     tabs: h('div', { className: 'tabs' },
-      tabBtn('detail', tabLabel('Detail', taskCount(pr.body))),
-      tabBtn('files', tabLabel('Files', viewedCount(pr.files)))),
+      paneTab('detail', tabLabel('Detail', taskCount(parsed))),
+      paneTab('files', tabLabel('Files', viewedCount(pr.files)))),
   };
   document.getElementById('pr-head').replaceChildren(...kids(HEAD_ORDER.map((k) => rows[k])));
 }
@@ -509,15 +528,16 @@ export const tabLabel = (name, { done, total }) => {
   return done === total ? `${name} ✓` : `${name} (${done}/${total})`;
 };
 
-export const taskCount = (body) => {
-  const tasks = blocks(body).filter((b) => b.kind === 'task');
+/** Over blocks() rather than the body, so a caller that has parsed it once reuses that. */
+export const taskCount = (list) => {
+  const tasks = list.filter((b) => b.kind === 'task');
   return { done: tasks.filter((b) => b.done).length, total: tasks.length };
 };
 
 export const viewedCount = (files = []) =>
   ({ done: files.filter((f) => f.viewed).length, total: files.length });
 
-function renderPrTab(pr, handlers) {
+function renderPrTab(pr, parsed, handlers) {
   const host = document.getElementById('pr-body');
   // Recorded as it happens rather than read before the replace: a tab switch
   // sets `tab` to the tab being switched *to* before it re-renders, so reading
@@ -533,11 +553,11 @@ function renderPrTab(pr, handlers) {
   const focused = document.activeElement?.closest?.('.md-section')?.dataset.key;
 
   host.replaceChildren(...kids(tab === 'files' ? [
-    ...GROUPS.map(([key, label]) => fileGroup(label, pr.groups[key], handlers)),
+    ...GROUPS.map(([key, label]) => fileGroup(label, pr.files.filter((f) => f.group === key), handlers)),
     h('div', { className: 'meta' },
       ext(`${pr.url}#issuecomment`, `${pr.counts.comments} comments · ${pr.counts.reviews} reviews`)),
   ] : [
-    h('div', { className: 'body md' }, ...description(pr.body, handlers.onTask)),
+    h('div', { className: 'body md' }, ...description(parsed, handlers.onTask)),
     issueRow(pr.issues, true, 'Closes'),
     issueRow(pr.issues, false, 'Mentions'),
   ]));
@@ -609,8 +629,7 @@ function fileGroup(label, files, handlers) {
   const { root, dirs } = byDir(files);
   return fold({
     className: 'group', dataset: { group: label }, title: label, progress: { ...viewedCount(files), what: 'viewed' },
-    open: !closedGroups.has(label),
-    onToggle: (open) => { if (open) closedGroups.delete(label); else closedGroups.add(label); },
+    ...kept(closedGroups, label, 'closed'),
   }, [
     ...root.map((f) => fileRow(f, handlers)),
     ...dirs.map(([dir, list]) => dirGroup(label, dir, list, handlers)),
@@ -682,8 +701,7 @@ function dirGroup(group, dir, files, handlers) {
   const key = `${group}/${dir}`;
   return fold({
     className: 'dir', dataset: { dir }, title: dir, progress: { ...viewedCount(files), what: 'viewed' },
-    open: !closedGroups.has(key),
-    onToggle: (open) => { if (open) closedGroups.delete(key); else closedGroups.add(key); },
+    ...kept(closedGroups, key, 'closed'),
   }, files.map((f) => fileRow(f, handlers, dir)));
 }
 
@@ -722,6 +740,16 @@ function pie({ done, total, what }) {
  * Not a dot per item, which is exact but grows with the count: a 35-file group
  * would be a row of dots.
  */
+/**
+ * A fold's `open` and `onToggle`, remembered in `set` -- which holds the keys
+ * that are `holds`: the file groups record what was closed (they open by
+ * default), the description's sections what was opened (they do not).
+ */
+const kept = (set, key, holds) => ({
+  open: set.has(key) === (holds === 'open'),
+  onToggle: (open) => { if (open === (holds === 'open')) set.add(key); else set.delete(key); },
+});
+
 function fold({ className, dataset, title, progress, open, onToggle }, children) {
   const d = h('details', { className: `fold ${className}`, open, dataset },
     h('summary', {}, h('h3', {}, title), progress ? pie(progress) : null),
@@ -732,7 +760,7 @@ function fold({ className, dataset, title, progress, open, onToggle }, children)
 
 function fileRow(f, { onViewed, onOpen, selected }, dir = '') {
   const box = h('input', { type: 'checkbox', checked: f.viewed, title: 'mark viewed on GitHub' });
-  writeThrough(box, (v) => onViewed(f.path, v), (v) => row.classList.toggle('viewed', v));
+  writeThrough(box, (v) => onViewed(f.path, v));
   // The path goes inside a <bdi>. Its container is `direction: rtl` so that a
   // long path is cut at the *head* and the filename survives -- but that also
   // makes a leading `.` a neutral character at the start of an RTL run, which
@@ -742,7 +770,9 @@ function fileRow(f, { onViewed, onOpen, selected }, dir = '') {
   // which for any real path is a Latin letter, so it lays out left to right
   // inside a box that still overflows from the left. Checked in both engines
   // on 2026-09-09; `unicode-bidi: plaintext` on the link fixes the order too,
-  // but moves the cut to the tail, which is the thing the rtl was for.
+  // but moves the cut to the tail, which is the thing the rtl was for. An LRM
+  // prefix and an LRI…PDI wrap both work, and both put invisible characters
+  // into text people copy.
   // The name the fold above it does not already say. `title` stays the whole
   // path: the row is what you point at when you want to know where a file is,
   // and the directory heading may have scrolled off the top of a long group.
@@ -775,7 +805,7 @@ function fileRow(f, { onViewed, onOpen, selected }, dir = '') {
  * `index` counts every checklist line as it goes, because a tick is sent as a
  * *position* in that list and taskLines() in tasks.js recounts it the same way
  * on the server -- the two walks have to agree line for line (tasks.js says
- * what happens when they do not, and test/queue.test.js pins it).
+ * what happens when they do not, and test/tasks.test.js pins it).
  *
  * The numbering happens here, once, before anything downstream groups or hides
  * anything. So sectionize() may regroup these blocks and the pane may fold them
@@ -974,13 +1004,12 @@ export function sectionize(list) {
  * because they opened the next one is worse than either.
  */
 function sectionNode(s, onTask) {
-  const tasks = s.nodes.filter((b) => b.kind === 'task');
+  const count = taskCount(s.nodes);
   return fold({
     className: 'md-section', dataset: { key: s.key }, title: s.title,
     // So a fold never hides work without saying so.
-    progress: tasks.length ? { done: tasks.filter((b) => b.done).length, total: tasks.length, what: 'done' } : null,
-    open: openSections.has(s.key),
-    onToggle: (open) => { if (open) openSections.add(s.key); else openSections.delete(s.key); },
+    progress: count.total ? { ...count, what: 'done' } : null,
+    ...kept(openSections, s.key, 'open'),
   }, s.nodes.map((b) => blockNode(b, onTask)));
 }
 
@@ -991,8 +1020,8 @@ function sectionNode(s, onTask) {
  * description you finished reading yesterday reopening itself today is how the
  * pane becomes what this was written to fix.
  */
-function description(body, onTask) {
-  const { lead, sections } = sectionize(blocks(body));
+function description(parsed, onTask) {
+  const { lead, sections } = sectionize(parsed);
   // A description that is one heading and nothing else would fold to a single
   // line showing nothing at all.
   // Once per pull request, not once per poll. renderPr runs every 60s, and
@@ -1010,46 +1039,12 @@ function description(body, onTask) {
 // would swallow the line.
 export const HEADING = /^(#{1,6})\s+(.*)$/;
 
-/**
- * The three pieces of raw HTML a PR description actually contains, dealt with
- * before anything is escaped. Everything else stays escaped and shows as text:
- * this is an allowlist of three, not the beginning of an HTML renderer.
- *
- * Comments go because GitHub hides them and prcoder's own block markers are
- * comments -- without this the pane shows a literal marker above the list it
- * delimits.
- *
- * `<details>` is unwrapped rather than reproduced. It used to be because the
- * pane merely scrolled and a collapsed half was usually history; now it is the
- * better reason: the pane folds its own sections, so an author's fold and
- * prcoder's are the same idea twice. Unwrapping it and promoting its summary to
- * a heading feeds it into that machinery instead of nesting inside it.
- *
- * One consequence, live in this repo: a <details> in a description shows up in
- * the pane as its summary promoted to a level-4 heading, which is deeper than
- * the level sections fold at -- so it renders *inside* whichever fold precedes
- * it rather than as one of its own. That is the intended trade (the alternative
- * is two kinds of fold competing), but it is why a collapsed block in this
- * repo's own pull request description reads differently here and on github.com.
- *
- * Every substitution here must leave the body's *lines* where they are.
- * blocks() runs on the output and taskLines() runs on the raw body, and the two
- * counts of checklist lines have to match -- so anything added here that could
- * delete or merge a line containing a `- [ ]` breaks the tick, silently.
- */
-export const withoutHtml = (text) => hideComments(text ?? '')
-  .replace(/<\/?details[^>]*>/g, '')
-  // The heading is one line, and the summary's other lines stay behind it empty.
-  .replace(summary(), (s, t) =>
-    `#### ${t.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim()}${'\n'.repeat(s.split('\n').length - 1)}`);
-
 /** A checkbox in the description, ticked through to GitHub. */
 function taskRow({ done, text, index }, onTask) {
   const box = h('input', { type: 'checkbox', checked: done, title: 'tick this on GitHub' });
   const row = h('label', { className: `task${done ? ' done' : ''}` },
     box, h('span', { innerHTML: inline(text) }));
-  writeThrough(box, (v) => onTask({ index, done: v, text }),
-    (v) => row.classList.toggle('done', v));
+  writeThrough(box, (v) => onTask({ index, done: v, text }));
   return row;
 }
 
@@ -1079,10 +1074,10 @@ export const inline = (s, where = links) => {
     .replace(/(^|[\s(])(https?:\/\/[^\s)]+)/g, (_, pre, url) => pre + a(url, url))
     // After the two link rules, so a `#` inside an href this just built is not
     // a mention: those are preceded by a path character, and a mention has to
-    // start a word. Same match as linkedIssues() in github.js, which is what
-    // puts the same numbers in the Mentions row.
-    .replace(/(^|[\s(])#(\d+)\b/g, (m, pre, n) =>
-      (where ? `${pre}${a(`${where.repo}/issues/${n}`, `#${n}`)}` : m))
+    // start a word. mentions() in tasks.js reads the same pattern over the same
+    // shown text, which is what puts the same numbers in the Mentions row.
+    .replace(mention(), (m, pre, n) =>
+      (where ? `${pre}${a(`${escape(where.repo)}/issues/${n}`, `#${n}`)}` : m))
     .replace(/\n/g, '<br>')
     .replace(/\u0000(\d+)\u0000/g, (_, i) => `<code>${code[i]}</code>`);
 };
@@ -1101,7 +1096,10 @@ export const inline = (s, where = links) => {
 const target = (href, where) => {
   if (/^https?:\/\//.test(href)) return href;
   if (/^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith('#')) return null;
-  return where ? `${where.repo}/blob/${where.ref}/${href.replace(/^\.?\//, '')}` : null;
+  // `href` has been through escape() with the rest of the description, but the
+  // ref comes from the pull request: raw, a branch named `a"/style="...` closed
+  // the href and added an attribute to the page that holds the /pty socket.
+  return where ? `${escape(where.repo)}/blob/${urlPath(where.ref)}/${href.replace(/^\.?\//, '')}` : null;
 };
 
 // Quotes as well as angle brackets. inline() interpolates a link's URL into an

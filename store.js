@@ -34,9 +34,9 @@ const EMPTY = { version: VERSION, items: [] };
 
 /**
  * Every field, coerced. The client PUTs back the array it was handed, which
- * decorate() has added a derived `issueUrl` to — so this constructs rather than
- * spreads. The markdown writer dropped unknown fields for free; JSON would keep
- * them.
+ * decorate() in queue.js has added a derived `issueUrl` to — so this
+ * constructs rather than spreads. The markdown writer dropped unknown fields
+ * for free; JSON would keep them.
  *
  * Constructing is also the whole migration from older prcoders. A `branch` from
  * the per-branch queue goes, and so do `inPr` and `pr` from the description
@@ -47,7 +47,10 @@ const EMPTY = { version: VERSION, items: [] };
 export const pick = (i) => ({
   text: String(i?.text ?? ''),
   done: !!i?.done,
+  // The number of the GitHub issue this item was filed as with ◎, if any.
   issue: Number.isInteger(i?.issue) ? i.issue : null,
+  // A tombstone, so nothing typed disappears without the Deleted tab to get it
+  // back from.
   deleted: !!i?.deleted,
   // When it was ticked, for the Completed tab's order. Meaningless once it is
   // not done, so an untick clears it and a re-tick is stamped afresh.

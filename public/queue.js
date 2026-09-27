@@ -1,39 +1,52 @@
-import { h, btn, ext, api, toast, blocks, writeThrough } from './pr.js';
+import { h, btn, ext, api, toast, pref, setPref, tabBtn, blocks, writeThrough } from './pr.js';
 import { TABS } from './items.js';
 
 // The client owns the list; every change persists the whole array. Single user,
 // single repo — no ids, no diffing.
 let items = [];
+// The list as the server last had it. Every caller changes `items` in place and
+// then saves, so a failed save has to put this back: left alone, the change
+// stayed on screen as if saved, and the next save that did succeed sent the
+// whole array -- persisting the change the toast had just said was not.
+let confirmed = [];
+const settle = (list) => { items = list; confirmed = structuredClone(list); };
 let tab = 'local';
 let deps = {};
-// Set while a branch switch is in flight. The switch ends by replacing the
-// whole list from the server, so a click landing in the middle of it writes the
-// array as it was before the switch and then watches the response take it back.
-// Inert for those few hundred milliseconds is the honest thing to show.
-let frozen = false;
-
-// Repaints, because render() is what marks the list inert. The guard in save()
-// used to be the only one, by which point the click had already flipped a box
-// or pushed an item into the local array -- the write was dropped and the UI
-// went on showing it as saved until a poll silently took it back.
-export const freeze = (on) => { frozen = on; render(); };
+// Saves the server has not answered yet. A status that arrives meanwhile was
+// read before the write -- the server runs them in order behind one lock -- so
+// its list is the one the change was made to, and painting it would take the
+// change back until the save's own answer put it back again.
+let saving = 0;
 
 /**
- * Replace the list from the server. Skipped while an item is being edited: the
+ * Replace the list, and the PR its source tabs read, from the server. Skipped
+ * while a save is in flight (above); while an item is being edited, because the
  * text is contentEditable and only saves on blur, so a poll landing mid-typing
- * would throw the edit away. Skipped while a row is being dragged, too: the
+ * would throw the edit away; and while a row is being dragged, because the
  * repaint replaces the row under the pointer, the drop lands on nothing, and
  * the reorder silently does not happen.
  *
- * Only those two are at risk, so only they hold the list back. Anything else in
+ * Only those put the list at risk, so only they hold it back. Anything else in
  * the pane can keep focus indefinitely -- a clicked tab does, in Chromium -- and
  * freezing on it leaves the queue stale with nothing to unstick it.
  */
 export function setItems(next, prOnScreen = null) {
-  if (document.activeElement?.closest?.('#queue-body .text[contenteditable]')) return;
+  if (saving || document.activeElement?.closest?.('#queue-body .text[contenteditable]')) return;
   if (document.querySelector('#queue-body .item.dragging')) return;
-  items = next;
+  // What the PR and Issues tabs draw from: a tick on github.com changes the
+  // PR tab without changing the list, so it has to count as news too.
+  const source = (p) => (p ? JSON.stringify([p.number, p.body, p.issues]) : '');
+  const samePr = source(prOnScreen) === source(pr);
   pr = prOnScreen;
+  // Most polls bring the list already on screen, and a rebuild for nothing
+  // costs every row and listener. `items` is kept, not swapped for the equal
+  // copy: the rows on screen hold its objects, and a tick on a row whose item
+  // was no longer in `items` saved the list without the tick.
+  if (samePr && JSON.stringify(next) === JSON.stringify(items)) {
+    confirmed = structuredClone(next);
+    return;
+  }
+  settle(next);
   render();
 }
 
@@ -55,9 +68,7 @@ let openIssues = null;
 // and starts again from the default. Losing it costs a click.
 const ADD_TO_KEY = 'prcoder:add-to';
 let addTo = 'bottom';
-const readAddTo = () => {
-  try { return localStorage.getItem(ADD_TO_KEY) === 'top' ? 'top' : 'bottom'; } catch { return 'bottom'; }
-};
+const readAddTo = () => (pref(ADD_TO_KEY) === 'top' ? 'top' : 'bottom');
 
 export async function initQueue(d) {
   deps = d;
@@ -67,7 +78,7 @@ export async function initQueue(d) {
   addTo = readAddTo();
   document.getElementById('queue-where').onclick = () => {
     addTo = addTo === 'bottom' ? 'top' : 'bottom';
-    try { localStorage.setItem(ADD_TO_KEY, addTo); } catch { /* honoured for this session anyway */ }
+    setPref(ADD_TO_KEY, addTo);
     paintWhere();
   };
   // Before the fetch, so a remembered ↑ is not shown as the markup's ↓ for as
@@ -78,25 +89,28 @@ export async function initQueue(d) {
   // items.filter -- a server-side error taking the whole pane down rather than
   // showing itself.
   try {
-    items = await api('/api/queue', undefined, 'GET');
+    settle(await api('/api/queue', undefined, 'GET'));
   } catch (e) {
     toast(e.message, true);
   }
   render();
 }
 
-/** Whether the change reached the server, for the one caller that has to undo. */
+/**
+ * Whether the change reached the server. When it did not, the list goes back to
+ * what the server last confirmed, and the toast says why.
+ */
 const save = async (url = '/api/queue', method = 'PUT', body = { items }) => {
-  // The backstop behind inert -- a blur fired *by* the freeze still lands here.
-  // Loud, because the local array has already moved and the next poll is about
-  // to move it back.
-  if (frozen) {
-    toast('busy switching branches — that change was not saved', true);
+  const undo = (message) => {
+    toast(message, true);
+    items = structuredClone(confirmed);
+    render();
     return false;
-  }
+  };
   let data;
-  try { data = await api(url, body, method); } catch (e) { toast(e.message, true); return false; }
-  if (Array.isArray(data)) items = data;
+  saving++;
+  try { data = await api(url, body, method); } catch (e) { return undo(e.message); } finally { saving--; }
+  settle(Array.isArray(data) ? data : items);
   render();
   return true;
 };
@@ -144,9 +158,6 @@ const mentioned = () => (pr?.issues ?? []).filter((i) => !i.closes);
 
 function render() {
   const host = document.getElementById('queue-body');
-  // Native, and it covers what a per-control `disabled` would miss: the
-  // contentEditable text, the drag handles, focus.
-  host.inert = frozen;
   const { strip, tab: active } = stripFor(items, tab, pr ? ['pr', 'issues'] : []);
   tab = active;
   // A source's count is what it still holds open; the list's own are its tabs.
@@ -164,7 +175,7 @@ function render() {
 
   host.replaceChildren(
     h('div', { className: 'tabs' },
-      ...strip.map((n) => tabBtn(n, label(n))),
+      ...strip.map((n) => queueTab(n, label(n))),
       h('span', { className: 'spacer' }),
       ...bulks(),
     ),
@@ -242,11 +253,11 @@ export function reorder(list, from, to) {
   return list;
 }
 
-const tabBtn = (name, label) => btn(label, () => {
+const queueTab = (name, label) => tabBtn(label, tab === name, () => {
   tab = name;
   render();
   if (name === 'issues') loadIssues();
-}, { className: tab === name ? 'tab on' : 'tab' });
+});
 
 /** Titles, refetched on every visit to the tab: issues change on GitHub, not here. */
 async function loadIssues() {
@@ -270,8 +281,8 @@ async function pull(text, issue = null) {
   }
   const item = { text, done: false, issue, deleted: false };
   if (addTo === 'top') items.unshift(item); else items.push(item);
+  // A refusal has already taken it back out.
   if (await save()) toast(`added to your queue: ${text}`);
-  else items = items.filter((i) => i !== item);
 }
 
 /** The PR tab: the description's own checkboxes, ticked through to GitHub. */
@@ -316,7 +327,7 @@ function issueList() {
  */
 const ROW = 'application/x-prcoder-row';
 
-const bulk = (label, fn, props = {}) => btn(label, fn, { className: 'bulk', ...props });
+const bulk = (label, fn) => btn(label, fn, { className: 'bulk' });
 
 function row(item, above, below) {
   const idx = items.indexOf(item);
@@ -369,13 +380,17 @@ function row(item, above, below) {
       btn('▶', () => {
         if (!deps.sendToClaude(item.text, false)) return toast('Claude is not connected — nothing was typed.', true);
         item.done = true;
-        save();
+        return save();
       }, { title: 'type into Claude, and check it off' }),
       // A move, not a flag: the issue is filed and the item leaves the queue.
       // Nothing moves into the PR description -- prcoder does not write one,
-      // bar a box you tick on the PR tab.
-      item.issue ? null : btn('◎', () => save('/api/queue/to-issue', 'POST', { items, index: idx }),
-        { title: 'move into a new issue' }),
+      // bar a box you tick on the PR tab. Disabled while the issue is filed: a
+      // second click filed a second issue for the same item.
+      item.issue ? null : btn('◎', async (e) => {
+        const b = e.currentTarget;
+        b.disabled = true;
+        if (!await save('/api/queue/to-issue', 'POST', { items, index: idx })) b.disabled = false;
+      }, { title: 'move into a new issue' }),
       item.deleted
         ? btn('↩', () => { item.deleted = false; save(); }, { title: 'restore' })
         // A tombstone, not a splice: the Deleted tab is where it goes.
@@ -415,14 +430,8 @@ export async function addItem(text) {
   if (addTo === 'top') items.unshift(item); else items.push(item);
   // A brand-new item is local by definition, so this is the tab it is on.
   tab = 'local';
-  if (!await save()) {
-    // Taken back out. save() has already said what went wrong, and a row left
-    // sitting there is one the next poll is about to delete without comment --
-    // while the text it came from has gone from the input.
-    items = items.filter((i) => i !== item);
-    render();
-    return false;
-  }
+  // A refusal has already taken it back out; the input keeps the text.
+  if (!await save()) return false;
   // Either end can be off-screen in a list taller than the pane, and an item
   // you cannot see reads as a save that did not happen. Not scrollIntoView:
   // save() has already repainted from the server's echo, so the object above no

@@ -16,11 +16,7 @@
 // and nowhere else, because a mousedown inside a draggable element goes to the
 // drag machinery there, and every screenshot before that had been Chromium.
 //
-// CLAUDE_BIN is stubbed because every page load opens a websocket and spawns
-// it in a PTY -- unstubbed, each run starts a real Claude session and leaves it
-// running. The stub is `tools/claude-stub.mjs` rather than /bin/cat: it echoes
-// as cat does, and it also sends the cursor-position probe a real session sends
-// between turns, which is the half the icon check needs.
+// CLAUDE_BIN is stubbed (serverEnv in tools/driver.mjs says why and with what).
 //
 // It writes, so it is not read-only. The run replaces the repo's queue with a
 // fixture -- at least one item per tab -- and puts the queue back at the end; a
@@ -32,14 +28,10 @@
 // writes to GitHub needs its own undo, and needs to run against a repo you own.
 
 import { spawn } from 'node:child_process';
-import { createServer } from 'node:net';
-import { existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { chromium, firefox } from 'playwright';
 import { openShots, pruneShots } from './shots.mjs';
+import { repo, free, serverEnv, killOnExit, openPage, launchBrowser } from './driver.mjs';
 
-const repo = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 // data/, not a new top-level shots/: this repo's scratch space is data/, and it
 // is gitignored precisely so driver output has somewhere to live. The argument
 // is a label for this run rather than a path -- what you were looking at, so
@@ -48,18 +40,6 @@ const shotsRoot = path.join(repo, 'data', 'shots');
 const label = process.argv[2] ?? 'latest';
 const port = Number(process.env.PRCODER_PORT) || 17434;
 
-// server.js falls back to a free port when the one it is given is taken, and
-// says so only on a stdout this spawns with `ignore` -- so a driver whose port
-// is already held would sail past it and drive whatever *is* on that port. That
-// was not hypothetical: a leaked server from an earlier run held this one, and
-// the next run screenshotted yesterday's state. Fail here instead, where the
-// message can say which port and why.
-const free = (p) => new Promise((res, rej) => {
-  const probe = createServer();
-  probe.once('error', () => rej(new Error(`port ${p} is taken -- something else would be driven instead of this run's server. Stop it, or set PRCODER_PORT.`)));
-  probe.once('listening', () => probe.close(res));
-  probe.listen(p, '127.0.0.1');
-});
 await free(port);
 
 // Before the server starts: a bad label should fail while nothing is running.
@@ -70,28 +50,11 @@ const out = await openShots(shotsRoot, label);
 // PRCODER_PR pins one; unset is the old branch-following behaviour.
 const server = spawn('node', ['server.js', ...(process.env.PRCODER_PR ? [process.env.PRCODER_PR] : [])], {
   cwd: repo,
-  env: { ...process.env, PRCODER_PORT: String(port), PRCODER_NO_OPEN: '1', CLAUDE_BIN: path.join(repo, 'tools', 'claude-stub.mjs') },
+  env: serverEnv(port),
   stdio: 'ignore',
 });
-// The kill at the end of the file is load-bearing twice over: a live child
-// handle keeps the event loop open, so without it this never exits on its own.
-// It only runs if the file reaches the end, though. A throw in between -- a
-// missing browser download is the easy one -- left the server up polling gh
-// every 60s, and a kill of a run that hung left another; eight accumulated in
-// one afternoon. `exit` covers the throw, and the signals are wired to exit
-// because their default action would skip the handler. Same three as term.js.
-process.on('exit', () => server.kill());
-for (const sig of ['SIGTERM', 'SIGHUP', 'SIGINT']) process.on(sig, () => process.exit(130));
+killOnExit(server);
 
-// Firefox by default, because that is what prcoder is used in and it is where
-// the selection and drag bugs live. Playwright drives its own patched build,
-// never the Firefox in /Applications, so this asks whether
-// `npx playwright install firefox` has been run -- not whether the machine has
-// Firefox. Chromium is the fallback, and PRCODER_BROWSER=chromium|firefox is
-// the override; which one ran matters for reading the output, so it is logged.
-const forced = { chromium, firefox }[process.env.PRCODER_BROWSER];
-const engine = forced ?? (existsSync(firefox.executablePath()) ? firefox : chromium);
-console.log('engine: ', engine.name());
 // Which of the server's two ways of finding a pull request this run is about to
 // exercise. Worth saying out loud: pinning one is the only way to drive the
 // panes from a feature branch, and it is also the way to run the whole file and
@@ -101,37 +64,8 @@ console.log('engine: ', engine.name());
 console.log('pr:     ', process.env.PRCODER_PR
   ? `pinned to #${process.env.PRCODER_PR} (branch-following not exercised)`
   : "following the current branch");
-// macOS 27 denies a Firefox launched from a terminal its own
-// ~/Library/Application Support/Firefox. Firefox reads that directory even
-// when -profile points elsewhere, so without somewhere else to keep its app
-// data it hangs until the timeout (tools/firefox-runner). Firefox 158 fixes
-// this upstream; #80 is when to take this out.
-const appData = path.join(repo, 'data', 'firefox-appdata');
-const firefoxEnv = { MOZ_APP_DATA: path.join(appData, 'roaming'), MOZ_LOCAL_APP_DATA: path.join(appData, 'local') };
-for (const dir of Object.values(firefoxEnv)) mkdirSync(dir, { recursive: true });
-// existsSync above says the build was downloaded, not that it starts -- which
-// the env above is only the latest answer to (#80). So the fallback has to
-// survive a launch that fails as well as one that was never installed, or the
-// default run waits out Playwright's 180s timeout and dies with no browser at
-// all. The wait is 45s here because this is the unattended path and a browser
-// that has not started by then is not starting; a forced engine keeps the full
-// timeout and is left to fail, since falling back is the wrong answer to
-// someone who asked for Firefox by name.
-const browser = await (async () => {
-  try {
-    const env = engine === firefox ? { env: { ...process.env, ...firefoxEnv } } : {};
-    return await engine.launch({ ...env, ...(forced ? {} : { timeout: 45_000 }) });
-  } catch (err) {
-    if (forced || engine === chromium) throw err;
-    console.log(`engine:  ${engine.name()} would not start, falling back to chromium`);
-    console.log('        ', String(err).split('\n')[0]);
-    return chromium.launch();
-  }
-})();
-// The PR pane opens at 375px at any window width, so 1440 is simply a
-// common laptop size with room for all three panes.
-const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
-page.on('pageerror', (e) => console.log('PAGE EXCEPTION:', e.message));
+// Firefox by default, falling back to Chromium: launchBrowser() in driver.mjs.
+const browser = await launchBrowser();
 
 // The repo's queue may be empty, and then there is no
 // row to click into or tab to count -- and the strip only shows a tab that has
@@ -170,9 +104,7 @@ had = had.filter((i) => !mine.has(i.text));
 const seeded = await queueApi({ items: FIXTURE.map(seed) });
 console.log('seeded: ', Array.isArray(seeded) ? `${seeded.length} items` : JSON.stringify(seeded));
 
-for (let i = 0; i < 30; i++) {
-  try { await page.goto(`http://localhost:${port}/`); break; } catch { await page.waitForTimeout(500); }
-}
+const page = await openPage(browser, port);
 // The panes fill in from gh, so there is a second or two of "Loading…" first.
 // Wait on the head rather than on a file row: the pane opens on Detail now, and
 // `.file` only exists once the Files tab has been clicked.
@@ -520,7 +452,11 @@ await page.locator('#pr').screenshot({ path: path.join(out, 'pr-files-collapsed.
 await page.locator('.group > summary').first().click();
 await page.waitForTimeout(200);
 
-await page.locator('.file .path').first().click();   // opens the diff pane (Files tab)
+// A .js file by name, not the first row: the first is whatever the first group
+// holds, which since Config & docs went first is `.gitignore` -- no grammar,
+// so every highlight check below read zero spans and then timed out waiting.
+const highlighted = page.locator('.file[data-path$=".js"] .path').first();
+await highlighted.click();   // opens the diff pane (Files tab)
 await page.waitForSelector('main.diff-open');
 // The title says whether the pane holds a change or a whole file; every file in
 // PR #1 is one the PR adds, so it should read NEW there and DIFF nowhere.
@@ -564,7 +500,7 @@ if (await plain.count()) {
   const none = await tokens();
   console.log('plain:    ', `${none.n} spans`, none.names, ' (want 0 spans: .gitignore has no grammar)');
   // Back to the highlighted file, which is what the screenshots below hold.
-  await page.locator('.file .path').first().click();
+  await highlighted.click();
   await page.waitForFunction(() => document.querySelectorAll('#diff-body .dl span').length > 0);
 } else {
   console.log('plain:     no extensionless file in this PR to check');
@@ -634,8 +570,8 @@ console.log('wrap:    ', `${await page.locator('#pr').evaluate((e) => Math.round
 // and calls toast() for itself -- which is what says the plain path still
 // works. Four seconds and it is gone, hence the screenshot before anything
 // else. The sticky one has no read-only trigger (switching PRs would check out
-// a branch in this repo), so its class is set the way toast() sets it: the CSS
-// and the click-to-dismiss handler are real, the call is not.
+// a branch in this repo), so it calls toast() itself, through the same module
+// instance the page loaded -- as test/browser/suite.js does.
 const toastText = () => page.evaluate(() => {
   const el = document.getElementById('toast');
   return el.hidden ? null : el.textContent;
@@ -645,15 +581,8 @@ await page.locator('#toast').screenshot({ path: path.join(out, 'toast.png') }).c
 await page.waitForTimeout(4500);
 console.log('faded:  ', JSON.stringify(await toastText()), '  (want null -- the 4s timeout)');
 
-// Only now, or the timeout still pending from that one hides this one. toast()
-// clears it; setting the class by hand here cannot.
-await page.evaluate(() => {
-  const el = document.getElementById('toast');
-  el.textContent = 'Switched to add-retries (#123). Claude still has the old'
-    + " branch's files in mind — tell it to re-read anything it had open.";
-  el.className = 'sticky';
-  el.hidden = false;
-});
+await page.evaluate(async () => (await import('/pr.js')).toast('Switched to add-retries (#123). Claude still'
+  + " has the old branch's files in mind — tell it to re-read anything it had open.", false, true));
 await page.waitForTimeout(100);
 await page.locator('#toast').screenshot({ path: path.join(out, 'toast-sticky.png') });
 await page.screenshot({ path: path.join(out, 'full-toast.png') });   // and what it sits over
@@ -740,20 +669,20 @@ try {
   // splice() reads NaN as 0, and the queue's first item moved and was saved.
   // The synthetic drop is that case, and the queue must come out of it as the
   // real drag left it.
-  const scratch = () => page.evaluate(() => fetch('/api/queue').then((r) => r.json()))
+  const scratch = () => getQueue()
     .then((items) => items.filter((i) => i.text.startsWith('driver scratch')).map((i) => i.text.replace(/^driver scratch item,? /, '')));
   const scratchRows = page.locator('.item', { hasText: 'driver scratch' });
   await scratchRows.nth(1).locator('.grip').dragTo(scratchRows.nth(0));
   await page.waitForTimeout(500);
   const reordered = await scratch();
-  const before = (await page.evaluate(() => fetch('/api/queue').then((r) => r.json()))).map((i) => i.text);
+  const before = (await getQueue()).map((i) => i.text);
   await scratchRows.nth(0).evaluate((li) => {
     const dt = new DataTransfer();
     dt.setData('text/plain', 'a dropped selection');
     li.dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true }));
   });
   await page.waitForTimeout(500);
-  const after = (await page.evaluate(() => fetch('/api/queue').then((r) => r.json()))).map((i) => i.text);
+  const after = (await getQueue()).map((i) => i.text);
   console.log('drag:   ', reordered.join(' | '), '  (want "two" first)');
 
   // The same move without a pointer: the grip takes focus, and Down moves its
@@ -771,7 +700,7 @@ try {
 } finally {
   await putQueue(queue);
 }
-console.log('queue:  ', (await page.evaluate(() => fetch('/api/queue').then((r) => r.json()))).length, 'items  (want', queue.length + ')');
+console.log('queue:  ', (await getQueue()).length, 'items  (want', queue.length + ')');
 
 // Back to whatever the repo had.
 console.log('restored:', (await queueApi({ items: had })).length, 'items (was', had.length + ')');

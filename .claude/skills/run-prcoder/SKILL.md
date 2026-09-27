@@ -45,7 +45,7 @@ so one slow call delays the rest.
 ## Verifying a change
 
 ```bash
-npm test                   # node --test "test/**/*.test.js"; see CLAUDE.md for the quotes.
+npm test                   # node --test "test/**/*.test.js"; docs/Verifying.md says why it is quoted.
                            # Includes test/browser/, one suite run in Chromium and in Firefox;
                            # each run skips with a note when its browser is missing
                            # (npx playwright install chromium firefox)
@@ -61,7 +61,7 @@ an error anywhere prcoder shows. The exception is a package missing from
 which is what plain files were on 2026-09-23 -- and startup says so:
 `not in node_modules, so npm install first: prismjs`.
 
-Then look at it. `docs/Verifying.md` is the standing account of the three
+Then look at it. `docs/Verifying.md` is the standing account of the four
 drivers -- what each reaches, which engine, the stub, the Firefox situation --
 and is where a check that outlives the session gets written down. The short
 form:
@@ -73,6 +73,7 @@ node tools/browser.mjs highlighting               # the UI, PNGs to data/shots/h
 PRCODER_BROWSER=chromium node tools/browser.mjs   # compare engines
 node tools/cli.mjs                                # the terminal half, in a real PTY
 node tools/no-pr.mjs                              # the pane with no pull request, in a clone
+node tools/diff-views.mjs                         # the diff pane's DIFF, DELETED, renames, outline and .tsx, on fixture PR #87
 ```
 
 Each boots its own server on a port of its own (the `port` line near the top)
@@ -94,7 +95,7 @@ Two rules for them, and for any script after them:
   leaves it running. Use `tools/claude-stub.mjs`, which echoes and sends the
   cursor probe a real session sends. `/bin/cat` is enough for the terminal half
   only -- anything that reads the PTY's timing passes against it for the wrong
-  reason (CLAUDE.md).
+  reason (tools/CLAUDE.md).
 - **No writes you do not undo.** The queue is safe: it writes only `.prcoder/`,
   which is gitignored and needs no cleanup. The PR is not — ticking a
   description checkbox — in the PR pane or the queue's PR tab — edits the
@@ -106,4 +107,4 @@ Two rules for them, and for any script after them:
   driver clicks them freely.
 
 If every PTY spawn dies with a bare `posix_spawnp failed`, the `postinstall`
-script was skipped: `npm install` again, and see CLAUDE.md for why.
+script was skipped: `npm install` again, and see `tools/postinstall.mjs` for why.

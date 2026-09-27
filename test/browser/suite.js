@@ -43,11 +43,11 @@
 // enforced.
 import { test as nodeTest, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { existsSync } from 'node:fs';
 import { server } from '../../server.js';
-import { groupFiles } from '../../files.js';
+import { bucket } from '../../files.js';
 import { rollup } from '../../github.js';
+import { firefoxEnv } from '../../tools/driver.mjs';
 
 const engineName = process.env.PRCODER_TEST_BROWSER;
 let engine;
@@ -57,14 +57,9 @@ const skip = !engine ? 'playwright is not installed (npm ci without --omit=dev)'
     : false;
 // Each run's names carry its engine, so a CI log says which one broke.
 const test = (name, ...rest) => nodeTest(`${name} [${engineName}]`, ...rest);
-// macOS 27 keeps a Firefox launched from a terminal out of its own app data, and
-// it hangs until the timeout; this is the drivers' way round it
-// (tools/firefox-runner), harmless elsewhere, and #80 is when it comes out.
-const appData = fileURLToPath(new URL('../../data/firefox-appdata/', import.meta.url));
-const firefoxEnv = { MOZ_APP_DATA: appData + 'roaming', MOZ_LOCAL_APP_DATA: appData + 'local' };
 
-// Each line here is a regression: `_for_` showed its underscores, the comment
-// and prcoder's own markers showed as text, `##` rendered literally, and a
+// Each line here is a regression: `_for_` showed its underscores, HTML
+// comments showed as text, `##` rendered literally, and a
 // <details> left a stray `</details>` behind. The quote is here because neither
 // of this repo's own descriptions has one, so no driver run ever showed it. The
 // tasks are in the lead, above the first `##`, because sections render folded
@@ -93,9 +88,9 @@ const BODY = [
   '',
   '## Before merging',
   '',
-  '<!-- prcoder:todo -->',
-  '- [ ] a queue item',
-  '<!-- /prcoder:todo -->',
+  '<!-- begin checklist -->',
+  '- [ ] a task between comments',
+  '<!-- end checklist -->',
 ].join('\n');
 
 // A long slug on purpose: the head's repository line is built to be clipped,
@@ -111,7 +106,7 @@ const SOURCE = 'const s = "<script>alert(1)</script>"; // <img src=x onerror=ale
 const TSX = 'const B = ({ n }: { n: number }) => <div className="b">{n}</div>;';
 const added = { 'evil.js': SOURCE, 'app.tsx': TSX };
 const files = Object.keys(added).map((p, i) => ({
-  path: p, additions: added[p].split('\n').length, deletions: 0, viewed: false,
+  path: p, group: bucket(p), additions: added[p].split('\n').length, deletions: 0, viewed: false,
   url: `${REPO}/pull/12/files#diff-${i}`, blob: `${REPO}/blob/aaaa/${p}`,
   blame: `${REPO}/blame/aaaa/${p}`, history: `${REPO}/commits/aaaa/${p}`,
 }));
@@ -123,7 +118,6 @@ const pr = {
   reviewDecision: '', nodeId: 'PR_fixture',
   checks: rollup([]), counts: { comments: 0, reviews: 0 },
   issues: [{ number: 7, url: `${REPO}/issues/7`, closes: false, title: 'Per-route locking' }],
-  groups: groupFiles(files),
 };
 const status = {
   branch: 'topic', head: 'b'.repeat(40), detached: false, dirtyFiles: [], sync: 'synced', ahead: 0,
@@ -169,8 +163,9 @@ async function newPage() {
 before(async () => {
   if (skip) return;
   await new Promise((res) => server.listen(0, '127.0.0.1', res));
-  if (engineName === 'firefox') for (const dir of Object.values(firefoxEnv)) mkdirSync(dir, { recursive: true });
-  browser = await engine.launch(engineName === 'firefox' ? { env: { ...process.env, ...firefoxEnv } } : {});
+  // The drivers' way round macOS 27 keeping a terminal-launched Firefox out of
+  // its own app data (tools/driver.mjs); #80 is when it comes out.
+  browser = await engine.launch(engineName === 'firefox' ? { env: { ...process.env, ...firefoxEnv() } } : {});
   page = await newPage();
 });
 
@@ -216,6 +211,9 @@ test('checkboxes render with their state, and a tick posts through', { skip }, a
   await boxes.first().click();
   await page.waitForFunction(() => document.querySelectorAll('.task.done').length === 2);
   assert.deepEqual(posted, [{ index: 0, done: true, text: 'first task' }]);
+  // The count moves with the box, from the body the route answered, rather
+  // than a poll up to a minute later.
+  assert.ok((await page.locator('#pr-head .tab').allTextContents()).includes('Detail (2/3)'));
 });
 
 test('the issues the description mentions are listed below it, titled', { skip }, async () => {
@@ -225,15 +223,12 @@ test('the issues the description mentions are listed below it, titled', { skip }
   assert.equal(await row.getAttribute('href'), `${REPO}/issues/7`);
 });
 
-// Read off the page rather than hard-coded, because the tick above is real now:
-// the task route answers with the new body and both sets of boxes repaint from
-// it, so whether this runs before or after that test changes the numerator.
+// Its own page: the shared one has had a box ticked above.
 test('the tab carries the task count', { skip }, async () => {
-  const total = await page.locator('#pr-body .task').count();
-  const done = await page.locator('#pr-body .task.done').count();
-  assert.equal(total, 3, 'the fixture body has three checkboxes');
-  const tabs = await page.locator('#pr-head .tab').allTextContents();
-  assert.ok(tabs.includes(`Detail (${done}/${total})`), `${JSON.stringify(tabs)} with ${done}/${total} ticked`);
+  const fresh = await newPage();
+  const tabs = await fresh.locator('#pr-head .tab').allTextContents();
+  assert.ok(tabs.includes('Detail (1/3)'), JSON.stringify(tabs));
+  await fresh.close();
 });
 
 // The repository is the one link in the head with no bound on its width, which
@@ -537,7 +532,7 @@ test('folds show progress as a pie named by its figure', { skip }, async () => {
     .map(([path, viewed]) => ({ ...files[0], path, viewed }));
   const all = [...files, ...extra];
   await fresh.route('**/api/status', (r) => r.fulfill({ json: {
-    ...status, pr: { ...pr, files: all, groups: groupFiles(all) },
+    ...status, pr: { ...pr, files: all },
   } }));
   await fresh.reload();
   await fresh.waitForSelector('#pr-head .pr-title');
@@ -598,5 +593,216 @@ test('Completed lists the most recently finished first, and cannot be reordered'
     ['finished last', 'finished first', 'never stamped']);
   assert.equal(await fresh.locator('#queue-body .item .grip').count(), 0, 'no grip on Completed');
   assert.equal(await fresh.locator('#queue-body .item[draggable="true"]').count(), 0, 'and no drag');
+  await fresh.close();
+});
+
+// Every queue action changes the list in place and then saves. A refused save
+// used to leave the change on screen as if it had landed, and the next save
+// that did succeed sent it along with its own -- persisting what the toast had
+// just said was not saved.
+test('a queue change the server refuses is taken back off the screen', { skip }, async () => {
+  const fresh = await newPage();
+  const queue = [{ text: 'refused tick', done: false, issue: null, deleted: false }];
+  await fresh.route('**/api/status', (r) => r.fulfill({ json: { ...status, queue } }));
+  await fresh.route('**/api/queue', (r) => (r.request().method() === 'PUT'
+    ? r.fulfill({ status: 500, json: { error: 'disk full' } })
+    : r.fulfill({ json: queue })));
+  await fresh.reload();
+  await fresh.waitForSelector('#queue-body .item');
+  await fresh.locator('#queue-body .item input[type=checkbox]').check();
+  // For this text, not any toast: the reload raises its own restart notice.
+  await fresh.waitForFunction(() => document.getElementById('toast').textContent === 'disk full');
+  // Back in Active and unticked, as the server has it.
+  assert.deepEqual(await fresh.locator('#queue-body .item .text').allTextContents(), ['refused tick']);
+  assert.equal(await fresh.locator('#queue-body .item input[type=checkbox]').isChecked(), false);
+  await fresh.close();
+});
+
+// With the socket closed nothing is typed, so ▶ must not mark it done: done
+// moves it out of Active, and the item would be gone from view unsent.
+test('▶ with Claude disconnected types nothing and leaves the item active', { skip }, async () => {
+  const fresh = await newPage();
+  const queue = [{ text: 'send me', done: false, issue: null, deleted: false }];
+  const puts = [];
+  await fresh.routeWebSocket('**/pty', (ws) => ws.close());
+  await fresh.route('**/api/status', (r) => r.fulfill({ json: { ...status, queue } }));
+  await fresh.route('**/api/queue', (r) => {
+    if (r.request().method() === 'PUT') puts.push(r.request().postDataJSON());
+    return r.fulfill({ json: queue });
+  });
+  await fresh.reload();
+  await fresh.waitForSelector('#queue-body .item');
+  await fresh.waitForFunction(() => document.getElementById('term-host').textContent.includes('claude exited'));
+  await fresh.locator('#queue-body .item button[title^="type into Claude"]').click();
+  await fresh.waitForFunction(() => document.getElementById('toast').textContent.includes('not connected'));
+  assert.deepEqual(puts, []);
+  assert.deepEqual(await fresh.locator('#queue-body .item .text').allTextContents(), ['send me']);
+  await fresh.close();
+});
+
+// A second click while the first issue was still being filed filed a second
+// issue for the same item, and only one of them left the queue behind it.
+test('◎ files one issue however quickly it is clicked twice', { skip }, async () => {
+  const fresh = await newPage();
+  const queue = [{ text: 'file me', done: false, issue: null, deleted: false }];
+  let filed = 0;
+  await fresh.route('**/api/status', (r) => r.fulfill({ json: { ...status, queue } }));
+  await fresh.route('**/api/queue', (r) => r.fulfill({ json: queue }));
+  // A move: the issue is filed and the item comes back off the list.
+  await fresh.route('**/api/queue/to-issue', async (r) => {
+    filed++;
+    await new Promise((res) => setTimeout(res, 300));
+    return r.fulfill({ json: [] });
+  });
+  await fresh.reload();
+  await fresh.waitForSelector('#queue-body .item');
+  const issue = fresh.locator('#queue-body .item button[title="move into a new issue"]');
+  await issue.click();
+  await issue.click({ force: true, timeout: 1000 }).catch(() => {});
+  await fresh.waitForFunction(() => !document.querySelector('#queue-body .item'));
+  assert.equal(filed, 1);
+  await fresh.close();
+});
+
+// A file with no patch returns before the outline is rebuilt, so opening one
+// after a file with several hunks left that file's hunks there to jump to.
+test('a file with no diff does not keep the last file\'s outline', { skip }, async () => {
+  const fresh = await newPage();
+  await fresh.route('**/api/diff', (r) => {
+    const { path } = r.request().postDataJSON();
+    return r.fulfill({ json: path === 'evil.js'
+      ? { path, patch: '@@ -1,1 +1,1 @@ first\n-a\n+b\n@@ -9,1 +9,1 @@ second\n-c\n+d' }
+      : { path, patch: null } });
+  });
+  await fresh.locator('#pr-head .tab', { hasText: 'Files' }).click();
+  await fresh.locator('.file[data-path="evil.js"] .path').click();
+  await fresh.waitForSelector('#diff-outline button');
+  assert.equal(await fresh.locator('#diff-outline button').count(), 2);
+  await fresh.locator('.file[data-path="app.tsx"] .path').click();
+  await fresh.waitForSelector('#diff-body .empty >> text=No diff to show');
+  assert.equal(await fresh.locator('#diff-outline button').count(), 0);
+  await fresh.close();
+});
+
+// A separator moves on one axis, and says which with aria-orientation. Up and
+// Down used to resize the vertical ones too.
+test('a separator moves only on the arrows along its own axis', { skip }, async () => {
+  const fresh = await newPage();
+  const size = () => fresh.$eval('main', (m) => m.style.getPropertyValue('--w-pr'));
+  await fresh.locator('#gut-pr').focus();
+  await fresh.keyboard.press('ArrowDown');
+  assert.equal(await size(), '', 'Down leaves a vertical separator where it was');
+  await fresh.keyboard.press('ArrowRight');
+  assert.notEqual(await size(), '', 'Right moves it');
+  await fresh.close();
+});
+
+// A folded pane still says when Claude is working, from the same bracketed turn
+// as the tab icon -- so it appears on Enter and goes after 2s of quiet, and the
+// mocked /pty here sends nothing to hold the turn open. Only folded: open, the
+// terminal shows the turn itself.
+test('a folded terminal says it is working while a turn runs, and not after', { skip }, async () => {
+  const fresh = await newPage();
+  const busy = () => fresh.locator('#term-busy').isVisible();
+  await fresh.click('#term-host');
+  await fresh.keyboard.press('Enter');
+  assert.equal(await busy(), false, 'not shown while the pane is open');
+  await fresh.click('#term-fold');
+  assert.equal(await busy(), true, 'shown once folded mid-turn');
+  assert.equal(await fresh.locator('#term-busy').textContent(), 'working');
+  // Folding must not make the header a different height from the open one.
+  assert.equal(await fresh.$eval('#term', (el) => el.getBoundingClientRect().height),
+    await fresh.$eval('#term > header', (el) => el.getBoundingClientRect().height));
+  await fresh.waitForFunction(() => document.getElementById('term-busy').hidden, null, { timeout: 5000 });
+  assert.equal(await busy(), false, 'gone when the turn ends');
+  await fresh.close();
+});
+
+// A viewed tick changes every place that shows it: the row, its group's pie,
+// the Files tab's count, and the diff pane's own box when that file is open --
+// not the one box that was clicked, with the rest a poll behind.
+test('marking a file viewed moves the tab count and the open diff\'s box with it', { skip }, async () => {
+  const fresh = await newPage();
+  await fresh.route('**/api/pr/viewed', (r) => r.fulfill({ json: { ok: true } }));
+  await fresh.locator('#pr-head .tab', { hasText: 'Files' }).click();
+  await fresh.locator('.file[data-path="evil.js"] .path').click();
+  await fresh.waitForSelector('#diff-body .dl');
+  await fresh.locator('.file[data-path="evil.js"] input[type=checkbox]').check();
+  await fresh.waitForFunction(() => [...document.querySelectorAll('#pr-head .tab')]
+    .some((t) => t.textContent === 'Files (1/2)'));
+  assert.equal(await fresh.locator('#diff-viewed').isChecked(), true);
+  assert.equal(await fresh.locator('.file.viewed').count(), 1);
+  // And the other way: the diff pane's box moves the row.
+  await fresh.locator('#diff-viewed').uncheck();
+  await fresh.waitForFunction(() => document.querySelectorAll('.file.viewed').length === 0);
+  assert.ok((await fresh.locator('#pr-head .tab').allTextContents()).includes('Files (0/2)'));
+  await fresh.close();
+});
+
+// A push while a file is open re-opens it, so it shows the pushed version. The
+// path through paint() that does it runs only when the head moves, which no
+// other test here makes happen -- and it once called a helper a local variable
+// had shadowed, which would have thrown on every such poll.
+test('a poll that moves the head re-opens the open file without an error', { skip }, async () => {
+  const fresh = await newPage();
+  const errors = [];
+  fresh.on('pageerror', (e) => errors.push(e.message));
+  let diffs = 0;
+  await fresh.route('**/api/diff', (r) => {
+    diffs++;
+    return r.fulfill({ json: { path: 'evil.js', patch: '@@ -0,0 +1 @@\n+x' } });
+  });
+  await fresh.locator('#pr-head .tab', { hasText: 'Files' }).click();
+  await fresh.locator('.file[data-path="evil.js"] .path').click();
+  await fresh.waitForSelector('#diff-body .dl');
+  await fresh.route('**/api/status', (r) => r.fulfill({ json: {
+    ...status, pr: { ...pr, headRefOid: 'c'.repeat(40) },
+  } }));
+  await fresh.click('#pr-refresh');
+  await fresh.waitForFunction(() => document.getElementById('diff-path').textContent === 'evil.js');
+  await fresh.waitForTimeout(300);
+  assert.deepEqual(errors, []);
+  assert.equal(diffs, 2, 'the open file was fetched again');
+  await fresh.close();
+});
+
+// A status read before a save lands carries the list as it was before the
+// change -- the server answers them in order -- and painting it took the change
+// back off the screen until the save's own answer put it back.
+test('a poll that lands while a save is in flight does not undo it on screen', { skip }, async () => {
+  const fresh = await newPage();
+  const before = [{ text: 'tick me', done: false, issue: null, deleted: false }];
+  let release;
+  await fresh.route('**/api/status', (r) => r.fulfill({ json: { ...status, queue: before } }));
+  await fresh.route('**/api/queue', async (r) => {
+    if (r.request().method() !== 'PUT') return r.fulfill({ json: before });
+    await new Promise((res) => { release = res; });
+    return r.fulfill({ json: r.request().postDataJSON().items });
+  });
+  await fresh.reload();
+  await fresh.waitForSelector('#pr-head .pr-title');
+  await fresh.waitForSelector('#queue-body .item');
+  const box = fresh.locator('#queue-body .item input[type=checkbox]');
+  await box.check();
+  await fresh.click('#pr-refresh');
+  await fresh.waitForTimeout(300);
+  assert.equal(await box.isChecked(), true, 'the poll did not untick it');
+  release();
+  await fresh.waitForFunction(() => document.querySelector('#queue-body .tab')?.textContent === 'Local (0)');
+  await fresh.close();
+});
+
+// Most polls find nothing new. Rebuilding the panes anyway cost every row and
+// listener, and put scroll, focus and folds back by hand every minute.
+test('a poll that brings nothing new leaves the panes as they were', { skip }, async () => {
+  const fresh = await newPage();
+  await fresh.evaluate(() => {
+    document.querySelector('#pr-body > *').dataset.mark = 'kept';
+    document.querySelector('#queue-body > *').dataset.mark = 'kept';
+  });
+  await fresh.click('#pr-refresh');
+  await fresh.waitForTimeout(300);
+  assert.equal(await fresh.locator('#pr-body > [data-mark=kept]').count(), 1, 'PR pane not rebuilt');
+  assert.equal(await fresh.locator('#queue-body > [data-mark=kept]').count(), 1, 'queue not rebuilt');
   await fresh.close();
 });

@@ -112,7 +112,7 @@ export function status(next) {
 
 /**
  * A log line, at or above the current verbosity. Errors keep stderr when the
- * output is piped, because the README promises the busy-port note there; on a
+ * output is piped, because docs/Terminal.md promises the busy-port note there; on a
  * real terminal the two are the same screen and the split buys nothing.
  */
 export function log(line, min = QUIET, err = false) {
@@ -147,8 +147,13 @@ export function confirm(text, onYes) {
  * Raw mode turns ISIG off, so Ctrl-C arrives as byte 3 and *no SIGINT is
  * delivered* -- this handler is the only Ctrl-C there is. Which is the point:
  * quitting kills the browser's Claude session, so it gets asked about first.
+ * It also means a bug in this handler makes the process impossible to
+ * interrupt, hence the unconditional second Ctrl-C below.
  *
- * With no tty there is nobody to ask, and the default death is right.
+ * With no tty there is nobody to ask, and the default death is right. The
+ * drivers split along that line: tools/browser.mjs spawns the server with
+ * `stdio: 'ignore'` and never reaches this, and tools/cli.mjs runs it in a
+ * real PTY to check it.
  */
 export function keys({ quit, key }) {
   if (!process.stdin.isTTY) return;

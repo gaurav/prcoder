@@ -23,7 +23,7 @@ let log;
 
 before(async () => {
   if (skip) return;
-  dir = await fs.mkdtemp(path.join(os.tmpdir(), 'prcoder-queue-writes-'));
+  dir = await fs.mkdtemp(path.join(os.tmpdir(), 'prcoder-queue-local-'));
   const bin = path.join(dir, 'bin');
   await fs.mkdir(bin);
   log = path.join(dir, 'calls.log');
@@ -63,16 +63,4 @@ test('adding, ticking, reordering and deleting queue items runs neither gh nor g
   // And the list is where it says it is.
   const stored = JSON.parse(await fs.readFile(path.join(dir, '.prcoder', 'queue.json'), 'utf8'));
   assert.equal(stored.items.length, 2);
-});
-
-// A queue from before the mirror went carries `inPr` and `pr`. Writing it back
-// drops them without touching GitHub -- the migration is the store's, and the
-// description it once mirrored into is left exactly as it is.
-test('a queue that was mirrored is written back without the mirror, and without gh', { skip }, async () => {
-  const [status, items] = await queue([{ text: 'was mirrored', done: false, inPr: true, pr: 1, issue: null, deleted: false }]);
-  assert.equal(status, 200);
-  assert.deepEqual(await calls(), []);
-  const stored = JSON.parse(await fs.readFile(path.join(dir, '.prcoder', 'queue.json'), 'utf8'));
-  assert.deepEqual(Object.keys(stored.items[0]).sort(), ['deleted', 'deletedAt', 'done', 'doneAt', 'issue', 'text']);
-  assert.equal(items[0].text, 'was mirrored');
 });

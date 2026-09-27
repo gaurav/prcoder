@@ -4,38 +4,40 @@
 // that cannot change while the process runs.
 
 import { run, parsePrUrl } from './github.js';
+import { urlPath } from './public/tasks.js';
 
-// GIT_TERMINAL_PROMPT=0 turns a credential prompt into an error. Without it a
-// push over SSH with a passphrase waits on a tty that does not exist, and with
-// the serial chain in server.js that hangs every route behind it.
-const git = (args, cwd) => run('git', args, {
-  cwd,
-  timeout: 30_000,
-  env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
-});
-
-/** Exit status only. `ok` is the answer; anything else is a real failure. */
-async function asks(args, cwd, ok = 1) {
-  try {
-    await git(args, cwd);
-    return true;
-  } catch (e) {
-    // execFile reports a spawn failure as a string code (ENOENT), an exit as a
-    // number. Only the expected number is an answer.
-    if (e.code === ok) return false;
-    throw e;
-  }
-}
+// Shorter than run()'s default: git here is local but for push and ls-remote,
+// and run() is also what turns a credential prompt into an error.
+const git = (args, cwd) => run('git', args, { cwd, timeout: 30_000 });
 
 const text = async (args, cwd) => (await git(args, cwd)).trim();
 
 /**
- * Empty on a detached HEAD, which happens mid-rebase and mid-bisect. `gh pr
- * view` fails there in a way loadPr does not recognise, so callers skip it.
+ * Trimmed stdout, or null when git exits `ok`; any other failure is a real one.
  *
- * Its own function because the queue needs the branch on routes that have no
- * reason to take a whole snapshot — the store is keyed by it.
+ * git's exit codes are per command, and a non-zero one is often an answer.
+ * `rev-parse --verify --quiet` exits 1 for a missing object where `cat-file -e`
+ * exits 128; `merge-base --is-ancestor` exits 1 for "no" and 128 for a bad
+ * object. So choose the command whose "no" code differs from its error code.
  */
+async function answer(args, cwd, ok = 1) {
+  try {
+    return await text(args, cwd);
+  } catch (e) {
+    // execFile reports a spawn failure as a string code (ENOENT), an exit as a
+    // number. Only the expected number is an answer.
+    if (e.code === ok) return null;
+    throw e;
+  }
+}
+
+/** Exit status only. `ok` is the answer; anything else is a real failure. */
+const asks = async (args, cwd, ok) => (await answer(args, cwd, ok)) !== null;
+
+/** Whether this clone has `rev` as a commit. 1 is "no"; 128 would be a bad name. */
+const hasCommit = (rev, cwd) => asks(['rev-parse', '--verify', '--quiet', `${rev}^{commit}`], cwd);
+
+/** Empty on a detached HEAD, which happens mid-rebase and mid-bisect. */
 export const currentBranch = (cwd) =>
   text(['symbolic-ref', '--quiet', '--short', 'HEAD'], cwd).catch(() => '');
 
@@ -55,14 +57,9 @@ export function syncState({ head, remoteHead, remoteKnownLocally, remoteIsAncest
 
 /**
  * The changed files that are the user's problem, from `git status --porcelain`.
- *
- * There is no longer an exception for FUTURE.md. It was here because prcoder
- * rewrote that file within seconds of normal use, so counting it left the
- * branch switcher permanently disabled — the queue now lives in an ignored
- * .prcoder/, prcoder writes nothing tracked, and an edit to FUTURE.md is
- * ordinary work that *should* block a checkout. The store never reaches this
- * function at all: it is ignored, and untracked files are excluded by the
- * caller's --untracked-files=no since they never block a checkout.
+ * Every one counts: prcoder writes nothing tracked (the store is in an ignored
+ * .prcoder/), and the caller's --untracked-files=no leaves out what never
+ * blocks a checkout. test/git.test.js has why FUTURE.md is no exception.
  *
  * Porcelain v1 lines are `XY path`, and the status letters are significant, so
  * the prefix is sliced rather than trimmed.
@@ -78,7 +75,7 @@ export const userDirt = (status) =>
  * base repo itself (checked 2026-09-24 against uc-cdis/heal-platform-sdk).
  */
 export const compareUrl = (nameWithOwner, base, branch, owner) =>
-  `https://github.com/${nameWithOwner}/compare/${base}...${owner ? `${owner}:` : ''}${branch}?expand=1`;
+  `https://github.com/${nameWithOwner}/compare/${urlPath(base)}...${owner ? `${owner}:` : ''}${urlPath(branch)}?expand=1`;
 
 /**
  * Who owns origin, read off its URL -- `git@github.com:o/r.git`,
@@ -120,7 +117,7 @@ export async function snapshot(cwd, remoteHead, branch) {
   const [head, status, known] = await Promise.all([
     text(['rev-parse', 'HEAD'], cwd),
     git(['status', '--porcelain', '--untracked-files=no'], cwd),
-    remoteHead && asks(['rev-parse', '--verify', '--quiet', `${remoteHead}^{commit}`], cwd),
+    remoteHead && hasCommit(remoteHead, cwd),
   ]);
   const dirty = userDirt(status);
 
@@ -152,13 +149,7 @@ export async function snapshot(cwd, remoteHead, branch) {
  */
 export async function trackingHead(cwd, branch) {
   if (!branch) return null;
-  try {
-    return await text(['rev-parse', '--verify', '--quiet', `refs/remotes/origin/${branch}`], cwd);
-  } catch (e) {
-    // 1 is "no such ref"; anything else is a real failure.
-    if (e.code === 1) return null;
-    throw e;
-  }
+  return answer(['rev-parse', '--verify', '--quiet', `refs/remotes/origin/${branch}`], cwd);
 }
 
 /**
@@ -207,12 +198,17 @@ const PATCH_LIMIT = 512 * 1024;
  * REST has dropped the patch.
  */
 export async function localPatch(cwd, { baseOid, baseRef, head, path, from, additions, deletions }) {
-  const known = (rev) => asks(['rev-parse', '--verify', '--quiet', `${rev}^{commit}`], cwd);
+  const known = (rev) => hasCommit(rev, cwd);
   const base = await known(baseOid) ? baseOid
     : await known(`refs/remotes/origin/${baseRef}`) ? `refs/remotes/origin/${baseRef}` : null;
   if (!base || !await known(head)) return null;
   // --literal-pathspecs because the path comes from the page: `:(glob)**` is
-  // otherwise every file. The rest keep a user's diff config out of it.
+  // otherwise every file. The rest keep a user's diff config out of it: a
+  // `diff.algorithm histogram` in someone's gitconfig reaches every `git diff`
+  // prcoder runs. Myers with three lines of context is what came closest to
+  // GitHub's patches, and even then a few files split hunks differently
+  // (7d3df58 has the comparison), which is why the line counts below are the
+  // check, not the text.
   const out = await git(['--literal-pathspecs', 'diff', '--no-color', '--no-ext-diff', '--no-textconv',
     '-U3', '--diff-algorithm=myers', '-M', `${base}...${head}`, '--', ...(from ? [from] : []), path], cwd);
   const at = out.search(/^@@/m);

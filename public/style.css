@@ -78,6 +78,9 @@ main.term-off #gut-diff { display: none; }
    selects the title. Background only -- a border or padding here would make
    the folded header a different height from the open one. */
 #term > header { user-select: none; cursor: pointer; }
+/* `● working` while a turn runs, and only folded: open, the terminal says so
+   itself. `hidden` stays the busy switch; this is the folded one. */
+main:not(.term-off) #term-busy { display: none; }
 #term > header:hover { background: var(--bg); }
 #term > header:hover h1, #term > header:hover #term-fold { color: var(--fg); }
 /* Before the title, like a disclosure triangle, at the title's own size and
@@ -287,8 +290,7 @@ a { color: var(--accent); }
    long path and keep its filename -- is one declaration instead of four and
    was measured against this. It works. It is not here because the two cut
    opposite ends: a path is recognised from its tail, an owner from its front,
-   and rtl leaves `…tewards` where the spans leave `heal-dat…`.
-   docs/Verifying.md has the comparison. */
+   and rtl leaves `…tewards` where the spans leave `heal-dat…`. */
 .pr-links a.primary {
   padding: 1px 8px; border-radius: 9px; text-decoration: none; font-weight: 600;
   background: var(--accent); color: var(--bg);
@@ -657,14 +659,16 @@ a { color: var(--accent); }
 .pane > header button.where.top { color: var(--accent); border-color: var(--accent); }
 
 /* The dot carries the state; the text next to it says what to do about it.
-   Two panes have one now: the PR's is about the branch and the remote, the
-   queue's is about whether GitHub has the items you typed. */
+   The PR pane's is about the branch and the remote. */
 .light { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--dim); white-space: nowrap; }
 .light::before {
   content: ''; width: 7px; height: 7px; border-radius: 50%;
   background: var(--line); flex: none;
 }
 .light.warn { color: #f0dc9a; }
+/* The favicon's busy blue (BUSY in app.js, from the icon in index.html), on
+   the dot only: the words stay dim, so a folded turn is noticeable, not loud. */
+.light.busy::before { background: #1f6feb; }
 .light.warn::before { background: #f0dc9a; }
 .light.unknown::before { background: transparent; box-shadow: inset 0 0 0 1px var(--dim); }
 

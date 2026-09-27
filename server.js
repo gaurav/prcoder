@@ -8,67 +8,31 @@ import fs from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createHash } from 'node:crypto';
 import { text as readBody } from 'node:stream/consumers';
 import { spawn as ptySpawn } from 'node-pty';
 import { WebSocketServer } from 'ws';
 import { loadPr, prHeads, prBody, listPrs, listIssues, setViewed, setBody, createIssue, fetchPatches, runCount } from './github.js';
 import { snapshot, currentBranch, repoInfo, prScope, compareUrl, originOwner, checkoutPr, pushBranch, remoteBranchHead, trackingHead, localPatch } from './git.js';
-import { groupFiles, fileUrl, fileViews } from './files.js';
-import { toggleTask } from './queue.js';
-import { readStore, writeStore, readPort, writePort, replaceItems } from './store.js';
+import { bucket, fileUrl, fileViews } from './files.js';
+import { readPort, writePort } from './store.js';
+import { readQueue, writeQueue, quote } from './queue.js';
+import { splitArgs, portCandidates, statusLines } from './cli.js';
 import { counts } from './public/items.js';
 import * as term from './term.js';
-import { syncPhrase } from './public/pr.js';
+import { toggleTask } from './public/tasks.js';
 import { grammars } from './public/diff.js';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const repo = process.cwd();
-/**
- * Where a repo's port starts from: a hash of its path, so the first run in a
- * clone picks a port of its own without asking anyone. What the repo then
- * *uses* is `.prcoder/port.json` -- see resolvePort(). This stays pure so the
- * seed can be checked without a disk.
- *
- * The range is above 10080 on purpose. Browsers refuse a fixed list of
- * well-known ports outright, and Firefox says only "This address is
- * restricted" -- nothing on screen connects that to prcoder, and the old
- * 1618-2617 range held four of them (1719, 1720, 1723, 2049). The list is the
- * WHATWG fetch standard's, shared by Firefox, Chrome and Safari, and 10080 is
- * its highest entry. macOS hands out ephemeral ports from 49152, so 10240-14335
- * is clear at both ends.
- */
-export const PORT_BASE = 10240;
-export const PORT_SPAN = 4096;
-
-export function portFor(repo) {
-  return PORT_BASE + createHash('sha1').update(repo).digest().readUInt16BE(0) % PORT_SPAN;
-}
-
-/**
- * Every port in the range, starting at this repo's seed and wrapping. Only a
- * first run walks past the first entry, and only until something binds.
- */
-export function portCandidates(repo) {
-  const first = portFor(repo) - PORT_BASE;
-  return Array.from({ length: PORT_SPAN }, (_, n) => PORT_BASE + (first + n) % PORT_SPAN);
-}
-// Args split at the first flag: everything before it is ours (an optional PR
-// number, URL or branch), everything from it on is handed to `claude` verbatim.
-// No table of Claude's flags to keep in sync, and no collisions to arbitrate.
-export function splitArgs(argv) {
-  const cut = argv.findIndex((a) => a.startsWith('-'));
-  return { target: cut === 0 ? undefined : argv[0], claudeArgs: cut === -1 ? [] : argv.slice(cut) };
-}
-
 let { target, claudeArgs } = splitArgs(process.argv.slice(2));
-
-// The PR is fetched once and reused; the queue routes need its body and node id.
+// The PR is fetched once and reused, with its files already grouped and linked
+// (decorateFiles); the PR routes need its body, node id and head.
 let pr = null;
 // owner/repo and default branch: constant while we run, and loaded at startup
-// rather than lazily, because the issue links decorate() derives need it before
+// rather than lazily, because the issue links the queue derives need it before
 // the first poll.
 let info = null;
+const repoFacts = async () => (info ??= await repoInfo(repo));
 
 // ponytail: patches fetched lazily on the first diff click, keyed by head oid
 // so a push or PR switch invalidates for free. Eager prefetch in refreshPr if
@@ -93,7 +57,7 @@ let wanted = 0;
  * Every gh/git call runs one at a time. `gh pr checkout` is a fetch, a checkout
  * and a fast-forward, and a status poll landing between the last two reads a
  * branch at the wrong commit. Serialising is also what stops a poll reloading
- * `pr` in the middle of writeQueue's read-modify-write of the description.
+ * `pr` in the middle of editBody's read-modify-write of the description.
  *
  * ponytail: one global lock; split per-route only if a slow gh call visibly
  * stalls the UI.
@@ -105,88 +69,30 @@ const serial = (fn) => {
   return p;
 };
 
-/** Item text, cut to something a status line can hold. */
-const quote = (t) => `'${t.length > 48 ? `${t.slice(0, 47)}…` : t}'`;
-
-/**
- * What changed in the queue, said out loud. Matched on text because that is the
- * only identity an item has -- so an edit reads as a delete and an add, which
- * is honest: nothing here can tell those apart either (see the ponytail note on
- * writeQueue).
- *
- * Returns the lines rather than printing them, which is the only reason the
- * transitions below can be checked without a terminal.
- */
-export function queueChanges(was, now) {
-  const before = new Map(was.map((i) => [i.text, i]));
-  const lines = [];
-  for (const i of now) {
-    const p = before.get(i.text);
-    if (!p) lines.push(`queued ${quote(i.text)}`);
-    else if (p.done !== i.done) lines.push(`${i.done ? 'ticked' : 'unticked'} ${quote(i.text)}`);
-    else if (p.deleted !== i.deleted) lines.push(`${i.deleted ? 'deleted' : 'restored'} ${quote(i.text)}`);
-  }
-  for (const i of was) {
-    if (!now.some((n) => n.text === i.text)) lines.push(`dropped ${quote(i.text)}`);
-  }
-  return lines;
-}
-
 const requirePr = () => {
   if (!pr) throw new Error('no pull request for this branch');
   return pr;
 };
 
-async function refreshPr(detached) {
-  // gh pr view fails on a detached HEAD in a way loadPr does not recognise, so
-  // it would throw rather than report "no PR" — and 500 the poll every minute.
-  detached ??= !(await currentBranch(repo));
-  pr = !target && detached ? null : await loadPr(repo, target);
+async function refreshPr() {
+  pr = await loadPr(repo, target);
+  // Once per load rather than per poll: nothing it reads changes until the PR
+  // is reloaded.
+  if (pr) decorateFiles(pr);
 }
 
 /**
- * Files bucketed for the pane, each carrying the two ways to read it on GitHub:
- * this file's patch in the diff viewer, and the whole file at the PR's head.
+ * Each file told which of the pane's groups it is in, and the ways to read it
+ * on GitHub: its patch in the diff viewer, and the whole file at the PR's head.
+ * The group is a key on the file rather than a second list of the same files:
+ * that list went to every tab on every poll beside `files`, each file twice.
  */
-function withUrls(p) {
-  const groups = groupFiles(p.files);
-  for (const list of Object.values(groups)) {
-    for (const f of list) {
-      f.url = fileUrl(p.url, f.path);
-      Object.assign(f, fileViews(p.url, p.headRefOid, f.path));
-    }
+function decorateFiles(p) {
+  for (const f of p.files) {
+    f.group = bucket(f.path);
+    f.url = fileUrl(p.url, f.path);
+    Object.assign(f, fileViews(p.url, p.headRefOid, f.path));
   }
-  return groups;
-}
-
-/**
- * The queue is yours and lives only in `.prcoder/queue.json`: nothing here reads
- * it back from GitHub. Moving an item out is a separate, one-way route (see
- * moveOut), not a flag this list keeps in step with a description.
- */
-const readQueue = async () => decorate((await readStore(repo)).store.items);
-
-/**
- * ponytail: last write wins. The store is re-read on every poll so an outside
- * edit is picked up, but two tabs racing means the slower one loses what it
- * never saw. Fixing that needs item identity — text is not it, since an edit is
- * indistinguishable from a delete plus an add — so if a lost item is ever
- * actually observed, give pick() a crypto.randomUUID() and union by id.
- */
-async function writeQueue(items) {
-  // The shape is the contract, and it has changed twice: the route took a bare
-  // array, then `{items, branch}`, and now `{items}` again. A client that
-  // missed a change -- an old tab, a curl copied from somewhere -- used to send
-  // something this function then indexed into, and the TypeError said nothing
-  // about what to send instead. Checked here rather than at the route, because
-  // every write goes through this function.
-  if (!Array.isArray(items)) {
-    throw new Error('the queue must be sent as {items}');
-  }
-  const { store, stale } = await readStore(repo);
-  for (const line of queueChanges(store.items, items)) term.verbose(line);
-  await writeStore(repo, replaceItems(store, items), { stale });
-  return decorate(items);
 }
 
 /**
@@ -203,7 +109,7 @@ async function moveOut(items, indices, send) {
   // "failed" without a URL is what makes someone file the same issue again.
   const where = await send(moving);
   try {
-    return await writeQueue(items.filter((i) => !moving.includes(i)));
+    return await writeQueue(repo, items.filter((i) => !moving.includes(i)), info?.nameWithOwner);
   } catch (e) {
     throw new Error(`moved to ${where}, but the queue still lists ${moving.length === 1 ? 'it' : 'them'}: ${e.message}`);
   }
@@ -225,83 +131,27 @@ async function editBody(edit) {
 }
 
 /**
- * The store keeps only the issue number; the link is derived. From
- * nameWithOwner rather than the PR's URL, because that is the repo createIssue
- * actually files into — with a pinned foreign PR the two differ — and because
- * a queue that now works with no PR loaded would otherwise render dead links.
- */
-function decorate(items) {
-  return items.map((i) => ({
-    ...i,
-    issueUrl: i.issue && info ? `https://github.com/${info.nameWithOwner}/issues/${i.issue}` : null,
-  }));
-}
-
-/**
- * How long ago the block was last true. Nothing under two minutes, because a
- * poll runs every sixty seconds and an age that is always on screen is an age
- * nobody reads.
- */
-export const ago = (ms) => {
-  if (!(ms >= 120_000)) return null;
-  const mins = Math.round(ms / 60_000);
-  return mins < 60 ? `checked ${mins}m ago` : `checked ${Math.round(mins / 60)}h ago`;
-};
-
-/**
- * The block pinned under the log: everything status() worked out anyway, for
- * the terminal that is otherwise sat idle for the whole session. Pure, so the
- * wording is testable without a tty.
- */
-export function statusLines(s, u = {}) {
-  // padEnd, not a slice: a label longer than the column has to push the row out
-  // rather than lose its tail, or `PR #10000` prints as a real-looking `PR #1000`.
-  const row = (label, ...rest) => `${label.padEnd(8)} ${rest.filter(Boolean).join('   ')}`;
-  // The same predicates the pane's tabs use, so the block and the tab strip
-  // cannot report the queue differently.
-  const q = counts(s.queue ?? []);
-
-  return [
-    row('prcoder', s.nameWithOwner,
-      s.branch ? `${s.branch} → ${s.pr?.baseRefName ?? s.defaultBranch}` : 'detached HEAD',
-      [syncPhrase(s), s.dirtyFiles?.length && `${s.dirtyFiles.length} uncommitted`]
-        .filter(Boolean).join(' · ')),
-    s.pr ? row(`PR #${s.pr.number}`, s.pr.title) : row('PR', 'none for this branch'),
-    s.pr && row('', s.pr.url),
-    row('queue', `${q.local} local · ${q.done} done`),
-    // The age belongs next to the tab count because the tab is the cause: the
-    // browser polls only while its tab is visible, so backgrounding it stops
-    // the clock on every number above while the socket stays open and the count
-    // keeps cheerfully saying `1 tab`.
-    row('serving', u.local, u.tabs ? `${u.tabs} tab${u.tabs > 1 ? 's' : ''}` : 'no tab open',
-      ago(u.age), 'q quit · r refresh · v verbose · o open'),
-    u.moved && row('', u.moved),
-  ].filter(Boolean);
-}
-
-/**
  * Where the repo is, plus the PR and queue that go with it. The client polls
  * this; nothing is stored between calls, so an outside `git checkout` or an
  * edit on github.com is picked up without prcoder having to be told.
  */
 async function status({ full = false } = {}) {
   const calls = runCount();
-  info ??= await repoInfo(repo);
 
   // Taken once and threaded through: the remote head is not known yet, and
   // asking git the same four questions three times a minute is just noise.
   const branch = await currentBranch(repo);
-  const detached = !branch;
-  // A pinned target keeps working on a detached HEAD; branch-following cannot.
   // A full refresh reloads regardless, so it has no use for the cheap check.
-  const heads = full || (detached && !target) ? null : await prHeads(repo, target);
+  const heads = full ? null : await prHeads(repo, target);
 
   // The cheap call decides whether the expensive one is needed: loadPr also
   // runs a paginated GraphQL pass, which is far too much for a 60s poll.
   if (full || heads?.updatedAt !== pr?.updatedAt || heads?.number !== pr?.number) {
     if (!full && pr) term.debug(`PR #${pr.number} changed upstream — reloading into the UI`);
-    await refreshPr(detached);
+    await refreshPr();
   }
+  // After the PR, so a startup whose repo lookup fails still has the PR to report.
+  const facts = await repoFacts();
 
   // With no PR there is no headRefOid to compare against, so read git's own
   // record of origin's head -- not origin: that was a `git ls-remote` a minute
@@ -310,12 +160,12 @@ async function status({ full = false } = {}) {
   // because it pushes on the answer.
   const oid = pr?.headRefOid ?? heads?.headRefOid ?? await trackingHead(repo, branch);
   const snap = await snapshot(repo, oid, branch);
-  const scope = prScope(pr, { branch: snap.branch, nameWithOwner: info.nameWithOwner });
+  const scope = prScope(pr, { branch: snap.branch, nameWithOwner: facts.nameWithOwner });
   const tracked = scope === 'current' || scope === 'none';
 
   last = {
     ...snap,
-    ...info,
+    ...facts,
     scope,
     // A PR we have not checked out can never be in sync with this working
     // tree, so its verdict is meaningless. With no PR at all the branch still
@@ -326,11 +176,14 @@ async function status({ full = false } = {}) {
     // say "N unpushed commits", which for a pinned PR on another branch was a
     // count against a branch you are not on.
     ahead: tracked ? snap.ahead : null,
-    pr: pr ? { ...pr, groups: withUrls(pr) } : null,
-    queue: await readQueue(),
+    pr,
+    queue: await readQueue(repo, info?.nameWithOwner),
   };
   checkedAt = Date.now();
   repaint();
+  // Seven on a clean tree or a dirty one, with or without a pull request.
+  // Printed at PRCODER_VERBOSE=2 so a change that adds one shows up as a
+  // number rather than as a slower poll.
   term.debug(`poll: ${runCount() - calls} subprocess calls`);
   return last;
 }
@@ -346,10 +199,24 @@ const repaint = () => term.status(last
  * who took its port, and a probe queued behind a slow `gh` would time out and
  * report the wrong thing.
  */
-const UNLOCKED = new Set(['GET /api/whoami']);
+const UNLOCKED = new Set(['GET /api/whoami', 'GET /api/status']);
+
+/**
+ * Status polls that arrive while one is still waiting for the lock share it:
+ * two tabs, or a tab's timer landing on its own visibilitychange, would
+ * otherwise each queue the full set of gh and git calls. Cleared as the run
+ * *starts*, so a poll arriving mid-run gets a fresh one rather than an answer
+ * from before whatever it queued behind.
+ */
+let queuedPoll = null;
+const poll = () => (queuedPoll ??= serial(() => {
+  queuedPoll = null;
+  return status();
+}));
 
 const routes = {
-  'GET /api/status': () => status(),
+  // Unlocked only because poll() takes the lock itself.
+  'GET /api/status': poll,
 
   'GET /api/whoami': () => ({ prcoder: true, repo, branch: last?.branch ?? null,
     nameWithOwner: info?.nameWithOwner ?? null }),
@@ -368,16 +235,16 @@ const routes = {
   },
 
   'POST /api/pr/create': async () => {
-    info ??= await repoInfo(repo);
+    const facts = await repoFacts();
     const branch = await currentBranch(repo);
     if (!branch) throw new Error('detached HEAD — check out a branch first');
-    if (branch === info.defaultBranch) throw new Error(`on ${branch} — make a branch first`);
+    if (branch === facts.defaultBranch) throw new Error(`on ${branch} — make a branch first`);
 
     // GitHub's compare page only knows about branches it has seen. Ask origin
     // rather than trusting a sync verdict computed without a remote head.
     const pushed = !(await remoteBranchHead(repo, branch));
     if (pushed) await pushBranch(repo);
-    return { url: compareUrl(info.nameWithOwner, info.defaultBranch, branch, await originOwner(repo)), pushed };
+    return { url: compareUrl(facts.nameWithOwner, facts.defaultBranch, branch, await originOwner(repo)), pushed };
   },
 
   'POST /api/pr/viewed': async ({ path: p, viewed }) => {
@@ -421,15 +288,15 @@ const routes = {
     }) };
   },
 
-  'GET /api/queue': () => readQueue(),
+  'GET /api/queue': () => readQueue(repo, info?.nameWithOwner),
 
-  'PUT /api/queue': ({ items }) => writeQueue(items),
+  'PUT /api/queue': ({ items }) => writeQueue(repo, items, info?.nameWithOwner),
 
   /** Filed as an issue, one item at a time: each is its own issue. */
   'POST /api/queue/to-issue': async ({ items, index }) => {
-    info ??= await repoInfo(repo);
+    const { nameWithOwner } = await repoFacts();
     return moveOut(items, [index], async ([item]) => {
-      const { url } = await createIssue(repo, info.nameWithOwner, item.text);
+      const { url } = await createIssue(repo, nameWithOwner, item.text);
       term.verbose(`filed ${quote(item.text)} as ${url}`);
       return url;
     });
@@ -662,14 +529,9 @@ async function ready() {
   // rather than running against a half-loaded process: an issue filed before
   // `info` loads would have no repository to link to. `listening` fires before
   // any connection is handled, so this is always first in the chain.
-  await serial(async () => {
-    info ??= await repoInfo(repo).catch((e) => {
-      console.error('repo:', e.message);
-      return null;
-    });
-    await refreshPr().catch((e) => console.error('pr:', e.message));
-    await status().catch((e) => console.error('status:', e.message));
-  });
+  // A full status rather than a PR load followed by a poll: the poll would only
+  // ask GitHub again whether the PR it just loaded had changed.
+  await serial(() => status({ full: true })).catch((e) => console.error('status:', e.message));
   console.log(`prcoder: ${repo}`);
   console.log(pr ? `PR #${pr.number}: ${pr.title}` : 'no pull request for this branch');
   if (pr) console.log(pr.url);

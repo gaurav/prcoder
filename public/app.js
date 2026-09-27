@@ -1,9 +1,9 @@
 import { Terminal } from '/vendor/xterm.mjs';
 import { FitAddon } from '/vendor/addon-fit.mjs';
 import { WebLinksAddon } from '/vendor/addon-web-links.mjs';
-import { renderPr, renderNoPr, renderHeader, pageTitle, api, toast } from './pr.js';
+import { renderPr, renderNoPr, renderHeader, pageTitle, api, toast, pref, setPref } from './pr.js';
 import { openDiff, closeDiff, selectedPath, setViewed } from './diff.js';
-import { initQueue, addItem, setItems, freeze } from './queue.js';
+import { initQueue, addItem, setItems } from './queue.js';
 import './panes.js';   // draggable pane gutters; nothing here calls into it
 
 const term = new Terminal({
@@ -19,6 +19,10 @@ term.open(document.getElementById('term-host'));
 
 const PTY_SEEN = 'prcoder:pty';
 const ws = new WebSocket(`ws://${location.host}/pty`);
+// `WebSocket.OPEN` is read off the global constructor, so a Playwright init
+// script that wraps `window.WebSocket` without copying its four state statics
+// makes it undefined. Every send then returns false, and the page silently
+// stops talking to the PTY, with no error and no closed socket.
 const send = (msg) => {
   if (ws.readyState !== WebSocket.OPEN) return false;
   ws.send(JSON.stringify(msg));
@@ -40,7 +44,9 @@ const sync = () => {
 };
 
 // The tab icon, blue while a turn is running, so a session left in a
-// background tab says whether it is still going without switching to it.
+// background tab says whether it is still going without switching to it. The
+// folded pane's header says the same with `● working`, from the same state, so
+// a session you folded away says when it is done without unfolding it.
 // The PTY carries no "thinking" signal and nothing here reads the frames, so a
 // turn is bracketed rather than detected: sending a line starts one, and the
 // output holds it open. Claude repaints its spinner every few hundred ms
@@ -68,6 +74,7 @@ const sync = () => {
 // looks at anything Claude drew.
 const PROBE = /^(?:\x1b\[\?6n)+$/;
 const link = document.querySelector('link[rel=icon]');
+const busyLabel = document.getElementById('term-busy');
 // Derived, not written out a second time -- so the icon in index.html stays the
 // one definition of it. Change its colour there and change this to match.
 const IDLE = link.href;
@@ -83,6 +90,9 @@ const icon = (href) => {
   shown = link.href = href;
   link.remove();
   document.head.append(link);
+  // Here rather than in turn(): the quiet timer ends a turn through icon()
+  // alone, and this is the one place the two can never disagree.
+  busyLabel.hidden = href !== BUSY;
 };
 let quiet;
 const turn = (on) => {
@@ -137,10 +147,10 @@ function foldTerm(off, save = true) {
   fold.textContent = off ? '▶\uFE0E' : '▼';   // FE0E: text, never macOS's emoji ▶
   fold.title = `${off ? 'expand' : 'collapse'} the coding agent pane`;
   fold.setAttribute('aria-label', fold.title);   // a glyph is no name, as in queue.js
-  if (save) try { localStorage.setItem(TERM_KEY, off ? 'off' : 'on'); } catch { /* this session only */ }
+  if (save) setPref(TERM_KEY, off ? 'off' : 'on');
   if (!off) term.focus();   // expanding it is to talk to it
 }
-try { if (localStorage.getItem(TERM_KEY) === 'off') foldTerm(true, false); } catch { /* shown */ }
+if (pref(TERM_KEY) === 'off') foldTerm(true, false);
 const folded = () => document.querySelector('main').classList.contains('term-off');
 // The whole header is the toggle, and the ▼ is only the part of it that says
 // so -- and the part a keyboard can reach, since a button's Enter is a click
@@ -187,31 +197,51 @@ const NOTES = {
 };
 
 /**
- * A checkbox in the description, ticked through to GitHub. Rethrown so the box
- * snaps back, and the status reload is for the one error that matters: the
- * description moved under us, and the pane is now showing a stale copy of it.
+ * A checkbox in the description, ticked through to GitHub -- the one edit to a
+ * description prcoder makes, on your click. The route answers with the body
+ * GitHub now has, which becomes the pane's, so the Detail count, the section's
+ * pie and the queue's PR tab move with the box rather than a poll later.
+ * Rethrown so the box snaps back, and the status reload is for the one error
+ * that matters: the description moved under us, and the pane is now showing a
+ * stale copy of it.
  */
 async function toggleTask(task) {
+  let body;
   try {
-    const { body } = await api('/api/pr/task', task);
-    // The PR pane and the queue's PR tab both draw these boxes; a tick in one
-    // has to show in the other without waiting for the poll.
-    if (last?.pr) {
-      last.pr.body = body;
-      paint(last);
-    }
+    ({ body } = await api('/api/pr/task', task));
   } catch (e) {
     toast(e.message, true);
     loadStatus();
     throw e;
   }
+  if (last?.pr) {
+    last.pr.body = body;
+    paint(last);
+  }
 }
 
+/** A file marked viewed or not, on GitHub and then in every place that shows it. */
+async function markViewed(path, viewed) {
+  await setViewed(path, viewed);
+  const f = last?.pr?.files.find((x) => x.path === path);
+  if (!f) return;
+  f.viewed = viewed;
+  paint(last);
+  // The diff pane's box is static markup, outside anything paint() draws.
+  if (selectedPath() === path) document.getElementById('diff-viewed').checked = viewed;
+}
+
+const openFile = (f) => openDiff(f, markViewed);
 const fileHandlers = {
-  onViewed: setViewed,
-  onOpen: openDiff,
+  onViewed: markViewed,
+  onOpen: openFile,
   onTask: toggleTask,
 };
+
+// What the pull request pane was last drawn from. A poll that finds nothing new
+// -- most of them -- skips rebuilding it: every row, fold and listener, and the
+// scroll, focus and fold state put back afterwards.
+let drawn = null;
 
 function paint(status) {
   const moved = last?.pr?.headRefOid !== status.pr?.headRefOid;
@@ -228,9 +258,16 @@ function paint(status) {
   document.title = pageTitle(status);
   renderHeader(status, prs, handlers);
   if (status.pr) {
-    renderPr({ ...status.pr, note: NOTES[status.scope] },
-      { ...fileHandlers, selected: selectedPath() });
-  } else renderNoPr(status, prs, { onCreate: createPr, onSwitch: switchPr });
+    const key = JSON.stringify([status.pr, status.scope]);
+    if (key !== drawn) {
+      drawn = key;
+      renderPr({ ...status.pr, note: NOTES[status.scope] },
+        { ...fileHandlers, selected: selectedPath() });
+    }
+  } else {
+    drawn = null;
+    renderNoPr(status, prs, { onCreate: createPr, onSwitch: switchPr });
+  }
   if (switched) loadPrs();
   // Reading its checklist into the PR tab needs only a PR on screen.
   if (status.queue) setItems(status.queue, status.pr);
@@ -242,7 +279,7 @@ function paint(status) {
   if (!open) return;
   const f = status.pr?.files.find((x) => x.path === open);
   if (!f) closeDiff();
-  else if (moved) openDiff(f);
+  else if (moved) openFile(f);
 }
 
 /**
@@ -261,7 +298,6 @@ async function loadStatus() {
 }
 
 async function switchPr(number) {
-  freeze(true);
   try {
     const status = await api('/api/pr/switch', { number });
     paint(status);
@@ -275,8 +311,6 @@ async function switchPr(number) {
   } catch (e) {
     toast(e.message, true);
     await loadStatus();   // re-derive: the checkout may have half-succeeded
-  } finally {
-    freeze(false);
   }
 }
 
@@ -323,8 +357,7 @@ input.addEventListener('keydown', async (e) => {
   e.preventDefault();
   // Cleared only once the server has the item. addItem is async and save()
   // reports a refusal with a toast rather than a throw, so clearing on the way
-  // past threw the text away on a stale-branch refusal, on any API failure, and
-  // on an Enter pressed during a branch switch.
+  // past threw the text away on any API failure.
   if (await addItem(input.value)) {
     input.value = '';
     grow();

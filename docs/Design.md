@@ -1,6 +1,6 @@
 # Why prcoder looks like this
 
-What the panes do is in [the README](../README.md). This file is the *why*: the argument for
+What the panes do is in [Panes.md](Panes.md). This file is the *why*: the argument for
 building it at all, what shapes the queue, and what it deliberately does not do. What the server is
 exposed to, and the checks that close it, is in [Security.md](Security.md). Where a
 decision is a property of one function, the docstring at that function argues it in full and this
@@ -19,11 +19,12 @@ The queue is your own TODO list for this working copy, kept in `.prcoder/queue.j
 else. It started as something bigger — one list that *was* every place work lives, two-way mirrored
 into a block in the PR description, with guards to stop that sync burying items — and in use it
 worked best as the smaller thing. That redesign, decided 2026-09-14, is [#27](https://github.com/gaurav/prcoder/pull/27). The mirror
-is parked in [#82](https://github.com/gaurav/prcoder/pull/82), a draft kept for reference.
+is parked in [#82](https://github.com/gaurav/prcoder/pull/82), a draft kept for reference, and a
+description that still carries its block holds an ordinary checklist now.
 
 **prcoder does not edit a pull request's title or description**, and keeps no list anywhere but
 `.prcoder/`. The one exception is a checkbox you tick, in the PR pane or on the queue's PR tab: that
-flips its one line (`toggleTask` in [`queue.js`](../queue.js)), re-reading the body first and
+flips its one line (`toggleTask` in [`public/tasks.js`](../public/tasks.js)), re-reading the body first and
 refusing if the line has changed under it, and never falling back to a cached copy (`editBody`) — a
 read that did not happen says nothing about what the description holds now. An earlier version of
 this branch also had ◇, which appended an item to the description as a checkbox; it came out under
@@ -41,6 +42,10 @@ minute. Last write wins over the whole list, as it does between two tabs (below)
 safer route is the server — `GET /api/queue`, then `PUT /api/queue` with `{items}` — because that
 goes through the same coercion the page's writes do; whether Claude should get a channel of its own
 into prcoder is [#21](https://github.com/gaurav/prcoder/issues/21)'s question.
+
+**What else reaches GitHub, and only on a click:** ◎ files an item as a new issue, a file's checkbox
+marks it viewed, and creating a pull request pushes the branch and opens GitHub's compare page. None
+of them writes a description.
 
 **Each permanent source is a tab, read straight from it.** PR is the description's checklist, and
 Issues is the issues the description mentions without closing; pulling from either copies the item

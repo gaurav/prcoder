@@ -19,17 +19,16 @@
 // failing identically.
 
 import { execFile } from 'node:child_process';
-import { existsSync, mkdirSync, rmSync } from 'node:fs';
+import { existsSync, rmSync } from 'node:fs';
 import { promisify } from 'node:util';
 import { firefox } from 'playwright';
+import { firefoxEnv } from '../driver.mjs';
 
 const run = promisify(execFile);
 const stock = '/Applications/Firefox.app/Contents/MacOS/firefox';
 const shot = new URL('../../data/firefox-probe.png', import.meta.url).pathname;
-// The same directory tools/browser.mjs uses, so the two cannot disagree.
-const appData = new URL('../../data/firefox-appdata/', import.meta.url).pathname;
-const appEnv = { MOZ_APP_DATA: appData + 'roaming', MOZ_LOCAL_APP_DATA: appData + 'local' };
-for (const dir of Object.values(appEnv)) mkdirSync(dir, { recursive: true });
+// The drivers' own, so the two cannot disagree.
+const appEnv = firefoxEnv();
 const envs = [['', process.env], [', MOZ_APP_DATA', { ...process.env, ...appEnv }]];
 
 // Headed is worth the window it opens: the two engines fail differently, and a
@@ -73,7 +72,7 @@ for (const [label, env] of envs) {
     if (shotOk) ok[label ? 'env' : 'bare'] = true;
     console.log(`${shotOk ? 'OK  ' : 'FAIL'} bare ${stock}${label} -- ${shotOk ? shot : firstLine(stderr)} (${Date.now() - started}ms)`);
   } catch (err) {
-    // execFile hands stderr to the callback rather than the error; see CLAUDE.md.
+    // execFile hands stderr to the callback rather than the error; see run() in github.js.
     console.log(`FAIL bare ${stock}${label} -- ${firstLine(err.stderr) || why(err)} (${Date.now() - started}ms)`);
   }
 }
