@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  pageTitle, withoutHtml, inline, headLinks, noPrLinks, prsInto, prTree, stackOn, stackLabel, stackOrder, stackEmpty, intoEmpty,
+  pageTitle, withoutHtml, inline, headLinks, noPrLinks, prsInto, prTree, stackOn, stackLabel, stackOrder, stackEmpty, intoEmpty, switcherRows,
   HEADING, blocks, sectionize, tabLabel, taskCount, viewedCount, byPath, bySize, byDir, nums,
 } from '../public/pr.js';
 import { fences, TASK, taskLines } from '../public/tasks.js';
@@ -349,6 +349,19 @@ test('the switcher lists each pull request with its stack under it', () => {
   const deeper = [...OPEN, { number: 61, headRefName: 'tabs-2', baseRefName: 'checks-tab' },
     { number: 9, headRefName: 'elsewhere', baseRefName: 'release' }];
   assert.deepEqual(order(deeper), ['1', '-27', '-60', '--61', '9']);
+});
+
+// gh pr list has only open PRs, so a merged one on screen is added -- into the
+// tree, so what is still open on its branch nests under it, as in its Stack tab.
+test('a merged pull request on screen parents the ones still open on its branch', () => {
+  const merged = { number: 5, title: 'Merged', headRefName: 'merged-topic', baseRefName: 'initial-implementation' };
+  const built = [...OPEN, { number: 70, headRefName: 'built-on-merged', baseRefName: 'merged-topic' }];
+  const rows = (prs, pr) => switcherRows(prs, pr).map(({ pr: p, depth }) => `${'-'.repeat(depth)}${p.number}`);
+  assert.deepEqual(rows(built, merged), ['1', '-5', '--70', '-27', '-60']);
+  // Open, it is already in the list, and nothing is added.
+  assert.deepEqual(rows(OPEN, OPEN[1]), ['1', '-27', '-60']);
+  // Into a branch no open PR is on, it leads.
+  assert.deepEqual(rows(OPEN, { ...merged, baseRefName: 'main' }), ['5', '1', '-27', '-60']);
 });
 
 // A fork's head is a branch in the fork. Named `main`, it would otherwise make

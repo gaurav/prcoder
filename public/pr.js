@@ -162,9 +162,6 @@ export function renderHeader(status, prs, { onSwitch, onCommit }) {
   const commit = document.getElementById('pr-commit');
 
   // Rebuilt only when the set of PRs changes, so the open list survives a poll.
-  // gh pr list is open PRs only, so a merged or closed one has no option of its
-  // own — without this the select falls to selectedIndex -1 and renders blank
-  // while the pane below it is showing that very PR.
   //
   // Stacked PRs sit under the one they build on. An <option> cannot nest and an
   // <optgroup> cannot be chosen, so the indent is in the label, in non-breaking
@@ -174,12 +171,7 @@ export function renderHeader(status, prs, { onSwitch, onCommit }) {
   // than "no open pull requests" -- the pane below says there is no list yet,
   // and the two sat one above the other disagreeing. The `?` in the keys
   // rebuilds the options when a list lands, even an empty one.
-  const list = prs ?? [];
-  const shown = [
-    ...(status.pr && !list.some((p) => p.number === status.pr.number)
-      ? [{ pr: { number: status.pr.number, title: status.pr.title, isDraft: false }, depth: 0 }] : []),
-    ...stackOrder(list),
-  ];
+  const shown = switcherRows(prs ?? [], status.pr);
 
   const keys = (prs ? '' : '?') + shown.map(({ pr, depth }) => `${pr.number}:${depth}`).join(',');
   if (sel.dataset.keys !== keys) {
@@ -265,6 +257,25 @@ export function stackOrder(prs) {
     ...[...bases].flatMap((b) => walk(prTree(prs, b, seen), 0)),
     ...prs.filter((p) => !seen.has(p.number)).map((pr) => ({ pr, depth: 0 })),
   ];
+}
+
+/**
+ * The switcher's options, `[{ pr, depth }]`: stackOrder over the open pull
+ * requests, and the one on screen.
+ *
+ * gh pr list is open PRs only, so a merged or closed one has no option of its
+ * own -- without one the select falls to selectedIndex -1 and renders blank
+ * while the pane below it is showing that very PR. It goes into the list the
+ * tree is built from rather than in front of the finished order: pinned there,
+ * the open PRs based on its branch were roots of their own in the switcher
+ * while its Stack tab showed them under it. First in that list, so it still
+ * leads its group.
+ */
+export function switcherRows(prs, current) {
+  const missing = current && !prs.some((p) => p.number === current.number);
+  if (!missing) return stackOrder(prs);
+  const { number, title, headRefName, baseRefName, isCrossRepository } = current;
+  return stackOrder([{ number, title, isDraft: false, headRefName, baseRefName, isCrossRepository }, ...prs]);
 }
 
 /**
