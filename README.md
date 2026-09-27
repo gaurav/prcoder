@@ -15,9 +15,13 @@ prcoder <pr-url>           # any PR, anywhere
 prcoder --model opus       # ...with flags for the Claude session
 ```
 
-It prints the URL to open, and opens it for you unless `PRCODER_NO_OPEN` is
-set. The port is per-repo and stays the same across runs -- see *A URL that
-stays put* below.
+It prints the URL to open, and opens it for you unless `PRCODER_NO_OPEN` is set. Each repo keeps
+the same port, and so the same URL, across runs.
+
+It needs Node 22.18 or later in the 22 line, or 24.2 or later -- on older versions it exits at once
+without a word, because it starts only under `import.meta.main` -- and the
+[`gh` CLI](https://cli.github.com/), authenticated. All GitHub access goes through `gh`, so there
+is no token to configure.
 
 ## What you get
 
@@ -55,50 +59,21 @@ variables:
 | `PRCODER_VERBOSE` | Start the log at `1` (verbose) or `2` (debug) rather than quiet. |
 | `CLAUDE_BIN` | Run this instead of `claude`. |
 
-## Scratch space
+## What it writes
 
-`data/` is gitignored and is where throwaway output goes -- driver screenshots,
-a snapshot of a PR body taken before a write, anything you want next to the code
-without committing it. Nothing reads it; it exists so that neither you nor an
-agent working in this repo has to reach for `/tmp`.
+**prcoder does not write anything you own unless you click something that says it will.** Its
+own state lives in `.prcoder/`, a directory that ignores itself (it holds a one-line `.gitignore`
+of `*`), so nothing shows up in `git status`: `queue.json` is the queue, and `port.json` is this
+working copy's port.
 
-## Where the queue lives
+On GitHub, it writes only when you click: ticking a description checkbox flips that one line of
+the description, ticking a file marks it viewed, ◎ files a queue item as a new issue, and creating
+a pull request pushes the branch and opens GitHub's compare page.
 
-`.prcoder/queue.json`, in a directory that ignores itself -- it holds a
-`.gitignore` of one line, `*`, so nothing is added to your own and nothing
-shows up in `git status`. **prcoder does not write anything you own unless you
-ask it to.** The only other file there is `port.json`, which is one line and
-the port this working copy listens on.
-
-```json
-{
-  "version": 1,
-  "items": [
-    { "text": "Add retry to the fetch path",
-      "done": false, "doneAt": null, "issue": null, "deleted": false }
-  ]
-}
-```
-
-One list for the repo, whatever is checked out. Items were scoped to the branch
-you added them on for a while; that hid them rather than organising them --
-moving to an unrelated branch mid-task took the list away, and merging a branch
-put its unfinished items out of reach for good. An older file's `branch` fields
-are dropped on the next write and those items come back.
-
-The queue is machine-local, which is the trade for not writing your files:
-nothing carries it to another machine, and an item that has to outlive this one
-can be filed as an issue. Separate worktrees keep separate queues, since each
-has its own `.prcoder/`. An earlier prcoder mirrored items into a
-`<!-- prcoder:todo -->` block in the PR description; that file's `inPr` and `pr`
-fields are dropped on the next write, those items stay in the queue as ordinary
-ones, and an old description's block is an ordinary checklist now.
-
-The file is safe for something else to edit -- prcoder writes it through a temp
-file and a rename, and re-reads it on every poll -- but the server is the
-better way in while prcoder is running: `GET /api/queue`, then `PUT /api/queue`
-with `{items}`. [docs/Design.md](docs/Design.md#what-prcoder-writes) has the
-rest.
+The queue is one list per working copy, whatever branch is checked out, and it stays on this
+machine. `queue.json` is safe for something else to edit, but while prcoder is running the server
+is the better way in: `GET /api/queue`, then `PUT /api/queue` with `{items}`.
+[docs/Design.md](docs/Design.md#what-prcoder-writes) has the reasons for all of this.
 
 ## The terminal you started it from
 
@@ -117,33 +92,14 @@ serving  http://localhost:17455   1 tab   q quit · r refresh · v verbose · o 
 quits, asking first if that would lose anything. [docs/Terminal.md](docs/Terminal.md) has how
 fresh the block is, what each verbosity level adds, and what a busy port looks like.
 
-## Requirements
+## More
 
-Node 22.18 or later in the 22 line, or 24.2 or later. `server.js` starts only
-under `import.meta.main`, which older versions do not have: there it is
-undefined, and prcoder exits at once having done nothing and said nothing. CI
-runs 26.
-
-The [`gh` CLI](https://cli.github.com/), authenticated. All GitHub access goes
-through it, so there is no token to configure.
-
-`npm install` brings Playwright for `tools/browser.mjs`; the engines themselves
-are a separate download -- `npx playwright install firefox chromium`. The driver
-prefers Firefox and falls back to Chromium, because Firefox is what catches
-anything to do with selection, focus or dragging, which Chromium is happy to
-render correctly and Firefox is not. `PRCODER_BROWSER=chromium|firefox` forces
-one. On macOS 27 the driver gives Firefox an app-data directory of its own,
-because the system's protection of the real one keeps a Firefox launched from a
-terminal from starting at all (`MOZ_APP_DATA`, until #80); [tools/firefox-runner](tools/firefox-runner/README.md)
-is what is known about it.
-
-## Not here
-
-Syntax-highlighted diffs of modified files, review threads, multi-session management. [docs/Design.md](docs/Design.md) has the full list and the reasoning behind
-it, along with why prcoder exists at all; [docs/Security.md](docs/Security.md) has what a
-localhost server is exposed to.
-
-`npm test` covers the parts worth pinning down: the queue store, file grouping, GitHub's diff
-anchors, every queue ↔ PR-description transition, and the routes that answer without `gh`. What
-cannot be unit-tested is driven in a real browser and a real PTY —
-[docs/Verifying.md](docs/Verifying.md).
+- [docs/Panes.md](docs/Panes.md) -- each pane in detail, and why it is laid out the way it is.
+- [docs/Terminal.md](docs/Terminal.md) -- the status block, its keys, and quitting.
+- [docs/Ports.md](docs/Ports.md) -- how a repo's port is chosen, and finding a prcoder again: tabs,
+  a window or a Dock icon per repo, an IDE pane.
+- [docs/Design.md](docs/Design.md) -- why prcoder exists, and what it deliberately does not do.
+- [docs/Security.md](docs/Security.md) -- what a localhost server is exposed to, and the checks
+  that close it.
+- [docs/Verifying.md](docs/Verifying.md) -- for working on prcoder: the tests, the browser and
+  terminal drivers, and the Playwright browsers they need.

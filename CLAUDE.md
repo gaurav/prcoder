@@ -1,7 +1,10 @@
 # prcoder
 
 A local server + browser UI wrapping a real `claude` PTY. See README.md for what
-it does and how to run it, `docs/Design.md` for why it works the way it does --
+it does and how to run it, `docs/Panes.md`, `docs/Terminal.md` and
+`docs/Ports.md` for how each part behaves in detail -- a change to a pane's
+layout or ordering is a change to Panes.md, not the README --
+`docs/Design.md` for why it works the way it does --
 the guards, the non-goals -- `docs/Security.md` for what the server is exposed to
 and the checks new work has to keep, and `docs/Verifying.md` for what this repo
 checks and how. `.claude/skills/run-prcoder/SKILL.md` is the short form of the
