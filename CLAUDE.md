@@ -240,19 +240,24 @@ Same shape in reverse: a `MutationObserver` in `addInitScript` has no
 `document.head` to observe yet, and the throw takes the rest of the init script
 with it. Install observers after `goto`.
 
-## Two files under `public/` are the server's as well
+## Three files under `public/` are the server's as well
 
 `server.js` imports `syncPhrase` from `public/pr.js` for the status block, and
 `grammars` from `public/diff.js` to build the Prism half of the vendor map -- so
 which grammars exist is stated once, by the page that asks for them.
+`public/tasks.js` is the description's grammar -- what a description shows
+(`withoutHtml`), its checklist lines, its `#N` mentions, and the URL helpers --
+and `queue.js`, `github.js`, `git.js` and `files.js` all import it, so the
+server and the pane read a description by the same rule rather than two that
+drift apart.
 
-Both modules therefore have to load in Node, and what keeps them loading is:
+All three modules therefore have to load in Node, and what keeps them loading is:
 nothing that touches the DOM at module scope. A `document.querySelector` beside
 the imports is ordinary in a browser file and stops the *server* from starting,
 with a stack trace naming a file under `public/` and nothing about why the
 server was reading it. Inside a function is where it goes -- `el()` in `diff.js`
-is the shape. A syntax error in either one now has that same reach, which is
-what `node --check public/*.js` is for; `test/api.test.js` imports both by
+is the shape. A syntax error in any of them has that same reach, which is
+what `node --check public/*.js` is for; `test/api.test.js` imports all three by
 importing the server.
 
 ## Verifying against GitHub
