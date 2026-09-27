@@ -16,6 +16,14 @@ export const mention = () => /(^|[\s(])#(\d+)\b/g;
 /** The repository a pull request's URL is under, on any host. */
 export const repoUrl = (prUrl) => prUrl.replace(/\/pull\/\d+$/, '');
 
+/**
+ * A branch name or a file path as URL path segments, `/` kept as the separator.
+ * Both come from git, not from anything escaped: git allows `"`, `<`, `#`, `?`
+ * and `%` in a branch name and a file name alike, and raw in a URL a `#` ends
+ * the path, a `?` starts a query, and a `"` inside an href="..." closes it.
+ */
+export const urlPath = (p) => p.split('/').map(encodeURIComponent).join('/');
+
 /** The same checklist line GitHub renders as a checkbox. */
 export const TASK = /^\s*[-*]\s*\[( |x|X)\]\s*(.*)$/;
 

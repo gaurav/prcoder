@@ -2,7 +2,7 @@
 // diff viewer.
 
 import { createHash } from 'node:crypto';
-import { repoUrl } from './public/tasks.js';
+import { repoUrl, urlPath } from './public/tasks.js';
 
 const TEST = /(^|\/)(tests?|spec|__tests__)\/|(^|\/)test_[^/]+$|[._-](test|spec)\.[^./]+$/i;
 const DOC_EXT = /\.(md|mdx|rst|txt|json|ya?ml|toml|ini|cfg|lock)$/i;
@@ -50,9 +50,11 @@ export function fileUrl(prUrl, p) {
  */
 export function fileViews(prUrl, sha, p) {
   const repo = repoUrl(prUrl);
+  // Encoded: a file named `notes#1.md` otherwise opens `notes` with a fragment.
+  const at = `${sha}/${urlPath(p)}`;
   return {
-    blob: `${repo}/blob/${sha}/${p}`,
-    blame: `${repo}/blame/${sha}/${p}`,
-    history: `${repo}/commits/${sha}/${p}`,
+    blob: `${repo}/blob/${at}`,
+    blame: `${repo}/blame/${at}`,
+    history: `${repo}/commits/${at}`,
   };
 }

@@ -60,3 +60,10 @@ test('the file links are the whole file at the head commit', () => {
     history: `https://github.com/cli/cli/commits/${sha}/docs/install_linux.md`,
   });
 });
+
+// A `#` or `?` in a file name is a fragment or a query raw, so every link opened
+// the wrong path. Encoded per segment; the directories stay directories.
+test('a file name with # or ? in it is encoded in its links', () => {
+  const { blob } = fileViews('https://github.com/o/r/pull/1', 'abc', 'docs/notes#1?.md');
+  assert.equal(blob, 'https://github.com/o/r/blob/abc/docs/notes%231%3F.md');
+});

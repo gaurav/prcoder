@@ -1,4 +1,4 @@
-import { TASK, fences, withoutHtml, mention, repoUrl } from './tasks.js';
+import { TASK, fences, withoutHtml, mention, repoUrl, urlPath } from './tasks.js';
 
 // Re-exported for the tests, which read the pane's view of a body through here.
 export { withoutHtml };
@@ -1095,18 +1095,11 @@ export const inline = (s, where = links) => {
 const target = (href, where) => {
   if (/^https?:\/\//.test(href)) return href;
   if (/^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith('#')) return null;
-  return where ? `${escape(where.repo)}/blob/${refPath(where.ref)}/${href.replace(/^\.?\//, '')}` : null;
+  // `href` has been through escape() with the rest of the description, but the
+  // ref comes from the pull request: raw, a branch named `a"/style="...` closed
+  // the href and added an attribute to the page that holds the /pty socket.
+  return where ? `${escape(where.repo)}/blob/${urlPath(where.ref)}/${href.replace(/^\.?\//, '')}` : null;
 };
-
-/**
- * A branch name as URL path segments. `href` has already been through escape()
- * with the rest of the description, but the ref comes from the pull request, not
- * from the text -- and git allows `"`, `<`, `>`, `#` and `%` in a branch name.
- * Raw, `a"/style="...` closed the href and added an attribute to the page that
- * holds the /pty socket; `#` and `%` just broke the link. Encoded per segment,
- * so the `/` in `feature/x` is still a path.
- */
-const refPath = (ref) => ref.split('/').map(encodeURIComponent).join('/');
 
 // Quotes as well as angle brackets. inline() interpolates a link's URL into an
 // href="..." attribute and blockNode() sets the result with innerHTML, so a `"`

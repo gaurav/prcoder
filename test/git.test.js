@@ -64,6 +64,14 @@ test('the compare URL names the fork the branch was pushed to', () => {
     'https://github.com/uc-cdis/heal-platform-sdk/compare/master...gaurav:my-branch?expand=1');
 });
 
+// git allows a `#` in a branch name, and raw in the URL it ends the path: the
+// compare page opened for whatever came before it. `/` stays a separator.
+test('a branch name is encoded in the compare URL, its slashes kept', () => {
+  assert.equal(
+    compareUrl('gaurav/prcoder', 'main', 'fix/issue#12'),
+    'https://github.com/gaurav/prcoder/compare/main...fix/issue%2312?expand=1');
+});
+
 test("origin's owner comes off every shape of GitHub remote URL", async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'prcoder-origin-'));
   try {

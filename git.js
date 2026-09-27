@@ -4,6 +4,7 @@
 // that cannot change while the process runs.
 
 import { run, parsePrUrl } from './github.js';
+import { urlPath } from './public/tasks.js';
 
 // GIT_TERMINAL_PROMPT=0 turns a credential prompt into an error. Without it a
 // push over SSH with a passphrase waits on a tty that does not exist, and with
@@ -75,7 +76,7 @@ export const userDirt = (status) =>
  * base repo itself (checked 2026-09-24 against uc-cdis/heal-platform-sdk).
  */
 export const compareUrl = (nameWithOwner, base, branch, owner) =>
-  `https://github.com/${nameWithOwner}/compare/${base}...${owner ? `${owner}:` : ''}${branch}?expand=1`;
+  `https://github.com/${nameWithOwner}/compare/${urlPath(base)}...${owner ? `${owner}:` : ''}${urlPath(branch)}?expand=1`;
 
 /**
  * Who owns origin, read off its URL -- `git@github.com:o/r.git`,
