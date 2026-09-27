@@ -1,3 +1,0 @@
-Notes that the pull request deletes.
-They exist only so the diff pane has a DELETED file to show.
-Three lines is enough.
