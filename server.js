@@ -39,6 +39,14 @@ let pr = null;
 let info = null;
 const repoFacts = async () => (info ??= await repoInfo(repo));
 
+// A port named for this run, and whether to open a browser: env first, then
+// the flags over it in main. Held here rather than written back into the env,
+// because the env is what the `claude` child inherits -- a flag set that way
+// reached any prcoder started from that pane, in any repo, which then never
+// opened a browser or fell off a --port pin it was never given.
+let pinnedPort = Number(process.env.PRCODER_PORT) || 0;
+let noOpen = !!process.env.PRCODER_NO_OPEN;
+
 // ponytail: patches fetched lazily on the first diff click, keyed by head oid
 // so a push or PR switch invalidates for free. Eager prefetch in refreshPr if
 // first-click latency annoys.
@@ -545,11 +553,11 @@ async function ready() {
     // Kept in the block for the whole session, not just said once at startup:
     // a moved port is exactly what breaks the bookmark and the Dock icon, and
     // that is discovered later, by clicking one of them.
-    // PRCODER_PORT means the port was named, not derived, so "the usual URL for
+    // A pinned port was named, not derived, so "the usual URL for
     // this repo" is not the true sentence -- there is no bookmark to have
     // broken, only an instruction that could not be followed.
     moved: port === wanted ? null : `http://localhost:${wanted} is taken by ${await whoHasPort(wanted)} — ` +
-      (process.env.PRCODER_PORT ? 'not the port you asked for' : 'not the usual URL for this repo'),
+      (pinnedPort ? 'not the port you asked for' : 'not the usual URL for this repo'),
   };
 
   // Through the serial chain, so a request arriving before this finishes waits
@@ -564,7 +572,7 @@ async function ready() {
   if (pr) console.log(pr.url);
   console.log(url);
   if (urls.moved) console.error(urls.moved);
-  if (!process.env.PRCODER_NO_OPEN) openBrowser();
+  if (!noOpen) openBrowser();
 }
 
 // ponytail: the platform's own opener, not a dependency. --no-open (or
@@ -613,19 +621,19 @@ function bind(ports) {
  * Bind the port this repo should be on, and answer with the one it *wanted* --
  * which ready() compares against what it got.
  *
- * A port that has been recorded, or named in PRCODER_PORT, gets one attempt and
- * then a kernel-chosen one, so a second prcoder in this directory moves aside
- * with a note rather than silently opening a different URL from the bookmark.
+ * A port that has been recorded, or named by --port or PRCODER_PORT, gets one
+ * attempt and then a kernel-chosen one, so a second prcoder in this directory
+ * moves aside with a note rather than silently opening a different URL from the
+ * bookmark.
  *
  * A first run has no such promise to keep, so it walks the range from the seed
  * and records whatever binds. That is what makes a collision between two repos
  * heal: without it the loser took a fresh random port every run forever.
  */
 async function listenOnRepoPort() {
-  const pinned = Number(process.env.PRCODER_PORT);
-  if (pinned) {
-    await bind([pinned, 0]);
-    return pinned;                       // never recorded: a pin is for one run
+  if (pinnedPort) {
+    await bind([pinnedPort, 0]);
+    return pinnedPort;                   // never recorded: a pin is for one run
   }
 
   const recorded = await readPort(repo);
@@ -694,14 +702,9 @@ if (import.meta.main) {
   if (cli.help) { console.log(usage()); process.exit(0); }
   if (cli.version) { console.log(VERSION); process.exit(0); }
   ({ target, agentArgs } = cli);
-  // ponytail: a flag sets the env var the rest of this file already reads
-  // (portFor, the port-moved wording, the browser open); threading a settings
-  // object through would touch six sites to say the same thing. The ceiling:
-  // the env reaches the `claude` child too, so a nested prcoder started from
-  // that pane in another repo inherits a --port pin and falls back with the
-  // "taken" note. A module-level pin is the fix if that ever bites.
-  if (cli.port) process.env.PRCODER_PORT = String(cli.port);
-  if (cli.noOpen) process.env.PRCODER_NO_OPEN = '1';
+  // Into the variables, never the env: see pinnedPort.
+  if (cli.port) pinnedPort = cli.port;
+  if (cli.noOpen) noOpen = true;
   if (cli.verbose) term.setVerbosity(cli.verbose);
 
   // Before anything can print: init() is what routes console through the log,
