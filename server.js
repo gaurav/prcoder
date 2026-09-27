@@ -14,7 +14,7 @@ import { WebSocketServer } from 'ws';
 import { loadPr, prHeads, prBody, listPrs, issueLinks, setViewed, setBody, createIssue, fetchPatches, runCount } from './github.js';
 import { snapshot, currentBranch, repoInfo, prScope, compareUrl, originOwner, checkoutPr, pushBranch, remoteBranchHead, trackingHead, localPatch } from './git.js';
 import { bucket, fileUrl, fileViews } from './files.js';
-import { readPort, writePort } from './store.js';
+import { readPort, writePort, useQueueFile, movedQueue } from './store.js';
 import { readQueue, writeQueue, quote } from './queue.js';
 import { parseCli, usage, VERSION, portCandidates, statusLines } from './cli.js';
 import { counts } from './public/items.js';
@@ -572,6 +572,9 @@ async function ready() {
   if (pr) console.log(pr.url);
   console.log(url);
   if (urls.moved) console.error(urls.moved);
+  // Said, because nothing else would: the pane looks the same whichever file
+  // it is showing, and a forgotten PRCODER_QUEUE reads as a lost queue.
+  if (movedQueue()) console.log(`queue: ${movedQueue()}`);
   if (!noOpen) openBrowser();
 }
 
@@ -712,6 +715,8 @@ if (import.meta.main) {
   // Into the variables, never the env: see pinnedPort.
   if (cli.port) pinnedPort = cli.port;
   if (cli.noOpen) noOpen = true;
+  // Into the store, not the env, for the same reason: see useQueueFile.
+  useQueueFile(cli.queue ?? process.env.PRCODER_QUEUE);
   if (cli.verbose) term.setVerbosity(cli.verbose);
 
   // Before anything can print: init() is what routes console through the log,
