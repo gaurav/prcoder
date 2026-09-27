@@ -127,9 +127,8 @@ line carrying its title: the ones this pull request closes, then the ones it
 only mentions. A bare `#41` in the prose is a link but says nothing about what
 it is, and the titles are the whole point of the list.
 
-*Files* is every changed file grouped as *Tests* / *Code* / *Config & docs*,
-tests first, because tests are the fastest way to see what functionality
-actually changed. Inside each of those, a group reads like a tree: the files at
+*Files* is every changed file grouped as *Config & docs* / *Tests* / *Code*,
+in that order. Inside each of those, a group reads like a tree: the files at
 the top of the repository are its first rows, and below them the rest are folded
 by the directory they are in, a directory ahead of what is inside it and
 siblings alphabetical. A row inside a fold says only the name the directory

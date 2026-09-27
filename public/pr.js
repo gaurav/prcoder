@@ -109,10 +109,11 @@ function paintLight(state) {
   light.textContent = state.text;
 }
 
+// The Files tab's top-level order: config and docs, then tests, then code.
 const GROUPS = [
+  ['docs', 'Config & docs'],
   ['tests', 'Tests'],
   ['code', 'Code'],
-  ['docs', 'Config & docs'],
 ];
 
 /**

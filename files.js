@@ -8,7 +8,7 @@ const TEST = /(^|\/)(tests?|spec|__tests__)\/|(^|\/)test_[^/]+$|[._-](test|spec)
 const DOC_EXT = /\.(md|mdx|rst|txt|json|ya?ml|toml|ini|cfg|lock)$/i;
 const DOC_PATH = /(^|\/)(docs?|\.github)\/|(^|\/)(LICENSE|CHANGELOG|NOTICE)$|(^|\/)\.[^/]+$/i;
 
-/** Tests first: they are the fastest way to see what functionality changed. */
+/** Bucketed only; the order the pane shows them in is GROUPS in public/pr.js. */
 export function groupFiles(files) {
   const groups = { tests: [], code: [], docs: [] };
   for (const f of files) groups[bucket(f.path)].push(f);
