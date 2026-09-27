@@ -24,7 +24,8 @@ Not `/tmp`: reads outside this working directory are blocked, so a screenshot
 written to `/tmp` is one nobody in this session can look at. A one-off
 Playwright script has to live here too -- `import 'playwright'` resolves from
 this repo's `node_modules`, and from a scratch directory it is `Cannot find
-package 'playwright'`.
+package 'playwright'`. Read `tools/CLAUDE.md` before writing one: it applies
+there too, and `tools/driver.mjs` is what to build it on.
 
 ## Two traps
 
@@ -79,97 +80,6 @@ Descriptions written by an earlier prcoder hold a checklist between prcoder's
 own HTML-comment markers. Nothing reads or rewrites that block any more: it is
 an ordinary checklist now, ticked like any other from the PR pane. Leave old
 blocks alone; hand-editing them is safe.
-
-## Driving Firefox
-
-prcoder is used in Firefox, so `tools/browser.mjs` now defaults to it and falls
-back to Chromium only when it is not installed; `PRCODER_BROWSER=chromium|firefox`
-forces one. That is Playwright's own patched Firefox, not the one in
-/Applications -- the default path needs the Juggler patch only that build has,
-so the check is `existsSync(firefox.executablePath())` and the fix for a miss is
-`npx playwright install firefox`. (A stock install is drivable over WebDriver
-BiDi with `channel: 'moz-firefox'`; `tools/firefox-runner/` has what came of
-trying it.) Running both is worth the second minute: the
-caret bug is invisible in Chromium and fatal in Firefox, and it is the one thing
-here that only one engine can tell you about. `test/browser/` runs its suite in
-both for the same reason: a header-height test written against Chromium failed
-in Firefox (2026-09-26).
-
-Installed is not the same as working, and the check cannot tell them apart.
-From 2026-09-16 to 2026-09-26 Firefox did not start at all on this machine,
-while `existsSync(firefox.executablePath())` was true throughout. The cause
-was macOS 27 denying a terminal-launched Firefox its own `~/Library/Application
-Support/Firefox`, which Firefox reads even when `-profile` points elsewhere.
-Every Firefox launch in `tools/` and `test/` now sets `MOZ_APP_DATA` and
-`MOZ_LOCAL_APP_DATA` under `data/firefox-appdata/`, and with them it starts in
-about two seconds. A launch that leaves them out hangs until the timeout, with
-nothing in the output to say why -- so a new driver that launches Firefox
-passes `firefoxEnv()` from `tools/driver.mjs`, which is also where the port
-check, the stubbed server environment and the kill-on-exit every driver needs
-live. The workaround is temporary, and #80 is when it comes out
-(Firefox 158 fixes this upstream). The 45-second timeout and the fall-back to
-Chromium stay until then, in case the workaround stops working;
-`tools/firefox-runner/` is the whole story, and `probe.mjs` there is the
-re-check. The Firefox pass #61 owed was run on 2026-09-26, the exit bar on #75's branch
-included, and #61 is closed; docs/Verifying.md has what it covered.
-
-## Running `tools/browser.mjs`
-
-A run takes minutes, which reads as a hung server: `node tools/browser.mjs |
-tail` shows nothing at all until the very end -- `tail` buffers the whole
-stream -- and the way to watch a run is to redirect to a file.
-
-Don't read the offset the driver prints as evidence. The assertion is `caret > 0`
-and nothing finer: `.item .text` is `flex: 1`, so the middle of its box is past
-the end of the sentence and the click sends the caret to the end of the text.
-The number is therefore the length of whichever row comes first, and it moves
-when the queue does -- it has been 65, 66 and 51 at different times, all of them
-passing and none of them meaning anything. docs/Verifying.md has the rest.
-
-What the driver waits on and clicks encodes assumptions about what the pane
-shows first. It waited on `.file` to decide the panes had finished loading,
-which was true until the pull request pane grew tabs and opened on the
-description instead -- after which `.file` does not exist until something
-clicks Files. Later it opened "the first file" expecting a highlighted `.js`,
-which held until Config & docs became the first group and the first row was
-`.gitignore`. Both failed as a 30-second timeout that reads as a hung server,
-not as a stale selector. So a change to what the panes show first -- the
-default tab, the order of the file groups -- is a run of the driver in the same
-commit, not the next one.
-
-## A stub that only echoes is not a session
-
-`CLAUDE_BIN=/bin/cat` was the drivers' stand-in for `claude` because an echo is
-the same burst of output a turn is made of. It is not the same *session*. A real
-one asks the terminal where the cursor is (`ESC [ ? 6 n`) every ~200ms forever,
-and xterm answers every one -- so the PTY is never quiet, and the tab icon's "2
-seconds of quiet means idle" never fired in a real browser. cat never asks, so
-the driver's icon check passed for as long as the bug existed.
-
-It is a request/response loop, which is why a bare PTY test misses it too: with
-nothing answering, Claude asks once and gives up. `tools/claude-stub.mjs` echoes
-*and* probes. It needs raw mode and has to swallow the `ESC [ ? ... R` answers
-rather than echo them -- a stub that prints its own answers back is output, which
-is the state the check is trying to tell apart.
-
-Anything else that reads the PTY's timing has the same blind spot: drive it
-against the stub that probes, not against cat.
-
-## Don't wrap `window.WebSocket` in a Playwright init script
-
-`send` in `public/app.js` tests `ws.readyState !== WebSocket.OPEN`. A wrapper
-function does not carry the statics, so `WebSocket.OPEN` becomes `undefined`,
-every send returns false, and the page silently stops talking to the PTY --
-no error, no closed socket. Three runs of a driver investigating an
-always-busy tab icon came back green because the instrumentation had switched
-off the traffic causing it. Copy `CONNECTING`/`OPEN`/`CLOSING`/`CLOSED` onto
-the wrapper, or listen without wrapping. To keep the page from opening a PTY at
-all, `page.routeWebSocket('**/pty', () => {})` mocks the socket without touching
-the constructor -- `test/browser/suite.js` runs the whole page that way.
-
-Same shape in reverse: a `MutationObserver` in `addInitScript` has no
-`document.head` to observe yet, and the throw takes the rest of the init script
-with it. Install observers after `goto`.
 
 ## Verifying against GitHub
 

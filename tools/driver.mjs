@@ -35,7 +35,7 @@ export const free = (port) => new Promise((res, rej) => {
  * PTY, and unstubbed each run starts a real Claude session and leaves it
  * running. The stub is `tools/claude-stub.mjs` rather than /bin/cat: it echoes
  * as cat does, and it also sends the cursor-position probe a real session sends
- * between turns, which is the half the tab icon's idle check needs (CLAUDE.md).
+ * between turns, which is the half the tab icon's idle check needs (tools/CLAUDE.md).
  */
 export const serverEnv = (port, extra = {}) => ({
   ...process.env,

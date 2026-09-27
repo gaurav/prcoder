@@ -94,7 +94,7 @@ Two rules for them, and for any script after them:
   leaves it running. Use `tools/claude-stub.mjs`, which echoes and sends the
   cursor probe a real session sends. `/bin/cat` is enough for the terminal half
   only -- anything that reads the PTY's timing passes against it for the wrong
-  reason (CLAUDE.md).
+  reason (tools/CLAUDE.md).
 - **No writes you do not undo.** The queue is safe: it writes only `.prcoder/`,
   which is gitignored. The PR is not -- ticking a description checkbox edits the
   description on GitHub, and ◎ on a queue item files a real issue. Snapshot the
