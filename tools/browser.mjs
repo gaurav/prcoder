@@ -16,7 +16,7 @@
 // and nowhere else, because a mousedown inside a draggable element goes to the
 // drag machinery there, and every screenshot before that had been Chromium.
 //
-// CLAUDE_BIN is stubbed (serverEnv in tools/driver.mjs says why and with what).
+// PRCODER_AGENT_BIN is stubbed (serverEnv in tools/driver.mjs says why and with what).
 //
 // It writes, so it is not read-only. The run replaces the repo's queue with a
 // fixture -- at least one item per tab -- and puts the queue back at the end. A

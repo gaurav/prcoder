@@ -105,7 +105,11 @@ actually observed, is an id per item and a union by id.
 in [`cli.js`](../cli.js)); everything after it goes to the agent verbatim. So there is no list of
 Claude's flags to keep in step, and an agent flag written before `--` is an error that says where it
 goes, not a session started with the wrong pull request. Each flag has an environment variable of
-the same meaning, and `PRCODER_OPEN` and `CLAUDE_BIN` stay environment-only.
+the same meaning, and `PRCODER_OPEN` and `PRCODER_AGENT_BIN` stay environment-only.
+`PRCODER_AGENT_BIN` is a path to run, not a name, which is why it is not `PRCODER_AGENT`: that
+would read as `--agent`'s variable, and is the name `--agent` needs if it ever gets one. It was
+`CLAUDE_BIN`, and prcoder refuses to start while only the old name is set, since ignoring it would
+spawn the real `claude` in place of whatever stub it named.
 
 The other side of that line, prcoder adding nothing of its own to `claude`'s arguments, is what
 keeps one gap open.

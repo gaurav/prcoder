@@ -90,7 +90,7 @@ edit them for whatever you are looking at and keep the edits worth having.
 
 Two rules for them, and for any script after them:
 
-- **Stub `claude`.** Every page load opens a websocket and spawns `CLAUDE_BIN`
+- **Stub `claude`.** Every page load opens a websocket and spawns `PRCODER_AGENT_BIN`
   in a PTY, one per tab; without a stub each run starts a real session and
   leaves it running. Use `tools/claude-stub.mjs`, which echoes and sends the
   cursor probe a real session sends. `/bin/cat` is enough for the terminal half

@@ -480,7 +480,7 @@ const wss = new WebSocketServer({ server, path: '/pty' }).on('error', () => {}).
   // that has already started has already read the repo.
   if (!sameOrigin(req)) return ws.close(1008, 'cross-origin connection refused');
 
-  const pty = ptySpawn(process.env.CLAUDE_BIN || 'claude', agentArgs, {
+  const pty = ptySpawn(process.env.PRCODER_AGENT_BIN || 'claude', agentArgs, {
     name: 'xterm-256color',
     cols: 80,
     rows: 24,
@@ -701,6 +701,13 @@ if (import.meta.main) {
   }
   if (cli.help) { console.log(usage()); process.exit(0); }
   if (cli.version) { console.log(VERSION); process.exit(0); }
+  // Renamed, and refused rather than read: ignored, a leftover CLAUDE_BIN -- a
+  // driver's stub, a scratch script's /bin/cat -- would quietly spawn the real
+  // `claude` in its place, one session per tab, left running.
+  if (process.env.CLAUDE_BIN && !process.env.PRCODER_AGENT_BIN) {
+    console.error('prcoder: CLAUDE_BIN is now PRCODER_AGENT_BIN; rename it, or unset it to run `claude`');
+    process.exit(2);
+  }
   ({ target, agentArgs } = cli);
   // Into the variables, never the env: see pinnedPort.
   if (cli.port) pinnedPort = cli.port;

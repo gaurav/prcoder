@@ -40,7 +40,7 @@ launched or what it stubs belongs there too.
 
 Each driver's header says what it does and why; this is what each one reaches, and what it
 cannot. They share `tools/driver.mjs`, which refuses a port that is already held and stubs
-`CLAUDE_BIN` ([tools/CLAUDE.md](../tools/CLAUDE.md)). **The UI's controls hit the live PR**, so a
+`PRCODER_AGENT_BIN` ([tools/CLAUDE.md](../tools/CLAUDE.md)). **The UI's controls hit the live PR**, so a
 stray click edits a description on GitHub: undo what you write, or stay read-only.
 
 **`node tools/browser.mjs [label]`** drives the UI in a real browser and writes PNGs to

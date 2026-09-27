@@ -18,8 +18,8 @@ import { counts } from './public/items.js';
 export const VERSION = createRequire(import.meta.url)('./package.json').version;
 
 // ponytail: one entry. The name is what #21 (a channel for the agent to drive
-// prcoder) and #30 (other agents) key per-agent behaviour off; CLAUDE_BIN still
-// picks the executable.
+// prcoder) and #30 (other agents) key per-agent behaviour off;
+// PRCODER_AGENT_BIN still picks the executable.
 export const AGENTS = ['claude'];
 
 const OPTIONS = {
@@ -38,7 +38,7 @@ export function usage() {
   --port <n>       listen on this port for this run          env PRCODER_PORT
   --no-open        print the URL, don't open a browser        env PRCODER_NO_OPEN=1
   -v, --verbose    narrate; -vv for debug                     env PRCODER_VERBOSE=1|2
-  --agent <name>   the coding agent: ${AGENTS.join(', ')}              env CLAUDE_BIN names the executable
+  --agent <name>   the coding agent: ${AGENTS.join(', ')}              env PRCODER_AGENT_BIN names the executable
   -h, --help       -V, --version
 
 Everything after -- goes to the agent untouched:

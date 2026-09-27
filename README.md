@@ -63,7 +63,7 @@ are given.
 | `-v`, `-vv` | `PRCODER_VERBOSE` | Start the log at verbose (`1`) or debug (`2`) rather than quiet. |
 | `--agent <name>` | | The coding agent; only `claude` today. |
 | | `PRCODER_OPEN` | Open the URL with this command instead of the platform's opener; the URL is appended. |
-| | `CLAUDE_BIN` | Run this instead of `claude`. |
+| | `PRCODER_AGENT_BIN` | Run this instead of `claude`. |
 
 ## What it writes
 

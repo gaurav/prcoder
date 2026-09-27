@@ -58,7 +58,7 @@ test('bad input is an error that names the problem', () => {
 test('the help names every flag, env var and agent', () => {
   const text = usage();
   for (const s of ['--port', '--no-open', '--verbose', '--agent', '--help', '--version', '-- ',
-    'PRCODER_PORT', 'PRCODER_NO_OPEN', 'PRCODER_VERBOSE', 'PRCODER_OPEN', 'CLAUDE_BIN', ...AGENTS]) {
+    'PRCODER_PORT', 'PRCODER_NO_OPEN', 'PRCODER_VERBOSE', 'PRCODER_OPEN', 'PRCODER_AGENT_BIN', ...AGENTS]) {
     assert.ok(text.includes(s), `help mentions ${s}`);
   }
   assert.equal(VERSION, createRequire(import.meta.url)('../package.json').version);
@@ -190,8 +190,12 @@ test('a PR number too wide for the label column widens the row, it does not lose
 test('prcoder --help, --version and a bad flag exit before anything starts', async () => {
   const { execFile } = await import('node:child_process');
   const { promisify } = await import('node:util');
-  const run = (...args) => promisify(execFile)('node', ['server.js', ...args], { cwd: new URL('..', import.meta.url) })
+  // The timeout is for a run that does not exit: one that got past the checks
+  // is a listening server, and would otherwise hang the suite rather than fail.
+  const runIn = (env, ...args) => promisify(execFile)('node', ['server.js', ...args],
+    { cwd: new URL('..', import.meta.url), env, timeout: 15_000 })
     .then((r) => ({ code: 0, ...r }), (e) => ({ code: e.code, stdout: e.stdout, stderr: e.stderr }));
+  const run = (...args) => runIn(process.env, ...args);
 
   const help = await run('--help');
   assert.equal(help.code, 0);
@@ -206,4 +210,12 @@ test('prcoder --help, --version and a bad flag exit before anything starts', asy
   assert.equal(bad.stdout, '');
   assert.match(bad.stderr, /^prcoder: unknown option --effort; flags for the agent go after --/);
   assert.match(bad.stderr, /\nusage: prcoder /);
+
+  // The old name is refused, not ignored: ignored, it would start the real agent.
+  // Refused before the server starts, so this exits rather than listening.
+  const env = { ...process.env, CLAUDE_BIN: '/bin/cat' };
+  delete env.PRCODER_AGENT_BIN;
+  const stale = await runIn(env, '--no-open');
+  assert.equal(stale.code, 2);
+  assert.match(stale.stderr, /^prcoder: CLAUDE_BIN is now PRCODER_AGENT_BIN/);
 });
