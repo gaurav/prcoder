@@ -72,7 +72,17 @@ main.diff-open.term-off {
 main.term-off #term-host,
 main.term-off:not(.diff-open) #gut-queue,
 main.term-off #gut-diff { display: none; }
-#term > header { user-select: none; }   /* a double-click folds it, not selects the title */
+/* A click anywhere on it folds or unfolds, so it looks pressable across its
+   whole width: the pointer, and a hover that darkens the bar and brings the ▼
+   and the title up to full colour. user-select, or a quick second click
+   selects the title. Background only -- a border or padding here would make
+   the folded header a different height from the open one. */
+#term > header { user-select: none; cursor: pointer; }
+/* `● working` while a turn runs, and only folded: open, the terminal says so
+   itself. `hidden` stays the busy switch; this is the folded one. */
+main:not(.term-off) #term-busy { display: none; }
+#term > header:hover { background: var(--bg); }
+#term > header:hover h1, #term > header:hover #term-fold { color: var(--fg); }
 /* Before the title, like a disclosure triangle, at the title's own size and
    line-height so the two centre together. ▼/▶ rather than the small ▾/▸, which
    sit low and needed a bigger font that then sat lower still. */
@@ -137,6 +147,10 @@ a { color: var(--accent); }
 .spacer { flex: 1; }
 
 /* --- PR pane --- */
+/* This font draws ⟳ well under the text beside it -- at the header's 14px it
+   was a speck. The line-height stays at what 14px computes to, or the unitless
+   one scales with the glyph and the header grows 6px. */
+#pr-refresh { font-size: 18px; line-height: 21px; }
 .pane > header button, .pane > header input {
   background: none; border: 0; color: var(--dim); font: inherit;
 }
@@ -179,7 +193,7 @@ a { color: var(--accent); }
 
 .empty { color: var(--dim); }
 /* The head's way out -- this pull request on GitHub, the lists you leave for,
-   and the repository under them -- starts at the left margin, like the title,
+   and the repository further down -- starts at the left margin, like the title,
    the badges and the tabs. It has no alignment rule of its own; `.meta` is
    already flex-start, and `.pr-links` is kept only as a hook for the driver.
 
@@ -188,21 +202,36 @@ a { color: var(--accent); }
    row of dim 12px text between the badges and the tabs, and people looked for
    it to the right of the title or under the badges and never found it at the
    top; pushing it to the right edge was what made it a thing rather than part
-   of the pane's prose. Left is also where the pane with no pull request has
-   always drawn the same links, so the two panes agree for the first time, and
-   a line that clips is easier to read from an edge that does not move with its
-   content.
+   of the pane's prose. Left is also where a line that clips is easier to read
+   from, since that edge does not move with its content. The pane with no pull
+   request draws the same row in the same head (renderNoPr), so there is one
+   layout to keep, not two.
 
-   The repository, on the line under that row rather than in the middle of it.
+   The row sits directly under the title, above the state and the branches,
+   because that is the order it is used in (2026-09-26): the title says what
+   this is, and the next thing wanted is nearly always the pull request on
+   GitHub. Which row goes where is HEAD_ORDER in pr.js, and no row's spacing
+   depends on its neighbour -- each is a `.meta` with the same 8px under it --
+   so moving one is moving one word. Keep it that way: the repository used to
+   sit 2px under this row as "one block" with it, which was a margin that only
+   made sense in one order.
+
+   The pull request is a filled button, `.primary`, and the lists beside it
+   stay plain links. Of everything in the head it is the link actually
+   clicked, and as a fifth underlined `--accent` word it was no easier to find
+   than `milestones`. A solid fill is the one treatment nothing else in the
+   head has: the chip below is a faint outline, the badges are pastel,
+   uppercase and not links, and the tabs are grey. One button is not the
+   button group the paragraph further down warns against -- the three lists
+   stay text, so nothing here looks like it switches the pane. No dot beside
+   it; its box is the separator (see linkRow).
+
+   The repository, on a line of its own rather than in the middle of the row.
    It is the only link there whose width has no bound -- a real
    `heal-data-stewards/heal-vlmd-AI-pipeline` is most of the pane at its
    375px default -- so in the row it wrapped, and dragged where issues, pulls
    and milestones sat along with it. Alone on a line it can overflow instead:
-   the row above keeps one predictable shape, and this line clips.
-
-   The two are one block, so the gap between them is 2px rather than the 8px
-   `.meta` gives every other row. `.pr-repo` keeps the 8px, which is the gap to
-   the tabs and is unchanged.
+   the row keeps one predictable shape, and this line clips.
 
    And the repository is a chip rather than a fifth link, which is what the
    move down the page did not by itself fix. Giving it its own line said where
@@ -212,18 +241,27 @@ a { color: var(--accent); }
    radius and the dropped underline are the same three the queue's `#N` tag
    wears (`.item .tag`) -- this window's word for a small thing you can click
    that is an object rather than a phrase -- so it is the vocabulary already
-   here and not a new one. What it buys: the row above stays a list of places
-   to go, and the line below is the one fact in the head that says which
-   checkout you are in.
+   here and not a new one. What it buys: the links row stays a list of places
+   to go, and the chip is the one fact in the head that says which checkout
+   you are in.
+
+   The chip's colour is where it leaves the tag. A `--line` border on the
+   panel is about 1.2:1, which is enough to notice once you know it is there and
+   not enough to make you look (2026-09-25). So the border and a faint fill are
+   the chip's own `--accent`, mixed toward transparent: the chip stands out from
+   the prose while being the same blue as its text, and it stops well short of
+   the solid fills and uppercase text the `.badge`s use for status. A brighter
+   grey ring was the other candidate, and it read as one more `.tab`.
 
    Two things deliberately not done. A logo or an emoji ahead of the slug, the
    other way to mark it: no other glyph in this window earns its place that way
    -- the `↗` that used to sit on these links was dropped for raising the
    question of what the unmarked ones did -- and a mark says "look here"
-   without saying what kind of thing it is, where a chip does both. And the row
-   above is still plain text, not a button group: the tabs two rows down are
-   the head's one group of bordered controls, and a second one over them would
-   make the four links look like the thing that switches the pane.
+   without saying what kind of thing it is, where a chip does both. And the links
+   row is still plain text, not a button group: the tabs are the head's one
+   group of bordered controls, and a second one over them would make the four
+   links look like the thing that switches the pane. The pull request's single
+   filled button is the exception, argued above.
 
    The chip's padding puts the slug 8px in from the margin the rest of the head
    starts at. That is the treatment the tabs under it already have -- `.tab` is
@@ -241,7 +279,7 @@ a { color: var(--accent); }
    Every declaration below is load-bearing, each checked by dropping it on
    2026-09-21 (Chromium; #61 is the owed Firefox pass, and flex shrink is
    exactly the kind of thing engines have disagreed about). The first three
-   are pinned by test/browser.test.js, which fails on each:
+   are pinned by test/browser/suite.js, which fails on each:
 
    - `inline-flex` on the link, or none of the rest applies and the line simply
      overflows the pane.
@@ -259,7 +297,7 @@ a { color: var(--accent); }
    it: `padding` and `border` shrink the content box the spans divide up, and
    the clipping behaves the same with less of it to work in. What they do move
    is the right edge the line must stay inside -- it is the chip's border now,
-   not the name's last glyph, which is what test/browser.test.js measures.
+   not the name's last glyph, which is what test/browser/suite.js measures.
 
    The owner needs no `min-width: 0` of its own. `overflow: hidden` already
    makes a flex item's automatic minimum size zero, and the pair passed every
@@ -269,15 +307,27 @@ a { color: var(--accent); }
    long path and keep its filename -- is one declaration instead of four and
    was measured against this. It works. It is not here because the two cut
    opposite ends: a path is recognised from its tail, an owner from its front,
-   and rtl leaves `…tewards` where the spans leave `heal-dat…`.
-   docs/Verifying.md has the comparison. */
-.pr-ways { margin-bottom: 2px; }
+   and rtl leaves `…tewards` where the spans leave `heal-dat…`. */
+/* On a branch with no pull request the same slot holds Create PR, a <button>
+   rather than a link because it pushes before it opens anything -- hence the
+   reset, and a disabled state for while it does. */
+.pr-links .primary {
+  padding: 1px 8px; border-radius: 9px; text-decoration: none; font-weight: 600;
+  background: var(--accent); color: var(--bg);
+  border: 0; font-family: inherit; font-size: inherit; line-height: inherit; cursor: pointer;
+}
+.pr-links .primary:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 80%, white); }
+.pr-links .primary:disabled { opacity: .5; cursor: progress; }
 .pr-repo a {
   display: inline-flex; min-width: 0;
   text-decoration: none; padding: 1px 7px;
-  border: 1px solid var(--line); border-radius: 9px;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent); border-radius: 9px;
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
 }
-.pr-repo a:hover { border-color: var(--dim); background: var(--bg); }
+.pr-repo a:hover {
+  border-color: color-mix(in srgb, var(--accent) 60%, transparent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
 .pr-repo .owner { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pr-repo .name { flex: none; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
@@ -300,8 +350,12 @@ a { color: var(--accent); }
    wide pane, where the title fits on one, and a browser without it wraps
    greedily, which is where this started. No `font-weight`: the <h2> is bold
    already, and 600 against 700 was indistinguishable in this stack when both
-   were photographed. */
-.pr-title { margin: 0 0 8px; font-family: var(--serif); font-size: 21px; line-height: 1.25; text-wrap: balance; }
+   were photographed.
+
+   The pane with no pull request titles its head with the branch, which is the
+   same row and so the same face. It is a class of its own only because the
+   drivers wait on `.pr-title` to mean a pull request has loaded. */
+.pr-title, .pr-branch-name { margin: 0 0 8px; font-family: var(--serif); font-size: 21px; line-height: 1.25; text-wrap: balance; }
 .meta { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; color: var(--dim); font-size: 12px; margin-bottom: 8px; }
 .add { color: var(--add); } .del { color: var(--del); }
 
@@ -380,8 +434,17 @@ a { color: var(--accent); }
 .fold > summary:hover, .fold > summary:hover::before { color: var(--accent); }
 .fold > summary:focus-visible { outline: 1px solid var(--accent); border-radius: 3px; }
 .fold > summary h3 { display: inline; margin: 0; font: inherit; flex: 1; min-width: 0; }
-/* What is still outstanding inside, so a fold never hides work silently. */
-.fold > summary .count { flex: none; font-weight: 400; color: var(--dim); }
+/* What is still outstanding inside, so a fold never hides work silently: a pie
+   that fills green as its items are done (pie() in pr.js says why not `3/5`).
+   The ring is what an empty one is -- without it, nothing done is nothing
+   drawn. 10px, under every summary's line box, so the row keeps its height. */
+.fold > summary .pie {
+  flex: none; width: 10px; height: 10px; border-radius: 50%;
+  align-self: center;   /* the row is baseline-aligned, and a box with no text sits on it by its bottom */
+  background: conic-gradient(var(--add) calc(var(--p) * 1turn), transparent 0);
+  box-shadow: inset 0 0 0 1px var(--dim);
+}
+.fold > summary .pie.full { box-shadow: none; }
 /* Indented under the title, not under the triangle. */
 .fold > .sec-body { padding: 2px 0 12px 18px; }
 
@@ -393,7 +456,6 @@ a { color: var(--accent); }
   padding: 8px 2px;
   font: 600 15px/1.35 ui-sans-serif, system-ui, sans-serif; color: var(--fg);
 }
-.md-section > summary .count { font-size: 12px; }
 
 /* A quote is marked by a rule and a colour, not by an indent: at 375px the pane
    has no width to give away, and the rule alone is what GitHub uses too. */
@@ -447,7 +509,6 @@ a { color: var(--accent); }
   text-transform: uppercase; letter-spacing: .06em; color: var(--dim);
 }
 .group > summary:hover { color: var(--fg); }
-.group > summary .count { font-size: 12px; letter-spacing: 0; opacity: .7; }
 /* Less than a description's sections: a file path is already short, and the
    rows have to stay wide enough to ellipsize from the left. */
 .group > .sec-body { padding: 2px 0 0 10px; }
@@ -461,7 +522,6 @@ a { color: var(--accent); }
 .dir { margin-bottom: 2px; }
 .dir > summary { padding: 1px 0; font: 400 12px/1.5 ui-sans-serif, system-ui, sans-serif; color: var(--dim); }
 .dir > summary:hover { color: var(--fg); }
-.dir > summary .count { font-size: 11px; opacity: .7; }
 .dir > .sec-body { padding: 0 0 4px 9px; }
 /* The seam between a group's two runs. Files at the top of the repository are
    the group's first rows and the directories follow them at the same indent, so
@@ -575,6 +635,8 @@ a { color: var(--accent); }
 .item .text:focus { box-shadow: 0 0 0 1px var(--accent); border-radius: 2px; }
 .item input[type=checkbox]:checked ~ .text { color: var(--dim); text-decoration: line-through; }
 .item .tag { font-size: 11px; text-decoration: none; padding: 0 5px; border: 1px solid var(--line); border-radius: 8px; }
+/* A mention on the Issues tab that is not an open issue: closed, or a PR. */
+.item.source.closed .text { color: var(--dim); }
 
 /* The row's only reliable drag handle: the text gives up draggable while it is
    being clicked, so the caret can land where you aimed. Unlike .actions it does
@@ -623,18 +685,17 @@ a { color: var(--accent); }
 .pane > header button.where.top { color: var(--accent); border-color: var(--accent); }
 
 /* The dot carries the state; the text next to it says what to do about it.
-   Two panes have one now: the PR's is about the branch and the remote, the
-   queue's is about whether GitHub has the items you typed. */
+   The PR pane's is about the branch and the remote. */
 .light { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--dim); white-space: nowrap; }
 .light::before {
   content: ''; width: 7px; height: 7px; border-radius: 50%;
   background: var(--line); flex: none;
 }
-.light.ok::before { background: #7fd88f; }
 .light.warn { color: #f0dc9a; }
+/* The favicon's busy blue (BUSY in app.js, from the icon in index.html), on
+   the dot only: the words stay dim, so a folded turn is noticeable, not loud. */
+.light.busy::before { background: #1f6feb; }
 .light.warn::before { background: #f0dc9a; }
-.light.bad { color: #f5a3a3; }
-.light.bad::before { background: #f5a3a3; }
 .light.unknown::before { background: transparent; box-shadow: inset 0 0 0 1px var(--dim); }
 
 /* Sits over the panes so it never reflows them. Above the terminal pane rather
@@ -648,16 +709,27 @@ a { color: var(--accent); }
 }
 #toast[hidden] { display: none; }
 #toast.bad { background: #4d1f24; color: #f5a3a3; border-color: #f5a3a3; }
-/* A sticky toast waits to be clicked, so it has to look like it can be. The
-   glyph is a pseudo-element because toast() sets textContent. */
+/* Every toast closes on a click, so every one says so -- a sticky one most of
+   all, since it waits for that click, which is what its border marks. The
+   glyph is a pseudo-element because toast() sets textContent. In the top right
+   corner, where a close button is looked for: after the text, a toast that
+   wrapped put it at the end of its last line, mid-box. The padding keeps the
+   text from running under it; top matches the toast's own, so it sits on the
+   first line. */
+#toast { padding-right: 30px; }
+#toast::after { content: '✕'; position: absolute; top: 7px; right: 10px; color: var(--dim); }
+#toast:hover::after { color: var(--fg); }
+#toast.bad::after { color: inherit; opacity: .7; }
+#toast.bad:hover::after { opacity: 1; }
 #toast.sticky { border-color: #f0dc9a; }
-#toast.sticky::after { content: '✕'; margin-left: 8px; color: var(--dim); }
-#toast.sticky:hover::after { color: var(--fg); }
 
 /* A row per pull request that merges into this branch: the #N is a link out,
    Switch is the checkout, and the title sits between them and gives way first. */
 .pr-into { margin: 0 0 10px; font-size: 12px; }
 .pr-into-label { display: block; color: var(--dim); }
+/* A branch named in a sentence, in the diff pane's face so it reads as a name.
+   Monospace runs wide at the same size, hence the smaller em. */
+code.branch { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .92em; color: var(--fg); }
 .pr-into ul { list-style: none; margin: 0; padding: 0 0 0 10px; }
 /* A stack under the pull request it builds on: the rule is the branch. */
 .pr-into ul ul { margin-left: 4px; padding-left: 10px; border-left: 1px solid var(--line); }
@@ -671,10 +743,3 @@ a { color: var(--accent); }
 .pr-go:disabled { color: var(--dim); cursor: not-allowed; }
 
 .pr-note { color: var(--dim); font-size: 12px; margin: 0 0 8px; }
-.pr-create {
-  font: inherit; font-size: 13px; margin-top: 6px; padding: 4px 10px; cursor: pointer;
-  color: var(--fg); background: var(--bg);
-  border: 1px solid var(--line); border-radius: 4px;
-}
-.pr-create:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
-.pr-create:disabled { opacity: .4; cursor: not-allowed; }

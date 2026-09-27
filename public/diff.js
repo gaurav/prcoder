@@ -2,7 +2,7 @@
 // iframed, so the pane draws the raw patch itself and keeps a link out for
 // the fancy view.
 
-import { h, btn, ext, api, writeThrough } from './pr.js';
+import { h, btn, ext, api, writeThrough, pref, setPref } from './pr.js';
 
 // Lives outside the render because the 60s poll rebuilds #pr-body from
 // scratch; #diff itself is never repainted by the poll (queue.js does the
@@ -146,18 +146,15 @@ export function highlightLines(text, grammar, tokenize) {
 const loaded = {};
 let attempt = 0;
 const fresh = (url) => (attempt ? `${url}?retry=${attempt}` : url);
+const load = (key, url) => (loaded[key] ??= import(fresh(url))
+  .catch((e) => { loaded[key] = null; attempt++; throw e; }));
 async function one(lang) {
   if (globalThis.Prism.languages[lang]) return;
-  loaded[lang] ??= import(fresh(`/vendor/prism/${lang}.js`))
-    .catch((e) => { loaded[lang] = null; attempt++; throw e; });
-  await loaded[lang];
+  await load(lang, `/vendor/prism/${lang}.js`);
 }
 async function grammar(lang) {
-  if (!loaded.core) {
-    globalThis.Prism = { manual: true };
-    loaded.core = import(fresh('/vendor/prism.js')).catch((e) => { loaded.core = null; attempt++; throw e; });
-  }
-  await loaded.core;
+  if (!loaded.core) globalThis.Prism = { manual: true };
+  await load('core', '/vendor/prism.js');
   // Prerequisites first and in order: prism-tsx builds on the jsx and
   // typescript grammars, and defines nothing at all if they are not there yet.
   for (const dep of NEEDS[lang] ?? []) await one(dep);
@@ -168,15 +165,12 @@ async function grammar(lang) {
 const el = (id) => document.getElementById(id);
 
 // Hiding the outline is a preference about the pane, not about one file, so it
-// is browser-wide and outlives a reload. Wrapped for the same reason as the
-// pane widths in panes.js: a refused store must not take the diff with it.
+// is browser-wide and outlives a reload.
 const OUTLINE_KEY = 'prcoder:outline';
-const outlineOff = () => {
-  try { return localStorage.getItem(OUTLINE_KEY) === 'off'; } catch { return false; }
-};
+const outlineOff = () => pref(OUTLINE_KEY) === 'off';
 function showOutline(on) {
   el('diff').classList.toggle('outline-off', !on);
-  try { localStorage.setItem(OUTLINE_KEY, on ? 'on' : 'off'); } catch { /* this session only */ }
+  setPref(OUTLINE_KEY, on ? 'on' : 'off');
   // The clicked control has just vanished; keep focus on the one that undoes it.
   el(on ? 'diff-outline-hide' : 'diff-outline-show').focus();
 }
@@ -201,7 +195,8 @@ function setTitle(kind) {
   title.className = kind ?? '';
 }
 
-export async function openDiff(f) {
+/** `onViewed` is what the viewed box calls: app.js's, which repaints the file rows too. */
+export async function openDiff(f, onViewed = setViewed) {
   openPath = f.path;
   // A <bdi>, for the reason spelled out at fileRow in pr.js: this element is
   // `direction: rtl` so a long path is cut at the head, and that alone would
@@ -225,16 +220,11 @@ export async function openDiff(f) {
   document.querySelector('main').classList.add('diff-open');
   markSelected(f.path);
 
-  // Same GraphQL round-trip the row checkboxes use; on success mirror the
-  // row so the two boxes never disagree without a repaint.
+  // The same write the row checkboxes make, through the same handler, so the
+  // row, its group's pie and the tab count follow it.
   const box = el('diff-viewed');
   box.checked = f.viewed;
-  writeThrough(box, (v) => setViewed(f.path, v), (v) => {
-    const row = document.querySelector(`.file[data-path="${CSS.escape(f.path)}"]`);
-    row?.classList.toggle('viewed', v);
-    const rowBox = row?.querySelector('input[type=checkbox]');
-    if (rowBox) rowBox.checked = v;
-  });
+  writeThrough(box, (v) => onViewed(f.path, v));
 
   el('diff-close').onclick = closeDiff;
   el('diff').classList.toggle('outline-off', outlineOff());
@@ -243,6 +233,9 @@ export async function openDiff(f) {
 
   const body = el('diff-body');
   body.replaceChildren(h('div', { className: 'empty' }, 'Loading…'));
+  // Emptied here, with the body: a file with no patch returns before the
+  // outline is rebuilt, and kept the last file's hunks to jump to.
+  el('diff-outline').replaceChildren();
   setTitle(null);
   let patch, from;
   try {
@@ -267,10 +260,14 @@ export async function openDiff(f) {
   // colour wrongly from inside a comment or string -- #68 has the safe way.
   // Anything that goes wrong here paints the file plain, as before.
   const lang = kind === 'add' && language(f.path);
+  // Built once: the highlight source, the rows and the outline all read it, and
+  // the outline's indices have to be the rows'. A rename's `from` row is a hunk
+  // row, so the ctx filter below leaves it out of the source.
+  const parsed = diffRows(patch, from);
   let lines = null;
   if (lang) {
     try {
-      const src = diffRows(patch).filter((r) => r.cls === 'ctx').map((r) => r.text).join('\n');
+      const src = parsed.filter((r) => r.cls === 'ctx').map((r) => r.text).join('\n');
       lines = highlightLines(src, await grammar(lang), globalThis.Prism.tokenize);
     } catch (e) {
       console.error('highlight', e);
@@ -279,12 +276,12 @@ export async function openDiff(f) {
   }
   let at = 0;
   const seg = ({ cls, text }) => (cls ? h('span', { className: cls }, text) : text);
-  const rows = diffRows(patch, from).map(({ cls, text }) => {
+  const rows = parsed.map(({ cls, text }) => {
     const segs = lines && cls === 'ctx' ? lines[at++] : null;
     return h('div', { className: `dl ${cls}` }, ...(segs?.length ? segs.map(seg) : [text]));
   });
   body.replaceChildren(...rows);
-  el('diff-outline').replaceChildren(...outline(diffRows(patch, from)).map(({ at, text }) =>
+  el('diff-outline').replaceChildren(...outline(parsed).map(({ at, text }) =>
     btn(text, () => rows[at].scrollIntoView({ block: 'start' }), { title: text })));
 }
 

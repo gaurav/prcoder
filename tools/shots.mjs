@@ -39,11 +39,17 @@ export function labelPath(root, label) {
  * else, including a subdirectory or a symlink, which is left alone.
  */
 async function shotsOnly(dir) {
-  const entries = await fs.readdir(dir, { withFileTypes: true }).catch((e) => {
-    if (e.code === 'ENOENT' || e.code === 'ENOTDIR') return null;
+  // lstat, not readdir alone: readdir follows a symlink, so a label linked to a
+  // directory of PNGs anywhere passed as the driver's, and the run then emptied
+  // and wrote into wherever it pointed.
+  const stat = await fs.lstat(dir).catch((e) => {
+    if (e.code === 'ENOENT') return null;
     throw e;
   });
-  return entries && entries.every((e) => e.isFile() && e.name.endsWith('.png'));
+  if (!stat) return null;
+  if (!stat.isDirectory()) return false;
+  const entries = await fs.readdir(dir, { withFileTypes: true });
+  return entries.every((e) => e.isFile() && e.name.endsWith('.png'));
 }
 
 /** The directory this run writes into, emptied first. */

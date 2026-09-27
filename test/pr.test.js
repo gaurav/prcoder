@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  pageTitle, withoutHtml, inline, headLinks, noPrLinks, prsInto, prTree, stackOn, stackLabel, stackOrder, stackEmpty, queueSync, HEADING, blocks, sectionize,
-  tabLabel, taskCount, viewedCount, checkCount, worst, byPath, byDir, nums,
+  pageTitle, withoutHtml, inline, headLinks, noPrLinks, prsInto, prTree, stackOn, stackLabel, stackOrder, stackEmpty, intoEmpty, switcherRows,
+  HEADING, blocks, sectionize, tabLabel, taskCount, viewedCount, checkCount, worst, byPath, bySize, byDir, nums,
 } from '../public/pr.js';
 import { fences, TASK, taskLines } from '../public/tasks.js';
 
@@ -54,16 +54,16 @@ test('a first load that failed has nothing to name the tab with', () => {
 
 // The pane escapes everything, which is right for safety and wrong for the
 // three constructs a real description uses. All three shipped visible: `## Why`
-// as a literal `## Why`, prcoder's own markers sitting above the list they
-// delimit, and a stray `</details>` mid-pane.
-test("prcoder's own block markers do not show up in the pane", () => {
-  const body = ['Prose above.', '', '<!-- prcoder:todo -->', '## TODO', '',
-    '- [ ] an item', '<!-- /prcoder:todo -->', '', 'Prose below.'].join('\n');
+// as a literal `## Why`, HTML comments sitting above the list they delimit, and
+// a stray `</details>` mid-pane.
+test('HTML comments around a block do not show up in the pane', () => {
+  const body = ['Prose above.', '', '<!-- begin checklist -->', '## Checklist', '',
+    '- [ ] an item', '<!-- end checklist -->', '', 'Prose below.'].join('\n');
   const out = withoutHtml(body);
   assert.doesNotMatch(out, /<!--/);
-  assert.doesNotMatch(out, /prcoder:todo/);
-  // The block's contents survive -- only the markers go.
-  assert.match(out, /## TODO/);
+  assert.doesNotMatch(out, /checklist -->/);
+  // The block's contents survive -- only the comments go.
+  assert.match(out, /## Checklist/);
   assert.match(out, /- \[ \] an item/);
   assert.match(out, /Prose above[\s\S]*Prose below/);
 });
@@ -190,6 +190,18 @@ test('a relative link resolves against the head branch of the repository', () =>
   assert.equal(href(inline('[docs](https://x.test/a)', where)), 'https://x.test/a');
 });
 
+// The ref is a branch name, which is not the description's text and so never
+// went through the escaper -- and git allows a `"` in one. That closed the href
+// and let the rest of the name add attributes (found in review, 2026-09-26).
+test("a branch name in a relative link cannot leave the link's href", () => {
+  const out = inline('[a](docs/a.md)', { ...where, ref: 'a"/style="color:red' });
+  assert.doesNotMatch(out, /style=/);
+  assert.equal(href(out), 'https://github.test/o/r/blob/a%22/style%3D%22color%3Ared/docs/a.md');
+  // A `#` or `%` would otherwise end the path or start an escape; `/` stays a path.
+  assert.equal(href(inline('[a](x.md)', { ...where, ref: 'feature/50%#1' })),
+    'https://github.test/o/r/blob/feature/50%25%231/x.md');
+});
+
 test('a bare #N becomes a link to the issue of that number', () => {
   assert.equal(href(inline('Closes #28.', where)), 'https://github.test/o/r/issues/28');
   assert.equal(inline('(#28)', where).includes('>#28</a>)'), true);
@@ -215,6 +227,8 @@ test('the head links point at the repository the pull request is in', () => {
     ['milestones', 'https://github.test/o/r/milestones'],
   ]);
   assert.deepEqual(repo, { href: 'https://github.test/o/r', slug: 'o/r', owner: 'o', rest: '/r' });
+  // The pull request is the one drawn as a button; the lists stay links.
+  assert.deepEqual(links.map((l) => l.className), ['primary', undefined, undefined, undefined]);
 });
 
 // The line clips on purpose, and the two spans are what decide which half goes.
@@ -307,15 +321,26 @@ test('the Stack tab counts the whole tree, and a fork has no stack here', () => 
   assert.deepEqual(stackOn({ headRefName: 'main', isCrossRepository: true }, OPEN), []);
 });
 
-// Three empties, three sentences. The other-repo one used to say "Nothing is
-// stacked", which was a claim about a repository prcoder had not looked in.
+// Four empties, four sentences. The other-repo one used to say "Nothing is
+// stacked", which was a claim about a repository prcoder had not looked in; and
+// with no list yet -- the first fetch still out, or every one failed -- the tab
+// said the same, because the list it had was an empty one standing in for none.
+// `{ branch }` parts become <code> in the pane; here, a backticked name.
+const said = (parts) => parts.map((p) => (typeof p === 'string' ? p : `\`${p.branch}\``)).join('');
+
 test('an empty Stack tab says why it is empty', () => {
-  const here = { headRefName: 'queue-tabs' };
-  assert.equal(stackEmpty(here, OPEN), 'Nothing is stacked on queue-tabs.');
-  assert.equal(stackEmpty({ headRefName: 'main', isCrossRepository: true }, OPEN),
-    'Nothing here can be built on main: it is a branch in a fork.');
-  assert.equal(stackEmpty(here, null), 'Stacks are listed only for pull requests in this repository.');
+  const here = { number: 70, headRefName: 'queue-tabs' };
+  assert.equal(said(stackEmpty(here, OPEN)), 'Nothing is stacked on PR #70 (branch `queue-tabs`).');
+  assert.equal(said(stackEmpty({ number: 80, headRefName: 'main', isCrossRepository: true }, OPEN)),
+    'Nothing here can be built on PR #80 (branch `main`): the branch is in a fork.');
+  assert.equal(said(stackEmpty(here, null, true)), 'Stacks are listed only for pull requests in this repository.');
+  assert.equal(said(stackEmpty(here, null)), 'No list of open pull requests yet.');
   assert.deepEqual(stackOn(here, null), []);
+});
+
+test('the branch-only pane does not say nothing merges in when it has no list', () => {
+  assert.equal(said(intoEmpty('main', [])), 'No pull requests into branch `main`.');
+  assert.equal(said(intoEmpty('main', null)), 'No list of open pull requests yet.');
 });
 
 const order = (prs) => stackOrder(prs).map(({ pr, depth }) => `${'-'.repeat(depth)}${pr.number}`);
@@ -324,6 +349,19 @@ test('the switcher lists each pull request with its stack under it', () => {
   const deeper = [...OPEN, { number: 61, headRefName: 'tabs-2', baseRefName: 'checks-tab' },
     { number: 9, headRefName: 'elsewhere', baseRefName: 'release' }];
   assert.deepEqual(order(deeper), ['1', '-27', '-60', '--61', '9']);
+});
+
+// gh pr list has only open PRs, so a merged one on screen is added -- into the
+// tree, so what is still open on its branch nests under it, as in its Stack tab.
+test('a merged pull request on screen parents the ones still open on its branch', () => {
+  const merged = { number: 5, title: 'Merged', headRefName: 'merged-topic', baseRefName: 'initial-implementation' };
+  const built = [...OPEN, { number: 70, headRefName: 'built-on-merged', baseRefName: 'merged-topic' }];
+  const rows = (prs, pr) => switcherRows(prs, pr).map(({ pr: p, depth }) => `${'-'.repeat(depth)}${p.number}`);
+  assert.deepEqual(rows(built, merged), ['1', '-5', '--70', '-27', '-60']);
+  // Open, it is already in the list, and nothing is added.
+  assert.deepEqual(rows(OPEN, OPEN[1]), ['1', '-27', '-60']);
+  // Into a branch no open PR is on, it leads.
+  assert.deepEqual(rows(OPEN, { ...merged, baseRefName: 'main' }), ['5', '1', '-27', '-60']);
 });
 
 // A fork's head is a branch in the fork. Named `main`, it would otherwise make
@@ -354,6 +392,17 @@ test('a cycle of bases ends instead of recursing forever', () => {
     { number: 3, headRefName: 'b', baseRefName: 'a' },
   ];
   assert.deepEqual(shape(prTree(loop, 'a')), [3, [2]]);
+});
+
+// prTree from a bare branch reaches round to #2, above; from #2 itself it must
+// not, or #2's Stack tab lists #2 with a Switch to the pull request on screen.
+test('a cycle of bases does not stack a pull request on itself', () => {
+  const loop = [
+    { number: 2, headRefName: 'a', baseRefName: 'b' },
+    { number: 3, headRefName: 'b', baseRefName: 'a' },
+  ];
+  assert.deepEqual(shape(stackOn(loop[0], loop)), [3]);
+  assert.equal(stackLabel(stackOn(loop[0], loop)), 'Stack (1)');
 });
 
 test('without a repository to resolve against, neither becomes a link', () => {
@@ -397,19 +446,6 @@ test('a fence that is never closed is left as text', () => {
   const out = fences('text\n\n```sh\nnpm install\n\nstill prose');
   assert.deepEqual(out.map((c) => (c.code !== undefined ? 'code' : 'text')), ['text']);
   assert.match(out[0].text, /still prose/);
-});
-
-// The queue pane's light. "Nothing to mirror" and "GitHub has it" are both
-// fine, and only one of them earns a dot.
-test('the queue light shows only what is worth acting on', () => {
-  const q = [{ text: 'a', inPr: true }];
-  assert.equal(queueSync({ queue: [{ text: 'a', inPr: false }], scope: 'current' }), null);
-  assert.equal(queueSync({ queue: q, scope: 'current' }).text, 'in the PR');
-  // A tombstoned item is not evidence of anything still mirrored.
-  assert.equal(queueSync({ queue: [{ text: 'a', inPr: true, deleted: true }], scope: 'current' }), null);
-  // The one that matters: the store took it, GitHub did not.
-  assert.match(queueSync({ queue: q, scope: 'current', mirrorFailed: true }).className, /bad/);
-  assert.equal(queueSync({ queue: q, scope: 'other-branch' }).text, 'not mirroring');
 });
 
 // --- lists ---
@@ -516,8 +552,8 @@ test('a bullet inside a fence is a sample, not a list', () => {
 //
 // A description is folded by section so that ten sections of agent-written
 // prose do not bury the rest of the pane. The fold level comes from the body
-// rather than being fixed here, because prcoder's own mirrored block writes
-// `## TODO` while a description someone typed may well start at `#`.
+// rather than being fixed here, because one description uses `##` for its
+// sections while another someone typed may well start at `#`.
 
 const fold = (body) => sectionize(blocks(body));
 const titles = (body) => fold(body).sections.map((s) => s.title);
@@ -611,10 +647,11 @@ test('a failure colours the tab even when something else is still running', () =
 });
 
 test('the description count walks the body, fences and all', () => {
-  assert.deepEqual(taskCount('- [x] a\n- [ ] b\n- [x] c'), { done: 2, total: 3 });
+  const count = (body) => taskCount(blocks(body));
+  assert.deepEqual(count('- [x] a\n- [ ] b\n- [x] c'), { done: 2, total: 3 });
   // The same rule the tick uses: a checklist line inside a fence is a sample.
-  assert.deepEqual(taskCount('```\n- [ ] sample\n```\n\n- [x] real'), { done: 1, total: 1 });
-  assert.deepEqual(taskCount('Just prose.'), { done: 0, total: 0 });
+  assert.deepEqual(count('```\n- [ ] sample\n```\n\n- [x] real'), { done: 1, total: 1 });
+  assert.deepEqual(count('Just prose.'), { done: 0, total: 0 });
 });
 
 test('the file count is files viewed on GitHub, over files changed', () => {
@@ -643,7 +680,7 @@ test('paths order like a tree, a directory ahead of what is inside it', () => {
   assert.deepEqual(['a/z.js', 'a/b.js'].sort(byPath), ['a/b.js', 'a/z.js']);
 });
 
-test('a group splits into its root files and its directories, both in path order', () => {
+test('a group splits into its root files and its directories, directories in path order', () => {
   // Deliberately unsorted: the order is the pane's own now, not whatever order
   // `gh` handed the files over in.
   const f = (path) => ({ path });
@@ -655,6 +692,19 @@ test('a group splits into its root files and its directories, both in path order
   assert.deepEqual(dirs.map(([dir]) => dir), ['alpha/', 'alpha/beta/', 'docs/']);
   assert.deepEqual(dirs.map(([, list]) => list.map((x) => x.path)),
     [['alpha/one.js'], ['alpha/beta/two.js'], ['docs/Design.md', 'docs/Verifying.md']]);
+});
+
+test('files are ordered by lines changed, additions plus deletions, and by path on a tie', () => {
+  const f = (path, additions, deletions) => ({ path, additions, deletions });
+  const { root, dirs } = byDir([
+    f('a.js', 3, 0), f('b.js', 10, 5), f('c.js', 0, 14), f('d.js', 1, 2),
+    f('lib/x.js', 1, 1), f('lib/y.js', 40, 0),
+  ]);
+  // 15 beats 14 only because deletions count: by additions alone c.js is last.
+  assert.deepEqual(root.map((x) => x.path), ['b.js', 'c.js', 'a.js', 'd.js']);
+  assert.deepEqual(dirs.map(([, list]) => list.map((x) => x.path)), [['lib/y.js', 'lib/x.js']]);
+  // A file with no counts (a binary, or one gh has not answered for) sorts as none.
+  assert.deepEqual([{ path: 'z' }, f('y', 0, 1)].sort(bySize).map((x) => x.path), ['y', 'z']);
 });
 
 test('a root file is never a directory of its own', () => {

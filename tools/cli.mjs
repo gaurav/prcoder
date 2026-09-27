@@ -6,7 +6,7 @@
 //   node tools/cli.mjs
 //
 // Scratch driver, not a test: add keystrokes for whatever you are looking at.
-// The rules from browser.mjs hold. CLAUDE_BIN is stubbed, because every websocket
+// The rules from browser.mjs hold. PRCODER_AGENT_BIN is stubbed, because every websocket
 // spawns it in a PTY and an unstubbed run leaves a real Claude session behind;
 // and this stays read-only, because the queue and the description it would
 // write to are this repo's live ones.
@@ -19,9 +19,9 @@ import { execSync } from 'node:child_process';
 import { setTimeout as wait } from 'node:timers/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createServer } from 'node:net';
 import { spawn } from 'node-pty';
 import { WebSocket } from 'ws';
+import { free } from './driver.mjs';
 
 // The pty kills below are what let this exit; these are the backstop for a run
 // that throws or is killed first. Same three signals as term.js.
@@ -33,15 +33,7 @@ const port = Number(process.env.PRCODER_PORT) || 17455;
 // server.js falls back to a free port when the one it is given is taken --
 // which is the whole point of `second` below. `first` finding it taken is a
 // different thing entirely: it would drive whatever already holds the port, and
-// then report that stranger's status block as its own. A leaked server from an
-// earlier run did exactly this to the browser driver. Fail here instead, where
-// the message can say which port and why.
-const free = (p) => new Promise((res, rej) => {
-  const probe = createServer();
-  probe.once('error', () => rej(new Error(`port ${p} is taken -- something else would be driven instead of this run's server. Stop it, or set PRCODER_PORT.`)));
-  probe.once('listening', () => probe.close(res));
-  probe.listen(p, '127.0.0.1');
-});
+// then report that stranger's status block as its own.
 await free(port);   // before `first` only: `second` is meant to find it taken
 
 function start(label) {
@@ -50,7 +42,7 @@ function start(label) {
     cols: 100,
     rows: 30,
     cwd: repo,
-    env: { ...process.env, PRCODER_PORT: String(port), PRCODER_NO_OPEN: '1', CLAUDE_BIN: '/bin/cat' },
+    env: { ...process.env, PRCODER_PORT: String(port), PRCODER_NO_OPEN: '1', PRCODER_AGENT_BIN: '/bin/cat' },
   });
   // See the note in browser.mjs: a throw past this point would otherwise leave
   // the server running. Killing an already-killed pty throws, and the deliberate

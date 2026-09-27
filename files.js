@@ -2,18 +2,16 @@
 // diff viewer.
 
 import { createHash } from 'node:crypto';
+import { repoUrl, urlPath } from './public/tasks.js';
 
 const TEST = /(^|\/)(tests?|spec|__tests__)\/|(^|\/)test_[^/]+$|[._-](test|spec)\.[^./]+$/i;
 const DOC_EXT = /\.(md|mdx|rst|txt|json|ya?ml|toml|ini|cfg|lock)$/i;
 const DOC_PATH = /(^|\/)(docs?|\.github)\/|(^|\/)(LICENSE|CHANGELOG|NOTICE)$|(^|\/)\.[^/]+$/i;
 
-/** Tests first: they are the fastest way to see what functionality changed. */
-export function groupFiles(files) {
-  const groups = { tests: [], code: [], docs: [] };
-  for (const f of files) groups[bucket(f.path)].push(f);
-  return groups;
-}
-
+/**
+ * Which of the Files tab's groups a path goes in: 'tests', 'code' or 'docs'.
+ * The order the pane shows them in is GROUPS in public/pr.js.
+ */
 export function bucket(p) {
   if (TEST.test(p)) return 'tests';
   if (DOC_EXT.test(p) || DOC_PATH.test(p)) return 'docs';
@@ -48,10 +46,12 @@ export function fileUrl(prUrl, p) {
  * PR -- `/cli/cli/blob/682398a/docs/install_linux.md` answered 200.
  */
 export function fileViews(prUrl, sha, p) {
-  const repo = prUrl.replace(/\/pull\/\d+$/, '');
+  const repo = repoUrl(prUrl);
+  // Encoded: a file named `notes#1.md` otherwise opens `notes` with a fragment.
+  const at = `${sha}/${urlPath(p)}`;
   return {
-    blob: `${repo}/blob/${sha}/${p}`,
-    blame: `${repo}/blame/${sha}/${p}`,
-    history: `${repo}/commits/${sha}/${p}`,
+    blob: `${repo}/blob/${at}`,
+    blame: `${repo}/blame/${at}`,
+    history: `${repo}/commits/${at}`,
   };
 }
