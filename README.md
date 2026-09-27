@@ -120,8 +120,9 @@ scroll; a section that contains checklist items says how many are still open.
 The prose is set in serif at a reading size and capped to a comfortable line
 length, because it is the one thing in the window that is read rather than
 operated. Checklists in it are real checkboxes and write straight back to the
-description -- ticking one inside prcoder's own TODO block ticks the queue item
-it came from. It ends with the issues the description points at, each one a
+description, and that is all a tick does: a TODO block an earlier prcoder left
+in a description is an ordinary checklist now, and ticking it touches no queue
+item. It ends with the issues the description points at, each one a
 line carrying its title: the ones this pull request closes, then the ones it
 only mentions. A bare `#41` in the prose is a link but says nothing about what
 it is, and the titles are the whole point of the list.
