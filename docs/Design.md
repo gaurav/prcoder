@@ -101,12 +101,19 @@ happens (two tabs on one server, where the mtime matches because the same proces
 merging on conflict needs item identity, which text is not. The upgrade, if a lost item is ever
 actually observed, is an id per item and a union by id.
 
-**prcoder has no flags of its own.** The argv is cut at the first flag and everything from there is
-handed to `claude` verbatim, which is why prcoder's settings are environment variables and its
-verbosity is a keypress; `prcoder --help` is still Claude's help.
-[#12](https://github.com/gaurav/prcoder/issues/12) is the replacement.
+**prcoder's flags end at `--`.** Everything before it is prcoder's and parsed strictly (`parseCli`
+in [`cli.js`](../cli.js)); everything after it goes to the agent verbatim. So there is no list of
+Claude's flags to keep in step, and an agent flag written before `--` is an error that says where it
+goes, not a session started with the wrong pull request. `--port`, `--no-open` and `-v` each have an
+environment variable of the same meaning, which the flag overrides; `--agent` has none yet, and
+`PRCODER_OPEN` and `PRCODER_AGENT_BIN` have no flag.
+`PRCODER_AGENT_BIN` is a path to run, not a name, which is why it is not `PRCODER_AGENT`: that
+would read as `--agent`'s variable, and is the name `--agent` needs if it ever gets one. It was
+`CLAUDE_BIN`, and prcoder refuses to start while only the old name is set, since ignoring it would
+spawn the real `claude` in place of whatever stub it named.
 
-That policy is also what keeps one gap open.
+The other side of that line, prcoder adding nothing of its own to `claude`'s arguments, is what
+keeps one gap open.
 [#21](https://github.com/gaurav/prcoder/issues/21): prcoder can put nothing into the Claude session
 that is not a typed user turn, so it cannot give the session standing instructions about the
 workspace it sits in, cannot tell it the branch moved underneath it, and cannot receive the

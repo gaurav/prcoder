@@ -16,7 +16,7 @@ import { snapshot, currentBranch, repoInfo, prScope, compareUrl, originOwner, ch
 import { bucket, fileUrl, fileViews } from './files.js';
 import { readPort, writePort } from './store.js';
 import { readQueue, writeQueue, quote } from './queue.js';
-import { splitArgs, portCandidates, statusLines } from './cli.js';
+import { parseCli, usage, VERSION, portCandidates, statusLines } from './cli.js';
 import { counts } from './public/items.js';
 import * as term from './term.js';
 import { toggleTask } from './public/tasks.js';
@@ -24,7 +24,12 @@ import { grammars } from './public/diff.js';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const repo = process.cwd();
-let { target, claudeArgs } = splitArgs(process.argv.slice(2));
+// The PR to open (a number, URL or branch) and the agent's argv, both from the
+// command line -- see cli.js. Parsed in main, not here: a test importing this
+// module must not parse the runner's argv, and the spawn needs `agentArgs` to
+// be an array either way.
+let target;
+let agentArgs = [];
 // The PR is fetched once and reused, with its files already grouped and linked
 // (decorateFiles); the PR routes need its body, node id and head.
 let pr = null;
@@ -33,6 +38,14 @@ let pr = null;
 // the first poll.
 let info = null;
 const repoFacts = async () => (info ??= await repoInfo(repo));
+
+// A port named for this run, and whether to open a browser: env first, then
+// the flags over it in main. Held here rather than written back into the env,
+// because the env is what the `claude` child inherits -- a flag set that way
+// reached any prcoder started from that pane, in any repo, which then never
+// opened a browser or fell off a --port pin it was never given.
+let pinnedPort = Number(process.env.PRCODER_PORT) || 0;
+let noOpen = !!process.env.PRCODER_NO_OPEN;
 
 // ponytail: patches fetched lazily on the first diff click, keyed by head oid
 // so a push or PR switch invalidates for free. Eager prefetch in refreshPr if
@@ -467,7 +480,7 @@ const wss = new WebSocketServer({ server, path: '/pty' }).on('error', () => {}).
   // that has already started has already read the repo.
   if (!sameOrigin(req)) return ws.close(1008, 'cross-origin connection refused');
 
-  const pty = ptySpawn(process.env.CLAUDE_BIN || 'claude', claudeArgs, {
+  const pty = ptySpawn(process.env.PRCODER_AGENT_BIN || 'claude', agentArgs, {
     name: 'xterm-256color',
     cols: 80,
     rows: 24,
@@ -540,11 +553,11 @@ async function ready() {
     // Kept in the block for the whole session, not just said once at startup:
     // a moved port is exactly what breaks the bookmark and the Dock icon, and
     // that is discovered later, by clicking one of them.
-    // PRCODER_PORT means the port was named, not derived, so "the usual URL for
+    // A pinned port was named, not derived, so "the usual URL for
     // this repo" is not the true sentence -- there is no bookmark to have
     // broken, only an instruction that could not be followed.
     moved: port === wanted ? null : `http://localhost:${wanted} is taken by ${await whoHasPort(wanted)} — ` +
-      (process.env.PRCODER_PORT ? 'not the port you asked for' : 'not the usual URL for this repo'),
+      (pinnedPort ? 'not the port you asked for' : 'not the usual URL for this repo'),
   };
 
   // Through the serial chain, so a request arriving before this finishes waits
@@ -559,12 +572,12 @@ async function ready() {
   if (pr) console.log(pr.url);
   console.log(url);
   if (urls.moved) console.error(urls.moved);
-  if (!process.env.PRCODER_NO_OPEN) openBrowser();
+  if (!noOpen) openBrowser();
 }
 
-// ponytail: the platform's own opener, not a dependency. PRCODER_NO_OPEN=1 to
-// skip; PRCODER_OPEN to run your own command with the URL appended, which is
-// how a browser is told "a new window, not a tab".
+// ponytail: the platform's own opener, not a dependency. --no-open (or
+// PRCODER_NO_OPEN=1) to skip; PRCODER_OPEN to run your own command with the URL
+// appended, which is how a browser is told "a new window, not a tab".
 function openBrowser() {
   const url = urls.local;
   const opener = { darwin: 'open', win32: 'start' }[process.platform] || 'xdg-open';
@@ -608,19 +621,19 @@ function bind(ports) {
  * Bind the port this repo should be on, and answer with the one it *wanted* --
  * which ready() compares against what it got.
  *
- * A port that has been recorded, or named in PRCODER_PORT, gets one attempt and
- * then a kernel-chosen one, so a second prcoder in this directory moves aside
- * with a note rather than silently opening a different URL from the bookmark.
+ * A port that has been recorded, or named by --port or PRCODER_PORT, gets one
+ * attempt and then a kernel-chosen one, so a second prcoder in this directory
+ * moves aside with a note rather than silently opening a different URL from the
+ * bookmark.
  *
  * A first run has no such promise to keep, so it walks the range from the seed
  * and records whatever binds. That is what makes a collision between two repos
  * heal: without it the loser took a fresh random port every run forever.
  */
 async function listenOnRepoPort() {
-  const pinned = Number(process.env.PRCODER_PORT);
-  if (pinned) {
-    await bind([pinned, 0]);
-    return pinned;                       // never recorded: a pin is for one run
+  if (pinnedPort) {
+    await bind([pinnedPort, 0]);
+    return pinnedPort;                   // never recorded: a pin is for one run
   }
 
   const recorded = await readPort(repo);
@@ -679,6 +692,28 @@ function askToQuit() {
 }
 
 if (import.meta.main) {
+  let cli;
+  try {
+    cli = parseCli(process.argv.slice(2));
+  } catch (e) {
+    console.error(`prcoder: ${e.message}\n${usage().split('\n')[0]}`);
+    process.exit(2);
+  }
+  if (cli.help) { console.log(usage()); process.exit(0); }
+  if (cli.version) { console.log(VERSION); process.exit(0); }
+  // Renamed, and refused rather than read: ignored, a leftover CLAUDE_BIN -- a
+  // driver's stub, a scratch script's /bin/cat -- would quietly spawn the real
+  // `claude` in its place, one session per tab, left running.
+  if (process.env.CLAUDE_BIN && !process.env.PRCODER_AGENT_BIN) {
+    console.error('prcoder: CLAUDE_BIN is now PRCODER_AGENT_BIN; rename it, or unset it to run `claude`');
+    process.exit(2);
+  }
+  ({ target, agentArgs } = cli);
+  // Into the variables, never the env: see pinnedPort.
+  if (cli.port) pinnedPort = cli.port;
+  if (cli.noOpen) noOpen = true;
+  if (cli.verbose) term.setVerbosity(cli.verbose);
+
   // Before anything can print: init() is what routes console through the log,
   // and a line written ahead of it would sit above the block and stay there.
   term.init();

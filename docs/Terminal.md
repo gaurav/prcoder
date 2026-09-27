@@ -27,8 +27,8 @@ says `checked 7m ago` next to that count, rather than presenting them as current
 - `v` cycles quiet → verbose → debug. Verbose reports the things that change something you care
   about: an item queued, ticked or moved into an issue, a PR checked out. Debug adds every `git`
   and `gh` subprocess with its timing, the per-poll count of them, route timings, and a line when
-  the PR has moved upstream. `PRCODER_VERBOSE=1` or `=2` starts at a level, which is the only way
-  to see startup itself.
+  the PR has moved upstream. `-v` or `-vv` (or `PRCODER_VERBOSE=1` or `=2`) starts at a level, which
+  is the only way to see startup itself.
 - `o` reopens the browser.
 - `q` or Ctrl-C quits, asking first when that would cost something.
 
@@ -44,7 +44,7 @@ nothing here can make prcoder unkillable.
 
 If the port this repo usually uses was busy, prcoder takes a free one, and the block says so for
 the whole session with the URL prcoder *wanted* -- the one your bookmark or Dock icon points at, or
-the one you named in `PRCODER_PORT`, which the line tells apart. It asks whoever holds that port
+the one you named with `--port` or `PRCODER_PORT`, which the line tells apart. It asks whoever holds that port
 who they are, so the line tells you whether the window you are looking for is another prcoder on
 this repo, another worktree, or nothing to do with prcoder at all.
 [Ports.md](Ports.md) says how the port is chosen.

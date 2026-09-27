@@ -22,7 +22,7 @@ is the [WHATWG fetch standard's](https://fetch.spec.whatwg.org/#port-blocking), 
 highest entry, so nothing derived here can land on one.
 
 To choose a port yourself, edit `port.json` to change it for good (avoiding that list), or set
-`PRCODER_PORT` for a single run.
+`--port` (or `PRCODER_PORT`) for a single run.
 
 ## Finding it again
 

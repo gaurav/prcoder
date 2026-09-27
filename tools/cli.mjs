@@ -6,7 +6,7 @@
 //   node tools/cli.mjs
 //
 // Scratch driver, not a test: add keystrokes for whatever you are looking at.
-// The rules from browser.mjs hold. CLAUDE_BIN is stubbed, because every websocket
+// The rules from browser.mjs hold. PRCODER_AGENT_BIN is stubbed, because every websocket
 // spawns it in a PTY and an unstubbed run leaves a real Claude session behind;
 // and this stays read-only, because the queue and the description it would
 // write to are this repo's live ones.
@@ -42,7 +42,7 @@ function start(label) {
     cols: 100,
     rows: 30,
     cwd: repo,
-    env: { ...process.env, PRCODER_PORT: String(port), PRCODER_NO_OPEN: '1', CLAUDE_BIN: '/bin/cat' },
+    env: { ...process.env, PRCODER_PORT: String(port), PRCODER_NO_OPEN: '1', PRCODER_AGENT_BIN: '/bin/cat' },
   });
   // See the note in browser.mjs: a throw past this point would otherwise leave
   // the server running. Killing an already-killed pty throws, and the deliberate

@@ -31,7 +31,7 @@ export const free = (port) => new Promise((res, rej) => {
 
 /**
  * The server's environment for a driver: its port, no browser of its own, and
- * CLAUDE_BIN stubbed -- every page load opens a websocket and spawns it in a
+ * PRCODER_AGENT_BIN stubbed -- every page load opens a websocket and spawns it in a
  * PTY, and unstubbed each run starts a real Claude session and leaves it
  * running. The stub is `tools/claude-stub.mjs` rather than /bin/cat: it echoes
  * as cat does, and it also sends the cursor-position probe a real session sends
@@ -41,7 +41,7 @@ export const serverEnv = (port, extra = {}) => ({
   ...process.env,
   PRCODER_PORT: String(port),
   PRCODER_NO_OPEN: '1',
-  CLAUDE_BIN: path.join(repo, 'tools', 'claude-stub.mjs'),
+  PRCODER_AGENT_BIN: path.join(repo, 'tools', 'claude-stub.mjs'),
   ...extra,
 });
 

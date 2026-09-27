@@ -12,11 +12,12 @@ npm link                   # once, to run it from any repo; edits here go live
 prcoder                    # the PR for the current branch
 prcoder 123                # a specific PR
 prcoder <pr-url>           # any PR, anywhere
-prcoder --model opus       # ...with flags for the Claude session
+prcoder -- --model opus    # ...with flags for the Claude session, after --
+prcoder --help             # prcoder's own flags
 ```
 
-It prints the URL to open, and opens it for you unless `PRCODER_NO_OPEN` is set. Each repo keeps
-the same port, and so the same URL, across runs.
+It prints the URL to open, and opens it for you unless `--no-open` (or `PRCODER_NO_OPEN`) is set.
+Each repo keeps the same port, and so the same URL, across runs.
 
 It needs Node 22.18 or later in the 22 line, or 24.2 or later -- on older versions it exits at once
 without a word, because it starts only under `import.meta.main` -- and the
@@ -47,18 +48,22 @@ every control does.
 
 ## Arguments and settings
 
-The first argument, if it isn't a flag, is prcoder's: the PR to open. Everything from the first
-flag onward is handed to `claude` untouched, so `prcoder 123 --effort high --model opus` opens
-PR 123 with that session. prcoder has no flags of its own, so its settings are environment
-variables:
+The first argument, if it isn't a flag, is prcoder's: the PR to open. Everything after `--` is
+handed to `claude` untouched, so `prcoder 123 -- --effort high --model opus` opens PR 123 with that
+session. Before `--` a flag is prcoder's, and one it does not know is an error that says where it
+goes, rather than a guess at which of the two it was for. `prcoder --help` lists the flags.
 
-| Variable | What it does |
-| --- | --- |
-| `PRCODER_PORT` | Use this port for one run, instead of the repo's own ([docs/Ports.md](docs/Ports.md)). |
-| `PRCODER_NO_OPEN` | Don't open a browser; just print the URL. |
-| `PRCODER_OPEN` | Open the URL with this command instead of the platform's opener; the URL is appended. |
-| `PRCODER_VERBOSE` | Start the log at `1` (verbose) or `2` (debug) rather than quiet. |
-| `CLAUDE_BIN` | Run this instead of `claude`. |
+Most settings are a flag with an environment variable of the same meaning; the flag wins when both
+are given.
+
+| Flag | Variable | What it does |
+| --- | --- | --- |
+| `--port <n>` | `PRCODER_PORT` | Use this port for one run, instead of the repo's own ([docs/Ports.md](docs/Ports.md)). |
+| `--no-open` | `PRCODER_NO_OPEN` | Don't open a browser; just print the URL. |
+| `-v`, `-vv` | `PRCODER_VERBOSE` | Start the log at verbose (`1`) or debug (`2`) rather than quiet. |
+| `--agent <name>` | | The coding agent; only `claude` today. |
+| | `PRCODER_OPEN` | Open the URL with this command instead of the platform's opener; the URL is appended. |
+| | `PRCODER_AGENT_BIN` | Run this instead of `claude`. |
 
 ## What it writes
 

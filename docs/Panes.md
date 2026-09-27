@@ -12,8 +12,9 @@ resize, double-click it to go back to the default. Sizes are remembered per repo
 the next `prcoder` in that repo opens with the layout you settled on. They live in the browser's
 `localStorage`, which is kept per origin, and the origin includes the port from
 `.prcoder/port.json`. So each repo, each worktree, and each browser or profile has a layout of its
-own. A repo whose port changes (`port.json` deleted, its port busy at startup, or `PRCODER_PORT`
-set) opens with the default layout, and gets the old one back once it is on the old port again.
+own. A repo whose port changes (`port.json` deleted, its port busy at startup, or a port named
+with `--port` or `PRCODER_PORT`) opens with the default layout, and gets the old one back once it
+is on the old port again.
 
 The terminal folds to its header line with a click anywhere on that line; the ▼ before its title
 says so, and is the keyboard's way in. The diff (or the queue, with no diff open) takes the room,
