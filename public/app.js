@@ -1,9 +1,9 @@
 import { Terminal } from '/vendor/xterm.mjs';
 import { FitAddon } from '/vendor/addon-fit.mjs';
 import { WebLinksAddon } from '/vendor/addon-web-links.mjs';
-import { renderPr, renderNoPr, renderHeader, renderQueueSync, pageTitle, api, toast } from './pr.js';
+import { renderPr, renderNoPr, renderHeader, pageTitle, api, toast, pref, setPref } from './pr.js';
 import { openDiff, closeDiff, selectedPath, setViewed } from './diff.js';
-import { initQueue, addItem, setItems, freeze } from './queue.js';
+import { initQueue, addItem, setItems } from './queue.js';
 import './panes.js';   // draggable pane gutters; nothing here calls into it
 
 const term = new Terminal({
@@ -19,9 +19,16 @@ term.open(document.getElementById('term-host'));
 
 const PTY_SEEN = 'prcoder:pty';
 const ws = new WebSocket(`ws://${location.host}/pty`);
+// `WebSocket.OPEN` is read off the global constructor, so a Playwright init
+// script that wraps `window.WebSocket` without copying its four state statics
+// makes it undefined. Every send then returns false, and the page silently
+// stops talking to the PTY, with no error and no closed socket.
 const send = (msg) => {
   if (ws.readyState !== WebSocket.OPEN) return false;
   ws.send(JSON.stringify(msg));
+  // A line sent is the start of a turn -- Enter in the terminal, or an item
+  // sent from the queue, which appends its own. See the tab icon below.
+  if (msg.type === 'input' && msg.data.endsWith('\r')) turn(true);
   return true;
 };
 
@@ -36,29 +43,38 @@ const sync = () => {
   if (dims !== sent && send({ type: 'resize', cols: term.cols, rows: term.rows })) sent = dims;
 };
 
-// The tab icon, blue while Claude is working, so a session left in a
-// background tab says whether it is still going without switching to it.
-// The PTY carries no "thinking" signal, but it doesn't need one: Claude
-// repaints its spinner every few hundred ms mid-turn and prints nothing at all
-// while it waits for you. Measured 2026-09-11 against a turn with a 12s tool
-// call in it: no gap over 750ms until the turn ended, then silence. So the
-// bytes *are* the signal, and 2s of quiet is the end of a turn.
+// The tab icon, blue while a turn is running, so a session left in a
+// background tab says whether it is still going without switching to it. The
+// folded pane's header says the same with `● working`, from the same state, so
+// a session you folded away says when it is done without unfolding it.
+// The PTY carries no "thinking" signal and nothing here reads the frames, so a
+// turn is bracketed rather than detected: sending a line starts one, and the
+// output holds it open. Claude repaints its spinner every few hundred ms
+// mid-turn -- measured 2026-09-11 against a turn with a 12s tool call in it, no
+// gap ran over 750ms until the turn ended -- so 2s of quiet is the end of one.
+//
+// Output cannot *start* a turn, because a PTY echoes what is typed at it:
+// Claude repainting its prompt as you type is output too, and keying off that
+// alone turned the icon busy while it was waiting on the operator -- which is
+// the one state it exists to tell apart.
 //
 // Amber is deliberately not used: it is held for the third state, "stopped to
 // ask you something", which prcoder cannot see yet -- issue #51.
 //
-// One sequence has to come out of the signal first, because it is a question
-// rather than output. Claude asks the terminal where the cursor is (DSR,
+// One sequence has to come out of the signal even so, because it is a question
+// rather than output, and it arrives *during* a turn where the bracketing above
+// cannot help: Claude asks the terminal where the cursor is (DSR,
 // `ESC [ ? 6 n`) every ~200ms for as long as the session is up, and xterm
-// answers every one, so the stream is never quiet for two seconds and the icon
-// stuck busy from the first paint onwards. It only happens against a terminal
-// that answers: measured 2026-09-12 against a bare PTY with nothing replying,
-// Claude asks once and never again, which is why a driver on a `cat` stub saw
-// nothing wrong. Dropping a frame that is nothing but probes is not parsing the
-// TUI -- it is a question for the terminal, answered by the terminal, and this
-// never looks at anything Claude drew.
+// answers every one, so the stream is never quiet for two seconds and a turn
+// once started never ended. It only happens against a terminal that answers:
+// measured 2026-09-12 against a bare PTY with nothing replying, Claude asks
+// once and never again, which is why a driver on a `cat` stub saw nothing
+// wrong. Dropping a frame that is nothing but probes is not parsing the TUI --
+// it is a question for the terminal, answered by the terminal, and this never
+// looks at anything Claude drew.
 const PROBE = /^(?:\x1b\[\?6n)+$/;
 const link = document.querySelector('link[rel=icon]');
+const busyLabel = document.getElementById('term-busy');
 // Derived, not written out a second time -- so the icon in index.html stays the
 // one definition of it. Change its colour there and change this to match.
 const IDLE = link.href;
@@ -74,14 +90,24 @@ const icon = (href) => {
   shown = link.href = href;
   link.remove();
   document.head.append(link);
+  // Here rather than in turn(): the quiet timer ends a turn through icon()
+  // alone, and this is the one place the two can never disagree.
+  busyLabel.hidden = href !== BUSY;
 };
 let quiet;
+const turn = (on) => {
+  clearTimeout(quiet);
+  icon(on ? BUSY : IDLE);
+  // ponytail: typing during a turn echoes, and the echo holds the turn open, so
+  // busy can outlast the turn's real end by as long as you keep typing. Closing
+  // that needs what the frames say rather than when they arrive -- see #51,
+  // which is the same wall from the other side.
+  if (on) quiet = setTimeout(() => icon(IDLE), 2000);
+};
 ws.onmessage = (e) => {
   term.write(e.data);
   if (PROBE.test(e.data)) return;
-  icon(BUSY);
-  clearTimeout(quiet);
-  quiet = setTimeout(() => icon(IDLE), 2000);
+  if (shown === BUSY) turn(true);   // holds an open turn open; cannot start one
 };
 // A tab the browser unloaded in the background comes back as a fresh page, and
 // the socket it closed on the way out has already killed the PTY — so this is a
@@ -102,30 +128,67 @@ ws.onopen = () => {
   } catch { /* private mode: no memory, so no claim about a previous session */ }
 };
 ws.onclose = () => {
-  clearTimeout(quiet);
-  icon(IDLE);
+  turn(false);
   term.write('\r\n\x1b[31m[claude exited — reload to restart]\x1b[0m\r\n');
 };
 
 term.onData((d) => send({ type: 'input', data: d }));
 new ResizeObserver(sync).observe(document.getElementById('term-host'));
 
+// Folding the terminal to its header, stored like the outline's ✕ in diff.js.
+// The PTY keeps its size while folded: a display:none host has no height, so
+// fit() gets NaN rows and returns without resizing, and the ResizeObserver
+// above re-fits it on the way back out.
+const TERM_KEY = 'prcoder:term';
+const fold = document.getElementById('term-fold');
+function foldTerm(off, save = true) {
+  document.querySelector('main').classList.toggle('term-off', off);
+  fold.setAttribute('aria-expanded', String(!off));
+  fold.textContent = off ? '▶\uFE0E' : '▼';   // FE0E: text, never macOS's emoji ▶
+  fold.title = `${off ? 'expand' : 'collapse'} the coding agent pane`;
+  fold.setAttribute('aria-label', fold.title);   // a glyph is no name, as in queue.js
+  if (save) setPref(TERM_KEY, off ? 'off' : 'on');
+  if (!off) term.focus();   // expanding it is to talk to it
+}
+if (pref(TERM_KEY) === 'off') foldTerm(true, false);
+const folded = () => document.querySelector('main').classList.contains('term-off');
+// The whole header is the toggle, and the ▼ is only the part of it that says
+// so -- and the part a keyboard can reach, since a button's Enter is a click
+// and bubbles here. One listener for both, so a click on the ▼ toggles once.
+// No double-click: two clicks would already have folded and unfolded it.
+document.querySelector('#term > header').addEventListener('click', () => foldTerm(!folded()));
+
 // Type an item into Claude's prompt. If Claude is mid-turn it queues the
 // message itself, which is exactly the behaviour we want.
-function sendToClaude(text) {
-  send({ type: 'input', data: text + '\r' });
+//
+// `submit` false types the text and stops there: the prompt is left ready to
+// edit and send by hand, which is what the queue's ▶ wants. Trailing
+// whitespace is cut either way -- a newline in the text *is* the Enter that
+// would have sent it half-written.
+//
+// Whether it went is the return value, because the queue ticks an item off on
+// the strength of it: `send` refuses on a socket that is not open -- a dead PTY,
+// a reload in flight -- and an item checked off after a refused send is one
+// nobody has done and nobody is going to be reminded of.
+function sendToClaude(text, submit = true) {
+  const sent = send({ type: 'input', data: text.replace(/\s+$/, '') + (submit ? '\r' : '') });
   term.focus();
+  return sent;
 }
 
 // The switcher only changes when PRs are opened or closed, so it is not worth a
-// call every minute — page load and opening the dropdown are enough.
+// call every minute — page load, opening the dropdown, and a checkout are
+// enough. The branch-only pane's list of what merges into this branch comes out
+// of the same array, and is as fresh as that.
 let prs = [];
 let last = null;
 const loadPrs = () => api('/api/prs', undefined, 'GET')
   .catch(() => [])   // the switcher is a convenience; a failure is not a banner
   // Repaint, or a PR opened since page load stays invisible until the next
-  // poll — the switcher only rebuilds its options when the set changes.
-  .then((l) => { prs = l; if (last) renderHeader(last, prs, handlers); });
+  // poll — the switcher only rebuilds its options when the set changes. The
+  // whole status, because the branch-only pane reads this list too; `last` is
+  // already the branch this fetch was for, so nothing asks for it again.
+  .then((l) => { prs = l; if (last) paint(last); });
 document.getElementById('pr-switch').addEventListener('mousedown', loadPrs);
 
 const NOTES = {
@@ -134,46 +197,80 @@ const NOTES = {
 };
 
 /**
- * A checkbox in the description, ticked through to GitHub. Rethrown so the box
- * snaps back, and the status reload is for the one error that matters: the
- * description moved under us, and the pane is now showing a stale copy of it.
+ * A checkbox in the description, ticked through to GitHub -- the one edit to a
+ * description prcoder makes, on your click. The route answers with the body
+ * GitHub now has, which becomes the pane's, so the Detail count, the section's
+ * pie and the queue's PR tab move with the box rather than a poll later.
+ * Rethrown so the box snaps back, and the status reload is for the one error
+ * that matters: the description moved under us, and the pane is now showing a
+ * stale copy of it.
  */
 async function toggleTask(task) {
+  let body;
   try {
-    const { queue } = await api('/api/pr/task', task);
-    // Only when the line was one of the queue's own, so the two panes agree
-    // without waiting for the poll.
-    if (queue) setItems(queue, true);
+    ({ body } = await api('/api/pr/task', task));
   } catch (e) {
     toast(e.message, true);
     loadStatus();
     throw e;
   }
+  if (last?.pr) {
+    last.pr.body = body;
+    paint(last);
+  }
 }
 
+/** A file marked viewed or not, on GitHub and then in every place that shows it. */
+async function markViewed(path, viewed) {
+  await setViewed(path, viewed);
+  const f = last?.pr?.files.find((x) => x.path === path);
+  if (!f) return;
+  f.viewed = viewed;
+  paint(last);
+  // The diff pane's box is static markup, outside anything paint() draws.
+  if (selectedPath() === path) document.getElementById('diff-viewed').checked = viewed;
+}
+
+const openFile = (f) => openDiff(f, markViewed);
 const fileHandlers = {
-  onViewed: setViewed,
-  onOpen: openDiff,
+  onViewed: markViewed,
+  onOpen: openFile,
   onTask: toggleTask,
 };
 
+// What the pull request pane was last drawn from. A poll that finds nothing new
+// -- most of them -- skips rebuilding it: every row, fold and listener, and the
+// scroll, focus and fold state put back afterwards.
+let drawn = null;
+
 function paint(status) {
   const moved = last?.pr?.headRefOid !== status.pr?.headRefOid;
+  // A checkout is the one thing that changes which pull requests merge into the
+  // branch under you, and the branch-only pane lists them. Refreshed here rather
+  // than on the poll, which is the whole reason that list is affordable.
+  // `last &&`, or the first paint counts as a change and fetches the list a
+  // second time behind the one the page load already asked for.
+  const switched = last && last.branch !== status.branch;
   last = status;
   // Named for the tab strip, not the page: which PR, in which repo. A poll
   // that fails leaves the last good name up rather than reverting to
   // "prcoder", which is why this is here and not in loadStatus's catch.
   document.title = pageTitle(status);
   renderHeader(status, prs, handlers);
-  renderQueueSync(status);
   if (status.pr) {
-    renderPr({ ...status.pr, note: NOTES[status.scope] },
-      { ...fileHandlers, selected: selectedPath() });
-  } else renderNoPr(status, { onCreate: createPr });
-  // Mirroring needs the PR to be *this* branch's: prcoder will not write our
-  // items into a PR we are only looking at, so the controls that would ask it
-  // to must disable themselves rather than silently do nothing.
-  if (status.queue) setItems(status.queue, status.scope === 'current');
+    const key = JSON.stringify([status.pr, status.scope]);
+    if (key !== drawn) {
+      drawn = key;
+      renderPr({ ...status.pr, note: NOTES[status.scope] },
+        { ...fileHandlers, selected: selectedPath() });
+    }
+  } else {
+    drawn = null;
+    renderNoPr(status, prs, { onCreate: createPr, onSwitch: switchPr });
+  }
+  if (switched) loadPrs();
+  // Reading its checklist into the PR tab needs only a PR on screen.
+  if (status.queue) setItems(status.queue, status.pr);
 
   // Keep an open diff honest: close it if its file left the PR (or the PR
   // switched away), refresh it if the branch moved — the server cache is
@@ -182,7 +279,7 @@ function paint(status) {
   if (!open) return;
   const f = status.pr?.files.find((x) => x.path === open);
   if (!f) closeDiff();
-  else if (moved) openDiff(f);
+  else if (moved) openFile(f);
 }
 
 /**
@@ -197,12 +294,10 @@ async function loadStatus() {
   } catch (e) {
     const failed = { error: e.message, dirtyFiles: [], pr: null };
     renderHeader(failed, prs, handlers);
-    renderQueueSync(failed);
   }
 }
 
 async function switchPr(number) {
-  freeze(true);
   try {
     const status = await api('/api/pr/switch', { number });
     paint(status);
@@ -216,8 +311,6 @@ async function switchPr(number) {
   } catch (e) {
     toast(e.message, true);
     await loadStatus();   // re-derive: the checkout may have half-succeeded
-  } finally {
-    freeze(false);
   }
 }
 
@@ -264,8 +357,7 @@ input.addEventListener('keydown', async (e) => {
   e.preventDefault();
   // Cleared only once the server has the item. addItem is async and save()
   // reports a refusal with a toast rather than a throw, so clearing on the way
-  // past threw the text away on a stale-branch refusal, on any API failure, and
-  // on an Enter pressed during a branch switch.
+  // past threw the text away on any API failure.
   if (await addItem(input.value)) {
     input.value = '';
     grow();
@@ -282,5 +374,5 @@ input.addEventListener('input', grow);
 // needs it — renderHeader synthesises an option for the current PR until it
 // lands, and loadPrs repaints the header itself when it does.
 loadPrs();
-await initQueue({ sendToClaude });
+await initQueue({ sendToClaude, onTask: toggleTask });
 loadStatus();

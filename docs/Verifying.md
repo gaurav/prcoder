@@ -1,152 +1,118 @@
 # How this repo checks itself
 
-`npm test` is `node --test` — bare, never `node --test test/`, for the reason in
-[CLAUDE.md](../CLAUDE.md). That covers everything that can be checked without a browser or a tty.
-This file is about the rest, and about the rule that produced it.
+`npm test` is `node --test "test/**/*.test.js"`, and every part of that is load-bearing:
+
+- **Not `node --test test/`.** On Node 26 a directory argument is resolved as a module and dies
+  with `Cannot find module`.
+- **Not bare `node --test`,** which walks the *whole* working directory, so a scratch checkout under
+  `data/` became a second copy of the suite: 386 tests, and one failure on the vendored-xterm path
+  check because the clone had no `node_modules` (2026-09-18). Node 26 has no
+  `--test-exclude-glob` to exclude it; the flag is gone, and `node --help` lists no replacement.
+- **Quoted,** because the glob has to reach node unexpanded. `sh` has no `**`, so unquoted it
+  collapses to whatever one directory it matches; that run reported 1 test and passed.
+- **Double quotes,** for the same reason the `postinstall` script is Node: single quotes are not
+  quotes to cmd.exe.
+
+[test/CLAUDE.md](../test/CLAUDE.md) has what discovery picks up and why that keeps the drivers in
+`tools/`.
+
+The suite covers everything that can be checked without a browser or a tty, and one thing that
+needs a browser: `test/browser/suite.js` opens the real page from a server started in-process, with
+the API routes and the `/pty` socket answered by Playwright from a fixture, so it needs no `gh`, no
+`claude` and no PTY. It runs once per engine, from `chromium.test.js` and `firefox.test.js`, and
+skips with a note when Playwright or that engine is missing; CI installs both. Its blind spot is the
+fixture, which is shaped by hand from what `/api/status` answers today, so a field the server
+renames and the client follows still passes. A stub `gh` ([#54](https://github.com/gaurav/prcoder/issues/54))
+is what closes that.
 
 ## Reading the CSS is not verification
 
-Three UI changes shipped in this repo "verified" by reading the stylesheet: the tab title, the pane
-width and font sizes, and the description's checkboxes. None of them worked. Every screenshot taken
-since has turned up something reading the CSS had not — prcoder's own block markers rendering as
-literal text, `##` headings rendering as literal `##`, a stray `</details>` the moment the
-description grew one, and `_for_` with its underscores showing because a formatter had rewritten
-`*for*` in the body.
+Three UI changes shipped in this repo "verified" by reading the stylesheet, and none of them worked.
+Every screenshot taken since has found something reading the CSS had not, from HTML comments
+rendering as literal text to `_for_` showing its underscores.
 
-So: anything whose correctness is a fact about what a browser or a terminal actually does gets
-driven, not reasoned about. The two drivers exist for the two halves.
+So anything whose correctness is a fact about what a browser or a terminal actually does gets
+driven, not reasoned about. The [run-prcoder skill](../.claude/skills/run-prcoder/SKILL.md) is the
+short form of this file for an agent about to run the drivers, and a change to how a driver is
+launched or what it stubs belongs there too.
 
-## The two drivers
+## The drivers
 
-`node tools/browser.mjs` boots its own server and drives the UI in a real browser, writing PNGs to
-`data/shots`. Firefox by default — see [CLAUDE.md](../CLAUDE.md) for why one engine is not "a real
-browser", and for the three fixes to the Firefox caret bug that do **not** work.
-`PRCODER_BROWSER=chromium` forces the other; running both is worth the second minute.
+Each driver's header says what it does and why; this is what each one reaches, and what it
+cannot. They share `tools/driver.mjs`, which refuses a port that is already held and stubs
+`CLAUDE_BIN` ([tools/CLAUDE.md](../tools/CLAUDE.md)). **The UI's controls hit the live PR**, so a
+stray click edits a description on GitHub: undo what you write, or stay read-only.
 
-`node tools/cli.mjs` drives the other half in a real PTY, because none of the terminal UI exists
-without a tty: the status block, the keys and the quit prompt all switch off the moment stdout is a
-pipe, which is exactly what a scripted `node server.js` gets — and so exactly what the browser
-driver proves *nothing* about. It prints escape sequences as `\e`, so a block claiming six rows with
-five underneath it is visible rather than a mystery smear.
+**`node tools/browser.mjs [label]`** drives the UI in a real browser and writes PNGs to
+`data/shots/<label>/` (`tools/shots.mjs` says how labels are kept and pruned). It prints what it
+measures, with a comment at each check saying which regression the check catches.
 
-Both refuse to start if their port (17434, 17455) is already held, because `server.js` quietly falls
-back to a free one and a driver would otherwise drive whatever *is* on that port. Both stub
-`CLAUDE_BIN`: every page load spawns it in a PTY, and an unstubbed run starts a real Claude session
-per screenshot. `tools/cli.mjs` stubs it with `/bin/cat`, which is all the terminal half needs;
-`tools/browser.mjs` uses `tools/claude-stub.mjs`, which also sends the probe a real session sends,
-because a stub that only echoes cannot fail the icon check. The UI's controls hit the live PR, so a stray click edits a description on GitHub —
-undo what you write, or stay read-only.
+- **Firefox by default**, because a Firefox-only caret bug survived every Chromium screenshot
+  ([public/CLAUDE.md](../public/CLAUDE.md)). `PRCODER_BROWSER=chromium` forces the other, and
+  running both is worth the second minute. On macOS 27, Firefox starts only with the app-data
+  workaround every launch takes from `firefoxEnv()` (#80);
+  [tools/firefox-runner](../tools/firefox-runner/README.md) has the cause and the re-check, and
+  [#61](https://github.com/gaurav/prcoder/issues/61) records the Firefox pass owed while it did
+  not start.
+- **Written against this repo's PR #1**: its sections, file groups and issue chips. The server
+  follows the branch, so a run from a feature branch fails on the section count; `PRCODER_PR=1`
+  pins it. Leave it unset on `initial-implementation`, since that run is the only one that covers
+  branch-following.
+- **What it cannot reach.** Every file in PR #1 is one the pull request adds, so the diff pane's
+  DIFF and DELETED views, the hunk outline and a `.tsx` file are `tools/diff-views.mjs`'s, below.
+  The queue pane is driven against this repo's own queue, swapped for a fixture with an item in
+  every tab and put back at the end; a queue of its own is
+  [#65](https://github.com/gaurav/prcoder/issues/65).
+- **It reports only a `pageerror`.** A Content-Security-Policy that blocks something is a console
+  message, so it shows only as whichever later check needed what did not load
+  ([#62](https://github.com/gaurav/prcoder/issues/62)). Add a `page.on('console')` for a run that
+  changes the header.
 
-## The measured figures
+**`node tools/diff-views.mjs`** drives the diff pane against
+[#87](https://github.com/gaurav/prcoder/pull/87), a draft fixture that is never merged: a file
+modified in two places (the DIFF view, the outline's rows, its gutter, its ✕ and *Outline*), a
+deleted one, an added `.tsx` file highlighted by the grammar built on jsx and typescript, and two
+renames, one untouched and one with a line changed. Its base is an orphan branch, so the fixture
+stays those files whatever happens to `main`, and the driver refuses to start if the fixture has
+been closed. Run it for any change to what the diff pane draws.
 
-Numbers that only mean something re-measured. The driver prints all of these on every run, so they
-are re-checked rather than quoted:
+**`node tools/no-pr.mjs`** drives the pane with **no** pull request, which `browser.mjs` cannot
+reach from a branch that has one. It clones the remote into `data/main-clone` and runs this
+tree's `server.js` there, so a row's checkout lands in the clone rather than your working copy.
 
-| What | Firefox | Chromium |
-| --- | --- | --- |
-| Description prose width, in an 864px pane | 568px | 567px |
-| Title line widths at the pane's 375px floor | 285, 263, 236 | 285, 263, 236 |
+**`node tools/cli.mjs`** drives the terminal half in a real PTY, because the status block, the keys
+and the quit prompt all switch off when stdout is not a tty, which is what every other driver's
+server gets.
 
-The prose cap and the title's `text-wrap: balance` are both properties no stylesheet can be read
-for, and the 375px floor is the only width at which balancing does anything — a real title runs to
-three lines there, and a greedy wrap leaves the last holding a word or two. The title figures were
-taken by hand for most of this repo's first PR while the description claimed the driver measured
-them; it does now.
+**`node tools/firefox-runner/probe.mjs`** is not a driver and boots no server. It asks only whether
+anything on this machine can start Firefox, with and without the workaround, and is worth running
+after a macOS, Firefox or Playwright update; [its README](../tools/firefox-runner/README.md) says
+how to read it.
 
-A poll costs **seven subprocess calls**, clean tree and dirty alike. `PRCODER_VERBOSE=2` prints the
-count on every poll, so a change that adds a call is visible rather than inferred.
+## Figures worth re-measuring
 
-Every figure here was measured on `5f7d6cc`, in both engines.
+- **A poll costs seven subprocess calls**, clean tree or dirty, with or without a pull request.
+  `PRCODER_VERBOSE=2` prints the count on every poll, so a change that adds a call shows up.
+- **The description's prose is 568px wide in Firefox and 567px in Chromium**, in an 864px pane
+  (on `23b192f`). `browser.mjs` prints it every run; a line-length cap is not something the
+  stylesheet can be read for.
 
-## What gets checked, and where
+## What else is checked, and where
 
-Unit tests cover the queue store, the port derivation, the description renderer, file grouping,
-GitHub's diff anchors, the sync verdict, every queue ↔ PR-description transition, the status block's
-wording, the queue light's states, and the terminal's own erase bookkeeping — the last because a
-block that miscounts its rows either eats scrollback or leaves a smear, and both look like anything
-but an off-by-one.
+Each unit test file says at its top what it pins. Two run the server itself:
+`test/api.test.js` over real HTTP in-process, including the `Origin` and `Host` refusals
+([Security.md](Security.md)), and `test/queue-local.test.js` in a scratch directory with `gh` and
+`git` stubbed to fail, asserting that the routes which only read or rewrite the queue never reach
+either. Filing an item with ◎ is the one queue route that does, on purpose, and is not driven.
 
-Two of them pin a *coupling* rather than a behaviour. The description wins on `done`, so a tick the
-description never received is reverted by the next merge — correct, and exactly why the store may
-never move without the body moving with it. And a tick is sent as a *position* in the body's list of
-checklist lines, so `public/tasks.js` holds that grammar for both sides and a test walks one body
-through both walks; two callers of one function can still be handed different bodies.
+Some things were checked against the real thing rather than a stub, and the evidence sits next to
+the code:
 
-The routes are tested over real HTTP. `test/api.test.js` listens on port 0 in-process rather than
-spawning anything — everything that listens in `server.js` is behind `import.meta.main`, so
-importing the module starts nothing, and a PTY comes only from a `/pty` websocket no test opens. It
-pins `/api/whoami`'s cache-only contract, the 404 and 500 shapes, static serving, the four
-hand-written `vendor` paths into `node_modules` (which break silently on an xterm upgrade and
-surface as a blank page), and the origin refusal: an `Origin` that is not ours is a 403 before any
-handler runs, one that matches reaches the handler, one that is absent does too, and a malformed one
-is refused rather than parsed into a pass. A `Host` that is not a loopback name is refused with or
-without an `Origin`, which is the DNS-rebinding case; that test sends its requests with `node:http`,
-because `fetch` will not set `Host`. Only the handlers that answer without `gh` — the rest
-would be testing this machine's GitHub auth.
-
-Some things can only be checked against the real thing, so they are:
-
-- **GitHub's diff-anchor scheme** (`diff-` + sha256 of the path) was confirmed by grepping the
-  rendered HTML of a public PR rather than taken from documentation, and the assertion is pinned so
-  it fails loudly if GitHub changes it.
-- **`git ls-remote`'s branch argument is a pattern, not a ref name.** Checked against real git in a
-  scratch repo, because the belief *was* the bug: with only `refs/heads/feature/topic` on the
-  remote, a bare `topic` comes back with its sha. A stub would have pinned the belief.
-- **The `git` exit codes the sync verdict depends on** — see [CLAUDE.md](../CLAUDE.md), which
-  records which command returns what and why `asks()` exists.
-- **Which CSS stops a dotfile's leading dot migrating to the end of its path**, decided by measuring
-  four candidates in both engines rather than by reasoning about the bidi algorithm. The column is
-  `direction: rtl` so a long path is cut at the head and keeps its filename; the first guess,
-  `unicode-bidi: plaintext`, fixes the character order and moves the cut to the tail, which is the
-  thing the rtl was for. An LRM prefix and an `LRI…PDI` wrap both work and both put invisible
-  characters into text people copy. `<bdi>` needs no styles of its own and is what shipped. The
-  driver measures the dot's position with range rectangles rather than screenshotting it, because at
-  13px a misplaced leading dot reads as a full stop and is invisible either way.
-
-And some only on screen. Driven in the browser: the two tabs and the folded description, including a
-forced poll to prove a fold survives `renderPr` replacing the whole pane, and each tab's scroll
-position crossed to the other tab and back, because the switch is what used to lose it; quoted sections, spliced
-into the `/api/status` response because neither of this repo's own descriptions contains a `>`; the
-splitters dragged to known coordinates and the page reloaded, and moved again from the keyboard —
-focus lands, an arrow moves the line by ten and shift-arrow by fifty, `Home` resets, and
-`aria-valuenow` reports the position as a percentage of the window and changes when the line moves
-(it was a ResizeObserver on the 1px gutter, which a move never resizes); the switcher, both sync-light
-states, the Deleted tab (which needed a tombstone put in through the API before it would render at
-all), the queue's synced light, the description's checkboxes and the disabled states; and both
-toasts, the four-second one watched to fade and the sticky one clicked away; the head's row of links out, whose right
-alignment is measured against the head's own content edge with the title's left edge as the control,
-because `justify-content` on a row that is also `.meta` is an agreement between two rules that only
-the browser settles, and whose separators are hit-tested at their own centres -- they were an
-`a::before`, which lives inside the link's box, so each dot was underlined with its link and a press
-on one followed the link to its right, and that a separator is now its own element says nothing
-about where a click lands; the description's two
-repository-relative link kinds, a relative path and a bare `#N`, read back as resolved hrefs off
-this repo's own description rather than as the source they used to show; and the tab icon going
-blue while the PTY prints and back to green two seconds after it stops, typed at the
-`tools/claude-stub.mjs` stub, whose echo is the same burst of output a Claude turn is made of and
-whose cursor-position probe, every 200ms throughout, is what a real session sends between turns. The
-green half is the assertion: it was a `cat` stub that never probed, so the icon stuck busy from the
-first paint in every real session and no check could see it. And a queue row dragged by its grip onto
-the row above, then a synthetic `drop` carrying only `text/plain` -- a link or a selection -- on the
-same row, which must leave the queue exactly as the real drag did. Row drags carried `text/plain`
-too, until that drop read as a drag from row `NaN` and moved the first item; run against the old
-code the check prints `MOVED`, in both engines. Then the same row moved back from the keyboard: focus
-on its grip, Down, and the pair is in its original order with focus still on the row that moved.
-
-Driven in the PTY: the tab count, `r` forcing a poll, the busy-port line finding the other instance
-and naming its repo, the quit prompt naming what it costs, a second instance with no tab quitting on
-one press with no prompt at all, and no `claude` left running afterwards.
-
-## What the caret assertion actually proves
-
-Narrower than it looks, and worth knowing before trusting it. The assertion is `caret > 0` — that a
-click into a queue item's text did not land at position 0, which is what the Firefox drag bug does
-([CLAUDE.md](../CLAUDE.md)). That is all it proves.
-
-The offset it prints is not a constant and is not evidence. `.item .text` is `flex: 1`, so its box
-runs to the end of the row and the middle of the box is past the end of the sentence — the click
-lands after the last glyph and the caret goes to the end of the text. So the number printed is the
-length of whichever row happens to come first, which is why it moves when the queue's contents
-move. A check that would catch a click landing on the *wrong* character has to aim at the
-text node rather than at the box; that is a two-line fix, and it is on the branch stacked on this
-one rather than cherry-picked back here.
+- GitHub's diff-anchor scheme: pinned, with the date, in `test/files.test.js`.
+- `git ls-remote`'s branch argument is a pattern, not a ref name: `remoteBranchHead` in `git.js`.
+- git's exit codes, which differ per command: `answer` in `git.js`.
+- A patch rebuilt from local git when GitHub sends none: `localPatch` in `git.js`, and the
+  comparison against GitHub's own patches in commit 7d3df58.
+- Which CSS keeps a dotfile's leading dot in place: `fileRow` in `public/pr.js`.
+- Which CSS keeps a repository's name when its owner will not fit: the repository line in
+  `public/style.css`, and its test in `test/browser/suite.js`.

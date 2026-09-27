@@ -1,26 +1,29 @@
 // Dragging the lines between the panes. Each gutter owns one CSS length that
 // style.css reads out of <main>, so the whole feature is: write a number, let
 // the grid do the layout.
+//
+// Every length is a distance from one edge of <main>, including the diff
+// outline's, which is a flex item rather than a grid track: the property is set
+// on <main> and inherits down to it, so a gutter inside a pane needs nothing
+// here beyond its direction.
+
+import { pref, setPref } from './pr.js';
 
 const main = document.querySelector('main');
 const KEY = 'prcoder:panes';
 
 // The inline style *is* the state — nothing else writes to it, so persisting it
 // whole needs no parallel copy and no parsing. A garbled stored value costs
-// nothing either: the CSS parser drops declarations it cannot read. Both ends
-// are wrapped because a browser can refuse the store outright (Safari's private
-// mode throws on write), and a pane preference must not take the terminal with
-// it — the import in app.js is what would fail.
-let stored = null;
-try { stored = localStorage.getItem(KEY); } catch { /* no store, no memory */ }
-main.style.cssText = stored ?? '';
-const save = () => {
-  try { localStorage.setItem(KEY, main.style.cssText); } catch { /* as above */ }
-};
+// nothing either: the CSS parser drops declarations it cannot read. Through
+// pref(), because a refused store must not take the terminal with it -- the
+// import in app.js is what would fail.
+main.style.cssText = pref(KEY) ?? '';
+const save = () => setPref(KEY, main.style.cssText);
 
 /** Pointer position as a distance from the edge of <main> the pane grows from. */
 const px = (r, from, e) => ({
   left: e.clientX - r.left,
+  right: r.right - e.clientX,
   top: e.clientY - r.top,
   bottom: r.bottom - e.clientY,
 }[from]);
@@ -35,14 +38,17 @@ const px = (r, from, e) => ({
  */
 const at = (r, from, g) => {
   const b = g.getBoundingClientRect();
-  return { left: b.left - r.left, top: b.top - r.top, bottom: r.bottom - b.bottom }[from];
+  return {
+    left: b.left - r.left, right: r.right - b.right,
+    top: b.top - r.top, bottom: r.bottom - b.bottom,
+  }[from];
 };
 
 const reports = [];
 
 for (const g of document.querySelectorAll('.gut')) {
   const { var: name, from } = g.dataset;
-  const along = from === 'left' ? 'width' : 'height';
+  const along = from === 'left' || from === 'right' ? 'width' : 'height';
 
   // What a screen reader can say about a line that has no text: how far along
   // <main> it sits. The clamp() bounds are a percentage and two pixel values in
@@ -82,14 +88,18 @@ for (const g of document.querySelectorAll('.gut')) {
   //
   // `grows` is which way the pane's own edge runs: the queue grows *upward*
   // from the bottom of <main>, so pressing Down there has to make its number
-  // smaller, or the separator would walk the wrong way from under the key.
-  const grows = from === 'bottom' ? -1 : 1;
+  // smaller, or the separator would walk the wrong way from under the key. The
+  // outline grows leftward from the right edge and reads the same way.
+  const grows = from === 'bottom' || from === 'right' ? -1 : 1;
   g.addEventListener('keydown', (e) => {
     if (e.key === 'Home') {
       e.preventDefault();
       return reset();
     }
-    const towards = { ArrowLeft: -1, ArrowUp: -1, ArrowRight: 1, ArrowDown: 1 }[e.key];
+    // Only the two arrows along the axis it moves on: a vertical separator
+    // (aria-orientation) that moved on Up and Down said one thing and did
+    // another, and took those keys from the page for nothing.
+    const towards = (along === 'width' ? { ArrowLeft: -1, ArrowRight: 1 } : { ArrowUp: -1, ArrowDown: 1 })[e.key];
     if (!towards) return;
     e.preventDefault();
     const r = main.getBoundingClientRect();
