@@ -34,9 +34,9 @@ const EMPTY = { version: VERSION, items: [] };
 
 /**
  * Every field, coerced. The client PUTs back the array it was handed, which
- * decorate() has added a derived `issueUrl` to — so this constructs rather than
- * spreads. The markdown writer dropped unknown fields for free; JSON would keep
- * them.
+ * decorate() in queue.js has added a derived `issueUrl` to — so this
+ * constructs rather than spreads. The markdown writer dropped unknown fields
+ * for free; JSON would keep them.
  *
  * Constructing is also the whole migration from older prcoders. A `branch` from
  * the per-branch queue goes, and so do `inPr` and `pr` from the description

@@ -15,7 +15,8 @@ import { WebSocketServer } from 'ws';
 import { loadPr, prHeads, prBody, listPrs, setViewed, setBody, createIssue, fetchPatches, runCount } from './github.js';
 import { snapshot, currentBranch, repoInfo, prScope, compareUrl, originOwner, checkoutPr, pushBranch, remoteBranchHead, trackingHead, localPatch } from './git.js';
 import { bucket, fileUrl, fileViews } from './files.js';
-import { readStore, writeStore, readPort, writePort, replaceItems } from './store.js';
+import { readPort, writePort } from './store.js';
+import { readQueue, writeQueue, quote } from './queue.js';
 import * as term from './term.js';
 import { syncPhrase } from './public/pr.js';
 import { toggleTask } from './public/tasks.js';
@@ -65,7 +66,7 @@ let { target, claudeArgs } = splitArgs(process.argv.slice(2));
 // (withUrls); the PR routes need its body, node id and head.
 let pr = null;
 // owner/repo and default branch: constant while we run, and loaded at startup
-// rather than lazily, because the issue links decorate() derives need it before
+// rather than lazily, because the issue links the queue derives need it before
 // the first poll.
 let info = null;
 const repoFacts = async () => (info ??= await repoInfo(repo));
@@ -105,33 +106,6 @@ const serial = (fn) => {
   return p;
 };
 
-/** Item text, cut to something a status line can hold. */
-const quote = (t) => `'${t.length > 48 ? `${t.slice(0, 47)}…` : t}'`;
-
-/**
- * What changed in the queue, said out loud. Matched on text because that is the
- * only identity an item has -- so an edit reads as a delete and an add, which
- * is honest: nothing here can tell those apart either (see the ponytail note on
- * writeQueue).
- *
- * Returns the lines rather than printing them, which is the only reason the
- * five transitions below can be checked without a terminal.
- */
-export function queueChanges(was, now) {
-  const before = new Map(was.map((i) => [i.text, i]));
-  const lines = [];
-  for (const i of now) {
-    const p = before.get(i.text);
-    if (!p) lines.push(`queued ${quote(i.text)}`);
-    else if (p.done !== i.done) lines.push(`${i.done ? 'ticked' : 'unticked'} ${quote(i.text)}`);
-    else if (p.deleted !== i.deleted) lines.push(`${i.deleted ? 'deleted' : 'restored'} ${quote(i.text)}`);
-  }
-  for (const i of was) {
-    if (!now.some((n) => n.text === i.text)) lines.push(`dropped ${quote(i.text)}`);
-  }
-  return lines;
-}
-
 const requirePr = () => {
   if (!pr) throw new Error('no pull request for this branch');
   return pr;
@@ -159,35 +133,6 @@ function decorateFiles(p) {
 }
 
 /**
- * The queue is yours and lives only in `.prcoder/queue.json`: nothing here reads
- * it back from GitHub or writes it anywhere else.
- */
-const readQueue = async () => decorate((await readStore(repo)).store.items);
-
-/**
- * ponytail: last write wins. The store is re-read on every poll so an outside
- * edit is picked up, but two tabs racing means the slower one loses what it
- * never saw. Fixing that needs item identity — text is not it, since an edit is
- * indistinguishable from a delete plus an add — so if a lost item is ever
- * actually observed, give pick() a crypto.randomUUID() and union by id.
- */
-async function writeQueue(items) {
-  // The shape is the contract, and it has changed twice: the route took a bare
-  // array, then `{items, branch}`, and now `{items}` again. A client that
-  // missed a change -- an old tab, a curl copied from somewhere -- used to send
-  // something this function then indexed into, and the TypeError said nothing
-  // about what to send instead. Checked here rather than at the route, because
-  // every write goes through this function.
-  if (!Array.isArray(items)) {
-    throw new Error('the queue must be sent as {items}');
-  }
-  const { store, stale } = await readStore(repo);
-  for (const line of queueChanges(store.items, items)) term.verbose(line);
-  await writeStore(repo, replaceItems(store, items), { stale });
-  return decorate(items);
-}
-
-/**
  * Read, change and write the description: the one way anything writes it, and
  * only for a checkbox ticked in the PR pane. Answers whether anything was sent.
  */
@@ -200,19 +145,6 @@ async function editBody(edit) {
   // makes the pane show a description GitHub never saw.
   cur.body = body;
   return body !== current;
-}
-
-/**
- * The store keeps only the issue number; the link is derived. From
- * nameWithOwner rather than the PR's URL, because that is the repo createIssue
- * actually files into — with a pinned foreign PR the two differ — and because
- * a queue that now works with no PR loaded would otherwise render dead links.
- */
-function decorate(items) {
-  return items.map((i) => ({
-    ...i,
-    issueUrl: i.issue && info ? `https://github.com/${info.nameWithOwner}/issues/${i.issue}` : null,
-  }));
 }
 
 /**
@@ -304,7 +236,7 @@ async function status({ full = false } = {}) {
     // count against a branch you are not on.
     ahead: tracked ? snap.ahead : null,
     pr,
-    queue: await readQueue(),
+    queue: await readQueue(repo, info?.nameWithOwner),
   };
   checkedAt = Date.now();
   repaint();
@@ -412,16 +344,16 @@ const routes = {
     }) };
   },
 
-  'GET /api/queue': () => readQueue(),
+  'GET /api/queue': () => readQueue(repo, info?.nameWithOwner),
 
-  'PUT /api/queue': ({ items }) => writeQueue(items),
+  'PUT /api/queue': ({ items }) => writeQueue(repo, items, info?.nameWithOwner),
 
   'POST /api/queue/issue': async ({ items, index }) => {
     const { url, number } = await createIssue(repo, (await repoFacts()).nameWithOwner, items[index].text);
     items[index].issue = number;
     term.verbose(`filed ${quote(items[index].text)} as ${url}`);
     try {
-      return await writeQueue(items);
+      return await writeQueue(repo, items, info?.nameWithOwner);
     } catch (e) {
       // The issue exists on GitHub whatever happened here, so the error has to
       // name it: "failed" without a number is what makes someone file another.

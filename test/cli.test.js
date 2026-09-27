@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { splitArgs, portFor, portCandidates, PORT_BASE, PORT_SPAN, statusLines, queueChanges, ago } from '../server.js';
+import { splitArgs, portFor, portCandidates, PORT_BASE, PORT_SPAN, statusLines, ago } from '../server.js';
+import { queueChanges } from '../queue.js';
 
 test('a leading positional is our PR target, the rest is Claude\'s', () => {
   assert.deepEqual(splitArgs([]), { target: undefined, claudeArgs: [] });
