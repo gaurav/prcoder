@@ -319,8 +319,7 @@ export function renderNoPr(status, prs, { onCreate, onSwitch, creating = false }
   paintHead({
     title: h('h2', { className: 'pr-branch-name' }, status.detached ? 'Detached HEAD' : status.branch),
     note: h('p', { className: 'pr-note' }, why),
-    links: create.length || out.links.length ? linkRow([...create, ...out.links], 'meta pr-ways pr-links') : null,
-    repo: out.repo ? repoRow(out.repo, 'meta pr-repo') : null,
+    links: create.length || out.links.length ? linkRow([...create, ...out.links], 'meta pr-ways pr-links', out.repo) : null,
   });
 
   host.replaceChildren(...kids([
@@ -451,18 +450,21 @@ const linkBase = (pr) => ({
 const repoName = (repoUrl) => repoUrl.replace(/^https?:\/\/[^/]+\//, '');
 
 /**
- * The head's way out of the pane, in two parts: a row of links -- this pull
- * request on GitHub and the three lists people leave for -- and the repository
- * they are all in, which gets a line to itself.
+ * The head's way out of the pane, in two parts: the links -- this pull request
+ * on GitHub and the three lists people leave for -- and the repository they are
+ * all in, which ends the same row.
  *
- * The repository used to sit in the middle of that row, between `PR #62` and
- * `issues`, and it is the only part of it whose width has no bound.
- * `heal-data-stewards/heal-vlmd-AI-pipeline` is a real one, and at 12px it
- * is most of the pane at its 375px default -- so the row wrapped, and where
- * `issues`/`pulls`/`milestones` were moved from one repository to the next. The
- * four links you aim at are the four that are always the same length; keeping
- * them on a line of their own is what makes them findable, and lets the line
- * below them truncate instead of wrap (see .pr-repo in the stylesheet).
+ * At the end, and nowhere else in it. The repository is the only part of the
+ * row whose width has no bound: `heal-data-stewards/heal-vlmd-AI-pipeline` is a
+ * real one, and at 12px it is most of the pane at its 375px default. It used
+ * to sit between `PR #62` and `issues`, where it wrapped the row and moved
+ * `issues`/`pulls`/`milestones` from one repository to the next; the four links
+ * you aim at are the four that are always the same length, and they stay
+ * findable only while nothing ahead of them varies. It then had a line of its
+ * own under the state for a while, which cost the head a line even for a slug
+ * as short as `gaurav/prcoder`. Last in the row, a short slug shares the line
+ * and a long one wraps whole onto the next and clips only there (see .pr-repo
+ * in the stylesheet), so neither case moves the four.
  *
  * Built from the PR's own URL rather than from the `nameWithOwner` the status
  * carries, which says nothing about the host. That keeps these links right for
@@ -494,8 +496,8 @@ const listLinks = (repo) =>
   ['issues', 'pulls', 'milestones'].map((p) => ({ text: p, href: `${repo}/${p}` }));
 
 /**
- * The repository itself, as its own line rather than a link in the row, split
- * at the first slash so the line can be truncated on purpose.
+ * The repository itself, as a chip rather than a fifth link, split at the
+ * first slash so it can be truncated on purpose.
  *
  * `rest` carries the slash. The owner is the half that gives way when the slug
  * will not fit -- it is the same all day, where the name is what tells you
@@ -521,8 +523,8 @@ const repoCrumb = (repo) => {
  * That makes this the third of the github.com assumptions #53 is about, not a
  * new kind of one; the head's is still the part not to undo.
  *
- * Same shape as headLinks minus the pull request, and rendered by the same two
- * calls -- before this the two panes laid the same links out differently.
+ * Same shape as headLinks minus the pull request, and rendered by the same
+ * linkRow -- before this the two panes laid the same links out differently.
  */
 export const noPrLinks = ({ nameWithOwner }) => {
   if (!nameWithOwner) return { links: [], repo: null };
@@ -545,27 +547,30 @@ export const noPrLinks = ({ nameWithOwner }) => {
  * An entry with `onClick` in place of `href` is a button, handed itself so it
  * can disable itself while it works: Create PR, which pushes before it opens
  * anything.
+ *
+ * The repository chip, when there is one, goes last and without a dot either:
+ * the chip's border separates it the way the button's fill does.
  */
-const linkRow = (list, className) => h('div', { className },
+const linkRow = (list, className, crumb) => h('div', { className },
   ...list.map((l, i) => [
     i && !l.className && !list[i - 1].className ? h('span', { className: 'sep' }, '·') : null,
     l.onClick
       ? btn(l.text, (e) => l.onClick(e.currentTarget), { className: l.className, disabled: !!l.disabled })
       : ext(l.href, l.text, l.className ? { className: l.className } : {}),
-  ]));
+  ]),
+  crumb ? repoChip(crumb) : null);
 
 /**
- * The repository, alone on the line under that row.
+ * The repository, at the end of that row.
  *
  * One link in two spans, because the CSS shrinks them differently: the owner
  * ellipsises and the name is held whole. `title` is the slug uncut, which is
  * the only way back to an owner the pane has clipped.
  */
-const repoRow = (crumb, className) => h('div', { className },
-  ext(crumb.href, [
-    crumb.owner ? h('span', { className: 'owner' }, crumb.owner) : null,
-    h('span', { className: 'name' }, crumb.rest),
-  ], { title: crumb.slug }));
+const repoChip = (crumb) => ext(crumb.href, [
+  crumb.owner ? h('span', { className: 'owner' }, crumb.owner) : null,
+  h('span', { className: 'name' }, crumb.rest),
+], { title: crumb.slug, className: 'pr-repo' });
 
 /**
  * The pull request pane, in two roots.
@@ -620,14 +625,13 @@ function renderPrHead(pr, parsed, handlers) {
     note: pr.note ? h('p', { className: 'pr-note' }, pr.note) : null,
     // `pr-links` carries no style of its own -- it is the hook tools/browser.mjs
     // measures the row by, so it is not dead CSS to clean up.
-    links: linkRow(ways.links, 'meta pr-ways pr-links'),
+    links: linkRow(ways.links, 'meta pr-ways pr-links', ways.repo),
     state: h('div', { className: 'meta pr-state' },
       badge(state, state),
       h('span', {}, `${pr.headRefName} → ${pr.baseRefName}`),
       h('span', { className: 'add' }, `+${pr.additions}`),
       h('span', { className: 'del' }, `−${pr.deletions}`),
     ),
-    repo: repoRow(ways.repo, 'meta pr-repo'),
     tabs: h('div', { className: 'tabs' },
       paneTab('detail', tabLabel('Detail', taskCount(parsed))),
       paneTab('files', tabLabel('Files', viewedCount(pr.files))),
@@ -641,13 +645,14 @@ function renderPrHead(pr, parsed, handlers) {
 
 /**
  * The head, top to bottom, in the order it is read: what this is, the way to
- * it on GitHub and the lists beside it, whether it is open, what it changes,
- * and which checkout it is in. Rearranging the head is reordering this.
+ * it on GitHub with the lists beside it and the repository they are in,
+ * whether it is open, and what it changes. Rearranging the head is reordering
+ * this.
  *
  * Both views of the pane draw their head through it. The one with no pull
  * request has no state or tabs, and those rows fall out.
  */
-const HEAD_ORDER = ['title', 'note', 'links', 'state', 'repo', 'tabs'];
+const HEAD_ORDER = ['title', 'note', 'links', 'state', 'tabs'];
 
 const paintHead = (rows) =>
   document.getElementById('pr-head').replaceChildren(...kids(HEAD_ORDER.map((k) => rows[k])));

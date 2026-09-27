@@ -365,32 +365,40 @@ console.log('still open after a refresh:',
   JSON.stringify(await page.locator('.md-section[open] > summary h3').allInnerTexts()),
   ' (want the one clicked above)');
 
-// The head's way out of the pane, which is two lines and only on screen: both
-// of them are `.meta`, neither has an alignment rule any more, and whether that
-// leaves them at the same left edge as everything else in the head is a fact
-// about the browser rather than about the stylesheet. The title is the control
-// -- it never moved, and these two are now supposed to agree with it. (They did
-// not until 2026-09-21: the row was `justify-content: flex-end`, and this check
-// measured its right edge instead. The stylesheet says why it moved back.)
-console.log('head:   ', await page.evaluate(() => {
+// The head's way out of the pane, which is one row ending in the repository and
+// only on screen: the row is `.meta` with no alignment rule any more, and
+// whether that leaves it at the same left edge as everything else in the head
+// is a fact about the browser rather than about the stylesheet. The title is
+// the control -- it never moved, and the row is supposed to agree with it. (It
+// did not until 2026-09-21: the row was `justify-content: flex-end`, and this
+// check measured its right edge instead. The stylesheet says why it moved back.)
+//
+// Which line the repository lands on depends on the slug and the pane: this
+// repository's `gaurav/prcoder` fits beside the four at the default width,
+// which is the case the move into the row was for.
+const headRow = () => page.evaluate(() => {
   const row = document.querySelector('#pr-head .pr-links');
-  const repo = document.querySelector('#pr-head .pr-repo');
-  const at = (el) => Math.round(el.getBoundingClientRect().left);
-  const title = at(document.querySelector('#pr-head .pr-title'));
+  const repo = row.querySelector('.pr-repo');
+  const box = (el) => el.getBoundingClientRect();
+  const mid = (el) => Math.round(box(el).top + box(el).height / 2);
+  const title = Math.round(box(document.querySelector('#pr-head .pr-title')).left);
+  const line = mid(repo) === mid(row.querySelector('a:not(.primary)')) ? 'same line' : 'next line';
   return `${[...row.querySelectorAll('a')].map((a) => a.textContent).join(' ')} | row left ${
-    at(row)}, repo left ${at(repo)}, title left ${title}`;
-}), ' (want all three the same)');
+    Math.round(box(row).left)}, title left ${title}, repo on the ${line}`;
+});
+console.log('head:   ', await headRow(), ' (want the two lefts the same, and the repo on the same line)');
 console.log('out:    ', await page.evaluate(() =>
   [...document.querySelectorAll('#pr-head .pr-links a')].map((a) => a.href).join(' ')));
-// The repository is the line under that row because it is the one link with no
-// bound on its width, and it clips rather than wraps.
+// The repository ends that row because it is the one link with no bound on its
+// width: where it does not fit it wraps whole onto a line of its own, and clips
+// only there.
 //
 // Both lines say `whole` against this repository and that is the right answer:
 // `gaurav/prcoder` is 14 characters and fits the 180px floor with room over.
 // The clipping itself is pinned in test/browser/suite.js, whose fixture carries
 // a 44-character slug; what a driver run adds is the shape of the block at a
 // width a drag can really reach, which is pr-head-narrow.png -- the links row
-// wraps there, and the repository line under it does not.
+// wraps there, and the repository, on a line of its own by then, does not.
 //
 // So this is a check that goes quiet on a long slug: `owner ... clipped` here
 // means the run was against a repository whose name this pane cannot hold, and
@@ -404,6 +412,7 @@ console.log('repo:   ', await repoLine(), ' (want both whole -- this repo\'s slu
 await page.evaluate(() => document.querySelector('main').style.setProperty('--w-pr', '180px'));
 console.log('repo180:', await repoLine(),
   ' (want the name whole; the owner clips only where the slug is long)');
+console.log('head180:', await headRow(), ' (want the repo on the next line: the four fill 180px)');
 await page.locator('#pr').screenshot({ path: path.join(out, 'pr-head-narrow.png') });
 await page.evaluate(() => document.querySelector('main').style.removeProperty('--w-pr'));
 // The dots between them are delimiters, and were an `a::before` -- which is
@@ -411,7 +420,7 @@ await page.evaluate(() => document.querySelector('main').style.removeProperty('-
 // followed the link to its right. Hit-tested rather than read off the DOM: that
 // a separator is its own element says nothing about where a click lands.
 console.log('dots:   ', await page.evaluate(() =>
-  [...document.querySelectorAll('#pr-head .pr-links span')].map((sep) => {
+  [...document.querySelectorAll('#pr-head .pr-links > .sep')].map((sep) => {
     const b = sep.getBoundingClientRect();
     return document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2)?.tagName;
   }).join(' ')), ' (want SPAN each, never A)');

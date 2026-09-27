@@ -193,7 +193,7 @@ a { color: var(--accent); }
 
 .empty { color: var(--dim); }
 /* The head's way out -- this pull request on GitHub, the lists you leave for,
-   and the repository further down -- starts at the left margin, like the title,
+   and the repository at the end of the row -- starts at the left margin, like the title,
    the badges and the tabs. It has no alignment rule of its own; `.meta` is
    already flex-start, and `.pr-links` is kept only as a hook for the driver.
 
@@ -226,18 +226,22 @@ a { color: var(--accent); }
    stay text, so nothing here looks like it switches the pane. No dot beside
    it; its box is the separator (see linkRow).
 
-   The repository, on a line of its own rather than in the middle of the row.
-   It is the only link there whose width has no bound -- a real
+   The repository goes last in the row, and only last. It is the only link
+   there whose width has no bound -- a real
    `heal-data-stewards/heal-vlmd-AI-pipeline` is most of the pane at its
-   375px default -- so in the row it wrapped, and dragged where issues, pulls
-   and milestones sat along with it. Alone on a line it can overflow instead:
-   the row keeps one predictable shape, and this line clips.
+   375px default -- so in the middle of the row it wrapped, and dragged where
+   issues, pulls and milestones sat along with it. At the end nothing follows
+   it to be dragged. A flex row breaks its lines by each item's full width,
+   not by how far it could shrink, so the chip either fits whole beside
+   `milestones` or wraps whole onto a line of its own, and only alone there
+   does `min-width: 0` let it shrink and clip. A line of its own every time,
+   under the state, was the layout before this one (until 2026-09-27); it
+   cost a line even for `gaurav/prcoder`, which fits beside the four easily.
 
-   And the repository is a chip rather than a fifth link, which is what the
-   move down the page did not by itself fix. Giving it its own line said where
-   it was, not that it was different: both rows are 12px, and every link in
-   both is `--accent` and underlined, so the head read as five blue links in
-   two rows and the eye had no reason to stop on the second. The border, the
+   And the repository is a chip rather than a fifth link. Where it sits says
+   nothing about what it is: the row is 12px, and every link in it is
+   `--accent` and underlined, so as a plain link it read as five blue links
+   and the eye had no reason to stop on the last. The border, the
    radius and the dropped underline are the same three the queue's `#N` tag
    wears (`.item .tag`) -- this window's word for a small thing you can click
    that is an object rather than a phrase -- so it is the vocabulary already
@@ -263,23 +267,24 @@ a { color: var(--accent); }
    links look like the thing that switches the pane. The pull request's single
    filled button is the exception, argued above.
 
-   The chip's padding puts the slug 8px in from the margin the rest of the head
-   starts at. That is the treatment the tabs under it already have -- `.tab` is
-   `padding: 2px 8px` inside a `.tabs` row that sits on the margin -- so the
-   indent is the head's existing answer for a control with a box, not a break
-   in its alignment. The driver's `head:` check measures `.pr-repo` itself,
-   which is the full-width row and still starts where the title does.
+   When the chip wraps, its padding puts the slug 8px in from the margin the
+   rest of the head starts at. That is the treatment the tabs under it already
+   have -- `.tab` is `padding: 2px 8px` inside a `.tabs` row that sits on the
+   margin -- so the indent is the head's existing answer for a control with a
+   box, not a break in its alignment. The driver's `head:` check measures the
+   row, which starts where the title does, and says which line the chip is on.
 
    Which half of the slug gets clipped is the point of the two spans. A pane
    too narrow for `heal-data-stewards/heal-vlmd-AI-pipeline` shows
    `heal-data-…/heal-vlmd-AI-pipeline`: the owner gives way, because it is
    the same all day, and the name is the half that says which checkout this is.
-   `title` on the link (see repoRow) is the way back to the whole slug.
+   `title` on the link (see repoChip) is the way back to the whole slug.
 
    Every declaration below is load-bearing, each checked by dropping it on
    2026-09-21 (Chromium; #61 is the owed Firefox pass, and flex shrink is
    exactly the kind of thing engines have disagreed about). The first three
-   are pinned by test/browser/suite.js, which fails on each:
+   are pinned by test/browser/suite.js, which fails on each -- re-checked on
+   2026-09-27 in Chromium and Firefox, once the chip had moved into the row:
 
    - `inline-flex` on the link, or none of the rest applies and the line simply
      overflows the pane.
@@ -318,13 +323,13 @@ a { color: var(--accent); }
 }
 .pr-links .primary:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 80%, white); }
 .pr-links .primary:disabled { opacity: .5; cursor: progress; }
-.pr-repo a {
+.pr-repo {
   display: inline-flex; min-width: 0;
   text-decoration: none; padding: 1px 7px;
   border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent); border-radius: 9px;
   background: color-mix(in srgb, var(--accent) 8%, transparent);
 }
-.pr-repo a:hover {
+.pr-repo:hover {
   border-color: color-mix(in srgb, var(--accent) 60%, transparent);
   background: color-mix(in srgb, var(--accent) 14%, transparent);
 }

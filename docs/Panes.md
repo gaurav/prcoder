@@ -33,14 +33,15 @@ tab width.
 
 Which pull request you are in stays at the top, in the order it is used: the title; then the way
 out of the window, with this pull request on GitHub drawn as a button beside plain links to the
-repository's issues, pulls and milestones; then the state and the branch it targets; and
-last the repository they are all in.
+repository's issues, pulls and milestones, and the repository they are all in at the end of that
+row; then the state and the branch it targets.
 
-The repository is on its own line because it is the only one of them whose length has no bound. It
-truncates rather than wraps: a long owner is clipped and the repository's own name kept, since
-that is the half that says which checkout you are in. It is drawn as a chip rather than a fifth
-link: the links row is the list of places to go, and the chip is the one line in the head that
-answers which checkout this is.
+The repository comes last in its row because it is the only thing there whose length has no
+bound. A short one fits beside the four links; a long one drops whole onto the next line, so the
+four stay where they are either way. On a line of its own it truncates rather than wraps: a long
+owner is clipped and the repository's own name kept, since that is the half that says which
+checkout you are in. It is drawn as a chip rather than a fifth link: the links are places to go,
+and the chip is the one thing in the head that answers which checkout this is.
 
 ### Moving between pull requests
 
@@ -50,7 +51,7 @@ behind a Commit button, because the checkout would fail anyway.
 
 On a branch with no pull request the pane keeps the pull request head's shape, with the branch as
 its title and a line under it saying why there is no pull request. The way out of the window is in
-the same rows: the issues, pulls and milestones, and the repository on the line below them. The head
+the same row: the issues, pulls and milestones, and the repository at the end of it. The head
 does not scroll, so those are on screen however long the list below it runs. Where the pull
 request's button would be, **Create PR** opens GitHub's compare page, pushing the branch first if
 GitHub has not seen it; on the default branch or a detached HEAD there is nothing to create, and
