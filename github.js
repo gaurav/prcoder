@@ -72,13 +72,20 @@ const PR_FIELDS = [
   'baseRefOid',
 ].join(',');
 
-/** `gh pr view`, or null when there is no PR to view. */
+/**
+ * `gh pr view`, or null when there is no PR to view. A detached HEAD -- mid-
+ * rebase, mid-bisect -- is one of those: with no target gh has no branch to look
+ * up, and says `could not determine current branch: ... not on any branch`
+ * (gh 2.x, checked 2026-09-26) without touching the network. Answered here, so
+ * no caller has to check for a branch first; a pinned target still works.
+ */
 async function viewPr(cwd, target, fields) {
   const args = ['pr', 'view', ...(target ? [target] : []), '--json', fields];
   try {
     return JSON.parse(await gh(args, { cwd }));
   } catch (e) {
-    if (/no pull requests found|no default remote|not a git repo/i.test(e.stderr ?? '')) return null;
+    if (/no pull requests found|no default remote|not a git repo|could not determine current branch/i
+      .test(e.stderr ?? '')) return null;
     throw e;
   }
 }

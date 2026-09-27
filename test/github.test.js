@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { rollup, linkedIssues, linksFrom, parsePrUrl, run, issueNumber, lf, setViewed, listPrs } from '../github.js';
+import { rollup, linkedIssues, linksFrom, parsePrUrl, run, issueNumber, lf, setViewed, listPrs, loadPr, prHeads } from '../github.js';
 import { taskLines } from '../public/tasks.js';
 
 test('check states collapse into passed, failed and pending', () => {
@@ -165,20 +165,22 @@ test('a CRLF description reads as the same checklist as an LF one', () => {
 // went to GitHub as an Int and was refused, and a path starting with @ is read
 // as a file -- so every string has to go as -f. And `gh pr list` stops at 30
 // unless given a limit, which silently dropped the rest from the switcher.
-const ghArgs = async (fn) => {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'prcoder-gh-args-'));
-  const log = path.join(dir, 'args');
-  await fs.writeFile(path.join(dir, 'gh'), `#!/bin/sh\nprintf '%s\\n' "$@" > "${log}"\necho '[]'\n`, { mode: 0o755 });
+const withGh = async (script, fn) => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'prcoder-gh-stub-'));
+  await fs.writeFile(path.join(dir, 'gh'), `#!/bin/sh\n${script(dir)}\n`, { mode: 0o755 });
   const saved = process.env.PATH;
   process.env.PATH = `${dir}${path.delimiter}${saved}`;
   try {
-    await fn();
-    return (await fs.readFile(log, 'utf8')).trimEnd().split('\n');
+    return await fn(dir);
   } finally {
     process.env.PATH = saved;
     await fs.rm(dir, { recursive: true, force: true });
   }
 };
+const ghArgs = (fn) => withGh((dir) => `printf '%s\\n' "$@" > "${dir}/args"\necho '[]'`, async (dir) => {
+  await fn();
+  return (await fs.readFile(path.join(dir, 'args'), 'utf8')).trimEnd().split('\n');
+});
 const unix = process.platform === 'win32' ? 'the gh stub is a sh script' : false;
 
 test('a file path goes to gh as a string, whatever it looks like', { skip: unix }, async () => {
@@ -205,4 +207,15 @@ test('run() turns gh and git prompts off, whatever env it is given', { skip: uni
   const out = await run('sh', ['-c', 'echo "$GIT_TERMINAL_PROMPT $GH_PROMPT_DISABLED"'],
     { env: { PATH: process.env.PATH, GIT_TERMINAL_PROMPT: '1' } });
   assert.equal(out.trim(), '0 1');
+});
+
+// gh's answer on a detached HEAD with no target, verbatim from gh 2.x on
+// 2026-09-26. It is "no PR here", not a failure: thrown, it 500'd every poll
+// mid-rebase, which is why each caller used to check for a branch first.
+test('a detached HEAD is no pull request, not an error', { skip: unix }, async () => {
+  const detached = () => `echo 'could not determine current branch: failed to run git: not on any branch' >&2\nexit 1`;
+  await withGh(detached, async () => {
+    assert.equal(await loadPr(os.tmpdir()), null);
+    assert.equal(await prHeads(os.tmpdir()), null);
+  });
 });

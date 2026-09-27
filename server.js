@@ -137,10 +137,8 @@ const requirePr = () => {
   return pr;
 };
 
-async function refreshPr(detached) {
-  // gh pr view fails on a detached HEAD in a way loadPr does not recognise, so
-  // it would throw rather than report "no PR" — and 500 the poll every minute.
-  pr = !target && detached ? null : await loadPr(repo, target);
+async function refreshPr() {
+  pr = await loadPr(repo, target);
   // Once per load rather than per poll: nothing it reads changes until the PR
   // is reloaded, and a viewed tick flips `viewed` on these same objects.
   if (pr) pr.groups = withUrls(pr);
@@ -271,16 +269,14 @@ async function status({ full = false } = {}) {
   // Taken once and threaded through: the remote head is not known yet, and
   // asking git the same four questions three times a minute is just noise.
   const branch = await currentBranch(repo);
-  const detached = !branch;
-  // A pinned target keeps working on a detached HEAD; branch-following cannot.
   // A full refresh reloads regardless, so it has no use for the cheap check.
-  const heads = full || (detached && !target) ? null : await prHeads(repo, target);
+  const heads = full ? null : await prHeads(repo, target);
 
   // The cheap call decides whether the expensive one is needed: loadPr also
   // runs a paginated GraphQL pass, which is far too much for a 60s poll.
   if (full || heads?.updatedAt !== pr?.updatedAt || heads?.number !== pr?.number) {
     if (!full && pr) term.debug(`PR #${pr.number} changed upstream — reloading into the UI`);
-    await refreshPr(detached);
+    await refreshPr();
   }
   // After the PR, so a startup whose repo lookup fails still has the PR to report.
   const facts = await repoFacts();

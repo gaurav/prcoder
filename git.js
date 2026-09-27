@@ -30,10 +30,7 @@ const asks = async (args, cwd, ok) => (await answer(args, cwd, ok)) !== null;
 /** Whether this clone has `rev` as a commit. 1 is "no"; 128 would be a bad name. */
 const hasCommit = (rev, cwd) => asks(['rev-parse', '--verify', '--quiet', `${rev}^{commit}`], cwd);
 
-/**
- * Empty on a detached HEAD, which happens mid-rebase and mid-bisect. `gh pr
- * view` fails there in a way loadPr does not recognise, so callers skip it.
- */
+/** Empty on a detached HEAD, which happens mid-rebase and mid-bisect. */
 export const currentBranch = (cwd) =>
   text(['symbolic-ref', '--quiet', '--short', 'HEAD'], cwd).catch(() => '');
 
