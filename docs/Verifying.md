@@ -59,15 +59,20 @@ measures, with a comment at each check saying which regression the check catches
   pins it. Leave it unset on `initial-implementation`, since that run is the only one that covers
   branch-following.
 - **What it cannot reach.** Every file in PR #1 is one the pull request adds, so the diff pane's
-  DIFF and DELETED views and the hunk outline are never drawn
-  ([#86](https://github.com/gaurav/prcoder/issues/86) has how they were checked instead), and no
-  `.tsx` file exists to open ([#74](https://github.com/gaurav/prcoder/issues/74)). The queue pane is
-  driven only lightly, against this repo's own queue
+  DIFF and DELETED views, the hunk outline and a `.tsx` file are `tools/diff-views.mjs`'s, below.
+  The queue pane is driven only lightly, against this repo's own queue
   ([#65](https://github.com/gaurav/prcoder/issues/65)).
 - **It reports only a `pageerror`.** A Content-Security-Policy that blocks something is a console
   message, so it shows only as whichever later check needed what did not load
   ([#62](https://github.com/gaurav/prcoder/issues/62)). Add a `page.on('console')` for a run that
   changes the header.
+
+**`node tools/diff-views.mjs`** drives the diff pane against
+[#87](https://github.com/gaurav/prcoder/pull/87), a draft fixture that is never merged: a file
+modified in two places (the DIFF view, the outline's rows, its gutter, its ✕ and *Outline*), a
+deleted one, and an added `.tsx` file highlighted by the grammar built on jsx and typescript. Its
+base is an orphan branch, so the fixture stays those three files whatever happens to `main`. Run it
+for any change to what the diff pane draws.
 
 **`node tools/no-pr.mjs`** drives the pane with **no** pull request, which `browser.mjs` cannot
 reach from a branch that has one. It clones the remote into `data/main-clone` and runs this

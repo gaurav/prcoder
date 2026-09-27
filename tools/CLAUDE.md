@@ -2,12 +2,13 @@
 
 This also applies to a one-off Playwright script under `data/`. Start any new
 driver from `driver.mjs`. It has the port check, the stubbed server
-environment, kill-on-exit and `firefoxEnv()`, and every one of them fixes a
-bug that cost a run. `docs/Verifying.md` covers what each driver reaches.
+environment, kill-on-exit, `firefoxEnv()` and `launchBrowser()`, and every one
+of them fixes a bug that cost a run. `docs/Verifying.md` covers what each driver reaches.
 
 ## Launching browsers
 
-Every Firefox launch passes `firefoxEnv()`. Without it, macOS 27 stops a
+Launch with `launchBrowser()`, which picks the engine, falls back to Chromium,
+and passes `firefoxEnv()` to every Firefox launch. Without that, macOS 27 stops a
 terminal-launched Firefox from starting at all, and the launch hangs until the
 timeout with nothing in the output to say why. `existsSync(executablePath())`
 is true throughout, so "installed" does not mean "starts". This is a temporary
