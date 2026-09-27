@@ -44,7 +44,7 @@ nothing here can make prcoder unkillable.
 
 If the port this repo usually uses was busy, prcoder takes a free one, and the block says so for
 the whole session with the URL prcoder *wanted* -- the one your bookmark or Dock icon points at, or
-the one you named in `PRCODER_PORT`, which the line tells apart. It asks whoever holds that port
+the one you named with `--port` or `PRCODER_PORT`, which the line tells apart. It asks whoever holds that port
 who they are, so the line tells you whether the window you are looking for is another prcoder on
 this repo, another worktree, or nothing to do with prcoder at all.
 [Ports.md](Ports.md) says how the port is chosen.
