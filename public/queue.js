@@ -302,13 +302,25 @@ function prList() {
 }
 
 /**
+ * Mentions, most recently updated on GitHub first, so the issue with news on it
+ * is on top. `found` is the lookup, number -> { updatedAt, ... }, or null until
+ * it answers. A mention with no time -- before then, or a number GitHub did not
+ * find -- goes last, and the sort is stable, so those keep the order they came
+ * in (by number). The timestamps are ISO strings, which compare as they read.
+ */
+export function newestFirst(list, found) {
+  const updated = (i) => found?.get(i.number)?.updatedAt ?? '';
+  return [...list].sort((a, b) => updated(b).localeCompare(updated(a)));
+}
+
+/**
  * The Issues tab: what the description mentions without closing. A mention that
  * is not an open issue is a closed one, or a pull request -- a bare `#N` is
  * either on GitHub -- and says which rather than disappearing, since the
  * description still points at it.
  */
 function issueList() {
-  const list = mentioned();
+  const list = newestFirst(mentioned(), mentions);
   if (!list.length) return h('p', { className: 'empty' }, `PR #${pr.number}'s description mentions no issues it does not close.`);
   return h('ul', { className: 'items' }, ...list.map((i) => {
     const found = mentions?.get(i.number);

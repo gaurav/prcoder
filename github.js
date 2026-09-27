@@ -321,7 +321,7 @@ export async function issueLinks(cwd, prUrl, numbers) {
   const { owner, repo } = parsePrUrl(prUrl);
   const query = `query($owner:String!,$repo:String!){ repository(owner:$owner,name:$repo){ ` +
     numbers.map((n) => `i${n}: issueOrPullRequest(number:${n})` +
-      `{ __typename ... on Issue { title url state } ... on PullRequest { title url state } }`).join(' ') + ` } }`;
+      `{ __typename ... on Issue { title url state updatedAt } ... on PullRequest { title url state updatedAt } }`).join(' ') + ` } }`;
   const args = ['api', 'graphql', '-f', `query=${query}`, '-f', `owner=${owner}`, '-f', `repo=${repo}`];
   try {
     return linksFrom(await gh(args, { cwd }));
@@ -330,9 +330,10 @@ export async function issueLinks(cwd, prUrl, numbers) {
   }
 }
 
-/** The `iN: { title, url, state, kind }` aliases of a response, whether or not
- *  it also carried errors. `kind` is `issue` or `pull`; `state` is GitHub's own
- *  -- OPEN or CLOSED, and MERGED for a pull request. Anything unparseable is
+/** The `iN: { title, url, state, kind, updatedAt }` aliases of a response,
+ *  whether or not it also carried errors. `kind` is `issue` or `pull`; `state`
+ *  is GitHub's own -- OPEN or CLOSED, and MERGED for a pull request; `updatedAt`
+ *  is an ISO timestamp, which any comment, label or edit moves. Anything unparseable is
  *  nothing -- these are decoration and a redirect, and a lookup that fails may
  *  not fail the pane. */
 export function linksFrom(out) {
@@ -349,5 +350,6 @@ export function linksFrom(out) {
       url: v.url ?? null,
       state: v.state ?? null,
       kind: { Issue: 'issue', PullRequest: 'pull' }[v.__typename] ?? null,
+      updatedAt: v.updatedAt ?? null,
     }]));
 }

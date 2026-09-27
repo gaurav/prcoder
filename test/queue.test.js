@@ -4,7 +4,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { readQueue, writeQueue } from '../queue.js';
-import { reorder } from '../public/queue.js';
+import { reorder, newestFirst } from '../public/queue.js';
 
 const item = (over = {}) =>
   ({ text: 'a task', done: false, doneAt: null, issue: null, deleted: false, ...over });
@@ -60,4 +60,19 @@ test('a dragged row lands in the same place in both directions', () => {
   // The two ends, where an off-by-one falls off the array instead of misplacing.
   assert.deepEqual(reorder(['a', 'b', 'c'], 0, 2), ['b', 'a', 'c']);
   assert.deepEqual(reorder(['a', 'b', 'c'], 2, 0), ['c', 'a', 'b']);
+});
+
+// The Issues tab puts the mention with news on it first. Before the lookup
+// answers there are no times at all, and the description's own order stands.
+test('mentions are listed most recently updated first, the unknown last', () => {
+  const list = [{ number: 3 }, { number: 7 }, { number: 12 }, { number: 20 }];
+  const found = new Map([
+    [7, { updatedAt: '2026-09-06T15:31:21Z' }],
+    [12, { updatedAt: '2026-09-27T04:50:06Z' }],
+    [20, { updatedAt: '2026-09-20T09:00:00Z' }],
+  ]);
+  assert.deepEqual(newestFirst(list, found).map((i) => i.number), [12, 20, 7, 3]);
+  assert.deepEqual(newestFirst(list, null).map((i) => i.number), [3, 7, 12, 20]);
+  // A copy: the list it was handed is the PR's own, and stays in its order.
+  assert.deepEqual(list.map((i) => i.number), [3, 7, 12, 20]);
 });

@@ -147,6 +147,7 @@ nothing. Every item is on exactly one of those.
 
 With a pull request on screen, two more tabs read GitHub rather than your queue. **PR** is the
 description's own checklist, ticked through to GitHub like the boxes in the PR pane; **Issues** is
-the issues the description mentions without closing. A mention that is not an open issue -- a
-closed one, or a pull request -- is dimmed and says which. ↓ on either copies the item into Local
+the issues the description mentions without closing, the most recently updated on GitHub
+first. A mention that is not an open issue -- a closed one, or a pull request -- is dimmed and
+says which. ↓ on either copies the item into Local
 and leaves it where it was.
