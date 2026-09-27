@@ -221,9 +221,9 @@ without an `Origin`, which is the DNS-rebinding case; that test sends its reques
 because `fetch` will not set `Host`. Only the handlers that answer without `gh` — the rest
 would be testing this machine's GitHub auth.
 
-`test/queue-writes.test.js` is the same server in a process of its own, moved into a scratch
+`test/queue-local.test.js` is the same server in a process of its own, moved into a scratch
 directory first and with `gh` and `git` on `PATH` as stubs that log and fail. It drives the queue
-routes through an add, a tick, a reorder, a delete and an older mirrored store, and asserts nothing
+routes through an add, a tick, a reorder and a delete, and asserts nothing
 was run: the queue lives in `.prcoder/` and no route that touches it reaches GitHub or git. Run
 against the code that still mirrored, it fails on the branch lookup every queue write made first.
 
