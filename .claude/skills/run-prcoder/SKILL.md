@@ -97,9 +97,9 @@ Two rules for them, and for any script after them:
   only -- anything that reads the PTY's timing passes against it for the wrong
   reason (tools/CLAUDE.md).
 - **No writes you do not undo.** The queue is safe: it writes only `.prcoder/`,
-  which is gitignored and needs no cleanup. `browser.mjs` swaps it for a fixture
-  and puts it back; a run that dies first leaves the real one in
-  `data/queue-before-browser.json`, which the next run restores. The PR is not — ticking a
+  which is gitignored and needs no cleanup, and `browser.mjs` never touches it:
+  it runs with `--queue data/browser-queue.json`. A script of your own that
+  writes the queue should do the same. The PR is not — ticking a
   description checkbox — in the PR pane or the queue's PR tab — edits the
   description on GitHub. Filing a queue item with ◎
   writes to GitHub too, and one-way: putting the queue back does not close the
