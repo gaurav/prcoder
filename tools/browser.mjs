@@ -202,7 +202,7 @@ console.log('row ↩:  ', await local(), JSON.stringify(await page.locator('.ite
 // out. Round-tripped like the ✕ above -- the caret check below still needs a
 // full Local tab.
 const SENT = 'a local item, still only on this machine';
-await page.locator('.item', { hasText: SENT }).locator('button[title="send to Claude, and check it off"]').click();
+await page.locator('.item', { hasText: SENT }).locator('button[title="type into Claude, and check it off"]').click();
 await page.locator('#queue-body .tab', { hasText: 'Local (2)' }).waitFor({ timeout: 10_000 });
 await page.waitForTimeout(400);   // the stub echoes on the PTY's own schedule
 const echoed = (await page.locator('#term-host').innerText()).includes(SENT);
