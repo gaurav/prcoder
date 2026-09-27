@@ -177,9 +177,11 @@ function sendToClaude(text, submit = true) {
 }
 
 // The switcher only changes when PRs are opened or closed, so it is not worth a
-// call every minute — page load, opening the dropdown, and a checkout are
-// enough. The branch-only pane's list of what merges into this branch comes out
-// of the same array, and is as fresh as that.
+// call every minute — page load, opening the dropdown, opening the Stack tab,
+// and a checkout are enough. The branch-only pane's list of what merges into
+// this branch comes out of the same array, and is as fresh as that. The Stack
+// tab is too, but it states outright that nothing is stacked on a branch, so it
+// asks for the list itself rather than trust one from minutes ago.
 let prs = [];
 let last = null;
 const loadPrs = () => api('/api/prs', undefined, 'GET')
@@ -273,6 +275,7 @@ function paint(status) {
         ...fileHandlers,
         selected: selectedPath(),
         prs: stack,
+        onStackOpen: loadPrs,
         onSwitch: switchPr,
         blocked,
       });

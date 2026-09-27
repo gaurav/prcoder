@@ -849,6 +849,23 @@ test('stacked PRs nest in the switcher and the Stack tab, each linked and switch
   await fresh.close();
 });
 
+// The list behind the tab is not polled, and a PR stacked from the terminal
+// after the page loaded would leave the tab saying nothing is stacked here.
+// Opening the tab fetches it again; a route added later answers first.
+test('opening the Stack tab picks up a PR stacked since the page loaded', { skip }, async () => {
+  const fresh = await newPage({ prs: STACK.slice(0, 1) });
+  await fresh.route('**/api/prs', (r) => r.fulfill({ json: STACK }));
+  const tab = fresh.locator('#pr-head .tab', { hasText: 'Stack' });
+  assert.equal(await tab.textContent(), 'Stack');
+  const fetched = fresh.waitForResponse('**/api/prs');
+  await tab.click();
+  await fetched;
+  await fresh.waitForSelector('#pr-body .pr-into .pr-num');
+  assert.deepEqual(await fresh.locator('#pr-body .pr-into > ul > li > .pr-row .pr-num').allTextContents(), ['#13']);
+  assert.equal(await fresh.locator('#pr-head .tab', { hasText: 'Stack' }).textContent(), 'Stack (2)');
+  await fresh.close();
+});
+
 // The pane with no pull request, on the branch the fixture PR merges into.
 // tools/no-pr.mjs drives this against the real remote; this is the part of it
 // that needs no clone, so it runs on every `npm test`.
