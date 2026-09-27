@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { text as readBody } from 'node:stream/consumers';
 import { spawn as ptySpawn } from 'node-pty';
 import { WebSocketServer } from 'ws';
-import { loadPr, prHeads, prBody, listPrs, listIssues, setViewed, setBody, createIssue, fetchPatches, runCount } from './github.js';
+import { loadPr, prHeads, prBody, listPrs, issueLinks, setViewed, setBody, createIssue, fetchPatches, runCount } from './github.js';
 import { snapshot, currentBranch, repoInfo, prScope, compareUrl, originOwner, checkoutPr, pushBranch, remoteBranchHead, trackingHead, localPatch } from './git.js';
 import { bucket, fileUrl, fileViews } from './files.js';
 import { readPort, writePort } from './store.js';
@@ -234,7 +234,18 @@ const routes = {
 
   'GET /api/prs': () => listPrs(repo),
 
-  'GET /api/issues': () => listIssues(repo),
+  /**
+   * The issues the description mentions without closing, for the queue's Issues
+   * tab: title, state and kind, asked about by number. It was the repo's first
+   * 200 open issues, and in a repo with more than that an open issue past the
+   * cut read as "not an open issue". Capped at 50 numbers, as withLinks is.
+   */
+  'GET /api/issues': async () => {
+    const cur = requirePr();
+    const numbers = cur.issues.filter((i) => !i.closes).map((i) => i.number).slice(0, 50);
+    const links = numbers.length ? await issueLinks(repo, cur.url, numbers) : new Map();
+    return numbers.map((number) => ({ number, ...links.get(number) }));
+  },
 
   'POST /api/pr/switch': async ({ number }) => {
     await checkoutPr(repo, number);

@@ -70,12 +70,17 @@ test('an empty body links nothing', () => {
 //
 // #27 is a pull request, and its URL says so: the number alone cannot be told
 // apart from an issue's, which is why the URL is taken from here rather than
-// built from the repository and the number.
+// built from the repository and the number. `__typename` and `state` were
+// added to the query later, and confirmed on 2026-09-27: OPEN or CLOSED on an
+// issue, and MERGED too on a pull request.
 const PARTIAL = JSON.stringify({
   data: {
     repository: {
       i999999: null,
-      i27: { title: 'Make the queue your own list', url: 'https://github.com/gaurav/prcoder/pull/27' },
+      i27: { __typename: 'PullRequest', title: 'Make the queue your own list',
+        url: 'https://github.com/gaurav/prcoder/pull/27', state: 'OPEN' },
+      i86: { __typename: 'Issue', title: 'Drive the diff pane',
+        url: 'https://github.com/gaurav/prcoder/issues/86', state: 'CLOSED' },
     },
   },
   errors: [{ type: 'NOT_FOUND', path: ['repository', 'i999999'] }],
@@ -84,6 +89,10 @@ const PARTIAL = JSON.stringify({
 test('what resolved survives a NOT_FOUND on what did not, pull request URL and all', () => {
   assert.deepEqual(linksFrom(PARTIAL), new Map([[27, {
     title: 'Make the queue your own list', url: 'https://github.com/gaurav/prcoder/pull/27',
+    state: 'OPEN', kind: 'pull',
+  }], [86, {
+    title: 'Drive the diff pane', url: 'https://github.com/gaurav/prcoder/issues/86',
+    state: 'CLOSED', kind: 'issue',
   }]]));
 });
 
