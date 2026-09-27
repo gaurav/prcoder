@@ -7,14 +7,18 @@ and the checks new work has to keep, and `docs/Verifying.md` for what this repo
 checks and how. `.claude/skills/run-prcoder/SKILL.md` is the short form of the
 last two for an agent about to run the thing: how to launch, what to stub, what
 not to write. Keep all of them true when you change what they describe -- the
-skill drifts first, because nothing else links to it.
+skill drifts first, because nothing else links to it. `public/`, `tools/` and
+`test/` each have a CLAUDE.md for work inside them.
 
 **The queue is yours, and prcoder writes no description but a box you tick.**
 The queue lives only in `.prcoder/queue.json`; it no longer mirrors into the PR
 description, and prcoder no longer reads FUTURE.md. "What prcoder writes" in
 `docs/Design.md` says why, what the one exception is, and where the source tabs
 are going (`queue-tabs`, PR #27). The mirror is parked in PR #82; don't bring a
-sync back without reading both.
+sync back without reading both. Descriptions an earlier prcoder wrote still
+carry the mirror's block between HTML-comment markers. Nothing reads it any
+more, so leave it alone; it is an ordinary checklist now, and editing it by
+hand is safe.
 
 ## Scratch work goes in `data/`
 
@@ -45,13 +49,6 @@ A gh or git failure here is usually quiet, not loud: stderr missing from the
 error, a full stdout behind a non-zero exit, or an exit code that means "no"
 rather than "broke". Read the docstrings on `run` in `github.js` and `answer`
 in `git.js` before adding a call, and check what the real tool does.
-
-## Old descriptions still carry the mirror's block
-
-Descriptions written by an earlier prcoder hold a checklist between prcoder's
-own HTML-comment markers. Nothing reads or rewrites that block any more: it is
-an ordinary checklist now, ticked like any other from the PR pane. Leave old
-blocks alone; hand-editing them is safe.
 
 ## Verifying against GitHub
 
