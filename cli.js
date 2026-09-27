@@ -6,6 +6,7 @@
 
 import { createHash } from 'node:crypto';
 import { syncPhrase } from './public/pr.js';
+import { counts } from './public/items.js';
 
 /**
  * Where a repo's port starts from: a hash of its path, so the first run in a
@@ -65,8 +66,9 @@ export function statusLines(s, u = {}) {
   // padEnd, not a slice: a label longer than the column has to push the row out
   // rather than lose its tail, or `PR #10000` prints as a real-looking `PR #1000`.
   const row = (label, ...rest) => `${label.padEnd(8)} ${rest.filter(Boolean).join('   ')}`;
-  const live = (s.queue ?? []).filter((i) => !i.deleted);
-  const n = (k) => live.filter(k).length;
+  // The same predicates the pane's tabs use, so the block and the tab strip
+  // cannot report the queue differently.
+  const q = counts(s.queue ?? []);
 
   return [
     row('prcoder', s.nameWithOwner,
@@ -75,8 +77,7 @@ export function statusLines(s, u = {}) {
         .filter(Boolean).join(' · ')),
     s.pr ? row(`PR #${s.pr.number}`, s.pr.title) : row('PR', 'none for this branch'),
     s.pr && row('', s.pr.url),
-    row('queue', `${n((i) => !i.done)} active · ${n((i) => i.done)} done · ` +
-      `${n((i) => i.issue)} issue${n((i) => i.issue) === 1 ? '' : 's'}`),
+    row('queue', `${q.local} local · ${q.done} done`),
     // The age belongs next to the tab count because the tab is the cause: the
     // browser polls only while its tab is visible, so backgrounding it stops
     // the clock on every number above while the socket stays open and the count

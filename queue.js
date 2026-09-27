@@ -18,7 +18,7 @@ export const quote = (t) => `'${t.length > 48 ? `${t.slice(0, 47)}…` : t}'`;
  * writeQueue).
  *
  * Returns the lines rather than printing them, which is the only reason the
- * five transitions below can be checked without a terminal.
+ * transitions below can be checked without a terminal.
  */
 export function queueChanges(was, now) {
   const before = new Map(was.map((i) => [i.text, i]));
@@ -35,7 +35,11 @@ export function queueChanges(was, now) {
   return lines;
 }
 
-/** Every item, as stored, with the link to its issue derived. */
+/**
+ * Every item, as stored, with the link to its issue derived. Moving an item out
+ * is a separate, one-way route (moveOut in server.js), not a flag this list
+ * keeps in step with anything.
+ */
 export const readQueue = async (repo, nameWithOwner) =>
   decorate((await readStore(repo)).store.items, nameWithOwner);
 
@@ -58,8 +62,14 @@ export async function writeQueue(repo, items, nameWithOwner) {
   }
   const { store, stale } = await readStore(repo);
   for (const line of queueChanges(store.items, items)) term.verbose(line);
-  await writeStore(repo, replaceItems(store, items), { stale });
-  return decorate(items, nameWithOwner);
+  // What was stored, not what was sent: replaceItems stamps `doneAt` and
+  // `deletedAt`, and a client handed back the unstamped list sends it again on
+  // its next write, where every item done or deleted since the last poll gets
+  // stamped a second time -- all with that write's time, so the Deleted tab's
+  // most-recent-first order collapses into a tie.
+  const next = replaceItems(store, items);
+  await writeStore(repo, next, { stale });
+  return decorate(next.items, nameWithOwner);
 }
 
 /**

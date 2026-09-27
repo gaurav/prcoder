@@ -84,7 +84,8 @@ the list. What the renderer does and does not draw is in [Design.md](Design.md).
 *Files* is every changed file grouped as *Config & docs* / *Tests* / *Code*, in that order. Inside
 each group the files read like a tree: the files at the top of the repository come first, and
 below them the rest are folded by the directory they are in, a directory ahead of what is inside
-it and siblings alphabetical. A row inside a fold shows only the part of its path the directory
+it and sibling directories alphabetical. The files in each list are ordered by lines changed,
+additions plus deletions, the largest first. A row inside a fold shows only the part of its path the directory
 above it does not, so a path is read once per directory rather than once per file. Both levels
 fold and remember what you closed. Each fold's pie fills green as its files are viewed (hover it
 for the figure). The checkbox on each file is GitHub's own "viewed" checkbox: tick it here and
@@ -129,12 +130,24 @@ timing).
 ## Queue
 
 Your own TODO list for this working copy, stored in `.prcoder/queue.json`. Add an item, drag it by
-its grip (or focus the grip and use ↑ ↓) to reorder, tick it off. Each item can be sent to Claude,
-or filed as a new GitHub issue with ◎, which links the item to it.
+its grip (or focus the grip and use ↑ ↓) to reorder, tick it off. ▶ types an item into the session
+and ticks it off in the same click; ◎ files it as a new GitHub issue and takes it off the queue, so
+the issue is where it lives from then on.
 
 New items go to the bottom, so typing them in builds a list in the order you mean to work through
 it. The arrow next to the input flips that to the top, for the other way of using a queue -- the
 thing you must not forget to do next -- and stays flipped.
 
-Only Active is yours to order. Completed lists the most recently finished first, so something
-ticked off by mistake is at the top to be unticked, and neither it nor Deleted can be dragged.
+**Local** is the working list, and it drains as you move and finish things, so a session you
+finished tidily ends with it empty. Only Local is yours to reorder. **Completed** is what you ticked
+off and what you sent, most recently finished first, with a delete-all for clearing it out;
+unticking one puts it back on Local, which is the way back if Claude did not do it or the tick was
+a slip. **Deleted** holds tombstones, the latest on top, until you empty it, and hides when it holds
+nothing. Every item is on exactly one of those.
+
+With a pull request on screen, two more tabs read GitHub rather than your queue. **PR** is the
+description's own checklist, ticked through to GitHub like the boxes in the PR pane; **Issues** is
+the issues the description mentions without closing, the most recently updated on GitHub
+first. A mention that is not an open issue -- a closed one, or a pull request -- is dimmed and
+says which. ↓ on either copies the item into Local
+and leaves it where it was.

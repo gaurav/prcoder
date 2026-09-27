@@ -55,6 +55,8 @@ export const pick = (i) => ({
   // When it was ticked, for the Completed tab's order. Meaningless once it is
   // not done, so an untick clears it and a re-tick is stamped afresh.
   doneAt: i?.done && Number.isFinite(i?.doneAt) ? i.doneAt : null,
+  // When it was deleted, for the Deleted tab's order, on the same terms.
+  deletedAt: i?.deleted && Number.isFinite(i?.deletedAt) ? i.deletedAt : null,
 });
 
 /**
@@ -86,10 +88,10 @@ export function normalise(raw) {
   };
 }
 
-/** The store, and whether the bytes behind it need moving aside on write. */
+/** The store, plus whether the bytes behind it need moving aside on write. */
 export async function readStore(repo) {
-  const raw = await fs.readFile(file(repo), 'utf8').catch(() => null);
-  return normalise(raw ?? '');
+  const raw = await fs.readFile(file(repo), 'utf8').catch(() => '');
+  return normalise(raw);
 }
 
 /**
@@ -160,15 +162,19 @@ export async function readPort(repo) {
 export const writePort = (repo, port) => writeJson(repo, portFile(repo), { version: VERSION, port });
 
 /**
- * The whole list replaced, coerced on the way in -- and where `doneAt` is
- * stamped, because every write passes through here: a PUT from the pane and a
- * tick merged from the description alike. An item arriving done with no time
- * has just been ticked; one already done carries the time it was handed back.
- * That needs no item identity, which the queue does not have. Items done before
- * the field existed are stamped by the first write, together, and so sit below
- * anything ticked after it.
+ * The whole list replaced, coerced on the way in -- and where `doneAt` and
+ * `deletedAt` are stamped, because every write passes through here. An item
+ * arriving done (or deleted) with no time has just been ticked (or deleted);
+ * one already so carries the time it was handed back. That needs no item
+ * identity, which the queue does not have. Items from before either field
+ * existed are stamped by the first write, together, and so sit below anything
+ * done or deleted after it.
  */
 export const replaceItems = (store, items, now = Date.now()) => ({
   ...store,
-  items: items.map(pick).map((i) => (i.done && i.doneAt == null ? { ...i, doneAt: now } : i)),
+  items: items.map(pick).map((i) => ({
+    ...i,
+    doneAt: i.done && i.doneAt == null ? now : i.doneAt,
+    deletedAt: i.deleted && i.deletedAt == null ? now : i.deletedAt,
+  })),
 });

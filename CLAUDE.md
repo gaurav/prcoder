@@ -14,14 +14,13 @@ skill drifts first, because nothing else links to it. `public/`, `tools/` and
 `test/` each have a CLAUDE.md for work inside them.
 
 **The queue is yours, and prcoder writes no description but a box you tick.**
-The queue lives only in `.prcoder/queue.json`; it no longer mirrors into the PR
-description, and prcoder no longer reads FUTURE.md. "What prcoder writes" in
-`docs/Design.md` says why, what the one exception is, and where the source tabs
-are going (`queue-tabs`, PR #27). The mirror is parked in PR #82; don't bring a
-sync back without reading both. Descriptions an earlier prcoder wrote still
-carry the mirror's block between HTML-comment markers. Nothing reads it any
-more, so leave it alone; it is an ordinary checklist now, and editing it by
-hand is safe.
+The queue lives only in `.prcoder/queue.json`: it no longer mirrors into the PR
+description, nothing moves into one, and FUTURE.md is gone. "The queue is yours"
+in `docs/Design.md` says what replaced them and what is still to come. The
+mirror is parked in PR #82; don't bring a sync back without reading both.
+Descriptions an earlier prcoder wrote still carry the mirror's block between
+HTML-comment markers. Nothing reads it any more, so leave it alone; it is an
+ordinary checklist now, and editing it by hand is safe.
 
 ## Scratch work goes in `data/`
 

@@ -6,7 +6,7 @@ The window prcoder was launched in keeps a status block pinned under a scrolling
 prcoder  gaurav/prcoder   initial-implementation → main   2 unpushed · 8 uncommitted
 PR #1    A browser workspace around a live Claude Code session
          https://github.com/gaurav/prcoder/pull/1
-queue    19 active · 1 done · 1 issue
+queue    4 local · 1 done
 serving  http://localhost:17455   1 tab   q quit · r refresh · v verbose · o open
 ```
 
@@ -25,7 +25,7 @@ says `checked 7m ago` next to that count, rather than presenting them as current
 
 - `r` polls now, which moves the block without going back to the browser.
 - `v` cycles quiet → verbose → debug. Verbose reports the things that change something you care
-  about: an item queued, ticked or filed as an issue, a PR checked out. Debug adds every `git`
+  about: an item queued, ticked or moved into an issue, a PR checked out. Debug adds every `git`
   and `gh` subprocess with its timing, the per-poll count of them, route timings, and a line when
   the PR has moved upstream. `PRCODER_VERBOSE=1` or `=2` starts at a level, which is the only way
   to see startup itself.
@@ -35,7 +35,8 @@ says `checked 7m ago` next to that count, rather than presenting them as current
 ## Quitting
 
 Quitting kills the PTY, and with it the Claude session in the browser. So when there is something
-to lose -- tabs open, unpushed commits, uncommitted files -- Ctrl-C asks first and says which;
+to lose -- tabs open, unpushed commits, uncommitted files, queue items still on Local and so
+only on this machine -- Ctrl-C asks first and says which;
 with nothing to lose it quits on one press. A second Ctrl-C at the prompt quits immediately;
 nothing here can make prcoder unkillable.
 

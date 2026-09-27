@@ -29,8 +29,10 @@ A run takes minutes and looks like a hung server. `node tools/browser.mjs |
 tail` shows nothing until the very end, because `tail` buffers the whole
 stream, so redirect the output to a file and watch that instead.
 
-The caret offset it prints is not evidence. The assertion is `caret > 0` and
-nothing finer; the comment on the caret check says why.
+The caret check prints `caret: 12 of 34`, an offset into the first Local row's
+text and that text's length, and passes only strictly between the two. `0 of n`
+is the Firefox drag bug; `n of n` means the click missed the glyphs. The comment
+on the check says why it aims at the text node rather than the box.
 
 What the driver waits on and clicks assumes what each pane shows first. It
 waited on `.file` to decide the panes had loaded, which held until the pull

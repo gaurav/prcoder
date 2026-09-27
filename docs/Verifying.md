@@ -60,8 +60,9 @@ measures, with a comment at each check saying which regression the check catches
   branch-following.
 - **What it cannot reach.** Every file in PR #1 is one the pull request adds, so the diff pane's
   DIFF and DELETED views, the hunk outline and a `.tsx` file are `tools/diff-views.mjs`'s, below.
-  The queue pane is driven only lightly, against this repo's own queue
-  ([#65](https://github.com/gaurav/prcoder/issues/65)).
+  The queue pane is driven against this repo's own queue, swapped for a fixture with an item in
+  every tab and put back at the end; a queue of its own is
+  [#65](https://github.com/gaurav/prcoder/issues/65).
 - **It reports only a `pageerror`.** A Content-Security-Policy that blocks something is a console
   message, so it shows only as whichever later check needed what did not load
   ([#62](https://github.com/gaurav/prcoder/issues/62)). Add a `page.on('console')` for a run that
@@ -101,7 +102,8 @@ how to read it.
 Each unit test file says at its top what it pins. Two run the server itself:
 `test/api.test.js` over real HTTP in-process, including the `Origin` and `Host` refusals
 ([Security.md](Security.md)), and `test/queue-local.test.js` in a scratch directory with `gh` and
-`git` stubbed to fail, asserting the queue routes never reach either.
+`git` stubbed to fail, asserting that the routes which only read or rewrite the queue never reach
+either. Filing an item with ◎ is the one queue route that does, on purpose, and is not driven.
 
 Some things were checked against the real thing rather than a stub, and the evidence sits next to
 the code:

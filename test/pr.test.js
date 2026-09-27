@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   pageTitle, withoutHtml, inline, headLinks, noPrLinks, prsInto, HEADING, blocks, sectionize,
-  tabLabel, taskCount, viewedCount, byPath, byDir, nums,
+  tabLabel, taskCount, viewedCount, byPath, bySize, byDir, nums,
 } from '../public/pr.js';
 import { fences, TASK, taskLines } from '../public/tasks.js';
 
@@ -557,7 +557,7 @@ test('paths order like a tree, a directory ahead of what is inside it', () => {
   assert.deepEqual(['a/z.js', 'a/b.js'].sort(byPath), ['a/b.js', 'a/z.js']);
 });
 
-test('a group splits into its root files and its directories, both in path order', () => {
+test('a group splits into its root files and its directories, directories in path order', () => {
   // Deliberately unsorted: the order is the pane's own now, not whatever order
   // `gh` handed the files over in.
   const f = (path) => ({ path });
@@ -569,6 +569,19 @@ test('a group splits into its root files and its directories, both in path order
   assert.deepEqual(dirs.map(([dir]) => dir), ['alpha/', 'alpha/beta/', 'docs/']);
   assert.deepEqual(dirs.map(([, list]) => list.map((x) => x.path)),
     [['alpha/one.js'], ['alpha/beta/two.js'], ['docs/Design.md', 'docs/Verifying.md']]);
+});
+
+test('files are ordered by lines changed, additions plus deletions, and by path on a tie', () => {
+  const f = (path, additions, deletions) => ({ path, additions, deletions });
+  const { root, dirs } = byDir([
+    f('a.js', 3, 0), f('b.js', 10, 5), f('c.js', 0, 14), f('d.js', 1, 2),
+    f('lib/x.js', 1, 1), f('lib/y.js', 40, 0),
+  ]);
+  // 15 beats 14 only because deletions count: by additions alone c.js is last.
+  assert.deepEqual(root.map((x) => x.path), ['b.js', 'c.js', 'a.js', 'd.js']);
+  assert.deepEqual(dirs.map(([, list]) => list.map((x) => x.path)), [['lib/y.js', 'lib/x.js']]);
+  // A file with no counts (a binary, or one gh has not answered for) sorts as none.
+  assert.deepEqual([{ path: 'z' }, f('y', 0, 1)].sort(bySize).map((x) => x.path), ['y', 'z']);
 });
 
 test('a root file is never a directory of its own', () => {

@@ -160,11 +160,16 @@ document.querySelector('#term > header').addEventListener('click', () => foldTer
 
 // Type an item into Claude's prompt. If Claude is mid-turn it queues the
 // message itself, which is exactly the behaviour we want.
+//
 // `submit` false types the text and stops there: the prompt is left ready to
 // edit and send by hand, which is what the queue's ▶ wants. Trailing
 // whitespace is cut either way -- a newline in the text *is* the Enter that
 // would have sent it half-written.
-/** Whether it was typed: false when the socket is not open. */
+//
+// Whether it went is the return value, because the queue ticks an item off on
+// the strength of it: `send` refuses on a socket that is not open -- a dead PTY,
+// a reload in flight -- and an item checked off after a refused send is one
+// nobody has done and nobody is going to be reminded of.
 function sendToClaude(text, submit = true) {
   const sent = send({ type: 'input', data: text.replace(/\s+$/, '') + (submit ? '\r' : '') });
   term.focus();
@@ -194,10 +199,11 @@ const NOTES = {
 /**
  * A checkbox in the description, ticked through to GitHub -- the one edit to a
  * description prcoder makes, on your click. The route answers with the body
- * GitHub now has, which becomes the pane's, so the Detail count and the
- * section's pie move with the box rather than a poll later. Rethrown so the box
- * snaps back, and the status reload is for the one error that matters: the
- * description moved under us, and the pane is now showing a stale copy of it.
+ * GitHub now has, which becomes the pane's, so the Detail count, the section's
+ * pie and the queue's PR tab move with the box rather than a poll later.
+ * Rethrown so the box snaps back, and the status reload is for the one error
+ * that matters: the description moved under us, and the pane is now showing a
+ * stale copy of it.
  */
 async function toggleTask(task) {
   let body;
@@ -263,7 +269,8 @@ function paint(status) {
     renderNoPr(status, prs, { onCreate: createPr, onSwitch: switchPr });
   }
   if (switched) loadPrs();
-  if (status.queue) setItems(status.queue);
+  // Reading its checklist into the PR tab needs only a PR on screen.
+  if (status.queue) setItems(status.queue, status.pr);
 
   // Keep an open diff honest: close it if its file left the PR (or the PR
   // switched away), refresh it if the branch moved — the server cache is
@@ -367,5 +374,5 @@ input.addEventListener('input', grow);
 // needs it — renderHeader synthesises an option for the current PR until it
 // lands, and loadPrs repaints the header itself when it does.
 loadPrs();
-await initQueue({ sendToClaude });
+await initQueue({ sendToClaude, onTask: toggleTask });
 loadStatus();

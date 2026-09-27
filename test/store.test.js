@@ -7,7 +7,7 @@ import { normalise, pick, readStore, writeStore, readPort, writePort, replaceIte
 
 const repo = () => fs.mkdtemp(path.join(os.tmpdir(), 'prcoder-store-'));
 const item = (over = {}) =>
-  ({ text: 'a task', done: false, doneAt: null, issue: null, deleted: false, ...over });
+  ({ text: 'a task', done: false, doneAt: null, issue: null, deleted: false, deletedAt: null, ...over });
 
 // The client PUTs back the array it was handed, which decorate() has added an
 // issueUrl to. The markdown writer dropped unknown fields for free; JSON would
@@ -15,7 +15,7 @@ const item = (over = {}) =>
 test('only the fields we own are stored', () => {
   const stored = pick({ ...item(), issueUrl: 'https://github.com/o/r/issues/1', junk: 1 });
   assert.deepEqual(Object.keys(stored).sort(),
-    ['deleted', 'done', 'doneAt', 'issue', 'text']);
+    ['deleted', 'deletedAt', 'done', 'doneAt', 'issue', 'text']);
 });
 
 // The queue was scoped per branch for a while, so a file written then has a
@@ -23,7 +23,7 @@ test('only the fields we own are stored', () => {
 // come back into view on the next read, which is the point of #48.
 test('a branch left on an item by an older prcoder is dropped', () => {
   assert.deepEqual(Object.keys(pick(item({ branch: 'merged-and-gone' }))).sort(),
-    ['deleted', 'done', 'doneAt', 'issue', 'text']);
+    ['deleted', 'deletedAt', 'done', 'doneAt', 'issue', 'text']);
   const { store } = normalise(JSON.stringify(
     { version: 1, items: [item({ branch: 'work' }), item({ text: 'b', branch: 'other' })] }));
   assert.deepEqual(store.items.map((i) => i.text), ['a task', 'b']);
@@ -32,7 +32,7 @@ test('a branch left on an item by an older prcoder is dropped', () => {
 test('fields are coerced, so a hand-edited file cannot make a half-item', () => {
   const out = pick({ text: 42, done: 'yes', issue: '7' });
   assert.deepEqual(out,
-    { text: '42', done: true, doneAt: null, issue: null, deleted: false });
+    { text: '42', done: true, doneAt: null, issue: null, deleted: false, deletedAt: null });
 });
 
 // The Completed tab sorts on it, so it has to mean "when this was ticked": set
@@ -49,6 +49,19 @@ test('an item is stamped when it is ticked, keeps the stamp, and loses it when u
   const [again] = replaceItems(store, [{ ...unticked, done: true }], 4000).items;
   assert.equal(again.doneAt, 4000, 'and ticking it again is a new time');
   assert.equal(replaceItems(store, [item()], 5000).items[0].doneAt, null, 'an active item has none');
+});
+
+// The Deleted tab's order, on the same terms as doneAt: stamped by the write
+// that deletes, kept after, gone on a restore.
+test('an item is stamped when it is deleted, keeps the stamp, and loses it when restored', () => {
+  const store = { version: 1, items: [] };
+  const [gone] = replaceItems(store, [item({ deleted: true })], 1000).items;
+  assert.equal(gone.deletedAt, 1000, 'a newly deleted item is stamped');
+  assert.equal(replaceItems(store, [gone], 2000).items[0].deletedAt, 1000, 'a later write keeps it');
+  const [back] = replaceItems(store, [{ ...gone, deleted: false }], 3000).items;
+  assert.equal(back.deletedAt, null, 'restoring clears it');
+  const [both] = replaceItems(store, [item({ done: true, doneAt: 500, deleted: true })], 4000).items;
+  assert.deepEqual([both.doneAt, both.deletedAt], [500, 4000], 'deleting a finished item keeps when it was finished');
 });
 
 // Reading is not a write: a store from before the field existed reads with no
@@ -69,8 +82,8 @@ test('an item from the description mirror stays in the queue, without the mirror
     { text: 'was filed', done: true, inPr: true, pr: null, issue: 9, deleted: false },
   ] }));
   assert.deepEqual(store.items, [
-    { text: 'was mirrored', done: false, issue: null, deleted: false, doneAt: null },
-    { text: 'was filed', done: true, issue: 9, deleted: false, doneAt: null },
+    { text: 'was mirrored', done: false, doneAt: null, issue: null, deleted: false, deletedAt: null },
+    { text: 'was filed', done: true, doneAt: null, issue: 9, deleted: false, deletedAt: null },
   ]);
 });
 
@@ -112,7 +125,7 @@ test('a store from a newer version is not guessed at', () => {
 test('a missing field takes its default instead of failing the read', () => {
   const { store, stale } = normalise(JSON.stringify({ version: 1, items: [{ text: 'bare' }] }));
   assert.equal(stale, false);
-  assert.deepEqual(store.items, [{ text: 'bare', done: false, doneAt: null, issue: null, deleted: false }]);
+  assert.deepEqual(store.items, [{ text: 'bare', done: false, doneAt: null, issue: null, deleted: false, deletedAt: null }]);
 });
 
 // One list, whatever is checked out. The branch scoping this replaces is what

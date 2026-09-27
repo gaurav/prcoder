@@ -11,12 +11,13 @@ import { fileURLToPath } from 'node:url';
 import { text as readBody } from 'node:stream/consumers';
 import { spawn as ptySpawn } from 'node-pty';
 import { WebSocketServer } from 'ws';
-import { loadPr, prHeads, prBody, listPrs, setViewed, setBody, createIssue, fetchPatches, runCount } from './github.js';
+import { loadPr, prHeads, prBody, listPrs, issueLinks, setViewed, setBody, createIssue, fetchPatches, runCount } from './github.js';
 import { snapshot, currentBranch, repoInfo, prScope, compareUrl, originOwner, checkoutPr, pushBranch, remoteBranchHead, trackingHead, localPatch } from './git.js';
 import { bucket, fileUrl, fileViews } from './files.js';
 import { readPort, writePort } from './store.js';
 import { readQueue, writeQueue, quote } from './queue.js';
 import { splitArgs, portCandidates, statusLines } from './cli.js';
+import { counts } from './public/items.js';
 import * as term from './term.js';
 import { toggleTask } from './public/tasks.js';
 import { grammars } from './public/diff.js';
@@ -25,7 +26,7 @@ const root = path.dirname(fileURLToPath(import.meta.url));
 const repo = process.cwd();
 let { target, claudeArgs } = splitArgs(process.argv.slice(2));
 // The PR is fetched once and reused, with its files already grouped and linked
-// (withUrls); the PR routes need its body, node id and head.
+// (decorateFiles); the PR routes need its body, node id and head.
 let pr = null;
 // owner/repo and default branch: constant while we run, and loaded at startup
 // rather than lazily, because the issue links the queue derives need it before
@@ -95,8 +96,39 @@ function decorateFiles(p) {
 }
 
 /**
- * Read, change and write the description: the one way anything writes it, and
- * only for a checkbox ticked in the PR pane. Answers whether anything was sent.
+ * Every queue write, and the copy of the queue askToQuit counts kept up with it.
+ * That copy is otherwise the last poll's, so an item filed as an issue a moment
+ * before `q` was still counted as "only on this machine".
+ */
+async function saveQueue(items) {
+  const saved = await writeQueue(repo, items, info?.nameWithOwner);
+  if (last) last.queue = saved;
+  return saved;
+}
+
+/**
+ * Items leave the queue for somewhere permanent: written there first, then taken
+ * off the list. In that order because the failure it leaves is the recoverable
+ * one -- a write that did not land keeps the item where it was, and a store
+ * write that fails after one that did leaves the item in both places, which the
+ * error says, rather than in neither.
+ */
+async function moveOut(items, indices, send) {
+  const moving = indices.map((n) => items[n]).filter(Boolean);
+  if (!moving.length) throw new Error('nothing to move');
+  // `send` answers where the items went, for the one error that has to say so:
+  // "failed" without a URL is what makes someone file the same issue again.
+  const where = await send(moving);
+  try {
+    return await saveQueue(items.filter((i) => !moving.includes(i)));
+  } catch (e) {
+    throw new Error(`moved to ${where}, but the queue still lists ${moving.length === 1 ? 'it' : 'them'}: ${e.message}`);
+  }
+}
+
+/**
+ * Read, change and write the description: the one way anything writes it.
+ * Answers whether anything was sent.
  */
 async function editBody(edit) {
   const cur = requirePr();
@@ -202,6 +234,19 @@ const routes = {
 
   'GET /api/prs': () => listPrs(repo),
 
+  /**
+   * The issues the description mentions without closing, for the queue's Issues
+   * tab: title, state and kind, asked about by number. It was the repo's first
+   * 200 open issues, and in a repo with more than that an open issue past the
+   * cut read as "not an open issue". Capped at 50 numbers, as withLinks is.
+   */
+  'GET /api/issues': async () => {
+    const cur = requirePr();
+    const numbers = cur.issues.filter((i) => !i.closes).map((i) => i.number).slice(0, 50);
+    const links = numbers.length ? await issueLinks(repo, cur.url, numbers) : new Map();
+    return numbers.map((number) => ({ number, ...links.get(number) }));
+  },
+
   'POST /api/pr/switch': async ({ number }) => {
     await checkoutPr(repo, number);
     term.verbose(`checked out PR #${number}`);
@@ -234,10 +279,9 @@ const routes = {
   },
 
   /**
-   * One checkbox in the description, ticked from the PR pane -- the one write
-   * prcoder makes to a description, and only on that click. The body is re-read
-   * rather than taken from the cached PR: prose edited on github.com since the
-   * last poll would otherwise be written back out of date. Answers the new body.
+   * One checkbox in the description, ticked from the PR pane. The body is
+   * re-read rather than taken from the cached PR: prose edited on github.com
+   * since the last poll would otherwise be written back out of date.
    */
   'POST /api/pr/task': async ({ index, done, text }) => {
     // Unguarded on purpose: a read that failed is not the cached body. Falling
@@ -246,6 +290,8 @@ const routes = {
     // and the client says so.
     await editBody((current) => toggleTask(current, index, done, text));
     term.verbose(`${done ? 'ticked' : 'unticked'} a checkbox in PR #${pr.number}'s description`);
+    // The body GitHub now has, so both panes that show its checkboxes can
+    // repaint from it rather than wait a minute for the poll to agree.
     return { body: pr.body };
   },
 
@@ -266,19 +312,16 @@ const routes = {
 
   'GET /api/queue': () => readQueue(repo, info?.nameWithOwner),
 
-  'PUT /api/queue': ({ items }) => writeQueue(repo, items, info?.nameWithOwner),
+  'PUT /api/queue': ({ items }) => saveQueue(items),
 
-  'POST /api/queue/issue': async ({ items, index }) => {
-    const { url, number } = await createIssue(repo, (await repoFacts()).nameWithOwner, items[index].text);
-    items[index].issue = number;
-    term.verbose(`filed ${quote(items[index].text)} as ${url}`);
-    try {
-      return await writeQueue(repo, items, info?.nameWithOwner);
-    } catch (e) {
-      // The issue exists on GitHub whatever happened here, so the error has to
-      // name it: "failed" without a number is what makes someone file another.
-      throw new Error(`filed ${url}, but the queue did not record it: ${e.message}`);
-    }
+  /** Filed as an issue, one item at a time: each is its own issue. */
+  'POST /api/queue/to-issue': async ({ items, index }) => {
+    const { nameWithOwner } = await repoFacts();
+    return moveOut(items, [index], async ([item]) => {
+      const { url } = await createIssue(repo, nameWithOwner, item.text);
+      term.verbose(`filed ${quote(item.text)} as ${url}`);
+      return url;
+    });
   },
 };
 
@@ -604,8 +647,12 @@ async function listenOnRepoPort() {
  * is a keypress that can hang.
  *
  * An empty list is not a question worth asking, so it is not asked: no tab open,
- * nothing in the working tree that quitting could lose.
+ * nothing left in the queue, nothing in the working tree that quitting could
+ * lose.
  */
+/** The queue's outstanding items. Cached by the poll and by saveQueue, so no subprocess. */
+const localOnly = () => counts(last?.queue ?? []).local;
+
 function askToQuit() {
   const risk = [
     wss.clients.size && (wss.clients.size > 1
@@ -613,6 +660,10 @@ function askToQuit() {
       : '1 browser tab — the Claude session ends'),
     last?.ahead && `${last.ahead} unpushed commit${last.ahead > 1 ? 's' : ''}`,
     last?.dirtyFiles?.length && `${last.dirtyFiles.length} uncommitted file${last.dirtyFiles.length > 1 ? 's' : ''}`,
+    // The queue is what you meant to finish this time round, and it lives only
+    // on this machine: an item still in it never became an issue, and nobody
+    // working anywhere else will ever see it.
+    localOnly() && `${localOnly()} queue item${localOnly() > 1 ? 's' : ''} only on this machine — file them as issues to keep them past it`,
   ].filter(Boolean);
   // Killed here rather than left to the close handlers: process.exit does not
   // wait for them, and an orphaned `claude` outlives the terminal it was

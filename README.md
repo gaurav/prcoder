@@ -34,7 +34,8 @@ is no token to configure.
 - **Claude Code** -- the real `claude` in a PTY: Escape, slash commands and permission prompts all
   work as they do in a terminal.
 - **Queue** -- your own TODO list for this working copy, kept in `.prcoder/` rather than in any
-  file you own. An item can be typed into Claude or filed as a GitHub issue.
+  file you own. An item can be typed into Claude or moved into a GitHub issue, and with a pull
+  request on screen two more tabs read its description's checklist and the issues it mentions.
 
 prcoder follows the branch. It works out the pull request for whatever is checked out, and does
 it again every 60 seconds, so a `git checkout` in another terminal -- or by Claude in the middle
@@ -67,13 +68,14 @@ of `*`), so nothing shows up in `git status`: `queue.json` is the queue, and `po
 working copy's port.
 
 On GitHub, it writes only when you click: ticking a description checkbox flips that one line of
-the description, ticking a file marks it viewed, ◎ files a queue item as a new issue, and creating
+the description, ticking a file marks it viewed, ◎ moves a queue item into a new issue, and creating
 a pull request pushes the branch and opens GitHub's compare page.
 
 The queue is one list per working copy, whatever branch is checked out, and it stays on this
 machine. `queue.json` is safe for something else to edit, but while prcoder is running the server
 is the better way in: `GET /api/queue`, then `PUT /api/queue` with `{items}`.
-[docs/Design.md](docs/Design.md#what-prcoder-writes) has the reasons for all of this.
+Quitting with items still on Local says how many, since nothing but this machine has them.
+[docs/Design.md](docs/Design.md#the-queue-is-yours) has the reasons for all of this.
 
 ## The terminal you started it from
 
@@ -84,7 +86,7 @@ and its sync state, the pull request, the queue's counts, and the URL.
 prcoder  gaurav/prcoder   initial-implementation → main   2 unpushed · 8 uncommitted
 PR #1    A browser workspace around a live Claude Code session
          https://github.com/gaurav/prcoder/pull/1
-queue    19 active · 1 done · 1 issue
+queue    4 local · 1 done
 serving  http://localhost:17455   1 tab   q quit · r refresh · v verbose · o open
 ```
 

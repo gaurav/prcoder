@@ -17,12 +17,19 @@
 // drag machinery there, and every screenshot before that had been Chromium.
 //
 // CLAUDE_BIN is stubbed (serverEnv in tools/driver.mjs says why and with what).
-// And the UI's controls hit the live PR: ticking a description
-// checkbox edits the description on GitHub, and ◎ files a real issue. The queue
-// itself is safe -- it writes only `.prcoder/`, which is gitignored. Undo what
-// you write, or stay read-only as this does.
+//
+// It writes, so it is not read-only. The run replaces the repo's queue with a
+// fixture -- at least one item per tab -- and puts the queue back at the end. A
+// run that dies in between leaves the fixture behind, and the queue it replaced
+// in data/queue-before-browser.json; the next run drops the one and puts back
+// the other. The queue itself writes only `.prcoder/`.
+//
+// Nothing here clicks ◎. It moves an item into a new issue, one-way: there is
+// no queue to put back that would close the issue again. Anything added here that
+// writes to GitHub needs its own undo, and needs to run against a repo you own.
 
-import { spawn } from 'node:child_process';
+import { spawn, execFileSync } from 'node:child_process';
+import fs from 'node:fs';
 import path from 'node:path';
 import { openShots, pruneShots } from './shots.mjs';
 import { repo, free, serverEnv, killOnExit, openPage, launchBrowser } from './driver.mjs';
@@ -61,6 +68,58 @@ console.log('pr:     ', process.env.PRCODER_PR
   : "following the current branch");
 // Firefox by default, falling back to Chromium: launchBrowser() in driver.mjs.
 const browser = await launchBrowser();
+
+// The repo's queue may be empty, and then there is no
+// row to click into or tab to count -- and the strip only shows a tab that has
+// something in it, so an empty queue is a strip of two. Seed one item per tab
+// through the API the pane itself uses, before the first page load, so the pane
+// paints the fixture rather than an empty list it would not refetch for another
+// minute.
+//
+// `issue` is a bare number, so it links to an existing issue rather than filing
+// a new one, and the item stays on Local like any other.
+const queueApi = (body, method = 'PUT') =>
+  fetch(`http://localhost:${port}/api/queue`, {
+    method,
+    headers: { 'content-type': 'application/json' },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  }).then((r) => r.json());
+
+let had = [];
+for (let i = 0; i < 60; i++) {
+  try { had = await queueApi(undefined, 'GET'); break; } catch { await new Promise((r) => setTimeout(r, 500)); }
+}
+const FIXTURE = [
+  { t: 'a local item, still only on this machine' },
+  { t: 'a second local item, to click into' },
+  { t: 'linked to an issue', issue: 20 },
+  { t: 'ticked off', done: true },
+  { t: 'thrown away', deleted: true },
+];
+const seed = (over) => ({ text: over.t, done: false, issue: null, deleted: false, ...over });
+// A run that dies before the restore leaves its fixture in the store. Dropping
+// anything that looks like the fixture from what we are going to put back makes
+// the next run clean up after the last one, rather than restoring the mess and
+// adding to it.
+// The repaint check's throwaway item, below, is dropped the same way.
+const NUDGE = 'driver repaint nudge';
+const mine = new Set([...FIXTURE.map((f) => f.t), NUDGE]);
+had = had.filter((i) => !mine.has(i.text));
+// And the queue the fixture replaces, on disk until the restore at the end has
+// landed. Held only in memory, it died with a run that died: the next run saw
+// nothing but fixture, filtered that out, and put back an empty queue. A backup
+// still here is that run's, and it is what gets put back -- with anything added
+// to the store since, which is not in it.
+const backup = path.join(repo, 'data', 'queue-before-browser.json');
+if (fs.existsSync(backup)) {
+  const left = JSON.parse(fs.readFileSync(backup, 'utf8'));
+  had = [...left, ...had.filter((i) => !left.some((l) => l.text === i.text))];
+  console.log('backup: ', `${left.length} items left by a run that did not finish, put back at the end`);
+}
+fs.writeFileSync(backup, JSON.stringify(had, null, 2));
+const seeded = await queueApi({ items: FIXTURE.map(seed) });
+console.log('seeded: ', Array.isArray(seeded) ? `${seeded.length} items` : JSON.stringify(seeded));
+
 const page = await openPage(browser, port);
 // The panes fill in from gh, so there is a second or two of "Loading…" first.
 // Wait on the head rather than on a file row: the pane opens on Detail now, and
@@ -83,6 +142,161 @@ const drag = async (sel, x, y) => {
   await page.mouse.move(x, y, { steps: 8 });
   await page.mouse.up();
 };
+
+
+// Every queue tab, and what each shows. The counts are read rather than
+// eyeballed -- and the strip is shot at the pane's own width to see whether the
+// tabs wrap. `#queue-body .tab` and not `.tab`: the pull request pane has a strip of
+// its own, driven further down.
+const queueStrip = () => page.locator('#queue-body .tab').allTextContents();
+console.log('q tabs: ', (await queueStrip()).join(' | '));
+for (const name of ['Local', 'Completed', 'Deleted']) {
+  await page.locator('#queue-body .tab', { hasText: name }).click();
+  await page.waitForTimeout(150);
+  const rows = await page.locator('.item .text').allTextContents();
+  const grips = await page.locator('.item .grip').count();
+  console.log(`  ${name.padEnd(9)} ${JSON.stringify(rows)}${grips ? '  [draggable]' : ''}`);
+  await page.locator('#queue').screenshot({ path: path.join(out, `queue-${name.toLowerCase()}.png`) });
+}
+// 1440px is the only width the strip had been looked at -- where the tabs and
+// the bulk button fit easily. The pane the queue
+// actually lives in is whatever is left after the PR column, so drag that wide
+// and ask the tabs themselves whether they are still on one row: same offsetTop
+// for the first and the last is the only version of "does not wrap" that does
+// not depend on reading a screenshot.
+await drag('#gut-pr', 980, 450);
+await page.waitForTimeout(300);
+const strip = await page.evaluate(() => {
+  const t = [...document.querySelectorAll('#queue-body .tab')];
+  const pane = document.getElementById('queue').getBoundingClientRect().width;
+  return { rows: new Set(t.map((b) => b.offsetTop)).size, n: t.length, pane: Math.round(pane) };
+});
+console.log('narrow: ', `${strip.n} tabs on ${strip.rows} row(s) in a ${strip.pane}px pane`,
+  strip.rows === 1 ? '' : '  <-- the strip wrapped');
+await page.locator('#queue').screenshot({ path: path.join(out, 'queue-narrow.png') });
+await drag('#gut-pr', 375, 450);
+await page.waitForTimeout(300);
+
+// The confirm is the only thing between one click and every completed item, so
+// check it is load-bearing rather than decorative: dismissing it has to leave
+// the counts alone, and only accepting moves them.
+await page.locator('#queue-body .tab', { hasText: 'Completed' }).click();
+await page.waitForTimeout(150);
+page.once('dialog', (d) => { console.log('confirm:', JSON.stringify(d.message().split('\n')[0])); d.dismiss(); });
+await page.locator('.bulk', { hasText: 'delete all' }).click();
+await page.waitForTimeout(500);
+console.log('  dismissed', (await queueStrip()).join(' | '));
+page.once('dialog', (d) => d.accept());
+await page.locator('.bulk', { hasText: 'delete all' }).click();
+await page.waitForTimeout(800);
+console.log('  accepted ', (await queueStrip()).join(' | '));
+
+await page.locator('#queue-body .tab', { hasText: 'Local' }).click();
+await page.waitForTimeout(150);
+
+// The single-row path into Deleted and back out again. The bulk button above
+// covers the same tombstone rule, but not the ✕ and ↩ on the row itself, and
+// they are the only way to delete one item rather than a tabful. Round-tripped
+// rather than left deleted: the caret check below still needs this row on
+// Local, and a restore that puts it back is the half worth proving anyway.
+const local = () => page.locator('#queue-body .tab', { hasText: /^Local/ }).innerText();
+await page.locator('.item', { hasText: 'a second local item' }).locator('button[title="delete"]').click();
+await page.locator('#queue-body .tab', { hasText: 'Local (2)' }).waitFor({ timeout: 10_000 });
+console.log('row ✕:  ', await local(), '+', await page.locator('#queue-body .tab', { hasText: /^Deleted/ }).innerText());
+await page.locator('#queue-body .tab', { hasText: 'Deleted' }).click();
+await page.waitForTimeout(150);
+await page.locator('.item', { hasText: 'a second local item' }).locator('button[title="restore"]').click();
+await page.locator('#queue-body .tab', { hasText: 'Local (3)' }).waitFor({ timeout: 10_000 });
+await page.locator('#queue-body .tab', { hasText: 'Local' }).click();
+await page.waitForTimeout(150);
+console.log('row ↩:  ', await local(), JSON.stringify(await page.locator('.item .text').allTextContents()));
+
+// ▶ sends the item and ticks it off in one click, so the row leaves Local for
+// Completed. Both halves are checked here, because the tick is only honest if
+// the text really reached the PTY: the stub echoes what it is given, so the
+// terminal is the evidence that something was sent rather than just crossed
+// out. Round-tripped like the ✕ above -- the caret check below still needs a
+// full Local tab.
+const SENT = 'a local item, still only on this machine';
+await page.locator('.item', { hasText: SENT }).locator('button[title="type into Claude, and check it off"]').click();
+await page.locator('#queue-body .tab', { hasText: 'Local (2)' }).waitFor({ timeout: 10_000 });
+await page.waitForTimeout(400);   // the stub echoes on the PTY's own schedule
+const echoed = (await page.locator('#term-host').innerText()).includes(SENT);
+console.log('row ▶:  ', await local(), '+', await page.locator('#queue-body .tab', { hasText: /^Completed/ }).innerText(),
+  `, terminal echoed it: ${echoed}`, ' (want it off Local, on Completed, and echoed true)');
+await page.locator('#queue-body .tab', { hasText: 'Completed' }).click();
+await page.waitForTimeout(150);
+// The way back, which is why this is a tick and not a delete: the box that
+// checked itself unchecks.
+await page.locator('.item', { hasText: SENT }).locator('input[type=checkbox]').uncheck();
+await page.locator('#queue-body .tab', { hasText: 'Local (3)' }).waitFor({ timeout: 10_000 });
+await page.locator('#queue-body .tab', { hasText: 'Local' }).click();
+await page.waitForTimeout(150);
+console.log('unticked:', await local(), ' (want Local (3) again)');
+
+// The source tabs, which read GitHub rather than the queue. The PR tab is this
+// PR's own checklist: one box ticked from here and unticked again is two real
+// edits to the description, checked to leave the body as it was -- read back
+// through /api/status, whose copy is the one editBody replaced after each
+// write. Issues is the issues the description mentions without closing them;
+// ↓ copies one into Local without touching the issue, and the queue restore at
+// the end takes the copy back out.
+const prBody = () => page.evaluate(() => fetch('/api/status').then((r) => r.json()).then((st) => st.pr?.body));
+const bodyBefore = await prBody();
+await page.locator('#queue-body .tab', { hasText: /^PR/ }).click();
+await page.waitForTimeout(150);
+await page.locator('#queue').screenshot({ path: path.join(out, 'queue-pr.png') });
+const prRows = page.locator('#queue-body .item.source');
+console.log('pr tab: ', await page.locator('#queue-body .tab', { hasText: /^PR/ }).innerText(), `${await prRows.count()} rows`);
+const firstBox = () => page.locator('#queue-body .item.source input[type=checkbox]').first();
+// A description can have no checkboxes at all -- this repo's PR #27 has none --
+// and then there is nothing to tick, which is a skip rather than a hang.
+if (await prRows.count()) {
+  // The untick is the undo, so a run that fails between the two clicks -- a
+  // timeout, a refused write, the browser going away -- would leave the box
+  // ticked on GitHub. The description is snapshotted first, byte for byte from
+  // gh rather than /api/status's LF copy, and put back from the snapshot in the
+  // finally if it did not come back the same. The file stays in data/ if even
+  // that fails, or the run is killed outright.
+  const prUrl = await page.evaluate(() => fetch('/api/status').then((r) => r.json()).then((st) => st.pr.url));
+  const ghBody = () => JSON.parse(execFileSync('gh', ['pr', 'view', prUrl, '--json', 'body'], { cwd: repo })).body;
+  const snapshot = path.join(repo, 'data', 'pr-body-before-browser.md');
+  const original = ghBody();
+  fs.writeFileSync(snapshot, original);
+  try {
+    const wasTicked = await firstBox().isChecked();
+    for (const _ of [1, 2]) {
+      await firstBox().click();
+      // Disabled while the write is out, and repainted from the new body after.
+      await page.waitForFunction(() => {
+        const box = document.querySelector('#queue-body .item.source input[type=checkbox]');
+        return box && !box.disabled;
+      }, null, { timeout: 30_000 });
+      await page.waitForTimeout(300);
+    }
+    console.log('  ticked and unticked:', (await firstBox().isChecked()) === wasTicked ? 'box back as it was' : 'BOX CHANGED',
+      (await prBody()) === bodyBefore ? '· body unchanged' : '· BODY CHANGED');
+  } finally {
+    if (ghBody() !== original) {
+      execFileSync('gh', ['pr', 'edit', prUrl, '--body-file', snapshot], { cwd: repo });
+      console.log('  description put back from', path.relative(repo, snapshot));
+    }
+    fs.rmSync(snapshot);
+  }
+} else console.log('  no checkboxes in this description to tick');
+
+await page.locator('#queue-body .tab', { hasText: /^Issues/ }).click();
+await page.waitForFunction(() => ![...document.querySelectorAll('#queue-body .item.source .text')]
+  .some((t) => t.textContent === '…'), null, { timeout: 30_000 });
+await page.locator('#queue').screenshot({ path: path.join(out, 'queue-issues.png') });
+console.log('issues: ', await page.locator('#queue-body .tab', { hasText: /^Issues/ }).innerText(),
+  JSON.stringify(await page.locator('#queue-body .item.source').allInnerTexts()));
+const localBefore = await local();
+await page.locator('#queue-body .item.source .actions button').first().click();
+await page.locator('#queue-body .tab', { hasText: /^Local \(4\)/ }).waitFor({ timeout: 10_000 });
+console.log('  pulled: ', localBefore, '->', await local(), '(want one more)');
+await page.locator('#queue-body .tab', { hasText: /^Local/ }).click();
+await page.waitForTimeout(150);
 
 // The two tabs, and what each says about the other. `Detail (3/10)` /
 // `Files (7/23)` is the whole reason the counts are on the labels -- they are
@@ -231,7 +445,7 @@ console.log('groups open on arrival:', await page.locator('.group[open]').count(
 console.log('dirs:    ', (await page.locator('.dir > summary h3').allInnerTexts()).join(' '),
   ' (want each ending in /, a parent before its children, alphabetical)');
 console.log('rows:    ', (await page.locator('.dir').first().locator('.file .path').allInnerTexts()).join(' '),
-  ' (want names without the directory above them)');
+  ' (want names without the directory above them, most lines changed first)');
 // Files at the top of the repository are not a fold: they are the group's first
 // rows, above every directory in it. Counted per group rather than over the
 // pane, because "before the first .dir" is only a claim within one group.
@@ -415,42 +629,89 @@ console.log('clicked:', JSON.stringify(await toastText()), '  (want null)');
 // The caret check needs a row on the Local tab to click into, and this repo's
 // queue is legitimately empty the moment the last item has been finished or
 // filed -- which it was, on 2026-09-06, and the driver then failed on a missing
-// locator rather than on the bug it exists to catch. So seed one and put the
-// queue back exactly as it was. The queue writes `.prcoder/` and nothing else,
-// so this never reaches GitHub.
+// locator rather than on the bug it exists to catch. The fixture seeded before
+// the first page load is what it clicks into now. The reload above left the
+// pane on Local, the tab it opens on.
+await page.waitForSelector('.item .text');
+
+// The bug above, pinned: a click in the middle of an item's text has to land
+// in the middle of it. Silent in Chromium either way, so this only earns its
+// keep under PRCODER_BROWSER=firefox.
+//
+// Aimed at the glyphs and not at the box. `.item .text` is `flex: 1`, so its
+// box runs to the end of the row and the middle of *that* is well past the end
+// of the sentence -- clicking there put the caret at the end of the text, and
+// `caret > 0` called it a pass. It read as a real offset for as long as nobody
+// compared it to the length: 34 of 34. So measure the text node and aim inside
+// it, and fail a caret that has snapped to either end rather than only to the
+// start.
+const span = await page.locator('.item .text').first().evaluate((el) => {
+  const t = document.createTreeWalker(el, NodeFilter.SHOW_TEXT).nextNode();
+  const r = document.createRange();
+  r.selectNodeContents(t);
+  const { x, y, width, height } = r.getBoundingClientRect();
+  return { x, y, width, height, len: t.data.length };
+});
+await page.mouse.click(span.x + span.width * 0.4, span.y + span.height / 2);
+await page.waitForTimeout(200);
+const caret = await page.evaluate(() => window.getSelection().anchorOffset);
+console.log('caret:  ', `${caret} of ${span.len}`,
+  caret > 0 && caret < span.len ? ''
+    : caret === 0 ? '  <-- click landed at the start of the text'
+      : '  <-- click landed at the end of the text');
+
+// Then two scratch rows on Local for the reorder checks, on top of the fixture
+// and put back after, in a finally: everything between here and the restore
+// drives a browser, and a hang would otherwise leave them in the store.
 const getQueue = () => page.evaluate(() => fetch('/api/queue').then((r) => r.json()));
 const queue = await getQueue();
-// The route takes `{items}` and replaces the list wholesale -- one queue for the
-// repo, whatever is checked out.
 const putQueue = (items) => page.evaluate((body) => fetch('/api/queue', {
   method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
 }).then((r) => r.json()), { items });
 await putQueue([...queue,
   { text: 'driver scratch item, put back at the end of the run' },
   { text: 'driver scratch item two' }]);
-// finally, because everything between here and the restore drives a browser: a
-// reload that hangs or a locator that times out would otherwise leave the
-// scratch item sitting in the live .prcoder/queue.json, and this driver is run
-// against a queue somebody is using.
 try {
   await page.reload();
-  await page.waitForSelector('.item .text');
+  // The PR head, not a queue row. The checks below read /api/queue half a second
+  // after each drop, and the drop's PUT goes through the server's serial lock --
+  // behind the page's first status poll, which is several gh calls. Started
+  // before that poll lands, the drop worked and the read still saw the old order.
+  await page.waitForSelector('#pr-head .pr-title', { timeout: 30_000 });
+  await page.waitForTimeout(500);
 
-  // The bug above, pinned: a click in the middle of an item's text has to land
-  // in the middle of it. Silent in Chromium either way, so this only earns its
-  // keep under PRCODER_BROWSER=firefox.
+  // A poll's repaint replaces every row, so one landing mid-drag took the row
+  // from under the pointer and the drop reordered nothing. setItems holds a
+  // repaint back while a row is marked as dragging; checked directly rather than
+  // by racing a real drag against the 60s timer. The control is the same refresh
+  // without the mark, which does replace the row.
   //
-  // All it proves is `caret > 0`. The offset it prints is not evidence: `.item
-  // .text` is `flex: 1`, so the middle of its box is past the end of the
-  // sentence and the caret goes to the end of the text -- the number is the
-  // first row's length, and moves when the queue does. Aiming at the text node
-  // with a Range is the finer check; 43c8162 on #27's branch does that.
-  const text = page.locator('.item .text').first();
-  const tb = await text.boundingBox();
-  await page.mouse.click(tb.x + tb.width / 2, tb.y + tb.height / 2);
-  await page.waitForTimeout(200);
-  const caret = await page.evaluate(() => window.getSelection().anchorOffset);
-  console.log('caret:  ', caret, caret > 0 ? '' : '  <-- click landed at the start');
+  // Each refresh has to bring a change: a poll whose list matches the one on
+  // screen is skipped without a repaint, so an unchanged refresh keeps every
+  // row and the control would pass for the wrong reason. NUDGE goes into the
+  // stored queue before each refresh and comes out after.
+  const refresh = () => Promise.all([
+    page.waitForResponse((r) => r.url().endsWith('/api/status')),
+    page.locator('#pr-refresh').click(),
+  ]);
+  const nudge = async (on) => {
+    const now = (await getQueue()).filter((i) => i.text !== NUDGE);
+    await queueApi({ items: on ? [...now, seed({ t: NUDGE })] : now });
+  };
+  const heldRow = async (dragging) => {
+    const row = await page.evaluateHandle(() => document.querySelector('#queue-body .item'));
+    if (dragging) await row.evaluate((el) => el.classList.add('dragging'));
+    await nudge(true);
+    await refresh();
+    await page.waitForTimeout(300);
+    const kept = await row.evaluate((el) => el.isConnected);
+    await row.evaluate((el) => el.classList.remove('dragging'));
+    await nudge(false);
+    return kept;
+  };
+  console.log('repaint:', `mid-drag row ${await heldRow(true) ? 'kept' : 'REPLACED'},`,
+    `idle row ${await heldRow(false) ? 'KEPT' : 'replaced'}`, '  (want kept, then replaced)');
+  await refresh();
 
   // A row drag carries its own data type. It carried text/plain, which a link
   // or a text selection dropped on a row also carries; Number() of that is NaN,
@@ -489,6 +750,11 @@ try {
   await putQueue(queue);
 }
 console.log('queue:  ', (await getQueue()).length, 'items  (want', queue.length + ')');
+
+// Back to whatever the repo had.
+const putBack = await queueApi({ items: had });
+console.log('restored:', putBack.length, 'items (was', had.length + ')');
+if (Array.isArray(putBack)) fs.rmSync(backup);
 
 // The tab icon, which goes blue while a turn is running and back to green two
 // seconds after its output stops -- prcoder's only reading of "Claude is

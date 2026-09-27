@@ -1,8 +1,8 @@
 # Why prcoder looks like this
 
 What the panes do is in [Panes.md](Panes.md). This file is the *why*: the argument for
-building it at all, what it writes and where, and what it deliberately does not do. What
-the server is exposed to, and the checks that close it, is in [Security.md](Security.md). Where a
+building it at all, what shapes the queue, and what it deliberately does not do. What the server is
+exposed to, and the checks that close it, is in [Security.md](Security.md). Where a
 decision is a property of one function, the docstring at that function argues it in full and this
 file only says which one to read.
 
@@ -13,37 +13,53 @@ fits that loop. Claude Code Desktop, Conductor and Nimbalyst are session manager
 worktrees. PR-Agent and CodeRabbit review *for* you, which is the opposite end of the problem.
 Agent HQ is a cloud fleet dashboard. None of them treats the pull request as the workspace.
 
-## What prcoder writes
+## The queue is yours
 
-prcoder does not edit a pull request's title or description, and it keeps no list anywhere but
-`.prcoder/`. The one exception is a checkbox you tick in the PR pane: that flips its one line in the
-description (`toggleTask` in [`public/tasks.js`](../public/tasks.js)), re-reading the body first and refusing if
-the line has changed under it. Nothing else is written into a description, by the server or the page.
+The queue is your own TODO list for this working copy, kept in `.prcoder/queue.json` and nowhere
+else. It started as something bigger — one list that *was* every place work lives, two-way mirrored
+into a block in the PR description, with guards to stop that sync burying items — and in use it
+worked best as the smaller thing. That redesign, decided 2026-09-14, is [#27](https://github.com/gaurav/prcoder/pull/27). The mirror
+is parked in [#82](https://github.com/gaurav/prcoder/pull/82), a draft kept for reference, and a
+description that still carries its block holds an ordinary checklist now.
 
-- **The queue is yours**, stored in `.prcoder/queue.json` and nowhere else. It is one list for the
-  repo, not scoped to the checked-out branch: a per-branch queue was built and reverted, because
-  switching branches mid-task took the list away and merging a branch put its unfinished items out
-  of reach for good ([#48](https://github.com/gaurav/prcoder/issues/48)). Its tabs are states of
-  that list — Active, Completed, Deleted — and nothing else.
-- **No other list is read into it, and it is written nowhere else.** An earlier prcoder mirrored
-  items two ways into a block of the PR description between HTML-comment markers, with two guards and a
-  per-PR latch to stop the sync burying items, and imported FUTURE.md once. Both are gone. The
-  mirror is parked in [#82](https://github.com/gaurav/prcoder/pull/82), a draft kept for reference,
-  since it was the one thing that carried items between machines; an old description's block is an ordinary checklist now. FUTURE.md is not
-  a source and will not be one (retired 2026-09-26): its items were all either done or already
-  issues.
-- **Something else may edit `.prcoder/queue.json`.** Every write is a temp file and a rename, so a
-  reader never sees half a file, and every poll re-reads it, so an outside edit shows up within a
-  minute. Last write wins over the whole list, as it does between two tabs (below). For an agent the
-  safer route is the server — `GET /api/queue`, then `PUT /api/queue` with `{items}` — because that
-  goes through the same coercion the page's writes do; whether Claude should get a channel of its
-  own into prcoder is [#21](https://github.com/gaurav/prcoder/issues/21)'s question.
-- **What else reaches GitHub, and only on a click:** ◎ files an item as a new issue, a file's
-  checkbox marks it viewed, and creating a pull request pushes the branch and opens GitHub's compare
-  page. None of them writes a description.
-- **Where it is going.** [#27](https://github.com/gaurav/prcoder/pull/27) adds tabs read straight
-  from other sources — the description's checklist, the issues it mentions, later a search over
-  issues — where pulling an item copies it into your list and leaves the source alone.
+**prcoder does not edit a pull request's title or description**, and keeps no list anywhere but
+`.prcoder/`. The one exception is a checkbox you tick, in the PR pane or on the queue's PR tab: that
+flips its one line (`toggleTask` in [`public/tasks.js`](../public/tasks.js)), re-reading the body first and
+refusing if the line has changed under it, and never falling back to a cached copy (`editBody`) — a
+read that did not happen says nothing about what the description holds now. An earlier version of
+this branch also had ◇, which appended an item to the description as a checkbox; it came out under
+the same rule, and is small enough to rebuild from `203dd93` if it is ever wanted.
+
+**Moving an item out is one-way, and only into an issue.** ◎ files it as an issue: written there
+first and taken off the list after (`moveOut` in [`server.js`](../server.js)). That order is the
+one whose failure is recoverable: a filing that did not land leaves the item where it was, and a
+store write that fails after one that did leaves it in both places and says so, rather than in
+neither. Nothing reads a description back into the queue, so there is no merge to get wrong.
+
+**Something else may edit `.prcoder/queue.json`.** Every write is a temp file and a rename, so a
+reader never sees half a file, and every poll re-reads it, so an outside edit shows up within a
+minute. Last write wins over the whole list, as it does between two tabs (below). For an agent the
+safer route is the server — `GET /api/queue`, then `PUT /api/queue` with `{items}` — because that
+goes through the same coercion the page's writes do; whether Claude should get a channel of its own
+into prcoder is [#21](https://github.com/gaurav/prcoder/issues/21)'s question.
+
+**What else reaches GitHub, and only on a click:** ◎ files an item as a new issue, a file's checkbox
+marks it viewed, and creating a pull request pushes the branch and opens GitHub's compare page. None
+of them writes a description.
+
+**Each permanent source is a tab, read straight from it.** PR is the description's checklist, and
+Issues is the issues the description mentions without closing; pulling from either copies the item
+into Local and leaves the source alone, since a checkbox is the PR's record and an issue is the
+project's. Issues is deliberately that narrow for now: an upcoming milestone to focus on, search, and
+showing an issue in the pane are a design still to be settled. Quitting with items still on Local
+offering to file them as issues is a follow-up of its own. FUTURE.md is not a source and
+will not be one (retired 2026-09-26): its items were all either done or already issues, and a
+tracked file of TODOs is a third place for work to live where the queue and issues cover it.
+
+The queue was scoped per branch once, with a guard refusing a write from a branch the tab had left.
+That is gone too, and [#48](https://github.com/gaurav/prcoder/issues/48) holds why: scoping the list
+to the checkout hid items rather than organising them. Moving to an unrelated branch mid-task took
+the list away, and merging a branch put its unfinished items out of reach for good.
 
 ## What it deliberately does not do
 
@@ -78,9 +94,8 @@ alerts are not alerts here. Everything past that is
 argument for settling it rather than for continuing. It is a security boundary as well as a scope
 one — [Security.md](Security.md) says why.
 
-**The queue is machine-local**, which is the trade for not writing your files. Nothing carries it to
-another machine; an item that has to outlive this one can be filed as an issue with ◎. Separate
-worktrees keep separate queues. There is no conflict detection between two tabs racing on one repo — last write wins on the
+**The queue is machine-local**, which is the trade for not writing your files. Filing an item as an
+issue is how you carry it to another machine, and separate worktrees keep separate queues. There is no conflict detection between two tabs racing on one repo — last write wins on the
 whole list. A write-side guard was written and cut: it misses the case that actually
 happens (two tabs on one server, where the mtime matches because the same process wrote it), and
 merging on conflict needs item identity, which text is not. The upgrade, if a lost item is ever

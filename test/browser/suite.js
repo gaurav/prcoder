@@ -122,7 +122,7 @@ const pr = {
 const status = {
   branch: 'topic', head: 'b'.repeat(40), detached: false, dirtyFiles: [], sync: 'synced', ahead: 0,
   defaultBranch: 'main', nameWithOwner: 'heal-data-stewards/heal-vlmd-AI-pipeline',
-  scope: 'current',
+  scope: 'current', mirrorFailed: false,
   pr, queue: [],
 };
 
@@ -145,9 +145,10 @@ async function newPage() {
       path, patch: `@@ -0,0 +1,${lines.length} @@\n` + lines.map((l) => '+' + l).join('\n'),
     } });
   });
-  // Answered in the route's own shape -- the body GitHub now holds. A mock
-  // written in some other shape is the trap at the head of this file: it
-  // merges without a murmur and blanks the pane at runtime.
+  // The route answers with the body GitHub now holds, and the client paints
+  // both sets of checkboxes from it -- so a mock that returns anything else
+  // blanks the description on the first tick, and every later assertion about
+  // this page is against an empty pane.
   await p.route('**/api/pr/task', (r) => {
     const task = r.request().postDataJSON();
     posted.push(task);
@@ -551,13 +552,30 @@ test('folds show progress as a pie named by its figure', { skip }, async () => {
   await fresh.close();
 });
 
+// Deleted is newest first too, so a delete you did not mean is at the top to be
+// restored. Its own page: the queue here is one with tombstones in it.
+test('Deleted lists the most recently deleted first', { skip }, async () => {
+  const fresh = await newPage();
+  const gone = (text, deletedAt) => ({ text, done: false, issue: null, deleted: true, deletedAt });
+  const queue = [gone('never stamped', null), gone('deleted first', 1000), gone('deleted last', 3000),
+    { text: 'still here', done: false, issue: null, deleted: false }];
+  await fresh.route('**/api/queue', (r) => r.fulfill({ json: queue }));
+  await fresh.route('**/api/status', (r) => r.fulfill({ json: { ...status, queue } }));
+  await fresh.reload();
+  await fresh.waitForSelector('#queue-body .item');
+  await fresh.locator('#queue-body .tab', { hasText: 'Deleted' }).click();
+  assert.deepEqual(await fresh.locator('#queue-body .item .text').allTextContents(),
+    ['deleted last', 'deleted first', 'never stamped']);
+  await fresh.close();
+});
+
 // Completed is sorted by when each item was finished, so the one just ticked by
 // mistake is on top to be unticked -- whatever order the queue holds them in.
 // One the store has not stamped yet goes last. With the order not the user's to
 // set, the tab has no grip and no drag; Active keeps both.
 test('Completed lists the most recently finished first, and cannot be reordered', { skip }, async () => {
   const fresh = await newPage();
-  const it = (text, over) => ({ text, done: true, issue: null, deleted: false, ...over });
+  const it = (text, over) => ({ text, done: true, inPr: false, pr: null, issue: null, deleted: false, ...over });
   const queue = [
     it('never stamped', { doneAt: null }),
     it('finished first', { doneAt: 1000 }),
@@ -622,25 +640,26 @@ test('▶ with Claude disconnected types nothing and leaves the item active', { 
   await fresh.close();
 });
 
-// A second click while the first issue was still being filed queued a second
-// createIssue; its number then overwrote the first's, orphaning that issue.
+// A second click while the first issue was still being filed filed a second
+// issue for the same item, and only one of them left the queue behind it.
 test('◎ files one issue however quickly it is clicked twice', { skip }, async () => {
   const fresh = await newPage();
   const queue = [{ text: 'file me', done: false, issue: null, deleted: false }];
   let filed = 0;
   await fresh.route('**/api/status', (r) => r.fulfill({ json: { ...status, queue } }));
   await fresh.route('**/api/queue', (r) => r.fulfill({ json: queue }));
-  await fresh.route('**/api/queue/issue', async (r) => {
+  // A move: the issue is filed and the item comes back off the list.
+  await fresh.route('**/api/queue/to-issue', async (r) => {
     filed++;
     await new Promise((res) => setTimeout(res, 300));
-    return r.fulfill({ json: [{ ...queue[0], issue: 40 + filed }] });
+    return r.fulfill({ json: [] });
   });
   await fresh.reload();
   await fresh.waitForSelector('#queue-body .item');
-  const issue = fresh.locator('#queue-body .item button[title="create an issue"]');
+  const issue = fresh.locator('#queue-body .item button[title="move into a new issue"]');
   await issue.click();
   await issue.click({ force: true, timeout: 1000 }).catch(() => {});
-  await fresh.waitForSelector('#queue-body .item .tag.issue');
+  await fresh.waitForFunction(() => !document.querySelector('#queue-body .item'));
   assert.equal(filed, 1);
   await fresh.close();
 });
@@ -769,7 +788,7 @@ test('a poll that lands while a save is in flight does not undo it on screen', {
   await fresh.waitForTimeout(300);
   assert.equal(await box.isChecked(), true, 'the poll did not untick it');
   release();
-  await fresh.waitForFunction(() => document.querySelector('#queue-body .tab')?.textContent === 'Active (0)');
+  await fresh.waitForFunction(() => document.querySelector('#queue-body .tab')?.textContent === 'Local (0)');
   await fresh.close();
 });
 

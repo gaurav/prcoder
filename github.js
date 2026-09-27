@@ -233,8 +233,8 @@ export async function setBody(cwd, prUrl, body) {
  * before the URL, so the last line is the one that matters.
  *
  * Failing here rather than returning NaN is the point: output with no issue
- * URL at the end is a filing prcoder cannot vouch for, and recording it would
- * give the item a link to nothing.
+ * URL at the end is a filing prcoder cannot vouch for, and reporting it as a
+ * move would take the item off the queue on the strength of a link to nothing.
  */
 export function issueNumber(out) {
   const url = out.trim().split('\n').pop()?.trim() ?? '';
@@ -321,7 +321,7 @@ export async function issueLinks(cwd, prUrl, numbers) {
   const { owner, repo } = parsePrUrl(prUrl);
   const query = `query($owner:String!,$repo:String!){ repository(owner:$owner,name:$repo){ ` +
     numbers.map((n) => `i${n}: issueOrPullRequest(number:${n})` +
-      `{ ... on Issue { title url } ... on PullRequest { title url } }`).join(' ') + ` } }`;
+      `{ __typename ... on Issue { title url state updatedAt } ... on PullRequest { title url state updatedAt } }`).join(' ') + ` } }`;
   const args = ['api', 'graphql', '-f', `query=${query}`, '-f', `owner=${owner}`, '-f', `repo=${repo}`];
   try {
     return linksFrom(await gh(args, { cwd }));
@@ -330,9 +330,12 @@ export async function issueLinks(cwd, prUrl, numbers) {
   }
 }
 
-/** The `iN: { title, url }` aliases of a response, whether or not it also
- *  carried errors. Anything unparseable is nothing -- these are decoration and
- *  a redirect, and a lookup that fails may not fail the pane. */
+/** The `iN: { title, url, state, kind, updatedAt }` aliases of a response,
+ *  whether or not it also carried errors. `kind` is `issue` or `pull`; `state`
+ *  is GitHub's own -- OPEN or CLOSED, and MERGED for a pull request; `updatedAt`
+ *  is an ISO timestamp, which any comment, label or edit moves. Anything unparseable is
+ *  nothing -- these are decoration and a redirect, and a lookup that fails may
+ *  not fail the pane. */
 export function linksFrom(out) {
   let repo;
   try {
@@ -342,5 +345,11 @@ export function linksFrom(out) {
   }
   return new Map(Object.entries(repo ?? {})
     .filter(([, v]) => v?.title)
-    .map(([alias, v]) => [Number(alias.slice(1)), { title: v.title, url: v.url ?? null }]));
+    .map(([alias, v]) => [Number(alias.slice(1)), {
+      title: v.title,
+      url: v.url ?? null,
+      state: v.state ?? null,
+      kind: { Issue: 'issue', PullRequest: 'pull' }[v.__typename] ?? null,
+      updatedAt: v.updatedAt ?? null,
+    }]));
 }
