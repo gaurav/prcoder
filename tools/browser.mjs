@@ -23,11 +23,9 @@
 // you write, or stay read-only as this does.
 
 import { spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
 import path from 'node:path';
-import { chromium, firefox } from 'playwright';
 import { openShots, pruneShots } from './shots.mjs';
-import { repo, free, serverEnv, killOnExit, openPage, firefoxEnv } from './driver.mjs';
+import { repo, free, serverEnv, killOnExit, openPage, launchBrowser } from './driver.mjs';
 
 // data/, not a new top-level shots/: this repo's scratch space is data/, and it
 // is gitignored precisely so driver output has somewhere to live. The argument
@@ -52,15 +50,6 @@ const server = spawn('node', ['server.js', ...(process.env.PRCODER_PR ? [process
 });
 killOnExit(server);
 
-// Firefox by default, because that is what prcoder is used in and it is where
-// the selection and drag bugs live. Playwright drives its own patched build,
-// never the Firefox in /Applications, so this asks whether
-// `npx playwright install firefox` has been run -- not whether the machine has
-// Firefox. Chromium is the fallback, and PRCODER_BROWSER=chromium|firefox is
-// the override; which one ran matters for reading the output, so it is logged.
-const forced = { chromium, firefox }[process.env.PRCODER_BROWSER];
-const engine = forced ?? (existsSync(firefox.executablePath()) ? firefox : chromium);
-console.log('engine: ', engine.name());
 // Which of the server's two ways of finding a pull request this run is about to
 // exercise. Worth saying out loud: pinning one is the only way to drive the
 // panes from a feature branch, and it is also the way to run the whole file and
@@ -70,25 +59,8 @@ console.log('engine: ', engine.name());
 console.log('pr:     ', process.env.PRCODER_PR
   ? `pinned to #${process.env.PRCODER_PR} (branch-following not exercised)`
   : "following the current branch");
-// existsSync above says the build was downloaded, not that it starts -- which
-// firefoxEnv() is only the latest answer to (#80). So the fallback has to
-// survive a launch that fails as well as one that was never installed, or the
-// default run waits out Playwright's 180s timeout and dies with no browser at
-// all. The wait is 45s here because this is the unattended path and a browser
-// that has not started by then is not starting; a forced engine keeps the full
-// timeout and is left to fail, since falling back is the wrong answer to
-// someone who asked for Firefox by name.
-const browser = await (async () => {
-  try {
-    const env = engine === firefox ? { env: { ...process.env, ...firefoxEnv() } } : {};
-    return await engine.launch({ ...env, ...(forced ? {} : { timeout: 45_000 }) });
-  } catch (err) {
-    if (forced || engine === chromium) throw err;
-    console.log(`engine:  ${engine.name()} would not start, falling back to chromium`);
-    console.log('        ', String(err).split('\n')[0]);
-    return chromium.launch();
-  }
-})();
+// Firefox by default, falling back to Chromium: launchBrowser() in driver.mjs.
+const browser = await launchBrowser();
 const page = await openPage(browser, port);
 // The panes fill in from gh, so there is a second or two of "Loading…" first.
 // Wait on the head rather than on a file row: the pane opens on Detail now, and

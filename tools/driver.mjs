@@ -6,7 +6,7 @@
 // firefoxEnv from here too.
 
 import { createServer } from 'node:net';
-import { mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -75,6 +75,45 @@ export async function openPage(browser, port) {
     try { await page.goto(`http://localhost:${port}/`); break; } catch { await page.waitForTimeout(500); }
   }
   return page;
+}
+
+/**
+ * The browser a driver runs in, with its engine logged.
+ *
+ * Firefox by default, because that is what prcoder is used in and it is where
+ * the selection and drag bugs live. Playwright drives its own patched build,
+ * never the Firefox in /Applications, so this asks whether
+ * `npx playwright install firefox` has been run -- not whether the machine has
+ * Firefox. Chromium is the fallback, and PRCODER_BROWSER=chromium|firefox is
+ * the override; which one ran matters for reading the output, so it is logged.
+ *
+ * existsSync says the build was downloaded, not that it starts -- which
+ * firefoxEnv() is only the latest answer to (#80). So the fallback has to
+ * survive a launch that fails as well as one that was never installed, or the
+ * default run waits out Playwright's 180s timeout and dies with no browser at
+ * all. The wait is 45s here because this is the unattended path and a browser
+ * that has not started by then is not starting; a forced engine keeps the full
+ * timeout and is left to fail, since falling back is the wrong answer to
+ * someone who asked for Firefox by name.
+ *
+ * Playwright is imported here rather than at the top, because
+ * test/browser/suite.js imports this module for firefoxEnv() and has to be able
+ * to skip, not crash, where Playwright is not installed.
+ */
+export async function launchBrowser() {
+  const { chromium, firefox } = await import('playwright');
+  const forced = { chromium, firefox }[process.env.PRCODER_BROWSER];
+  const engine = forced ?? (existsSync(firefox.executablePath()) ? firefox : chromium);
+  console.log('engine: ', engine.name());
+  try {
+    const env = engine === firefox ? { env: { ...process.env, ...firefoxEnv() } } : {};
+    return await engine.launch({ ...env, ...(forced ? {} : { timeout: 45_000 }) });
+  } catch (err) {
+    if (forced || engine === chromium) throw err;
+    console.log(`engine:  ${engine.name()} would not start, falling back to chromium`);
+    console.log('        ', String(err).split('\n')[0]);
+    return chromium.launch();
+  }
 }
 
 /**
