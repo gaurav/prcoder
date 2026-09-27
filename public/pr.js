@@ -576,10 +576,12 @@ const repoChip = (crumb) => ext(crumb.href, [
  * The pull request pane, in two roots.
  *
  * #pr-head is the identity -- which pull request, on what branch, passing or
- * not -- and does not scroll. #pr-body is one of two views of it: the argument
- * (Detail) or the work (Files). They are tabs rather than one column because
- * they are two different things to be doing, they each want the whole pane, and
- * an agent-written description is long enough to bury a file list entirely.
+ * not -- and does not scroll. #pr-body is one of four views of it: the argument
+ * (Detail), the work (Files), CI (Checks, drawn only when there are checks) and
+ * the pull requests built on it (Stack). They are tabs rather than one column
+ * because they are different things to be doing, they each want the whole
+ * pane, and an agent-written description is long enough to bury a file list
+ * entirely. docs/Panes.md has what each shows.
  */
 export function renderPr(pr, handlers) {
   links = linkBase(pr);
