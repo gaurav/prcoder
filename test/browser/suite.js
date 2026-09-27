@@ -131,12 +131,15 @@ let page;
 const posted = [];
 
 // A page with every route answered, so a test that needs a module map of its
-// own -- Prism loads once per page -- can open a second one.
-async function newPage() {
+// own -- Prism loads once per page -- can open a second one. `prs` is the
+// switcher's list, empty unless a test is about it, and null for a fetch that
+// fails; `st` and `ready` are for a page with no pull request, which has no
+// title to wait on.
+async function newPage({ prs = [], st = status, ready = '#pr-head .pr-title' } = {}) {
   const p = await browser.newPage();
   await p.routeWebSocket('**/pty', () => {});
-  await p.route('**/api/status', (r) => r.fulfill({ json: status }));
-  await p.route('**/api/prs', (r) => r.fulfill({ json: [] }));
+  await p.route('**/api/status', (r) => r.fulfill({ json: st }));
+  await p.route('**/api/prs', (r) => (prs ? r.fulfill({ json: prs }) : r.abort()));
   await p.route('**/api/queue', (r) => r.fulfill({ json: [] }));
   await p.route('**/api/diff', (r) => {
     const { path } = r.request().postDataJSON();
@@ -156,7 +159,7 @@ async function newPage() {
     return r.fulfill({ json: { body: BODY.replace(`- [${task.done ? ' ' : 'x'}] ${task.text}`, box + task.text) } });
   });
   await p.goto(`http://127.0.0.1:${server.address().port}/`);
-  await p.waitForSelector('#pr-head .pr-title');
+  await p.waitForSelector(ready);
   return p;
 }
 
@@ -805,4 +808,190 @@ test('a poll that brings nothing new leaves the panes as they were', { skip }, a
   assert.equal(await fresh.locator('#pr-body > [data-mark=kept]').count(), 1, 'PR pane not rebuilt');
   assert.equal(await fresh.locator('#queue-body > [data-mark=kept]').count(), 1, 'queue not rebuilt');
   await fresh.close();
+});
+
+// The fixture PR, one built on its branch, and one built on that. The switcher
+// and the Stack tab both have to show the chain as a chain, and a row's #N has
+// to be a link out while its Switch is the checkout -- one control each.
+const STACK = [
+  { number: 12, title: pr.title, headRefName: 'topic', baseRefName: 'main', isDraft: false, url: pr.url },
+  { number: 13, title: 'Built on the fixture', headRefName: 'topic-2', baseRefName: 'topic', isDraft: true, url: `${REPO}/pull/13` },
+  { number: 14, title: 'Built on that', headRefName: 'topic-3', baseRefName: 'topic-2', isDraft: false, url: `${REPO}/pull/14` },
+];
+
+test('stacked PRs nest in the switcher and the Stack tab, each linked and switchable', { skip }, async () => {
+  const fresh = await newPage({ prs: STACK });
+  const switched = [];
+  await fresh.route('**/api/pr/switch', (r) => {
+    switched.push(r.request().postDataJSON().number);
+    return r.fulfill({ json: status });
+  });
+  await fresh.waitForSelector('#pr-switch option[value="14"]', { state: 'attached' });
+  assert.deepEqual(await fresh.$$eval('#pr-switch option', (os) => os.map((o) => o.textContent.replaceAll('\u00a0', ' '))), [
+    'no pull request',
+    '#12 A fixture pull request',
+    '  └ #13 (draft) Built on the fixture',
+    '    └ #14 Built on that',
+  ]);
+
+  const tab = fresh.locator('#pr-head .tab', { hasText: 'Stack' });
+  assert.equal(await tab.textContent(), 'Stack (2)');
+  await tab.click();
+  // The tab is read on its own, so it names the PR as well as the branch, and
+  // the branch in the code face.
+  assert.equal(await fresh.locator('#pr-body .pr-into-label').textContent(), 'Pull requests built on PR #12 (branch topic)');
+  assert.equal(await fresh.locator('#pr-body .pr-into-label code.branch').textContent(), 'topic');
+  assert.deepEqual(await fresh.locator('#pr-body .pr-into > ul > li > .pr-row .pr-num').allTextContents(), ['#13']);
+  assert.deepEqual(await fresh.locator('#pr-body .pr-into ul ul .pr-num').allTextContents(), ['#14']);
+  const link = fresh.locator('#pr-body .pr-num', { hasText: '#14' });
+  assert.equal(await link.getAttribute('href'), `${REPO}/pull/14`);
+  assert.equal(await link.getAttribute('target'), '_blank');
+
+  const sent = fresh.waitForResponse('**/api/pr/switch');
+  await fresh.locator('#pr-body .pr-row', { hasText: '#14' }).locator('.pr-go').click();
+  await sent;
+  assert.deepEqual(switched, [14]);
+  await fresh.close();
+});
+
+// The list behind the tab is not polled, and a PR stacked from the terminal
+// after the page loaded would leave the tab saying nothing is stacked here.
+// Opening the tab fetches it again; a route added later answers first.
+test('opening the Stack tab picks up a PR stacked since the page loaded', { skip }, async () => {
+  const fresh = await newPage({ prs: STACK.slice(0, 1) });
+  await fresh.route('**/api/prs', (r) => r.fulfill({ json: STACK }));
+  const tab = fresh.locator('#pr-head .tab', { hasText: 'Stack' });
+  assert.equal(await tab.textContent(), 'Stack');
+  const fetched = fresh.waitForResponse('**/api/prs');
+  await tab.click();
+  await fetched;
+  await fresh.waitForSelector('#pr-body .pr-into .pr-num');
+  assert.deepEqual(await fresh.locator('#pr-body .pr-into > ul > li > .pr-row .pr-num').allTextContents(), ['#13']);
+  assert.equal(await fresh.locator('#pr-head .tab', { hasText: 'Stack' }).textContent(), 'Stack (2)');
+  await fresh.close();
+});
+
+// Opening the tab fetches the list, and gh can fail. The list it had is still
+// the best it knows; an empty one in its place said "Nothing is stacked" over
+// the rows it had just shown.
+test('a failed fetch on opening the Stack tab keeps the rows it had', { skip }, async () => {
+  const fresh = await newPage({ prs: STACK });
+  const tab = fresh.locator('#pr-head .tab', { hasText: 'Stack' });
+  await fresh.waitForSelector('#pr-switch option[value="14"]', { state: 'attached' });
+  await fresh.route('**/api/prs', (r) => r.abort());
+  const failed = fresh.waitForEvent('requestfailed', (q) => q.url().endsWith('/api/prs'));
+  await tab.click();
+  await failed;
+  await fresh.waitForTimeout(100);
+  assert.deepEqual(await fresh.locator('#pr-body .pr-into > ul > li > .pr-row .pr-num').allTextContents(), ['#13']);
+  assert.equal(await tab.textContent(), 'Stack (2)');
+  assert.equal(await fresh.locator('#pr-switch option').count(), 4, 'the switcher kept its options');
+  await fresh.close();
+});
+
+// With no list at all -- the first fetch still out, or every one failed -- the
+// tab and the branch-only pane say so, rather than that the list is empty.
+test('with no list of pull requests, the panes say there is none yet', { skip }, async () => {
+  const fresh = await newPage({ prs: null });
+  await fresh.locator('#pr-head .tab', { hasText: 'Stack' }).click();
+  assert.equal(await fresh.locator('#pr-body .empty').textContent(), 'No list of open pull requests yet.');
+  await fresh.close();
+
+  const alone = await newPage({ prs: null, st: { ...status, branch: 'topic-x', pr: null }, ready: '#pr-head .pr-branch-name' });
+  assert.equal(await alone.locator('#pr-body .empty').textContent(), 'No list of open pull requests yet.');
+  // And the switcher above it agrees, rather than saying no PRs are open.
+  assert.deepEqual(await alone.locator('#pr-switch option').allTextContents(), ['no list of pull requests yet']);
+  await alone.close();
+});
+
+// The pane with no pull request, on the branch the fixture PR merges into.
+// tools/no-pr.mjs drives this against the real remote; this is the part of it
+// that needs no clone, so it runs on every `npm test`.
+const onMain = { ...status, branch: 'main', pr: null };
+
+test('with no PR, the PRs into this branch nest their stacks, and a dirty tree blocks only Switch', { skip }, async () => {
+  const clean = await newPage({ prs: STACK, st: onMain, ready: '#pr-body .pr-into .pr-go' });
+  assert.equal(await clean.locator('#pr-body .pr-into-label').textContent(), 'Pull requests into branch main');
+  assert.equal(await clean.locator('#pr-body .pr-into-label code.branch').textContent(), 'main');
+  assert.deepEqual(await clean.locator('#pr-body .pr-into > ul > li > .pr-row .pr-num').allTextContents(), ['#12']);
+  assert.deepEqual(await clean.locator('#pr-body .pr-into ul ul .pr-num').allTextContents(), ['#13', '#14']);
+  assert.equal(await clean.locator('#pr-body .pr-num', { hasText: '#12' }).getAttribute('href'), pr.url);
+  const switched = [];
+  await clean.route('**/api/pr/switch', (r) => {
+    switched.push(r.request().postDataJSON().number);
+    return r.fulfill({ json: status });
+  });
+  const sent = clean.waitForResponse('**/api/pr/switch');
+  await clean.locator('#pr-body .pr-row', { hasText: '#13' }).locator('.pr-go').click();
+  await sent;
+  assert.deepEqual(switched, [13]);
+  await clean.close();
+
+  const dirty = await newPage({ prs: STACK, st: { ...onMain, dirtyFiles: ['README.md'] }, ready: '#pr-body .pr-into .pr-go' });
+  const go = await dirty.$$eval('#pr-body .pr-go', (bs) => bs.map((b) => [b.disabled, b.title]));
+  assert.deepEqual(go, Array(3).fill([true, 'Commit or stash your changes first']));
+  assert.deepEqual(await dirty.$$eval('#pr-body .pr-num', (as) => as.map((a) => a.getAttribute('href'))),
+    STACK.map((p) => p.url));
+  await dirty.close();
+});
+
+// On main the issues and milestones are how you pick what to work on next, and
+// in the body they sat under the whole list of PRs, off the bottom with a dozen
+// open. The head does not scroll, and it is the pull request head's own rows,
+// in HEAD_ORDER, with the branch where the title goes.
+test('with no PR, the head names the branch and carries the way out', { skip }, async () => {
+  const p = await newPage({ prs: STACK, st: onMain, ready: '#pr-head .pr-branch-name' });
+  assert.equal(await p.locator('#pr-head .pr-branch-name').textContent(), 'main');
+  assert.equal(await p.locator('#pr-head .pr-title').count(), 0, 'the drivers read .pr-title as a PR on screen');
+  assert.match(await p.locator('#pr-head .pr-note').textContent(), /^Default branch/);
+  assert.deepEqual(await p.locator('#pr-head .pr-links a').allTextContents(), ['issues', 'pulls', 'milestones']);
+  assert.equal(await p.locator('#pr-head .pr-links .primary').count(), 0, 'no Create PR on the default branch');
+  assert.equal(await p.locator('#pr-head .pr-repo a').textContent(), 'heal-data-stewards/heal-vlmd-AI-pipeline');
+  assert.equal(await p.locator('#pr-body .pr-ways, #pr-body .pr-repo').count(), 0);
+  const order = await p.$$eval('#pr-head > *', (els) => els.map((e) => e.className.split(' ')[0]));
+  assert.deepEqual(order, ['pr-branch-name', 'pr-note', 'meta', 'meta'], order.join(' | '));
+  await p.close();
+
+  // A branch nothing merges into says so, rather than leaving the body blank.
+  // And one that can have a PR gets Create PR where a PR's head has its own
+  // filled button, with no dot beside it.
+  // Waited for, not read: until the list lands the pane says it has none.
+  const alone = await newPage({ st: { ...status, branch: 'topic-x', pr: null }, ready: '#pr-head .pr-branch-name' });
+  await alone.locator('#pr-body .empty', { hasText: 'No pull requests into branch topic-x.' }).waitFor();
+  assert.deepEqual(await alone.$$eval('#pr-head .pr-links > :not(.sep)', (els) => els.map((e) => `${e.tagName} ${e.textContent}`)),
+    ['BUTTON Create PR', 'A issues', 'A pulls', 'A milestones']);
+  assert.equal(await alone.locator('#pr-head .pr-links .sep').count(), 2);
+  await alone.route('**/api/pr/create', (r) => r.fulfill({ json: { url: 'about:blank', pushed: false } }));
+  const created = alone.waitForRequest('**/api/pr/create');
+  await alone.locator('#pr-head .pr-links button.primary').click();
+  await created;
+  await alone.close();
+});
+
+// The pane with no PR is redrawn on every poll, and a push can take longer than
+// one. The button used to be disabled only where it was clicked, so the redraw
+// put an enabled one back, and a second click pushed and opened a second tab.
+test('Create PR stays disabled through a poll while the first click is pushing', { skip }, async () => {
+  const p = await newPage({ st: { ...status, branch: 'topic-x', pr: null }, ready: '#pr-head .pr-branch-name' });
+  let release;
+  const held = new Promise((res) => { release = res; });
+  let asked = 0;
+  await p.route('**/api/pr/create', async (r) => {
+    asked += 1;
+    await held;
+    await r.fulfill({ json: { url: 'about:blank', pushed: true } });
+  });
+  const button = p.locator('#pr-head .pr-links button.primary');
+  const first = p.waitForRequest('**/api/pr/create');
+  await button.click();
+  await first;
+  const polled = p.waitForResponse('**/api/status');
+  await p.click('#pr-refresh');
+  await polled;
+  assert.equal(await button.isDisabled(), true, 'a poll put an enabled Create PR back');
+  await button.click({ force: true });
+  release();
+  await p.locator('#pr-head .pr-links button.primary:not([disabled])').waitFor();
+  assert.equal(asked, 1);
+  await p.close();
 });

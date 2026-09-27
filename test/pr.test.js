@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  pageTitle, withoutHtml, inline, headLinks, noPrLinks, prsInto, HEADING, blocks, sectionize,
-  tabLabel, taskCount, viewedCount, byPath, bySize, byDir, nums,
+  pageTitle, withoutHtml, inline, headLinks, noPrLinks, prsInto, prTree, stackOn, stackLabel, stackOrder, stackEmpty, intoEmpty, switcherRows,
+  HEADING, blocks, sectionize, tabLabel, taskCount, viewedCount, byPath, bySize, byDir, nums,
 } from '../public/pr.js';
 import { fences, TASK, taskLines } from '../public/tasks.js';
 
@@ -280,9 +280,9 @@ test('no repository means no links rather than links to nowhere', () => {
 // The list the switcher fetches, which carries every open pull request in the
 // repository -- the pane wants the ones that land on the branch you are on.
 const OPEN = [
-  { number: 1, baseRefName: 'main', title: 'The one into main' },
-  { number: 27, baseRefName: 'initial-implementation', title: 'One of three' },
-  { number: 60, baseRefName: 'initial-implementation', title: 'Another' },
+  { number: 1, headRefName: 'initial-implementation', baseRefName: 'main', title: 'The one into main' },
+  { number: 27, headRefName: 'queue-tabs', baseRefName: 'initial-implementation', title: 'One of three' },
+  { number: 60, headRefName: 'checks-tab', baseRefName: 'initial-implementation', title: 'Another' },
 ];
 
 test('the pane lists the pull requests that merge into this branch, and no others', () => {
@@ -297,6 +297,112 @@ test('the pane lists the pull requests that merge into this branch, and no other
 test('a detached HEAD lists nothing, not everything', () => {
   assert.deepEqual(prsInto(OPEN, null), []);
   assert.deepEqual(prsInto(OPEN, undefined), []);
+});
+
+// Numbers only, so a failure reads as the tree it got: [1, [27, 60]].
+const shape = (nodes) => nodes.flatMap(({ pr, kids }) => (kids.length ? [pr.number, shape(kids)] : [pr.number]));
+
+// This repository's own shape on 2026-09-25: #1 into main, the rest stacked on it.
+test('each pull request carries the ones stacked on its branch', () => {
+  assert.deepEqual(shape(prTree(OPEN, 'main')), [1, [27, 60]]);
+  assert.deepEqual(shape(prTree(OPEN, 'initial-implementation')), [27, 60]);
+  const deeper = [...OPEN, { number: 61, headRefName: 'tabs-2', baseRefName: 'checks-tab' }];
+  assert.deepEqual(shape(prTree(deeper, 'main')), [1, [27, 60, [61]]]);
+  assert.deepEqual(prTree(OPEN, null), []);
+});
+
+test('the Stack tab counts the whole tree, and a fork has no stack here', () => {
+  assert.equal(stackLabel(stackOn({ headRefName: 'initial-implementation' }, OPEN)), 'Stack (2)');
+  const deeper = [...OPEN, { number: 61, headRefName: 'tabs-2', baseRefName: 'checks-tab' }];
+  assert.equal(stackLabel(stackOn({ headRefName: 'initial-implementation' }, deeper)), 'Stack (3)');
+  assert.equal(stackLabel(stackOn({ headRefName: 'queue-tabs' }, OPEN)), 'Stack');
+  // A fork's head is often `main`, which every PR here is into -- none of them
+  // is built on the fork's branch.
+  assert.deepEqual(stackOn({ headRefName: 'main', isCrossRepository: true }, OPEN), []);
+});
+
+// Four empties, four sentences. The other-repo one used to say "Nothing is
+// stacked", which was a claim about a repository prcoder had not looked in; and
+// with no list yet -- the first fetch still out, or every one failed -- the tab
+// said the same, because the list it had was an empty one standing in for none.
+// `{ branch }` parts become <code> in the pane; here, a backticked name.
+const said = (parts) => parts.map((p) => (typeof p === 'string' ? p : `\`${p.branch}\``)).join('');
+
+test('an empty Stack tab says why it is empty', () => {
+  const here = { number: 70, headRefName: 'queue-tabs' };
+  assert.equal(said(stackEmpty(here, OPEN)), 'Nothing is stacked on PR #70 (branch `queue-tabs`).');
+  assert.equal(said(stackEmpty({ number: 80, headRefName: 'main', isCrossRepository: true }, OPEN)),
+    'Nothing here can be built on PR #80 (branch `main`): the branch is in a fork.');
+  assert.equal(said(stackEmpty(here, null, true)), 'Stacks are listed only for pull requests in this repository.');
+  assert.equal(said(stackEmpty(here, null)), 'No list of open pull requests yet.');
+  assert.deepEqual(stackOn(here, null), []);
+});
+
+test('the branch-only pane does not say nothing merges in when it has no list', () => {
+  assert.equal(said(intoEmpty('main', [])), 'No pull requests into branch `main`.');
+  assert.equal(said(intoEmpty('main', null)), 'No list of open pull requests yet.');
+});
+
+const order = (prs) => stackOrder(prs).map(({ pr, depth }) => `${'-'.repeat(depth)}${pr.number}`);
+
+test('the switcher lists each pull request with its stack under it', () => {
+  const deeper = [...OPEN, { number: 61, headRefName: 'tabs-2', baseRefName: 'checks-tab' },
+    { number: 9, headRefName: 'elsewhere', baseRefName: 'release' }];
+  assert.deepEqual(order(deeper), ['1', '-27', '-60', '--61', '9']);
+});
+
+// gh pr list has only open PRs, so a merged one on screen is added -- into the
+// tree, so what is still open on its branch nests under it, as in its Stack tab.
+test('a merged pull request on screen parents the ones still open on its branch', () => {
+  const merged = { number: 5, title: 'Merged', headRefName: 'merged-topic', baseRefName: 'initial-implementation' };
+  const built = [...OPEN, { number: 70, headRefName: 'built-on-merged', baseRefName: 'merged-topic' }];
+  const rows = (prs, pr) => switcherRows(prs, pr).map(({ pr: p, depth }) => `${'-'.repeat(depth)}${p.number}`);
+  assert.deepEqual(rows(built, merged), ['1', '-5', '--70', '-27', '-60']);
+  // Open, it is already in the list, and nothing is added.
+  assert.deepEqual(rows(OPEN, OPEN[1]), ['1', '-27', '-60']);
+  // Into a branch no open PR is on, it leads.
+  assert.deepEqual(rows(OPEN, { ...merged, baseRefName: 'main' }), ['5', '1', '-27', '-60']);
+});
+
+// A fork's head is a branch in the fork. Named `main`, it would otherwise make
+// every PR into main look stacked on it and leave the switcher with no roots.
+test('a fork does not parent the PRs into a branch of the same name', () => {
+  const fork = [{ number: 80, headRefName: 'main', baseRefName: 'main', isCrossRepository: true }, ...OPEN];
+  assert.deepEqual(order(fork), ['80', '1', '-27', '-60']);
+});
+
+test('a cycle of bases still lands in the switcher', () => {
+  const loop = [
+    { number: 2, headRefName: 'a', baseRefName: 'b' },
+    { number: 3, headRefName: 'b', baseRefName: 'a' },
+  ];
+  assert.deepEqual(order([...OPEN, ...loop]), ['1', '-27', '-60', '2', '3']);
+});
+
+// A fork PR from `someone:main` into main is not the parent of every PR into main.
+test('a fork has no stack under it', () => {
+  const fork = [{ number: 80, headRefName: 'main', baseRefName: 'main', isCrossRepository: true }, ...OPEN];
+  assert.deepEqual(shape(prTree(fork, 'main')), [80, 1, [27, 60]]);
+});
+
+// GitHub lets two open pull requests base on each other's heads.
+test('a cycle of bases ends instead of recursing forever', () => {
+  const loop = [
+    { number: 2, headRefName: 'a', baseRefName: 'b' },
+    { number: 3, headRefName: 'b', baseRefName: 'a' },
+  ];
+  assert.deepEqual(shape(prTree(loop, 'a')), [3, [2]]);
+});
+
+// prTree from a bare branch reaches round to #2, above; from #2 itself it must
+// not, or #2's Stack tab lists #2 with a Switch to the pull request on screen.
+test('a cycle of bases does not stack a pull request on itself', () => {
+  const loop = [
+    { number: 2, headRefName: 'a', baseRefName: 'b' },
+    { number: 3, headRefName: 'b', baseRefName: 'a' },
+  ];
+  assert.deepEqual(shape(stackOn(loop[0], loop)), [3]);
+  assert.equal(stackLabel(stackOn(loop[0], loop)), 'Stack (1)');
 });
 
 test('without a repository to resolve against, neither becomes a link', () => {

@@ -27,9 +27,9 @@ is no token to configure.
 ## What you get
 
 - **Pull request** -- the pull request for the checked-out branch: its description, with checkboxes
-  that write back to GitHub, and its changed files, with GitHub's own "viewed" checkbox. A
-  switcher checks out another pull request, and a light says whether the branch needs a push or
-  a pull.
+  that write back to GitHub, its changed files, with GitHub's own "viewed" checkbox, and the pull
+  requests stacked on it. A switcher checks out another pull request, and a light says whether the
+  branch needs a push or a pull.
 - **Diff** -- the file you clicked, as GitHub shows it, with links out to GitHub for comments,
   blame and history.
 - **Claude Code** -- the real `claude` in a PTY: Escape, slash commands and permission prompts all

@@ -78,7 +78,10 @@ been closed. Run it for any change to what the diff pane draws.
 
 **`node tools/no-pr.mjs`** drives the pane with **no** pull request, which `browser.mjs` cannot
 reach from a branch that has one. It clones the remote into `data/main-clone` and runs this
-tree's `server.js` there, so a row's checkout lands in the clone rather than your working copy.
+tree's `server.js` there, so a row's checkout lands in the clone rather than your working copy. It
+prints every row and the stack nested under each root, and drives the first row only: its `#N`
+link, a dirty tree disabling its Switch but not the link, and its Switch checking the PR out. A
+fault in a later row shows only in the printed list.
 
 **`node tools/cli.mjs`** drives the terminal half in a real PTY, because the status block, the keys
 and the quit prompt all switch off when stdout is not a tty, which is what every other driver's

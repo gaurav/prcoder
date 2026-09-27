@@ -44,17 +44,23 @@ answers which checkout this is.
 
 ### Moving between pull requests
 
-The switcher in the head lists open pull requests and runs `gh pr checkout` to move between them.
-Uncommitted work hides it behind a Commit button, because the checkout would fail anyway.
+The switcher in the head lists open pull requests, each followed by the ones stacked on its branch
+and indented under it, and runs `gh pr checkout` to move between them. Uncommitted work hides it
+behind a Commit button, because the checkout would fail anyway.
 
-On a branch with no pull request the pane says so, disables the editing controls, and offers to
-create one, pushing the branch first if GitHub has not seen it. It keeps the same way out of the
-window as the pull request head, laid out the same way: the issues, pulls and milestones, and the
-repository on the line below them.
+On a branch with no pull request the pane keeps the pull request head's shape, with the branch as
+its title and a line under it saying why there is no pull request. The way out of the window is in
+the same rows: the issues, pulls and milestones, and the repository on the line below them. The head
+does not scroll, so those are on screen however long the list below it runs. Where the pull
+request's button would be, **Create PR** opens GitHub's compare page, pushing the branch first if
+GitHub has not seen it; on the default branch or a detached HEAD there is nothing to create, and
+the button is left out. The editing controls are disabled.
 
 It also lists the open pull requests that merge *into* the branch you are on, which on `main` is
-the question that branch is interesting for. Clicking one checks it out, the same way the switcher
-does; uncommitted work dims the rows for the same reason it hides the switcher.
+the question that branch is interesting for, with each one's stack nested under it. A row's `#N`
+opens that pull request on GitHub, so you can compare a few in other tabs; its **Switch** checks it
+out, the same way the switcher does. Uncommitted work disables Switch for the same reason it hides
+the switcher, and leaves the links alone.
 
 ### The sync light
 
@@ -65,12 +71,19 @@ branch with no pull request it uses git's own record of origin's head from the l
 the one `git status` reads, so a push from another machine shows only after a fetch. Either way it
 is only as fresh as the last poll.
 
-### Detail and Files
+### Detail, Files and Stack
 
-Below the head are two tabs, because reading the argument and working the files are two different
-things and each wants the whole pane. Each tab carries the count the other one cannot show you --
-how many description boxes are still unticked, how many files are still unviewed -- so neither
-hides from you while you are in the other.
+Below the head are three tabs. Reading the argument and working the files are two different things
+and each wants the whole pane; the third, *Stack*, is the pull requests built on this one's branch,
+laid out like the list above. Each tab carries the count the others cannot show you -- how many
+description boxes are still unticked, how many files are still unviewed, how many pull requests are
+stacked on this one -- so none hides from you while you are in another.
+
+The list of open pull requests is fetched when the page loads, when you open the switcher, and
+after a checkout, not on every poll, so the Stack count can be a few minutes old. Opening the tab
+fetches the list again, so a pull request stacked from the terminal shows up there, and one that
+merged drops out. A fetch that fails keeps the list it had, and until the first one lands the tab,
+and the list of pull requests into a branch, say there is no list yet rather than that it is empty.
 
 *Detail* is the description. It opens as the lead paragraph and then one folded line per section,
 so a long description is an outline you scan rather than a wall you scroll; a section that contains

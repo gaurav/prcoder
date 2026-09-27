@@ -177,18 +177,25 @@ function sendToClaude(text, submit = true) {
 }
 
 // The switcher only changes when PRs are opened or closed, so it is not worth a
-// call every minute — page load, opening the dropdown, and a checkout are
-// enough. The branch-only pane's list of what merges into this branch comes out
-// of the same array, and is as fresh as that.
-let prs = [];
+// call every minute — page load, opening the dropdown, opening the Stack tab,
+// and a checkout are enough. The branch-only pane's list of what merges into
+// this branch comes out of the same array, and is as fresh as that. The Stack
+// tab is too, but it states outright that nothing is stacked on a branch, so it
+// asks for the list itself rather than trust one from minutes ago.
+//
+// Null until the first list lands: no list, which the panes say, rather than an
+// empty one, which they would read as "nothing is stacked" or "nothing merges
+// into this branch". A failed fetch is not a banner, and it keeps the list we
+// had for the same reason -- an empty list in its place told the Stack tab that
+// the pull requests it showed a moment ago had gone, because gh had a blip.
+let prs = null;
 let last = null;
 const loadPrs = () => api('/api/prs', undefined, 'GET')
-  .catch(() => [])   // the switcher is a convenience; a failure is not a banner
   // Repaint, or a PR opened since page load stays invisible until the next
   // poll — the switcher only rebuilds its options when the set changes. The
   // whole status, because the branch-only pane reads this list too; `last` is
   // already the branch this fetch was for, so nothing asks for it again.
-  .then((l) => { prs = l; if (last) paint(last); });
+  .then((l) => { prs = l; if (last) paint(last); }, () => {});
 document.getElementById('pr-switch').addEventListener('mousedown', loadPrs);
 
 const NOTES = {
@@ -258,15 +265,32 @@ function paint(status) {
   document.title = pageTitle(status);
   renderHeader(status, prs, handlers);
   if (status.pr) {
-    const key = JSON.stringify([status.pr, status.scope]);
+    // The Stack tab reads `prs`, which is this repository's list: against a pull
+    // request in another one it would name strangers, and Switch would check
+    // out whichever PR here has the same number. Null rather than empty, so the
+    // tab says it has no list instead of saying the list is empty, and
+    // `otherRepo` says which of the two reasons for having none it is.
+    const otherRepo = status.scope === 'other-repo';
+    const stack = otherRepo ? null : prs;
+    const blocked = status.dirtyFiles.length > 0;
+    // Everything the pane is drawn from, the Stack tab's inputs included: a
+    // fresh PR list, or a tree going dirty, is a redraw even when the PR is not.
+    const key = JSON.stringify([status.pr, status.scope, stack, blocked]);
     if (key !== drawn) {
       drawn = key;
-      renderPr({ ...status.pr, note: NOTES[status.scope] },
-        { ...fileHandlers, selected: selectedPath() });
+      renderPr({ ...status.pr, note: NOTES[status.scope] }, {
+        ...fileHandlers,
+        selected: selectedPath(),
+        prs: stack,
+        otherRepo,
+        onStackOpen: loadPrs,
+        onSwitch: switchPr,
+        blocked,
+      });
     }
   } else {
     drawn = null;
-    renderNoPr(status, prs, { onCreate: createPr, onSwitch: switchPr });
+    renderNoPr(status, prs, { onCreate: createPr, onSwitch: switchPr, creating });
   }
   if (switched) loadPrs();
   // Reading its checklist into the PR tab needs only a PR on screen.
@@ -314,12 +338,20 @@ async function switchPr(number) {
   }
 }
 
+// Held here, not on the button: the pane with no PR is redrawn on every poll,
+// and a push can outlast one. Disabling only the button that was clicked put
+// an enabled one back in its place a poll later, and a second click was a
+// second push and a second compare tab.
+let creating = false;
+
 async function createPr(btn) {
+  if (creating) return;
   // Opened before the await, or the popup blocker eats it. Blocked outright and
   // this is null -- which used to throw on `win.location`, throw again on
   // `win.close()` inside the catch, and leave the button disabled for good with
   // nothing said. The request is still worth making; only the tab is lost.
   const win = window.open('', '_blank');
+  creating = true;
   btn.disabled = true;
   try {
     const { url, pushed } = await api('/api/pr/create');
@@ -330,7 +362,10 @@ async function createPr(btn) {
     win?.close();
     toast(e.message, true);
   }
+  creating = false;
   btn.disabled = false;
+  // The button on screen may be a redrawn one, drawn disabled from `creating`.
+  if (last && !last.pr) paint(last);
 }
 
 const askClaudeToCommit = (files) =>
