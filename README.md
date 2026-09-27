@@ -19,33 +19,26 @@ It prints the URL to open, and opens it for you unless `PRCODER_NO_OPEN` is
 set. The port is per-repo and stays the same across runs -- see *A URL that
 stays put* below.
 
-## Where the repo is
+## What you get
 
-prcoder follows the branch. It resolves the pull request for whatever is
-checked out, and re-derives that every 60 seconds, so a `git checkout` in
-another terminal -- or by Claude in the middle pane -- is picked up on its own.
-Nothing is remembered between polls; every fact comes back from `git` and `gh`.
+- **Pull request** -- the pull request for the checked-out branch: its description, with checkboxes
+  that write back to GitHub, and its changed files, with GitHub's own "viewed" checkbox. A
+  switcher checks out another pull request, and a light says whether the branch needs a push or
+  a pull.
+- **Diff** -- the file you clicked, as GitHub shows it, with links out to GitHub for comments,
+  blame and history.
+- **Claude Code** -- the real `claude` in a PTY: Escape, slash commands and permission prompts all
+  work as they do in a terminal.
+- **Queue** -- your own TODO list for this working copy, kept in `.prcoder/` rather than in any
+  file you own. An item can be typed into Claude or filed as a GitHub issue.
 
-The switcher in the PR pane header lists open pull requests and runs
-`gh pr checkout` to move between them. Uncommitted work hides it behind a
-Commit button, because the checkout would fail anyway. On a branch with no pull
-request the pane says so, disables the editing controls, and offers to create
-one -- pushing the branch first if GitHub has not seen it. It still carries the
-way out of the window that the pull request head does, laid out the same way:
-the issues, pulls and milestones, and the repository on the line below them.
+prcoder follows the branch. It works out the pull request for whatever is checked out, and does
+it again every 60 seconds, so a `git checkout` in another terminal -- or by Claude in the middle
+pane -- is picked up on its own. Nothing is remembered between polls; every fact comes back from
+`git` and `gh`.
 
-It also lists the open pull requests that merge *into* the branch you are on,
-which on `main` is the question that branch is interesting for. Clicking one
-checks it out, the same way the switcher does; uncommitted work dims the rows
-for the same reason it hides the switcher.
-
-Next to it, a light for the one thing prcoder cannot fix for you: whether the
-branch and the remote agree. It reads `unpushed`, `N unpushed`, `pull needed`
-or `diverged`, and it needs no `git fetch` -- GitHub's view of the branch head
-comes back with the pull request metadata. On a branch with no pull request it
-is git's own record of origin's head from the last push or fetch, the one
-`git status` reads, so a push from another machine shows only after a fetch.
-Either way it is only as fresh as the last poll.
+[docs/Panes.md](docs/Panes.md) has each pane in detail: layout, ordering, grouping, and what
+every control does.
 
 ## Arguments
 
@@ -75,121 +68,6 @@ screen to connect it to prcoder. The list is the
 to pin one for a single run; `PRCODER_NO_OPEN=1` to be left with just the URL
 on stdout, or `PRCODER_OPEN` to a command of your own that gets the URL
 appended.
-
-Each tab names itself `owner/repo#N · pull request title` -- the branch and
-`(no PR)` when there isn't one -- and re-names itself as the branch moves, so a
-row of prcoder tabs stays readable at tab width.
-
-## The panes
-
-Every line between the panes is a splitter, and so is the diff outline's left
-edge: drag it to resize, double-click it to drop back to the default. The sizes
-are remembered per repo and per browser, so the layout you settle on is the one
-the next `prcoder` in that repo opens with. They live in the browser's
-`localStorage`, which is kept per origin -- and the origin includes the port,
-which is `.prcoder/port.json`'s. So each repo and each worktree has a layout of
-its own, and so does each browser or profile. The terminal folds to its header
-line with a click anywhere on that line -- the ▼ before its title says so, and is
-the keyboard's way in -- and the diff (or the queue, with no diff open) takes
-the room; another click unfolds it. Folding never touches the session, which
-keeps running folded -- and while a turn runs, the folded header says `● working`
-beside its title, from the same signal as the tab's blue icon, and drops it when
-the turn ends.
-Whether the terminal is folded, whether the outline is shown, and which way the
-queue adds are stored the same way. A repo whose port changes
-(`port.json` deleted, its port busy at startup, or `PRCODER_PORT` set) opens
-with the default layout, and gets the old one back once it is on the old port
-again.
-
-**Pull request** — which pull request you are in stays at the top, in the
-order it is used: the title; then the way out of the window, with this pull
-request on GitHub drawn as a button beside plain links to the repository's
-issues, pulls and milestones; then the state, the branch it targets and the
-checks; and last the repository they are all in. The repository is on its own
-line because it is the only one of them whose length has no bound, and it
-truncates rather than wraps -- a long owner is clipped and the repository's own
-name kept, since that is the half that says which checkout you are in. It is
-drawn as a chip rather than a fifth link, because a line of its own said where
-it was without saying it was anything else: the links row is the list of places
-to go, and the chip is the one line in the head that answers which checkout
-this is.
-Below that are two tabs, because reading the argument and working the files are
-two different things and each wants the whole pane.
-
-*Detail* is the description. It opens as the lead paragraph and then one folded
-line per section, so a long one is an outline you scan rather than a wall you
-scroll; a section that contains checklist items says how many are still open.
-The prose is set in serif at a reading size and capped to a comfortable line
-length, because it is the one thing in the window that is read rather than
-operated. Checklists in it are real checkboxes and write straight back to the
-description, and that is all a tick does: a TODO block an earlier prcoder left
-in a description is an ordinary checklist now, and ticking it touches no queue
-item. It ends with the issues the description points at, each one a
-line carrying its title: the ones this pull request closes, then the ones it
-only mentions. A bare `#41` in the prose is a link but says nothing about what
-it is, and the titles are the whole point of the list.
-
-*Files* is every changed file grouped as *Config & docs* / *Tests* / *Code*,
-in that order. Inside each of those, a group reads like a tree: the files at
-the top of the repository are its first rows, and below them the rest are folded
-by the directory they are in, a directory ahead of what is inside it and
-siblings alphabetical. A row inside a fold says only the name the directory
-above it does not -- so a path is read once per directory rather than once per
-file -- and both levels fold and remember what you closed. Each fold's pie
-fills green as its files are viewed (hover it for the figure), and a
-description section's fills as its boxes are ticked. The checkbox on each
-file is GitHub's own "viewed" checkbox: tick it here and it's ticked on
-github.com. Clicking a file opens its diff in the **Diff** pane;
-cmd/ctrl-clicking opens GitHub's diff viewer at that file instead.
-
-Each tab carries the count the other one cannot show you — how many description
-boxes are still unticked, how many files are still unviewed — so neither hides
-from you while you are in the other.
-
-**Diff** — the selected file's patch, rendered plainly above the terminal so
-select → read → tick viewed → ask Claude never leaves the window. It shows the
-same hunks GitHub does (fetched once per push and cached) -- or, for a file GitHub
-sent no patch for, the same change as local git sees it. GitHub stops sending
-patches partway through a large pull request, and git in this clone can
-usually still make them. It refreshes itself when the branch head moves, and
-links out to GitHub for anything the plain rendering can't do — comments, binary and oversized files, highlighting of a changed file. A
-file the pull request adds or deletes is shown as its own text under a green **NEW**
-or red **DELETED** title rather than as a wall of `+` or `-`: a patch that is all one
-sign has nothing to contrast. A **NEW** file is syntax-highlighted when its
-extension names a language prcoder ships a grammar for; it is the one view where
-a tokenizer sees a whole file rather than a hunk that starts in the middle of one. A renamed file says where it came from on its
-first line, and a rename with no other change says only that. A diff with more
-than one hunk gets an outline down its right edge -- one row per hunk, named by
-the context git puts after the `@@` (the enclosing function, a heading) -- and a
-click scrolls the body to it. Its ✕ hides it for every file until *Outline* in
-the header brings it back, and the browser remembers which you chose. Four links, because they answer different
-questions. *Diff* comes first because it is what the pane itself shows: this
-file's patch in GitHub's viewer. The other three are the whole file as this pull
-request leaves it: *File* for what it became — the untouched parts a hunk
-doesn't show, and a Markdown file rendered rather than as source — *Blame* for
-who last touched the lines around a hunk, and *History* for what else has landed
-in it. Those three are pinned to the head commit, so they go on saying what you
-were looking at after the next push.
-
-**Claude Code** — the real `claude` binary in a PTY, so Escape still interrupts,
-slash commands still work, permission prompts still appear, and typing while
-Claude is mid-turn queues the message the way it always has. Links Claude prints
-are clickable.
-
-**Queue** — your own TODO list for this working copy. Throw an item in, drag to
-reorder, tick it off. Each item can be sent to Claude, or filed as a new GitHub
-issue with ◎, which links the item to it. The queue is never written into the
-PR description: the only thing prcoder writes there is a checkbox you tick in
-the PR pane.
-
-New items go to the bottom, so typing them in builds a list in the order you
-mean to work through it. The arrow next to the input flips that to the top for
-the other way of using a queue -- the thing you must not forget to do next --
-and stays flipped.
-
-Only Active is yours to order. Completed lists the most recently finished
-first, so something ticked off by mistake is at the top to be unticked, and
-neither it nor Deleted can be dragged.
 
 ## Scratch space
 

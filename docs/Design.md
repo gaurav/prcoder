@@ -1,6 +1,6 @@
 # Why prcoder looks like this
 
-What the panes do is in [the README](../README.md). This file is the *why*: the argument for
+What the panes do is in [Panes.md](Panes.md). This file is the *why*: the argument for
 building it at all, what it writes and where, and what it deliberately does not do. What
 the server is exposed to, and the checks that close it, is in [Security.md](Security.md). Where a
 decision is a property of one function, the docstring at that function argues it in full and this
