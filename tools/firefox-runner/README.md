@@ -53,8 +53,8 @@ The point of the second row is that prcoder's fix -- the grip, which switches
 `draggable` off while the pointer is over the text -- hides the bug completely.
 So the app feeling fine in Firefox is not evidence the browser was fixed, and
 the plain row is the only one that answers the question. If both rows put the
-caret where you clicked, the bug is gone, and public/CLAUDE.md, docs/Verifying.md and
-#61 all describe something that no longer exists.
+caret where you clicked, the bug is gone, and public/CLAUDE.md,
+docs/Verifying.md and issue #61 all describe something that no longer exists.
 
 Run on 2026-09-17: the plain row put the caret at 0, the grip row put it where
 it was clicked. The bug is live, the grip is load-bearing, and the run worth
@@ -122,8 +122,8 @@ ls: /Users/gaurav/Library/Application Support/Firefox/: Operation not permitted
   maintainer's reply points at the Mozilla fix above.
 - [microsoft/playwright#42082](https://github.com/microsoft/playwright/issues/42082),
   closed not-planned. It is the same failure, blamed on the
-  `sandbox_extension_issue_file_to_process` line -- the red herring above, which
-  #42768 also calls out.
+  `sandbox_extension_issue_file_to_process` line -- the red herring above,
+  which #42768 also calls out.
 
 ### Workarounds
 
@@ -159,8 +159,9 @@ microsoft/playwright#42768 -- and this repo's `package.json` moving to it. After
 that, the no-env half of `probe.mjs` confirms the workaround is dead code.
 
 **The Firefox pass under #61** was run on 2026-09-26 with the workaround in
-place; the issue's last two comments have what it covered. The Claude pane's exit bar, on
-#75's branch, passed too, and #61 is closed. The other half of that issue -- whether the caret bug that made Firefox
-mandatory is still live -- is answered above and needs no driver.
+place; the issue's last two comments have what it covered. The Claude pane's
+exit bar, on the branch for #75, passed too, and #61 is closed. The other half
+of that issue -- whether the caret bug that made Firefox mandatory is still
+live -- is answered above and needs no driver.
 [public/CLAUDE.md](../../public/CLAUDE.md) has that bug, and the comment on the
 `pointerdown` handler in `public/queue.js` has the fixes to it that do not work.
