@@ -1,3 +1,18 @@
+// files.js: what the server works out about a changed file from its path
+// alone -- which group of the Files tab it goes in, and the URLs that open it on
+// GitHub. Pure functions over strings, so nothing here spawns gh or git or
+// touches the network.
+//
+// Two kinds of test belong here. Path classification: a real path from some
+// language's convention, and the bucket it has to land in. And URL shapes: a
+// test that pins a URL is a claim about how GitHub lays its pages out, so check
+// it against a real pull request and write down which one and when, as the
+// anchor and file-link tests below do (CLAUDE.md, "Verifying against GitHub").
+//
+// Not here: how the pane orders and nests those files (byPath and byDir, in
+// test/pr.test.js), and patches -- rendering one is test/diff.test.js, making
+// one from local git is test/git.test.js.
+
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { bucket, groupFiles, diffAnchor, fileUrl, fileViews } from '../files.js';
