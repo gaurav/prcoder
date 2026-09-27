@@ -51,9 +51,10 @@ behind a Commit button, because the checkout would fail anyway.
 On a branch with no pull request the pane keeps the pull request head's shape, with the branch as
 its title and a line under it saying why there is no pull request. The way out of the window is in
 the same rows: the issues, pulls and milestones, and the repository on the line below them. The head
-does not scroll, so those are on screen however long the list below it runs. The editing controls
-are disabled, and the pane offers to create a pull request, pushing the branch first if GitHub has
-not seen it.
+does not scroll, so those are on screen however long the list below it runs. Where the pull
+request's button would be, **Create PR** opens GitHub's compare page, pushing the branch first if
+GitHub has not seen it; on the default branch or a detached HEAD there is nothing to create, and
+the button is left out. The editing controls are disabled.
 
 It also lists the open pull requests that merge *into* the branch you are on, which on `main` is
 the question that branch is interesting for, with each one's stack nested under it. A row's `#N`

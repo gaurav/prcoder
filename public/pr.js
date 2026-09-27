@@ -277,15 +277,20 @@ export function renderNoPr(status, prs, { onCreate, onSwitch }) {
   shownFor = null;
   const onDefault = status.branch === status.defaultBranch;
 
-  const why = status.detached ? 'No branch to open a pull request for.'
-    : onDefault ? 'Default branch. Make a branch to start a pull request.'
-    : `No pull request for ${status.branch} yet.`;
-
   // Comparing a branch with itself opens an empty diff, so on main there is
   // nothing to offer — the fix is a branch, not a button.
   const can = !status.detached && !onDefault;
-  const create = h('button', { className: 'pr-create', disabled: !can }, 'Create a pull request');
-  if (can) create.onclick = () => onCreate(create);
+  const why = status.detached ? 'No branch to open a pull request for.'
+    : onDefault ? 'Default branch. Make a branch to start a pull request.'
+    : status.sync === 'unpushed' ? `No pull request for ${status.branch} yet. It is not on GitHub, so Create PR pushes it first.`
+    : `No pull request for ${status.branch} yet.`;
+
+  // Create PR takes the pull request's own place in the row, as the one filled
+  // button: in both views it is the way to this branch's pull request on
+  // GitHub, one that exists and one that is a compare page away. Where no pull
+  // request can be made it is left out rather than disabled, since the note
+  // already says why.
+  const create = can ? [{ text: 'Create PR', className: 'primary', onClick: onCreate }] : [];
 
   // The same rows as a pull request's head, down to the class names, through
   // the same HEAD_ORDER. The title is `pr-branch-name` and not `pr-title`
@@ -295,7 +300,7 @@ export function renderNoPr(status, prs, { onCreate, onSwitch }) {
   paintHead({
     title: h('h2', { className: 'pr-branch-name' }, status.detached ? 'Detached HEAD' : status.branch),
     note: h('p', { className: 'pr-note' }, why),
-    links: out.repo ? linkRow(out.links, 'meta pr-ways pr-links') : null,
+    links: create.length || out.links.length ? linkRow([...create, ...out.links], 'meta pr-ways pr-links') : null,
     repo: out.repo ? repoRow(out.repo, 'meta pr-repo') : null,
   });
 
@@ -303,10 +308,6 @@ export function renderNoPr(status, prs, { onCreate, onSwitch }) {
     intoRow(status, prs, onSwitch)
       ?? (status.detached ? null : h('p', { className: 'empty' },
         ...named(['No pull requests into branch ', { branch: status.branch }, '.']))),
-    status.sync === 'unpushed' && can
-      ? h('p', { className: 'pr-note' }, 'This branch is not on GitHub yet; it will be pushed first.')
-      : null,
-    create,
   ]));
 }
 
@@ -513,11 +514,17 @@ export const noPrLinks = ({ nameWithOwner }) => {
  *
  * No dot beside a link with a class of its own (the pull request's button):
  * its box already separates it, and a dot hanging off a pill reads as debris.
+ *
+ * An entry with `onClick` in place of `href` is a button, handed itself so it
+ * can disable itself while it works: Create PR, which pushes before it opens
+ * anything.
  */
 const linkRow = (list, className) => h('div', { className },
   ...list.map((l, i) => [
     i && !l.className && !list[i - 1].className ? h('span', { className: 'sep' }, '·') : null,
-    ext(l.href, l.text, l.className ? { className: l.className } : {}),
+    l.onClick
+      ? btn(l.text, (e) => l.onClick(e.currentTarget), { className: l.className })
+      : ext(l.href, l.text, l.className ? { className: l.className } : {}),
   ]));
 
 /**
