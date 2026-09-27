@@ -135,7 +135,7 @@ to do with the terminal. Pass `sticky` for one that stays true until acted on
 rather than reporting something already finished -- it waits for a click instead
 of timing out.
 
-## One engine is not "a real browser"
+## Check the UI in Firefox, not only Chromium
 
 `tools/browser.mjs` ran Chromium only, and a Firefox-only bug survived every
 screenshot it ever took: in Firefox a mousedown inside a `draggable` element
