@@ -1,6 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { rollup, linkedIssues, linksFrom, parsePrUrl, run, issueNumber, lf } from '../github.js';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { rollup, linkedIssues, linksFrom, parsePrUrl, run, issueNumber, lf, setViewed, listPrs } from '../github.js';
 import { taskLines } from '../public/tasks.js';
 
 test('check states collapse into passed, failed and pending', () => {
@@ -155,4 +158,38 @@ test('a CRLF description reads as the same checklist as an LF one', () => {
   assert.deepEqual(taskLines(crlf), [], 'the bug this guards against');
   assert.deepEqual(taskLines(lf(crlf)), [2, 3]);
   assert.equal(lf(null), '');
+});
+
+// What reaches gh, from a stub on PATH that writes each argument on its own line
+// and answers `[]`. gh's -F converts a value by its shape -- an all-digit owner
+// went to GitHub as an Int and was refused, and a path starting with @ is read
+// as a file -- so every string has to go as -f. And `gh pr list` stops at 30
+// unless given a limit, which silently dropped the rest from the switcher.
+const ghArgs = async (fn) => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'prcoder-gh-args-'));
+  const log = path.join(dir, 'args');
+  await fs.writeFile(path.join(dir, 'gh'), `#!/bin/sh\nprintf '%s\\n' "$@" > "${log}"\necho '[]'\n`, { mode: 0o755 });
+  const saved = process.env.PATH;
+  process.env.PATH = `${dir}${path.delimiter}${saved}`;
+  try {
+    await fn();
+    return (await fs.readFile(log, 'utf8')).trimEnd().split('\n');
+  } finally {
+    process.env.PATH = saved;
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+};
+const unix = process.platform === 'win32' ? 'the gh stub is a sh script' : false;
+
+test('a file path goes to gh as a string, whatever it looks like', { skip: unix }, async () => {
+  for (const p of ['404', '@types/x.d.ts']) {
+    const args = await ghArgs(() => setViewed(os.tmpdir(), 'PR_node', p, true));
+    assert.equal(args[args.indexOf(`path=${p}`) - 1], '-f', p);
+    assert.equal(args[args.indexOf('id=PR_node') - 1], '-f');
+  }
+});
+
+test('the PR list asks for more than gh\'s default 30', { skip: unix }, async () => {
+  const args = await ghArgs(() => listPrs(os.tmpdir()));
+  assert.ok(Number(args[args.indexOf('--limit') + 1]) > 30, args.join(' '));
 });
