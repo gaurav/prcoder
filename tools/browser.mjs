@@ -326,23 +326,28 @@ console.log('tabs:    ', tabs.join('  |  '), '  (want a count on each)');
 console.log('switch:  ', (await page.$$eval('#pr-switch option', (os) => os.slice(1, 4)
   .map((o) => o.textContent.slice(0, 12)))).join('  |  '), '  (want the pinned PR first if it is not open, then each open PR with its stack indented under it)');
 
-// The checks, which are a tab and a coloured dot rather than the badges they
-// used to be above the title. The colour is a computed background rather than a
-// class name, because the class is only a promise that the stylesheet has a
-// rule -- and green/yellow/red is the whole claim. This repo's own PR is the
-// fixture, so what it says depends on what CI is doing right now: the assertion
-// is that the dot's colour and the fraction agree, not what either one is.
+// The checks, which are a tab and a mark rather than the badges they used to be
+// above the title: a filled green dot passed, a yellow ring is pending, a red ✕
+// failed. The mark is read off the computed ::before rather than the class
+// name, because the class is only a promise that the stylesheet has a rule.
+// This repo's own PR is the fixture, so what it says depends on what CI is
+// doing right now: the assertion is that the mark and the label agree, not
+// what either one is. test/browser/suite.js pins all three against a fixture.
 const checksTab = page.locator('#pr-head .tab.dot');
 if (await checksTab.count()) {
   const label = await checksTab.innerText();
-  const dot = await checksTab.evaluate((e) => getComputedStyle(e, '::before').backgroundColor);
+  const dot = await checksTab.evaluate((e) => {
+    const s = getComputedStyle(e, '::before');
+    return /✕/.test(s.content) ? `✕ ${s.color}`
+      : parseFloat(s.borderTopWidth) ? `ring ${s.borderTopColor}` : `dot ${s.backgroundColor}`;
+  });
   const cls = await checksTab.getAttribute('class');
   await checksTab.click();
   await page.waitForSelector('.check');
   const rows = await page.locator('.check').allInnerTexts();
   const linked = await page.locator('.check a').count();
   console.log('checks:  ', JSON.stringify(label), cls, dot,
-    ` (want a fraction or ✓, and green 127,216,143 / yellow 240,220,154 / red 245,163,163 to match it)`);
+    ` (want ✓ with a dot 127,216,143, or a fraction with a ring 240,220,154 while pending or a ✕ 245,163,163 once any failed)`);
   console.log('check rows:', rows.join(' | '), `, ${linked} of ${rows.length} link out`,
     ' (want one row per check, each linking to its run)');
   await page.locator('#pr').screenshot({ path: path.join(out, 'pr-checks.png') });

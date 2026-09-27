@@ -81,8 +81,8 @@ export const setPref = (key, value) => {
 };
 
 /** One of a pane's tabs; `on` is the one showing, and `extra` is any class besides. */
-export const tabBtn = (label, on, onClick, extra = '') =>
-  btn(label, onClick, { className: ['tab', extra, on ? 'on' : ''].filter(Boolean).join(' ') });
+export const tabBtn = (label, on, onClick, extra = '', props = {}) =>
+  btn(label, onClick, { ...props, className: ['tab', extra, on ? 'on' : ''].filter(Boolean).join(' ') });
 
 /**
  * A checkbox that writes through to GitHub. The browser has already flipped it
@@ -616,7 +616,7 @@ function renderPrHead(pr, parsed, handlers) {
     renderPrHead(pr, parsed, handlers);
     renderPrTab(pr, parsed, handlers);
   };
-  const paneTab = (name, label, extra) => tabBtn(label, tab === name, () => switchTo(name), extra);
+  const paneTab = (name, label, extra, props) => tabBtn(label, tab === name, () => switchTo(name), extra, props);
   const ways = headLinks(pr);
   const state = pr.isDraft ? 'draft' : pr.state.toLowerCase();
 
@@ -638,7 +638,8 @@ function renderPrHead(pr, parsed, handlers) {
       paneTab('detail', tabLabel('Detail', taskCount(parsed))),
       paneTab('files', tabLabel('Files', viewedCount(pr.files))),
       pr.checks.list.length
-        ? paneTab('checks', tabLabel('Checks', checkCount(pr.checks)), `dot ${worst(pr.checks)}`)
+        ? paneTab('checks', tabLabel('Checks', checkCount(pr.checks)), `dot ${worst(pr.checks)}`,
+          { ariaLabel: checksName(pr.checks), title: checksName(pr.checks) })
         : null,
       paneTab('stack', stackLabel(stackOn(pr, handlers.prs)))),
   };
@@ -721,12 +722,33 @@ export const viewedCount = (files = []) =>
  * progress reads as `Checks (1/3)` and a green one as `Checks ✓`.
  *
  * A failure is not "done": it is counted in the total and not in the done, so
- * the fraction stays short of the total for as long as something is red. The
- * colour beside it is what tells those two apart -- a pending 1/3 and a failed
- * 1/3 are the same fraction.
+ * the fraction stays short of the total for as long as something is red. That
+ * leaves a pending 1/3 and a failed 1/3 as the same fraction: the mark beside
+ * it tells them apart on screen, and checksName in words.
  */
 export const checkCount = ({ passed, failed, pending }) =>
   ({ done: passed, total: passed + failed + pending });
+
+/**
+ * The Checks tab's accessible name and tooltip: its label, then what the mark
+ * beside it means -- `Checks (1/3): 1 failed, 1 pending`. The mark is shape and
+ * colour, which a screen reader does not get, and the fraction alone cannot say
+ * whether what is missing failed or is still running.
+ *
+ * Not the visible label. `Checks (1/3, 1 failed)` on the tab itself was tried
+ * (2026-09-27) and at the pane's 375px default it wrapped every tab's label
+ * onto two lines, which is the head growing back the height this pane has been
+ * giving up. The name starts with the label as written, so speech input that
+ * says what is on screen still finds the button.
+ */
+export const checksName = (checks) => {
+  const label = tabLabel('Checks', checkCount(checks));
+  const words = [checks.failed && `${checks.failed} failed`, checks.pending && `${checks.pending} pending`];
+  return words.some(Boolean) ? `${label}: ${words.filter(Boolean).join(', ')}` : label;
+};
+
+/** The word a check row carries beside its mark. A pass carries none: it is the state you stop reading at. */
+const CHECK_WORD = { pend: 'pending', fail: 'failed' };
 
 /**
  * The one state a row of checks is worth reporting as. Red beats yellow beats
@@ -761,7 +783,8 @@ function renderPrTab(pr, parsed, handlers) {
       h('span', { className: `dot ${c.state}` }),
       // A check GitHub gave no URL for is rare and not worth a dead link, so it
       // stays plain text rather than becoming an <a> to nowhere.
-      c.url ? ext(c.url, c.name) : h('span', {}, c.name))),
+      c.url ? ext(c.url, c.name, { className: 'check-name' }) : h('span', { className: 'check-name' }, c.name),
+      CHECK_WORD[c.state] ? h('span', { className: 'check-state' }, CHECK_WORD[c.state]) : null)),
   ] : tab === 'files' ? [
     ...GROUPS.map(([key, label]) => fileGroup(label, pr.files.filter((f) => f.group === key), handlers)),
     h('div', { className: 'meta' },

@@ -251,13 +251,27 @@ test('the Checks tab lists each check, and a poll that empties it moves you to D
   const p = await newPage({ st: withChecks });
   const tab = p.locator('#pr-head .tab', { hasText: 'Checks' });
   assert.equal(await tab.textContent(), 'Checks (1/3)');
-  assert.match(await tab.getAttribute('class'), /\bdot fail\b/, 'red beats yellow');
+  assert.equal(await p.getByRole('button', { name: 'Checks (1/3): 1 failed, 1 pending', exact: true }).count(), 1,
+    'the name says in words what the mark says in shape');
+  assert.match(await tab.getAttribute('class'), /\bdot fail\b/, 'a failure beats a pending check');
   await tab.click();
-  assert.deepEqual(await p.locator('#pr-body .check').allTextContents(), ['CI / test', 'deploy', 'lint']);
+  assert.deepEqual(await p.locator('#pr-body .check-name').allTextContents(), ['CI / test', 'deploy', 'lint']);
+  assert.deepEqual(await p.locator('#pr-body .check-state').allTextContents(), ['pending', 'failed'],
+    'a word beside every check that did not pass');
   assert.deepEqual(await p.$$eval('#pr-body .check a', (as) => as.map((a) => a.getAttribute('href'))),
     [`${REPO}/actions/runs/1`], 'only the http(s) link is a link');
-  assert.deepEqual(await p.$$eval('#pr-body .check .dot', (ds) => ds.map((d) => d.className)),
-    ['dot pass', 'dot pend', 'dot fail']);
+  // Shape, not only colour: read off the computed ::before, since the class is
+  // only a promise that the stylesheet draws something different for it.
+  const marks = await p.$$eval('#pr-body .check .dot', (ds) => ds.map((d) => {
+    const s = getComputedStyle(d, '::before');
+    return { filled: s.backgroundColor !== 'rgba(0, 0, 0, 0)', ring: parseFloat(s.borderTopWidth) > 0,
+      glyph: /✕/.test(s.content) };
+  }));
+  assert.deepEqual(marks, [
+    { filled: true, ring: false, glyph: false },
+    { filled: false, ring: true, glyph: false },
+    { filled: false, ring: false, glyph: true },
+  ], 'a dot passed, a ring is pending, a ✕ failed');
 
   await p.route('**/api/status', (r) => r.fulfill({ json: { ...withChecks, pr: { ...pr, checks: rollup([]) } } }));
   const polled = p.waitForResponse('**/api/status');

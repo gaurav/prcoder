@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   pageTitle, withoutHtml, inline, headLinks, noPrLinks, prsInto, prTree, stackOn, stackLabel, stackOrder, stackEmpty, intoEmpty, switcherRows,
-  HEADING, blocks, sectionize, tabLabel, taskCount, viewedCount, checkCount, worst, byPath, bySize, byDir, nums,
+  HEADING, blocks, sectionize, tabLabel, taskCount, viewedCount, checkCount, checksName, worst, byPath, bySize, byDir, nums,
 } from '../public/pr.js';
 import { fences, TASK, taskLines } from '../public/tasks.js';
 
@@ -639,8 +639,18 @@ test('the checks count is passing over all of them', () => {
   assert.equal(tabLabel('Checks', checkCount({ passed: 0, failed: 1, pending: 0 })), 'Checks (0/1)');
 });
 
-// Which is why the dot is there at all: these two labels are identical.
-test('a failure colours the tab even when something else is still running', () => {
+// The fraction alone reads the same for a failure and a check still running,
+// and the mark that tells them apart is not text, so the tab's name says it in
+// words -- starting with the label as shown.
+test('the Checks tab is named in words, so a failed 1/3 and a pending one differ', () => {
+  assert.equal(checksName({ passed: 1, failed: 0, pending: 2 }), 'Checks (1/3): 2 pending');
+  assert.equal(checksName({ passed: 1, failed: 1, pending: 1 }), 'Checks (1/3): 1 failed, 1 pending');
+  assert.equal(checksName({ passed: 0, failed: 2, pending: 0 }), 'Checks (0/2): 2 failed');
+  assert.equal(checksName({ passed: 3, failed: 0, pending: 0 }), 'Checks ✓');
+});
+
+// And the mark: one failure is the thing to know, whatever is still running.
+test('a failure marks the tab even when something else is still running', () => {
   assert.equal(worst({ failed: 1, pending: 2 }), 'fail');
   assert.equal(worst({ failed: 0, pending: 2 }), 'pend');
   assert.equal(worst({ failed: 0, pending: 0 }), 'pass');

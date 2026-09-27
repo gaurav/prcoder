@@ -79,9 +79,11 @@ different things and each wants the whole pane; the last, *Stack*, is the pull r
 this one's branch, laid out like the list above. Each tab carries the count the others cannot show
 you -- how many description boxes are still unticked, how many files are still unviewed, how many
 checks have gone green, how many pull requests are stacked on this one -- so none hides from you
-while you are in another. The Checks tab also carries a dot: green when everything passed, yellow
-while something is still running, red as soon as anything fails, which is the part a fraction alone
-can't tell you.
+while you are in another. The Checks tab also carries a mark: a green dot when everything passed,
+a yellow ring while something is still running, and a red ✕ as soon as anything fails, which is
+the part a fraction alone can't tell you. It is a shape as well as a colour so that it survives
+colour blindness, and the tab's name, read by a screen reader and shown on hover, says the same in
+words: `Checks (1/3): 1 failed, 1 pending`.
 
 The list of open pull requests is fetched when the page loads, when you open the switcher, and
 after a checkout, not on every poll, so the Stack count can be a few minutes old. Opening the tab
@@ -110,7 +112,8 @@ for the figure). The checkbox on each file is GitHub's own "viewed" checkbox: ti
 it's ticked on github.com. Clicking a file opens its diff in the **Diff** pane; cmd/ctrl-clicking
 opens GitHub's diff viewer at that file instead.
 
-*Checks* is CI, one row per check, each linking to its run -- or plain text, when GitHub gave no
+*Checks* is CI, one row per check, led by the same mark and ending in `pending` or `failed` for a
+check that has not passed. Each links to its run -- or is plain text, when GitHub gave no
 link or one that is not `http(s)` ([Security.md](Security.md#the-pull-request-description)). The
 tab is there only when the pull request has any, and a poll that empties the list moves you back
 to *Detail* rather than leaving you on a tab that is no longer drawn.
