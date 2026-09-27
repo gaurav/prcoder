@@ -109,8 +109,10 @@ for the figure). The checkbox on each file is GitHub's own "viewed" checkbox: ti
 it's ticked on github.com. Clicking a file opens its diff in the **Diff** pane; cmd/ctrl-clicking
 opens GitHub's diff viewer at that file instead.
 
-*Checks* is CI, one row per check, each linking to its run. The tab is there only when the pull
-request has any.
+*Checks* is CI, one row per check, each linking to its run -- or plain text, when GitHub gave no
+link or one that is not `http(s)` ([Security.md](Security.md#the-pull-request-description)). The
+tab is there only when the pull request has any, and a poll that empties the list moves you back
+to *Detail* rather than leaving you on a tab that is no longer drawn.
 
 ## Diff
 
