@@ -2,9 +2,10 @@
 
 ## Three files here are the server's as well
 
-`server.js` imports `syncPhrase` from `pr.js` for the status block, and
-`grammars` from `diff.js` to build the Prism half of the vendor map, so the
-list of grammars is written once, in the page that loads them. `tasks.js` is
+`cli.js` imports `syncPhrase` from `pr.js` for the status block, and
+`server.js` imports `grammars` from `diff.js` to build the Prism half of the
+vendor map, so the list of grammars is written once, in the page that loads
+them. `tasks.js` is
 the description's grammar -- what a description shows (`withoutHtml`), its
 checklist lines, its `#N` mentions, the URL helpers, and `toggleTask`, which
 flips one box in a body. `server.js`, `github.js`, `git.js` and `files.js` at

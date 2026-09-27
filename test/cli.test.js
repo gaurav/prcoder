@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { splitArgs, portFor, portCandidates, PORT_BASE, PORT_SPAN, statusLines, ago } from '../server.js';
+import { splitArgs, portFor, portCandidates, PORT_BASE, PORT_SPAN, statusLines, ago } from '../cli.js';
 import { queueChanges } from '../queue.js';
 
 test('a leading positional is our PR target, the rest is Claude\'s', () => {
@@ -48,7 +48,7 @@ test('the candidates are the whole range, starting at the seed', () => {
   assert.ok(c.every((p) => p >= PORT_BASE && p < PORT_BASE + PORT_SPAN));
 
   // A pinned port is not a seed to walk from -- it is the whole answer, and
-  // resolvePort never gets here with one set. Below the range it would also
+  // listenOnRepoPort never gets here with one set. Below the range it would also
   // start the walk at a negative offset.
   process.env.PRCODER_PORT = '4000';
   try { assert.deepEqual(portCandidates('/Users/x/code/prcoder'), c); }
