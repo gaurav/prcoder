@@ -370,6 +370,17 @@ test('a cycle of bases ends instead of recursing forever', () => {
   assert.deepEqual(shape(prTree(loop, 'a')), [3, [2]]);
 });
 
+// prTree from a bare branch reaches round to #2, above; from #2 itself it must
+// not, or #2's Stack tab lists #2 with a Switch to the pull request on screen.
+test('a cycle of bases does not stack a pull request on itself', () => {
+  const loop = [
+    { number: 2, headRefName: 'a', baseRefName: 'b' },
+    { number: 3, headRefName: 'b', baseRefName: 'a' },
+  ];
+  assert.deepEqual(shape(stackOn(loop[0], loop)), [3]);
+  assert.equal(stackLabel(stackOn(loop[0], loop)), 'Stack (1)');
+});
+
 test('without a repository to resolve against, neither becomes a link', () => {
   assert.equal(inline('[README](README.md) and #28', null),
     '[README](README.md) and #28');

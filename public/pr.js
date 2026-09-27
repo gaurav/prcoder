@@ -536,6 +536,10 @@ export function renderPr(pr, handlers) {
 function renderPrHead(pr, parsed, handlers) {
   const switchTo = (name) => {
     tab = name;
+    // The Stack tab says what is and is not built on this branch, and the list
+    // it says it from is fetched only now and then (see loadPrs in app.js).
+    // Opening it asks for a fresh one, which repaints the pane when it lands.
+    if (name === 'stack') handlers.onStackOpen?.();
     renderPrHead(pr, parsed, handlers);
     renderPrTab(pr, parsed, handlers);
   };
@@ -600,8 +604,13 @@ export const taskCount = (list) => {
  * The open pull requests built on this one's branch, from the switcher's list.
  * None for a fork: its head branch is in another repository, so a base here
  * with the same name -- a fork's `main`, often -- is not it.
+ *
+ * This one starts out seen. prTree's own `seen` only stops a cycle of bases
+ * recursing forever; it would still reach round the loop back to this pull
+ * request and list it under its own Stack tab, with a Switch to where you are.
  */
-export const stackOn = (pr, prs) => (!prs || pr.isCrossRepository ? [] : prTree(prs, pr.headRefName));
+export const stackOn = (pr, prs) => (!prs || pr.isCrossRepository ? []
+  : prTree(prs, pr.headRefName, new Set([pr.number])));
 
 /**
  * What the Stack tab says when it has no rows, which is three different facts:
