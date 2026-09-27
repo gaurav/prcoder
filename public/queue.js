@@ -28,6 +28,14 @@ let saving = 0;
  */
 export function setItems(next) {
   if (saving || document.activeElement?.closest?.('#queue-body .text[contenteditable]')) return;
+  // Most polls bring the list already on screen, and a rebuild for nothing
+  // costs every row and listener. `items` is kept, not swapped for the equal
+  // copy: the rows on screen hold its objects, and a tick on a row whose item
+  // was no longer in `items` saved the list without the tick.
+  if (JSON.stringify(next) === JSON.stringify(items)) {
+    confirmed = structuredClone(next);
+    return;
+  }
   settle(next);
   render();
 }

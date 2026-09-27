@@ -772,3 +772,18 @@ test('a poll that lands while a save is in flight does not undo it on screen', {
   await fresh.waitForFunction(() => document.querySelector('#queue-body .tab')?.textContent === 'Active (0)');
   await fresh.close();
 });
+
+// Most polls find nothing new. Rebuilding the panes anyway cost every row and
+// listener, and put scroll, focus and folds back by hand every minute.
+test('a poll that brings nothing new leaves the panes as they were', { skip }, async () => {
+  const fresh = await newPage();
+  await fresh.evaluate(() => {
+    document.querySelector('#pr-body > *').dataset.mark = 'kept';
+    document.querySelector('#queue-body > *').dataset.mark = 'kept';
+  });
+  await fresh.click('#pr-refresh');
+  await fresh.waitForTimeout(300);
+  assert.equal(await fresh.locator('#pr-body > [data-mark=kept]').count(), 1, 'PR pane not rebuilt');
+  assert.equal(await fresh.locator('#queue-body > [data-mark=kept]').count(), 1, 'queue not rebuilt');
+  await fresh.close();
+});

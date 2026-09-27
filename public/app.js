@@ -228,6 +228,11 @@ const fileHandlers = {
   onTask: toggleTask,
 };
 
+// What the pull request pane was last drawn from. A poll that finds nothing new
+// -- most of them -- skips rebuilding it: every row, fold and listener, and the
+// scroll, focus and fold state put back afterwards.
+let drawn = null;
+
 function paint(status) {
   const moved = last?.pr?.headRefOid !== status.pr?.headRefOid;
   // A checkout is the one thing that changes which pull requests merge into the
@@ -243,9 +248,16 @@ function paint(status) {
   document.title = pageTitle(status);
   renderHeader(status, prs, handlers);
   if (status.pr) {
-    renderPr({ ...status.pr, note: NOTES[status.scope] },
-      { ...fileHandlers, selected: selectedPath() });
-  } else renderNoPr(status, prs, { onCreate: createPr, onSwitch: switchPr });
+    const key = JSON.stringify([status.pr, status.scope]);
+    if (key !== drawn) {
+      drawn = key;
+      renderPr({ ...status.pr, note: NOTES[status.scope] },
+        { ...fileHandlers, selected: selectedPath() });
+    }
+  } else {
+    drawn = null;
+    renderNoPr(status, prs, { onCreate: createPr, onSwitch: switchPr });
+  }
   if (switched) loadPrs();
   if (status.queue) setItems(status.queue);
 
