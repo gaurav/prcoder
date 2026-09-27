@@ -59,17 +59,11 @@ putting the caret at offset 0 — survived every Chromium screenshot; see
 [public/CLAUDE.md](../public/CLAUDE.md) for the rest, and the comment on the `pointerdown` handler in
 `public/queue.js` for the fixes to it that do **not** work.
 `PRCODER_BROWSER=chromium` forces the other; running both is worth the second minute.
-Firefox did not start on this machine from 2026-09-16 to 2026-09-26: macOS 27 denies a Firefox
-launched from a terminal its own app-data directory. The driver now points `MOZ_APP_DATA` and
-`MOZ_LOCAL_APP_DATA` under `data/firefox-appdata/`, and a default run on 2026-09-26 said
-`engine: firefox` with no fallback line and exited 0. [tools/firefox-runner](../tools/firefox-runner/README.md)
-is the cause and the one-command re-check, and #80 is when the workaround comes out. The Playwright
-build was uninstalled on 2026-09-19 and reinstalled on 2026-09-26; `npx playwright install firefox`
-is what brings it back if it goes again. The Firefox pass #61 owed was run on 2026-09-26:
-`tools/browser.mjs` against PR #1 and `tools/no-pr.mjs` (through a scratch Firefox copy under
-`data/`) in both engines, which agreed on every figure but a 1px measure; and the browser suite
-in Firefox, all passing, which is what made it a standing Firefox run under `npm test`. The Claude pane's exit bar, on #75's
-branch, passed the same way from a worktree, which closed #61.
+On macOS 27, Firefox starts only with the app-data workaround every launch takes from
+`firefoxEnv()` in `tools/driver.mjs` (#80). [tools/firefox-runner](../tools/firefox-runner/README.md)
+has the cause, the one-command re-check, and what to do when Firefox stops starting; the Firefox
+pass that was owed while it did not start is recorded on
+[#61](https://github.com/gaurav/prcoder/issues/61).
 
 Its assertions are written against this repo's own PR #1 — that description's sections, file groups
 and issue chips — and the server follows whatever branch you are on, so a run from a feature branch
@@ -164,15 +158,10 @@ instead, which a clone gives for free the way `tools/no-pr.mjs` already takes on
 order, most recently finished first with no grip, is `test/browser/suite.js`'s, against a mocked
 queue; the `doneAt` stamp it sorts on is `test/store.test.js`'s.
 
-`node tools/firefox-runner/probe.mjs` is not a driver and boots no server. It asks a narrower
-question — can anything on this machine drive Firefox — by trying Playwright's own build and the
-Firefox in `/Applications` over WebDriver BiDi, headless and headed, and then the bare binary with
-no Playwright in the way. That last one is what says whose bug a failure is, and it is why the
-ad-hoc signature on Playwright's build is ruled out rather than suspected. Each launch runs with
-and without `MOZ_APP_DATA`. The lines with it say the driver's workaround still works (all OK on
-2026-09-26); the lines without it say whether the fix upstream has reached us, and are #80's check
-for removing it. The run that matters is the one after a macOS, Firefox or Playwright update, and
-[the directory's README](../tools/firefox-runner/README.md) is what to read before adding a case.
+`node tools/firefox-runner/probe.mjs` is not a driver and boots no server. It asks only whether
+anything on this machine can start Firefox, with and without the workaround, and is worth running
+after a macOS, Firefox or Playwright update; [its README](../tools/firefox-runner/README.md) says
+how to read it.
 
 ## The measured figures
 

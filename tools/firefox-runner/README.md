@@ -32,7 +32,15 @@ The two halves answer different questions:
   2026-09-17 on. When the no-env line for Playwright's own build says `OK`, the
   workaround is dead code, and #80 says what to delete.
 
-The run worth doing is the one after a macOS, Firefox or Playwright update.
+The bare binary is the line that says whose bug a failure is: it has no
+Playwright in the way, so a failure there is Firefox's own. It is also why the
+ad-hoc signature on Playwright's build was ruled out rather than suspected --
+the Mozilla-signed Firefox in `/Applications` failed the same way.
+
+The run worth doing is the one after a macOS, Firefox or Playwright update. A
+`FAIL` for Playwright's build that says `Executable doesn't exist` means the
+build is not installed rather than broken: `npx playwright install firefox` brings
+it back. (It was uninstalled on 2026-09-19 and reinstalled on 2026-09-26.)
 
 ## The other thing in here
 
@@ -124,9 +132,9 @@ ls: /Users/gaurav/Library/Application Support/Firefox/: Operation not permitted
   bare binary went from `Could not find profile folder` in 98ms to a written
   screenshot in 712ms. Through Playwright,
   `firefox.launch({ channel: 'moz-firefox', env: { ...process.env, MOZ_APP_DATA,
-  MOZ_LOCAL_APP_DATA } })` loaded example.com in 1.2s. Playwright's own build
-  was not tried, because it is not currently installed (`npx playwright install
-  firefox`). This is the one that needs no settings change.
+  MOZ_LOCAL_APP_DATA } })` loaded example.com in 1.2s. Playwright's own build,
+  reinstalled the same day, starts with them in about two seconds. This is the
+  one that needs no settings change.
 - **Grant the terminal access to Firefox's data:** System Settings -> Privacy &
   Security -> Files & Folders -> *the terminal* -> Firefox. Mozilla
   recommends this narrower grant over Full Disk Access. It has to be given to
@@ -151,7 +159,7 @@ microsoft/playwright#42768 -- and this repo's `package.json` moving to it. After
 that, the no-env half of `probe.mjs` confirms the workaround is dead code.
 
 **The Firefox pass under #61** was run on 2026-09-26 with the workaround in
-place; docs/Verifying.md has what it covered. The Claude pane's exit bar, on
+place; the issue's last two comments have what it covered. The Claude pane's exit bar, on
 #75's branch, passed too, and #61 is closed. The other half of that issue -- whether the caret bug that made Firefox
 mandatory is still live -- is answered above and needs no driver.
 [public/CLAUDE.md](../../public/CLAUDE.md) has that bug, and the comment on the
