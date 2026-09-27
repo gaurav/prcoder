@@ -79,8 +79,13 @@ export async function writeQueue(repo, items, nameWithOwner) {
  * a queue that now works with no PR loaded would otherwise render dead links.
  */
 function decorate(items, nameWithOwner) {
-  return items.map((i) => ({
-    ...i,
-    issueUrl: i.issue && nameWithOwner ? `https://github.com/${nameWithOwner}/issues/${i.issue}` : null,
-  }));
+  return items.map((i) => {
+    // An item about another repo's issue carries that repo, and needs no answer
+    // from `gh repo view` to link to it.
+    const where = i.repo ?? nameWithOwner;
+    return {
+      ...i,
+      issueUrl: i.issue && where ? `https://github.com/${where}/${i.kind === 'pull' ? 'pull' : 'issues'}/${i.issue}` : null,
+    };
+  });
 }
