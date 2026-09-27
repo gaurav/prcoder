@@ -263,7 +263,7 @@ function paint(status) {
   // that fails leaves the last good name up rather than reverting to
   // "prcoder", which is why this is here and not in loadStatus's catch.
   document.title = pageTitle(status);
-  renderHeader(status, prs ?? [], handlers);
+  renderHeader(status, prs, handlers);
   if (status.pr) {
     // The Stack tab reads `prs`, which is this repository's list: against a pull
     // request in another one it would name strangers, and Switch would check
@@ -317,7 +317,7 @@ async function loadStatus() {
     paint(await api('/api/status', undefined, 'GET'));
   } catch (e) {
     const failed = { error: e.message, dirtyFiles: [], pr: null };
-    renderHeader(failed, prs ?? [], handlers);
+    renderHeader(failed, prs, handlers);
   }
 }
 

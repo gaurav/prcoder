@@ -899,6 +899,8 @@ test('with no list of pull requests, the panes say there is none yet', { skip },
 
   const alone = await newPage({ prs: null, st: { ...status, branch: 'topic-x', pr: null }, ready: '#pr-head .pr-branch-name' });
   assert.equal(await alone.locator('#pr-body .empty').textContent(), 'No list of open pull requests yet.');
+  // And the switcher above it agrees, rather than saying no PRs are open.
+  assert.deepEqual(await alone.locator('#pr-switch option').allTextContents(), ['no list of pull requests yet']);
   await alone.close();
 });
 

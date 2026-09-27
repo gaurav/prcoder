@@ -169,17 +169,23 @@ export function renderHeader(status, prs, { onSwitch, onCommit }) {
   // Stacked PRs sit under the one they build on. An <option> cannot nest and an
   // <optgroup> cannot be chosen, so the indent is in the label, in non-breaking
   // spaces because a plain leading one is collapsed.
+  //
+  // `prs` is null until app.js has a list, and the placeholder says so rather
+  // than "no open pull requests" -- the pane below says there is no list yet,
+  // and the two sat one above the other disagreeing. The `?` in the keys
+  // rebuilds the options when a list lands, even an empty one.
+  const list = prs ?? [];
   const shown = [
-    ...(status.pr && !prs.some((p) => p.number === status.pr.number)
+    ...(status.pr && !list.some((p) => p.number === status.pr.number)
       ? [{ pr: { number: status.pr.number, title: status.pr.title, isDraft: false }, depth: 0 }] : []),
-    ...stackOrder(prs),
+    ...stackOrder(list),
   ];
 
-  const keys = shown.map(({ pr, depth }) => `${pr.number}:${depth}`).join(',');
+  const keys = (prs ? '' : '?') + shown.map(({ pr, depth }) => `${pr.number}:${depth}`).join(',');
   if (sel.dataset.keys !== keys) {
     sel.dataset.keys = keys;
     sel.replaceChildren(
-      h('option', { value: '' }, shown.length ? 'no pull request' : 'no open pull requests'),
+      h('option', { value: '' }, shown.length ? 'no pull request' : prs ? 'no open pull requests' : 'no list of pull requests yet'),
       ...shown.map(({ pr: p, depth }) => h('option', { value: String(p.number) },
         `${depth ? `${'\u00a0\u00a0'.repeat(depth)}└\u00a0` : ''}#${p.number} ${p.isDraft ? '(draft) ' : ''}${p.title}`)),
     );
