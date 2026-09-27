@@ -69,7 +69,7 @@ console.log('says:   ', await page.$eval('#pr-body .empty', (e) => e.textContent
 console.log('into:   ', (await rows()).join(' | '), ' (want every open PR whose base is main, then its stack, titled)');
 console.log('stacked:', await page.$$eval('#pr-body .pr-into > ul > li', (ls) => ls.map((l) =>
   `${l.querySelector('.pr-num').textContent} +${l.querySelectorAll('li').length}`).join(' | ')),
-' (want each root with the count of PRs stacked under it: #1 carries the ones based on its branch)');
+' (want each root with the count of PRs stacked under it: a stacked PR is counted under the one it builds on, not listed as a root)');
 console.log('link:   ', await page.$eval('#pr-body .pr-into .pr-num', (a) => `${a.href} target=${a.target}`),
   ' (want the first row\'s #N to open its PR on GitHub in a new tab)');
 await page.locator('#pr').screenshot({ path: path.join(shots, 'no-pr.png') });

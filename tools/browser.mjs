@@ -304,7 +304,7 @@ await page.waitForTimeout(150);
 const tabs = await page.locator('#pr-head .tab').allInnerTexts();
 console.log('tabs:    ', tabs.join('  |  '), '  (want a count on each)');
 console.log('switch:  ', (await page.$$eval('#pr-switch option', (os) => os.slice(1, 4)
-  .map((o) => o.textContent.slice(0, 12)))).join('  |  '), '  (want #1, then its stack indented under it)');
+  .map((o) => o.textContent.slice(0, 12)))).join('  |  '), '  (want the pinned PR first if it is not open, then each open PR with its stack indented under it)');
 
 // The folds. A description this long is ten collapsed lines until you open
 // one, which is the point -- and the open one has to survive the poll, because
