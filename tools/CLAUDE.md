@@ -5,7 +5,7 @@ driver from `driver.mjs`. It has the port check, the stubbed server
 environment, kill-on-exit and `firefoxEnv()`, and every one of them fixes a
 bug that cost a run. `docs/Verifying.md` covers what each driver reaches.
 
-## Launching Firefox
+## Launching browsers
 
 Every Firefox launch passes `firefoxEnv()`. Without it, macOS 27 stops a
 terminal-launched Firefox from starting at all, and the launch hangs until the
@@ -15,6 +15,13 @@ workaround: #80 says when it comes out, and `firefox-runner/` has the whole
 story. `PRCODER_BROWSER=chromium` is the way past it for work that is not about
 Firefox.
 
+Chromium's build is in two halves. Playwright runs a headless launch from
+`chromium_headless_shell-<build>` and a headed one from `chromium-<build>`,
+which are separate downloads, and a machine can have one without the other.
+`Executable doesn't exist at .../chromium-<build>/...` on a headed run looks
+like a broken Playwright install, but it is only the missing half:
+`npx playwright install chromium` fetches it.
+
 ## Running `browser.mjs`
 
 A run takes minutes and looks like a hung server. `node tools/browser.mjs |
@@ -22,8 +29,7 @@ tail` shows nothing until the very end, because `tail` buffers the whole
 stream, so redirect the output to a file and watch that instead.
 
 The caret offset it prints is not evidence. The assertion is `caret > 0` and
-nothing finer ("What the caret assertion actually proves" in
-`docs/Verifying.md`).
+nothing finer; the comment on the caret check says why.
 
 What the driver waits on and clicks assumes what each pane shows first. It
 waited on `.file` to decide the panes had loaded, which held until the pull
