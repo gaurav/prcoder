@@ -13,6 +13,54 @@
  */
 export const mention = () => /(^|[\s(])#(\d+)\b/g;
 
+/**
+ * A reference to an issue or pull request in any repo, the four ways people
+ * type one: `#91`, `owner/name#91`, `name#91`, and a github.com `/issues/` or
+ * `/pull/` URL, whatever follows its number. Wider than mention(), which stays
+ * as it is: that is what GitHub links in a description, and this is what the
+ * queue input accepts, where `name#91` means this repo's owner.
+ *
+ * Group 1 is the boundary, as in mention(); 2-4 are a URL's owner, name and
+ * number, and 5-7 the same for the other three shapes.
+ */
+const REF = () => new RegExp('(^|[\\s(])(?:'
+  + 'https?://github\\.com/([\\w.-]+)/([\\w.-]+)/(?:issues|pull)/(\\d+)(?:[/?#][^\\s)]*)?'
+  + '|(?:(?:([\\w.-]+)/)?([\\w.-]+))?#(\\d+)'
+  + ')(?=$|[\\s),.;:!?])', 'g');
+
+/**
+ * Every reference in `text`, in order: `owner` and `name` as written, null
+ * where the shape leaves them out, and `index` and `text` for where it was.
+ */
+export function refs(text = '') {
+  return [...text.matchAll(REF())].map((m) => ({
+    owner: m[2] ?? m[5] ?? null,
+    name: m[3] ?? m[6] ?? null,
+    number: Number(m[4] ?? m[7]),
+    index: m.index + m[1].length,
+    text: m[0].slice(m[1].length),
+  }));
+}
+
+/** The one reference `text` is, if it is nothing else, trimmed; otherwise null. */
+export function wholeRef(text = '') {
+  const t = text.trim();
+  const [r, more] = refs(t);
+  return r && !more && r.index === 0 && r.text.length === t.length ? r : null;
+}
+
+/**
+ * A reference as `owner/name` and number, filled in from `home` -- the repo
+ * prcoder is in, as `owner/name` -- where it leaves them out. `repo` is null
+ * when that is home itself, which GitHub compares case-insensitively and so
+ * does this: that is how a stored item says "this repo".
+ */
+export function resolveRef(ref, home) {
+  const [owner, name] = home.split('/');
+  const full = `${ref.owner ?? owner}/${ref.name ?? name}`;
+  return { repo: full.toLowerCase() === home.toLowerCase() ? null : full, number: ref.number };
+}
+
 /** The repository a pull request's URL is under, on any host. */
 export const repoUrl = (prUrl) => prUrl.replace(/\/pull\/\d+$/, '');
 
