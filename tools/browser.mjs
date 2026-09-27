@@ -28,7 +28,7 @@
 // no queue to put back that would close the issue again. Anything added here that
 // writes to GitHub needs its own undo, and needs to run against a repo you own.
 
-import { spawn } from 'node:child_process';
+import { spawn, execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { openShots, pruneShots } from './shots.mjs';
@@ -252,18 +252,37 @@ const firstBox = () => page.locator('#queue-body .item.source input[type=checkbo
 // A description can have no checkboxes at all -- this repo's PR #27 has none --
 // and then there is nothing to tick, which is a skip rather than a hang.
 if (await prRows.count()) {
-  const wasTicked = await firstBox().isChecked();
-  for (const _ of [1, 2]) {
-    await firstBox().click();
-    // Disabled while the write is out, and repainted from the new body after.
-    await page.waitForFunction(() => {
-      const box = document.querySelector('#queue-body .item.source input[type=checkbox]');
-      return box && !box.disabled;
-    }, null, { timeout: 30_000 });
-    await page.waitForTimeout(300);
+  // The untick is the undo, so a run that fails between the two clicks -- a
+  // timeout, a refused write, the browser going away -- would leave the box
+  // ticked on GitHub. The description is snapshotted first, byte for byte from
+  // gh rather than /api/status's LF copy, and put back from the snapshot in the
+  // finally if it did not come back the same. The file stays in data/ if even
+  // that fails, or the run is killed outright.
+  const prUrl = await page.evaluate(() => fetch('/api/status').then((r) => r.json()).then((st) => st.pr.url));
+  const ghBody = () => JSON.parse(execFileSync('gh', ['pr', 'view', prUrl, '--json', 'body'], { cwd: repo })).body;
+  const snapshot = path.join(repo, 'data', 'pr-body-before-browser.md');
+  const original = ghBody();
+  fs.writeFileSync(snapshot, original);
+  try {
+    const wasTicked = await firstBox().isChecked();
+    for (const _ of [1, 2]) {
+      await firstBox().click();
+      // Disabled while the write is out, and repainted from the new body after.
+      await page.waitForFunction(() => {
+        const box = document.querySelector('#queue-body .item.source input[type=checkbox]');
+        return box && !box.disabled;
+      }, null, { timeout: 30_000 });
+      await page.waitForTimeout(300);
+    }
+    console.log('  ticked and unticked:', (await firstBox().isChecked()) === wasTicked ? 'box back as it was' : 'BOX CHANGED',
+      (await prBody()) === bodyBefore ? '· body unchanged' : '· BODY CHANGED');
+  } finally {
+    if (ghBody() !== original) {
+      execFileSync('gh', ['pr', 'edit', prUrl, '--body-file', snapshot], { cwd: repo });
+      console.log('  description put back from', path.relative(repo, snapshot));
+    }
+    fs.rmSync(snapshot);
   }
-  console.log('  ticked and unticked:', (await firstBox().isChecked()) === wasTicked ? 'box back as it was' : 'BOX CHANGED',
-    (await prBody()) === bodyBefore ? '· body unchanged' : '· BODY CHANGED');
 } else console.log('  no checkboxes in this description to tick');
 
 await page.locator('#queue-body .tab', { hasText: /^Issues/ }).click();
