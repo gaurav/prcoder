@@ -112,7 +112,7 @@ export function status(next) {
 
 /**
  * A log line, at or above the current verbosity. Errors keep stderr when the
- * output is piped, because the README promises the busy-port note there; on a
+ * output is piped, because docs/Terminal.md promises the busy-port note there; on a
  * real terminal the two are the same screen and the split buys nothing.
  */
 export function log(line, min = QUIET, err = false) {

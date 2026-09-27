@@ -116,8 +116,8 @@ rest.
 
 ## The terminal you started it from
 
-The window prcoder was launched in is not finished once it has printed a URL.
-It keeps a status block pinned under a scrolling log:
+The window prcoder was launched in keeps a status block pinned under a scrolling log: the branch
+and its sync state, the pull request, the queue's counts, and the URL.
 
 ```
 prcoder  gaurav/prcoder   initial-implementation → main   2 unpushed · 8 uncommitted
@@ -127,36 +127,9 @@ queue    19 active · 1 done · 1 issue
 serving  http://localhost:17455   1 tab   q quit · r refresh · v verbose · o open
 ```
 
-All of it is what the browser's poll worked out anyway, so it costs no extra
-`git` or `gh` calls. That also means it only moves when the browser does — and
-the browser polls only while its tab is *visible*, so switching away stops the
-clock while the socket stays open and the tab count keeps saying `1 tab`. Once
-the numbers are more than two minutes old the block says `checked 7m ago` next
-to that count, rather than presenting them as current. The block is redrawn in
-place and the log scrolls above it, so what happened stays in the scrollback.
-
-**Keys.** `r` polls now, which is the way to move the block without going back
-to the browser. `v` cycles quiet → verbose → debug. Verbose narrates the things
-that change something you care about — an item queued, ticked, filed as an
-issue, a PR checked out. Debug adds every `git` and
-`gh` subprocess with its timing, the per-poll count of them, route timings, and
-a line when the PR has moved upstream. `PRCODER_VERBOSE=1` or `=2` starts at a
-level, which is the only way to see startup itself. `o` reopens the browser.
-
-**Quitting.** Ctrl-C asks first, because quitting kills the PTY and with it the
-Claude session in the browser. It says what that costs — tabs open, unpushed
-commits, uncommitted files. A second
-Ctrl-C at the prompt goes immediately; nothing here can make prcoder unkillable.
-
-None of this happens when stdout is not a terminal. Piped or redirected, you
-get plain lines and errors on stderr, which is what a script wants.
-
-If the port was busy, the block keeps saying so for the whole session, with the
-URL prcoder *wanted* — the one your bookmark and Dock icon point at, or the one
-you named in `PRCODER_PORT`, which the line tells apart. It asks
-whoever holds it who they are, so the line tells you whether the window you are
-looking for is another prcoder on this repo, another worktree, or nothing to do
-with prcoder at all.
+`r` refreshes it, `v` cycles how much the log says, `o` reopens the browser, and `q` or Ctrl-C
+quits, asking first if that would lose anything. [docs/Terminal.md](docs/Terminal.md) has how
+fresh the block is, what each verbosity level adds, and what a busy port looks like.
 
 ## Requirements
 
