@@ -190,6 +190,18 @@ test('a relative link resolves against the head branch of the repository', () =>
   assert.equal(href(inline('[docs](https://x.test/a)', where)), 'https://x.test/a');
 });
 
+// The ref is a branch name, which is not the description's text and so never
+// went through the escaper -- and git allows a `"` in one. That closed the href
+// and let the rest of the name add attributes (found in review, 2026-09-26).
+test("a branch name in a relative link cannot leave the link's href", () => {
+  const out = inline('[a](docs/a.md)', { ...where, ref: 'a"/style="color:red' });
+  assert.doesNotMatch(out, /style=/);
+  assert.equal(href(out), 'https://github.test/o/r/blob/a%22/style%3D%22color%3Ared/docs/a.md');
+  // A `#` or `%` would otherwise end the path or start an escape; `/` stays a path.
+  assert.equal(href(inline('[a](x.md)', { ...where, ref: 'feature/50%#1' })),
+    'https://github.test/o/r/blob/feature/50%25%231/x.md');
+});
+
 test('a bare #N becomes a link to the issue of that number', () => {
   assert.equal(href(inline('Closes #28.', where)), 'https://github.test/o/r/issues/28');
   assert.equal(inline('(#28)', where).includes('>#28</a>)'), true);
