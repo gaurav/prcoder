@@ -20,9 +20,10 @@
 //
 // It writes, so it is not read-only. The run replaces the repo's queue with a
 // fixture -- at least one item per tab -- and puts the queue back at the end. A
-// run that dies in between leaves the fixture behind, and the queue it replaced
-// in data/queue-before-browser.json; the next run drops the one and puts back
-// the other. The queue itself writes only `.prcoder/`.
+// run that dies in between leaves the fixture and whatever else it added behind,
+// and the queue it replaced in data/queue-before-browser.json; the next run
+// drops the one and puts back the other. The queue itself writes only
+// `.prcoder/`.
 //
 // Nothing here clicks ◎. It moves an item into a new issue, one-way: there is
 // no queue to put back that would close the issue again. Anything added here that
@@ -101,22 +102,37 @@ const seed = (over) => ({ text: over.t, done: false, issue: null, deleted: false
 // anything that looks like the fixture from what we are going to put back makes
 // the next run clean up after the last one, rather than restoring the mess and
 // adding to it.
-// The repaint check's throwaway item, below, is dropped the same way.
+// The repaint check's throwaway item and the reorder checks' scratch rows, below,
+// are dropped the same way: their own cleanup is a finally, which a killed run
+// never reaches.
 const NUDGE = 'driver repaint nudge';
-const mine = new Set([...FIXTURE.map((f) => f.t), NUDGE]);
+const SCRATCH = ['driver scratch item, put back at the end of the run', 'driver scratch item two'];
+const mine = new Set([...FIXTURE.map((f) => f.t), NUDGE, ...SCRATCH]);
 had = had.filter((i) => !mine.has(i.text));
 // And the queue the fixture replaces, on disk until the restore at the end has
 // landed. Held only in memory, it died with a run that died: the next run saw
 // nothing but fixture, filtered that out, and put back an empty queue. A backup
 // still here is that run's, and it is what gets put back -- with anything added
-// to the store since, which is not in it.
+// to the store since, which is not in it, less what that run added itself.
+//
+// `added` is that last part: an item the driver puts in the store whose text is
+// not known up front, so `mine` cannot name it -- the copy ↓ pulls from the
+// Issues tab. Recorded by ownItem() the moment it lands. Without it, a run that
+// died after the pull left the copy behind, and the next run kept it as yours.
 const backup = path.join(repo, 'data', 'queue-before-browser.json');
 if (fs.existsSync(backup)) {
   const left = JSON.parse(fs.readFileSync(backup, 'utf8'));
-  had = [...left, ...had.filter((i) => !left.some((l) => l.text === i.text))];
-  console.log('backup: ', `${left.length} items left by a run that did not finish, put back at the end`);
+  const known = new Set([...left.had.map((i) => i.text), ...left.added]);
+  had = [...left.had, ...had.filter((i) => !known.has(i.text))];
+  console.log('backup: ', `${left.had.length} items left by a run that did not finish, put back at the end`,
+    left.added.length ? `(dropping ${left.added.length} it added)` : '');
 }
-fs.writeFileSync(backup, JSON.stringify(had, null, 2));
+fs.writeFileSync(backup, JSON.stringify({ had, added: [] }, null, 2));
+const ownItem = (text) => {
+  const b = JSON.parse(fs.readFileSync(backup, 'utf8'));
+  b.added.push(text);
+  fs.writeFileSync(backup, JSON.stringify(b, null, 2));
+};
 const seeded = await queueApi({ items: FIXTURE.map(seed) });
 console.log('seeded: ', Array.isArray(seeded) ? `${seeded.length} items` : JSON.stringify(seeded));
 
@@ -292,9 +308,13 @@ await page.locator('#queue').screenshot({ path: path.join(out, 'queue-issues.png
 console.log('issues: ', await page.locator('#queue-body .tab', { hasText: /^Issues/ }).innerText(),
   JSON.stringify(await page.locator('#queue-body .item.source').allInnerTexts()));
 const localBefore = await local();
+const texts = async () => new Set((await queueApi(undefined, 'GET')).map((i) => i.text));
+const beforePull = await texts();
 await page.locator('#queue-body .item.source .actions button').first().click();
 await page.locator('#queue-body .tab', { hasText: /^Local \(4\)/ }).waitFor({ timeout: 10_000 });
-console.log('  pulled: ', localBefore, '->', await local(), '(want one more)');
+const pulled = [...await texts()].filter((t) => !beforePull.has(t));
+pulled.forEach(ownItem);
+console.log('  pulled: ', localBefore, '->', await local(), '(want one more)', JSON.stringify(pulled));
 await page.locator('#queue-body .tab', { hasText: /^Local/ }).click();
 await page.waitForTimeout(150);
 
@@ -668,9 +688,7 @@ const queue = await getQueue();
 const putQueue = (items) => page.evaluate((body) => fetch('/api/queue', {
   method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
 }).then((r) => r.json()), { items });
-await putQueue([...queue,
-  { text: 'driver scratch item, put back at the end of the run' },
-  { text: 'driver scratch item two' }]);
+await putQueue([...queue, ...SCRATCH.map((text) => ({ text }))]);
 try {
   await page.reload();
   // The PR head, not a queue row. The checks below read /api/queue half a second
