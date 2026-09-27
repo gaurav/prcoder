@@ -31,6 +31,26 @@ test('an issue link is derived from owner/repo, and absent without one', async (
   }
 });
 
+// The pane sends back whatever the last write answered, so that answer has to
+// carry the times the write stamped. When it echoed the request instead, the
+// next write stamped every earlier deletion again with its own time, and two
+// items deleted seconds apart tied on the Deleted tab.
+test('a write answers with the times it stamped, so the next one keeps them', async () => {
+  const repo = await fs.mkdtemp(path.join(os.tmpdir(), 'prcoder-queue-'));
+  try {
+    const first = await writeQueue(repo, [item({ text: 'a', deleted: true }), item({ text: 'b' })]);
+    const aAt = first[0].deletedAt;
+    assert.equal(typeof aAt, 'number');
+    await new Promise((res) => setTimeout(res, 5));
+    const second = await writeQueue(repo, [first[0], { ...first[1], deleted: true, done: true }]);
+    assert.equal(second[0].deletedAt, aAt);
+    assert.ok(second[1].deletedAt > aAt);
+    assert.equal(second[1].doneAt, second[1].deletedAt);
+  } finally {
+    await fs.rm(repo, { recursive: true, force: true });
+  }
+});
+
 // A drop means the same thing whichever way the row was dragged: the row lands
 // where the row it was dropped on is now. Unadjusted, the removal shifted the
 // target out from under the insert and a downward drag overshot it by one.

@@ -62,8 +62,14 @@ export async function writeQueue(repo, items, nameWithOwner) {
   }
   const { store, stale } = await readStore(repo);
   for (const line of queueChanges(store.items, items)) term.verbose(line);
-  await writeStore(repo, replaceItems(store, items), { stale });
-  return decorate(items, nameWithOwner);
+  // What was stored, not what was sent: replaceItems stamps `doneAt` and
+  // `deletedAt`, and a client handed back the unstamped list sends it again on
+  // its next write, where every item done or deleted since the last poll gets
+  // stamped a second time -- all with that write's time, so the Deleted tab's
+  // most-recent-first order collapses into a tie.
+  const next = replaceItems(store, items);
+  await writeStore(repo, next, { stale });
+  return decorate(next.items, nameWithOwner);
 }
 
 /**
