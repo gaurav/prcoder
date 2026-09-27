@@ -805,7 +805,7 @@ function fileRow(f, { onViewed, onOpen, selected }, dir = '') {
  * `index` counts every checklist line as it goes, because a tick is sent as a
  * *position* in that list and taskLines() in tasks.js recounts it the same way
  * on the server -- the two walks have to agree line for line (tasks.js says
- * what happens when they do not, and test/queue.test.js pins it).
+ * what happens when they do not, and test/tasks.test.js pins it).
  *
  * The numbering happens here, once, before anything downstream groups or hides
  * anything. So sectionize() may regroup these blocks and the pane may fold them

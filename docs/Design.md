@@ -17,7 +17,7 @@ Agent HQ is a cloud fleet dashboard. None of them treats the pull request as the
 
 prcoder does not edit a pull request's title or description, and it keeps no list anywhere but
 `.prcoder/`. The one exception is a checkbox you tick in the PR pane: that flips its one line in the
-description (`toggleTask` in [`queue.js`](../queue.js)), re-reading the body first and refusing if
+description (`toggleTask` in [`public/tasks.js`](../public/tasks.js)), re-reading the body first and refusing if
 the line has changed under it. Nothing else is written into a description, by the server or the page.
 
 - **The queue is yours**, stored in `.prcoder/queue.json` and nowhere else. It is one list for the

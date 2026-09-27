@@ -6,9 +6,10 @@
 `grammars` from `diff.js` to build the Prism half of the vendor map, so the
 list of grammars is written once, in the page that loads them. `tasks.js` is
 the description's grammar -- what a description shows (`withoutHtml`), its
-checklist lines, its `#N` mentions, and the URL helpers. `queue.js`,
-`github.js`, `git.js` and `files.js` at the root all import it, so the server
-and the pane read a description by the same rules and cannot drift apart.
+checklist lines, its `#N` mentions, the URL helpers, and `toggleTask`, which
+flips one box in a body. `server.js`, `github.js`, `git.js` and `files.js` at
+the root all import it, so the server and the pane read a description by the
+same rules and cannot drift apart.
 
 All three therefore have to load in Node, so they must not touch the DOM at
 module scope. A `document.querySelector` beside the imports is ordinary in a

@@ -47,7 +47,10 @@ const EMPTY = { version: VERSION, items: [] };
 export const pick = (i) => ({
   text: String(i?.text ?? ''),
   done: !!i?.done,
+  // The number of the GitHub issue this item was filed as with ◎, if any.
   issue: Number.isInteger(i?.issue) ? i.issue : null,
+  // A tombstone, so nothing typed disappears without the Deleted tab to get it
+  // back from.
   deleted: !!i?.deleted,
   // When it was ticked, for the Completed tab's order. Meaningless once it is
   // not done, so an untick clears it and a re-tick is stamped afresh.

@@ -15,10 +15,10 @@ import { WebSocketServer } from 'ws';
 import { loadPr, prHeads, prBody, listPrs, setViewed, setBody, createIssue, fetchPatches, runCount } from './github.js';
 import { snapshot, currentBranch, repoInfo, prScope, compareUrl, originOwner, checkoutPr, pushBranch, remoteBranchHead, trackingHead, localPatch } from './git.js';
 import { bucket, fileUrl, fileViews } from './files.js';
-import { toggleTask } from './queue.js';
 import { readStore, writeStore, readPort, writePort, replaceItems } from './store.js';
 import * as term from './term.js';
 import { syncPhrase } from './public/pr.js';
+import { toggleTask } from './public/tasks.js';
 import { grammars } from './public/diff.js';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
