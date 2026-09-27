@@ -1,10 +1,20 @@
 # How this repo checks itself
 
-`npm test` is `node --test "test/**/*.test.js"` — a quoted glob, never `node --test test/`, because
-Node 26 resolves a directory argument as a module and dies with `Cannot find module`, and never bare
-either, because that walks the whole working directory and runs any scratch checkout under `data/`
-as a second suite ([CLAUDE.md](../CLAUDE.md) has the rest, including why the quotes are
-load-bearing and why that puts the drivers in `tools/`). That covers everything that can be checked
+`npm test` is `node --test "test/**/*.test.js"`, and every part of that is load-bearing:
+
+- **Not `node --test test/`.** On Node 26 a directory argument is resolved as a module and dies
+  with `Cannot find module`.
+- **Not bare `node --test`,** which walks the *whole* working directory, so a scratch checkout under
+  `data/` became a second copy of the suite: 386 tests, and one failure on the vendored-xterm path
+  check because the clone had no `node_modules` (2026-09-18). Node 26 has no
+  `--test-exclude-glob` to exclude it; the flag is gone, and `node --help` lists no replacement.
+- **Quoted,** because the glob has to reach node unexpanded. `sh` has no `**`, so unquoted it
+  collapses to whatever one directory it matches; that run reported 1 test and passed.
+- **Double quotes,** for the same reason the `postinstall` script is Node: single quotes are not
+  quotes to cmd.exe.
+
+[test/CLAUDE.md](../test/CLAUDE.md) has what discovery picks up and why that keeps the drivers in
+`tools/`. The suite covers everything that can be checked
 without a browser or a tty, plus one test that needs a browser: `test/browser/suite.js` opens the real
 page from the server started in-process, with the API routes and the `/pty` socket answered by
 Playwright from a fixture, so it needs no `gh`, no `claude` and no PTY, and asserts the things this

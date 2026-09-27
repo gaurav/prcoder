@@ -30,42 +30,14 @@ there too, and `tools/driver.mjs` is what to build it on.
 ## Two traps
 
 **Don't delete the `postinstall` script.** `tools/postinstall.mjs` looks like
-dead setup. npm blocks node-pty's own install script, which is what makes
-`prebuilds/*/spawn-helper` executable. Without it every PTY spawn fails with a
-bare `posix_spawnp failed` — no mention of permissions, and node-pty still
-imports fine, so it reads like a Node ABI problem when it isn't.
-`npm install-scripts approve node-pty` does *not* replace it — tested 2026-08-23,
-the approved script is `node-gyp rebuild` and the prebuilt helper still lands
-non-executable. It is Node rather than the `chmod ... || true` it used to be
-because cmd.exe has neither command, so the shell version failed `npm install`
-outright on Windows.
+dead setup, but without it every PTY spawn fails with a bare `posix_spawnp
+failed`, which looks like a Node ABI problem and isn't. Its header says why,
+and why `npm install-scripts approve node-pty` does not replace it.
 
-**`npm test` is `node --test "test/**/*.test.js"`, and the quotes are
-load-bearing.** Not `node --test test/`: on Node 26 a directory argument is
-resolved as a module and dies with `Cannot find module`. Not bare `node --test`
-either, which walks the *whole* working directory — so a scratch checkout under
-`data/` became a second copy of the suite, 386 tests and one failure on the
-vendored-xterm path check because the clone had no `node_modules` (2026-09-18).
-Node 26 has no `--test-exclude-glob` to say it the other way round; the flag is
-gone, and `node --help` lists no replacement.
-
-The glob has to reach node unexpanded. `sh` has no `**`, so unquoted it collapses
-to whatever one directory it matches — that run reported 1 test and passed. The
-quotes are double for the same reason the postinstall script is Node: single
-quotes are not quotes to cmd.exe.
-
-Discovery takes every `*.test.js` under `test/`, at any depth; anything else
-there runs only when a test file imports it, which is how `test/browser/suite.js`
-runs once per engine and never bare. The drivers still live in `tools/` —
-`browser.mjs` for the UI, `cli.mjs` for the terminal, `no-pr.mjs` for the pane
-the first one cannot reach — so none of them is one rename from running on every
-`npm test`, spawning a server and driving a browser or a PTY.
-
-`node:test` is a preference, not a constraint. If it ever gets in the way —
-maintainability, a matcher you keep hand-rolling, watch mode, anything — the
-owner is fine with swapping in a real test framework (stated 2026-09-05). The
-rule above is about the CLI's directory argument, not about staying on the
-built-in runner.
+**Don't simplify `npm test`.** It is `node --test "test/**/*.test.js"`, and the
+double quotes, the glob and the absence of a directory argument each prevent a
+different failure: a crash, a second copy of the suite, or a run that reports
+one test and passes. `docs/Verifying.md` has all three.
 
 ## Subprocess errors are quieter than they look
 

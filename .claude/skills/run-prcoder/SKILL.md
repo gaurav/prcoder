@@ -45,7 +45,7 @@ so one slow call delays the rest.
 ## Verifying a change
 
 ```bash
-npm test                   # node --test "test/**/*.test.js"; see CLAUDE.md for the quotes.
+npm test                   # node --test "test/**/*.test.js"; docs/Verifying.md says why it is quoted.
                            # Includes test/browser/, one suite run in Chromium and in Firefox;
                            # each run skips with a note when its browser is missing
                            # (npx playwright install chromium firefox)
@@ -103,4 +103,4 @@ Two rules for them, and for any script after them:
   them freely.
 
 If every PTY spawn dies with a bare `posix_spawnp failed`, the `postinstall`
-script was skipped: `npm install` again, and see CLAUDE.md for why.
+script was skipped: `npm install` again, and see `tools/postinstall.mjs` for why.
