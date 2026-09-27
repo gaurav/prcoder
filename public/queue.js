@@ -1,0 +1,280 @@
+import { h, btn, ext, api, toast, pref, setPref, tabBtn } from './pr.js';
+
+// The client owns the list; every change persists the whole array. Single user,
+// single repo — no ids, no diffing.
+let items = [];
+// The list as the server last had it. Every caller changes `items` in place and
+// then saves, so a failed save has to put this back: left alone, the change
+// stayed on screen as if saved, and the next save that did succeed sent the
+// whole array -- persisting the change the toast had just said was not.
+let confirmed = [];
+const settle = (list) => { items = list; confirmed = structuredClone(list); };
+let tab = 'active';
+let deps = {};
+// Saves the server has not answered yet. A status that arrives meanwhile was
+// read before the write -- the server runs them in order behind one lock -- so
+// its list is the one the change was made to, and painting it would take the
+// change back until the save's own answer put it back again.
+let saving = 0;
+
+/**
+ * Replace the list from the server. Skipped while a save is in flight (above),
+ * and while an item is being edited: the text is contentEditable and only saves
+ * on blur, so a poll landing mid-typing would throw the edit away.
+ *
+ * Only those put the list at risk, so only they hold it back. Anything else in
+ * the pane can keep focus indefinitely -- a clicked tab does, in Chromium -- and
+ * freezing on it leaves the queue stale with nothing to unstick it.
+ */
+export function setItems(next) {
+  if (saving || document.activeElement?.closest?.('#queue-body .text[contenteditable]')) return;
+  // Most polls bring the list already on screen, and a rebuild for nothing
+  // costs every row and listener. `items` is kept, not swapped for the equal
+  // copy: the rows on screen hold its objects, and a tick on a row whose item
+  // was no longer in `items` saved the list without the tick.
+  if (JSON.stringify(next) === JSON.stringify(items)) {
+    confirmed = structuredClone(next);
+    return;
+  }
+  settle(next);
+  render();
+}
+
+// Which end the input adds to. The queue is two things at once -- a backlog in
+// the order you mean to work through it, and somewhere to put the thing you
+// must not forget to do next -- so the end is the user's to choose, and the
+// arrow on the button says which one is live without being clicked.
+//
+// The app's only stored preference, and a best-effort one: reading storage
+// throws outright where it is disabled, and the origin is a port -- so a repo
+// whose port moves, or one opened through PRCODER_PORT, is a different origin
+// and starts again from the default. Losing it costs a click.
+const ADD_TO_KEY = 'prcoder:add-to';
+let addTo = 'bottom';
+const readAddTo = () => (pref(ADD_TO_KEY) === 'top' ? 'top' : 'bottom');
+
+export async function initQueue(d) {
+  deps = d;
+  // Read here rather than at module scope: initQueue only ever runs in a
+  // browser, so the module stays importable by a node test that has no
+  // localStorage to touch.
+  addTo = readAddTo();
+  document.getElementById('queue-where').onclick = () => {
+    addTo = addTo === 'bottom' ? 'top' : 'bottom';
+    setPref(ADD_TO_KEY, addTo);
+    paintWhere();
+  };
+  // Before the fetch, so a remembered ↑ is not shown as the markup's ↓ for as
+  // long as /api/queue takes to answer.
+  paintWhere();
+  // api(), not a bare fetch: a 500 answers `{error}` with a 200-shaped body, and
+  // assigning that object to `items` made the very next render() throw on
+  // items.filter -- a server-side error taking the whole pane down rather than
+  // showing itself.
+  try {
+    settle(await api('/api/queue', undefined, 'GET'));
+  } catch (e) {
+    toast(e.message, true);
+  }
+  render();
+}
+
+/**
+ * Whether the change reached the server. When it did not, the list goes back to
+ * what the server last confirmed, and the toast says why.
+ */
+const save = async (url = '/api/queue', method = 'PUT', body = { items }) => {
+  const undo = (message) => {
+    toast(message, true);
+    items = structuredClone(confirmed);
+    render();
+    return false;
+  };
+  let data;
+  saving++;
+  try { data = await api(url, body, method); } catch (e) { return undo(e.message); } finally { saving--; }
+  settle(Array.isArray(data) ? data : items);
+  render();
+  return true;
+};
+
+function render() {
+  const host = document.getElementById('queue-body');
+  const live = items.filter((i) => !i.deleted);
+  // Restoring the last tombstone hides the tab; without this you would be left
+  // looking at an empty list with no tab to click back to.
+  if (tab === 'deleted' && live.length === items.length) tab = 'active';
+  const shown = tab === 'deleted' ? items.filter((i) => i.deleted)
+    : live.filter((i) => (tab === 'done' ? i.done : !i.done));
+  // Most recently finished first, so the item you just ticked by mistake is on
+  // top to be unticked. The store stamps doneAt; one it has not stamped yet
+  // (done before the field existed) goes last, and the sort is stable, so ties
+  // keep the queue's own order.
+  if (tab === 'done') shown.sort((a, b) => (b.doneAt ?? -Infinity) - (a.doneAt ?? -Infinity));
+
+  host.replaceChildren(
+    h('div', { className: 'tabs' },
+      queueTab('active', `Active (${live.filter((i) => !i.done).length})`),
+      queueTab('done', `Completed (${live.filter((i) => i.done).length})`),
+      items.some((i) => i.deleted) ? queueTab('deleted', `Deleted (${items.filter((i) => i.deleted).length})`) : null,
+      h('span', { className: 'spacer' }),
+      tab === 'deleted'
+        // The only hard delete in the app, and it is behind the tab that shows
+        // you what you are about to lose.
+        ? bulk('empty', () => { items = items.filter((i) => !i.deleted); save(); })
+        // Same tombstone the row's own delete writes.
+        : bulk('clear done', () => { items.forEach((i) => { if (i.done) i.deleted = true; }); save(); }),
+    ),
+    h('ul', { className: 'items' }, ...shown.map((i, n) => row(i, shown[n - 1], shown[n + 1]))),
+  );
+
+  document.getElementById('queue-input').placeholder =
+    tab === 'done' ? 'Add an item…' : 'Add an item, Enter to save';
+}
+
+// The button is static markup in the pane header, which render()'s
+// replaceChildren never reaches, so only the two things that change addTo have
+// to repaint it. The title says both where items go now and what a click does;
+// the accent is there because ↑ is the choice you made, not the default.
+function paintWhere() {
+  const b = document.getElementById('queue-where');
+  const title = addTo === 'bottom'
+    ? 'new items go to the bottom — click to add to the top'
+    : 'new items go to the top — click to add to the bottom';
+  b.textContent = addTo === 'bottom' ? '↓' : '↑';
+  b.title = title;
+  b.setAttribute('aria-label', title);
+  b.classList.toggle('top', addTo === 'top');
+}
+
+/**
+ * Drop `from` where `to` currently sits, in place.
+ *
+ * The correction is the whole of it: the row is removed first, which shifts
+ * every index above it down by one, so an unadjusted `to` puts a downward drag
+ * *past* the row it was dropped on while an upward one lands before it -- the
+ * same gesture meaning two different things depending on direction. Out here
+ * rather than inline in the drop handler because it is the one part of a drag
+ * that can be checked without a browser.
+ */
+export function reorder(list, from, to) {
+  const [moved] = list.splice(from, 1);
+  list.splice(from < to ? to - 1 : to, 0, moved);
+  return list;
+}
+
+const queueTab = (name, label) => tabBtn(label, tab === name, () => { tab = name; render(); });
+
+/**
+ * What a row's drag carries. Its own type, not text/plain: a link or a text
+ * selection dropped on a row carries text/plain too, and Number() of that is
+ * NaN -- which splice() reads as 0, so the first item moved and was saved.
+ */
+const ROW = 'application/x-prcoder-row';
+
+const bulk = (label, fn) => btn(label, fn, { className: 'bulk' });
+
+function row(item, above, below) {
+  const idx = items.indexOf(item);
+  // Order is the backlog's meaning, and only Active is a backlog -- Completed
+  // is sorted by when each item was finished, and Deleted is a filtered view
+  // where a drop would splice the item to a position nobody on it can see.
+  const ordered = tab === 'active';
+
+  // The keyboard's way to reorder, which a drag has no equivalent of. Moves
+  // past the next row *shown*, not the next in the array: the tab filters, so
+  // the array neighbour may be a done or deleted item you cannot see move.
+  const grip = h('span', { className: 'grip', title: 'drag, or focus and press ↑ ↓, to reorder', tabIndex: 0 }, '⠿');
+  grip.setAttribute('role', 'button');
+  grip.setAttribute('aria-label', `reorder “${item.text}”: up or down arrow moves it`);
+  grip.onkeydown = async (e) => {
+    const past = { ArrowUp: above, ArrowDown: below }[e.key];
+    if (!past) return;
+    e.preventDefault();
+    const at = [...document.querySelectorAll('#queue-body .item .grip')].indexOf(grip);
+    // reorder() drops in front of its target, so going down targets the row after.
+    reorder(items, idx, items.indexOf(past) + (e.key === 'ArrowDown' ? 1 : 0));
+    // save() repaints every row, so focus goes to the grip now in the new place.
+    if (await save()) document.querySelectorAll('#queue-body .item .grip')[at + (e.key === 'ArrowDown' ? 1 : -1)]?.focus();
+  };
+
+  const box = h('input', { type: 'checkbox', checked: item.done });
+  box.onchange = () => { item.done = box.checked; save(); };
+
+  const text = h('span', { className: 'text', contentEditable: 'true', textContent: item.text });
+  text.onblur = () => { if (text.textContent.trim() !== item.text) { item.text = text.textContent.trim(); save(); } };
+  text.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); text.blur(); } };
+
+  const li = h('li', { className: 'item', draggable: ordered },
+    ordered ? grip : null,
+    box,
+    text,
+    item.issue ? ext(item.issueUrl ?? '#', `#${item.issue}`, { className: 'tag issue' }) : null,
+    h('span', { className: 'actions' },
+      // Typed, not sent -- and done, because handing it over is the last thing
+      // the queue has to say about it. The Completed tab still has it.
+      // Only once it was typed: with the socket closed nothing reaches Claude,
+      // and marking it done would move it out of Active unsent.
+      btn('▶', () => {
+        if (!deps.sendToClaude(item.text, false)) return toast('Claude is not connected — nothing was typed', true);
+        item.done = true;
+        return save();
+      }, { title: 'type into Claude, and mark done' }),
+      // Disabled while the issue is filed: a second click queued a second
+      // createIssue, and its number overwrote the first's, orphaning it. A
+      // success repaints the row without the button.
+      item.issue ? null : btn('◎', async (e) => {
+        const b = e.currentTarget;
+        b.disabled = true;
+        if (!await save('/api/queue/issue', 'POST', { items, index: idx })) b.disabled = false;
+      }, { title: 'create an issue' }),
+      item.deleted
+        ? btn('↩', () => { item.deleted = false; save(); }, { title: 'restore' })
+        // A tombstone, not a splice: the Deleted tab is where it goes.
+        : btn('✕', () => { item.deleted = true; save(); }, { title: 'delete' }),
+    ),
+  );
+
+  // Firefox hands a mousedown inside a draggable element to its drag machinery
+  // instead of to the caret, so a click in the middle of an item's text landed
+  // at the start of it. Confirmed in Firefox and *not* in Chromium, which is
+  // why it survived being looked at. Nothing else fixes it — draggable=false on
+  // the span, and -moz-user-select, both leave the caret at 0 — so the row
+  // gives up being draggable for exactly as long as the pointer is on its text,
+  // and the grip above is the handle that always drags.
+  li.addEventListener('pointerdown', (e) => { li.draggable = ordered && !text.contains(e.target); });
+  li.addEventListener('dragstart', (e) => { e.dataTransfer.setData(ROW, idx); li.classList.add('dragging'); });
+  li.addEventListener('dragend', () => li.classList.remove('dragging'));
+  li.addEventListener('dragover', (e) => e.preventDefault());
+  li.addEventListener('drop', (e) => {
+    e.preventDefault();
+    if (!e.dataTransfer.types.includes(ROW)) return;
+    const from = Number(e.dataTransfer.getData(ROW));
+    if (from === idx) return;
+    reorder(items, from, idx);
+    save();
+  });
+
+  return li;
+}
+
+/** True once the server has it, so the caller knows whether to clear the input. */
+export async function addItem(text) {
+  if (!text.trim()) return false;
+  const item = { text: text.trim(), done: false, issue: null, deleted: false };
+  // The end of the whole array, past any done or deleted rows: the Active tab
+  // filters without reordering, so it still shows last there.
+  if (addTo === 'top') items.unshift(item); else items.push(item);
+  tab = 'active';
+  // A refusal has already taken it back out; the input keeps the text.
+  if (!await save()) return false;
+  // Either end can be off-screen in a list taller than the pane, and an item
+  // you cannot see reads as a save that did not happen. Not scrollIntoView:
+  // save() has already repainted from the server's echo, so the object above no
+  // longer exists as a row -- but the end it went to is known, and that is all
+  // this needs. It stays out of save() itself, which every checkbox and drag
+  // also calls; the viewport should not jump for those.
+  const host = document.getElementById('queue-body');
+  host.scrollTop = addTo === 'top' ? 0 : host.scrollHeight;
+  return true;
+}
