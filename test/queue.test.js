@@ -14,11 +14,11 @@ const BODY = [
   '- [ ] first task',
   '- [x] second task, already done',
   '',
-  '<!-- prcoder:todo -->',
-  '## TODO',
+  '<!-- begin checklist -->',
+  '## Checklist',
   '',
-  '- [ ] a queue item',
-  '<!-- /prcoder:todo -->',
+  '- [ ] a task between comments',
+  '<!-- end checklist -->',
 ].join('\n');
 
 test('ticking a description checkbox flips that line and nothing else', () => {
@@ -52,7 +52,7 @@ const paneTasks = (body) => blocks(body).filter((b) => b.kind === 'task').map((b
 
 test('the PR pane and queue.js pick out the same checklist lines', () => {
   const seen = paneTasks(BODY);
-  assert.deepEqual(seen, ['first task', 'second task, already done', 'a queue item']);
+  assert.deepEqual(seen, ['first task', 'second task, already done', 'a task between comments']);
   for (const [index, text] of seen.entries()) {
     assert.doesNotThrow(() => toggleTask(BODY, index, true, text), `index ${index} (${text})`);
   }

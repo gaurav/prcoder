@@ -54,16 +54,16 @@ test('a first load that failed has nothing to name the tab with', () => {
 
 // The pane escapes everything, which is right for safety and wrong for the
 // three constructs a real description uses. All three shipped visible: `## Why`
-// as a literal `## Why`, prcoder's own markers sitting above the list they
-// delimit, and a stray `</details>` mid-pane.
-test("prcoder's own block markers do not show up in the pane", () => {
-  const body = ['Prose above.', '', '<!-- prcoder:todo -->', '## TODO', '',
-    '- [ ] an item', '<!-- /prcoder:todo -->', '', 'Prose below.'].join('\n');
+// as a literal `## Why`, HTML comments sitting above the list they delimit, and
+// a stray `</details>` mid-pane.
+test('HTML comments around a block do not show up in the pane', () => {
+  const body = ['Prose above.', '', '<!-- begin checklist -->', '## Checklist', '',
+    '- [ ] an item', '<!-- end checklist -->', '', 'Prose below.'].join('\n');
   const out = withoutHtml(body);
   assert.doesNotMatch(out, /<!--/);
-  assert.doesNotMatch(out, /prcoder:todo/);
-  // The block's contents survive -- only the markers go.
-  assert.match(out, /## TODO/);
+  assert.doesNotMatch(out, /checklist -->/);
+  // The block's contents survive -- only the comments go.
+  assert.match(out, /## Checklist/);
   assert.match(out, /- \[ \] an item/);
   assert.match(out, /Prose above[\s\S]*Prose below/);
 });

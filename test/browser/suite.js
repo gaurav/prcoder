@@ -58,8 +58,8 @@ const skip = !engine ? 'playwright is not installed (npm ci without --omit=dev)'
 // Each run's names carry its engine, so a CI log says which one broke.
 const test = (name, ...rest) => nodeTest(`${name} [${engineName}]`, ...rest);
 
-// Each line here is a regression: `_for_` showed its underscores, the comment
-// and prcoder's own markers showed as text, `##` rendered literally, and a
+// Each line here is a regression: `_for_` showed its underscores, HTML
+// comments showed as text, `##` rendered literally, and a
 // <details> left a stray `</details>` behind. The quote is here because neither
 // of this repo's own descriptions has one, so no driver run ever showed it. The
 // tasks are in the lead, above the first `##`, because sections render folded
@@ -88,9 +88,9 @@ const BODY = [
   '',
   '## Before merging',
   '',
-  '<!-- prcoder:todo -->',
-  '- [ ] a queue item',
-  '<!-- /prcoder:todo -->',
+  '<!-- begin checklist -->',
+  '- [ ] a task between comments',
+  '<!-- end checklist -->',
 ].join('\n');
 
 // A long slug on purpose: the head's repository line is built to be clipped,
