@@ -154,9 +154,11 @@ document.querySelector('#term > header').addEventListener('click', () => foldTer
 // edit and send by hand, which is what the queue's ▶ wants. Trailing
 // whitespace is cut either way -- a newline in the text *is* the Enter that
 // would have sent it half-written.
+/** Whether it was typed: false when the socket is not open. */
 function sendToClaude(text, submit = true) {
-  send({ type: 'input', data: text.replace(/\s+$/, '') + (submit ? '\r' : '') });
+  const sent = send({ type: 'input', data: text.replace(/\s+$/, '') + (submit ? '\r' : '') });
   term.focus();
+  return sent;
 }
 
 // The switcher only changes when PRs are opened or closed, so it is not worth a

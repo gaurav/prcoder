@@ -3,6 +3,12 @@ import { h, btn, ext, api, toast, pref, setPref, tabBtn } from './pr.js';
 // The client owns the list; every change persists the whole array. Single user,
 // single repo — no ids, no diffing.
 let items = [];
+// The list as the server last had it. Every caller changes `items` in place and
+// then saves, so a failed save has to put this back: left alone, the change
+// stayed on screen as if saved, and the next save that did succeed sent the
+// whole array -- persisting the change the toast had just said was not.
+let confirmed = [];
+const settle = (list) => { items = list; confirmed = structuredClone(list); };
 let tab = 'active';
 let deps = {};
 // Set while a branch switch is in flight. The switch ends by replacing the
@@ -28,7 +34,7 @@ export const freeze = (on) => { frozen = on; render(); };
  */
 export function setItems(next) {
   if (document.activeElement?.closest?.('#queue-body .text[contenteditable]')) return;
-  items = next;
+  settle(next);
   render();
 }
 
@@ -64,25 +70,29 @@ export async function initQueue(d) {
   // items.filter -- a server-side error taking the whole pane down rather than
   // showing itself.
   try {
-    items = await api('/api/queue', undefined, 'GET');
+    settle(await api('/api/queue', undefined, 'GET'));
   } catch (e) {
     toast(e.message, true);
   }
   render();
 }
 
-/** Whether the change reached the server, for the one caller that has to undo. */
+/**
+ * Whether the change reached the server. When it did not, the list goes back to
+ * what the server last confirmed, and the toast says why.
+ */
 const save = async (url = '/api/queue', method = 'PUT', body = { items }) => {
-  // The backstop behind inert -- a blur fired *by* the freeze still lands here.
-  // Loud, because the local array has already moved and the next poll is about
-  // to move it back.
-  if (frozen) {
-    toast('busy switching branches — that change was not saved', true);
+  const undo = (message) => {
+    toast(message, true);
+    items = structuredClone(confirmed);
+    render();
     return false;
-  }
+  };
+  // The backstop behind inert -- a blur fired *by* the freeze still lands here.
+  if (frozen) return undo('busy switching branches — that change was not saved');
   let data;
-  try { data = await api(url, body, method); } catch (e) { toast(e.message, true); return false; }
-  if (Array.isArray(data)) items = data;
+  try { data = await api(url, body, method); } catch (e) { return undo(e.message); }
+  settle(Array.isArray(data) ? data : items);
   render();
   return true;
 };
@@ -205,10 +215,21 @@ function row(item, above, below) {
     h('span', { className: 'actions' },
       // Typed, not sent -- and done, because handing it over is the last thing
       // the queue has to say about it. The Completed tab still has it.
-      btn('▶', () => { deps.sendToClaude(item.text, false); item.done = true; save(); },
-        { title: 'type into Claude, and mark done' }),
-      item.issue ? null : btn('◎', () => save('/api/queue/issue', 'POST', { items, index: idx }),
-        { title: 'create an issue' }),
+      // Only once it was typed: with the socket closed nothing reaches Claude,
+      // and marking it done would move it out of Active unsent.
+      btn('▶', () => {
+        if (!deps.sendToClaude(item.text, false)) return toast('Claude is not connected — nothing was typed', true);
+        item.done = true;
+        return save();
+      }, { title: 'type into Claude, and mark done' }),
+      // Disabled while the issue is filed: a second click queued a second
+      // createIssue, and its number overwrote the first's, orphaning it. A
+      // success repaints the row without the button.
+      item.issue ? null : btn('◎', async (e) => {
+        const b = e.currentTarget;
+        b.disabled = true;
+        if (!await save('/api/queue/issue', 'POST', { items, index: idx })) b.disabled = false;
+      }, { title: 'create an issue' }),
       item.deleted
         ? btn('↩', () => { item.deleted = false; save(); }, { title: 'restore' })
         // A tombstone, not a splice: the Deleted tab is where it goes.
@@ -247,14 +268,8 @@ export async function addItem(text) {
   // filters without reordering, so it still shows last there.
   if (addTo === 'top') items.unshift(item); else items.push(item);
   tab = 'active';
-  if (!await save()) {
-    // Taken back out. save() has already said what went wrong, and a row left
-    // sitting there is one the next poll is about to delete without comment --
-    // while the text it came from has gone from the input.
-    items = items.filter((i) => i !== item);
-    render();
-    return false;
-  }
+  // A refusal has already taken it back out; the input keeps the text.
+  if (!await save()) return false;
   // Either end can be off-screen in a list taller than the pane, and an item
   // you cannot see reads as a save that did not happen. Not scrollIntoView:
   // save() has already repainted from the server's echo, so the object above no

@@ -572,3 +572,70 @@ test('Completed lists the most recently finished first, and cannot be reordered'
   assert.equal(await fresh.locator('#queue-body .item[draggable="true"]').count(), 0, 'and no drag');
   await fresh.close();
 });
+
+// Every queue action changes the list in place and then saves. A refused save
+// used to leave the change on screen as if it had landed, and the next save
+// that did succeed sent it along with its own -- persisting what the toast had
+// just said was not saved.
+test('a queue change the server refuses is taken back off the screen', { skip }, async () => {
+  const fresh = await newPage();
+  const queue = [{ text: 'refused tick', done: false, issue: null, deleted: false }];
+  await fresh.route('**/api/status', (r) => r.fulfill({ json: { ...status, queue } }));
+  await fresh.route('**/api/queue', (r) => (r.request().method() === 'PUT'
+    ? r.fulfill({ status: 500, json: { error: 'disk full' } })
+    : r.fulfill({ json: queue })));
+  await fresh.reload();
+  await fresh.waitForSelector('#queue-body .item');
+  await fresh.locator('#queue-body .item input[type=checkbox]').check();
+  // For this text, not any toast: the reload raises its own restart notice.
+  await fresh.waitForFunction(() => document.getElementById('toast').textContent === 'disk full');
+  // Back in Active and unticked, as the server has it.
+  assert.deepEqual(await fresh.locator('#queue-body .item .text').allTextContents(), ['refused tick']);
+  assert.equal(await fresh.locator('#queue-body .item input[type=checkbox]').isChecked(), false);
+  await fresh.close();
+});
+
+// With the socket closed nothing is typed, so ▶ must not mark it done: done
+// moves it out of Active, and the item would be gone from view unsent.
+test('▶ with Claude disconnected types nothing and leaves the item active', { skip }, async () => {
+  const fresh = await newPage();
+  const queue = [{ text: 'send me', done: false, issue: null, deleted: false }];
+  const puts = [];
+  await fresh.routeWebSocket('**/pty', (ws) => ws.close());
+  await fresh.route('**/api/status', (r) => r.fulfill({ json: { ...status, queue } }));
+  await fresh.route('**/api/queue', (r) => {
+    if (r.request().method() === 'PUT') puts.push(r.request().postDataJSON());
+    return r.fulfill({ json: queue });
+  });
+  await fresh.reload();
+  await fresh.waitForSelector('#queue-body .item');
+  await fresh.waitForFunction(() => document.getElementById('term-host').textContent.includes('claude exited'));
+  await fresh.locator('#queue-body .item button[title^="type into Claude"]').click();
+  await fresh.waitForFunction(() => document.getElementById('toast').textContent.includes('not connected'));
+  assert.deepEqual(puts, []);
+  assert.deepEqual(await fresh.locator('#queue-body .item .text').allTextContents(), ['send me']);
+  await fresh.close();
+});
+
+// A second click while the first issue was still being filed queued a second
+// createIssue; its number then overwrote the first's, orphaning that issue.
+test('◎ files one issue however quickly it is clicked twice', { skip }, async () => {
+  const fresh = await newPage();
+  const queue = [{ text: 'file me', done: false, issue: null, deleted: false }];
+  let filed = 0;
+  await fresh.route('**/api/status', (r) => r.fulfill({ json: { ...status, queue } }));
+  await fresh.route('**/api/queue', (r) => r.fulfill({ json: queue }));
+  await fresh.route('**/api/queue/issue', async (r) => {
+    filed++;
+    await new Promise((res) => setTimeout(res, 300));
+    return r.fulfill({ json: [{ ...queue[0], issue: 40 + filed }] });
+  });
+  await fresh.reload();
+  await fresh.waitForSelector('#queue-body .item');
+  const issue = fresh.locator('#queue-body .item button[title="create an issue"]');
+  await issue.click();
+  await issue.click({ force: true, timeout: 1000 }).catch(() => {});
+  await fresh.waitForSelector('#queue-body .item .tag.issue');
+  assert.equal(filed, 1);
+  await fresh.close();
+});
