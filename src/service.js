@@ -5,7 +5,8 @@ export function parseQuery(text) {
   const out = {};
   for (const pair of text.split('&')) {
     const [key, value = ''] = pair.split('=');
-    if (key) out[decodeURIComponent(key)] = decodeURIComponent(value);
+    // A `+` is a space in a query string, which decodeURIComponent leaves alone.
+    if (key) out[decodeURIComponent(key.replace(/\+/g, ' '))] = decodeURIComponent(value.replace(/\+/g, ' '));
   }
   return out;
 }
@@ -33,9 +34,9 @@ export function chunk(list, size) {
   return out;
 }
 
-export function retry(fn, times) {
+export function retry(fn, times = 3) {
   let last;
-  for (let i = 0; i < times; i++) {
+  for (let i = 0; i < Math.max(1, times); i++) {
     try {
       return fn();
     } catch (e) {
