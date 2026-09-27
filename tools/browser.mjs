@@ -99,7 +99,9 @@ const seed = (over) => ({ text: over.t, done: false, issue: null, deleted: false
 // anything that looks like the fixture from what we are going to put back makes
 // the next run clean up after the last one, rather than restoring the mess and
 // adding to it.
-const mine = new Set(FIXTURE.map((f) => f.t));
+// The repaint check's throwaway item, below, is dropped the same way.
+const NUDGE = 'driver repaint nudge';
+const mine = new Set([...FIXTURE.map((f) => f.t), NUDGE]);
 had = had.filter((i) => !mine.has(i.text));
 const seeded = await queueApi({ items: FIXTURE.map(seed) });
 console.log('seeded: ', Array.isArray(seeded) ? `${seeded.length} items` : JSON.stringify(seeded));
@@ -628,7 +630,8 @@ console.log('caret:  ', `${caret} of ${span.len}`,
 // Then two scratch rows on Local for the reorder checks, on top of the fixture
 // and put back after, in a finally: everything between here and the restore
 // drives a browser, and a hang would otherwise leave them in the store.
-const queue = await page.evaluate(() => fetch('/api/queue').then((r) => r.json()));
+const getQueue = () => page.evaluate(() => fetch('/api/queue').then((r) => r.json()));
+const queue = await getQueue();
 const putQueue = (items) => page.evaluate((body) => fetch('/api/queue', {
   method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
 }).then((r) => r.json()), { items });
@@ -649,20 +652,33 @@ try {
   // repaint back while a row is marked as dragging; checked directly rather than
   // by racing a real drag against the 60s timer. The control is the same refresh
   // without the mark, which does replace the row.
+  //
+  // Each refresh has to bring a change: a poll whose list matches the one on
+  // screen is skipped without a repaint, so an unchanged refresh keeps every
+  // row and the control would pass for the wrong reason. NUDGE goes into the
+  // stored queue before each refresh and comes out after.
+  const refresh = () => Promise.all([
+    page.waitForResponse((r) => r.url().endsWith('/api/status')),
+    page.locator('#pr-refresh').click(),
+  ]);
+  const nudge = async (on) => {
+    const now = (await getQueue()).filter((i) => i.text !== NUDGE);
+    await queueApi({ items: on ? [...now, seed({ t: NUDGE })] : now });
+  };
   const heldRow = async (dragging) => {
     const row = await page.evaluateHandle(() => document.querySelector('#queue-body .item'));
     if (dragging) await row.evaluate((el) => el.classList.add('dragging'));
-    await Promise.all([
-      page.waitForResponse((r) => r.url().endsWith('/api/status')),
-      page.locator('#pr-refresh').click(),
-    ]);
+    await nudge(true);
+    await refresh();
     await page.waitForTimeout(300);
     const kept = await row.evaluate((el) => el.isConnected);
     await row.evaluate((el) => el.classList.remove('dragging'));
+    await nudge(false);
     return kept;
   };
   console.log('repaint:', `mid-drag row ${await heldRow(true) ? 'kept' : 'REPLACED'},`,
     `idle row ${await heldRow(false) ? 'KEPT' : 'replaced'}`, '  (want kept, then replaced)');
+  await refresh();
 
   // A row drag carries its own data type. It carried text/plain, which a link
   // or a text selection dropped on a row also carries; Number() of that is NaN,
