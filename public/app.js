@@ -1,9 +1,9 @@
 import { Terminal } from '/vendor/xterm.mjs';
 import { FitAddon } from '/vendor/addon-fit.mjs';
 import { WebLinksAddon } from '/vendor/addon-web-links.mjs';
-import { renderPr, renderNoPr, renderHeader, renderQueueSync, pageTitle, api, toast } from './pr.js';
+import { renderPr, renderNoPr, renderHeader, pageTitle, api, toast, pref, setPref } from './pr.js';
 import { openDiff, closeDiff, selectedPath, setViewed } from './diff.js';
-import { initQueue, addItem, setItems, freeze } from './queue.js';
+import { initQueue, addItem, setItems } from './queue.js';
 import './panes.js';   // draggable pane gutters; nothing here calls into it
 
 const term = new Terminal({
@@ -19,6 +19,10 @@ term.open(document.getElementById('term-host'));
 
 const PTY_SEEN = 'prcoder:pty';
 const ws = new WebSocket(`ws://${location.host}/pty`);
+// `WebSocket.OPEN` is read off the global constructor, so a Playwright init
+// script that wraps `window.WebSocket` without copying its four state statics
+// makes it undefined. Every send then returns false, and the page silently
+// stops talking to the PTY, with no error and no closed socket.
 const send = (msg) => {
   if (ws.readyState !== WebSocket.OPEN) return false;
   ws.send(JSON.stringify(msg));
@@ -40,7 +44,9 @@ const sync = () => {
 };
 
 // The tab icon, blue while a turn is running, so a session left in a
-// background tab says whether it is still going without switching to it.
+// background tab says whether it is still going without switching to it. The
+// folded pane's header says the same with `● working`, from the same state, so
+// a session you folded away says when it is done without unfolding it.
 // The PTY carries no "thinking" signal and nothing here reads the frames, so a
 // turn is bracketed rather than detected: sending a line starts one, and the
 // output holds it open. Claude repaints its spinner every few hundred ms
@@ -68,6 +74,7 @@ const sync = () => {
 // looks at anything Claude drew.
 const PROBE = /^(?:\x1b\[\?6n)+$/;
 const link = document.querySelector('link[rel=icon]');
+const busyLabel = document.getElementById('term-busy');
 // Derived, not written out a second time -- so the icon in index.html stays the
 // one definition of it. Change its colour there and change this to match.
 const IDLE = link.href;
@@ -83,6 +90,9 @@ const icon = (href) => {
   shown = link.href = href;
   link.remove();
   document.head.append(link);
+  // Here rather than in turn(): the quiet timer ends a turn through icon()
+  // alone, and this is the one place the two can never disagree.
+  busyLabel.hidden = href !== BUSY;
 };
 let quiet;
 const turn = (on) => {
@@ -112,7 +122,7 @@ ws.onopen = () => {
       // Not the error style: the session did end, but on a deliberate reload
       // that is the answer to what you just did, not something that went wrong.
       toast('Claude was restarted — this tab\'s previous session ended when it disconnected. '
-        + '/resume picks it back up, or start prcoder with --continue.');
+        + '/resume picks it back up, or start prcoder with -- --continue.');
     }
     sessionStorage.setItem(PTY_SEEN, '1');
   } catch { /* private mode: no memory, so no claim about a previous session */ }
@@ -136,26 +146,34 @@ function foldTerm(off, save = true) {
   fold.setAttribute('aria-expanded', String(!off));
   fold.textContent = off ? '▶\uFE0E' : '▼';   // FE0E: text, never macOS's emoji ▶
   fold.title = `${off ? 'expand' : 'collapse'} the coding agent pane`;
-  if (save) try { localStorage.setItem(TERM_KEY, off ? 'off' : 'on'); } catch { /* this session only */ }
+  fold.setAttribute('aria-label', fold.title);   // a glyph is no name, as in queue.js
+  if (save) setPref(TERM_KEY, off ? 'off' : 'on');
   if (!off) term.focus();   // expanding it is to talk to it
 }
-try { if (localStorage.getItem(TERM_KEY) === 'off') foldTerm(true, false); } catch { /* shown */ }
+if (pref(TERM_KEY) === 'off') foldTerm(true, false);
 const folded = () => document.querySelector('main').classList.contains('term-off');
-fold.addEventListener('click', () => foldTerm(!folded()));
-// Not from the button, whose two clicks have already toggled twice.
-document.querySelector('#term > header').addEventListener('dblclick', (e) => {
-  if (!e.target.closest('button')) foldTerm(!folded());
-});
+// The whole header is the toggle, and the ▼ is only the part of it that says
+// so -- and the part a keyboard can reach, since a button's Enter is a click
+// and bubbles here. One listener for both, so a click on the ▼ toggles once.
+// No double-click: two clicks would already have folded and unfolded it.
+document.querySelector('#term > header').addEventListener('click', () => foldTerm(!folded()));
 
 // Type an item into Claude's prompt. If Claude is mid-turn it queues the
 // message itself, which is exactly the behaviour we want.
+//
 // `submit` false types the text and stops there: the prompt is left ready to
 // edit and send by hand, which is what the queue's ▶ wants. Trailing
 // whitespace is cut either way -- a newline in the text *is* the Enter that
 // would have sent it half-written.
+//
+// Whether it went is the return value, because the queue ticks an item off on
+// the strength of it: `send` refuses on a socket that is not open -- a dead PTY,
+// a reload in flight -- and an item checked off after a refused send is one
+// nobody has done and nobody is going to be reminded of.
 function sendToClaude(text, submit = true) {
-  send({ type: 'input', data: text.replace(/\s+$/, '') + (submit ? '\r' : '') });
+  const sent = send({ type: 'input', data: text.replace(/\s+$/, '') + (submit ? '\r' : '') });
   term.focus();
+  return sent;
 }
 
 // The switcher only changes when PRs are opened or closed, so it is not worth a
@@ -179,28 +197,51 @@ const NOTES = {
 };
 
 /**
- * A checkbox in the description, ticked through to GitHub. Rethrown so the box
- * snaps back, and the status reload is for the one error that matters: the
- * description moved under us, and the pane is now showing a stale copy of it.
+ * A checkbox in the description, ticked through to GitHub -- the one edit to a
+ * description prcoder makes, on your click. The route answers with the body
+ * GitHub now has, which becomes the pane's, so the Detail count, the section's
+ * pie and the queue's PR tab move with the box rather than a poll later.
+ * Rethrown so the box snaps back, and the status reload is for the one error
+ * that matters: the description moved under us, and the pane is now showing a
+ * stale copy of it.
  */
 async function toggleTask(task) {
+  let body;
   try {
-    const { queue } = await api('/api/pr/task', task);
-    // Only when the line was one of the queue's own, so the two panes agree
-    // without waiting for the poll.
-    if (queue) setItems(queue, true);
+    ({ body } = await api('/api/pr/task', task));
   } catch (e) {
     toast(e.message, true);
     loadStatus();
     throw e;
   }
+  if (last?.pr) {
+    last.pr.body = body;
+    paint(last);
+  }
 }
 
+/** A file marked viewed or not, on GitHub and then in every place that shows it. */
+async function markViewed(path, viewed) {
+  await setViewed(path, viewed);
+  const f = last?.pr?.files.find((x) => x.path === path);
+  if (!f) return;
+  f.viewed = viewed;
+  paint(last);
+  // The diff pane's box is static markup, outside anything paint() draws.
+  if (selectedPath() === path) document.getElementById('diff-viewed').checked = viewed;
+}
+
+const openFile = (f) => openDiff(f, markViewed);
 const fileHandlers = {
-  onViewed: setViewed,
-  onOpen: openDiff,
+  onViewed: markViewed,
+  onOpen: openFile,
   onTask: toggleTask,
 };
+
+// What the pull request pane was last drawn from. A poll that finds nothing new
+// -- most of them -- skips rebuilding it: every row, fold and listener, and the
+// scroll, focus and fold state put back afterwards.
+let drawn = null;
 
 function paint(status) {
   const moved = last?.pr?.headRefOid !== status.pr?.headRefOid;
@@ -216,25 +257,33 @@ function paint(status) {
   // "prcoder", which is why this is here and not in loadStatus's catch.
   document.title = pageTitle(status);
   renderHeader(status, prs, handlers);
-  renderQueueSync(status);
   if (status.pr) {
     // The Stack tab reads `prs`, which is this repository's list: against a pull
     // request in another one it would name strangers, and Switch would check
     // out whichever PR here has the same number. Null rather than empty, so the
     // tab says it has no list instead of saying the list is empty.
-    renderPr({ ...status.pr, note: NOTES[status.scope] }, {
-      ...fileHandlers,
-      selected: selectedPath(),
-      prs: status.scope === 'other-repo' ? null : prs,
-      onSwitch: switchPr,
-      blocked: status.dirtyFiles.length > 0,
-    });
-  } else renderNoPr(status, prs, { onCreate: createPr, onSwitch: switchPr });
+    const stack = status.scope === 'other-repo' ? null : prs;
+    const blocked = status.dirtyFiles.length > 0;
+    // Everything the pane is drawn from, the Stack tab's inputs included: a
+    // fresh PR list, or a tree going dirty, is a redraw even when the PR is not.
+    const key = JSON.stringify([status.pr, status.scope, stack, blocked]);
+    if (key !== drawn) {
+      drawn = key;
+      renderPr({ ...status.pr, note: NOTES[status.scope] }, {
+        ...fileHandlers,
+        selected: selectedPath(),
+        prs: stack,
+        onSwitch: switchPr,
+        blocked,
+      });
+    }
+  } else {
+    drawn = null;
+    renderNoPr(status, prs, { onCreate: createPr, onSwitch: switchPr });
+  }
   if (switched) loadPrs();
-  // Mirroring needs the PR to be *this* branch's: prcoder will not write our
-  // items into a PR we are only looking at, so the controls that would ask it
-  // to must disable themselves rather than silently do nothing.
-  if (status.queue) setItems(status.queue, status.scope === 'current');
+  // Reading its checklist into the PR tab needs only a PR on screen.
+  if (status.queue) setItems(status.queue, status.pr);
 
   // Keep an open diff honest: close it if its file left the PR (or the PR
   // switched away), refresh it if the branch moved — the server cache is
@@ -243,7 +292,7 @@ function paint(status) {
   if (!open) return;
   const f = status.pr?.files.find((x) => x.path === open);
   if (!f) closeDiff();
-  else if (moved) openDiff(f);
+  else if (moved) openFile(f);
 }
 
 /**
@@ -258,12 +307,10 @@ async function loadStatus() {
   } catch (e) {
     const failed = { error: e.message, dirtyFiles: [], pr: null };
     renderHeader(failed, prs, handlers);
-    renderQueueSync(failed);
   }
 }
 
 async function switchPr(number) {
-  freeze(true);
   try {
     const status = await api('/api/pr/switch', { number });
     paint(status);
@@ -277,8 +324,6 @@ async function switchPr(number) {
   } catch (e) {
     toast(e.message, true);
     await loadStatus();   // re-derive: the checkout may have half-succeeded
-  } finally {
-    freeze(false);
   }
 }
 
@@ -325,8 +370,7 @@ input.addEventListener('keydown', async (e) => {
   e.preventDefault();
   // Cleared only once the server has the item. addItem is async and save()
   // reports a refusal with a toast rather than a throw, so clearing on the way
-  // past threw the text away on a stale-branch refusal, on any API failure, and
-  // on an Enter pressed during a branch switch.
+  // past threw the text away on any API failure.
   if (await addItem(input.value)) {
     input.value = '';
     grow();
@@ -343,5 +387,5 @@ input.addEventListener('input', grow);
 // needs it — renderHeader synthesises an option for the current PR until it
 // lands, and loadPrs repaints the header itself when it does.
 loadPrs();
-await initQueue({ sendToClaude });
+await initQueue({ sendToClaude, onTask: toggleTask });
 loadStatus();

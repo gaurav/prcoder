@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// A stand-in for `claude` in the drivers, spawned as CLAUDE_BIN.
+// A stand-in for `claude` in the drivers, spawned as PRCODER_AGENT_BIN.
 //
 // It was /bin/cat, which echoes -- and an echo is the same burst of output a
 // turn is made of, which is all the tab icon's busy state needs. But a real
