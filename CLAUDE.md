@@ -179,10 +179,17 @@ Chromium stay until then, in case the workaround stops working;
 re-check. The Firefox pass #61 owed was run on 2026-09-26, the exit bar on #75's branch
 included, and #61 is closed; docs/Verifying.md has what it covered.
 
-One thing about running the driver at all, which reads as a hung server: it
-takes minutes, so `node tools/browser.mjs | tail` shows nothing at all until the
-very end -- `tail` buffers the whole stream -- and the way to watch a run is to
-redirect to a file.
+Three fixes for that bug do not work, so they are not worth retrying:
+`draggable="false"` on the child, `-moz-user-select` on the child, and leaving
+it to the browser. All three leave the caret at 0. The row has to stop being
+draggable for as long as the pointer is on its text, which is why the queue
+rows have a grip.
+
+## Running `tools/browser.mjs`
+
+A run takes minutes, which reads as a hung server: `node tools/browser.mjs |
+tail` shows nothing at all until the very end -- `tail` buffers the whole
+stream -- and the way to watch a run is to redirect to a file.
 
 Don't read the offset the driver prints as evidence. The assertion is `caret > 0`
 and nothing finer: `.item .text` is `flex: 1`, so the middle of its box is past
@@ -191,20 +198,16 @@ The number is therefore the length of whichever row comes first, and it moves
 when the queue does -- it has been 65, 66 and 51 at different times, all of them
 passing and none of them meaning anything. docs/Verifying.md has the rest.
 
-What the driver waits on encodes an assumption about what the pane shows first.
-It waited on `.file` to decide the panes had finished loading, which was true
-until the pull request pane grew tabs and opened on the description instead --
-after which `.file` does not exist until something clicks Files. The failure is
-a 30-second `waitForSelector` timeout that reads as a hung server, not as a
-stale selector. It waits on `#pr-head .pr-title` now; if you change which tab
-opens by default, check every `waitForSelector` in `tools/browser.mjs` in the
-same commit rather than the next one.
-
-Three fixes for that bug do not work, so they are not worth retrying:
-`draggable="false"` on the child, `-moz-user-select` on the child, and leaving
-it to the browser. All three leave the caret at 0. The row has to stop being
-draggable for as long as the pointer is on its text, which is why the queue
-rows have a grip.
+What the driver waits on and clicks encodes assumptions about what the pane
+shows first. It waited on `.file` to decide the panes had finished loading,
+which was true until the pull request pane grew tabs and opened on the
+description instead -- after which `.file` does not exist until something
+clicks Files. Later it opened "the first file" expecting a highlighted `.js`,
+which held until Config & docs became the first group and the first row was
+`.gitignore`. Both failed as a 30-second timeout that reads as a hung server,
+not as a stale selector. So a change to what the panes show first -- the
+default tab, the order of the file groups -- is a run of the driver in the same
+commit, not the next one.
 
 ## A stub that only echoes is not a session
 
