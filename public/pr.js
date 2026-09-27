@@ -80,8 +80,9 @@ export const setPref = (key, value) => {
   try { localStorage.setItem(key, value); } catch { /* this session only */ }
 };
 
-/** One of a pane's tabs; `on` is the one showing. */
-export const tabBtn = (label, on, onClick) => btn(label, onClick, { className: on ? 'tab on' : 'tab' });
+/** One of a pane's tabs; `on` is the one showing, and `extra` is any class besides. */
+export const tabBtn = (label, on, onClick, extra = '', props = {}) =>
+  btn(label, onClick, { ...props, className: ['tab', extra, on ? 'on' : ''].filter(Boolean).join(' ') });
 
 /**
  * A checkbox that writes through to GitHub. The browser has already flipped it
@@ -318,8 +319,7 @@ export function renderNoPr(status, prs, { onCreate, onSwitch, creating = false }
   paintHead({
     title: h('h2', { className: 'pr-branch-name' }, status.detached ? 'Detached HEAD' : status.branch),
     note: h('p', { className: 'pr-note' }, why),
-    links: create.length || out.links.length ? linkRow([...create, ...out.links], 'meta pr-ways pr-links') : null,
-    repo: out.repo ? repoRow(out.repo, 'meta pr-repo') : null,
+    links: create.length || out.links.length ? linkRow([...create, ...out.links], 'meta pr-ways pr-links', out.repo) : null,
   });
 
   host.replaceChildren(...kids([
@@ -415,7 +415,7 @@ const prRow = (p, { blocked, onSwitch }, kids) => h('li', {},
  */
 let tab = 'detail';
 let shownFor = null;
-const scrolled = { detail: 0, files: 0, stack: 0 };
+const scrolled = { detail: 0, files: 0, checks: 0, stack: 0 };
 const openSections = new Set();
 // Whether the single-section description below is still allowed to open itself.
 let autoOpen = true;
@@ -450,18 +450,21 @@ const linkBase = (pr) => ({
 const repoName = (repoUrl) => repoUrl.replace(/^https?:\/\/[^/]+\//, '');
 
 /**
- * The head's way out of the pane, in two parts: a row of links -- this pull
- * request on GitHub and the three lists people leave for -- and the repository
- * they are all in, which gets a line to itself.
+ * The head's way out of the pane, in two parts: the links -- this pull request
+ * on GitHub and the three lists people leave for -- and the repository they are
+ * all in, which ends the same row.
  *
- * The repository used to sit in the middle of that row, between `PR #62` and
- * `issues`, and it is the only part of it whose width has no bound.
- * `heal-data-stewards/heal-vlmd-AI-pipeline` is a real one, and at 12px it
- * is most of the pane at its 375px default -- so the row wrapped, and where
- * `issues`/`pulls`/`milestones` were moved from one repository to the next. The
- * four links you aim at are the four that are always the same length; keeping
- * them on a line of their own is what makes them findable, and lets the line
- * below them truncate instead of wrap (see .pr-repo in the stylesheet).
+ * At the end, and nowhere else in it. The repository is the only part of the
+ * row whose width has no bound: `heal-data-stewards/heal-vlmd-AI-pipeline` is a
+ * real one, and at 12px it is most of the pane at its 375px default. It used
+ * to sit between `PR #62` and `issues`, where it wrapped the row and moved
+ * `issues`/`pulls`/`milestones` from one repository to the next; the four links
+ * you aim at are the four that are always the same length, and they stay
+ * findable only while nothing ahead of them varies. It then had a line of its
+ * own under the state for a while, which cost the head a line even for a slug
+ * as short as `gaurav/prcoder`. Last in the row, a short slug shares the line
+ * and a long one wraps whole onto the next and clips only there (see .pr-repo
+ * in the stylesheet), so neither case moves the four.
  *
  * Built from the PR's own URL rather than from the `nameWithOwner` the status
  * carries, which says nothing about the host. That keeps these links right for
@@ -493,8 +496,8 @@ const listLinks = (repo) =>
   ['issues', 'pulls', 'milestones'].map((p) => ({ text: p, href: `${repo}/${p}` }));
 
 /**
- * The repository itself, as its own line rather than a link in the row, split
- * at the first slash so the line can be truncated on purpose.
+ * The repository itself, as a chip rather than a fifth link, split at the
+ * first slash so it can be truncated on purpose.
  *
  * `rest` carries the slash. The owner is the half that gives way when the slug
  * will not fit -- it is the same all day, where the name is what tells you
@@ -520,8 +523,8 @@ const repoCrumb = (repo) => {
  * That makes this the third of the github.com assumptions #53 is about, not a
  * new kind of one; the head's is still the part not to undo.
  *
- * Same shape as headLinks minus the pull request, and rendered by the same two
- * calls -- before this the two panes laid the same links out differently.
+ * Same shape as headLinks minus the pull request, and rendered by the same
+ * linkRow -- before this the two panes laid the same links out differently.
  */
 export const noPrLinks = ({ nameWithOwner }) => {
   if (!nameWithOwner) return { links: [], repo: null };
@@ -544,36 +547,41 @@ export const noPrLinks = ({ nameWithOwner }) => {
  * An entry with `onClick` in place of `href` is a button, handed itself so it
  * can disable itself while it works: Create PR, which pushes before it opens
  * anything.
+ *
+ * The repository chip, when there is one, goes last and without a dot either:
+ * the chip's border separates it the way the button's fill does.
  */
-const linkRow = (list, className) => h('div', { className },
+const linkRow = (list, className, crumb) => h('div', { className },
   ...list.map((l, i) => [
     i && !l.className && !list[i - 1].className ? h('span', { className: 'sep' }, '·') : null,
     l.onClick
       ? btn(l.text, (e) => l.onClick(e.currentTarget), { className: l.className, disabled: !!l.disabled })
       : ext(l.href, l.text, l.className ? { className: l.className } : {}),
-  ]));
+  ]),
+  crumb ? repoChip(crumb) : null);
 
 /**
- * The repository, alone on the line under that row.
+ * The repository, at the end of that row.
  *
  * One link in two spans, because the CSS shrinks them differently: the owner
  * ellipsises and the name is held whole. `title` is the slug uncut, which is
  * the only way back to an owner the pane has clipped.
  */
-const repoRow = (crumb, className) => h('div', { className },
-  ext(crumb.href, [
-    crumb.owner ? h('span', { className: 'owner' }, crumb.owner) : null,
-    h('span', { className: 'name' }, crumb.rest),
-  ], { title: crumb.slug }));
+const repoChip = (crumb) => ext(crumb.href, [
+  crumb.owner ? h('span', { className: 'owner' }, crumb.owner) : null,
+  h('span', { className: 'name' }, crumb.rest),
+], { title: crumb.slug, className: 'pr-repo' });
 
 /**
  * The pull request pane, in two roots.
  *
  * #pr-head is the identity -- which pull request, on what branch, passing or
- * not -- and does not scroll. #pr-body is one of two views of it: the argument
- * (Detail) or the work (Files). They are tabs rather than one column because
- * they are two different things to be doing, they each want the whole pane, and
- * an agent-written description is long enough to bury a file list entirely.
+ * not -- and does not scroll. #pr-body is one of four views of it: the argument
+ * (Detail), the work (Files), CI (Checks, drawn only when there are checks) and
+ * the pull requests built on it (Stack). They are tabs rather than one column
+ * because they are different things to be doing, they each want the whole
+ * pane, and an agent-written description is long enough to bury a file list
+ * entirely. docs/Panes.md has what each shows.
  */
 export function renderPr(pr, handlers) {
   links = linkBase(pr);
@@ -583,10 +591,15 @@ export function renderPr(pr, handlers) {
     shownFor = pr.number;
     scrolled.detail = 0;
     scrolled.files = 0;
+    scrolled.checks = 0;
     scrolled.stack = 0;
     openSections.clear();
     autoOpen = true;
   }
+  // A poll can take the tab out from under the reader: checks that have been
+  // deleted from the workflow, or a force-push that has not queued any yet,
+  // leave nothing for the Checks tab to show and no tab to leave it by.
+  if (tab === 'checks' && !pr.checks.list.length) tab = 'detail';
   // Parsed once for both: the Detail tab's count and the description itself.
   const parsed = blocks(pr.body);
   renderPrHead(pr, parsed, handlers);
@@ -603,7 +616,7 @@ function renderPrHead(pr, parsed, handlers) {
     renderPrHead(pr, parsed, handlers);
     renderPrTab(pr, parsed, handlers);
   };
-  const paneTab = (name, label) => tabBtn(label, tab === name, () => switchTo(name));
+  const paneTab = (name, label, extra, props) => tabBtn(label, tab === name, () => switchTo(name), extra, props);
   const ways = headLinks(pr);
   const state = pr.isDraft ? 'draft' : pr.state.toLowerCase();
 
@@ -614,18 +627,24 @@ function renderPrHead(pr, parsed, handlers) {
     note: pr.note ? h('p', { className: 'pr-note' }, pr.note) : null,
     // `pr-links` carries no style of its own -- it is the hook tools/browser.mjs
     // measures the row by, so it is not dead CSS to clean up.
-    links: linkRow(ways.links, 'meta pr-ways pr-links'),
+    links: linkRow(ways.links, 'meta pr-ways pr-links', ways.repo),
     state: h('div', { className: 'meta pr-state' },
       badge(state, state),
       h('span', {}, `${pr.headRefName} → ${pr.baseRefName}`),
       h('span', { className: 'add' }, `+${pr.additions}`),
       h('span', { className: 'del' }, `−${pr.deletions}`),
     ),
-    checks: checks(pr.checks),
-    repo: repoRow(ways.repo, 'meta pr-repo'),
     tabs: h('div', { className: 'tabs' },
-      paneTab('detail', tabLabel('Detail', taskCount(parsed))),
-      paneTab('files', tabLabel('Files', viewedCount(pr.files))),
+      paneTab('detail', tabLabel('Detail', taskCount(parsed)), tabDone(taskCount(parsed)) ? 'done' : ''),
+      paneTab('files', tabLabel('Files', viewedCount(pr.files)), tabDone(viewedCount(pr.files)) ? 'done' : ''),
+      pr.checks.list.length
+        // All passed is the done circle every tab has, not a green dot in
+        // front as well: one mark each for pending and failed, and the same
+        // one as Files and Detail for nothing left.
+        ? paneTab('checks', tabLabel('Checks', checkCount(pr.checks)),
+          tabDone(checkCount(pr.checks)) ? 'done' : `dot ${worst(pr.checks)}`,
+          { ariaLabel: checksName(pr.checks), title: checksName(pr.checks) })
+        : null,
       paneTab('stack', stackLabel(stackOn(pr, handlers.prs)))),
   };
   paintHead(rows);
@@ -633,13 +652,14 @@ function renderPrHead(pr, parsed, handlers) {
 
 /**
  * The head, top to bottom, in the order it is read: what this is, the way to
- * it on GitHub and the lists beside it, whether it is open, what it changes,
- * and which checkout it is in. Rearranging the head is reordering this.
+ * it on GitHub with the lists beside it and the repository they are in,
+ * whether it is open, and what it changes. Rearranging the head is reordering
+ * this.
  *
  * Both views of the pane draw their head through it. The one with no pull
- * request has no state, checks or tabs, and those rows fall out.
+ * request has no state or tabs, and those rows fall out.
  */
-const HEAD_ORDER = ['title', 'note', 'links', 'state', 'checks', 'repo', 'tabs'];
+const HEAD_ORDER = ['title', 'note', 'links', 'state', 'tabs'];
 
 const paintHead = (rows) =>
   document.getElementById('pr-head').replaceChildren(...kids(HEAD_ORDER.map((k) => rows[k])));
@@ -647,18 +667,24 @@ const paintHead = (rows) =>
 /**
  * The count each tab carries is what it can tell you while you are on the other
  * one: how many description checkboxes are still open, how many files are still
- * unviewed. Three states, because a fraction that has run out says the wrong
- * thing -- `Detail (10/10)` reads as a proportion you would want to be larger,
- * when what it means is that there is nothing left to do.
+ * unviewed.
  *
  *   Detail          nothing to count
  *   Detail (3/10)   seven outstanding, done over total as the file groups read
- *   Detail ✓        there were things, and they are all done
+ *   Detail (10/10)  there were things, and they are all done -- and tabDone
+ *
+ * The count stays on when it runs out. It used to become a bare `Detail ✓`, on
+ * the grounds that `(10/10)` alone reads as a proportion you would want to be
+ * larger; but `(11/11)` is what says all eleven files were viewed rather than
+ * that some rule decided it was finished, and the ✓, a 12px glyph in the tab's
+ * dim grey, was too faint to notice (2026-09-27). So the count says how many,
+ * and tabDone puts a green ✓ circle after it (`.tab.done` in the stylesheet)
+ * to say none are left.
  */
-export const tabLabel = (name, { done, total }) => {
-  if (!total) return name;
-  return done === total ? `${name} ✓` : `${name} (${done}/${total})`;
-};
+export const tabLabel = (name, { done, total }) => (total ? `${name} (${done}/${total})` : name);
+
+/** Whether a tab's count has run out, which is what draws the circle. Never for nothing to count. */
+export const tabDone = ({ done, total }) => total > 0 && done === total;
 
 /** Over blocks() rather than the body, so a caller that has parsed it once reuses that. */
 export const taskCount = (list) => {
@@ -701,6 +727,46 @@ export const stackLabel = (nodes) => (nodes.length ? `Stack (${stackSize(nodes)}
 export const viewedCount = (files = []) =>
   ({ done: files.filter((f) => f.viewed).length, total: files.length });
 
+/**
+ * The checks as the same done-over-total the other two tabs carry, so a run in
+ * progress reads as `Checks (1/3)` and a green one as `Checks (3/3)` with the
+ * done circle.
+ *
+ * A failure is not "done": it is counted in the total and not in the done, so
+ * the fraction stays short of the total for as long as something is red. That
+ * leaves a pending 1/3 and a failed 1/3 as the same fraction: the mark beside
+ * it tells them apart on screen, and checksName in words.
+ */
+export const checkCount = ({ passed, failed, pending }) =>
+  ({ done: passed, total: passed + failed + pending });
+
+/**
+ * The Checks tab's accessible name and tooltip: its label, then what the mark
+ * beside it means -- `Checks (1/3): 1 failed, 1 pending`. The mark is shape and
+ * colour, which a screen reader does not get, and the fraction alone cannot say
+ * whether what is missing failed or is still running.
+ *
+ * Not the visible label. `Checks (1/3, 1 failed)` on the tab itself was tried
+ * (2026-09-27) and at the pane's 375px default it wrapped every tab's label
+ * onto two lines, which is the head growing back the height this pane has been
+ * giving up. The name starts with the label as written, so speech input that
+ * says what is on screen still finds the button.
+ */
+export const checksName = (checks) => {
+  const label = tabLabel('Checks', checkCount(checks));
+  const words = [checks.failed && `${checks.failed} failed`, checks.pending && `${checks.pending} pending`];
+  return words.some(Boolean) ? `${label}: ${words.filter(Boolean).join(', ')}` : label;
+};
+
+/** The word a check row carries beside its mark. A pass carries none: it is the state you stop reading at. */
+const CHECK_WORD = { pend: 'pending', fail: 'failed' };
+
+/**
+ * The one state a row of checks is worth reporting as. Red beats yellow beats
+ * green: a single failure is the thing to know about, whatever else passed.
+ */
+export const worst = ({ failed, pending }) => (failed ? 'fail' : pending ? 'pend' : 'pass');
+
 function renderPrTab(pr, parsed, handlers) {
   const host = document.getElementById('pr-body');
   // Recorded as it happens rather than read before the replace: a tab switch
@@ -723,6 +789,13 @@ function renderPrTab(pr, parsed, handlers) {
         h('span', { className: 'pr-into-label' }, ...named(['Pull requests built on ', ...stackBase(pr)])),
         stackList(stack, handlers))
       : h('p', { className: 'empty' }, ...named(stackEmpty(pr, handlers.prs, handlers.otherRepo))),
+  ] : tab === 'checks' ? [
+    ...pr.checks.list.map((c) => h('div', { className: 'check' },
+      h('span', { className: `dot ${c.state}` }),
+      // A check GitHub gave no URL for is rare and not worth a dead link, so it
+      // stays plain text rather than becoming an <a> to nowhere.
+      c.url ? ext(c.url, c.name, { className: 'check-name' }) : h('span', { className: 'check-name' }, c.name),
+      CHECK_WORD[c.state] ? h('span', { className: 'check-state' }, CHECK_WORD[c.state]) : null)),
   ] : tab === 'files' ? [
     ...GROUPS.map(([key, label]) => fileGroup(label, pr.files.filter((f) => f.group === key), handlers)),
     h('div', { className: 'meta' },
@@ -742,15 +815,6 @@ function renderPrTab(pr, parsed, handlers) {
 }
 
 const badge = (text, kind) => h('span', { className: `badge ${kind}` }, text);
-
-function checks({ passed, failed, pending }) {
-  if (!passed && !failed && !pending) return null;
-  return h('div', { className: 'meta' },
-    failed ? badge(`${failed} failing`, 'fail') : null,
-    pending ? badge(`${pending} pending`, 'pend') : null,
-    passed ? badge(`${passed} passing`, 'pass') : null,
-  );
-}
 
 /**
  * One list of issues, labelled with what this pull request does about them.

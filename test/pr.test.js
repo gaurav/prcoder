@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   pageTitle, withoutHtml, inline, headLinks, noPrLinks, prsInto, prTree, stackOn, stackLabel, stackOrder, stackEmpty, intoEmpty, switcherRows,
-  HEADING, blocks, sectionize, tabLabel, taskCount, viewedCount, byPath, bySize, byDir, nums,
+  HEADING, blocks, sectionize, tabLabel, taskCount, viewedCount, checkCount, checksName, tabDone, worst, byPath, bySize, byDir, nums,
 } from '../public/pr.js';
 import { fences, TASK, taskLines } from '../public/tasks.js';
 
@@ -612,14 +612,17 @@ test('a tab with nothing to count is named, not numbered', () => {
   assert.equal(tabLabel('Files', { done: 0, total: 0 }), 'Files');
 });
 
-// A fraction that has run out says the wrong thing: `(10/10)` reads as a
-// proportion you would want to be larger, when it means there is nothing left.
-test('a tab whose count has run out says so rather than showing 10/10', () => {
-  assert.equal(tabLabel('Detail', { done: 10, total: 10 }), 'Detail ✓');
-  assert.equal(tabLabel('Files', { done: 1, total: 1 }), 'Files ✓');
-  // Distinct from the nothing-to-count case, which is the bare name -- so a
-  // description with no checklist never claims to have finished one.
+// A count that has run out keeps its numbers -- `(11/11)` is what says all
+// eleven were viewed -- and tabDone is what marks it finished.
+test('a tab whose count has run out keeps the count, and is done', () => {
+  assert.equal(tabLabel('Detail', { done: 10, total: 10 }), 'Detail (10/10)');
+  assert.equal(tabLabel('Files', { done: 1, total: 1 }), 'Files (1/1)');
+  assert.equal(tabDone({ done: 10, total: 10 }), true);
+  assert.equal(tabDone({ done: 9, total: 10 }), false);
+  // Distinct from the nothing-to-count case, which is the bare name and never
+  // done -- so a description with no checklist never claims to have finished one.
   assert.equal(tabLabel('Detail', { done: 0, total: 0 }), 'Detail');
+  assert.equal(tabDone({ done: 0, total: 0 }), false);
 });
 
 test('a tab with something to count carries done over total', () => {
@@ -627,6 +630,34 @@ test('a tab with something to count carries done over total', () => {
   // Nothing done yet still counts: `(0/4)` is four things waiting, and reads
   // very differently from a bare `Files`.
   assert.equal(tabLabel('Files', { done: 0, total: 4 }), 'Files (0/4)');
+});
+
+// A failure is counted in the total and not in the done, so the fraction stays
+// short of the total for as long as anything is red -- a done Checks tab is
+// reachable only by everything passing.
+test('the checks count is passing over all of them', () => {
+  assert.deepEqual(checkCount({ passed: 1, failed: 1, pending: 1 }), { done: 1, total: 3 });
+  assert.equal(tabLabel('Checks', checkCount({ passed: 1, failed: 1, pending: 1 })), 'Checks (1/3)');
+  assert.equal(tabLabel('Checks', checkCount({ passed: 3, failed: 0, pending: 0 })), 'Checks (3/3)');
+  assert.equal(tabDone(checkCount({ passed: 2, failed: 1, pending: 0 })), false);
+  assert.equal(tabLabel('Checks', checkCount({ passed: 0, failed: 1, pending: 0 })), 'Checks (0/1)');
+});
+
+// The fraction alone reads the same for a failure and a check still running,
+// and the mark that tells them apart is not text, so the tab's name says it in
+// words -- starting with the label as shown.
+test('the Checks tab is named in words, so a failed 1/3 and a pending one differ', () => {
+  assert.equal(checksName({ passed: 1, failed: 0, pending: 2 }), 'Checks (1/3): 2 pending');
+  assert.equal(checksName({ passed: 1, failed: 1, pending: 1 }), 'Checks (1/3): 1 failed, 1 pending');
+  assert.equal(checksName({ passed: 0, failed: 2, pending: 0 }), 'Checks (0/2): 2 failed');
+  assert.equal(checksName({ passed: 3, failed: 0, pending: 0 }), 'Checks (3/3)');
+});
+
+// And the mark: one failure is the thing to know, whatever is still running.
+test('a failure marks the tab even when something else is still running', () => {
+  assert.equal(worst({ failed: 1, pending: 2 }), 'fail');
+  assert.equal(worst({ failed: 0, pending: 2 }), 'pend');
+  assert.equal(worst({ failed: 0, pending: 0 }), 'pass');
 });
 
 test('the description count walks the body, fences and all', () => {

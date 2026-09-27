@@ -57,7 +57,10 @@ Two functions in [`public/pr.js`](../public/pr.js) keep it out. `escape()` escap
 angle brackets, because a link's URL is interpolated into `href="..."` and a raw `"` closes the
 attribute and opens an event handler, which `innerHTML` does fire. `target()` lets through only
 `http(s)` and repository-relative links, so `javascript:` and `data:` hrefs stay as their own source.
-`test/pr.test.js` pins both, and the CSP stands behind them rather than instead of them: a hole in
+A check's link is held to the same rule by `rollup()` in [`github.js`](../github.js): a status
+context's `targetUrl` is whatever its poster said, so anything not `http(s)` is dropped and the
+check's name stays plain text. `test/pr.test.js` pins both functions, `test/github.test.js` the
+check links, and the CSP stands behind them rather than instead of them: a hole in
 either loads no script under `script-src 'self'`, but the two functions are still what keeps the
 markup honest in the first place. [#49](https://github.com/gaurav/prcoder/issues/49) holds the rest
 of what is open around the renderer.

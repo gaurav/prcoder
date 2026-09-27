@@ -234,17 +234,107 @@ test('the tab carries the task count', { skip }, async () => {
   await fresh.close();
 });
 
+// A finished count keeps its numbers and gains the green circle after them;
+// the ✓ glyph alone, in the tab's dim grey, was too faint to see. Read off the
+// computed ::after, since the class only promises the stylesheet draws it, and
+// the name is asserted exactly so the ✓ is not read out beside `(2/2)`. A
+// Checks tab where everything passed is the same circle, not a dot as well.
+test('a tab with nothing left keeps its count and ends in a green ✓ circle', { skip }, async () => {
+  const p = await newPage({ st: { ...status, pr: { ...pr,
+    files: files.map((f) => ({ ...f, viewed: true })),
+    checks: rollup([{ workflowName: 'CI', name: 'test', conclusion: 'SUCCESS' }]) } } });
+  const circle = (name) => p.locator('#pr-head .tab', { hasText: name }).evaluate((el) => {
+    const s = getComputedStyle(el, '::after');
+    return { cls: el.className, text: el.textContent, glyph: /✓/.test(s.content),
+      filled: s.backgroundColor !== 'rgba(0, 0, 0, 0)', round: parseFloat(s.borderTopLeftRadius) > 0 };
+  });
+  assert.deepEqual(await circle('Files'), { cls: 'tab done', text: 'Files (2/2)', glyph: true, filled: true, round: true });
+  assert.deepEqual(await circle('Checks'), { cls: 'tab done', text: 'Checks (1/1)', glyph: true, filled: true, round: true });
+  assert.equal((await circle('Detail')).glyph, false, 'Detail (1/3) is not done');
+  assert.equal(await p.getByRole('button', { name: 'Files (2/2)', exact: true }).count(), 1);
+  await p.close();
+});
+
+// The shared fixture has no checks, and a PR with none draws no Checks tab --
+// which is the first thing asserted -- so the tab needs a page of its own.
+// One check per state, and one per kind of link: a run's own, none at all, and
+// a `javascript:` one that rollup() drops (docs/Security.md). The last step is
+// the poll that empties the list while you are on the tab, which has to put
+// you back on Detail rather than on a tab that is no longer drawn.
+test('the Checks tab lists each check, and a poll that empties it moves you to Detail', { skip }, async () => {
+  assert.equal(await page.locator('#pr-head .tab', { hasText: 'Checks' }).count(), 0, 'no checks, no tab');
+  const checks = rollup([
+    { workflowName: 'CI', name: 'test', conclusion: 'SUCCESS', detailsUrl: `${REPO}/actions/runs/1` },
+    { context: 'deploy', state: 'PENDING' },
+    { context: 'lint', state: 'FAILURE', targetUrl: 'javascript:alert(1)' },
+  ]);
+  const withChecks = { ...status, pr: { ...pr, checks } };
+  const p = await newPage({ st: withChecks });
+  const tab = p.locator('#pr-head .tab', { hasText: 'Checks' });
+  assert.equal(await tab.textContent(), 'Checks (1/3)');
+  assert.equal(await p.getByRole('button', { name: 'Checks (1/3): 1 failed, 1 pending', exact: true }).count(), 1,
+    'the name says in words what the mark says in shape');
+  assert.match(await tab.getAttribute('class'), /\bdot fail\b/, 'a failure beats a pending check');
+  await tab.click();
+  assert.deepEqual(await p.locator('#pr-body .check-name').allTextContents(), ['CI / test', 'deploy', 'lint']);
+  assert.deepEqual(await p.locator('#pr-body .check-state').allTextContents(), ['pending', 'failed'],
+    'a word beside every check that did not pass');
+  assert.deepEqual(await p.$$eval('#pr-body .check a', (as) => as.map((a) => a.getAttribute('href'))),
+    [`${REPO}/actions/runs/1`], 'only the http(s) link is a link');
+  // Shape, not only colour: read off the computed ::before, since the class is
+  // only a promise that the stylesheet draws something different for it.
+  const marks = await p.$$eval('#pr-body .check .dot', (ds) => ds.map((d) => {
+    const s = getComputedStyle(d, '::before');
+    return { filled: s.backgroundColor !== 'rgba(0, 0, 0, 0)', ring: parseFloat(s.borderTopWidth) > 0,
+      glyph: /✕/.test(s.content) };
+  }));
+  assert.deepEqual(marks, [
+    { filled: true, ring: false, glyph: false },
+    { filled: false, ring: true, glyph: false },
+    { filled: false, ring: false, glyph: true },
+  ], 'a dot passed, a ring is pending, a ✕ failed');
+
+  await p.route('**/api/status', (r) => r.fulfill({ json: { ...withChecks, pr: { ...pr, checks: rollup([]) } } }));
+  const polled = p.waitForResponse('**/api/status');
+  await p.click('#pr-refresh');
+  await polled;
+  await p.locator('#pr-head .tab.on', { hasText: 'Detail' }).waitFor();
+  assert.equal(await tab.count(), 0);
+  assert.equal(await p.locator('#pr-body .md').count(), 1, 'the description is back');
+  await p.close();
+});
+
 // The repository is the one link in the head with no bound on its width, which
-// is why it is no longer in the row: it wrapped the row and moved the three
-// lists around with it. Asserted as a place in the DOM rather than as a
-// rendered width, because that is what the truncation below hangs off.
-test('the repository is a line of its own, not a link in the row', { skip }, async () => {
-  assert.deepEqual(await page.locator('#pr-head .pr-links a').allTextContents(),
-    ['PR #12', 'issues', 'pulls', 'milestones']);
-  const repo = page.locator('#pr-head .pr-repo a');
-  assert.equal(await repo.textContent(), 'heal-data-stewards/heal-vlmd-AI-pipeline');
+// is why it is last in the row: in the middle it wrapped the row and moved the
+// three lists around with it, and at the end there is nothing after it to move.
+// Asserted as a place in the DOM, and then as where it lands: this fixture's
+// 44-character slug does not fit beside the four at the default width, so it
+// wraps -- whole, onto a line of its own, which is where it may clip.
+test('the repository ends the row, and a long one wraps whole under it', { skip }, async () => {
+  assert.deepEqual(await page.locator('#pr-head .pr-links > a').allTextContents(),
+    ['PR #12', 'issues', 'pulls', 'milestones', 'heal-data-stewards/heal-vlmd-AI-pipeline']);
+  const repo = page.locator('#pr-head .pr-links > a:last-child');
+  assert.equal(await repo.getAttribute('class'), 'pr-repo');
   assert.equal(await repo.getAttribute('href'), REPO);
   assert.equal(await repo.getAttribute('title'), 'heal-data-stewards/heal-vlmd-AI-pipeline');
+  const top = (sel) => page.$eval(sel, (el) => Math.round(el.getBoundingClientRect().top));
+  assert.ok(await top('#pr-head .pr-repo') > await top('#pr-head .pr-links .primary'), 'a long slug should wrap');
+  const chip = await page.$eval('#pr-head .pr-repo', (el) => ({ scroll: el.scrollWidth, client: el.clientWidth }));
+  assert.equal(chip.scroll, chip.client, `wrapped, it has the line to itself and is whole, ${JSON.stringify(chip)}`);
+});
+
+// And the reason it moved into the row: a slug that fits shares the line with
+// the four rather than costing the head a line of its own. `o/r` is the short
+// end, and `gaurav/prcoder` behaves the same at the default width.
+test('a short repository shares the row with the four links', { skip }, async () => {
+  const short = 'https://github.com/o/r';
+  const p = await newPage({ st: { ...status, nameWithOwner: 'o/r', pr: { ...pr, url: `${short}/pull/12` } } });
+  // Centres, not tops: the chip's border and padding make it a few pixels
+  // taller than a plain link, and the row centres them on one line.
+  const mid = (sel) => p.$eval(sel, (el) => { const b = el.getBoundingClientRect(); return Math.round(b.top + b.height / 2); });
+  assert.equal(await p.locator('#pr-head .pr-repo').textContent(), 'o/r');
+  assert.equal(await mid('#pr-head .pr-repo'), await mid('#pr-head .pr-links a:not(.primary)'));
+  await p.close();
 });
 
 // A line of its own said where the repository was, not that it was anything
@@ -258,8 +348,8 @@ test('the repository is drawn as a chip, not as a fifth link', { skip }, async (
     const s = getComputedStyle(el);
     return { border: parseFloat(s.borderTopWidth), line: s.textDecorationLine };
   });
-  const repo = await styles('#pr-head .pr-repo a');
-  const way = await styles('#pr-head .pr-links a:not(.primary)');
+  const repo = await styles('#pr-head .pr-repo');
+  const way = await styles('#pr-head .pr-links a:not(.primary, .pr-repo)');
   assert.ok(repo.border > 0, `the chip should have a border, ${JSON.stringify(repo)}`);
   assert.equal(repo.line, 'none', `the chip should not be underlined, ${JSON.stringify(repo)}`);
   assert.equal(way.border, 0, `the row's links should stay plain, ${JSON.stringify(way)}`);
@@ -282,7 +372,8 @@ test('the pull request is a filled button on the row under the title', { skip },
   const order = await page.$$eval('#pr-head > *', (els) => els.map((e) => e.className));
   const at = (cls) => order.findIndex((c) => c.split(' ').includes(cls));
   assert.ok(at('pr-title') < at('pr-links') && at('pr-links') < at('pr-state'), order.join(' | '));
-  // No dot hangs off the button: the first separator follows `issues`.
+  // No dot hangs off the button or the repository chip: the first separator
+  // follows `issues`, and the last precedes `milestones`.
   assert.equal(await page.locator('#pr-head .pr-links .sep').count(), 2);
 });
 
@@ -301,7 +392,7 @@ test('a slug wider than the pane clips the owner and keeps the name whole', { sk
   const fresh = await newPage();
   const box = (sel) => fresh.$eval(sel, (el) =>
     ({ scroll: el.scrollWidth, client: el.clientWidth, right: el.getBoundingClientRect().right }));
-  const whole = await box('#pr-head .pr-repo a');
+  const whole = await box('#pr-head .pr-repo');
   assert.equal(whole.scroll, whole.client, `the pane opens wide enough for the slug, ${JSON.stringify(whole)}`);
 
   await fresh.evaluate(() => document.querySelector('main').style.setProperty('--w-pr', '200px'));
@@ -318,7 +409,7 @@ test('a slug wider than the pane clips the owner and keeps the name whole', { sk
   // would pass this read off the span and be wrong on screen.
   const edge = () => fresh.$eval('#pr-head', (el) =>
     el.getBoundingClientRect().right - parseFloat(getComputedStyle(el).paddingRight));
-  const chip = await box('#pr-head .pr-repo a');
+  const chip = await box('#pr-head .pr-repo');
   assert.ok(chip.right <= Math.ceil(await edge()), `chip ends at ${chip.right}, head content edge ${await edge()}`);
 
   // At the stylesheet's 180px floor the ordering still holds: the owner has
@@ -335,7 +426,7 @@ test('a slug wider than the pane clips the owner and keeps the name whole', { sk
   const [lastOwner, lastName] = [await box('#pr-head .pr-repo .owner'), await box('#pr-head .pr-repo .name')];
   assert.ok(lastOwner.client < lastName.client,
     `the owner should yield first, ${JSON.stringify({ lastOwner, lastName })}`);
-  const lastChip = await box('#pr-head .pr-repo a');
+  const lastChip = await box('#pr-head .pr-repo');
   assert.ok(lastChip.right <= Math.ceil(await edge()), `chip ends at ${lastChip.right}, head content edge ${await edge()}`);
   await fresh.close();
 });
@@ -944,12 +1035,13 @@ test('with no PR, the head names the branch and carries the way out', { skip }, 
   assert.equal(await p.locator('#pr-head .pr-branch-name').textContent(), 'main');
   assert.equal(await p.locator('#pr-head .pr-title').count(), 0, 'the drivers read .pr-title as a PR on screen');
   assert.match(await p.locator('#pr-head .pr-note').textContent(), /^Default branch/);
-  assert.deepEqual(await p.locator('#pr-head .pr-links a').allTextContents(), ['issues', 'pulls', 'milestones']);
+  assert.deepEqual(await p.locator('#pr-head .pr-links a').allTextContents(),
+    ['issues', 'pulls', 'milestones', 'heal-data-stewards/heal-vlmd-AI-pipeline']);
   assert.equal(await p.locator('#pr-head .pr-links .primary').count(), 0, 'no Create PR on the default branch');
-  assert.equal(await p.locator('#pr-head .pr-repo a').textContent(), 'heal-data-stewards/heal-vlmd-AI-pipeline');
+  assert.equal(await p.locator('#pr-head .pr-links > .pr-repo').count(), 1);
   assert.equal(await p.locator('#pr-body .pr-ways, #pr-body .pr-repo').count(), 0);
   const order = await p.$$eval('#pr-head > *', (els) => els.map((e) => e.className.split(' ')[0]));
-  assert.deepEqual(order, ['pr-branch-name', 'pr-note', 'meta', 'meta'], order.join(' | '));
+  assert.deepEqual(order, ['pr-branch-name', 'pr-note', 'meta'], order.join(' | '));
   await p.close();
 
   // A branch nothing merges into says so, rather than leaving the body blank.
@@ -958,7 +1050,7 @@ test('with no PR, the head names the branch and carries the way out', { skip }, 
   // Waited for, not read: until the list lands the pane says it has none.
   const alone = await newPage({ st: { ...status, branch: 'topic-x', pr: null }, ready: '#pr-head .pr-branch-name' });
   await alone.locator('#pr-body .empty', { hasText: 'No pull requests into branch topic-x.' }).waitFor();
-  assert.deepEqual(await alone.$$eval('#pr-head .pr-links > :not(.sep)', (els) => els.map((e) => `${e.tagName} ${e.textContent}`)),
+  assert.deepEqual(await alone.$$eval('#pr-head .pr-links > :not(.sep, .pr-repo)', (els) => els.map((e) => `${e.tagName} ${e.textContent}`)),
     ['BUTTON Create PR', 'A issues', 'A pulls', 'A milestones']);
   assert.equal(await alone.locator('#pr-head .pr-links .sep').count(), 2);
   await alone.route('**/api/pr/create', (r) => r.fulfill({ json: { url: 'about:blank', pushed: false } }));

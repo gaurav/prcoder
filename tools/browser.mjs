@@ -320,11 +320,42 @@ await page.waitForTimeout(150);
 
 // The tabs, and what each says about the others. `Detail (3/10)` /
 // `Files (7/23)` is the whole reason the counts are on the labels -- they are
-// what you can see while you are looking at the other half.
+// what you can see while you are looking at another one.
 const tabs = await page.locator('#pr-head .tab').allInnerTexts();
 console.log('tabs:    ', tabs.join('  |  '), '  (want a count on each)');
 console.log('switch:  ', (await page.$$eval('#pr-switch option', (os) => os.slice(1, 4)
   .map((o) => o.textContent.slice(0, 12)))).join('  |  '), '  (want the pinned PR first if it is not open, then each open PR with its stack indented under it)');
+
+// The checks, which are a tab and a mark rather than the badges they used to be
+// above the title: the green done circle every tab gets once everything passed,
+// a yellow ring while one is pending, a red ✕ once one failed. The mark is read off the computed ::before rather than the class
+// name, because the class is only a promise that the stylesheet has a rule.
+// This repo's own PR is the fixture, so what it says depends on what CI is
+// doing right now: the assertion is that the mark and the label agree, not
+// what either one is. test/browser/suite.js pins all three against a fixture.
+const checksTab = page.locator('#pr-head .tab', { hasText: /^Checks/ });
+if (await checksTab.count()) {
+  const label = await checksTab.innerText();
+  const dot = await checksTab.evaluate((e) => {
+    if (e.classList.contains('done')) return `done circle ${getComputedStyle(e, '::after').backgroundColor}`;
+    const s = getComputedStyle(e, '::before');
+    return /✕/.test(s.content) ? `✕ ${s.color}`
+      : parseFloat(s.borderTopWidth) ? `ring ${s.borderTopColor}` : `dot ${s.backgroundColor}`;
+  });
+  const cls = await checksTab.getAttribute('class');
+  await checksTab.click();
+  await page.waitForSelector('.check');
+  const rows = await page.locator('.check').allInnerTexts();
+  const linked = await page.locator('.check a').count();
+  console.log('checks:  ', JSON.stringify(label), cls, dot,
+    ` (want N/N with the done circle 127,216,143, or a ring 240,220,154 while pending or a ✕ 245,163,163 once any failed)`);
+  console.log('check rows:', rows.join(' | '), `, ${linked} of ${rows.length} link out`,
+    ' (want one row per check, each linking to its run)');
+  await page.locator('#pr').screenshot({ path: path.join(out, 'pr-checks.png') });
+  await page.locator('#pr-head .tab').nth(0).click();
+} else {
+  console.log('checks:   no tab  (want none only if this PR really has no checks)');
+}
 
 // The folds. A description this long is ten collapsed lines until you open
 // one, which is the point -- and the open one has to survive the poll, because
@@ -340,32 +371,40 @@ console.log('still open after a refresh:',
   JSON.stringify(await page.locator('.md-section[open] > summary h3').allInnerTexts()),
   ' (want the one clicked above)');
 
-// The head's way out of the pane, which is two lines and only on screen: both
-// of them are `.meta`, neither has an alignment rule any more, and whether that
-// leaves them at the same left edge as everything else in the head is a fact
-// about the browser rather than about the stylesheet. The title is the control
-// -- it never moved, and these two are now supposed to agree with it. (They did
-// not until 2026-09-21: the row was `justify-content: flex-end`, and this check
-// measured its right edge instead. The stylesheet says why it moved back.)
-console.log('head:   ', await page.evaluate(() => {
+// The head's way out of the pane, which is one row ending in the repository and
+// only on screen: the row is `.meta` with no alignment rule any more, and
+// whether that leaves it at the same left edge as everything else in the head
+// is a fact about the browser rather than about the stylesheet. The title is
+// the control -- it never moved, and the row is supposed to agree with it. (It
+// did not until 2026-09-21: the row was `justify-content: flex-end`, and this
+// check measured its right edge instead. The stylesheet says why it moved back.)
+//
+// Which line the repository lands on depends on the slug and the pane: this
+// repository's `gaurav/prcoder` fits beside the four at the default width,
+// which is the case the move into the row was for.
+const headRow = () => page.evaluate(() => {
   const row = document.querySelector('#pr-head .pr-links');
-  const repo = document.querySelector('#pr-head .pr-repo');
-  const at = (el) => Math.round(el.getBoundingClientRect().left);
-  const title = at(document.querySelector('#pr-head .pr-title'));
+  const repo = row.querySelector('.pr-repo');
+  const box = (el) => el.getBoundingClientRect();
+  const mid = (el) => Math.round(box(el).top + box(el).height / 2);
+  const title = Math.round(box(document.querySelector('#pr-head .pr-title')).left);
+  const line = mid(repo) === mid(row.querySelector('a:not(.primary)')) ? 'same line' : 'next line';
   return `${[...row.querySelectorAll('a')].map((a) => a.textContent).join(' ')} | row left ${
-    at(row)}, repo left ${at(repo)}, title left ${title}`;
-}), ' (want all three the same)');
+    Math.round(box(row).left)}, title left ${title}, repo on the ${line}`;
+});
+console.log('head:   ', await headRow(), ' (want the two lefts the same, and the repo on the same line)');
 console.log('out:    ', await page.evaluate(() =>
   [...document.querySelectorAll('#pr-head .pr-links a')].map((a) => a.href).join(' ')));
-// The repository is the line under that row because it is the one link with no
-// bound on its width, and it clips rather than wraps.
+// The repository ends that row because it is the one link with no bound on its
+// width: where it does not fit it wraps whole onto a line of its own, and clips
+// only there.
 //
 // Both lines say `whole` against this repository and that is the right answer:
 // `gaurav/prcoder` is 14 characters and fits the 180px floor with room over.
 // The clipping itself is pinned in test/browser/suite.js, whose fixture carries
 // a 44-character slug; what a driver run adds is the shape of the block at a
 // width a drag can really reach, which is pr-head-narrow.png -- the links row
-// wraps there, and the repository line under it does not.
+// wraps there, and the repository, on a line of its own by then, does not.
 //
 // So this is a check that goes quiet on a long slug: `owner ... clipped` here
 // means the run was against a repository whose name this pane cannot hold, and
@@ -379,6 +418,7 @@ console.log('repo:   ', await repoLine(), ' (want both whole -- this repo\'s slu
 await page.evaluate(() => document.querySelector('main').style.setProperty('--w-pr', '180px'));
 console.log('repo180:', await repoLine(),
   ' (want the name whole; the owner clips only where the slug is long)');
+console.log('head180:', await headRow(), ' (want the repo on the next line: the four fill 180px)');
 await page.locator('#pr').screenshot({ path: path.join(out, 'pr-head-narrow.png') });
 await page.evaluate(() => document.querySelector('main').style.removeProperty('--w-pr'));
 // The dots between them are delimiters, and were an `a::before` -- which is
@@ -386,7 +426,7 @@ await page.evaluate(() => document.querySelector('main').style.removeProperty('-
 // followed the link to its right. Hit-tested rather than read off the DOM: that
 // a separator is its own element says nothing about where a click lands.
 console.log('dots:   ', await page.evaluate(() =>
-  [...document.querySelectorAll('#pr-head .pr-links span')].map((sep) => {
+  [...document.querySelectorAll('#pr-head .pr-links > .sep')].map((sep) => {
     const b = sep.getBoundingClientRect();
     return document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2)?.tagName;
   }).join(' ')), ' (want SPAN each, never A)');

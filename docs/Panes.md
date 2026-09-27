@@ -33,14 +33,15 @@ tab width.
 
 Which pull request you are in stays at the top, in the order it is used: the title; then the way
 out of the window, with this pull request on GitHub drawn as a button beside plain links to the
-repository's issues, pulls and milestones; then the state, the branch it targets and the checks;
-and last the repository they are all in.
+repository's issues, pulls and milestones, and the repository they are all in at the end of that
+row; then the state and the branch it targets.
 
-The repository is on its own line because it is the only one of them whose length has no bound. It
-truncates rather than wraps: a long owner is clipped and the repository's own name kept, since
-that is the half that says which checkout you are in. It is drawn as a chip rather than a fifth
-link: the links row is the list of places to go, and the chip is the one line in the head that
-answers which checkout this is.
+The repository comes last in its row because it is the only thing there whose length has no
+bound. A short one fits beside the four links; a long one drops whole onto the next line, so the
+four stay where they are either way. On a line of its own it truncates rather than wraps: a long
+owner is clipped and the repository's own name kept, since that is the half that says which
+checkout you are in. It is drawn as a chip rather than a fifth link: the links are places to go,
+and the chip is the one thing in the head that answers which checkout this is.
 
 ### Moving between pull requests
 
@@ -50,7 +51,7 @@ behind a Commit button, because the checkout would fail anyway.
 
 On a branch with no pull request the pane keeps the pull request head's shape, with the branch as
 its title and a line under it saying why there is no pull request. The way out of the window is in
-the same rows: the issues, pulls and milestones, and the repository on the line below them. The head
+the same row: the issues, pulls and milestones, and the repository at the end of it. The head
 does not scroll, so those are on screen however long the list below it runs. Where the pull
 request's button would be, **Create PR** opens GitHub's compare page, pushing the branch first if
 GitHub has not seen it; on the default branch or a detached HEAD there is nothing to create, and
@@ -71,13 +72,20 @@ branch with no pull request it uses git's own record of origin's head from the l
 the one `git status` reads, so a push from another machine shows only after a fetch. Either way it
 is only as fresh as the last poll.
 
-### Detail, Files and Stack
+### Detail, Files, Checks and Stack
 
-Below the head are three tabs. Reading the argument and working the files are two different things
-and each wants the whole pane; the third, *Stack*, is the pull requests built on this one's branch,
-laid out like the list above. Each tab carries the count the others cannot show you -- how many
-description boxes are still unticked, how many files are still unviewed, how many pull requests are
-stacked on this one -- so none hides from you while you are in another.
+Below the head are the tabs. Reading the argument, working the files and watching CI are three
+different things and each wants the whole pane; the last, *Stack*, is the pull requests built on
+this one's branch, laid out like the list above. Each tab carries the count the others cannot show
+you -- how many description boxes are still unticked, how many files are still unviewed, how many
+checks have gone green, how many pull requests are stacked on this one -- so none hides from you
+while you are in another. A count that has run out keeps its numbers, `Files (11/11)`, so it
+still says how many, and ends in a green circle with a ✓ in it to say none are left. The Checks
+tab also carries a mark in front while it is not done: a yellow ring while something is still
+running, and a red ✕ as soon as anything fails, which is the part a fraction alone can't tell you.
+When everything passes it gets the green circle like any other tab. It is a shape as well as a colour so that it survives
+colour blindness, and the tab's name, read by a screen reader and shown on hover, says the same in
+words: `Checks (1/3): 1 failed, 1 pending`.
 
 The list of open pull requests is fetched when the page loads, when you open the switcher, and
 after a checkout, not on every poll, so the Stack count can be a few minutes old. Opening the tab
@@ -105,6 +113,12 @@ fold and remember what you closed. Each fold's pie fills green as its files are 
 for the figure). The checkbox on each file is GitHub's own "viewed" checkbox: tick it here and
 it's ticked on github.com. Clicking a file opens its diff in the **Diff** pane; cmd/ctrl-clicking
 opens GitHub's diff viewer at that file instead.
+
+*Checks* is CI, one row per check, led by the same mark and ending in `pending` or `failed` for a
+check that has not passed. Each links to its run -- or is plain text, when GitHub gave no
+link or one that is not `http(s)` ([Security.md](Security.md#the-pull-request-description)). The
+tab is there only when the pull request has any, and a poll that empties the list moves you back
+to *Detail* rather than leaving you on a tab that is no longer drawn.
 
 ## Diff
 

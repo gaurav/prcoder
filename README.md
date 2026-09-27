@@ -27,8 +27,8 @@ is no token to configure.
 ## What you get
 
 - **Pull request** -- the pull request for the checked-out branch: its description, with checkboxes
-  that write back to GitHub, its changed files, with GitHub's own "viewed" checkbox, and the pull
-  requests stacked on it. A switcher checks out another pull request, and a light says whether the
+  that write back to GitHub, its changed files, with GitHub's own "viewed" checkbox, its CI checks,
+  and the pull requests stacked on it. A switcher checks out another pull request, and a light says whether the
   branch needs a push or a pull.
 - **Diff** -- the file you clicked, as GitHub shows it, with links out to GitHub for comments,
   blame and history.

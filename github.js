@@ -250,15 +250,53 @@ export async function createIssue(cwd, nameWithOwner, title) {
     '--title', title, '--body', ''], { cwd }));
 }
 
+/**
+ * One check's state, in the three the pane draws. A queued or running check has
+ * a `status` but no `conclusion` yet, and a StatusContext has neither -- only a
+ * `state` -- so anything unrecognised counts as pending rather than as a pass:
+ * the optimistic reading of an unknown is the one that says "merge it".
+ *
+ * STALE is a finished run GitHub itself gave up on, not one still going, so it
+ * is a failure: counted as pending it held the tab yellow, and its fraction
+ * short, for a check that was never going to report. STARTUP_FAILURE is caught
+ * by FAILURE, since the pattern is not anchored. That covers every value of
+ * GitHub's CheckConclusionState and StatusState (read off the GraphQL schema
+ * 2026-09-27); StatusState's EXPECTED is a status not yet posted, so pending.
+ */
+const state = (c) => {
+  const s = c.conclusion || c.state || '';
+  if (/SUCCESS|NEUTRAL|SKIPPED/i.test(s)) return 'pass';
+  if (/FAILURE|ERROR|CANCELLED|TIMED_OUT|ACTION_REQUIRED|STALE/i.test(s)) return 'fail';
+  return 'pend';
+};
+
+/**
+ * The checks, as counts for the tab label plus one row each for the tab body.
+ *
+ * A CheckRun and a StatusContext are different shapes for the same thing -- a
+ * name and somewhere to go and read it -- so both are flattened here and the
+ * pane never sees which it got. The workflow name is kept in front of the job
+ * name because `test` on its own says nothing when three workflows all have one.
+ *
+ * A StatusContext's `targetUrl` is whatever the integration that posted it
+ * said, on any repo opened with `prcoder <pr-url>`, so it is held to the rule
+ * target() in public/pr.js holds description links to: http(s) or nothing. A
+ * `javascript:` URL would otherwise be a live href in the page holding /pty.
+ */
+const web = (url) => (/^https?:\/\//.test(url ?? '') ? url : null);
+
 export function rollup(checks) {
   const counts = { passed: 0, failed: 0, pending: 0 };
-  for (const c of checks ?? []) {
-    const s = c.conclusion || c.state || '';
-    if (/SUCCESS|NEUTRAL|SKIPPED/i.test(s)) counts.passed++;
-    else if (/FAILURE|ERROR|CANCELLED|TIMED_OUT|ACTION_REQUIRED/i.test(s)) counts.failed++;
-    else counts.pending++;
-  }
-  return counts;
+  const list = (checks ?? []).map((c) => {
+    const s = state(c);
+    counts[{ pass: 'passed', fail: 'failed', pend: 'pending' }[s]]++;
+    return {
+      name: [c.workflowName, c.name ?? c.context].filter(Boolean).join(' / '),
+      state: s,
+      url: web(c.detailsUrl ?? c.targetUrl),
+    };
+  });
+  return { ...counts, list };
 }
 
 /** Issues the PR closes, plus any bare #N mentioned in the body. */
