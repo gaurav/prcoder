@@ -79,9 +79,11 @@ different things and each wants the whole pane; the last, *Stack*, is the pull r
 this one's branch, laid out like the list above. Each tab carries the count the others cannot show
 you -- how many description boxes are still unticked, how many files are still unviewed, how many
 checks have gone green, how many pull requests are stacked on this one -- so none hides from you
-while you are in another. The Checks tab also carries a mark: a green dot when everything passed,
-a yellow ring while something is still running, and a red ✕ as soon as anything fails, which is
-the part a fraction alone can't tell you. It is a shape as well as a colour so that it survives
+while you are in another. A count that has run out keeps its numbers, `Files (11/11)`, so it
+still says how many, and ends in a green circle with a ✓ in it to say none are left. The Checks
+tab also carries a mark in front while it is not done: a yellow ring while something is still
+running, and a red ✕ as soon as anything fails, which is the part a fraction alone can't tell you.
+When everything passes it gets the green circle like any other tab. It is a shape as well as a colour so that it survives
 colour blindness, and the tab's name, read by a screen reader and shown on hover, says the same in
 words: `Checks (1/3): 1 failed, 1 pending`.
 

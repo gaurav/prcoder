@@ -635,10 +635,14 @@ function renderPrHead(pr, parsed, handlers) {
       h('span', { className: 'del' }, `−${pr.deletions}`),
     ),
     tabs: h('div', { className: 'tabs' },
-      paneTab('detail', tabLabel('Detail', taskCount(parsed))),
-      paneTab('files', tabLabel('Files', viewedCount(pr.files))),
+      paneTab('detail', tabLabel('Detail', taskCount(parsed)), tabDone(taskCount(parsed)) ? 'done' : ''),
+      paneTab('files', tabLabel('Files', viewedCount(pr.files)), tabDone(viewedCount(pr.files)) ? 'done' : ''),
       pr.checks.list.length
-        ? paneTab('checks', tabLabel('Checks', checkCount(pr.checks)), `dot ${worst(pr.checks)}`,
+        // All passed is the done circle every tab has, not a green dot in
+        // front as well: one mark each for pending and failed, and the same
+        // one as Files and Detail for nothing left.
+        ? paneTab('checks', tabLabel('Checks', checkCount(pr.checks)),
+          tabDone(checkCount(pr.checks)) ? 'done' : `dot ${worst(pr.checks)}`,
           { ariaLabel: checksName(pr.checks), title: checksName(pr.checks) })
         : null,
       paneTab('stack', stackLabel(stackOn(pr, handlers.prs)))),
@@ -663,18 +667,24 @@ const paintHead = (rows) =>
 /**
  * The count each tab carries is what it can tell you while you are on the other
  * one: how many description checkboxes are still open, how many files are still
- * unviewed. Three states, because a fraction that has run out says the wrong
- * thing -- `Detail (10/10)` reads as a proportion you would want to be larger,
- * when what it means is that there is nothing left to do.
+ * unviewed.
  *
  *   Detail          nothing to count
  *   Detail (3/10)   seven outstanding, done over total as the file groups read
- *   Detail ✓        there were things, and they are all done
+ *   Detail (10/10)  there were things, and they are all done -- and tabDone
+ *
+ * The count stays on when it runs out. It used to become a bare `Detail ✓`, on
+ * the grounds that `(10/10)` alone reads as a proportion you would want to be
+ * larger; but `(11/11)` is what says all eleven files were viewed rather than
+ * that some rule decided it was finished, and the ✓, a 12px glyph in the tab's
+ * dim grey, was too faint to notice (2026-09-27). So the count says how many,
+ * and tabDone puts a green ✓ circle after it (`.tab.done` in the stylesheet)
+ * to say none are left.
  */
-export const tabLabel = (name, { done, total }) => {
-  if (!total) return name;
-  return done === total ? `${name} ✓` : `${name} (${done}/${total})`;
-};
+export const tabLabel = (name, { done, total }) => (total ? `${name} (${done}/${total})` : name);
+
+/** Whether a tab's count has run out, which is what draws the circle. Never for nothing to count. */
+export const tabDone = ({ done, total }) => total > 0 && done === total;
 
 /** Over blocks() rather than the body, so a caller that has parsed it once reuses that. */
 export const taskCount = (list) => {
@@ -719,7 +729,8 @@ export const viewedCount = (files = []) =>
 
 /**
  * The checks as the same done-over-total the other two tabs carry, so a run in
- * progress reads as `Checks (1/3)` and a green one as `Checks ✓`.
+ * progress reads as `Checks (1/3)` and a green one as `Checks (3/3)` with the
+ * done circle.
  *
  * A failure is not "done": it is counted in the total and not in the done, so
  * the fraction stays short of the total for as long as something is red. That

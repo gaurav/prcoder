@@ -125,11 +125,27 @@ a { color: var(--accent); }
   font: inherit; font-size: 12px; padding: 2px 8px; border-radius: 4px; cursor: pointer;
 }
 .tab.on { color: var(--fg); border-color: var(--line); background: var(--bg); }
+/* A tab whose count has run out -- every box ticked, every file viewed, every
+   check passed -- ends in a green circle with a ✓ in it, after the count
+   (tabLabel in pr.js says why the count stays). It is the fold pie's full
+   state (`.pie.full`) with a tick in it, so green-and-round means "none left"
+   everywhere in the pane. Drawn rather than an emoji: ✅ is a square on macOS
+   and whatever the font has elsewhere. The ✓ has empty alt text, since
+   `(11/11)` already says it to a screen reader. 12px, inside the tab's line
+   box, so the tab row keeps its height. */
+.tab.done::after {
+  content: '✓'; content: '✓' / '';
+  display: inline-block; box-sizing: border-box; width: 12px; height: 12px;
+  margin-left: 5px; border-radius: 50%; vertical-align: -1px;
+  background: var(--add); color: var(--bg);
+  font-size: 9px; font-weight: 700; line-height: 12px; text-align: center;
+}
 /* The checks, as a mark rather than the row of badges they used to be above the
    title: three counts in colour, at the top of the pane, read as the loudest
    thing about a pull request when they are mostly a thing to glance at. The
    same mark leads each row inside the tab, so it means one thing in both
-   places. `.light` has a dot of its own and is a whole labelled control; this is
+   places -- except that a tab where every check passed has no dot in front,
+   only the done circle after it that any finished tab has (`.tab.done`). `.light` has a dot of its own and is a whole labelled control; this is
    just the mark.
 
    Shape as well as colour: a filled dot passed, a ring is still pending, a ✕

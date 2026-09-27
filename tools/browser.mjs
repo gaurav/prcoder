@@ -327,16 +327,17 @@ console.log('switch:  ', (await page.$$eval('#pr-switch option', (os) => os.slic
   .map((o) => o.textContent.slice(0, 12)))).join('  |  '), '  (want the pinned PR first if it is not open, then each open PR with its stack indented under it)');
 
 // The checks, which are a tab and a mark rather than the badges they used to be
-// above the title: a filled green dot passed, a yellow ring is pending, a red ✕
-// failed. The mark is read off the computed ::before rather than the class
+// above the title: the green done circle every tab gets once everything passed,
+// a yellow ring while one is pending, a red ✕ once one failed. The mark is read off the computed ::before rather than the class
 // name, because the class is only a promise that the stylesheet has a rule.
 // This repo's own PR is the fixture, so what it says depends on what CI is
 // doing right now: the assertion is that the mark and the label agree, not
 // what either one is. test/browser/suite.js pins all three against a fixture.
-const checksTab = page.locator('#pr-head .tab.dot');
+const checksTab = page.locator('#pr-head .tab', { hasText: /^Checks/ });
 if (await checksTab.count()) {
   const label = await checksTab.innerText();
   const dot = await checksTab.evaluate((e) => {
+    if (e.classList.contains('done')) return `done circle ${getComputedStyle(e, '::after').backgroundColor}`;
     const s = getComputedStyle(e, '::before');
     return /✕/.test(s.content) ? `✕ ${s.color}`
       : parseFloat(s.borderTopWidth) ? `ring ${s.borderTopColor}` : `dot ${s.backgroundColor}`;
@@ -347,7 +348,7 @@ if (await checksTab.count()) {
   const rows = await page.locator('.check').allInnerTexts();
   const linked = await page.locator('.check a').count();
   console.log('checks:  ', JSON.stringify(label), cls, dot,
-    ` (want ✓ with a dot 127,216,143, or a fraction with a ring 240,220,154 while pending or a ✕ 245,163,163 once any failed)`);
+    ` (want N/N with the done circle 127,216,143, or a ring 240,220,154 while pending or a ✕ 245,163,163 once any failed)`);
   console.log('check rows:', rows.join(' | '), `, ${linked} of ${rows.length} link out`,
     ' (want one row per check, each linking to its run)');
   await page.locator('#pr').screenshot({ path: path.join(out, 'pr-checks.png') });

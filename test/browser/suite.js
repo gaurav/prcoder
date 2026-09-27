@@ -234,6 +234,27 @@ test('the tab carries the task count', { skip }, async () => {
   await fresh.close();
 });
 
+// A finished count keeps its numbers and gains the green circle after them;
+// the ✓ glyph alone, in the tab's dim grey, was too faint to see. Read off the
+// computed ::after, since the class only promises the stylesheet draws it, and
+// the name is asserted exactly so the ✓ is not read out beside `(2/2)`. A
+// Checks tab where everything passed is the same circle, not a dot as well.
+test('a tab with nothing left keeps its count and ends in a green ✓ circle', { skip }, async () => {
+  const p = await newPage({ st: { ...status, pr: { ...pr,
+    files: files.map((f) => ({ ...f, viewed: true })),
+    checks: rollup([{ workflowName: 'CI', name: 'test', conclusion: 'SUCCESS' }]) } } });
+  const circle = (name) => p.locator('#pr-head .tab', { hasText: name }).evaluate((el) => {
+    const s = getComputedStyle(el, '::after');
+    return { cls: el.className, text: el.textContent, glyph: /✓/.test(s.content),
+      filled: s.backgroundColor !== 'rgba(0, 0, 0, 0)', round: parseFloat(s.borderTopLeftRadius) > 0 };
+  });
+  assert.deepEqual(await circle('Files'), { cls: 'tab done', text: 'Files (2/2)', glyph: true, filled: true, round: true });
+  assert.deepEqual(await circle('Checks'), { cls: 'tab done', text: 'Checks (1/1)', glyph: true, filled: true, round: true });
+  assert.equal((await circle('Detail')).glyph, false, 'Detail (1/3) is not done');
+  assert.equal(await p.getByRole('button', { name: 'Files (2/2)', exact: true }).count(), 1);
+  await p.close();
+});
+
 // The shared fixture has no checks, and a PR with none draws no Checks tab --
 // which is the first thing asserted -- so the tab needs a page of its own.
 // One check per state, and one per kind of link: a run's own, none at all, and
