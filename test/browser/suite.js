@@ -234,6 +234,41 @@ test('the tab carries the task count', { skip }, async () => {
   await fresh.close();
 });
 
+// The shared fixture has no checks, and a PR with none draws no Checks tab --
+// which is the first thing asserted -- so the tab needs a page of its own.
+// One check per state, and one per kind of link: a run's own, none at all, and
+// a `javascript:` one that rollup() drops (docs/Security.md). The last step is
+// the poll that empties the list while you are on the tab, which has to put
+// you back on Detail rather than on a tab that is no longer drawn.
+test('the Checks tab lists each check, and a poll that empties it moves you to Detail', { skip }, async () => {
+  assert.equal(await page.locator('#pr-head .tab', { hasText: 'Checks' }).count(), 0, 'no checks, no tab');
+  const checks = rollup([
+    { workflowName: 'CI', name: 'test', conclusion: 'SUCCESS', detailsUrl: `${REPO}/actions/runs/1` },
+    { context: 'deploy', state: 'PENDING' },
+    { context: 'lint', state: 'FAILURE', targetUrl: 'javascript:alert(1)' },
+  ]);
+  const withChecks = { ...status, pr: { ...pr, checks } };
+  const p = await newPage({ st: withChecks });
+  const tab = p.locator('#pr-head .tab', { hasText: 'Checks' });
+  assert.equal(await tab.textContent(), 'Checks (1/3)');
+  assert.match(await tab.getAttribute('class'), /\bdot fail\b/, 'red beats yellow');
+  await tab.click();
+  assert.deepEqual(await p.locator('#pr-body .check').allTextContents(), ['CI / test', 'deploy', 'lint']);
+  assert.deepEqual(await p.$$eval('#pr-body .check a', (as) => as.map((a) => a.getAttribute('href'))),
+    [`${REPO}/actions/runs/1`], 'only the http(s) link is a link');
+  assert.deepEqual(await p.$$eval('#pr-body .check .dot', (ds) => ds.map((d) => d.className)),
+    ['dot pass', 'dot pend', 'dot fail']);
+
+  await p.route('**/api/status', (r) => r.fulfill({ json: { ...withChecks, pr: { ...pr, checks: rollup([]) } } }));
+  const polled = p.waitForResponse('**/api/status');
+  await p.click('#pr-refresh');
+  await polled;
+  await p.locator('#pr-head .tab.on', { hasText: 'Detail' }).waitFor();
+  assert.equal(await tab.count(), 0);
+  assert.equal(await p.locator('#pr-body .md').count(), 1, 'the description is back');
+  await p.close();
+});
+
 // The repository is the one link in the head with no bound on its width, which
 // is why it is last in the row: in the middle it wrapped the row and moved the
 // three lists around with it, and at the end there is nothing after it to move.
