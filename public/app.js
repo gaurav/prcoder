@@ -182,15 +182,20 @@ function sendToClaude(text, submit = true) {
 // this branch comes out of the same array, and is as fresh as that. The Stack
 // tab is too, but it states outright that nothing is stacked on a branch, so it
 // asks for the list itself rather than trust one from minutes ago.
-let prs = [];
+//
+// Null until the first list lands: no list, which the panes say, rather than an
+// empty one, which they would read as "nothing is stacked" or "nothing merges
+// into this branch". A failed fetch is not a banner, and it keeps the list we
+// had for the same reason -- an empty list in its place told the Stack tab that
+// the pull requests it showed a moment ago had gone, because gh had a blip.
+let prs = null;
 let last = null;
 const loadPrs = () => api('/api/prs', undefined, 'GET')
-  .catch(() => [])   // the switcher is a convenience; a failure is not a banner
   // Repaint, or a PR opened since page load stays invisible until the next
   // poll — the switcher only rebuilds its options when the set changes. The
   // whole status, because the branch-only pane reads this list too; `last` is
   // already the branch this fetch was for, so nothing asks for it again.
-  .then((l) => { prs = l; if (last) paint(last); });
+  .then((l) => { prs = l; if (last) paint(last); }, () => {});
 document.getElementById('pr-switch').addEventListener('mousedown', loadPrs);
 
 const NOTES = {
@@ -258,13 +263,15 @@ function paint(status) {
   // that fails leaves the last good name up rather than reverting to
   // "prcoder", which is why this is here and not in loadStatus's catch.
   document.title = pageTitle(status);
-  renderHeader(status, prs, handlers);
+  renderHeader(status, prs ?? [], handlers);
   if (status.pr) {
     // The Stack tab reads `prs`, which is this repository's list: against a pull
     // request in another one it would name strangers, and Switch would check
     // out whichever PR here has the same number. Null rather than empty, so the
-    // tab says it has no list instead of saying the list is empty.
-    const stack = status.scope === 'other-repo' ? null : prs;
+    // tab says it has no list instead of saying the list is empty, and
+    // `otherRepo` says which of the two reasons for having none it is.
+    const otherRepo = status.scope === 'other-repo';
+    const stack = otherRepo ? null : prs;
     const blocked = status.dirtyFiles.length > 0;
     // Everything the pane is drawn from, the Stack tab's inputs included: a
     // fresh PR list, or a tree going dirty, is a redraw even when the PR is not.
@@ -275,6 +282,7 @@ function paint(status) {
         ...fileHandlers,
         selected: selectedPath(),
         prs: stack,
+        otherRepo,
         onStackOpen: loadPrs,
         onSwitch: switchPr,
         blocked,
@@ -309,7 +317,7 @@ async function loadStatus() {
     paint(await api('/api/status', undefined, 'GET'));
   } catch (e) {
     const failed = { error: e.message, dirtyFiles: [], pr: null };
-    renderHeader(failed, prs, handlers);
+    renderHeader(failed, prs ?? [], handlers);
   }
 }
 

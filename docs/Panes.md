@@ -82,7 +82,8 @@ stacked on this one -- so none hides from you while you are in another.
 The list of open pull requests is fetched when the page loads, when you open the switcher, and
 after a checkout, not on every poll, so the Stack count can be a few minutes old. Opening the tab
 fetches the list again, so a pull request stacked from the terminal shows up there, and one that
-merged drops out.
+merged drops out. A fetch that fails keeps the list it had, and until the first one lands the tab,
+and the list of pull requests into a branch, say there is no list yet rather than that it is empty.
 
 *Detail* is the description. It opens as the lead paragraph and then one folded line per section,
 so a long description is an outline you scan rather than a wall you scroll; a section that contains

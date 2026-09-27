@@ -305,11 +305,19 @@ export function renderNoPr(status, prs, { onCreate, onSwitch }) {
   });
 
   host.replaceChildren(...kids([
-    intoRow(status, prs, onSwitch)
-      ?? (status.detached ? null : h('p', { className: 'empty' },
-        ...named(['No pull requests into branch ', { branch: status.branch }, '.']))),
+    intoRow(status, prs ?? [], onSwitch)
+      ?? (status.detached ? null : h('p', { className: 'empty' }, ...named(intoEmpty(status.branch, prs)))),
   ]));
 }
+
+/**
+ * Said, as the Stack tab says it, when nothing merges into the branch -- or when
+ * prcoder has no list to tell (`prs` is null until app.js has one).
+ */
+const NO_LIST = ['No list of open pull requests yet.'];
+
+/** What the branch-only pane says with no rows. Parts, as named() takes them. */
+export const intoEmpty = (branch, prs) => (prs ? ['No pull requests into branch ', { branch }, '.'] : NO_LIST);
 
 /**
  * The pull requests into this branch, each a row you can read or check out.
@@ -653,13 +661,16 @@ export const stackOn = (pr, prs) => (!prs || pr.isCrossRepository ? []
   : prTree(prs, pr.headRefName, new Set([pr.number])));
 
 /**
- * What the Stack tab says when it has no rows, which is three different facts:
- * nothing is built on this branch, nothing *can* be (a fork's branch), or
- * prcoder has no list to look in (`prs` is null for a pull request in another
- * repository -- see paint() in app.js). Parts, as named() takes them.
+ * What the Stack tab says when it has no rows, which is four different facts:
+ * nothing is built on this branch, nothing *can* be (a fork's branch), prcoder
+ * does not look (a pull request in another repository), or it has no list to
+ * look in yet (`prs` is null until app.js has one). The last two both arrive as
+ * a null list, which is why `otherRepo` is its own argument -- see paint() in
+ * app.js. Parts, as named() takes them.
  */
-export const stackEmpty = (pr, prs) => (!prs
+export const stackEmpty = (pr, prs, otherRepo = false) => (otherRepo
   ? ['Stacks are listed only for pull requests in this repository.']
+  : !prs ? NO_LIST
   : pr.isCrossRepository
     ? ['Nothing here can be built on ', ...stackBase(pr), ': the branch is in a fork.']
     : ['Nothing is stacked on ', ...stackBase(pr), '.']);
@@ -693,7 +704,7 @@ function renderPrTab(pr, parsed, handlers) {
       ? h('div', { className: 'pr-into' },
         h('span', { className: 'pr-into-label' }, ...named(['Pull requests built on ', ...stackBase(pr)])),
         stackList(stack, handlers))
-      : h('p', { className: 'empty' }, ...named(stackEmpty(pr, handlers.prs))),
+      : h('p', { className: 'empty' }, ...named(stackEmpty(pr, handlers.prs, handlers.otherRepo))),
   ] : tab === 'files' ? [
     ...GROUPS.map(([key, label]) => fileGroup(label, pr.files.filter((f) => f.group === key), handlers)),
     h('div', { className: 'meta' },

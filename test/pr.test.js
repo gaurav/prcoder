@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  pageTitle, withoutHtml, inline, headLinks, noPrLinks, prsInto, prTree, stackOn, stackLabel, stackOrder, stackEmpty,
+  pageTitle, withoutHtml, inline, headLinks, noPrLinks, prsInto, prTree, stackOn, stackLabel, stackOrder, stackEmpty, intoEmpty,
   HEADING, blocks, sectionize, tabLabel, taskCount, viewedCount, byPath, bySize, byDir, nums,
 } from '../public/pr.js';
 import { fences, TASK, taskLines } from '../public/tasks.js';
@@ -321,8 +321,10 @@ test('the Stack tab counts the whole tree, and a fork has no stack here', () => 
   assert.deepEqual(stackOn({ headRefName: 'main', isCrossRepository: true }, OPEN), []);
 });
 
-// Three empties, three sentences. The other-repo one used to say "Nothing is
-// stacked", which was a claim about a repository prcoder had not looked in.
+// Four empties, four sentences. The other-repo one used to say "Nothing is
+// stacked", which was a claim about a repository prcoder had not looked in; and
+// with no list yet -- the first fetch still out, or every one failed -- the tab
+// said the same, because the list it had was an empty one standing in for none.
 // `{ branch }` parts become <code> in the pane; here, a backticked name.
 const said = (parts) => parts.map((p) => (typeof p === 'string' ? p : `\`${p.branch}\``)).join('');
 
@@ -331,8 +333,14 @@ test('an empty Stack tab says why it is empty', () => {
   assert.equal(said(stackEmpty(here, OPEN)), 'Nothing is stacked on PR #70 (branch `queue-tabs`).');
   assert.equal(said(stackEmpty({ number: 80, headRefName: 'main', isCrossRepository: true }, OPEN)),
     'Nothing here can be built on PR #80 (branch `main`): the branch is in a fork.');
-  assert.equal(said(stackEmpty(here, null)), 'Stacks are listed only for pull requests in this repository.');
+  assert.equal(said(stackEmpty(here, null, true)), 'Stacks are listed only for pull requests in this repository.');
+  assert.equal(said(stackEmpty(here, null)), 'No list of open pull requests yet.');
   assert.deepEqual(stackOn(here, null), []);
+});
+
+test('the branch-only pane does not say nothing merges in when it has no list', () => {
+  assert.equal(said(intoEmpty('main', [])), 'No pull requests into branch `main`.');
+  assert.equal(said(intoEmpty('main', null)), 'No list of open pull requests yet.');
 });
 
 const order = (prs) => stackOrder(prs).map(({ pr, depth }) => `${'-'.repeat(depth)}${pr.number}`);

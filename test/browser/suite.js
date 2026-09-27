@@ -132,13 +132,14 @@ const posted = [];
 
 // A page with every route answered, so a test that needs a module map of its
 // own -- Prism loads once per page -- can open a second one. `prs` is the
-// switcher's list, empty unless a test is about it; `st` and `ready` are for a
-// page with no pull request, which has no title to wait on.
+// switcher's list, empty unless a test is about it, and null for a fetch that
+// fails; `st` and `ready` are for a page with no pull request, which has no
+// title to wait on.
 async function newPage({ prs = [], st = status, ready = '#pr-head .pr-title' } = {}) {
   const p = await browser.newPage();
   await p.routeWebSocket('**/pty', () => {});
   await p.route('**/api/status', (r) => r.fulfill({ json: st }));
-  await p.route('**/api/prs', (r) => r.fulfill({ json: prs }));
+  await p.route('**/api/prs', (r) => (prs ? r.fulfill({ json: prs }) : r.abort()));
   await p.route('**/api/queue', (r) => r.fulfill({ json: [] }));
   await p.route('**/api/diff', (r) => {
     const { path } = r.request().postDataJSON();
@@ -870,6 +871,37 @@ test('opening the Stack tab picks up a PR stacked since the page loaded', { skip
   await fresh.close();
 });
 
+// Opening the tab fetches the list, and gh can fail. The list it had is still
+// the best it knows; an empty one in its place said "Nothing is stacked" over
+// the rows it had just shown.
+test('a failed fetch on opening the Stack tab keeps the rows it had', { skip }, async () => {
+  const fresh = await newPage({ prs: STACK });
+  const tab = fresh.locator('#pr-head .tab', { hasText: 'Stack' });
+  await fresh.waitForSelector('#pr-switch option[value="14"]', { state: 'attached' });
+  await fresh.route('**/api/prs', (r) => r.abort());
+  const failed = fresh.waitForEvent('requestfailed', (q) => q.url().endsWith('/api/prs'));
+  await tab.click();
+  await failed;
+  await fresh.waitForTimeout(100);
+  assert.deepEqual(await fresh.locator('#pr-body .pr-into > ul > li > .pr-row .pr-num').allTextContents(), ['#13']);
+  assert.equal(await tab.textContent(), 'Stack (2)');
+  assert.equal(await fresh.locator('#pr-switch option').count(), 4, 'the switcher kept its options');
+  await fresh.close();
+});
+
+// With no list at all -- the first fetch still out, or every one failed -- the
+// tab and the branch-only pane say so, rather than that the list is empty.
+test('with no list of pull requests, the panes say there is none yet', { skip }, async () => {
+  const fresh = await newPage({ prs: null });
+  await fresh.locator('#pr-head .tab', { hasText: 'Stack' }).click();
+  assert.equal(await fresh.locator('#pr-body .empty').textContent(), 'No list of open pull requests yet.');
+  await fresh.close();
+
+  const alone = await newPage({ prs: null, st: { ...status, branch: 'topic-x', pr: null }, ready: '#pr-head .pr-branch-name' });
+  assert.equal(await alone.locator('#pr-body .empty').textContent(), 'No list of open pull requests yet.');
+  await alone.close();
+});
+
 // The pane with no pull request, on the branch the fixture PR merges into.
 // tools/no-pr.mjs drives this against the real remote; this is the part of it
 // that needs no clone, so it runs on every `npm test`.
@@ -921,8 +953,9 @@ test('with no PR, the head names the branch and carries the way out', { skip }, 
   // A branch nothing merges into says so, rather than leaving the body blank.
   // And one that can have a PR gets Create PR where a PR's head has its own
   // filled button, with no dot beside it.
+  // Waited for, not read: until the list lands the pane says it has none.
   const alone = await newPage({ st: { ...status, branch: 'topic-x', pr: null }, ready: '#pr-head .pr-branch-name' });
-  assert.equal(await alone.locator('#pr-body .empty').textContent(), 'No pull requests into branch topic-x.');
+  await alone.locator('#pr-body .empty', { hasText: 'No pull requests into branch topic-x.' }).waitFor();
   assert.deepEqual(await alone.$$eval('#pr-head .pr-links > :not(.sep)', (els) => els.map((e) => `${e.tagName} ${e.textContent}`)),
     ['BUTTON Create PR', 'A issues', 'A pulls', 'A milestones']);
   assert.equal(await alone.locator('#pr-head .pr-links .sep').count(), 2);
