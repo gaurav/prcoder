@@ -19,15 +19,17 @@
 // CLAUDE_BIN is stubbed (serverEnv in tools/driver.mjs says why and with what).
 //
 // It writes, so it is not read-only. The run replaces the repo's queue with a
-// fixture -- at least one item per tab -- and puts the queue back at the end; a
-// run that dies in between leaves the fixture behind, and the next run drops it
-// rather than restoring it. The queue itself writes only `.prcoder/`.
+// fixture -- at least one item per tab -- and puts the queue back at the end. A
+// run that dies in between leaves the fixture behind, and the queue it replaced
+// in data/queue-before-browser.json; the next run drops the one and puts back
+// the other. The queue itself writes only `.prcoder/`.
 //
 // Nothing here clicks ◎. It moves an item into a new issue, one-way: there is
 // no queue to put back that would close the issue again. Anything added here that
 // writes to GitHub needs its own undo, and needs to run against a repo you own.
 
 import { spawn } from 'node:child_process';
+import fs from 'node:fs';
 import path from 'node:path';
 import { openShots, pruneShots } from './shots.mjs';
 import { repo, free, serverEnv, killOnExit, openPage, launchBrowser } from './driver.mjs';
@@ -103,6 +105,18 @@ const seed = (over) => ({ text: over.t, done: false, issue: null, deleted: false
 const NUDGE = 'driver repaint nudge';
 const mine = new Set([...FIXTURE.map((f) => f.t), NUDGE]);
 had = had.filter((i) => !mine.has(i.text));
+// And the queue the fixture replaces, on disk until the restore at the end has
+// landed. Held only in memory, it died with a run that died: the next run saw
+// nothing but fixture, filtered that out, and put back an empty queue. A backup
+// still here is that run's, and it is what gets put back -- with anything added
+// to the store since, which is not in it.
+const backup = path.join(repo, 'data', 'queue-before-browser.json');
+if (fs.existsSync(backup)) {
+  const left = JSON.parse(fs.readFileSync(backup, 'utf8'));
+  had = [...left, ...had.filter((i) => !left.some((l) => l.text === i.text))];
+  console.log('backup: ', `${left.length} items left by a run that did not finish, put back at the end`);
+}
+fs.writeFileSync(backup, JSON.stringify(had, null, 2));
 const seeded = await queueApi({ items: FIXTURE.map(seed) });
 console.log('seeded: ', Array.isArray(seeded) ? `${seeded.length} items` : JSON.stringify(seeded));
 
@@ -719,7 +733,9 @@ try {
 console.log('queue:  ', (await getQueue()).length, 'items  (want', queue.length + ')');
 
 // Back to whatever the repo had.
-console.log('restored:', (await queueApi({ items: had })).length, 'items (was', had.length + ')');
+const putBack = await queueApi({ items: had });
+console.log('restored:', putBack.length, 'items (was', had.length + ')');
+if (Array.isArray(putBack)) fs.rmSync(backup);
 
 // The tab icon, which goes blue while a turn is running and back to green two
 // seconds after its output stops -- prcoder's only reading of "Claude is
