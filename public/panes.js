@@ -96,7 +96,10 @@ for (const g of document.querySelectorAll('.gut')) {
       e.preventDefault();
       return reset();
     }
-    const towards = { ArrowLeft: -1, ArrowUp: -1, ArrowRight: 1, ArrowDown: 1 }[e.key];
+    // Only the two arrows along the axis it moves on: a vertical separator
+    // (aria-orientation) that moved on Up and Down said one thing and did
+    // another, and took those keys from the page for nothing.
+    const towards = (along === 'width' ? { ArrowLeft: -1, ArrowRight: 1 } : { ArrowUp: -1, ArrowDown: 1 })[e.key];
     if (!towards) return;
     e.preventDefault();
     const r = main.getBoundingClientRect();

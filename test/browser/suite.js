@@ -659,3 +659,16 @@ test('a file with no diff does not keep the last file\'s outline', { skip }, asy
   assert.equal(await fresh.locator('#diff-outline button').count(), 0);
   await fresh.close();
 });
+
+// A separator moves on one axis, and says which with aria-orientation. Up and
+// Down used to resize the vertical ones too.
+test('a separator moves only on the arrows along its own axis', { skip }, async () => {
+  const fresh = await newPage();
+  const size = () => fresh.$eval('main', (m) => m.style.getPropertyValue('--w-pr'));
+  await fresh.locator('#gut-pr').focus();
+  await fresh.keyboard.press('ArrowDown');
+  assert.equal(await size(), '', 'Down leaves a vertical separator where it was');
+  await fresh.keyboard.press('ArrowRight');
+  assert.notEqual(await size(), '', 'Right moves it');
+  await fresh.close();
+});
