@@ -290,8 +290,7 @@ a { color: var(--accent); }
    long path and keep its filename -- is one declaration instead of four and
    was measured against this. It works. It is not here because the two cut
    opposite ends: a path is recognised from its tail, an owner from its front,
-   and rtl leaves `…tewards` where the spans leave `heal-dat…`.
-   docs/Verifying.md has the comparison. */
+   and rtl leaves `…tewards` where the spans leave `heal-dat…`. */
 .pr-links a.primary {
   padding: 1px 8px; border-radius: 9px; text-decoration: none; font-weight: 600;
   background: var(--accent); color: var(--bg);

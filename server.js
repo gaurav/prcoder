@@ -308,6 +308,9 @@ async function status({ full = false } = {}) {
   };
   checkedAt = Date.now();
   repaint();
+  // Seven on a clean tree or a dirty one, with or without a pull request.
+  // Printed at PRCODER_VERBOSE=2 so a change that adds one shows up as a
+  // number rather than as a slower poll.
   term.debug(`poll: ${runCount() - calls} subprocess calls`);
   return last;
 }

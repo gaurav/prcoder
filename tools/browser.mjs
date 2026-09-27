@@ -467,6 +467,12 @@ try {
   // The bug above, pinned: a click in the middle of an item's text has to land
   // in the middle of it. Silent in Chromium either way, so this only earns its
   // keep under PRCODER_BROWSER=firefox.
+  //
+  // All it proves is `caret > 0`. The offset it prints is not evidence: `.item
+  // .text` is `flex: 1`, so the middle of its box is past the end of the
+  // sentence and the caret goes to the end of the text -- the number is the
+  // first row's length, and moves when the queue does. Aiming at the text node
+  // with a Range is the finer check; 43c8162 on #27's branch does that.
   const text = page.locator('.item .text').first();
   const tb = await text.boundingBox();
   await page.mouse.click(tb.x + tb.width / 2, tb.y + tb.height / 2);

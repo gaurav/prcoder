@@ -203,7 +203,12 @@ export async function localPatch(cwd, { baseOid, baseRef, head, path, from, addi
     : await known(`refs/remotes/origin/${baseRef}`) ? `refs/remotes/origin/${baseRef}` : null;
   if (!base || !await known(head)) return null;
   // --literal-pathspecs because the path comes from the page: `:(glob)**` is
-  // otherwise every file. The rest keep a user's diff config out of it.
+  // otherwise every file. The rest keep a user's diff config out of it: a
+  // `diff.algorithm histogram` in someone's gitconfig reaches every `git diff`
+  // prcoder runs. Myers with three lines of context is what came closest to
+  // GitHub's patches, and even then a few files split hunks differently
+  // (7d3df58 has the comparison), which is why the line counts below are the
+  // check, not the text.
   const out = await git(['--literal-pathspecs', 'diff', '--no-color', '--no-ext-diff', '--no-textconv',
     '-U3', '--diff-algorithm=myers', '-M', `${base}...${head}`, '--', ...(from ? [from] : []), path], cwd);
   const at = out.search(/^@@/m);

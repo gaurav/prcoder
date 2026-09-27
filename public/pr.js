@@ -770,7 +770,9 @@ function fileRow(f, { onViewed, onOpen, selected }, dir = '') {
   // which for any real path is a Latin letter, so it lays out left to right
   // inside a box that still overflows from the left. Checked in both engines
   // on 2026-09-09; `unicode-bidi: plaintext` on the link fixes the order too,
-  // but moves the cut to the tail, which is the thing the rtl was for.
+  // but moves the cut to the tail, which is the thing the rtl was for. An LRM
+  // prefix and an LRI…PDI wrap both work, and both put invisible characters
+  // into text people copy.
   // The name the fold above it does not already say. `title` stays the whole
   // path: the row is what you point at when you want to know where a file is,
   // and the directory heading may have scrolled off the top of a long group.

@@ -63,6 +63,10 @@ export function killOnExit(child) {
 /**
  * A page at the server's root, retried while the server is still starting.
  * 1440x900 is a common laptop size with room for all three panes.
+ *
+ * Only a `pageerror` is reported. A Content-Security-Policy that blocks a
+ * script, a stylesheet or a font is a console message, not a page exception,
+ * so it shows only as whichever later check needed what did not load (#62).
  */
 export async function openPage(browser, port) {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
