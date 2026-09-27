@@ -323,12 +323,15 @@ test('the Stack tab counts the whole tree, and a fork has no stack here', () => 
 
 // Three empties, three sentences. The other-repo one used to say "Nothing is
 // stacked", which was a claim about a repository prcoder had not looked in.
+// `{ branch }` parts become <code> in the pane; here, a backticked name.
+const said = (parts) => parts.map((p) => (typeof p === 'string' ? p : `\`${p.branch}\``)).join('');
+
 test('an empty Stack tab says why it is empty', () => {
-  const here = { headRefName: 'queue-tabs' };
-  assert.equal(stackEmpty(here, OPEN), 'Nothing is stacked on queue-tabs.');
-  assert.equal(stackEmpty({ headRefName: 'main', isCrossRepository: true }, OPEN),
-    'Nothing here can be built on main: it is a branch in a fork.');
-  assert.equal(stackEmpty(here, null), 'Stacks are listed only for pull requests in this repository.');
+  const here = { number: 70, headRefName: 'queue-tabs' };
+  assert.equal(said(stackEmpty(here, OPEN)), 'Nothing is stacked on PR #70 (branch `queue-tabs`).');
+  assert.equal(said(stackEmpty({ number: 80, headRefName: 'main', isCrossRepository: true }, OPEN)),
+    'Nothing here can be built on PR #80 (branch `main`): the branch is in a fork.');
+  assert.equal(said(stackEmpty(here, null)), 'Stacks are listed only for pull requests in this repository.');
   assert.deepEqual(stackOn(here, null), []);
 });
 

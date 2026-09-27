@@ -323,9 +323,28 @@ function intoRow(status, prs, onSwitch) {
   const tree = prTree(prs, status.branch);
   if (!tree.length) return null;
   return h('div', { className: 'pr-into' },
-    h('span', { className: 'pr-into-label' }, `Pull requests into ${status.branch}`),
+    h('span', { className: 'pr-into-label' }, ...named(['Pull requests into branch ', { branch: status.branch }])),
     stackList(tree, { blocked: status.dirtyFiles.length > 0, onSwitch }));
 }
+
+/**
+ * A sentence that names a branch, as parts: plain strings, and `{ branch }`
+ * for the name. Parts rather than a string so the name can be set in the code
+ * face -- `main` or `queue-tabs` in running text otherwise reads as a word of
+ * the sentence -- and rather than elements so tests can read them in Node,
+ * where there is no document to build one in.
+ */
+const named = (parts) => parts.map((p) => (typeof p === 'string' ? p : h('code', { className: 'branch' }, p.branch)));
+
+/**
+ * What a Stack tab's pull requests are built on. The head above already says
+ * both, but the tab is read on its own, and "built on pr-stack" left you to
+ * remember which pull request pr-stack was.
+ *
+ * Not a link. The PR's page is the title's link a few lines up, and GitHub's
+ * page for a branch shows its files and commits, not what is built on it.
+ */
+export const stackBase = (pr) => [`PR #${pr.number} (branch `, { branch: pr.headRefName }, ')'];
 
 /**
  * A prTree as nested lists. Each pull request's stack sits under it, so the
@@ -616,13 +635,13 @@ export const stackOn = (pr, prs) => (!prs || pr.isCrossRepository ? []
  * What the Stack tab says when it has no rows, which is three different facts:
  * nothing is built on this branch, nothing *can* be (a fork's branch), or
  * prcoder has no list to look in (`prs` is null for a pull request in another
- * repository -- see paint() in app.js).
+ * repository -- see paint() in app.js). Parts, as named() takes them.
  */
 export const stackEmpty = (pr, prs) => (!prs
-  ? 'Stacks are listed only for pull requests in this repository.'
+  ? ['Stacks are listed only for pull requests in this repository.']
   : pr.isCrossRepository
-    ? `Nothing here can be built on ${pr.headRefName}: it is a branch in a fork.`
-    : `Nothing is stacked on ${pr.headRefName}.`);
+    ? ['Nothing here can be built on ', ...stackBase(pr), ': the branch is in a fork.']
+    : ['Nothing is stacked on ', ...stackBase(pr), '.']);
 
 const stackSize = (nodes) => nodes.reduce((n, k) => n + 1 + stackSize(k.kids), 0);
 
@@ -651,9 +670,9 @@ function renderPrTab(pr, parsed, handlers) {
   host.replaceChildren(...kids(stack ? [
     stack.length
       ? h('div', { className: 'pr-into' },
-        h('span', { className: 'pr-into-label' }, `Pull requests built on ${pr.headRefName}`),
+        h('span', { className: 'pr-into-label' }, ...named(['Pull requests built on ', ...stackBase(pr)])),
         stackList(stack, handlers))
-      : h('p', { className: 'empty' }, stackEmpty(pr, handlers.prs)),
+      : h('p', { className: 'empty' }, ...named(stackEmpty(pr, handlers.prs))),
   ] : tab === 'files' ? [
     ...GROUPS.map(([key, label]) => fileGroup(label, pr.files.filter((f) => f.group === key), handlers)),
     h('div', { className: 'meta' },

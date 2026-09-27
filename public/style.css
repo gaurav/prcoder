@@ -701,6 +701,9 @@ a { color: var(--accent); }
    Switch is the checkout, and the title sits between them and gives way first. */
 .pr-into { margin: 0 0 10px; font-size: 12px; }
 .pr-into-label { display: block; color: var(--dim); }
+/* A branch named in a sentence, in the diff pane's face so it reads as a name.
+   Monospace runs wide at the same size, hence the smaller em. */
+code.branch { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .92em; color: var(--fg); }
 .pr-into ul { list-style: none; margin: 0; padding: 0 0 0 10px; }
 /* A stack under the pull request it builds on: the rule is the branch. */
 .pr-into ul ul { margin-left: 4px; padding-left: 10px; border-left: 1px solid var(--line); }

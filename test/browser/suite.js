@@ -836,6 +836,10 @@ test('stacked PRs nest in the switcher and the Stack tab, each linked and switch
   const tab = fresh.locator('#pr-head .tab', { hasText: 'Stack' });
   assert.equal(await tab.textContent(), 'Stack (2)');
   await tab.click();
+  // The tab is read on its own, so it names the PR as well as the branch, and
+  // the branch in the code face.
+  assert.equal(await fresh.locator('#pr-body .pr-into-label').textContent(), 'Pull requests built on PR #12 (branch topic)');
+  assert.equal(await fresh.locator('#pr-body .pr-into-label code.branch').textContent(), 'topic');
   assert.deepEqual(await fresh.locator('#pr-body .pr-into > ul > li > .pr-row .pr-num').allTextContents(), ['#13']);
   assert.deepEqual(await fresh.locator('#pr-body .pr-into ul ul .pr-num').allTextContents(), ['#14']);
   const link = fresh.locator('#pr-body .pr-num', { hasText: '#14' });
@@ -873,6 +877,8 @@ const onMain = { ...status, branch: 'main', pr: null };
 
 test('with no PR, the PRs into this branch nest their stacks, and a dirty tree blocks only Switch', { skip }, async () => {
   const clean = await newPage({ prs: STACK, st: onMain, ready: '#pr-body .pr-into .pr-go' });
+  assert.equal(await clean.locator('#pr-body .pr-into-label').textContent(), 'Pull requests into branch main');
+  assert.equal(await clean.locator('#pr-body .pr-into-label code.branch').textContent(), 'main');
   assert.deepEqual(await clean.locator('#pr-body .pr-into > ul > li > .pr-row .pr-num').allTextContents(), ['#12']);
   assert.deepEqual(await clean.locator('#pr-body .pr-into ul ul .pr-num').allTextContents(), ['#13', '#14']);
   assert.equal(await clean.locator('#pr-body .pr-num', { hasText: '#12' }).getAttribute('href'), pr.url);
