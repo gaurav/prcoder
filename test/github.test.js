@@ -10,11 +10,12 @@ test('check states collapse into passed, failed and pending', () => {
   const { list, ...counts } = rollup([
     { conclusion: 'SUCCESS' }, { conclusion: 'SKIPPED' }, { conclusion: 'NEUTRAL' },
     { conclusion: 'FAILURE' }, { conclusion: 'TIMED_OUT' },
+    { conclusion: 'STALE' }, { conclusion: 'STARTUP_FAILURE' },
     { state: 'PENDING' }, { conclusion: '' },
   ]);
-  assert.deepEqual(counts, { passed: 3, failed: 2, pending: 2 });
+  assert.deepEqual(counts, { passed: 3, failed: 4, pending: 2 });
   assert.deepEqual(list.map((c) => c.state),
-    ['pass', 'pass', 'pass', 'fail', 'fail', 'pend', 'pend']);
+    ['pass', 'pass', 'pass', 'fail', 'fail', 'fail', 'fail', 'pend', 'pend']);
 });
 
 test('a PR with no checks reports nothing rather than zeroes everywhere', () => {

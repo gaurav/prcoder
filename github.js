@@ -255,11 +255,18 @@ export async function createIssue(cwd, nameWithOwner, title) {
  * a `status` but no `conclusion` yet, and a StatusContext has neither -- only a
  * `state` -- so anything unrecognised counts as pending rather than as a pass:
  * the optimistic reading of an unknown is the one that says "merge it".
+ *
+ * STALE is a finished run GitHub itself gave up on, not one still going, so it
+ * is a failure: counted as pending it held the tab yellow, and its fraction
+ * short, for a check that was never going to report. STARTUP_FAILURE is caught
+ * by FAILURE, since the pattern is not anchored. That covers every value of
+ * GitHub's CheckConclusionState and StatusState (read off the GraphQL schema
+ * 2026-09-27); StatusState's EXPECTED is a status not yet posted, so pending.
  */
 const state = (c) => {
   const s = c.conclusion || c.state || '';
   if (/SUCCESS|NEUTRAL|SKIPPED/i.test(s)) return 'pass';
-  if (/FAILURE|ERROR|CANCELLED|TIMED_OUT|ACTION_REQUIRED/i.test(s)) return 'fail';
+  if (/FAILURE|ERROR|CANCELLED|TIMED_OUT|ACTION_REQUIRED|STALE/i.test(s)) return 'fail';
   return 'pend';
 };
 
