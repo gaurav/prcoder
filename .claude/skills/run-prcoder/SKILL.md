@@ -73,7 +73,7 @@ node tools/browser.mjs highlighting               # the UI, PNGs to data/shots/h
 PRCODER_BROWSER=chromium node tools/browser.mjs   # compare engines
 node tools/cli.mjs                                # the terminal half, in a real PTY
 node tools/no-pr.mjs                              # the pane with no pull request, in a clone
-node tools/diff-views.mjs                         # the diff pane's DIFF, DELETED, outline and .tsx, on fixture PR #87
+node tools/diff-views.mjs                         # the diff pane's DIFF, DELETED, renames, outline and .tsx, on fixture PR #87
 ```
 
 Each boots its own server on a port of its own (the `port` line near the top)

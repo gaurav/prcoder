@@ -8,17 +8,18 @@
 // ever opens the NEW view of a file with no hunks. This drives PR #87 instead:
 // a draft that is never merged, from `fixture/diff-views` into
 // `fixture/diff-views-base`, an orphan base with none of prcoder's history, so
-// it stays the same three files whatever happens to main. Its description says
-// what each file is for. `src/service.js` is modified in two places (the DIFF
-// view, and an outline with two rows), `notes/old.txt` is deleted (DELETED),
-// and `src/Badge.tsx` is added (NEW, and the one .tsx file any real pull
-// request here has -- #74).
+// it stays the same files whatever happens to main. Its description says what
+// each file is for. `src/service.js` is modified in two places (the DIFF view,
+// and an outline with two rows), `notes/old.txt` is deleted (DELETED),
+// `src/Badge.tsx` is added (NEW, and the one .tsx file any real pull request
+// here has -- #74), and two files are renamed, one untouched and one with a
+// line changed.
 //
 // The server is this working tree's, pinned to the fixture by number. Nothing
 // here writes to GitHub: it opens files and toggles the outline, and the only
 // preferences it changes it puts back.
 
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { openShots, pruneShots } from './shots.mjs';
 import { repo, free, serverEnv, killOnExit, openPage, launchBrowser } from './driver.mjs';
@@ -27,6 +28,19 @@ const FIXTURE = 87;
 const shotsRoot = path.join(repo, 'data', 'shots');
 const label = process.argv[2] ?? 'diff-views';
 const port = Number(process.env.PRCODER_PORT) || 17436;
+
+// Checked before anything starts: a fixture that has been closed, or whose
+// branches were deleted, loads no pull request, and every check below would
+// then fail as a 30-second timeout that reads like a hung server.
+const fixture = spawnSync('gh', ['pr', 'view', String(FIXTURE), '--json', 'state,headRefName,baseRefName'],
+  { cwd: repo, encoding: 'utf8' });
+const state = fixture.status === 0 ? JSON.parse(fixture.stdout) : null;
+if (state?.state !== 'OPEN') {
+  console.error(`fixture PR #${FIXTURE} is ${state ? state.state.toLowerCase() : 'not readable'}`
+    + ` (${state ? `${state.headRefName} into ${state.baseRefName}` : fixture.stderr.trim()}).`
+    + ' Reopen it -- the branches are fixture/diff-views and fixture/diff-views-base -- or point FIXTURE at its replacement.');
+  process.exit(1);
+}
 
 await free(port);
 const out = await openShots(shotsRoot, label);
@@ -131,6 +145,20 @@ console.log('tsx:     ', tsx.title, `(want NEW), ${tsx.spans} spans`);
 console.log('          ', 'tags:', tags.join(' ') || '(none)', '(want span and strong among them)');
 console.log('          ', tsx.classes, '\n           (want tok-tag and tok-attr-name: without jsx under it, markup is operators)');
 await page.locator('#diff').screenshot({ path: path.join(out, 'tsx.png') });
+
+// --- renamed: where it came from, alone or above a hunk ---
+
+const rows = () => page.$$eval('#diff-body .dl', (els) => els.map((e) => e.textContent));
+const moved = await open('lib/formatting.js');
+const movedRows = await rows();
+console.log('renamed: ', moved.title, JSON.stringify(movedRows),
+  '(want only ["renamed from lib/format.js"]: nothing else changed)');
+await page.locator('#diff').screenshot({ path: path.join(out, 'renamed.png') });
+await open('lib/text.js');
+const edited = await rows();
+console.log('          ', JSON.stringify(edited[0]), `then ${edited.length - 1} rows`,
+  '(want "renamed from lib/strings.js", then the hunk)');
+await page.locator('#diff').screenshot({ path: path.join(out, 'renamed-edited.png') });
 
 await browser.close();
 console.log('shots:  ', out);
