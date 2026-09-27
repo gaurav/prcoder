@@ -92,7 +92,10 @@ export async function prBody(cwd, prUrl) {
  * of its own would be a call on a poll that already has seven.
  */
 export async function listPrs(cwd) {
-  const args = ['pr', 'list', '--state', 'open', '--json',
+  // gh stops at 30 unless told otherwise, and the ones past it simply are not
+  // there -- in the switcher, and in the list of pull requests into a branch
+  // with none of its own. gh pages up to the limit itself.
+  const args = ['pr', 'list', '--state', 'open', '--limit', '1000', '--json',
     'number,title,headRefName,baseRefName,isDraft'];
   return JSON.parse(await gh(args, { cwd }));
 }
@@ -140,9 +143,13 @@ async function viewedState(cwd, url) {
   let after = null;
 
   do {
+    // -f for every string, -F only for the Int. -F converts by what a value
+    // looks like: an all-digit owner went as an Int and GitHub refused it
+    // ("Could not coerce value 12345 to String", checked 2026-09-26), and a
+    // value starting with @ is read as a file name.
     const args = ['api', 'graphql', '-f', `query=${VIEWED_QUERY}`,
-      '-F', `owner=${owner}`, '-F', `repo=${repo}`, '-F', `number=${number}`];
-    if (after) args.push('-F', `after=${after}`);
+      '-f', `owner=${owner}`, '-f', `repo=${repo}`, '-F', `number=${number}`];
+    if (after) args.push('-f', `after=${after}`);
     const { data } = JSON.parse(await gh(args, { cwd }));
     const pr = data.repository.pullRequest;
     nodeId = pr.id;
@@ -158,7 +165,8 @@ export async function setViewed(cwd, nodeId, path, viewed) {
   const op = viewed ? 'markFileAsViewed' : 'unmarkFileAsViewed';
   await gh(['api', 'graphql', '-f', `query=mutation($id:ID!,$path:String!){
     ${op}(input:{pullRequestId:$id,path:$path}){ clientMutationId } }`,
-    '-F', `id=${nodeId}`, '-F', `path=${path}`], { cwd });
+    // -f: a file named `404` or `@types/x.d.ts` is a string (see viewedState).
+    '-f', `id=${nodeId}`, '-f', `path=${path}`], { cwd });
 }
 
 /**
@@ -286,7 +294,7 @@ export async function issueLinks(cwd, prUrl, numbers) {
   const query = `query($owner:String!,$repo:String!){ repository(owner:$owner,name:$repo){ ` +
     numbers.map((n) => `i${n}: issueOrPullRequest(number:${n})` +
       `{ ... on Issue { title url } ... on PullRequest { title url } }`).join(' ') + ` } }`;
-  const args = ['api', 'graphql', '-f', `query=${query}`, '-F', `owner=${owner}`, '-F', `repo=${repo}`];
+  const args = ['api', 'graphql', '-f', `query=${query}`, '-f', `owner=${owner}`, '-f', `repo=${repo}`];
   try {
     return linksFrom(await gh(args, { cwd }));
   } catch (e) {
