@@ -965,3 +965,31 @@ test('with no PR, the head names the branch and carries the way out', { skip }, 
   await created;
   await alone.close();
 });
+
+// The pane with no PR is redrawn on every poll, and a push can take longer than
+// one. The button used to be disabled only where it was clicked, so the redraw
+// put an enabled one back, and a second click pushed and opened a second tab.
+test('Create PR stays disabled through a poll while the first click is pushing', { skip }, async () => {
+  const p = await newPage({ st: { ...status, branch: 'topic-x', pr: null }, ready: '#pr-head .pr-branch-name' });
+  let release;
+  const held = new Promise((res) => { release = res; });
+  let asked = 0;
+  await p.route('**/api/pr/create', async (r) => {
+    asked += 1;
+    await held;
+    await r.fulfill({ json: { url: 'about:blank', pushed: true } });
+  });
+  const button = p.locator('#pr-head .pr-links button.primary');
+  const first = p.waitForRequest('**/api/pr/create');
+  await button.click();
+  await first;
+  const polled = p.waitForResponse('**/api/status');
+  await p.click('#pr-refresh');
+  await polled;
+  assert.equal(await button.isDisabled(), true, 'a poll put an enabled Create PR back');
+  await button.click({ force: true });
+  release();
+  await p.locator('#pr-head .pr-links button.primary:not([disabled])').waitFor();
+  assert.equal(asked, 1);
+  await p.close();
+});

@@ -271,7 +271,7 @@ export function stackOrder(prs) {
  * milestones are how you choose what to work on next. The head does not
  * scroll, so it is always there.
  */
-export function renderNoPr(status, prs, { onCreate, onSwitch }) {
+export function renderNoPr(status, prs, { onCreate, onSwitch, creating = false }) {
   const host = document.getElementById('pr-body');
   tab = 'detail';
   shownFor = null;
@@ -289,8 +289,9 @@ export function renderNoPr(status, prs, { onCreate, onSwitch }) {
   // button: in both views it is the way to this branch's pull request on
   // GitHub, one that exists and one that is a compare page away. Where no pull
   // request can be made it is left out rather than disabled, since the note
-  // already says why.
-  const create = can ? [{ text: 'Create PR', className: 'primary', onClick: onCreate }] : [];
+  // already says why. Disabled while a click is still pushing (see createPr in
+  // app.js), since this pane is redrawn on every poll.
+  const create = can ? [{ text: 'Create PR', className: 'primary', onClick: onCreate, disabled: creating }] : [];
 
   // The same rows as a pull request's head, down to the class names, through
   // the same HEAD_ORDER. The title is `pr-branch-name` and not `pr-title`
@@ -531,7 +532,7 @@ const linkRow = (list, className) => h('div', { className },
   ...list.map((l, i) => [
     i && !l.className && !list[i - 1].className ? h('span', { className: 'sep' }, '·') : null,
     l.onClick
-      ? btn(l.text, (e) => l.onClick(e.currentTarget), { className: l.className })
+      ? btn(l.text, (e) => l.onClick(e.currentTarget), { className: l.className, disabled: !!l.disabled })
       : ext(l.href, l.text, l.className ? { className: l.className } : {}),
   ]));
 

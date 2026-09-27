@@ -290,7 +290,7 @@ function paint(status) {
     }
   } else {
     drawn = null;
-    renderNoPr(status, prs, { onCreate: createPr, onSwitch: switchPr });
+    renderNoPr(status, prs, { onCreate: createPr, onSwitch: switchPr, creating });
   }
   if (switched) loadPrs();
   // Reading its checklist into the PR tab needs only a PR on screen.
@@ -338,12 +338,20 @@ async function switchPr(number) {
   }
 }
 
+// Held here, not on the button: the pane with no PR is redrawn on every poll,
+// and a push can outlast one. Disabling only the button that was clicked put
+// an enabled one back in its place a poll later, and a second click was a
+// second push and a second compare tab.
+let creating = false;
+
 async function createPr(btn) {
+  if (creating) return;
   // Opened before the await, or the popup blocker eats it. Blocked outright and
   // this is null -- which used to throw on `win.location`, throw again on
   // `win.close()` inside the catch, and leave the button disabled for good with
   // nothing said. The request is still worth making; only the tab is lost.
   const win = window.open('', '_blank');
+  creating = true;
   btn.disabled = true;
   try {
     const { url, pushed } = await api('/api/pr/create');
@@ -354,7 +362,10 @@ async function createPr(btn) {
     win?.close();
     toast(e.message, true);
   }
+  creating = false;
   btn.disabled = false;
+  // The button on screen may be a redrawn one, drawn disabled from `creating`.
+  if (last && !last.pr) paint(last);
 }
 
 const askClaudeToCommit = (files) =>
