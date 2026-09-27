@@ -66,44 +66,12 @@ owner is fine with swapping in a real test framework (stated 2026-09-05). The
 rule above is about the CLI's directory argument, not about staying on the
 built-in runner.
 
-## Subprocess errors lie by omission
+## Subprocess errors are quieter than they look
 
-Three failures this repo depends on are invisible rather than loud, so check
-the real behaviour before trusting any of them.
-
-`execFile` hands stderr to its callback and never puts it on the error object.
-`run` in `github.js` attaches it, and every `no pull requests found`-style guard
-reads it — without that they match against `undefined` and silently never fire.
-
-A non-zero exit does not mean there is nothing on stdout, either. `gh api
-graphql` exits 1 whenever the response carries an `errors` array — and prints
-that whole response anyway, data included. Ask one query for ten issue titles
-where one of the numbers does not exist and you get nine titles beside a single
-NOT_FOUND, over exit 1. `run` attaches `err.stdout` for exactly that, and
-`issueLinks` in `github.js` reads its data off the failure; a catch that
-returned nothing there would lose nine answers to one bad number. Checked
-against the real API on 2026-09-18.
-
-git's exit codes are per-command, and a non-zero one is often an answer rather
-than a failure. `rev-parse --verify --quiet` exits 1 for a missing object where
-`cat-file -e` exits 128; `merge-base --is-ancestor` exits 1 to mean "no" and 128
-to mean "bad object". `asks()` in `git.js` treats one specific code as the
-answer and rethrows the rest, so pick the command whose codes you can tell apart.
-
-## Raw mode swallows SIGINT
-
-`term.js` puts stdin in raw mode so a keypress can be read, and raw mode turns
-ISIG off: Ctrl-C then arrives as byte 3 on stdin and **no SIGINT is delivered
-at all**. The keypress handler is the only Ctrl-C there is, so a bug in it is a
-process you cannot interrupt. That is why a second Ctrl-C at the confirm prompt
-exits unconditionally, and why `kill -TERM` is wired separately -- a signal
-with a default action never runs `exit` handlers, so the cursor and the raw
-mode would never be restored.
-
-None of it exists without a tty. `process.stdout.isTTY` gates the block and
-`process.stdin.isTTY` gates the keys, so a piped run behaves as it always did
--- which is what `tools/browser.mjs` (`stdio: 'ignore'`) is standing proof of.
-`tools/cli.mjs` drives the other half, in a real PTY.
+A gh or git failure here is usually quiet, not loud: stderr missing from the
+error, a full stdout behind a non-zero exit, or an exit code that means "no"
+rather than "broke". Read the docstrings on `run` in `github.js` and `answer`
+in `git.js` before adding a call, and check what the real tool does.
 
 ## Old descriptions still carry the mirror's block
 

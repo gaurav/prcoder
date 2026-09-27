@@ -12,7 +12,14 @@ const git = (args, cwd) => run('git', args, { cwd, timeout: 30_000 });
 
 const text = async (args, cwd) => (await git(args, cwd)).trim();
 
-/** Trimmed stdout, or null when git exits `ok`; any other failure is a real one. */
+/**
+ * Trimmed stdout, or null when git exits `ok`; any other failure is a real one.
+ *
+ * git's exit codes are per command, and a non-zero one is often an answer.
+ * `rev-parse --verify --quiet` exits 1 for a missing object where `cat-file -e`
+ * exits 128; `merge-base --is-ancestor` exits 1 for "no" and 128 for a bad
+ * object. So choose the command whose "no" code differs from its error code.
+ */
 async function answer(args, cwd, ok = 1) {
   try {
     return await text(args, cwd);

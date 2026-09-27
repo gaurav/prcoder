@@ -72,7 +72,7 @@ for (const [label, env] of envs) {
     if (shotOk) ok[label ? 'env' : 'bare'] = true;
     console.log(`${shotOk ? 'OK  ' : 'FAIL'} bare ${stock}${label} -- ${shotOk ? shot : firstLine(stderr)} (${Date.now() - started}ms)`);
   } catch (err) {
-    // execFile hands stderr to the callback rather than the error; see CLAUDE.md.
+    // execFile hands stderr to the callback rather than the error; see run() in github.js.
     console.log(`FAIL bare ${stock}${label} -- ${firstLine(err.stderr) || why(err)} (${Date.now() - started}ms)`);
   }
 }

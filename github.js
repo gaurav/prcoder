@@ -21,6 +21,11 @@ export const runCount = () => calls;
  * fetch would otherwise wait on -- holds every route behind it. The prompts are
  * turned into errors (GIT_TERMINAL_PROMPT, GH_PROMPT_DISABLED) whatever env a
  * caller passes; the timeout is a default a slow call raises (checkoutPr).
+ *
+ * A failure is quieter than it looks, so check the real tool's behaviour
+ * before writing a new call's error handling. stderr is on the error only
+ * because this puts it there; a non-zero exit can still carry a full stdout
+ * (issueLinks); and git's codes differ per command (`answer` in git.js).
  */
 const RUN_TIMEOUT = 60_000;
 export function run(bin, args, { input, env, ...opts } = {}) {

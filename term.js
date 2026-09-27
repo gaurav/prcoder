@@ -147,8 +147,13 @@ export function confirm(text, onYes) {
  * Raw mode turns ISIG off, so Ctrl-C arrives as byte 3 and *no SIGINT is
  * delivered* -- this handler is the only Ctrl-C there is. Which is the point:
  * quitting kills the browser's Claude session, so it gets asked about first.
+ * It also means a bug in this handler makes the process impossible to
+ * interrupt, hence the unconditional second Ctrl-C below.
  *
- * With no tty there is nobody to ask, and the default death is right.
+ * With no tty there is nobody to ask, and the default death is right. The
+ * drivers split along that line: tools/browser.mjs spawns the server with
+ * `stdio: 'ignore'` and never reaches this, and tools/cli.mjs runs it in a
+ * real PTY to check it.
  */
 export function keys({ quit, key }) {
   if (!process.stdin.isTTY) return;

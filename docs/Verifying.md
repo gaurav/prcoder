@@ -236,8 +236,8 @@ Some things can only be checked against the real thing, so they are:
   scratch repo, because the belief *was* the bug: with only `refs/heads/feature/topic` on the
   remote, a bare `topic` comes back with its sha. A stub would have pinned the belief.
 - **The `git` exit codes the sync verdict depends on**, because a non-zero exit is often an answer
-  rather than a failure and git's codes differ per command — see [CLAUDE.md](../CLAUDE.md), which
-  records which command returns what and why `asks()` exists.
+  rather than a failure and git's codes differ per command — `answer` in [`git.js`](../git.js)
+  records which command returns what, and why `asks()` exists.
 - **That a patch from local git stands in for one GitHub stopped sending** (`localPatch` in
   `git.js`), checked 2026-09-23 against NCATSTranslator/translator-diagram#32. There GitHub's
   `pulls/N/files` sent no patch, and `+0`, for every file after about 860 KB of patch text. The
