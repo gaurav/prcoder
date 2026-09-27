@@ -8,7 +8,7 @@
 // `deleted` is a tombstone, so nothing typed disappears without somewhere to
 // get it back.
 
-import { TASK, taskLines, hideComments } from './public/tasks.js';
+import { TASK, taskLines, hideComments, withoutHtml } from './public/tasks.js';
 
 /**
  * Flip one checkbox in a PR description, so the boxes rendered in the PR pane
@@ -22,16 +22,15 @@ export function toggleTask(body, index, done, expected) {
   const at = taskLines(body ?? '')[index];
   if (at === undefined) throw new Error('that checkbox is no longer in the description -- refresh');
 
-  // Read through the same comment blanking the pane rendered from: its text for
-  // `- [ ] fix <!-- note -->` is `fix`, and the raw line's never would be.
-  const visible = hideComments(body ?? '', ' ').split('\n')[at];
-  const text = TASK.exec(visible)[2].trim();
+  // Read from the text the pane rendered: its text for `- [ ] fix <!-- note -->
+  // the parser` has the comment gone, and the raw line's never would.
+  const text = TASK.exec(withoutHtml(body).split('\n')[at])[2].trim();
   if (text !== (expected ?? '').trim()) {
     throw new Error(`the description changed under that checkbox (now "${text}") -- refresh`);
   }
-  // TASK anchors the box at the start of the line, so the first [ ] outside a
-  // comment is it -- found in the blanked copy, whose offsets are the raw line's.
-  const box = visible.search(/\[( |x|X)\]/);
+  // The first [ ] outside a comment is the box -- found in a copy with comments
+  // blanked to spaces, whose offsets are the raw line's.
+  const box = hideComments(body ?? '', ' ').split('\n')[at].search(/\[( |x|X)\]/);
   lines[at] = `${lines[at].slice(0, box)}${done ? '[x]' : '[ ]'}${lines[at].slice(box + 3)}`;
   return lines.join('\n');
 }

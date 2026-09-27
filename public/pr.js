@@ -1,4 +1,7 @@
-import { TASK, fences, hideComments, summary, mention, repoUrl } from './tasks.js';
+import { TASK, fences, withoutHtml, mention, repoUrl } from './tasks.js';
+
+// Re-exported for the tests, which read the pane's view of a body through here.
+export { withoutHtml };
 
 // Skips absent sections; DOM append() would render them as the text "null".
 const kids = (list) => list.flat().filter((k) => k != null);
@@ -1034,39 +1037,6 @@ function description(parsed, onTask) {
 // would swallow the line.
 export const HEADING = /^(#{1,6})\s+(.*)$/;
 
-/**
- * The three pieces of raw HTML a PR description actually contains, dealt with
- * before anything is escaped. Everything else stays escaped and shows as text:
- * this is an allowlist of three, not the beginning of an HTML renderer.
- *
- * Comments go because GitHub hides them and prcoder's own block markers are
- * comments -- without this the pane shows a literal marker above the list it
- * delimits.
- *
- * `<details>` is unwrapped rather than reproduced. It used to be because the
- * pane merely scrolled and a collapsed half was usually history; now it is the
- * better reason: the pane folds its own sections, so an author's fold and
- * prcoder's are the same idea twice. Unwrapping it and promoting its summary to
- * a heading feeds it into that machinery instead of nesting inside it.
- *
- * One consequence, live in this repo: a <details> in a description shows up in
- * the pane as its summary promoted to a level-4 heading, which is deeper than
- * the level sections fold at -- so it renders *inside* whichever fold precedes
- * it rather than as one of its own. That is the intended trade (the alternative
- * is two kinds of fold competing), but it is why a collapsed block in this
- * repo's own pull request description reads differently here and on github.com.
- *
- * Every substitution here must leave the body's *lines* where they are.
- * blocks() runs on the output and taskLines() runs on the raw body, and the two
- * counts of checklist lines have to match -- so anything added here that could
- * delete or merge a line containing a `- [ ]` breaks the tick, silently.
- */
-export const withoutHtml = (text) => hideComments(text ?? '')
-  .replace(/<\/?details[^>]*>/g, '')
-  // The heading is one line, and the summary's other lines stay behind it empty.
-  .replace(summary(), (s, t) =>
-    `#### ${t.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim()}${'\n'.repeat(s.split('\n').length - 1)}`);
-
 /** A checkbox in the description, ticked through to GitHub. */
 function taskRow({ done, text, index }, onTask) {
   const box = h('input', { type: 'checkbox', checked: done, title: 'tick this on GitHub' });
@@ -1103,8 +1073,8 @@ export const inline = (s, where = links) => {
     .replace(/(^|[\s(])(https?:\/\/[^\s)]+)/g, (_, pre, url) => pre + a(url, url))
     // After the two link rules, so a `#` inside an href this just built is not
     // a mention: those are preceded by a path character, and a mention has to
-    // start a word. The same mention() linkedIssues() in github.js reads, which
-    // is what puts the same numbers in the Mentions row.
+    // start a word. mentions() in tasks.js reads the same pattern over the same
+    // shown text, which is what puts the same numbers in the Mentions row.
     .replace(mention(), (m, pre, n) =>
       (where ? `${pre}${a(`${where.repo}/issues/${n}`, `#${n}`)}` : m))
     .replace(/\n/g, '<br>')

@@ -43,6 +43,46 @@ export const hideComments = (body, fill = '') =>
 export const summary = () => /<summary[^>]*>([\s\S]*?)<\/summary>/g;
 
 /**
+ * The three pieces of raw HTML a PR description actually contains, dealt with
+ * before anything is escaped. Everything else stays escaped and shows as text:
+ * this is an allowlist of three, not the beginning of an HTML renderer.
+ *
+ * Comments go because GitHub hides them and prcoder's own block markers are
+ * comments -- without this the pane shows a literal marker above the list it
+ * delimits.
+ *
+ * `<details>` is unwrapped rather than reproduced. It used to be because the
+ * pane merely scrolled and a collapsed half was usually history; now it is the
+ * better reason: the pane folds its own sections, so an author's fold and
+ * prcoder's are the same idea twice. Unwrapping it and promoting its summary to
+ * a heading feeds it into that machinery instead of nesting inside it.
+ *
+ * One consequence, live in this repo: a <details> in a description shows up in
+ * the pane as its summary promoted to a level-4 heading, which is deeper than
+ * the level sections fold at -- so it renders *inside* whichever fold precedes
+ * it rather than as one of its own. That is the intended trade (the alternative
+ * is two kinds of fold competing), but it is why a collapsed block in this
+ * repo's own pull request description reads differently here and on github.com.
+ *
+ * This is what the pane shows, and so what the server reads too: taskLines()
+ * counts checklist lines in it, toggleTask() reads a box's text from it, and
+ * mentions() looks for `#N` in it. A second rule on the server was how a comment
+ * mid-line made a box untickable -- the pane sent `fix  the parser` with the
+ * comment gone, the server read spaces where it had been, and no refresh could
+ * make the two agree.
+ *
+ * Every substitution here must leave the body's *lines* where they are: a tick
+ * is sent as a line's position among the checklist lines, and the server edits
+ * the raw body at that line number. A `<details>` tag broken across lines
+ * therefore keeps its newlines.
+ */
+export const withoutHtml = (text) => hideComments(text ?? '')
+  .replace(/<\/?details[^>]*>/g, (t) => t.replace(/[^\n]/g, ''))
+  // The heading is one line, and the summary's other lines stay behind it empty.
+  .replace(summary(), (s, t) =>
+    `#### ${t.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim()}${'\n'.repeat(s.split('\n').length - 1)}`);
+
+/**
  * The body cut into fenced blocks and the text between them, in order. Fences
  * come out before paragraphs are split on blank lines, because a fence is
  * allowed to contain them.
@@ -67,6 +107,17 @@ export function fences(body) {
 }
 
 /**
+ * The `#N` numbers the pane turns into links, in order: in the shown text, and
+ * outside fences and code spans, which is everywhere inline() does not reach.
+ * The Mentions row is built from this, so a `Fixes #123` inside a template's
+ * comment no longer lists an issue the description never shows.
+ */
+export function mentions(body = '') {
+  return fences(withoutHtml(body)).flatMap((chunk) => (chunk.code != null ? []
+    : [...chunk.text.replace(/`[^`]+`/g, '').matchAll(mention())].map(([, , n]) => Number(n))));
+}
+
+/**
  * The indices of the body's checklist lines, in the order a tick counts them.
  *
  * Fenced lines are skipped: a `- [ ]` in a fence is a sample, not a task, and
@@ -76,25 +127,24 @@ export function fences(body) {
  * unterminated one as code, where the pane counts them as prose, and the two
  * lists then disagree from that point on.
  *
- * Lines inside an HTML comment are skipped for the same reason and in the same
- * order: the pane's withoutHtml() deletes comments before fences() ever sees
- * the body, so a commented-out task -- a GitHub PR template's, or an example --
- * is no task there. Counting it here made every pane index one low, and since
- * toggleTask checks the text it found against the text the pane sent, the tick
- * did not go to the wrong line: no box in that description could be ticked at
- * all. Blanked rather than removed, so the indices still address the raw body.
+ * Counted in withoutHtml()'s output, the text the pane counts in, so a task in
+ * an HTML comment or a <summary> is no task on either side. Counting the raw
+ * body made every pane index one low after a commented-out template task, and
+ * since toggleTask checks the text it found against the text the pane sent,
+ * the tick did not go to the wrong line: no box in that description could be
+ * ticked at all. withoutHtml() keeps every line where it was, so the indices
+ * still address the raw body.
  */
 export function taskLines(body = '') {
-  const uncommented = hideComments(body, ' ');
-  const visible = uncommented.replace(summary(), (s) => s.replace(/[^\n]/g, ' '));
-  const fenced = fencedLines(uncommented);
-  return visible.split('\n').flatMap((line, i) => (!fenced.has(i) && TASK.test(line) ? [i] : []));
+  const shown = withoutHtml(body);
+  const fenced = fencedLines(shown);
+  return shown.split('\n').flatMap((line, i) => (!fenced.has(i) && TASK.test(line) ? [i] : []));
 }
 
 /**
  * The numbers of the lines that sit inside a fence, fence lines included. Takes
- * the body with comments already blanked, the order the pane uses, so a ```
- * inside a comment opens nothing.
+ * withoutHtml()'s output, the order the pane uses, so a ``` inside a comment
+ * opens nothing.
  */
 function fencedLines(visible) {
   const fenced = new Set();

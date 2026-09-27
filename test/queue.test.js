@@ -223,6 +223,38 @@ test('a checkbox with a comment on its line can be ticked, and only its own box 
   assert.equal(toggleTask(body, 1, true, seen[1]).split('\n')[1], '<!-- [x] --> - [x] and the lexer');
 });
 
+// The comment in the middle this time. The pane deletes it and sends the text
+// with two spaces where it was; the server used to read the line with the
+// comment blanked to spaces and compare, and those never agree -- the box
+// refused every tick with "refresh", and refreshing changed nothing.
+test('a checkbox with a comment in the middle of its text can be ticked', () => {
+  const body = '- [ ] fix <!-- note --> the parser';
+  const [seen] = paneTasks(body);
+  assert.equal(toggleTask(body, 0, true, seen), '- [x] fix <!-- note --> the parser');
+});
+
+// The same disagreement over a <details> tag: the pane unwraps it, so a tag on
+// a task's line is gone from the text it sends -- and one opening the line was
+// a task to the pane and none to the server, putting every later index one off.
+test('a <details> tag on a task line is unwrapped on both sides', () => {
+  const body = '- [ ] closing one </details>\n<details>- [ ] opening one\n- [ ] last';
+  const seen = paneTasks(body);
+  assert.deepEqual(seen.map((t) => t.trim()), ['closing one', 'opening one', 'last']);
+  assert.deepEqual(taskLines(body), [0, 1, 2]);
+  for (const [index, text] of seen.entries()) {
+    assert.doesNotThrow(() => toggleTask(body, index, true, text), `index ${index} (${text})`);
+  }
+  assert.equal(toggleTask(body, 1, true, seen[1]).split('\n')[1], '<details>- [x] opening one');
+});
+
+// A tag broken across lines is still one tag, and still leaves the lines where
+// they were: the server edits the raw body at the line number the pane counted.
+test('a <details> tag over two lines keeps every line after it in place', () => {
+  const body = '<details\nopen>\n- [ ] inside';
+  assert.deepEqual(taskLines(body), [2]);
+  assert.equal(toggleTask(body, 0, true, paneTasks(body)[0]).split('\n')[2], '- [x] inside');
+});
+
 // The pane used to delete a comment's newlines with it, so a comment that
 // ended on a task's line joined that task onto the line the comment started on
 // -- where it was no longer at the start of a line, and no longer a task. The

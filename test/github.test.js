@@ -47,6 +47,14 @@ test('#N attached to a word is not a linked issue, but a parenthesised one is', 
   assert.deepEqual(linkedIssues(pr('see (#5) and #6')).map((i) => i.number), [5, 6]);
 });
 
+// Only where the pane would link it. A PR template's `<!-- e.g. Fixes #123 -->`
+// put #123 in the Mentions row, titled with whatever issue that was, under a
+// description that never showed it.
+test('#N in a comment, a fence or a code span is not a mention', () => {
+  const body = '<!-- e.g. Fixes #1 -->\n```\n#2\n```\nsee `#3` and #4';
+  assert.deepEqual(linkedIssues(pr(body)).map((i) => i.number), [4]);
+});
+
 test('an empty body links nothing', () => {
   assert.deepEqual(linkedIssues(pr(null)), []);
 });
