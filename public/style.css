@@ -185,10 +185,10 @@ a { color: var(--accent); }
    row of dim 12px text between the badges and the tabs, and people looked for
    it to the right of the title or under the badges and never found it at the
    top; pushing it to the right edge was what made it a thing rather than part
-   of the pane's prose. Left is also where the pane with no pull request has
-   always drawn the same links, so the two panes agree for the first time, and
-   a line that clips is easier to read from an edge that does not move with its
-   content.
+   of the pane's prose. Left is also where a line that clips is easier to read
+   from, since that edge does not move with its content. The pane with no pull
+   request draws the same row in the same head (renderNoPr), so there is one
+   layout to keep, not two.
 
    The row sits directly under the title, above the state and the branches,
    because that is the order it is used in (2026-09-26): the title says what
@@ -328,8 +328,12 @@ a { color: var(--accent); }
    wide pane, where the title fits on one, and a browser without it wraps
    greedily, which is where this started. No `font-weight`: the <h2> is bold
    already, and 600 against 700 was indistinguishable in this stack when both
-   were photographed. */
-.pr-title { margin: 0 0 8px; font-family: var(--serif); font-size: 21px; line-height: 1.25; text-wrap: balance; }
+   were photographed.
+
+   The pane with no pull request titles its head with the branch, which is the
+   same row and so the same face. It is a class of its own only because the
+   drivers wait on `.pr-title` to mean a pull request has loaded. */
+.pr-title, .pr-branch-name { margin: 0 0 8px; font-family: var(--serif); font-size: 21px; line-height: 1.25; text-wrap: balance; }
 .meta { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; color: var(--dim); font-size: 12px; margin-bottom: 8px; }
 .add { color: var(--add); } .del { color: var(--del); }
 

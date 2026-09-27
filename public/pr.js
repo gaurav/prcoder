@@ -261,20 +261,24 @@ export function stackOrder(prs) {
   ];
 }
 
-/** The pane with no PR to show: why, what merges into here, and the one thing
- *  worth doing about it. */
+/**
+ * The pane with no PR to show. The head is the pull request head's shape with
+ * the branch in place of the pull request -- which branch, why there is no PR,
+ * and the same way out of the window -- and the body is what merges into here.
+ *
+ * The way out used to be in the body, under that list, which put it below the
+ * fold on `main` with a dozen PRs open: the one branch where issues and
+ * milestones are how you choose what to work on next. The head does not
+ * scroll, so it is always there.
+ */
 export function renderNoPr(status, prs, { onCreate, onSwitch }) {
   const host = document.getElementById('pr-body');
-  // The head is a whole pull request's worth of identity -- title, badges,
-  // tabs -- and nothing else clears it, so without this the last PR's heading
-  // sits above "No pull request for main yet."
-  document.getElementById('pr-head').replaceChildren();
   tab = 'detail';
   shownFor = null;
   const onDefault = status.branch === status.defaultBranch;
 
-  const why = status.detached ? 'HEAD is detached — no branch to open a pull request for.'
-    : onDefault ? `You are on ${status.branch}. Make a branch to start a pull request.`
+  const why = status.detached ? 'No branch to open a pull request for.'
+    : onDefault ? 'Default branch. Make a branch to start a pull request.'
     : `No pull request for ${status.branch} yet.`;
 
   // Comparing a branch with itself opens an empty diff, so on main there is
@@ -283,18 +287,22 @@ export function renderNoPr(status, prs, { onCreate, onSwitch }) {
   const create = h('button', { className: 'pr-create', disabled: !can }, 'Create a pull request');
   if (can) create.onclick = () => onCreate(create);
 
-  // The same way out of the window the head carries, which is the one thing
-  // this pane can still offer: there is no pull request, but the repository and
-  // its lists are where you would go to find out why. Laid out exactly as the
-  // head lays it out, down to the class names -- the two panes used to disagree
-  // about where it went, and there was never a reason for them to.
+  // The same rows as a pull request's head, down to the class names, through
+  // the same HEAD_ORDER. The title is `pr-branch-name` and not `pr-title`
+  // because the drivers and the browser suite wait on `.pr-title` to mean a
+  // pull request has loaded.
   const out = noPrLinks(status);
+  paintHead({
+    title: h('h2', { className: 'pr-branch-name' }, status.detached ? 'Detached HEAD' : status.branch),
+    note: h('p', { className: 'pr-note' }, why),
+    links: out.repo ? linkRow(out.links, 'meta pr-ways pr-links') : null,
+    repo: out.repo ? repoRow(out.repo, 'meta pr-repo') : null,
+  });
 
   host.replaceChildren(...kids([
-    h('p', { className: 'empty' }, why),
-    intoRow(status, prs, onSwitch),
-    out.repo ? linkRow(out.links, 'meta pr-ways') : null,
-    out.repo ? repoRow(out.repo, 'meta pr-repo') : null,
+    intoRow(status, prs, onSwitch)
+      ?? (status.detached ? null : h('p', { className: 'empty' },
+        ...named(['No pull requests into branch ', { branch: status.branch }, '.']))),
     status.sync === 'unpushed' && can
       ? h('p', { className: 'pr-note' }, 'This branch is not on GitHub yet; it will be pushed first.')
       : null,
@@ -587,15 +595,21 @@ function renderPrHead(pr, parsed, handlers) {
       paneTab('files', tabLabel('Files', viewedCount(pr.files))),
       paneTab('stack', stackLabel(stackOn(pr, handlers.prs)))),
   };
-  document.getElementById('pr-head').replaceChildren(...kids(HEAD_ORDER.map((k) => rows[k])));
+  paintHead(rows);
 }
 
 /**
  * The head, top to bottom, in the order it is read: what this is, the way to
  * it on GitHub and the lists beside it, whether it is open, what it changes,
  * and which checkout it is in. Rearranging the head is reordering this.
+ *
+ * Both views of the pane draw their head through it. The one with no pull
+ * request has no state, checks or tabs, and those rows fall out.
  */
 const HEAD_ORDER = ['title', 'note', 'links', 'state', 'checks', 'repo', 'tabs'];
+
+const paintHead = (rows) =>
+  document.getElementById('pr-head').replaceChildren(...kids(HEAD_ORDER.map((k) => rows[k])));
 
 /**
  * The count each tab carries is what it can tell you while you are on the other

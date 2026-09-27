@@ -60,12 +60,13 @@ killOnExit(server);
 
 const browser = await chromium.launch();
 const page = await openPage(browser, port);
-await page.waitForSelector('#pr-body .empty', { timeout: 60_000 });
+await page.waitForSelector('#pr-head .pr-branch-name', { timeout: 60_000 });
 await page.waitForSelector('#pr-body .pr-into .pr-go', { timeout: 60_000 });
 
 const rows = () => page.$$eval('#pr-body .pr-into .pr-row', (rs) => rs.map((r) =>
   `${r.querySelector('.pr-num').textContent} ${r.querySelector('.pr-row-title').textContent}`));
-console.log('says:   ', await page.$eval('#pr-body .empty', (e) => e.textContent));
+console.log('says:   ', await page.$eval('#pr-head', (e) => [...e.children].map((c) => c.textContent.trim()).join(' | ')),
+  ' (want the branch, why it has no PR, issues · pulls · milestones and the repository, all in the head)');
 console.log('into:   ', (await rows()).join(' | '), ' (want every open PR whose base is main, then its stack, titled)');
 console.log('stacked:', await page.$$eval('#pr-body .pr-into > ul > li', (ls) => ls.map((l) =>
   `${l.querySelector('.pr-num').textContent} +${l.querySelectorAll('li').length}`).join(' | ')),

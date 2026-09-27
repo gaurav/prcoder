@@ -48,10 +48,12 @@ The switcher in the head lists open pull requests, each followed by the ones sta
 and indented under it, and runs `gh pr checkout` to move between them. Uncommitted work hides it
 behind a Commit button, because the checkout would fail anyway.
 
-On a branch with no pull request the pane says so, disables the editing controls, and offers to
-create one, pushing the branch first if GitHub has not seen it. It keeps the same way out of the
-window as the pull request head, laid out the same way: the issues, pulls and milestones, and the
-repository on the line below them.
+On a branch with no pull request the pane keeps the pull request head's shape, with the branch as
+its title and a line under it saying why there is no pull request. The way out of the window is in
+the same rows: the issues, pulls and milestones, and the repository on the line below them. The head
+does not scroll, so those are on screen however long the list below it runs. The editing controls
+are disabled, and the pane offers to create a pull request, pushing the branch first if GitHub has
+not seen it.
 
 It also lists the open pull requests that merge *into* the branch you are on, which on `main` is
 the question that branch is interesting for, with each one's stack nested under it. A row's `#N`

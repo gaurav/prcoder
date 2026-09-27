@@ -900,3 +900,25 @@ test('with no PR, the PRs into this branch nest their stacks, and a dirty tree b
     STACK.map((p) => p.url));
   await dirty.close();
 });
+
+// On main the issues and milestones are how you pick what to work on next, and
+// in the body they sat under the whole list of PRs, off the bottom with a dozen
+// open. The head does not scroll, and it is the pull request head's own rows,
+// in HEAD_ORDER, with the branch where the title goes.
+test('with no PR, the head names the branch and carries the way out', { skip }, async () => {
+  const p = await newPage({ prs: STACK, st: onMain, ready: '#pr-head .pr-branch-name' });
+  assert.equal(await p.locator('#pr-head .pr-branch-name').textContent(), 'main');
+  assert.equal(await p.locator('#pr-head .pr-title').count(), 0, 'the drivers read .pr-title as a PR on screen');
+  assert.match(await p.locator('#pr-head .pr-note').textContent(), /^Default branch/);
+  assert.deepEqual(await p.locator('#pr-head .pr-links a').allTextContents(), ['issues', 'pulls', 'milestones']);
+  assert.equal(await p.locator('#pr-head .pr-repo a').textContent(), 'heal-data-stewards/heal-vlmd-AI-pipeline');
+  assert.equal(await p.locator('#pr-body .pr-ways, #pr-body .pr-repo').count(), 0);
+  const order = await p.$$eval('#pr-head > *', (els) => els.map((e) => e.className.split(' ')[0]));
+  assert.deepEqual(order, ['pr-branch-name', 'pr-note', 'meta', 'meta'], order.join(' | '));
+  await p.close();
+
+  // A branch nothing merges into says so, rather than leaving the body blank.
+  const alone = await newPage({ st: { ...status, branch: 'topic-x', pr: null }, ready: '#pr-head .pr-branch-name' });
+  assert.equal(await alone.locator('#pr-body .empty').textContent(), 'No pull requests into branch topic-x.');
+  await alone.close();
+});
