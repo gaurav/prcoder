@@ -96,6 +96,17 @@ function decorateFiles(p) {
 }
 
 /**
+ * Every queue write, and the copy of the queue askToQuit counts kept up with it.
+ * That copy is otherwise the last poll's, so an item filed as an issue a moment
+ * before `q` was still counted as "only on this machine".
+ */
+async function saveQueue(items) {
+  const saved = await writeQueue(repo, items, info?.nameWithOwner);
+  if (last) last.queue = saved;
+  return saved;
+}
+
+/**
  * Items leave the queue for somewhere permanent: written there first, then taken
  * off the list. In that order because the failure it leaves is the recoverable
  * one -- a write that did not land keeps the item where it was, and a store
@@ -109,7 +120,7 @@ async function moveOut(items, indices, send) {
   // "failed" without a URL is what makes someone file the same issue again.
   const where = await send(moving);
   try {
-    return await writeQueue(repo, items.filter((i) => !moving.includes(i)), info?.nameWithOwner);
+    return await saveQueue(items.filter((i) => !moving.includes(i)));
   } catch (e) {
     throw new Error(`moved to ${where}, but the queue still lists ${moving.length === 1 ? 'it' : 'them'}: ${e.message}`);
   }
@@ -290,7 +301,7 @@ const routes = {
 
   'GET /api/queue': () => readQueue(repo, info?.nameWithOwner),
 
-  'PUT /api/queue': ({ items }) => writeQueue(repo, items, info?.nameWithOwner),
+  'PUT /api/queue': ({ items }) => saveQueue(items),
 
   /** Filed as an issue, one item at a time: each is its own issue. */
   'POST /api/queue/to-issue': async ({ items, index }) => {
@@ -628,7 +639,7 @@ async function listenOnRepoPort() {
  * nothing left in the queue, nothing in the working tree that quitting could
  * lose.
  */
-/** The queue's outstanding items. Cached, so no subprocess. */
+/** The queue's outstanding items. Cached by the poll and by saveQueue, so no subprocess. */
 const localOnly = () => counts(last?.queue ?? []).local;
 
 function askToQuit() {
