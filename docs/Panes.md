@@ -163,7 +163,8 @@ and ticks it off in the same click; ◎ files it as a new GitHub issue and takes
 the issue is where it lives from then on.
 
 New items go to the bottom, so typing them in builds a list in the order you mean to work through
-it. The arrow next to the input flips that to the top, for the other way of using a queue -- the
+it. They always go on Local, whichever tab is showing -- the input's placeholder says so -- and
+adding one from another tab leaves you there and flashes the Local tab instead. The arrow next to the input flips that to the top, for the other way of using a queue -- the
 thing you must not forget to do next -- and stays flipped.
 
 **Local** is the working list, and it drains as you move and finish things, so a session you

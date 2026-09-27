@@ -712,6 +712,28 @@ test('a queue change the server refuses is taken back off the screen', { skip },
   await fresh.close();
 });
 
+// Adding used to switch to Local, which threw away whatever tab you were
+// reading. It stays put now, and the Local tab flashes to say where it went.
+test('adding from another tab stays on it and flashes Local', { skip }, async () => {
+  const fresh = await newPage();
+  let queue = [{ text: 'already done', done: true, issue: null, deleted: false, doneAt: 1000 }];
+  await fresh.route('**/api/status', (r) => r.fulfill({ json: { ...status, queue } }));
+  await fresh.route('**/api/queue', (r) => {
+    if (r.request().method() === 'PUT') queue = r.request().postDataJSON().items;
+    return r.fulfill({ json: queue });
+  });
+  await fresh.reload();
+  await fresh.locator('#queue-body .tab', { hasText: 'Completed' }).click();
+  await fresh.locator('#queue-input').fill('new from Completed');
+  await fresh.locator('#queue-input').press('Enter');
+  await fresh.waitForSelector('#queue-body .tab.flash[data-tab="local"]');
+  assert.match(await fresh.locator('#queue-body .tab.on').textContent(), /^Completed/);
+  assert.deepEqual(await fresh.locator('#queue-body .item .text').allTextContents(), ['already done']);
+  assert.match(await fresh.locator('#queue-body .tab[data-tab="local"]').textContent(), /\(1\)/);
+  assert.equal(await fresh.locator('#queue-input').inputValue(), '');
+  await fresh.close();
+});
+
 // With the socket closed nothing is typed, so ▶ must not mark it done: done
 // moves it out of Active, and the item would be gone from view unsent.
 test('▶ with Claude disconnected types nothing and leaves the item active', { skip }, async () => {

@@ -253,7 +253,18 @@ const queueTab = (name, label) => tabBtn(label, tab === name, () => {
   tab = name;
   render();
   if (name === 'issues') loadIssues();
-});
+}, '', { dataset: { tab: name } });
+
+/**
+ * A new item always lands on Local, so when you are looking at another tab the
+ * Local tab flashes to say where it went -- rather than taking you there, which
+ * is what adding used to do, and which threw away whatever you were reading.
+ * After the save, because save() repaints the strip and a class set before it
+ * would be on a button that no longer exists.
+ */
+function flashLocal() {
+  if (tab !== 'local') document.querySelector('#queue-body .tab[data-tab="local"]')?.classList.add('flash');
+}
 
 /** Titles and states, refetched on every visit to the tab: issues change on GitHub, not here. */
 async function loadIssues() {
@@ -278,7 +289,9 @@ async function pull(text, issue = null) {
   const item = { text, done: false, issue, deleted: false };
   if (addTo === 'top') items.unshift(item); else items.push(item);
   // A refusal has already taken it back out.
-  if (await save()) toast(`added to your queue: ${text}`);
+  if (!await save()) return;
+  toast(`added to your queue: ${text}`);
+  flashLocal();
 }
 
 /** The PR tab: the description's own checkboxes, ticked through to GitHub. */
@@ -441,10 +454,12 @@ export async function addItem(text) {
   // The end of the whole array, past any done or deleted rows: Local filters
   // without reordering, so a new item still shows last there.
   if (addTo === 'top') items.unshift(item); else items.push(item);
-  // A brand-new item is local by definition, so this is the tab it is on.
-  tab = 'local';
   // A refusal has already taken it back out; the input keeps the text.
   if (!await save()) return false;
+  if (tab !== 'local') {
+    flashLocal();
+    return true;
+  }
   // Either end can be off-screen in a list taller than the pane, and an item
   // you cannot see reads as a save that did not happen. Not scrollIntoView:
   // save() has already repainted from the server's echo, so the object above no
