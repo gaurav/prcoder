@@ -184,11 +184,6 @@ function render() {
       : tab === 'issues' ? issueList()
         : h('ul', { className: 'items' }, ...shown.map((i, n) => row(i, shown[n - 1], shown[n + 1]))),
   );
-
-  // Adding always lands in Local, so say so where that is not what you are
-  // looking at.
-  document.getElementById('queue-input').placeholder =
-    tab === 'local' ? 'Add an item, Enter to save' : 'Add an item…';
 }
 
 /**
