@@ -92,7 +92,9 @@ its own, and so does each browser or profile. The terminal folds to its header
 line with a click anywhere on that line -- the ▼ before its title says so, and is
 the keyboard's way in -- and the diff (or the queue, with no diff open) takes
 the room; another click unfolds it. Folding never touches the session, which
-keeps running folded.
+keeps running folded -- and while a turn runs, the folded header says `● working`
+beside its title, from the same signal as the tab's blue icon, and drops it when
+the turn ends.
 Whether the terminal is folded, whether the outline is shown, and which way the
 queue adds are stored the same way. A repo whose port changes
 (`port.json` deleted, its port busy at startup, or `PRCODER_PORT` set) opens

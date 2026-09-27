@@ -40,7 +40,9 @@ const sync = () => {
 };
 
 // The tab icon, blue while a turn is running, so a session left in a
-// background tab says whether it is still going without switching to it.
+// background tab says whether it is still going without switching to it. The
+// folded pane's header says the same with `● working`, from the same state, so
+// a session you folded away says when it is done without unfolding it.
 // The PTY carries no "thinking" signal and nothing here reads the frames, so a
 // turn is bracketed rather than detected: sending a line starts one, and the
 // output holds it open. Claude repaints its spinner every few hundred ms
@@ -68,6 +70,7 @@ const sync = () => {
 // looks at anything Claude drew.
 const PROBE = /^(?:\x1b\[\?6n)+$/;
 const link = document.querySelector('link[rel=icon]');
+const busyLabel = document.getElementById('term-busy');
 // Derived, not written out a second time -- so the icon in index.html stays the
 // one definition of it. Change its colour there and change this to match.
 const IDLE = link.href;
@@ -83,6 +86,9 @@ const icon = (href) => {
   shown = link.href = href;
   link.remove();
   document.head.append(link);
+  // Here rather than in turn(): the quiet timer ends a turn through icon()
+  // alone, and this is the one place the two can never disagree.
+  busyLabel.hidden = href !== BUSY;
 };
 let quiet;
 const turn = (on) => {

@@ -672,3 +672,24 @@ test('a separator moves only on the arrows along its own axis', { skip }, async 
   assert.notEqual(await size(), '', 'Right moves it');
   await fresh.close();
 });
+
+// A folded pane still says when Claude is working, from the same bracketed turn
+// as the tab icon -- so it appears on Enter and goes after 2s of quiet, and the
+// mocked /pty here sends nothing to hold the turn open. Only folded: open, the
+// terminal shows the turn itself.
+test('a folded terminal says it is working while a turn runs, and not after', { skip }, async () => {
+  const fresh = await newPage();
+  const busy = () => fresh.locator('#term-busy').isVisible();
+  await fresh.click('#term-host');
+  await fresh.keyboard.press('Enter');
+  assert.equal(await busy(), false, 'not shown while the pane is open');
+  await fresh.click('#term-fold');
+  assert.equal(await busy(), true, 'shown once folded mid-turn');
+  assert.equal(await fresh.locator('#term-busy').textContent(), 'working');
+  // Folding must not make the header a different height from the open one.
+  assert.equal(await fresh.$eval('#term', (el) => el.getBoundingClientRect().height),
+    await fresh.$eval('#term > header', (el) => el.getBoundingClientRect().height));
+  await fresh.waitForFunction(() => document.getElementById('term-busy').hidden, null, { timeout: 5000 });
+  assert.equal(await busy(), false, 'gone when the turn ends');
+  await fresh.close();
+});
