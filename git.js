@@ -6,14 +6,9 @@
 import { run, parsePrUrl } from './github.js';
 import { urlPath } from './public/tasks.js';
 
-// GIT_TERMINAL_PROMPT=0 turns a credential prompt into an error. Without it a
-// push over SSH with a passphrase waits on a tty that does not exist, and with
-// the serial chain in server.js that hangs every route behind it.
-const git = (args, cwd) => run('git', args, {
-  cwd,
-  timeout: 30_000,
-  env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
-});
+// Shorter than run()'s default: git here is local but for push and ls-remote,
+// and run() is also what turns a credential prompt into an error.
+const git = (args, cwd) => run('git', args, { cwd, timeout: 30_000 });
 
 const text = async (args, cwd) => (await git(args, cwd)).trim();
 

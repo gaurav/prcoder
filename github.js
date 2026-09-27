@@ -14,12 +14,26 @@ export const runCount = () => calls;
  * `input` has to be written to the child's stdin by hand: execFile accepts the
  * option only in its *Sync* form and silently ignores it otherwise, which makes
  * a `--body-file -` call hang on a stdin that never closes.
+ *
+ * Every call gets a timeout and no way to prompt, because every call runs
+ * behind server.js's one serial lock: a gh or git that waits -- on a stalled
+ * network, or on a credential prompt nobody can see, which `gh pr checkout`'s
+ * fetch would otherwise wait on -- holds every route behind it. The prompts are
+ * turned into errors (GIT_TERMINAL_PROMPT, GH_PROMPT_DISABLED) whatever env a
+ * caller passes; the timeout is a default a slow call raises (checkoutPr).
  */
-export function run(bin, args, { input, ...opts } = {}) {
+const RUN_TIMEOUT = 60_000;
+export function run(bin, args, { input, env, ...opts } = {}) {
   calls++;
   const started = Date.now();
+  const timeout = opts.timeout ?? RUN_TIMEOUT;
   return new Promise((resolve, reject) => {
-    const child = execFile(bin, args, { maxBuffer: 32 * 1024 * 1024, ...opts },
+    const child = execFile(bin, args, {
+      maxBuffer: 32 * 1024 * 1024,
+      ...opts,
+      timeout,
+      env: { ...(env ?? process.env), GIT_TERMINAL_PROMPT: '0', GH_PROMPT_DISABLED: '1' },
+    },
       // execFile hands stderr to the callback and does not put it on the error,
       // so every caller matching on gh's complaints — "no pull requests found"
       // above, and the exit-code checks in git.js — was reading undefined.
@@ -37,6 +51,8 @@ export function run(bin, args, { input, ...opts } = {}) {
         // What the tool said, rather than Node's `Command failed: <argv>` -- which
         // for an issue title is the whole title. Every catch reads e.message.
         err.message = stderr.trim() || err.message;
+        // Killed by the timeout, which says nothing of its own.
+        if (err.killed) err.message = `${bin} ${args[0]} took over ${timeout / 1000}s and was stopped`;
         reject(err);
       });
     child.stdin.end(input);

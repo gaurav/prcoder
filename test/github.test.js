@@ -193,3 +193,16 @@ test('the PR list asks for more than gh\'s default 30', { skip: unix }, async ()
   const args = await ghArgs(() => listPrs(os.tmpdir()));
   assert.ok(Number(args[args.indexOf('--limit') + 1]) > 30, args.join(' '));
 });
+
+// Everything runs behind one serial lock, so a call that waits holds every
+// route. A timeout stops it, with a message that says so rather than Node's
+// bare `Command failed`; and neither gh nor git may stop to ask for anything.
+test('run() stops a call that outlives its timeout, and says it did', { skip: unix }, async () => {
+  await assert.rejects(run('sleep', ['5'], { timeout: 100 }), /sleep 5 took over 0.1s and was stopped/);
+});
+
+test('run() turns gh and git prompts off, whatever env it is given', { skip: unix }, async () => {
+  const out = await run('sh', ['-c', 'echo "$GIT_TERMINAL_PROMPT $GH_PROMPT_DISABLED"'],
+    { env: { PATH: process.env.PATH, GIT_TERMINAL_PROMPT: '1' } });
+  assert.equal(out.trim(), '0 1');
+});
