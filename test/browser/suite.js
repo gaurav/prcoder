@@ -639,3 +639,23 @@ test('◎ files one issue however quickly it is clicked twice', { skip }, async 
   assert.equal(filed, 1);
   await fresh.close();
 });
+
+// A file with no patch returns before the outline is rebuilt, so opening one
+// after a file with several hunks left that file's hunks there to jump to.
+test('a file with no diff does not keep the last file\'s outline', { skip }, async () => {
+  const fresh = await newPage();
+  await fresh.route('**/api/diff', (r) => {
+    const { path } = r.request().postDataJSON();
+    return r.fulfill({ json: path === 'evil.js'
+      ? { path, patch: '@@ -1,1 +1,1 @@ first\n-a\n+b\n@@ -9,1 +9,1 @@ second\n-c\n+d' }
+      : { path, patch: null } });
+  });
+  await fresh.locator('#pr-head .tab', { hasText: 'Files' }).click();
+  await fresh.locator('.file[data-path="evil.js"] .path').click();
+  await fresh.waitForSelector('#diff-outline button');
+  assert.equal(await fresh.locator('#diff-outline button').count(), 2);
+  await fresh.locator('.file[data-path="app.tsx"] .path').click();
+  await fresh.waitForSelector('#diff-body .empty >> text=No diff to show');
+  assert.equal(await fresh.locator('#diff-outline button').count(), 0);
+  await fresh.close();
+});

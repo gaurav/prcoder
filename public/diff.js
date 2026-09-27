@@ -237,6 +237,9 @@ export async function openDiff(f) {
 
   const body = el('diff-body');
   body.replaceChildren(h('div', { className: 'empty' }, 'Loading…'));
+  // Emptied here, with the body: a file with no patch returns before the
+  // outline is rebuilt, and kept the last file's hunks to jump to.
+  el('diff-outline').replaceChildren();
   setTitle(null);
   let patch, from;
   try {
