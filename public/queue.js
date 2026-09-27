@@ -53,9 +53,10 @@ export function setItems(next, prOnScreen = null) {
 // The sources, read straight from where they live rather than kept in the
 // queue: the PR on screen, from the poll. Its description's checkboxes are the
 // PR tab, and the issues it mentions without closing are the Issues tab -- whose
-// titles are fetched when that tab is opened, since nothing else needs them.
+// titles and states are fetched when that tab is opened, since nothing else
+// needs them.
 let pr = null;
-let openIssues = null;
+let mentions = null;
 
 // Which end the input adds to. The queue is two things at once -- a backlog in
 // the order you mean to work through it, and somewhere to put the thing you
@@ -259,10 +260,10 @@ const queueTab = (name, label) => tabBtn(label, tab === name, () => {
   if (name === 'issues') loadIssues();
 });
 
-/** Titles, refetched on every visit to the tab: issues change on GitHub, not here. */
+/** Titles and states, refetched on every visit to the tab: issues change on GitHub, not here. */
 async function loadIssues() {
   try {
-    openIssues = new Map((await api('/api/issues', undefined, 'GET')).map((i) => [i.number, i.title]));
+    mentions = new Map((await api('/api/issues', undefined, 'GET')).map((i) => [i.number, i]));
   } catch (e) {
     toast(e.message, true);
   }
@@ -301,18 +302,35 @@ function prList() {
 }
 
 /**
+ * Mentions, most recently updated on GitHub first, so the issue with news on it
+ * is on top. `found` is the lookup, number -> { updatedAt, ... }, or null until
+ * it answers. A mention with no time -- before then, or a number GitHub did not
+ * find -- goes last, and the sort is stable, so those keep the order they came
+ * in (by number). The timestamps are ISO strings, which compare as they read.
+ */
+export function newestFirst(list, found) {
+  const updated = (i) => found?.get(i.number)?.updatedAt ?? '';
+  return [...list].sort((a, b) => updated(b).localeCompare(updated(a)));
+}
+
+/**
  * The Issues tab: what the description mentions without closing. A mention that
- * is not among the open issues is a closed one, or a pull request -- a bare `#N`
- * is either on GitHub -- and says so rather than disappearing, since the
+ * is not an open issue is a closed one, or a pull request -- a bare `#N` is
+ * either on GitHub -- and says which rather than disappearing, since the
  * description still points at it.
  */
 function issueList() {
-  const list = mentioned();
+  const list = newestFirst(mentioned(), mentions);
   if (!list.length) return h('p', { className: 'empty' }, `PR #${pr.number}'s description mentions no issues it does not close.`);
   return h('ul', { className: 'items' }, ...list.map((i) => {
-    const title = openIssues?.get(i.number);
-    const text = title ?? (openIssues ? 'not an open issue' : '…');
-    return h('li', { className: `item source${title || !openIssues ? '' : ' closed'}` },
+    const found = mentions?.get(i.number);
+    const title = found?.title;
+    const open = found?.kind === 'issue' && found.state === 'OPEN';
+    const what = found?.kind === 'pull' ? 'pull request' : 'issue';
+    const text = !mentions ? '…'
+      : !title ? 'not found on GitHub'
+        : open ? title : `${title} · ${found.state?.toLowerCase() ?? 'unknown'} ${what}`;
+    return h('li', { className: `item source${open || !mentions ? '' : ' closed'}` },
       ext(i.url, `#${i.number}`, { className: 'tag issue' }),
       h('span', { className: 'text', textContent: text }),
       h('span', { className: 'actions' },

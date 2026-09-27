@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { text as readBody } from 'node:stream/consumers';
 import { spawn as ptySpawn } from 'node-pty';
 import { WebSocketServer } from 'ws';
-import { loadPr, prHeads, prBody, listPrs, listIssues, setViewed, setBody, createIssue, fetchPatches, runCount } from './github.js';
+import { loadPr, prHeads, prBody, listPrs, issueLinks, setViewed, setBody, createIssue, fetchPatches, runCount } from './github.js';
 import { snapshot, currentBranch, repoInfo, prScope, compareUrl, originOwner, checkoutPr, pushBranch, remoteBranchHead, trackingHead, localPatch } from './git.js';
 import { bucket, fileUrl, fileViews } from './files.js';
 import { readPort, writePort } from './store.js';
@@ -101,6 +101,17 @@ function decorateFiles(p) {
 }
 
 /**
+ * Every queue write, and the copy of the queue askToQuit counts kept up with it.
+ * That copy is otherwise the last poll's, so an item filed as an issue a moment
+ * before `q` was still counted as "only on this machine".
+ */
+async function saveQueue(items) {
+  const saved = await writeQueue(repo, items, info?.nameWithOwner);
+  if (last) last.queue = saved;
+  return saved;
+}
+
+/**
  * Items leave the queue for somewhere permanent: written there first, then taken
  * off the list. In that order because the failure it leaves is the recoverable
  * one -- a write that did not land keeps the item where it was, and a store
@@ -114,7 +125,7 @@ async function moveOut(items, indices, send) {
   // "failed" without a URL is what makes someone file the same issue again.
   const where = await send(moving);
   try {
-    return await writeQueue(repo, items.filter((i) => !moving.includes(i)), info?.nameWithOwner);
+    return await saveQueue(items.filter((i) => !moving.includes(i)));
   } catch (e) {
     throw new Error(`moved to ${where}, but the queue still lists ${moving.length === 1 ? 'it' : 'them'}: ${e.message}`);
   }
@@ -228,7 +239,18 @@ const routes = {
 
   'GET /api/prs': () => listPrs(repo),
 
-  'GET /api/issues': () => listIssues(repo),
+  /**
+   * The issues the description mentions without closing, for the queue's Issues
+   * tab: title, state and kind, asked about by number. It was the repo's first
+   * 200 open issues, and in a repo with more than that an open issue past the
+   * cut read as "not an open issue". Capped at 50 numbers, as withLinks is.
+   */
+  'GET /api/issues': async () => {
+    const cur = requirePr();
+    const numbers = cur.issues.filter((i) => !i.closes).map((i) => i.number).slice(0, 50);
+    const links = numbers.length ? await issueLinks(repo, cur.url, numbers) : new Map();
+    return numbers.map((number) => ({ number, ...links.get(number) }));
+  },
 
   'POST /api/pr/switch': async ({ number }) => {
     await checkoutPr(repo, number);
@@ -295,7 +317,7 @@ const routes = {
 
   'GET /api/queue': () => readQueue(repo, info?.nameWithOwner),
 
-  'PUT /api/queue': ({ items }) => writeQueue(repo, items, info?.nameWithOwner),
+  'PUT /api/queue': ({ items }) => saveQueue(items),
 
   /** Filed as an issue, one item at a time: each is its own issue. */
   'POST /api/queue/to-issue': async ({ items, index }) => {
@@ -633,7 +655,7 @@ async function listenOnRepoPort() {
  * nothing left in the queue, nothing in the working tree that quitting could
  * lose.
  */
-/** The queue's outstanding items. Cached, so no subprocess. */
+/** The queue's outstanding items. Cached by the poll and by saveQueue, so no subprocess. */
 const localOnly = () => counts(last?.queue ?? []).local;
 
 function askToQuit() {

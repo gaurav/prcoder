@@ -84,7 +84,8 @@ the list. What the renderer does and does not draw is in [Design.md](Design.md).
 *Files* is every changed file grouped as *Config & docs* / *Tests* / *Code*, in that order. Inside
 each group the files read like a tree: the files at the top of the repository come first, and
 below them the rest are folded by the directory they are in, a directory ahead of what is inside
-it and siblings alphabetical. A row inside a fold shows only the part of its path the directory
+it and sibling directories alphabetical. The files in each list are ordered by lines changed,
+additions plus deletions, the largest first. A row inside a fold shows only the part of its path the directory
 above it does not, so a path is read once per directory rather than once per file. Both levels
 fold and remember what you closed. Each fold's pie fills green as its files are viewed (hover it
 for the figure). The checkbox on each file is GitHub's own "viewed" checkbox: tick it here and
@@ -146,5 +147,7 @@ nothing. Every item is on exactly one of those.
 
 With a pull request on screen, two more tabs read GitHub rather than your queue. **PR** is the
 description's own checklist, ticked through to GitHub like the boxes in the PR pane; **Issues** is
-the issues the description mentions without closing. ↓ on either copies the item into Local and
-leaves it where it was.
+the issues the description mentions without closing, the most recently updated on GitHub
+first. A mention that is not an open issue -- a closed one, or a pull request -- is dimmed and
+says which. ↓ on either copies the item into Local
+and leaves it where it was.

@@ -114,17 +114,6 @@ export async function prBody(cwd, prUrl) {
 }
 
 /**
- * Open issues, for the titles on the queue's Issues tab.
- *
- * ponytail: the first 200, fetched whole and filtered by the pane. A repo past
- * that, or a tab that wants milestones or search, is a query of its own.
- */
-export async function listIssues(cwd) {
-  const args = ['issue', 'list', '--state', 'open', '--limit', '200', '--json', 'number,title'];
-  return JSON.parse(await gh(args, { cwd }));
-}
-
-/**
  * Open PRs, for the switcher -- and, filtered by `baseRefName`, for the list of
  * pull requests into the branch you are on that the pane with no pull request
  * shows. That field is not spare: it is free here, where a `gh pr list --base`
@@ -332,7 +321,7 @@ export async function issueLinks(cwd, prUrl, numbers) {
   const { owner, repo } = parsePrUrl(prUrl);
   const query = `query($owner:String!,$repo:String!){ repository(owner:$owner,name:$repo){ ` +
     numbers.map((n) => `i${n}: issueOrPullRequest(number:${n})` +
-      `{ ... on Issue { title url } ... on PullRequest { title url } }`).join(' ') + ` } }`;
+      `{ __typename ... on Issue { title url state updatedAt } ... on PullRequest { title url state updatedAt } }`).join(' ') + ` } }`;
   const args = ['api', 'graphql', '-f', `query=${query}`, '-f', `owner=${owner}`, '-f', `repo=${repo}`];
   try {
     return linksFrom(await gh(args, { cwd }));
@@ -341,9 +330,12 @@ export async function issueLinks(cwd, prUrl, numbers) {
   }
 }
 
-/** The `iN: { title, url }` aliases of a response, whether or not it also
- *  carried errors. Anything unparseable is nothing -- these are decoration and
- *  a redirect, and a lookup that fails may not fail the pane. */
+/** The `iN: { title, url, state, kind, updatedAt }` aliases of a response,
+ *  whether or not it also carried errors. `kind` is `issue` or `pull`; `state`
+ *  is GitHub's own -- OPEN or CLOSED, and MERGED for a pull request; `updatedAt`
+ *  is an ISO timestamp, which any comment, label or edit moves. Anything unparseable is
+ *  nothing -- these are decoration and a redirect, and a lookup that fails may
+ *  not fail the pane. */
 export function linksFrom(out) {
   let repo;
   try {
@@ -353,5 +345,11 @@ export function linksFrom(out) {
   }
   return new Map(Object.entries(repo ?? {})
     .filter(([, v]) => v?.title)
-    .map(([alias, v]) => [Number(alias.slice(1)), { title: v.title, url: v.url ?? null }]));
+    .map(([alias, v]) => [Number(alias.slice(1)), {
+      title: v.title,
+      url: v.url ?? null,
+      state: v.state ?? null,
+      kind: { Issue: 'issue', PullRequest: 'pull' }[v.__typename] ?? null,
+      updatedAt: v.updatedAt ?? null,
+    }]));
 }
