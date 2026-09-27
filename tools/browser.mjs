@@ -301,7 +301,11 @@ await page.locator('#pr').screenshot({ path: path.join(out, 'pr-files-collapsed.
 await page.locator('.group > summary').first().click();
 await page.waitForTimeout(200);
 
-await page.locator('.file .path').first().click();   // opens the diff pane (Files tab)
+// A .js file by name, not the first row: the first is whatever the first group
+// holds, which since Config & docs went first is `.gitignore` -- no grammar,
+// so every highlight check below read zero spans and then timed out waiting.
+const highlighted = page.locator('.file[data-path$=".js"] .path').first();
+await highlighted.click();   // opens the diff pane (Files tab)
 await page.waitForSelector('main.diff-open');
 // The title says whether the pane holds a change or a whole file; every file in
 // PR #1 is one the PR adds, so it should read NEW there and DIFF nowhere.
@@ -345,7 +349,7 @@ if (await plain.count()) {
   const none = await tokens();
   console.log('plain:    ', `${none.n} spans`, none.names, ' (want 0 spans: .gitignore has no grammar)');
   // Back to the highlighted file, which is what the screenshots below hold.
-  await page.locator('.file .path').first().click();
+  await highlighted.click();
   await page.waitForFunction(() => document.querySelectorAll('#diff-body .dl span').length > 0);
 } else {
   console.log('plain:     no extensionless file in this PR to check');
