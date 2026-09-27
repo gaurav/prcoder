@@ -958,9 +958,9 @@ const blockNode = (b, onTask) => ({
  *
  * Deriving that level from the body rather than fixing one here is what lets a
  * description written with `#` and one written with `##` each fold at their own
- * top level -- prcoder's own mirrored block writes `## TODO`, and a description
- * someone typed may well start at `#`. Anything deeper stays a plain heading
- * inside the section it belongs to.
+ * top level -- the mirrored block an earlier prcoder wrote starts `## TODO`, and
+ * a description someone typed may well start at `#`. Anything deeper stays a
+ * plain heading inside the section it belongs to.
  *
  * Regrouping only. Every block comes out exactly once, in the order it went in,
  * carrying the `index` it went in with -- see blocks() for why that is the whole
