@@ -3,7 +3,7 @@ import { FitAddon } from '/vendor/addon-fit.mjs';
 import { WebLinksAddon } from '/vendor/addon-web-links.mjs';
 import { renderPr, renderNoPr, renderHeader, pageTitle, api, toast, pref, setPref } from './pr.js';
 import { openDiff, closeDiff, selectedPath, setViewed } from './diff.js';
-import { initQueue, addItem, setItems, freeze } from './queue.js';
+import { initQueue, addItem, setItems } from './queue.js';
 import './panes.js';   // draggable pane gutters; nothing here calls into it
 
 const term = new Terminal({
@@ -275,7 +275,6 @@ async function loadStatus() {
 }
 
 async function switchPr(number) {
-  freeze(true);
   try {
     const status = await api('/api/pr/switch', { number });
     paint(status);
@@ -289,8 +288,6 @@ async function switchPr(number) {
   } catch (e) {
     toast(e.message, true);
     await loadStatus();   // re-derive: the checkout may have half-succeeded
-  } finally {
-    freeze(false);
   }
 }
 
@@ -337,8 +334,7 @@ input.addEventListener('keydown', async (e) => {
   e.preventDefault();
   // Cleared only once the server has the item. addItem is async and save()
   // reports a refusal with a toast rather than a throw, so clearing on the way
-  // past threw the text away on any API failure, and on an Enter pressed
-  // during a branch switch.
+  // past threw the text away on any API failure.
   if (await addItem(input.value)) {
     input.value = '';
     grow();

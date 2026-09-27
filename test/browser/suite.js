@@ -746,3 +746,29 @@ test('a poll that moves the head re-opens the open file without an error', { ski
   assert.equal(diffs, 2, 'the open file was fetched again');
   await fresh.close();
 });
+
+// A status read before a save lands carries the list as it was before the
+// change -- the server answers them in order -- and painting it took the change
+// back off the screen until the save's own answer put it back.
+test('a poll that lands while a save is in flight does not undo it on screen', { skip }, async () => {
+  const fresh = await newPage();
+  const before = [{ text: 'tick me', done: false, issue: null, deleted: false }];
+  let release;
+  await fresh.route('**/api/status', (r) => r.fulfill({ json: { ...status, queue: before } }));
+  await fresh.route('**/api/queue', async (r) => {
+    if (r.request().method() !== 'PUT') return r.fulfill({ json: before });
+    await new Promise((res) => { release = res; });
+    return r.fulfill({ json: r.request().postDataJSON().items });
+  });
+  await fresh.reload();
+  await fresh.waitForSelector('#pr-head .pr-title');
+  await fresh.waitForSelector('#queue-body .item');
+  const box = fresh.locator('#queue-body .item input[type=checkbox]');
+  await box.check();
+  await fresh.click('#pr-refresh');
+  await fresh.waitForTimeout(300);
+  assert.equal(await box.isChecked(), true, 'the poll did not untick it');
+  release();
+  await fresh.waitForFunction(() => document.querySelector('#queue-body .tab')?.textContent === 'Active (0)');
+  await fresh.close();
+});

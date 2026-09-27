@@ -11,29 +11,23 @@ let confirmed = [];
 const settle = (list) => { items = list; confirmed = structuredClone(list); };
 let tab = 'active';
 let deps = {};
-// Set while a branch switch is in flight. The switch ends by replacing the
-// whole list from the server, so a click landing in the middle of it writes the
-// array as it was before the switch and then watches the response take it back.
-// Inert for those few hundred milliseconds is the honest thing to show.
-let frozen = false;
-
-// Repaints, because render() is what marks the list inert. The guard in save()
-// used to be the only one, by which point the click had already flipped a box
-// or pushed an item into the local array -- the write was dropped and the UI
-// went on showing it as saved until a poll silently took it back.
-export const freeze = (on) => { frozen = on; render(); };
+// Saves the server has not answered yet. A status that arrives meanwhile was
+// read before the write -- the server runs them in order behind one lock -- so
+// its list is the one the change was made to, and painting it would take the
+// change back until the save's own answer put it back again.
+let saving = 0;
 
 /**
- * Replace the list from the server. Skipped while an item is being edited: the
- * text is contentEditable and only saves on blur, so a poll landing mid-typing
- * would throw the edit away.
+ * Replace the list from the server. Skipped while a save is in flight (above),
+ * and while an item is being edited: the text is contentEditable and only saves
+ * on blur, so a poll landing mid-typing would throw the edit away.
  *
- * Only that edit is at risk, so only that holds the list back. Anything else in
+ * Only those put the list at risk, so only they hold it back. Anything else in
  * the pane can keep focus indefinitely -- a clicked tab does, in Chromium -- and
  * freezing on it leaves the queue stale with nothing to unstick it.
  */
 export function setItems(next) {
-  if (document.activeElement?.closest?.('#queue-body .text[contenteditable]')) return;
+  if (saving || document.activeElement?.closest?.('#queue-body .text[contenteditable]')) return;
   settle(next);
   render();
 }
@@ -88,10 +82,9 @@ const save = async (url = '/api/queue', method = 'PUT', body = { items }) => {
     render();
     return false;
   };
-  // The backstop behind inert -- a blur fired *by* the freeze still lands here.
-  if (frozen) return undo('busy switching branches — that change was not saved');
   let data;
-  try { data = await api(url, body, method); } catch (e) { return undo(e.message); }
+  saving++;
+  try { data = await api(url, body, method); } catch (e) { return undo(e.message); } finally { saving--; }
   settle(Array.isArray(data) ? data : items);
   render();
   return true;
@@ -99,9 +92,6 @@ const save = async (url = '/api/queue', method = 'PUT', body = { items }) => {
 
 function render() {
   const host = document.getElementById('queue-body');
-  // Native, and it covers what a per-control `disabled` would miss: the
-  // contentEditable text, the drag handles, focus.
-  host.inert = frozen;
   const live = items.filter((i) => !i.deleted);
   // Restoring the last tombstone hides the tab; without this you would be left
   // looking at an empty list with no tab to click back to.
