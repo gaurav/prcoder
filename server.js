@@ -713,13 +713,18 @@ function askToQuit() {
 /**
  * Where this branch's work is on GitHub: the PR, or with none the compare page
  * the Create button would open. Not pushed first, as that button does -- this
- * only looks, so an unpushed branch gets GitHub's "nothing to compare".
+ * only looks. A branch origin has never had is refused rather than opened,
+ * because its compare page says only "nothing to compare". Whether origin has
+ * it is git's memory (trackingHead), so a push from elsewhere needs a fetch.
  */
 async function githubUrl() {
   const url = (await prHeads(repo, target))?.url;
   if (url) return url;
   const branch = await currentBranch(repo);
   if (!branch) throw new Error('no pull request, and no branch to compare');
+  if (!await trackingHead(repo, branch)) {
+    throw new Error(`no pull request, and ${branch} is not on GitHub yet: push it, or use Create in the pane`);
+  }
   const { nameWithOwner, defaultBranch } = await repoFacts();
   console.log(`no pull request for ${branch}; opening the compare page`);
   return compareUrl(nameWithOwner, defaultBranch, branch, await originOwner(repo));

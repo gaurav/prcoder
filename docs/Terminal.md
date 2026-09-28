@@ -30,7 +30,7 @@ says `checked 7m ago` next to that count, rather than presenting them as current
   the PR has moved upstream. `-v` or `-vv` (or `PRCODER_VERBOSE=1` or `=2`) starts at a level, which
   is the only way to see startup itself.
 - `o` reopens the browser.
-- `g` opens the pull request on GitHub, or the compare page when there is none, as `prcoder gh` does.
+- `g` opens the pull request on GitHub, as `prcoder gh` does. With no pull request it opens the compare page, but only for a branch that has been pushed, since for any other the page shows nothing.
 - `q` or Ctrl-C quits, asking first when that would cost something.
 
 ## Quitting

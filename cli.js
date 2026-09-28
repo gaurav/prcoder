@@ -42,7 +42,7 @@ export function usage() {
 
   open             the default: open the prcoder already running here, or start one
   new              start one even if another is running
-  gh, github       open the pull request on GitHub (the compare page if there is none), and exit
+  gh, github       open the pull request on GitHub, or a pushed branch's compare page, and exit
   <pr>             a pull request number, URL or branch (default: the current branch's)
   --port <n>       listen on this port for this run          env PRCODER_PORT
   --no-open        print the URL, don't open a browser        env PRCODER_NO_OPEN=1
