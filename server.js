@@ -16,8 +16,7 @@ import { snapshot, currentBranch, repoInfo, prScope, compareUrl, originOwner, ch
 import { bucket, fileUrl, fileViews } from './files.js';
 import { readPort, writePort } from './store.js';
 import { readQueue, writeQueue, quote } from './queue.js';
-import { parseCli, usage, VERSION, portCandidates, statusLines } from './cli.js';
-import { counts } from './public/items.js';
+import { parseCli, usage, VERSION, portCandidates, statusLines, queueSummary, quitRisks } from './cli.js';
 import * as term from './term.js';
 import { toggleTask } from './public/tasks.js';
 import { grammars } from './public/diff.js';
@@ -109,9 +108,9 @@ function decorateFiles(p) {
 }
 
 /**
- * Every queue write, and the copy of the queue askToQuit counts kept up with it.
+ * Every queue write, and the copy of the queue askToQuit lists kept up with it.
  * That copy is otherwise the last poll's, so an item filed as an issue a moment
- * before `q` was still counted as "only on this machine".
+ * before `q` was still listed as on Local.
  */
 async function saveQueue(items) {
   const saved = await writeQueue(repo, items, info?.nameWithOwner);
@@ -660,24 +659,17 @@ async function listenOnRepoPort() {
  * is a keypress that can hang.
  *
  * An empty list is not a question worth asking, so it is not asked: no tab open,
- * nothing left in the queue, nothing in the working tree that quitting could
- * lose.
+ * and nothing in the working tree only this machine has. The queue is not in
+ * it. Quitting leaves `.prcoder/queue.json` as it is, and a question about it
+ * read as if `y` would file the items as issues; what is still on Local is
+ * printed instead, first and either way, so it is in the scrollback to copy
+ * from once prcoder has gone.
  */
-/** The queue's outstanding items. Cached by the poll and by saveQueue, so no subprocess. */
-const localOnly = () => counts(last?.queue ?? []).local;
-
 function askToQuit() {
-  const risk = [
-    wss.clients.size && (wss.clients.size > 1
-      ? `${wss.clients.size} browser tabs — their Claude sessions end`
-      : '1 browser tab — the Claude session ends'),
-    last?.ahead && `${last.ahead} unpushed commit${last.ahead > 1 ? 's' : ''}`,
-    last?.dirtyFiles?.length && `${last.dirtyFiles.length} uncommitted file${last.dirtyFiles.length > 1 ? 's' : ''}`,
-    // The queue is what you meant to finish this time round, and it lives only
-    // on this machine: an item still in it never became an issue, and nobody
-    // working anywhere else will ever see it.
-    localOnly() && `${localOnly()} queue item${localOnly() > 1 ? 's' : ''} only on this machine — file them as issues to keep them past it`,
-  ].filter(Boolean);
+  // One write, not one per item: every log line erases and repaints the block.
+  const listed = queueSummary(last?.queue ?? []);
+  if (listed.length) console.log(listed.join('\n'));
+  const risk = quitRisks({ tabs: wss.clients.size, ahead: last?.ahead, dirty: last?.dirtyFiles?.length });
   // Killed here rather than left to the close handlers: process.exit does not
   // wait for them, and an orphaned `claude` outlives the terminal it was
   // started from.
