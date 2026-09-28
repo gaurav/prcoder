@@ -747,6 +747,10 @@ async function start() {
     key: (ch) => {
       if (ch === 'v') term.cycleVerbosity();
       else if (ch === 'o') openBrowser();
+      // The PR already in hand first: a keypress that shells out can hang.
+      else if (ch === 'g') {
+        Promise.resolve(pr?.url ?? githubUrl()).then(openBrowser, (e) => console.error('github:', e.message));
+      }
       // Serialised like any route: a poll is git and gh calls, and a keypress
       // is no reason to run them alongside a checkout.
       else if (ch === 'r') {

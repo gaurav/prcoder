@@ -164,7 +164,7 @@ export function statusLines(s, u = {}) {
     // the clock on every number above while the socket stays open and the count
     // keeps cheerfully saying `1 tab`.
     row('serving', u.local, u.tabs ? `${u.tabs} tab${u.tabs > 1 ? 's' : ''}` : 'no tab open',
-      ago(u.age), 'q quit · r refresh · v verbose · o open'),
+      ago(u.age), 'q quit · r refresh · v verbose · o open · g github'),
     u.moved && row('', u.moved),
   ].filter(Boolean);
 }

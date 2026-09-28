@@ -96,10 +96,10 @@ prcoder  gaurav/prcoder   initial-implementation → main   2 unpushed · 8 unco
 PR #1    A browser workspace around a live Claude Code session
          https://github.com/gaurav/prcoder/pull/1
 queue    4 local · 1 done
-serving  http://localhost:17455   1 tab   q quit · r refresh · v verbose · o open
+serving  http://localhost:17455   1 tab   q quit · r refresh · v verbose · o open · g github
 ```
 
-`r` refreshes it, `v` cycles how much the log says, `o` reopens the browser, and `q` or Ctrl-C
+`r` refreshes it, `v` cycles how much the log says, `o` reopens the browser, `g` opens the PR on GitHub, and `q` or Ctrl-C
 quits, asking first if that would lose anything. [docs/Terminal.md](docs/Terminal.md) has how
 fresh the block is, what each verbosity level adds, and what a busy port looks like.
 

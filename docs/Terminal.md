@@ -7,7 +7,7 @@ prcoder  gaurav/prcoder   initial-implementation → main   2 unpushed · 8 unco
 PR #1    A browser workspace around a live Claude Code session
          https://github.com/gaurav/prcoder/pull/1
 queue    4 local · 1 done
-serving  http://localhost:17455   1 tab   q quit · r refresh · v verbose · o open
+serving  http://localhost:17455   1 tab   q quit · r refresh · v verbose · o open · g github
 ```
 
 The block is redrawn in place and the log scrolls above it, so what happened stays in the
@@ -30,6 +30,7 @@ says `checked 7m ago` next to that count, rather than presenting them as current
   the PR has moved upstream. `-v` or `-vv` (or `PRCODER_VERBOSE=1` or `=2`) starts at a level, which
   is the only way to see startup itself.
 - `o` reopens the browser.
+- `g` opens the pull request on GitHub, or the compare page when there is none, as `prcoder gh` does.
 - `q` or Ctrl-C quits, asking first when that would cost something.
 
 ## Quitting
