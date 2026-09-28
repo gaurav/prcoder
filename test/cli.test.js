@@ -236,6 +236,28 @@ test('prcoder --help, --version and a bad flag exit before anything starts', asy
   assert.match(stale.stderr, /^prcoder: CLAUDE_BIN is now PRCODER_AGENT_BIN/);
 });
 
+// `prcoder open` hands you the instance already serving this directory and
+// target, and exits. Against a stand-in answering /api/whoami, so nothing starts
+// -- a mismatch would, and the 15s timeout would be the failure.
+test('prcoder open with this repo already running opens that one and exits', async () => {
+  const http = await import('node:http');
+  const { execFile } = await import('node:child_process');
+  const { promisify } = await import('node:util');
+  const cwd = new URL('..', import.meta.url);
+  const repo = (await import('node:url')).fileURLToPath(cwd).replace(/\/$/, '');
+  const fake = http.createServer((_, res) => res.end(JSON.stringify({ prcoder: true, repo, target: null })));
+  await new Promise((r) => fake.listen(0, '127.0.0.1', r));
+  const port = String(fake.address().port);
+  try {
+    const { stdout } = await promisify(execFile)('node', ['server.js', '--port', port, '--no-open', '--', '-r'],
+      { cwd, timeout: 15_000 });
+    assert.match(stdout, new RegExp(`already running for .* at http://localhost:${port}`));
+    assert.match(stdout, /agent flags after -- were not used/);
+  } finally {
+    fake.close();
+  }
+});
+
 // Quitting prints Local rather than asking about it: the queue is on disk, so
 // nothing is lost, and the list is what you would want to copy from.
 test('quitting lists what is on Local, with links, and nothing when it is empty', () => {
