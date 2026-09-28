@@ -161,6 +161,23 @@ test('a queue write of the wrong shape says so, rather than throwing from inside
   assert.deepEqual(await put({ items: 'not an array', branch: 'work' }), [500, want]);
 });
 
+// The branch goes into git, so it has to be one origin has (or the one checked
+// out). Both refusals come before the gh lookup the walk itself needs.
+test('what a branch is built on is asked only of a branch origin has', async () => {
+  const ask = async (body) => {
+    const res = await fetch(`${base}/api/below`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    return [res.status, (await res.json()).error];
+  };
+  assert.deepEqual(await ask({}), [500, 'no branch']);
+  assert.deepEqual(await ask({ branch: 42 }), [500, 'no branch']);
+  assert.deepEqual(await ask({ branch: '--upload-pack=x' }), [500, 'origin has no branch --upload-pack=x']);
+  assert.deepEqual(await ask({ branch: 'no-such-branch-anywhere' }), [500, 'origin has no branch no-such-branch-anywhere']);
+});
+
 // What startup warns about. Empty here, because this checkout has been
 // installed; and a directory with no node_modules is missing every file,
 // Prism's grammars included, so none of the map is skipped.
