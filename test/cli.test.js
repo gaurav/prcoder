@@ -258,6 +258,65 @@ test('prcoder open with this repo already running opens that one and exits', asy
   }
 });
 
+// `prcoder gh` end to end, in a scratch repo: real git, and a gh stub that has
+// a PR only when PR_URL is set. The four answers are the PR, the compare page
+// once origin has the branch, and a refusal for a branch origin has never had
+// or a detached HEAD, where a compare page would show nothing.
+test('prcoder gh opens the PR, or the compare page for a pushed branch', { skip: process.platform === 'win32' && 'the gh stub is a sh script' }, async () => {
+  const fs = await import('node:fs/promises');
+  const os = await import('node:os');
+  const path = await import('node:path');
+  const { execFile } = await import('node:child_process');
+  const { promisify } = await import('node:util');
+  const exec = promisify(execFile);
+  const server = new URL('../server.js', import.meta.url).pathname;
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'prcoder-gh-'));
+  const bin = path.join(dir, 'bin');
+  const work = path.join(dir, 'work');
+  await fs.mkdir(bin);
+  await fs.mkdir(work);
+  await fs.writeFile(path.join(bin, 'gh'), `#!/bin/sh
+case "$1 $2" in
+  "pr view") [ -n "$PR_URL" ] && echo "{\\"url\\":\\"$PR_URL\\"}" && exit 0
+             echo 'no pull requests found for branch "feat"' >&2; exit 1 ;;
+  "repo view") echo '{"defaultBranchRef":{"name":"main"},"nameWithOwner":"o/r"}' ;;
+  *) exit 1 ;;
+esac
+`, { mode: 0o755 });
+  const git = (...a) => exec('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...a], { cwd: work });
+  await git('init', '-q', '-b', 'main');
+  await git('commit', '-q', '--allow-empty', '-m', 'x');
+  await git('checkout', '-q', '-b', 'feat');
+  await git('remote', 'add', 'origin', 'git@github.com:me/r.git');
+  const env = { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}` };
+  delete env.CLAUDE_BIN;
+  const gh = (extra = {}) => exec('node', [server, 'gh', '--no-open'], { cwd: work, env: { ...env, ...extra }, timeout: 15_000 })
+    .then((r) => ({ code: 0, ...r }), (e) => ({ code: e.code, stdout: e.stdout, stderr: e.stderr }));
+  try {
+    const pr = await gh({ PR_URL: 'https://github.com/o/r/pull/7' });
+    assert.equal(pr.code, 0);
+    assert.equal(pr.stdout.trim(), 'https://github.com/o/r/pull/7');
+
+    const unpushed = await gh();
+    assert.equal(unpushed.code, 1);
+    assert.match(unpushed.stderr, /feat is not on GitHub yet/);
+    assert.doesNotMatch(unpushed.stdout, /compare/);
+
+    await git('update-ref', 'refs/remotes/origin/feat', 'HEAD');
+    const pushed = await gh();
+    assert.equal(pushed.code, 0);
+    assert.match(pushed.stdout, /no pull request for feat; opening the compare page/);
+    assert.match(pushed.stdout, /^https:\/\/github\.com\/o\/r\/compare\/main\.\.\.me:feat\?expand=1$/m);
+
+    await git('checkout', '-q', '--detach');
+    const detached = await gh();
+    assert.equal(detached.code, 1);
+    assert.match(detached.stderr, /no branch to compare/);
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
+
 // Quitting prints Local rather than asking about it: the queue is on disk, so
 // nothing is lost, and the list is what you would want to copy from.
 test('quitting lists what is on Local, with links, and nothing when it is empty', () => {
