@@ -280,6 +280,84 @@ export function switcherRows(prs, current) {
 }
 
 /**
+ * What `here` is built on, bottom first: `{ nodes, into, ask }` (#93). `here` is
+ * `{ pr }` in a pull request's pane and `{ branch }` in the branch-only one;
+ * `nodes` are the pull requests and bare branches under it, `into` the branch
+ * the bottom one merges into -- the default branch, or null when the walk ran
+ * out -- and `ask` the branch whose base only git can say, and has not yet.
+ *
+ * A pull request's base comes from the list, as prTree reads it the other way
+ * up, so most of a stack costs nothing. A branch with no open pull request --
+ * one that merged, or never had one -- has no base on GitHub, and `below` is
+ * git's answers for such branches (branchesBelow in git.js, asked for
+ * through app.js).
+ * `seen` again, because two pull requests can be each other's bases going
+ * down as well as up.
+ */
+export function stackUnder(here, prs, below = [], defaultBranch) {
+  const none = { nodes: [], into: null, ask: null };
+  if (!prs || !defaultBranch) return none;
+  const gitNext = (b) => {
+    for (const r of below) {
+      const git = [r.branch, ...r.names];
+      const i = git.indexOf(b);
+      if (i >= 0) return git[i + 1] ?? (r.toDefault ? defaultBranch : null);
+    }
+    return undefined;
+  };
+  const start = here.pr ? here.pr.headRefName : here.branch;
+  if (!start || (!here.pr && start === defaultBranch)) return none;
+  const seen = new Set([start]);
+  const nodes = [];
+  let b = here.pr ? here.pr.baseRefName : gitNext(start);
+  let ask = b === undefined ? start : null;
+  // ponytail: a fixed cap, past any stack a person keeps by hand.
+  while (b && b !== defaultBranch && !seen.has(b) && nodes.length < 20) {
+    seen.add(b);
+    // A fork's head is in the fork: nothing here is based on it.
+    const pr = prs.find((p) => !p.isCrossRepository && p.headRefName === b);
+    nodes.push(pr ? { pr } : { branch: b });
+    const next = pr ? pr.baseRefName : gitNext(b);
+    if (next === undefined) ask = b;
+    b = next;
+  }
+  return { nodes: nodes.reverse(), into: b === defaultBranch ? b : null, ask };
+}
+
+/**
+ * The whole stack `here` is in, as nested `[{ pr } | { branch }, kids]`: from
+ * the bottom of stackUnder's chain up to `here`, marked, with what is built on
+ * it under it as before. Each node on the way also carries the other pull
+ * requests built on it, since the list has them for nothing. Null with no
+ * chain, which is the pane as it was.
+ */
+export function stackTree(here, prs, under) {
+  if (!under.nodes.length) return null;
+  const chain = [...under.nodes, here];
+  const seen = new Set(chain.filter((n) => n.pr).map((n) => n.pr.number));
+  const build = (i) => {
+    const n = chain[i];
+    const up = i + 1 < chain.length ? [build(i + 1)] : [];
+    const others = n.pr?.isCrossRepository ? [] : prTree(prs, n.pr ? n.pr.headRefName : n.branch, seen);
+    return { ...n, here: i === chain.length - 1, kids: [...up, ...others] };
+  };
+  return [build(0)];
+}
+
+/**
+ * The line over a stackTree: whose stack it is, and where it bottoms out.
+ * Parts, as named() takes them.
+ */
+export const stackTitle = (who, under) => [
+  'The stack ', ...who, ' is in',
+  ...(under.into ? [', from ', { branch: under.into }, '.']
+    : under.ask ? ['. What ', { branch: under.ask }, ' is built on is not known yet.']
+    : ['. Nothing was found below ', { branch: headOf(under.nodes[0]) }, '.']),
+];
+
+const headOf = (n) => (n.pr ? n.pr.headRefName : n.branch);
+
+/**
  * The pane with no PR to show. The head is the pull request head's shape with
  * the branch in place of the pull request -- which branch, why there is no PR,
  * and the same way out of the window -- and the body is what merges into here.
@@ -289,7 +367,7 @@ export function switcherRows(prs, current) {
  * milestones are how you choose what to work on next. The head does not
  * scroll, so it is always there.
  */
-export function renderNoPr(status, prs, { onCreate, onSwitch, creating = false }) {
+export function renderNoPr(status, prs, { onCreate, onSwitch, onBelow, below = [], creating = false }) {
   const host = document.getElementById('pr-body');
   tab = 'detail';
   shownFor = null;
@@ -322,9 +400,19 @@ export function renderNoPr(status, prs, { onCreate, onSwitch, creating = false }
     links: create.length || out.links.length ? linkRow([...create, ...out.links], 'meta pr-ways pr-links', out.repo) : null,
   });
 
+  // What the branch is built on only git can say, so it is asked for here --
+  // app.js asks once per list, which is the schedule this pane already reads.
+  const under = stackUnder({ branch: status.branch }, prs, below, status.defaultBranch);
+  if (under.ask) onBelow?.(under.ask);
+  const opts = { blocked: status.dirtyFiles.length > 0, onSwitch };
+  const tree = stackTree({ branch: status.branch }, prs, under);
   host.replaceChildren(...kids([
-    intoRow(status, prs ?? [], onSwitch)
-      ?? (status.detached ? null : h('p', { className: 'empty' }, ...named(intoEmpty(status.branch, prs)))),
+    tree
+      ? h('div', { className: 'pr-into' },
+        h('span', { className: 'pr-into-label' }, ...named(stackTitle(['branch ', { branch: status.branch }], under))),
+        stackList(tree, opts))
+      : intoRow(status, prs ?? [], opts)
+        ?? (status.detached ? null : h('p', { className: 'empty' }, ...named(intoEmpty(status.branch, prs)))),
   ]));
 }
 
@@ -354,12 +442,12 @@ export const intoEmpty = (branch, prs) => (prs ? ['No pull requests into branch 
  * The header has already swapped the switcher for a Commit button, and the link
  * still works: you don't need a clean tree to read a pull request.
  */
-function intoRow(status, prs, onSwitch) {
+function intoRow(status, prs, opts) {
   const tree = prTree(prs, status.branch);
   if (!tree.length) return null;
   return h('div', { className: 'pr-into' },
     h('span', { className: 'pr-into-label' }, ...named(['Pull requests into branch ', { branch: status.branch }])),
-    stackList(tree, { blocked: status.dirtyFiles.length > 0, onSwitch }));
+    stackList(tree, opts));
 }
 
 /**
@@ -382,22 +470,37 @@ const named = (parts) => parts.map((p) => (typeof p === 'string' ? p : h('code',
 export const stackBase = (pr) => [`PR #${pr.number} (branch `, { branch: pr.headRefName }, ')'];
 
 /**
- * A prTree as nested lists. Each pull request's stack sits under it, so the
- * size of a stack is how far its indent runs.
+ * A prTree or stackTree as nested lists. Each pull request's stack sits under
+ * it, so the size of a stack is how far its indent runs.
  */
 const stackList = (nodes, opts) => h('ul', {},
-  ...nodes.map(({ pr, kids }) => prRow(pr, opts, kids.length ? stackList(kids, opts) : null)));
+  ...nodes.map((n) => (n.pr ? prRow : bareRow)(n, opts, n.kids.length ? stackList(n.kids, opts) : null)));
 
-/** One open pull request: the link to it, what it is called, and the checkout. */
-const prRow = (p, { blocked, onSwitch }, kids) => h('li', {},
-  h('div', { className: 'pr-row' },
+/**
+ * One open pull request: the link to it, what it is called, and the checkout.
+ * The one you are looking at is marked instead of offering to go there: the
+ * switcher in the head is the way to check it out.
+ */
+const prRow = ({ pr: p, here }, { blocked, onSwitch }, kids) => h('li', {},
+  h('div', { className: here ? 'pr-row here' : 'pr-row' },
     ext(p.url, `#${p.number}`, { className: 'pr-num' }),
     p.isDraft ? badge('draft', 'draft') : null,
     h('span', { className: 'pr-row-title', title: p.title }, p.title),
-    btn('Switch', () => onSwitch(p.number), {
+    here ? null : btn('Switch', () => onSwitch(p.number), {
       className: 'pr-go', disabled: blocked,
       title: blocked ? 'Commit or stash your changes first' : `Check out #${p.number} here`,
     })),
+  kids);
+
+/**
+ * A branch in a stack with no open pull request: the one you are on in the
+ * branch-only pane, or one a stack is built on that has merged or never had
+ * one. Nothing to link to or check out -- Switch is `gh pr checkout`.
+ */
+const bareRow = ({ branch, here }, _opts, kids) => h('li', {},
+  h('div', { className: here ? 'pr-row pr-bare here' : 'pr-row pr-bare' },
+    h('code', { className: 'branch' }, branch),
+    h('span', { className: 'pr-row-title' }, here ? 'this branch' : 'no open pull request')),
   kids);
 
 /**
@@ -578,7 +681,7 @@ const repoChip = (crumb) => ext(crumb.href, [
  * #pr-head is the identity -- which pull request, on what branch, passing or
  * not -- and does not scroll. #pr-body is one of four views of it: the argument
  * (Detail), the work (Files), CI (Checks, drawn only when there are checks) and
- * the pull requests built on it (Stack). They are tabs rather than one column
+ * the stack it is in (Stack). They are tabs rather than one column
  * because they are different things to be doing, they each want the whole
  * pane, and an agent-written description is long enough to bury a file list
  * entirely. docs/Panes.md has what each shows.
@@ -619,6 +722,9 @@ function renderPrHead(pr, parsed, handlers) {
   const paneTab = (name, label, extra, props) => tabBtn(label, tab === name, () => switchTo(name), extra, props);
   const ways = headLinks(pr);
   const state = pr.isDraft ? 'draft' : pr.state.toLowerCase();
+  // The base is often another pull request's branch, and which one is the
+  // thing you want next to it. From the list, so it costs nothing.
+  const under = handlers.prs?.find((p) => !p.isCrossRepository && p.headRefName === pr.baseRefName);
 
   // Each row stands alone -- no row's spacing depends on which one is above it
   // -- so the order is HEAD_ORDER and nothing else.
@@ -630,7 +736,8 @@ function renderPrHead(pr, parsed, handlers) {
     links: linkRow(ways.links, 'meta pr-ways pr-links', ways.repo),
     state: h('div', { className: 'meta pr-state' },
       badge(state, state),
-      h('span', {}, `${pr.headRefName} → ${pr.baseRefName}`),
+      h('span', {}, `${pr.headRefName} → ${pr.baseRefName}`, under ? ' (' : null,
+        under ? ext(under.url, `#${under.number}`) : null, under ? ')' : null),
       h('span', { className: 'add' }, `+${pr.additions}`),
       h('span', { className: 'del' }, `−${pr.deletions}`),
     ),
@@ -645,7 +752,7 @@ function renderPrHead(pr, parsed, handlers) {
           tabDone(checkCount(pr.checks)) ? 'done' : `dot ${worst(pr.checks)}`,
           { ariaLabel: checksName(pr.checks), title: checksName(pr.checks) })
         : null,
-      paneTab('stack', stackLabel(stackOn(pr, handlers.prs)))),
+      paneTab('stack', stackLabel(stackOn(pr, handlers.prs), stackUnder({ pr }, handlers.prs, handlers.below, handlers.defaultBranch).nodes))),
   };
   paintHead(rows);
 }
@@ -721,8 +828,18 @@ export const stackEmpty = (pr, prs, otherRepo = false) => (otherRepo
 
 const stackSize = (nodes) => nodes.reduce((n, k) => n + 1 + stackSize(k.kids), 0);
 
-/** `Stack (5)`, counting the whole tree, since it is the whole tree the tab shows. */
-export const stackLabel = (nodes) => (nodes.length ? `Stack (${stackSize(nodes)})` : 'Stack');
+/**
+ * `Stack (↓1 ↑2)`: the pull requests under this one, and every one built on it.
+ * A part that is nothing is left out, and a stack of one is plain `Stack`.
+ * Bare branches under it are drawn and not counted -- there is nothing to
+ * switch to -- and neither are the other stacks on the ones under it.
+ */
+export const stackLabel = (above, under = []) => {
+  const down = under.filter((n) => n.pr).length;
+  const up = stackSize(above);
+  const parts = [down && `↓${down}`, up && `↑${up}`].filter(Boolean);
+  return parts.length ? `Stack (${parts.join(' ')})` : 'Stack';
+};
 
 export const viewedCount = (files = []) =>
   ({ done: files.filter((f) => f.viewed).length, total: files.length });
@@ -783,8 +900,17 @@ function renderPrTab(pr, parsed, handlers) {
   const focused = document.activeElement?.closest?.('.md-section')?.dataset.key;
 
   const stack = tab === 'stack' ? stackOn(pr, handlers.prs) : null;
+  // Only an open tab asks git: most pull requests are on the default branch,
+  // and the ones that aren't mostly sit on another PR, which the list has.
+  const under = stack && stackUnder({ pr }, handlers.prs, handlers.below, handlers.defaultBranch);
+  if (under?.ask) handlers.onBelow?.(under.ask);
+  const tree = under && stackTree({ pr }, handlers.prs, under);
   host.replaceChildren(...kids(stack ? [
-    stack.length
+    tree
+      ? h('div', { className: 'pr-into' },
+        h('span', { className: 'pr-into-label' }, ...named(stackTitle(stackBase(pr), under))),
+        stackList(tree, handlers))
+      : stack.length
       ? h('div', { className: 'pr-into' },
         h('span', { className: 'pr-into-label' }, ...named(['Pull requests built on ', ...stackBase(pr)])),
         stackList(stack, handlers))

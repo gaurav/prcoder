@@ -776,6 +776,10 @@ code.branch { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-
 .pr-into ul ul { margin-left: 4px; padding-left: 10px; border-left: 1px solid var(--line); }
 .pr-row { display: flex; align-items: baseline; gap: 6px; padding: 1px 0; }
 .pr-row-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Where you are in the stack, in place of the Switch that would go nowhere. */
+.pr-row.here { font-weight: 600; }
+/* A branch in the stack with no pull request: said, not offered. */
+.pr-bare .pr-row-title { color: var(--dim); }
 .pr-go {
   font: inherit; font-size: 11px; padding: 0 6px; cursor: pointer;
   color: var(--accent); background: none; border: 1px solid var(--line); border-radius: 3px;
