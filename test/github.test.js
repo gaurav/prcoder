@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { rollup, linkedIssues, linksFrom, parsePrUrl, run, issueNumber, lf, setViewed, listPrs, loadPr, prHeads, lookupRef } from '../github.js';
+import { rollup, linkedIssues, linksFrom, parsePrUrl, run, issueNumber, lf, setViewed, listPrs, loadPr, prHeads, lookupRef, createIssue } from '../github.js';
 import { taskLines } from '../public/tasks.js';
 
 test('check states collapse into passed, failed and pending', () => {
@@ -300,4 +300,16 @@ test('a title from GitHub arrives without control characters', () => {
   const out = JSON.stringify({ data: { repository: { i5: { __typename: 'Issue', title: 'looks fine\r\u001b[2Jrm -rf', url: 'u', state: 'OPEN' } } } });
   // The ESC goes, which leaves the rest of the sequence as harmless text.
   assert.equal(linksFrom(out).get(5).title, 'looks fine [2Jrm -rf');
+});
+
+// ◎ on an item about another repo's issue files here, with that link as the
+// body; an ordinary item still files with an empty one, which gh needs to be
+// told about or it opens an editor.
+test('an issue is filed with the body it is given, and an empty one otherwise', { skip: unix }, async () => {
+  const filed = (...a) => ghArgs(() => createIssue(os.tmpdir(), 'o/r', 't', ...a).catch(() => {}));
+  const body = (args) => args[args.indexOf('--body') + 1];
+  assert.equal(body(await filed('https://github.com/cli/cli/issues/9')), 'https://github.com/cli/cli/issues/9');
+  // Last, and ghArgs trims the line an empty last argument would be.
+  const plain = await filed();
+  assert.equal(plain.at(-1), '--body');
 });

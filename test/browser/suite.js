@@ -771,6 +771,8 @@ test('a reference on its own is added as the issue\'s title, tagged, and ▶ car
   const tag = rows().locator('.tag.issue');
   assert.equal(await tag.textContent(), '#91');
   assert.equal(await tag.getAttribute('href'), 'https://github.com/gaurav/prcoder/pull/91');
+  // Already an issue here, so there is nothing for ◎ to file.
+  assert.equal(await rows().locator('button[title="move into a new issue"]').count(), 0);
   assert.equal(await fresh.locator('#queue-input').inputValue(), '');
   // The same reference again is refused, and stays in the input.
   await add('#91');
@@ -790,6 +792,8 @@ test('a reference inside other text keeps the text, and the tag is another repo\
   await fresh.waitForSelector('#queue-body .item .tag.issue');
   assert.deepEqual(await rows().locator('.text').allTextContents(), ['Work around cli/cli#123']);
   assert.equal(await rows().locator('.tag.issue').textContent(), 'cli/cli#123');
+  // Another repo's issue can still be filed here, as a new one.
+  assert.equal(await rows().locator('button[title="move into a new issue"]').count(), 1);
   // The text already says which issue, so ▶ adds nothing to it.
   await rows().locator('button[title^="type into Claude"]').click();
   await fresh.waitForFunction(() => document.querySelector('#queue-body .tab.on')?.textContent.startsWith('Local (0)'));

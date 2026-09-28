@@ -14,8 +14,8 @@ import { WebSocketServer } from 'ws';
 import { loadPr, prHeads, prBody, listPrs, issueLinks, lookupRef, setViewed, setBody, createIssue, fetchPatches, runCount } from './github.js';
 import { snapshot, currentBranch, repoInfo, prScope, compareUrl, originOwner, checkoutPr, pushBranch, remoteBranchHead, trackingHead, localPatch } from './git.js';
 import { bucket, fileUrl, fileViews } from './files.js';
-import { readPort, writePort } from './store.js';
-import { readQueue, writeQueue, quote } from './queue.js';
+import { readPort, writePort, pick } from './store.js';
+import { readQueue, writeQueue, quote, issueUrl } from './queue.js';
 import { parseCli, usage, VERSION, portCandidates, statusLines } from './cli.js';
 import { counts } from './public/items.js';
 import * as term from './term.js';
@@ -355,11 +355,18 @@ const routes = {
     } };
   },
 
-  /** Filed as an issue, one item at a time: each is its own issue. */
+  /**
+   * Filed as an issue, one item at a time: each is its own issue. Always in
+   * this repo; an item about another repo's issue or PR (the pane offers ◎ on
+   * no other kind that has one) puts the link to it in the new issue's body,
+   * built here from the item rather than taken from the page.
+   */
   'POST /api/queue/to-issue': async ({ items, index }) => {
     const { nameWithOwner } = await repoFacts();
     return moveOut(items, [index], async ([item]) => {
-      const { url } = await createIssue(repo, nameWithOwner, item.text);
+      const stored = pick(item);
+      const body = stored.repo ? issueUrl(stored, nameWithOwner) : '';
+      const { url } = await createIssue(repo, nameWithOwner, item.text, body);
       term.verbose(`filed ${quote(item.text)} as ${url}`);
       return url;
     });

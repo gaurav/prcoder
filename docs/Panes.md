@@ -174,7 +174,8 @@ item is added under that issue's title; the same thing inside longer text, `Fix 
 text. Either way the row gets a tag -- `#91` here, `cli/cli#123` elsewhere -- that links to it,
 and ▶ adds the link to what it types unless the text already names that issue. A reference GitHub
 does not know is refused with GitHub's reason and left in the input to fix, and one already on
-Local is not added twice.
+Local is not added twice. ◎ always files in this repo, so an item about one of this repo's issues
+has none, and one about another repo's files a new issue here with the link to it as the body.
 
 **Local** is the working list, and it drains as you move and finish things, so a session you
 finished tidily ends with it empty. Only Local is yours to reorder. **Completed** is what you ticked

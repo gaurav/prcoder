@@ -245,9 +245,9 @@ export function issueNumber(out) {
   return { url, number: n };
 }
 
-export async function createIssue(cwd, nameWithOwner, title) {
+export async function createIssue(cwd, nameWithOwner, title, body = '') {
   return issueNumber(await gh(['issue', 'create', '--repo', nameWithOwner,
-    '--title', title, '--body', ''], { cwd }));
+    '--title', title, '--body', body], { cwd }));
 }
 
 /**

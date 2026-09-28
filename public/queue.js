@@ -416,7 +416,11 @@ function row(item, above, below) {
       // Nothing moves into the PR description -- prcoder does not write one,
       // bar a box you tick on the PR tab. Disabled while the issue is filed: a
       // second click filed a second issue for the same item.
-      item.issue ? null : btn('◎', async (e) => {
+      //
+      // Not for an item about an issue or PR in this repo, which already has a
+      // home here. One about another repo's files an issue in this one, with
+      // the link to the other in its body (the to-issue route).
+      item.issue && !item.repo ? null : btn('◎', async (e) => {
         const b = e.currentTarget;
         b.disabled = true;
         if (!await save('/api/queue/to-issue', 'POST', { items, index: idx })) b.disabled = false;
