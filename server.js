@@ -559,7 +559,7 @@ async function whoHasPort(wanted) {
  * ponytail: only the recorded (or pinned) port is asked, and the target is
  * compared as typed. One that moved port, or holds the same PR spelled as a URL
  * rather than a number, is missed, and a new one starts beside it with the
- * moved-port note. Scan the range, or resolve the target, if that bites.
+ * moved-port note. #97 has what would find both.
  */
 async function reopen() {
   const port = pinnedPort || await readPort(repo);
