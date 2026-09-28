@@ -118,7 +118,11 @@ A modified file's diff is not highlighted at all, and
 - **Text from GitHub** — descriptions, titles, issue bodies, file names — is built into the page with
   `h()` and text nodes. `innerHTML` only through `inline()`, and a new kind of link only through
   `target()`.
-- **Nothing sends to Claude without a click** on text the user can see.
+- **Nothing sends to Claude without a click** on text the user can see. A queue item's text can be
+  an issue title from any repo, and ▶ types it into the PTY, where a `\r` would submit the turn and
+  an escape would start a sequence; so `linksFrom` in `github.js`, which every title the queue
+  takes passes through, takes control characters out of it, and the link ▶ adds is built from the
+  repo name and number the row's tag shows.
 - **A new kind of asset** — a font, an image, a worker, anything loaded rather than inlined — has to
   be allowed by the CSP beside `serveFile`, which is otherwise silent about what it blocks. The
   Prism grammars under `/vendor/prism/` are same-origin script, which `script-src 'self'` already
