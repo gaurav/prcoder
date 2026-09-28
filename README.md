@@ -35,8 +35,9 @@ is no token to configure.
 - **Claude Code** -- the real `claude` in a PTY: Escape, slash commands and permission prompts all
   work as they do in a terminal.
 - **Queue** -- your own TODO list for this working copy, kept in `.prcoder/` rather than in any
-  file you own. An item can be typed into Claude or moved into a GitHub issue, and with a pull
-  request on screen two more tabs read its description's checklist and the issues it mentions.
+  file you own. An item can be about an issue or pull request -- type `#91` or paste its link --
+  and can be typed into Claude or moved into a GitHub issue. With a pull request on screen two more
+  tabs read its description's checklist and the issues it mentions.
 
 prcoder follows the branch. It works out the pull request for whatever is checked out, and does
 it again every 60 seconds, so a `git checkout` in another terminal -- or by Claude in the middle

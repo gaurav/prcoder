@@ -3,7 +3,7 @@
 // and the status block share.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { TABS, counts } from '../public/items.js';
+import { TABS, counts, forClaude, refLabel } from '../public/items.js';
 import { stripFor } from '../public/queue.js';
 
 const item = (over = {}) => ({ text: 't', done: false, issue: null, deleted: false, ...over });
@@ -84,4 +84,33 @@ test('emptying the tab you are on falls back to Local', () => {
   assert.equal(stripFor([LOCAL], 'deleted').tab, 'local');
   assert.equal(stripFor([], 'done').tab, 'done');
   assert.equal(stripFor([], 'local').tab, 'local');
+});
+
+// ▶ hands Claude an item about an issue with the link to it, unless the text
+// already says which one: a title says nothing about where it came from.
+test('▶ adds the link to an item\'s issue only where the text does not name it', () => {
+  const home = 'gaurav/prcoder';
+  const here = (text, over = {}) => item({ text, issue: 91, issueUrl: 'https://github.com/gaurav/prcoder/pull/91', ...over });
+  assert.equal(forClaude(here('Make the queue better'), home), 'Make the queue better (https://github.com/gaurav/prcoder/pull/91)');
+  for (const text of ['Fix #91', 'see prcoder#91', 'see GAURAV/prcoder#91', 'https://github.com/gaurav/prcoder/issues/91']) {
+    assert.equal(forClaude(here(text), home), text);
+  }
+  // Another number, or the same number in another repo, is not this one.
+  assert.match(forClaude(here('like #90'), home), /\(https:/);
+  assert.match(forClaude(here('like cli/cli#91'), home), /\(https:/);
+  const there = here('Upstream bug', { repo: 'cli/cli', issueUrl: 'https://github.com/cli/cli/issues/91' });
+  assert.equal(forClaude(there, home), 'Upstream bug (https://github.com/cli/cli/issues/91)');
+  assert.equal(forClaude({ ...there, text: 'Upstream cli/cli#91' }, home), 'Upstream cli/cli#91');
+  // Here, #91 is this repo's, not cli/cli's.
+  assert.match(forClaude({ ...there, text: 'Upstream #91' }, home), /\(https:/);
+  // No repo known yet, and only a reference that names its repo can count.
+  assert.equal(forClaude({ ...there, text: 'Upstream cli/cli#91' }, undefined), 'Upstream cli/cli#91');
+  // An item with no issue, or no link yet, is typed as it is.
+  assert.equal(forClaude(item({ text: 'plain' }), home), 'plain');
+  assert.equal(forClaude(here('no link', { issueUrl: null }), home), 'no link');
+});
+
+test('the tag names the repo only when it is not this one', () => {
+  assert.equal(refLabel(item({ issue: 91 })), '#91');
+  assert.equal(refLabel(item({ issue: 123, repo: 'cli/cli' })), 'cli/cli#123');
 });

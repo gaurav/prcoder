@@ -390,12 +390,21 @@ input.addEventListener('keydown', async (e) => {
   // reason this is a textarea with a key handler rather than a form.
   if (e.key !== 'Enter' || e.shiftKey) return;
   e.preventDefault();
+  // A reference is looked up on GitHub before it is added, which takes a
+  // second; an Enter meanwhile would add it twice. Read-only rather than
+  // disabled, which would take the focus away from the input.
+  if (input.readOnly) return;
+  input.readOnly = true;
   // Cleared only once the server has the item. addItem is async and save()
   // reports a refusal with a toast rather than a throw, so clearing on the way
   // past threw the text away on any API failure.
-  if (await addItem(input.value)) {
-    input.value = '';
-    grow();
+  try {
+    if (await addItem(input.value)) {
+      input.value = '';
+      grow();
+    }
+  } finally {
+    input.readOnly = false;
   }
 });
 /** One line until it needs more, then up to a third of the pane. */
@@ -409,5 +418,6 @@ input.addEventListener('input', grow);
 // needs it — renderHeader synthesises an option for the current PR until it
 // lands, and loadPrs repaints the header itself when it does.
 loadPrs();
-await initQueue({ sendToClaude, onTask: toggleTask });
+// `home` for ▶, which reads a bare #N in an item's text as this repo's.
+await initQueue({ sendToClaude, onTask: toggleTask, home: () => last?.nameWithOwner });
 loadStatus();

@@ -1,5 +1,6 @@
 import { h, btn, ext, api, toast, pref, setPref, tabBtn, blocks, writeThrough } from './pr.js';
-import { TABS } from './items.js';
+import { TABS, refLabel, forClaude } from './items.js';
+import { refs } from './tasks.js';
 
 // The client owns the list; every change persists the whole array. Single user,
 // single repo — no ids, no diffing.
@@ -281,12 +282,12 @@ async function loadIssues() {
  * is the PR's record and an issue is the project's, so pulling an item is taking
  * it on, not taking it away. Something already on Local is not added twice.
  */
-async function pull(text, issue = null) {
+async function pull(text, issue = null, kind = null) {
   if (items.some((i) => TABS.local(i) && i.text === text)) {
     toast('already in your queue');
     return;
   }
-  const item = { text, done: false, issue, deleted: false };
+  const item = { text, done: false, issue, repo: null, kind, deleted: false };
   if (addTo === 'top') items.unshift(item); else items.push(item);
   // A refusal has already taken it back out.
   if (!await save()) return;
@@ -342,7 +343,7 @@ function issueList() {
       ext(i.url, `#${i.number}`, { className: 'tag issue' }),
       h('span', { className: 'text', textContent: text }),
       h('span', { className: 'actions' },
-        btn('↓', () => pull(title ?? `#${i.number}`, i.number), { title: 'copy into your queue' })));
+        btn('↓', () => pull(title ?? `#${i.number}`, i.number, found?.kind ?? null), { title: 'copy into your queue' })));
   }));
 }
 
@@ -390,7 +391,7 @@ function row(item, above, below) {
     ordered ? grip : null,
     box,
     text,
-    item.issue ? ext(item.issueUrl ?? '#', `#${item.issue}`, { className: 'tag issue' }) : null,
+    item.issue ? ext(item.issueUrl ?? '#', refLabel(item), { className: 'tag issue' }) : null,
     h('span', { className: 'actions' },
       // Typed, not sent: the turn is left in the prompt for you to edit, which
       // is the whole of what prcoder puts into a session (docs/Design.md).
@@ -403,8 +404,11 @@ function row(item, above, below) {
       // Only if it went. `sendToClaude` answers false on a closed socket, and
       // an item ticked off after a refused send is work nobody has done and
       // nothing will remind you of.
+      //
+      // With the link to the issue or PR it is about, where the text does not
+      // already say which (forClaude in items.js).
       btn('▶', () => {
-        if (!deps.sendToClaude(item.text, false)) return toast('Claude is not connected — nothing was typed.', true);
+        if (!deps.sendToClaude(forClaude(item, deps.home?.()), false)) return toast('Claude is not connected — nothing was typed.', true);
         item.done = true;
         return save();
       }, { title: 'type into Claude, and check it off' }),
@@ -447,10 +451,38 @@ function row(item, above, below) {
   return li;
 }
 
-/** True once the server has it, so the caller knows whether to clear the input. */
+/**
+ * True once the server has it, so the caller knows whether to clear the input.
+ *
+ * Text with an issue or PR reference in it -- `#91`, `cli/cli#123`, a link --
+ * is asked about first (POST /api/queue/ref). The item is about the first
+ * reference, which is the row's tag, and an input that is nothing but the
+ * reference takes the issue's title as its text: `#91` is no reminder of what
+ * #91 was. One GitHub does not know is refused with GitHub's reason, and the
+ * input keeps the text to be fixed; so is one already on Local.
+ */
 export async function addItem(text) {
   if (!text.trim()) return false;
-  const item = { text: text.trim(), done: false, issue: null, deleted: false };
+  const item = { text: text.trim(), done: false, issue: null, repo: null, kind: null, deleted: false };
+  if (refs(text).length) {
+    let ref;
+    try {
+      ({ ref } = await api('/api/queue/ref', { text }));
+    } catch (e) {
+      toast(e.message, true);
+      return false;
+    }
+    if (ref) {
+      Object.assign(item, { issue: ref.issue, repo: ref.repo, kind: ref.kind });
+      if (ref.whole) {
+        if (items.some((i) => TABS.local(i) && i.issue === ref.issue && (i.repo ?? null) === ref.repo)) {
+          toast(`${refLabel(item)} is already in your queue`);
+          return false;
+        }
+        item.text = ref.title;
+      }
+    }
+  }
   // The end of the whole array, past any done or deleted rows: Local filters
   // without reordering, so a new item still shows last there.
   if (addTo === 'top') items.unshift(item); else items.push(item);
