@@ -5,6 +5,13 @@ driver from `driver.mjs`. It has the port check, the stubbed server
 environment, kill-on-exit, `firefoxEnv()` and `launchBrowser()`, and every one
 of them fixes a bug that cost a run. `docs/Verifying.md` covers what each driver reaches.
 
+## Starting the server
+
+Spawn `server.js new`, never a bare `server.js`. A bare one is `prcoder open`,
+which asks the repo's recorded port first. If your own prcoder is on it, the
+driver prints "already running", exits 0 and then drives your session. `new`
+always starts one.
+
 ## Launching browsers
 
 Launch with `launchBrowser()`, which picks the engine, falls back to Chromium,
