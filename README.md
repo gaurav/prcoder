@@ -10,8 +10,8 @@ npm install
 npm link                   # once, to run it from any repo; edits here go live
 
 prcoder                    # the PR for the current branch
-prcoder 123                # a specific PR
-prcoder <pr-url>           # any PR, anywhere
+prcoder open 123           # a specific PR
+prcoder open <pr-url>      # any PR, anywhere
 prcoder -- --model opus    # ...with flags for the Claude session, after --
 prcoder --help             # prcoder's own flags
 ```
@@ -48,9 +48,10 @@ every control does.
 
 ## Arguments and settings
 
-The first argument, if it isn't a flag, is prcoder's: the PR to open. Everything after `--` is
-handed to `claude` untouched, so `prcoder 123 -- --effort high --model opus` opens PR 123 with that
-session. Before `--` a flag is prcoder's, and one it does not know is an error that says where it
+The first argument, if it isn't a flag, is a command -- `open` when there is none -- and the one
+after it is the PR to open. The PR never comes first: a branch name is a valid PR, so a word there
+could not be told from a command. Everything after `--` is handed to `claude` untouched, so
+`prcoder open 123 -- --effort high --model opus` opens PR 123 with that session. Before `--` a flag is prcoder's, and one it does not know is an error that says where it
 goes, rather than a guess at which of the two it was for. `prcoder --help` lists the flags.
 
 Most settings are a flag with an environment variable of the same meaning; the flag wins when both

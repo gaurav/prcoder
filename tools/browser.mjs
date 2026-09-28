@@ -51,7 +51,7 @@ const out = await openShots(shotsRoot, label);
 // file groups, its issue chips -- and the server follows the current branch, so
 // a run from any other branch drives a pull request the assertions do not fit.
 // PRCODER_PR pins one; unset is the old branch-following behaviour.
-const server = spawn('node', ['server.js', ...(process.env.PRCODER_PR ? [process.env.PRCODER_PR] : [])], {
+const server = spawn('node', ['server.js', 'new', ...(process.env.PRCODER_PR ? [process.env.PRCODER_PR] : [])], {
   cwd: repo,
   env: serverEnv(port),
   stdio: 'ignore',

@@ -51,7 +51,7 @@ if (!existsSync(clone)) {
 console.log('on:     ', git(['branch', '--show-current']).stdout.trim(), ' (want main)');
 
 const log = await fs.open(path.join(repo, 'data', 'no-pr-server.log'), 'w');
-const server = spawn('node', [path.join(repo, 'server.js')], {
+const server = spawn('node', [path.join(repo, 'server.js'), 'new'], {
   cwd: clone,
   env: serverEnv(port, { PRCODER_VERBOSE: '2' }),
   stdio: ['ignore', log.fd, log.fd],

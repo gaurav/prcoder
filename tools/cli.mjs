@@ -37,7 +37,7 @@ const port = Number(process.env.PRCODER_PORT) || 17455;
 await free(port);   // before `first` only: `second` is meant to find it taken
 
 function start(label) {
-  const p = spawn('node', ['server.js'], {
+  const p = spawn('node', ['server.js', 'new'], {
     name: 'xterm-256color',
     cols: 100,
     rows: 30,

@@ -4,17 +4,19 @@ import { createRequire } from 'node:module';
 import { parseCli, usage, AGENTS, VERSION, portFor, portCandidates, PORT_BASE, PORT_SPAN, statusLines, ago, queueSummary, quitRisks } from '../cli.js';
 import { queueChanges } from '../queue.js';
 
-test('a leading positional is our PR target, everything after -- is the agent\'s', () => {
+test('the PR target follows a command, everything after -- is the agent\'s', () => {
   const none = parseCli([]);
+  assert.equal(none.command, 'open');
   assert.equal(none.target, undefined);
   assert.deepEqual(none.agentArgs, []);
   assert.equal(none.agent, 'claude');
   assert.equal(none.verbose, 0);
-  assert.equal(parseCli(['123']).target, '123');
-  const both = parseCli(['123', '--', '--model', 'opus']);
+  assert.equal(parseCli(['open', '123']).target, '123');
+  assert.deepEqual([parseCli(['new', 'main']).command, parseCli(['new', 'main']).target], ['new', 'main']);
+  const both = parseCli(['open', '123', '--', '--model', 'opus']);
   assert.equal(both.target, '123');
   assert.deepEqual(both.agentArgs, ['--model', 'opus']);
-  assert.deepEqual(parseCli(['42', '--']).agentArgs, []);
+  assert.deepEqual(parseCli(['open', '42', '--']).agentArgs, []);
   assert.deepEqual(parseCli(['--', '-r']).agentArgs, ['-r']);
   // Only the first -- is ours; a second one is the agent's to interpret.
   assert.deepEqual(parseCli(['--', 'a', '--', 'b']).agentArgs, ['a', '--', 'b']);
@@ -32,7 +34,7 @@ test('flag values are never read as a PR target', () => {
   // An agent flag before -- is refused rather than guessed at, and the
   // message says where it goes.
   assert.throws(() => parseCli(['--effort', 'high']), /after --/);
-  assert.throws(() => parseCli(['42', '--effort', 'high']), /after --/);
+  assert.throws(() => parseCli(['open', '42', '--effort', 'high']), /after --/);
   assert.throws(() => parseCli(['-r']), /after --/);
 });
 
@@ -50,7 +52,15 @@ test('bad input is an error that names the problem', () => {
   assert.throws(() => parseCli(['--port']), /argument missing/);
   assert.throws(() => parseCli(['--port', 'abc']), /--port/);
   assert.throws(() => parseCli(['--agent', 'gpt']), /supported: claude/);
-  assert.throws(() => parseCli(['123', '456']), /456/);
+  assert.throws(() => parseCli(['open', '123', '456']), /456/);
+});
+
+// The PR used to come first. A branch is a valid target, so a word there that
+// is not a command is the old form, and the error says what it is now -- not a
+// guess at whether `prcoder open` meant a branch called open.
+test('a PR where the command goes is an error that shows the new form', () => {
+  assert.throws(() => parseCli(['123']), /unknown command 123; to open a pull request: prcoder open 123/);
+  assert.throws(() => parseCli(['constructor']), /unknown command constructor/);
 });
 
 // --help is meant to replace reading the README, so every flag and every
@@ -205,11 +215,15 @@ test('prcoder --help, --version and a bad flag exit before anything starts', asy
   assert.equal(version.code, 0);
   assert.equal(version.stdout.trim(), VERSION);
 
-  const bad = await run('42', '--effort', 'high');
+  const bad = await run('open', '42', '--effort', 'high');
   assert.equal(bad.code, 2);
   assert.equal(bad.stdout, '');
   assert.match(bad.stderr, /^prcoder: unknown option --effort; flags for the agent go after --/);
   assert.match(bad.stderr, /\nusage: prcoder /);
+
+  const old = await run('42');
+  assert.equal(old.code, 2);
+  assert.match(old.stderr, /prcoder open 42/);
 
   // The old name is refused, not ignored: ignored, it would start the real agent.
   // Refused before the server starts, so this exits rather than listening.

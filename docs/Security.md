@@ -50,7 +50,7 @@ at a cost to every client that is not the page — [#59](https://github.com/gaur
 ## The pull request description
 
 A description is text someone else may have written — a collaborator on your own PR, or anyone at
-all on a PR opened with `prcoder <pr-url>` — and the description pane renders it with `innerHTML`, in
+all on a PR opened with `prcoder open <pr-url>` — and the description pane renders it with `innerHTML`, in
 the same page that holds the socket. Script that runs there is a typed turn into Claude.
 
 Two functions in [`public/pr.js`](../public/pr.js) keep it out. `escape()` escapes quotes as well as
