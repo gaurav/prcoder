@@ -13,6 +13,7 @@ prcoder                    # the PR for the current branch
 prcoder open 123           # a specific PR
 prcoder open <pr-url>      # any PR, anywhere
 prcoder new                # a second one, even if one is already running
+prcoder gh [123]           # open the PR on GitHub instead, and exit
 prcoder -- --model opus    # ...with flags for the Claude session, after --
 prcoder --help             # prcoder's own flags
 ```

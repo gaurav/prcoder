@@ -13,6 +13,8 @@ test('the PR target follows a command, everything after -- is the agent\'s', () 
   assert.equal(none.verbose, 0);
   assert.equal(parseCli(['open', '123']).target, '123');
   assert.deepEqual([parseCli(['new', 'main']).command, parseCli(['new', 'main']).target], ['new', 'main']);
+  assert.equal(parseCli(['gh']).command, 'gh');
+  assert.deepEqual([parseCli(['github', '7']).command, parseCli(['github', '7']).target], ['gh', '7']);
   const both = parseCli(['open', '123', '--', '--model', 'opus']);
   assert.equal(both.target, '123');
   assert.deepEqual(both.agentArgs, ['--model', 'opus']);

@@ -605,8 +605,7 @@ async function ready() {
 // ponytail: the platform's own opener, not a dependency. --no-open (or
 // PRCODER_NO_OPEN=1) to skip; PRCODER_OPEN to run your own command with the URL
 // appended, which is how a browser is told "a new window, not a tab".
-function openBrowser() {
-  const url = urls.local;
+function openBrowser(url = urls.local) {
   const opener = { darwin: 'open', win32: 'start' }[process.platform] || 'xdg-open';
   const custom = process.env.PRCODER_OPEN;
   const child = custom
@@ -711,6 +710,33 @@ function askToQuit() {
   term.confirm(`quit? ${risk.join('; ')}  [y/N] `, quit);
 }
 
+/**
+ * Where this branch's work is on GitHub: the PR, or with none the compare page
+ * the Create button would open. Not pushed first, as that button does -- this
+ * only looks, so an unpushed branch gets GitHub's "nothing to compare".
+ */
+async function githubUrl() {
+  const url = (await prHeads(repo, target))?.url;
+  if (url) return url;
+  const branch = await currentBranch(repo);
+  if (!branch) throw new Error('no pull request, and no branch to compare');
+  const { nameWithOwner, defaultBranch } = await repoFacts();
+  console.log(`no pull request for ${branch}; opening the compare page`);
+  return compareUrl(nameWithOwner, defaultBranch, branch, await originOwner(repo));
+}
+
+/** `prcoder gh`: the URL, printed and opened, and no server. */
+async function openGithub() {
+  try {
+    const url = await githubUrl();
+    console.log(url);
+    if (!noOpen) openBrowser(url);
+  } catch (e) {
+    console.error(`prcoder: ${e.message}`);
+    process.exitCode = 1;
+  }
+}
+
 /** Everything that starts this instance, once main has settled that it should. */
 async function start() {
   // Before anything can print: init() is what routes console through the log,
@@ -768,5 +794,6 @@ if (import.meta.main) {
   if (cli.noOpen) noOpen = true;
   if (cli.verbose) term.setVerbosity(cli.verbose);
 
-  if (!(cli.command === 'open' && await reopen())) await start();
+  if (cli.command === 'gh') await openGithub();
+  else if (!(cli.command === 'open' && await reopen())) await start();
 }
