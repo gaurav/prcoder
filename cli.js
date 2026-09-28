@@ -40,8 +40,8 @@ const COMMANDS = { __proto__: null, open: 'open', new: 'new' };
 export function usage() {
   return `usage: prcoder [open|new] [<pr>] [--port <n>] [--no-open] [-v] [--agent <name>] [-- <agent args>]
 
-  open             the default: start prcoder here
-  new              start prcoder here
+  open             the default: open the prcoder already running here, or start one
+  new              start one even if another is running
   <pr>             a pull request number, URL or branch (default: the current branch's)
   --port <n>       listen on this port for this run          env PRCODER_PORT
   --no-open        print the URL, don't open a browser        env PRCODER_NO_OPEN=1

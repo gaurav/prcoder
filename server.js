@@ -241,7 +241,8 @@ const routes = {
   // Unlocked only because poll() takes the lock itself.
   'GET /api/status': poll,
 
-  'GET /api/whoami': () => ({ prcoder: true, repo, branch: last?.branch ?? null,
+  // `target` is what `prcoder open` matches on before handing you this one.
+  'GET /api/whoami': () => ({ prcoder: true, repo, branch: last?.branch ?? null, target: target ?? null,
     nameWithOwner: info?.nameWithOwner ?? null }),
 
   'GET /api/prs': () => listPrs(repo),
@@ -521,6 +522,16 @@ const wss = new WebSocketServer({ server, path: '/pty' }).on('error', () => {}).
   });
 });
 
+/** What answers on `port` at /api/whoami, or null when nothing does. */
+async function whoami(port) {
+  try {
+    const res = await fetch(`http://localhost:${port}/api/whoami`, { signal: AbortSignal.timeout(2000) });
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Who has the port we wanted. Worth asking rather than guessing: the likely
  * cause is a second prcoder in the same repo, and then the useful answer is not
@@ -529,19 +540,36 @@ const wss = new WebSocketServer({ server, path: '/pty' }).on('error', () => {}).
  * to read differently or you go hunting for a window that does not exist.
  */
 async function whoHasPort(wanted) {
-  try {
-    const res = await fetch(`http://localhost:${wanted}/api/whoami`,
-      { signal: AbortSignal.timeout(2000) });
-    const other = await res.json();
-    if (!other?.prcoder) return 'something that is not prcoder';
-    // The path only when it is not ours. Two worktrees of one repo share a
-    // nameWithOwner and are the collision worth spelling out; a second prcoder
-    // in *this* directory is the common case, and there the path says nothing.
-    return `another prcoder on ${other.nameWithOwner ?? 'an unknown repo'}` +
-      `${other.branch ? ` (${other.branch})` : ''}${other.repo === repo ? '' : ` in ${other.repo}`}`;
-  } catch {
-    return 'something that is not answering as prcoder';
-  }
+  const other = await whoami(wanted);
+  if (!other) return 'something that is not answering as prcoder';
+  if (!other.prcoder) return 'something that is not prcoder';
+  // The path only when it is not ours. Two worktrees of one repo share a
+  // nameWithOwner and are the collision worth spelling out; a second prcoder
+  // in *this* directory is the common case, and there the path says nothing.
+  return `another prcoder on ${other.nameWithOwner ?? 'an unknown repo'}` +
+    `${other.branch ? ` (${other.branch})` : ''}${other.repo === repo ? '' : ` in ${other.repo}`}`;
+}
+
+/**
+ * `prcoder open`: the prcoder already serving this repo and this target, opened
+ * rather than started again -- a second one is a second Claude session on the
+ * same working tree, on a port that is not the bookmark. True when there was
+ * one.
+ *
+ * ponytail: only the recorded (or pinned) port is asked, and the target is
+ * compared as typed. One that moved port, or holds the same PR spelled as a URL
+ * rather than a number, is missed, and a new one starts beside it with the
+ * moved-port note. Scan the range, or resolve the target, if that bites.
+ */
+async function reopen() {
+  const port = pinnedPort || await readPort(repo);
+  const other = port && await whoami(port);
+  if (!other?.prcoder || other.repo !== repo || other.target !== (target ?? null)) return false;
+  urls = { local: `http://localhost:${port}` };
+  console.log(`prcoder: already running for ${repo} at ${urls.local}`);
+  if (agentArgs.length) console.log('the agent flags after -- were not used; prcoder new starts one with them');
+  if (!noOpen) openBrowser();
+  return true;
 }
 
 async function ready() {
@@ -683,29 +711,8 @@ function askToQuit() {
   term.confirm(`quit? ${risk.join('; ')}  [y/N] `, quit);
 }
 
-if (import.meta.main) {
-  let cli;
-  try {
-    cli = parseCli(process.argv.slice(2));
-  } catch (e) {
-    console.error(`prcoder: ${e.message}\n${usage().split('\n')[0]}`);
-    process.exit(2);
-  }
-  if (cli.help) { console.log(usage()); process.exit(0); }
-  if (cli.version) { console.log(VERSION); process.exit(0); }
-  // Renamed, and refused rather than read: ignored, a leftover CLAUDE_BIN -- a
-  // driver's stub, a scratch script's /bin/cat -- would quietly spawn the real
-  // `claude` in its place, one session per tab, left running.
-  if (process.env.CLAUDE_BIN && !process.env.PRCODER_AGENT_BIN) {
-    console.error('prcoder: CLAUDE_BIN is now PRCODER_AGENT_BIN; rename it, or unset it to run `claude`');
-    process.exit(2);
-  }
-  ({ target, agentArgs } = cli);
-  // Into the variables, never the env: see pinnedPort.
-  if (cli.port) pinnedPort = cli.port;
-  if (cli.noOpen) noOpen = true;
-  if (cli.verbose) term.setVerbosity(cli.verbose);
-
+/** Everything that starts this instance, once main has settled that it should. */
+async function start() {
   // Before anything can print: init() is what routes console through the log,
   // and a line written ahead of it would sit above the block and stay there.
   term.init();
@@ -736,4 +743,30 @@ if (import.meta.main) {
   // socket is up rather than recomputed from the path afterwards.
   wanted = await listenOnRepoPort();
   await ready();
+}
+
+if (import.meta.main) {
+  let cli;
+  try {
+    cli = parseCli(process.argv.slice(2));
+  } catch (e) {
+    console.error(`prcoder: ${e.message}\n${usage().split('\n')[0]}`);
+    process.exit(2);
+  }
+  if (cli.help) { console.log(usage()); process.exit(0); }
+  if (cli.version) { console.log(VERSION); process.exit(0); }
+  // Renamed, and refused rather than read: ignored, a leftover CLAUDE_BIN -- a
+  // driver's stub, a scratch script's /bin/cat -- would quietly spawn the real
+  // `claude` in its place, one session per tab, left running.
+  if (process.env.CLAUDE_BIN && !process.env.PRCODER_AGENT_BIN) {
+    console.error('prcoder: CLAUDE_BIN is now PRCODER_AGENT_BIN; rename it, or unset it to run `claude`');
+    process.exit(2);
+  }
+  ({ target, agentArgs } = cli);
+  // Into the variables, never the env: see pinnedPort.
+  if (cli.port) pinnedPort = cli.port;
+  if (cli.noOpen) noOpen = true;
+  if (cli.verbose) term.setVerbosity(cli.verbose);
+
+  if (!(cli.command === 'open' && await reopen())) await start();
 }

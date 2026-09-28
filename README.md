@@ -12,12 +12,14 @@ npm link                   # once, to run it from any repo; edits here go live
 prcoder                    # the PR for the current branch
 prcoder open 123           # a specific PR
 prcoder open <pr-url>      # any PR, anywhere
+prcoder new                # a second one, even if one is already running
 prcoder -- --model opus    # ...with flags for the Claude session, after --
 prcoder --help             # prcoder's own flags
 ```
 
 It prints the URL to open, and opens it for you unless `--no-open` (or `PRCODER_NO_OPEN`) is set.
-Each repo keeps the same port, and so the same URL, across runs.
+Each repo keeps the same port, and so the same URL, across runs. Run it again while it is running
+and it opens the one you have rather than starting another.
 
 It needs Node 22.18 or later in the 22 line, or 24.2 or later -- on older versions it exits at once
 without a word, because it starts only under `import.meta.main` -- and the
