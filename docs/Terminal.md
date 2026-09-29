@@ -38,7 +38,8 @@ Quitting kills the PTY, and with it the Claude session in the browser. So when t
 to lose -- tabs open, unpushed commits, uncommitted files, queue items still on Local and so
 only on this machine -- Ctrl-C asks first and says which;
 with nothing to lose it quits on one press. A second Ctrl-C at the prompt quits immediately;
-nothing here can make prcoder unkillable.
+nothing here can make prcoder unkillable. The Quit button on the Claude pane, once Claude has
+exited, is the same quit and asks the same question in the browser.
 
 ## A busy port
 

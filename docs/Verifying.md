@@ -107,6 +107,10 @@ Each unit test file says at its top what it pins. Two run the server itself:
 ([Security.md](Security.md)), and `test/queue-local.test.js` in a scratch directory with `gh` and
 `git` stubbed to fail, asserting that the routes which only read or rewrite the queue never reach
 either. Filing an item with ◎ is the one queue route that does, on purpose, and is not driven.
+`test/api.test.js` is also the one test that opens a real `/pty`: with settings `sessionArgs`
+refuses, so the claim is that it closes with 1008 before the spawn. The exit bar's "Start coding
+agent again" and Quit are `test/browser/suite.js`'s, against a mock socket that closes the way an
+exiting agent does.
 
 Some things were checked against the real thing rather than a stub, and the evidence sits next to
 the code:
@@ -114,6 +118,7 @@ the code:
 - GitHub's diff-anchor scheme: pinned, with the date, in `test/files.test.js`.
 - `git ls-remote`'s branch argument is a pattern, not a ref name: `remoteBranchHead` in `git.js`.
 - git's exit codes, which differ per command: `answer` in `git.js`.
+- The exit bar's settings reaching the agent's argv: `sessionArgs` in `server.js`.
 - A patch rebuilt from local git when GitHub sends none: `localPatch` in `git.js`, and the
   comparison against GitHub's own patches in commit 7d3df58.
 - Which CSS keeps a dotfile's leading dot in place: `fileRow` in `public/pr.js`.

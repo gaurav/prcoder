@@ -33,7 +33,7 @@ is no token to configure.
 - **Diff** -- the file you clicked, as GitHub shows it, with links out to GitHub for comments,
   blame and history.
 - **Claude Code** -- the real `claude` in a PTY: Escape, slash commands and permission prompts all
-  work as they do in a terminal.
+  work as they do in a terminal. When it exits, the pane offers to start it again or quit prcoder.
 - **Queue** -- your own TODO list for this working copy, kept in `.prcoder/` rather than in any
   file you own. An item can be typed into Claude or moved into a GitHub issue, and with a pull
   request on screen two more tabs read its description's checklist and the issues it mentions.
