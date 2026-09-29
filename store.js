@@ -27,25 +27,50 @@ const PORT_FILE = 'port.json';
 const VERSION = 1;
 
 const dir = (repo) => path.join(repo, DIR);
-const file = (repo) => path.join(dir(repo), FILE);
+const file = (repo) => queueFile ?? path.join(dir(repo), FILE);
+
+/**
+ * A queue file of the caller's choosing, in place of `.prcoder/queue.json`:
+ * `--queue` or PRCODER_QUEUE, set once by server.js's main. What it is for is
+ * tools/browser.mjs, which drives the queue pane against a file in `data/` and
+ * so never writes the queue of the working copy it runs in (#65). Resolved
+ * against the directory prcoder started in. Only the queue moves; port.json
+ * stays in `.prcoder/`, and so does the `.gitignore` -- a file named here is
+ * wherever you put it, ignored or not.
+ */
+let queueFile = null;
+export const useQueueFile = (p) => { queueFile = p ? path.resolve(p) : null; };
+/** The file named with useQueueFile, or null for the repo's own. */
+export const movedQueue = () => queueFile;
 const portFile = (repo) => path.join(dir(repo), PORT_FILE);
 
 const EMPTY = { version: VERSION, items: [] };
 
 /**
  * Every field, coerced. The client PUTs back the array it was handed, which
- * decorate() has added a derived `issueUrl` to — so this constructs rather than
- * spreads, and a `branch` left on an item by an older prcoder is dropped here.
- * The markdown writer dropped unknown fields for free; JSON would keep them.
+ * decorate() in queue.js has added a derived `issueUrl` to — so this
+ * constructs rather than spreads. The markdown writer dropped unknown fields
+ * for free; JSON would keep them.
+ *
+ * Constructing is also the whole migration from older prcoders. A `branch` from
+ * the per-branch queue goes, and so do `inPr` and `pr` from the description
+ * mirror: an item that was mirrored stays in the queue as an ordinary one,
+ * because a duplicate of a line already in the description is something you can
+ * delete, and an item dropped on the word of a block nobody re-read is not.
  */
 export const pick = (i) => ({
   text: String(i?.text ?? ''),
   done: !!i?.done,
-  inPr: !!i?.inPr,
-  // Which PR's description it is mirrored into. Meaningless once it is not.
-  pr: i?.inPr && Number.isInteger(i?.pr) ? i.pr : null,
+  // The number of the GitHub issue this item was filed as with ◎, if any.
   issue: Number.isInteger(i?.issue) ? i.issue : null,
+  // A tombstone, so nothing typed disappears without the Deleted tab to get it
+  // back from.
   deleted: !!i?.deleted,
+  // When it was ticked, for the Completed tab's order. Meaningless once it is
+  // not done, so an untick clears it and a re-tick is stamped afresh.
+  doneAt: i?.done && Number.isFinite(i?.doneAt) ? i.doneAt : null,
+  // When it was deleted, for the Deleted tab's order, on the same terms.
+  deletedAt: i?.deleted && Number.isFinite(i?.deletedAt) ? i.deletedAt : null,
 });
 
 /**
@@ -77,14 +102,10 @@ export function normalise(raw) {
   };
 }
 
-/**
- * The store, whether the bytes behind it need moving aside on write, and whether
- * there were any bytes at all -- which is not the same question as whether the
- * list is empty, and the one-time import in server.js has to ask the first.
- */
+/** The store, plus whether the bytes behind it need moving aside on write. */
 export async function readStore(repo) {
-  const raw = await fs.readFile(file(repo), 'utf8').catch(() => null);
-  return { ...normalise(raw ?? ''), exists: raw !== null };
+  const raw = await fs.readFile(file(repo), 'utf8').catch(() => '');
+  return normalise(raw);
 }
 
 /**
@@ -101,10 +122,11 @@ export async function writeStore(repo, store, { stale = false } = {}) {
   await writeJson(repo, file(repo), { ...store, version: VERSION });
 }
 
-/** The temp-then-rename write above, for every file in the directory. */
+/** The temp-then-rename write above, for every file in the directory -- and
+ *  for a --queue file outside it, which gets its directory but no .gitignore. */
 async function writeJson(repo, target, obj) {
-  await fs.mkdir(dir(repo), { recursive: true });
-  await writeIgnore(repo);
+  await fs.mkdir(path.dirname(target), { recursive: true });
+  if (path.dirname(target) === dir(repo)) await writeIgnore(repo);
   const tmp = `${target}.${process.pid}.tmp`;
   await fs.writeFile(tmp, `${JSON.stringify(obj, null, 2)}\n`);
   await fs.rename(tmp, target);
@@ -154,5 +176,20 @@ export async function readPort(repo) {
 /** Written like the queue: temp file, then a rename, which is atomic in one directory. */
 export const writePort = (repo, port) => writeJson(repo, portFile(repo), { version: VERSION, port });
 
-/** The whole list replaced, coerced on the way in. */
-export const replaceItems = (store, items) => ({ ...store, items: items.map(pick) });
+/**
+ * The whole list replaced, coerced on the way in -- and where `doneAt` and
+ * `deletedAt` are stamped, because every write passes through here. An item
+ * arriving done (or deleted) with no time has just been ticked (or deleted);
+ * one already so carries the time it was handed back. That needs no item
+ * identity, which the queue does not have. Items from before either field
+ * existed are stamped by the first write, together, and so sit below anything
+ * done or deleted after it.
+ */
+export const replaceItems = (store, items, now = Date.now()) => ({
+  ...store,
+  items: items.map(pick).map((i) => ({
+    ...i,
+    doneAt: i.done && i.doneAt == null ? now : i.doneAt,
+    deletedAt: i.deleted && i.deletedAt == null ? now : i.deletedAt,
+  })),
+});

@@ -1,6 +1,21 @@
+// files.js: what the server works out about a changed file from its path
+// alone -- which group of the Files tab it goes in, and the URLs that open it on
+// GitHub. Pure functions over strings, so nothing here spawns gh or git or
+// touches the network.
+//
+// Two kinds of test belong here. Path classification: a real path from some
+// language's convention, and the bucket it has to land in. And URL shapes: a
+// test that pins a URL is a claim about how GitHub lays its pages out, so check
+// it against a real pull request and write down which one and when, as the
+// anchor and file-link tests below do (CLAUDE.md, "Verifying against GitHub").
+//
+// Not here: how the pane orders and nests those files (byPath and byDir, in
+// test/pr.test.js), and patches -- rendering one is test/diff.test.js, making
+// one from local git is test/git.test.js.
+
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { bucket, groupFiles, diffAnchor, fileUrl, fileViews } from '../files.js';
+import { bucket, diffAnchor, fileUrl, fileViews } from '../files.js';
 
 test('tests are recognised across language conventions', () => {
   for (const p of [
@@ -24,14 +39,6 @@ test('everything else is code', () => {
 test('a path containing "test" as a word fragment is not a test', () => {
   assert.equal(bucket('src/latest.js'), 'code');
   assert.equal(bucket('src/contest/view.js'), 'code');
-});
-
-test('groupFiles keeps every file exactly once', () => {
-  const files = ['a.test.js', 'b.js', 'c.md'].map((path) => ({ path }));
-  const g = groupFiles(files);
-  assert.deepEqual(g.tests.map((f) => f.path), ['a.test.js']);
-  assert.deepEqual(g.code.map((f) => f.path), ['b.js']);
-  assert.deepEqual(g.docs.map((f) => f.path), ['c.md']);
 });
 
 // Verified against https://github.com/cli/cli/pull/9000/files on 2026-08-20.
@@ -59,4 +66,11 @@ test('the file links are the whole file at the head commit', () => {
     // GitHub's path for a file's history is /commits/, not /history/.
     history: `https://github.com/cli/cli/commits/${sha}/docs/install_linux.md`,
   });
+});
+
+// A `#` or `?` in a file name is a fragment or a query raw, so every link opened
+// the wrong path. Encoded per segment; the directories stay directories.
+test('a file name with # or ? in it is encoded in its links', () => {
+  const { blob } = fileViews('https://github.com/o/r/pull/1', 'abc', 'docs/notes#1?.md');
+  assert.equal(blob, 'https://github.com/o/r/blob/abc/docs/notes%231%3F.md');
 });

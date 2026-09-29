@@ -11,8 +11,8 @@ follows is what still can.
 ## Other pages in your browser
 
 Listening on loopback is not the boundary it looks like. A page on the web cannot read localhost's
-answers, but it can send a request that takes effect on the way out — switching branches, rewriting
-the PR description, filing an issue — and WebSockets are not subject to the same-origin policy at
+answers, but it can send a request that takes effect on the way out — switching branches, ticking
+a box in the PR description, filing an issue — and WebSockets are not subject to the same-origin policy at
 all, so that page could open `/pty`, get a `claude` PTY in this repo, read what it printed and type
 at it.
 
@@ -57,7 +57,10 @@ Two functions in [`public/pr.js`](../public/pr.js) keep it out. `escape()` escap
 angle brackets, because a link's URL is interpolated into `href="..."` and a raw `"` closes the
 attribute and opens an event handler, which `innerHTML` does fire. `target()` lets through only
 `http(s)` and repository-relative links, so `javascript:` and `data:` hrefs stay as their own source.
-`test/pr.test.js` pins both, and the CSP stands behind them rather than instead of them: a hole in
+A check's link is held to the same rule by `rollup()` in [`github.js`](../github.js): a status
+context's `targetUrl` is whatever its poster said, so anything not `http(s)` is dropped and the
+check's name stays plain text. `test/pr.test.js` pins both functions, `test/github.test.js` the
+check links, and the CSP stands behind them rather than instead of them: a hole in
 either loads no script under `script-src 'self'`, but the two functions are still what keeps the
 markup honest in the first place. [#49](https://github.com/gaurav/prcoder/issues/49) holds the rest
 of what is open around the renderer.
@@ -69,9 +72,10 @@ that): every construct it learns is new markup built from untrusted text, and ha
 ## Text that becomes a turn
 
 Some text reaches Claude as a turn without any script involved, because a person clicked. A queue
-item's ▶ sends its text verbatim, and an item can arrive from a line added to the description's
-prcoder block (`syncFromPrBlock` in [`queue.js`](../queue.js)) — so whoever can edit that
-description can write the words. Commit sends a message built from the names of the working tree's uncommitted files.
+item's ▶ sends its text verbatim, and an item can arrive by ↓ from the PR tab, which copies a
+checklist line of the description, or from the Issues tab, which copies an issue's title (`pull` in
+[`public/queue.js`](../public/queue.js)) — so whoever can edit that description or that issue can
+write the words. Commit sends a message built from the names of the working tree's uncommitted files.
 
 The guard here is the click, and the text being visible before it. There is no filter on what the
 words say, and there should not be one pretending to be a guard. A feature that sends GitHub text
@@ -91,7 +95,7 @@ handled in the page: the whole of a file someone else committed, run through Pri
 What keeps it in the same shape as the renderer above is in `highlightLines` in
 [`public/diff.js`](../public/diff.js). Prism is asked for its *tokens*, never its HTML, and each token
 becomes a `<span>` through `h()` with the file's text as a text node — the same rule as every other
-string from GitHub, and `test/browser.test.js` opens a file made of `<script>` and `<img onerror>` to
+string from GitHub, and `test/browser/suite.js` opens a file made of `<script>` and `<img onerror>` to
 pin that it comes out as characters. The language is chosen from the extension alone: auto-detection
 would run every grammar over the file, and `grammars` in `diff.js` — that extension map plus what
 those grammars are built on — is the list the vendor map in `server.js` is built from, so the

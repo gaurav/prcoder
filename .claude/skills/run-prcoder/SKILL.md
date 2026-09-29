@@ -45,9 +45,10 @@ so one slow call delays the rest.
 ## Verifying a change
 
 ```bash
-npm test                   # node --test "test/**/*.test.js"; see CLAUDE.md for the quotes.
-                           # Includes test/browser.test.js, in Chromium; it skips with a
-                           # note when the browser is missing (npx playwright install chromium)
+npm test                   # node --test "test/**/*.test.js"; docs/Verifying.md says why it is quoted.
+                           # Includes test/browser/, one suite run in Chromium and in Firefox;
+                           # each run skips with a note when its browser is missing
+                           # (npx playwright install chromium firefox)
 node --check public/*.js   # the client files the tests do not import
 ```
 
@@ -60,7 +61,7 @@ an error anywhere prcoder shows. The exception is a package missing from
 which is what plain files were on 2026-09-23 -- and startup says so:
 `not in node_modules, so npm install first: prismjs`.
 
-Then look at it. `docs/Verifying.md` is the standing account of the three
+Then look at it. `docs/Verifying.md` is the standing account of the four
 drivers -- what each reaches, which engine, the stub, the Firefox situation --
 and is where a check that outlives the session gets written down. The short
 form:
@@ -69,9 +70,10 @@ form:
 node tools/browser.mjs highlighting               # the UI, PNGs to data/shots/highlighting/;
                                                   # the label says what you were looking at. Firefox, falling
                                                   # back to Chromium if it will not start
-PRCODER_BROWSER=chromium node tools/browser.mjs   # skip that wait, or compare engines
+PRCODER_BROWSER=chromium node tools/browser.mjs   # compare engines
 node tools/cli.mjs                                # the terminal half, in a real PTY
 node tools/no-pr.mjs                              # the pane with no pull request, in a clone
+node tools/diff-views.mjs                         # the diff pane's DIFF, DELETED, renames, outline and .tsx, on fixture PR #87
 ```
 
 Each boots its own server on a port of its own (the `port` line near the top)
@@ -88,18 +90,25 @@ edit them for whatever you are looking at and keep the edits worth having.
 
 Two rules for them, and for any script after them:
 
-- **Stub `claude`.** Every page load opens a websocket and spawns `CLAUDE_BIN`
+- **Stub `claude`.** Every page load opens a websocket and spawns `PRCODER_AGENT_BIN`
   in a PTY, one per tab; without a stub each run starts a real session and
   leaves it running. Use `tools/claude-stub.mjs`, which echoes and sends the
   cursor probe a real session sends. `/bin/cat` is enough for the terminal half
   only -- anything that reads the PTY's timing passes against it for the wrong
-  reason (CLAUDE.md).
-- **No writes you do not undo.** The queue is safe: it writes only `.prcoder/`,
-  which is gitignored. The PR is not -- ticking a description checkbox edits the
-  description on GitHub, and so does mirroring a queue item with ◆. Snapshot the
-  body with `gh pr view <n> --json body -q .body` before, and diff after. Folding
-  a description's section is browser state, never a write, so the driver clicks
-  them freely.
+  reason (tools/CLAUDE.md).
+- **No writes you do not undo.** The queue is safe. By default it writes only
+  `.prcoder/`, which is gitignored and needs no cleanup, and `browser.mjs`
+  leaves even that alone: it runs with `--queue data/browser-queue.json`, in the
+  gitignored scratch directory. A script of your own that writes the queue
+  should do the same -- `--queue` makes no `.gitignore`, so a path outside
+  `data/` or `.prcoder/` would show up in `git status`. The PR is not — ticking a
+  description checkbox — in the PR pane or the queue's PR tab — edits the
+  description on GitHub. Filing a queue item with ◎
+  writes to GitHub too, and one-way: putting the queue back does not close the
+  issue. Snapshot the body with `gh pr view <n> --json body -q
+  .body` before, and diff after. Opening and closing a description's sections
+  is not a write — the fold is browser state and never reaches GitHub — so the
+  driver clicks them freely.
 
 If every PTY spawn dies with a bare `posix_spawnp failed`, the `postinstall`
-script was skipped: `npm install` again, and see CLAUDE.md for why.
+script was skipped: `npm install` again, and see `tools/postinstall.mjs` for why.

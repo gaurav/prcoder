@@ -14,18 +14,15 @@
 // all `repo = process.cwd()` in it means. Nothing is installed in the clone --
 // every import resolves from the directory server.js is in.
 //
-// Chromium, not Firefox: this pane is a sentence, a list of buttons and a link
+// Chromium, not Firefox: this pane is a sentence, a list of rows and a link
 // row, with none of the draggable text the engine split in browser.mjs is about.
 import { spawn, spawnSync } from 'node:child_process';
-import { createServer } from 'node:net';
 import fs from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 import { openShots, pruneShots } from './shots.mjs';
-
-const repo = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
+import { repo, free, serverEnv, killOnExit, openPage } from './driver.mjs';
 const clone = path.join(repo, 'data', 'main-clone');
 // A label under data/shots, not a path -- see tools/shots.mjs. Its own default,
 // because this driver's three shots are of a state the other two cannot reach
@@ -34,14 +31,6 @@ const shotsRoot = path.join(repo, 'data', 'shots');
 const label = process.argv[2] ?? 'no-pr';
 const port = Number(process.env.PRCODER_PORT) || 17491;
 
-// Same reason as the other two: server.js quietly takes a free port when its own
-// is held, so a driver that did not check would drive whatever is already there.
-const free = (p) => new Promise((res, rej) => {
-  const probe = createServer();
-  probe.once('error', () => rej(new Error(`port ${p} is taken -- something else would be driven instead of this run's server. Stop it, or set PRCODER_PORT.`)));
-  probe.once('listening', () => probe.close(res));
-  probe.listen(p, '127.0.0.1');
-});
 await free(port);
 const shots = await openShots(shotsRoot, label);
 
@@ -64,28 +53,26 @@ console.log('on:     ', git(['branch', '--show-current']).stdout.trim(), ' (want
 const log = await fs.open(path.join(repo, 'data', 'no-pr-server.log'), 'w');
 const server = spawn('node', [path.join(repo, 'server.js')], {
   cwd: clone,
-  env: { ...process.env,
-    PRCODER_PORT: String(port), PRCODER_NO_OPEN: '1', PRCODER_VERBOSE: '2',
-    CLAUDE_BIN: path.join(repo, 'tools', 'claude-stub.mjs') },
+  env: serverEnv(port, { PRCODER_VERBOSE: '2' }),
   stdio: ['ignore', log.fd, log.fd],
 });
-// Load-bearing twice, as in browser.mjs: a live child keeps the event loop open,
-// and a throw in between would otherwise leave a server polling gh every minute.
-process.on('exit', () => server.kill());
-for (const sig of ['SIGTERM', 'SIGHUP', 'SIGINT']) process.on(sig, () => process.exit(130));
+killOnExit(server);
 
 const browser = await chromium.launch();
-const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
-page.on('pageerror', (e) => console.log('PAGE EXCEPTION:', e.message));
-for (let i = 0; i < 30; i++) {
-  try { await page.goto(`http://localhost:${port}/`); break; } catch { await page.waitForTimeout(500); }
-}
-await page.waitForSelector('#pr-body .empty', { timeout: 60_000 });
-await page.waitForSelector('#pr-body .pr-into button', { timeout: 60_000 });
+const page = await openPage(browser, port);
+await page.waitForSelector('#pr-head .pr-branch-name', { timeout: 60_000 });
+await page.waitForSelector('#pr-body .pr-into .pr-go', { timeout: 60_000 });
 
-const rows = () => page.$$eval('#pr-body .pr-into button', (bs) => bs.map((b) => b.textContent));
-console.log('says:   ', await page.$eval('#pr-body .empty', (e) => e.textContent));
-console.log('into:   ', (await rows()).join(' | '), ' (want every open PR whose base is main, titled)');
+const rows = () => page.$$eval('#pr-body .pr-into .pr-row', (rs) => rs.map((r) =>
+  `${r.querySelector('.pr-num').textContent} ${r.querySelector('.pr-row-title').textContent}`));
+console.log('says:   ', await page.$eval('#pr-head', (e) => [...e.children].map((c) => c.textContent.trim()).join(' | ')),
+  ' (want the branch, why it has no PR, issues · pulls · milestones and the repository, all in the head)');
+console.log('into:   ', (await rows()).join(' | '), ' (want every open PR whose base is main, then its stack, titled)');
+console.log('stacked:', await page.$$eval('#pr-body .pr-into > ul > li', (ls) => ls.map((l) =>
+  `${l.querySelector('.pr-num').textContent} +${l.querySelectorAll('li').length}`).join(' | ')),
+' (want each root with the count of PRs stacked under it: a stacked PR is counted under the one it builds on, not listed as a root)');
+console.log('link:   ', await page.$eval('#pr-body .pr-into .pr-num', (a) => `${a.href} target=${a.target}`),
+  ' (want the first row\'s #N to open its PR on GitHub in a new tab)');
 await page.locator('#pr').screenshot({ path: path.join(shots, 'no-pr.png') });
 
 // A dirty tree would fail the checkout the rows perform, so they say so instead
@@ -94,19 +81,20 @@ await page.locator('#pr').screenshot({ path: path.join(shots, 'no-pr.png') });
 // be a tracked file to test anything.
 await fs.appendFile(path.join(clone, 'README.md'), '\ndriver scratch\n');
 await page.reload();
-await page.waitForSelector('#pr-body .pr-into button');
-console.log('dirty:  ', await page.$eval('#pr-body .pr-into button',
-  (b) => `row disabled=${b.disabled} title="${b.title}"`),
+await page.waitForSelector('#pr-body .pr-into .pr-go');
+console.log('dirty:  ', await page.$eval('#pr-body .pr-into .pr-row',
+  (r) => `switch disabled=${r.querySelector('.pr-go').disabled} title="${r.querySelector('.pr-go').title}"`
+    + ` link=${Boolean(r.querySelector('.pr-num').href)}`),
 '|', await page.$eval('#pr-commit', (b) => `commit hidden=${b.hidden}`),
 '|', await page.$eval('#pr-switch', (s) => `switch hidden=${s.hidden}`),
-' (want disabled with a reason, commit shown, switcher hidden)');
+' (want Switch disabled with a reason, the link kept, commit shown, switcher hidden)');
 await page.locator('#pr').screenshot({ path: path.join(shots, 'no-pr-dirty.png') });
 
 git(['checkout', '--quiet', '--', 'README.md']);
 await page.reload();
-await page.waitForSelector('#pr-body .pr-into button:not([disabled])');
+await page.waitForSelector('#pr-body .pr-into .pr-go:not([disabled])');
 const took = (await rows())[0];
-await page.locator('#pr-body .pr-into button').first().click();
+await page.locator('#pr-body .pr-into .pr-go').first().click();
 await page.waitForSelector('#pr-head .pr-title', { timeout: 120_000 });
 console.log('clicked:', JSON.stringify(took?.slice(0, 40)));
 console.log('landed: ', git(['branch', '--show-current']).stdout.trim(),

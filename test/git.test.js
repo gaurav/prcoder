@@ -6,7 +6,19 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { syncState, compareUrl, prScope, userDirt, remoteBranchHead, trackingHead, snapshot, localPatch } from '../git.js';
+import { syncState, compareUrl, originOwner, prScope, userDirt, remoteBranchHead, trackingHead, snapshot, localPatch } from '../git.js';
+
+const git = promisify(execFile);
+// For the throwaway repos below. The identity goes on the command, not into a
+// config: a CI runner has none set, and `git commit` there is a hard failure
+// rather than a warning. Signing is turned off the same way: a machine that
+// signs every commit hands a throwaway repo's commit to its signer, and a
+// locked 1Password agent failed a test after a minute's wait with nothing to do
+// with what it was testing.
+const testGit = (cwd, ...args) => git('git', [
+  '-c', 'user.name=prcoder tests', '-c', 'user.email=tests@prcoder.invalid',
+  '-c', 'commit.gpgsign=false', ...args,
+], { cwd });
 
 // The four inputs come from `git rev-parse --verify` and `git merge-base
 // --is-ancestor`; the exit codes those return are checked in git.js, not here.
@@ -42,6 +54,38 @@ test('the compare URL opens GitHub with the form already expanded', () => {
   assert.equal(
     compareUrl('gaurav/prcoder', 'main', 'my-branch'),
     'https://github.com/gaurav/prcoder/compare/main...my-branch?expand=1');
+});
+
+// In a fork clone gh's base repo is upstream's, and the branch is only on
+// origin: a bare name there was GitHub's 404.
+test('the compare URL names the fork the branch was pushed to', () => {
+  assert.equal(
+    compareUrl('uc-cdis/heal-platform-sdk', 'master', 'my-branch', 'gaurav'),
+    'https://github.com/uc-cdis/heal-platform-sdk/compare/master...gaurav:my-branch?expand=1');
+});
+
+// git allows a `#` in a branch name, and raw in the URL it ends the path: the
+// compare page opened for whatever came before it. `/` stays a separator.
+test('a branch name is encoded in the compare URL, its slashes kept', () => {
+  assert.equal(
+    compareUrl('gaurav/prcoder', 'main', 'fix/issue#12'),
+    'https://github.com/gaurav/prcoder/compare/main...fix/issue%2312?expand=1');
+});
+
+test("origin's owner comes off every shape of GitHub remote URL", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'prcoder-origin-'));
+  try {
+    await git('git', ['init', '-q', dir]);
+    for (const url of ['git@github.com:gaurav/heal-platform-sdk.git',
+      'https://github.com/gaurav/heal-platform-sdk', 'https://github.com/gaurav/heal-platform-sdk.git/',
+      'ssh://git@github.com/gaurav/heal-platform-sdk.git']) {
+      await git('git', ['remote', 'remove', 'origin'], { cwd: dir }).catch(() => {});
+      await git('git', ['remote', 'add', 'origin', url], { cwd: dir });
+      assert.equal(await originOwner(dir), 'gaurav', url);
+    }
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
 });
 
 const here = { branch: 'feature', nameWithOwner: 'gaurav/prcoder' };
@@ -97,19 +141,10 @@ test('the old queue file is ordinary uncommitted work now', () => {
 // stranger. Real repos rather than a stub, because the whole bug was a belief
 // about what git does with that argument.
 test('a branch name that is the tail of another branch is not mistaken for it', async () => {
-  const git = promisify(execFile);
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'prcoder-lsremote-'));
   const bare = path.join(dir, 'origin.git');
   const work = path.join(dir, 'work');
-  // The identity goes on the command, not into a config: a CI runner has none
-  // set, and `git commit` there is a hard failure rather than a warning. Signing
-  // is turned off the same way: a machine that signs every commit hands this
-  // throwaway repo's commit to its signer, and a locked 1Password agent failed
-  // the test after a minute's wait with nothing to do with ls-remote.
-  const run = (cwd, ...args) => git('git', [
-    '-c', 'user.name=prcoder tests', '-c', 'user.email=tests@prcoder.invalid',
-    '-c', 'commit.gpgsign=false', ...args,
-  ], { cwd });
+  const run = testGit;
   try {
     await git('git', ['init', '-q', '--bare', bare]);
     await git('git', ['init', '-q', work]);
@@ -149,12 +184,8 @@ test('a branch name that is the tail of another branch is not mistaken for it', 
 // a commit this clone lacks, a pathspec the page made up, or a patch whose line
 // counts are not the ones GitHub has for the file.
 test('a local patch is GitHub-shaped, from the merge base, and null when git cannot say', async () => {
-  const git = promisify(execFile);
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'prcoder-patch-'));
-  const run = (...args) => git('git', [
-    '-c', 'user.name=prcoder tests', '-c', 'user.email=tests@prcoder.invalid',
-    '-c', 'commit.gpgsign=false', ...args,
-  ], { cwd: dir });
+  const run = (...args) => testGit(dir, ...args);
   const oid = async (rev) => (await run('rev-parse', rev)).stdout.trim();
   const write = (name, body) => fs.writeFile(path.join(dir, name), body);
   // GitHub's counts for a one-line change, which is what a.js is throughout.
