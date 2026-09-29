@@ -43,7 +43,8 @@ exited, is the same quit and asks the same question in the browser.
 The queue is not asked about, because quitting leaves it in `.prcoder/queue.json` (or the file
 `--queue` named). Instead, every item still on Local is printed first, under the name of that file, with its issue's link where it has one, so the list is in
 the scrollback after prcoder has gone: to copy something into an issue, or to see what to start it
-again for.
+again for. Declining and asking again doesn't print the same list twice; it prints again only once the
+queue has changed.
 
 ## A busy port
 

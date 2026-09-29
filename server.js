@@ -717,10 +717,17 @@ function quitRisk() {
   return quitRisks({ tabs: wss.clients.size, ahead: last?.ahead, dirty: last?.dirtyFiles?.length });
 }
 
-/** Print what is on Local. One write, not one per item: every log line erases and repaints the block. */
+/**
+ * Print what is on Local. One write, not one per item: every log line erases
+ * and repaints the block. Not again when it is what was printed last: Ctrl-C,
+ * `n`, Ctrl-C used to list the same items twice, and the second copy only
+ * pushed the first up the scrollback. A changed queue is listed afresh.
+ */
+let listed = '';
 function listQueue() {
-  const listed = queueSummary(last?.queue ?? [], movedQueue() ?? undefined);
-  if (listed.length) console.log(listed.join('\n'));
+  const now = queueSummary(last?.queue ?? [], movedQueue() ?? undefined).join('\n');
+  if (now && now !== listed) console.log(now);
+  listed = now;
 }
 
 // Kills the PTYs itself rather than leaving that to the close handlers:

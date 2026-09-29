@@ -107,8 +107,11 @@ first.write('n');
 await wait(400);
 first.show('declined');
 
+// Asked again, the list is not: it is still just above, unchanged.
+first.buf = '';
 first.write('\x03');
 await wait(400);
+console.log('  again:    ', first.line('on Local') ?? 'not listed twice');
 first.write('y');
 await wait(1500);
 // The stub stands in for `claude`: anything left here is an orphaned session.
