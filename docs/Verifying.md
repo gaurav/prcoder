@@ -60,9 +60,9 @@ measures, with a comment at each check saying which regression the check catches
   branch-following.
 - **What it cannot reach.** Every file in PR #1 is one the pull request adds, so the diff pane's
   DIFF and DELETED views, the hunk outline and a `.tsx` file are `tools/diff-views.mjs`'s, below.
-  The queue pane is driven against this repo's own queue, swapped for a fixture with an item in
-  every tab and put back at the end; a queue of its own is
-  [#65](https://github.com/gaurav/prcoder/issues/65).
+  The queue pane is driven against a queue of its own, `data/browser-queue.json` through
+  `--queue`, seeded with an item in every tab, so a run never writes the queue of the working copy
+  it runs in.
 - **It reports only a `pageerror`.** A Content-Security-Policy that blocks something is a console
   message, so it shows only as whichever later check needed what did not load
   ([#62](https://github.com/gaurav/prcoder/issues/62)). Add a `page.on('console')` for a run that
@@ -107,6 +107,10 @@ Each unit test file says at its top what it pins. Two run the server itself:
 ([Security.md](Security.md)), and `test/queue-local.test.js` in a scratch directory with `gh` and
 `git` stubbed to fail, asserting that the routes which only read or rewrite the queue never reach
 either. Filing an item with ◎ is the one queue route that does, on purpose, and is not driven.
+`test/api.test.js` is also the one test that opens a real `/pty`: with settings `sessionArgs`
+refuses, so the claim is that it closes with 1008 before the spawn. The exit bar's "Start coding
+agent again" and Quit are `test/browser/suite.js`'s, against a mock socket that closes the way an
+exiting agent does.
 
 Some things were checked against the real thing rather than a stub, and the evidence sits next to
 the code:
@@ -114,6 +118,7 @@ the code:
 - GitHub's diff-anchor scheme: pinned, with the date, in `test/files.test.js`.
 - `git ls-remote`'s branch argument is a pattern, not a ref name: `remoteBranchHead` in `git.js`.
 - git's exit codes, which differ per command: `answer` in `git.js`.
+- The exit bar's settings reaching the agent's argv: `sessionArgs` in `server.js`.
 - A patch rebuilt from local git when GitHub sends none: `localPatch` in `git.js`, and the
   comparison against GitHub's own patches in commit 7d3df58.
 - Which CSS keeps a dotfile's leading dot in place: `fileRow` in `public/pr.js`.
