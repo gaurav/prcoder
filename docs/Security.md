@@ -81,6 +81,16 @@ The guard here is the click, and the text being visible before it. There is no f
 words say, and there should not be one pretending to be a guard. A feature that sends GitHub text
 to Claude *without* a click removes the only check there is.
 
+## The terminal prcoder runs in
+
+The log and the status block print text prcoder did not write: queue items, which any tab can add
+and anyone can edit into `queue.json`, PR titles, branch names, git's stderr. An ESC in any of them
+is a sequence the terminal would run -- a colour that never resets, a cursor move that throws off
+the block's erase, a window title set. `visible()` in [`term.js`](../term.js) shows every control
+character as its Unicode picture instead (ESC as `␛`), and the C1 range as `�`. It runs inside
+`log()`, `status()` and `confirm()`, which are the only ways out: `init()` routes `console` through
+`log()`. `test/term.test.js` pins it.
+
 ## Static files
 
 Everything outside `/api/` and the `vendor` paths — xterm's four files, Prism's core and one file
@@ -123,6 +133,8 @@ A modified file's diff is not highlighted at all, and
 - **Text from GitHub** — descriptions, titles, issue bodies, file names — is built into the page with
   `h()` and text nodes. `innerHTML` only through `inline()`, and a new kind of link only through
   `target()`.
+- **Terminal output** goes through `term.js`, `console.log` included. A write straight to
+  `process.stdout` skips `visible()`.
 - **Nothing sends to Claude without a click** on text the user can see.
 - **A new kind of asset** — a font, an image, a worker, anything loaded rather than inlined — has to
   be allowed by the CSP beside `serveFile`, which is otherwise silent about what it blocks. The
