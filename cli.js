@@ -28,15 +28,17 @@ const OPTIONS = {
   agent: { type: 'string', default: 'claude' },
   port: { type: 'string' },
   'no-open': { type: 'boolean' },
+  queue: { type: 'string' },
   verbose: { type: 'boolean', short: 'v', multiple: true },
 };
 
 export function usage() {
-  return `usage: prcoder [<pr>] [--port <n>] [--no-open] [-v] [--agent <name>] [-- <agent args>]
+  return `usage: prcoder [<pr>] [--port <n>] [--no-open] [--queue <file>] [-v] [--agent <name>] [-- <agent args>]
 
   <pr>             a pull request number, URL or branch (default: the current branch's)
   --port <n>       listen on this port for this run          env PRCODER_PORT
   --no-open        print the URL, don't open a browser        env PRCODER_NO_OPEN=1
+  --queue <file>   keep the queue here, not .prcoder/        env PRCODER_QUEUE
   -v, --verbose    narrate; -vv for debug                     env PRCODER_VERBOSE=1|2
   --agent <name>   the coding agent: ${AGENTS.join(', ')}              env PRCODER_AGENT_BIN names the executable
   -h, --help       -V, --version
@@ -72,12 +74,14 @@ export function parseCli(argv) {
   if (port !== undefined && !(Number.isInteger(port) && port > 0 && port < 65536)) {
     throw new Error(`--port wants a port number, not ${values.port}`);
   }
+  if (values.queue === '') throw new Error('--queue wants a file path');
   return {
     target: positionals[0],
     agent: values.agent,
     agentArgs,
     port,
     noOpen: !!values['no-open'],
+    queue: values.queue,
     verbose: values.verbose?.length ?? 0,
     help: !!values.help,
     version: !!values.version,

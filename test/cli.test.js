@@ -41,6 +41,8 @@ test('prcoder\'s own flags', () => {
   assert.equal(parseCli(['-vv']).verbose, 2);
   assert.equal(parseCli(['--verbose', '--verbose']).verbose, 2);
   assert.equal(parseCli(['--no-open']).noOpen, true);
+  assert.equal(parseCli(['--queue', 'data/q.json']).queue, 'data/q.json');
+  assert.equal(parseCli([]).queue, undefined);
   assert.equal(parseCli(['-h']).help, true);
   assert.equal(parseCli(['--version']).version, true);
   assert.equal(parseCli(['-V']).version, true);
@@ -51,6 +53,7 @@ test('bad input is an error that names the problem', () => {
   assert.throws(() => parseCli(['--port', 'abc']), /--port/);
   assert.throws(() => parseCli(['--agent', 'gpt']), /supported: claude/);
   assert.throws(() => parseCli(['123', '456']), /456/);
+  assert.throws(() => parseCli(['--queue', '']), /--queue wants a file path/);
 });
 
 // --help is meant to replace reading the README, so every flag and every
@@ -58,7 +61,7 @@ test('bad input is an error that names the problem', () => {
 test('the help names every flag, env var and agent', () => {
   const text = usage();
   for (const s of ['--port', '--no-open', '--verbose', '--agent', '--help', '--version', '-- ',
-    'PRCODER_PORT', 'PRCODER_NO_OPEN', 'PRCODER_VERBOSE', 'PRCODER_OPEN', 'PRCODER_AGENT_BIN', ...AGENTS]) {
+    '--queue', 'PRCODER_QUEUE', 'PRCODER_PORT', 'PRCODER_NO_OPEN', 'PRCODER_VERBOSE', 'PRCODER_OPEN', 'PRCODER_AGENT_BIN', ...AGENTS]) {
     assert.ok(text.includes(s), `help mentions ${s}`);
   }
   assert.equal(VERSION, createRequire(import.meta.url)('../package.json').version);

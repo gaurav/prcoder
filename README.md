@@ -33,7 +33,7 @@ is no token to configure.
 - **Diff** -- the file you clicked, as GitHub shows it, with links out to GitHub for comments,
   blame and history.
 - **Claude Code** -- the real `claude` in a PTY: Escape, slash commands and permission prompts all
-  work as they do in a terminal.
+  work as they do in a terminal. When it exits, the pane offers to start it again or quit prcoder.
 - **Queue** -- your own TODO list for this working copy, kept in `.prcoder/` rather than in any
   file you own. An item can be typed into Claude or moved into a GitHub issue, and with a pull
   request on screen two more tabs read its description's checklist and the issues it mentions.
@@ -60,6 +60,7 @@ are given.
 | --- | --- | --- |
 | `--port <n>` | `PRCODER_PORT` | Use this port for one run, instead of the repo's own ([docs/Ports.md](docs/Ports.md)). |
 | `--no-open` | `PRCODER_NO_OPEN` | Don't open a browser; just print the URL. |
+| `--queue <file>` | `PRCODER_QUEUE` | Keep the queue in this file instead of `.prcoder/queue.json`; said at startup. |
 | `-v`, `-vv` | `PRCODER_VERBOSE` | Start the log at verbose (`1`) or debug (`2`) rather than quiet. |
 | `--agent <name>` | | The coding agent; only `claude` today. |
 | | `PRCODER_OPEN` | Open the URL with this command instead of the platform's opener; the URL is appended. |
