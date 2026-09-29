@@ -18,12 +18,10 @@
 //
 // PRCODER_AGENT_BIN is stubbed (serverEnv in tools/driver.mjs says why and with what).
 //
-// It writes, so it is not read-only. The run replaces the repo's queue with a
-// fixture -- at least one item per tab -- and puts the queue back at the end. A
-// run that dies in between leaves the fixture and whatever else it added behind,
-// and the queue it replaced in data/queue-before-browser.json; the next run
-// drops the one and puts back the other. The queue itself writes only
-// `.prcoder/`.
+// It writes, so it is not read-only -- but not to your queue. The server gets
+// `--queue data/browser-queue.json`, a queue of its own that each run seeds
+// with a fixture, so a run that dies partway leaves nothing behind in the queue
+// of the working copy it runs in (#65).
 //
 // Nothing here clicks ◎. It moves an item into a new issue, one-way: there is
 // no queue to put back that would close the issue again. Anything added here that
@@ -51,7 +49,9 @@ const out = await openShots(shotsRoot, label);
 // file groups, its issue chips -- and the server follows the current branch, so
 // a run from any other branch drives a pull request the assertions do not fit.
 // PRCODER_PR pins one; unset is the old branch-following behaviour.
-const server = spawn('node', ['server.js', 'new', ...(process.env.PRCODER_PR ? [process.env.PRCODER_PR] : [])], {
+const queueFile = path.join('data', 'browser-queue.json');
+const server = spawn('node', ['server.js', 'new', '--queue', queueFile,
+  ...(process.env.PRCODER_PR ? [process.env.PRCODER_PR] : [])], {
   cwd: repo,
   env: serverEnv(port),
   stdio: 'ignore',
@@ -70,12 +70,11 @@ console.log('pr:     ', process.env.PRCODER_PR
 // Firefox by default, falling back to Chromium: launchBrowser() in driver.mjs.
 const browser = await launchBrowser();
 
-// The repo's queue may be empty, and then there is no
-// row to click into or tab to count -- and the strip only shows a tab that has
-// something in it, so an empty queue is a strip of two. Seed one item per tab
-// through the API the pane itself uses, before the first page load, so the pane
-// paints the fixture rather than an empty list it would not refetch for another
-// minute.
+// One item per tab, so there is a row to click into and a tab to count -- the
+// strip only shows a tab that has something in it. Seeded through the API the
+// pane itself uses, before the first page load, so the pane paints the fixture
+// rather than an empty list it would not refetch for another minute. The PUT
+// replaces the whole list, so whatever the last run left in the file is gone.
 //
 // `issue` is a bare number, so it links to an existing issue rather than filing
 // a new one, and the item stays on Local like any other.
@@ -86,9 +85,9 @@ const queueApi = (body, method = 'PUT') =>
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   }).then((r) => r.json());
 
-let had = [];
+// Waiting on the server, which answers this once it is listening.
 for (let i = 0; i < 60; i++) {
-  try { had = await queueApi(undefined, 'GET'); break; } catch { await new Promise((r) => setTimeout(r, 500)); }
+  try { await queueApi(undefined, 'GET'); break; } catch { await new Promise((r) => setTimeout(r, 500)); }
 }
 const FIXTURE = [
   { t: 'a local item, still only on this machine' },
@@ -98,43 +97,10 @@ const FIXTURE = [
   { t: 'thrown away', deleted: true },
 ];
 const seed = (over) => ({ text: over.t, done: false, issue: null, deleted: false, ...over });
-// A run that dies before the restore leaves its fixture in the store. Dropping
-// anything that looks like the fixture from what we are going to put back makes
-// the next run clean up after the last one, rather than restoring the mess and
-// adding to it.
-// The repaint check's throwaway item and the reorder checks' scratch rows, below,
-// are dropped the same way: their own cleanup is a finally, which a killed run
-// never reaches.
 const NUDGE = 'driver repaint nudge';
 const SCRATCH = ['driver scratch item, put back at the end of the run', 'driver scratch item two'];
-const mine = new Set([...FIXTURE.map((f) => f.t), NUDGE, ...SCRATCH]);
-had = had.filter((i) => !mine.has(i.text));
-// And the queue the fixture replaces, on disk until the restore at the end has
-// landed. Held only in memory, it died with a run that died: the next run saw
-// nothing but fixture, filtered that out, and put back an empty queue. A backup
-// still here is that run's, and it is what gets put back -- with anything added
-// to the store since, which is not in it, less what that run added itself.
-//
-// `added` is that last part: an item the driver puts in the store whose text is
-// not known up front, so `mine` cannot name it -- the copy ↓ pulls from the
-// Issues tab. Recorded by ownItem() the moment it lands. Without it, a run that
-// died after the pull left the copy behind, and the next run kept it as yours.
-const backup = path.join(repo, 'data', 'queue-before-browser.json');
-if (fs.existsSync(backup)) {
-  const left = JSON.parse(fs.readFileSync(backup, 'utf8'));
-  const known = new Set([...left.had.map((i) => i.text), ...left.added]);
-  had = [...left.had, ...had.filter((i) => !known.has(i.text))];
-  console.log('backup: ', `${left.had.length} items left by a run that did not finish, put back at the end`,
-    left.added.length ? `(dropping ${left.added.length} it added)` : '');
-}
-fs.writeFileSync(backup, JSON.stringify({ had, added: [] }, null, 2));
-const ownItem = (text) => {
-  const b = JSON.parse(fs.readFileSync(backup, 'utf8'));
-  b.added.push(text);
-  fs.writeFileSync(backup, JSON.stringify(b, null, 2));
-};
 const seeded = await queueApi({ items: FIXTURE.map(seed) });
-console.log('seeded: ', Array.isArray(seeded) ? `${seeded.length} items` : JSON.stringify(seeded));
+console.log('seeded: ', Array.isArray(seeded) ? `${seeded.length} items` : JSON.stringify(seeded), `in ${queueFile}`);
 
 const page = await openPage(browser, port);
 // The panes fill in from gh, so there is a second or two of "Loading…" first.
@@ -255,8 +221,8 @@ console.log('unticked:', await local(), ' (want Local (3) again)');
 // edits to the description, checked to leave the body as it was -- read back
 // through /api/status, whose copy is the one editBody replaced after each
 // write. Issues is the issues the description mentions without closing them;
-// ↓ copies one into Local without touching the issue, and the queue restore at
-// the end takes the copy back out.
+// ↓ copies one into Local without touching the issue -- into the driver's own
+// queue, where the next run's seed replaces it.
 const prBody = () => page.evaluate(() => fetch('/api/status').then((r) => r.json()).then((st) => st.pr?.body));
 const bodyBefore = await prBody();
 await page.locator('#queue-body .tab', { hasText: /^PR/ }).click();
@@ -308,13 +274,9 @@ await page.locator('#queue').screenshot({ path: path.join(out, 'queue-issues.png
 console.log('issues: ', await page.locator('#queue-body .tab', { hasText: /^Issues/ }).innerText(),
   JSON.stringify(await page.locator('#queue-body .item.source').allInnerTexts()));
 const localBefore = await local();
-const texts = async () => new Set((await queueApi(undefined, 'GET')).map((i) => i.text));
-const beforePull = await texts();
 await page.locator('#queue-body .item.source .actions button').first().click();
 await page.locator('#queue-body .tab', { hasText: /^Local \(4\)/ }).waitFor({ timeout: 10_000 });
-const pulled = [...await texts()].filter((t) => !beforePull.has(t));
-pulled.forEach(ownItem);
-console.log('  pulled: ', localBefore, '->', await local(), '(want one more)', JSON.stringify(pulled));
+console.log('  pulled: ', localBefore, '->', await local(), '(want one more)');
 await page.locator('#queue-body .tab', { hasText: /^Local/ }).click();
 await page.waitForTimeout(150);
 
@@ -823,10 +785,6 @@ try {
 }
 console.log('queue:  ', (await getQueue()).length, 'items  (want', queue.length + ')');
 
-// Back to whatever the repo had.
-const putBack = await queueApi({ items: had });
-console.log('restored:', putBack.length, 'items (was', had.length + ')');
-if (Array.isArray(putBack)) fs.rmSync(backup);
 
 // The tab icon, which goes blue while a turn is running and back to green two
 // seconds after its output stops -- prcoder's only reading of "Claude is

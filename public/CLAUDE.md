@@ -35,12 +35,22 @@ Claude's context except a typed user turn; issue #21 lists the options.
 And Claude Code owns that viewport. With `"tui": "fullscreen"` it is on the
 alternate screen, repainting frames over whatever is there, so anything prcoder
 writes survives only until the next frame. The exception is `ws.onclose`, which
-writes `[claude exited]` because the PTY is dead and nothing will repaint.
+writes `[coding agent exited]` because the PTY is dead and nothing will repaint.
 
 Notices for the human go to `toast()`, which sits over the panes and has
 nothing to do with the terminal. Pass `sticky` for a notice that stays true
 until someone acts on it, rather than one reporting something already done:
 a sticky toast waits for a click instead of timing out.
+
+## The UI says "coding agent", not Claude
+
+prcoder already runs agents other than Claude Code -- `PRCODER_AGENT_BIN` picks
+the executable, and the drivers run a stub -- so any new text in the UI that
+refers to the agent (page copy, toasts, tooltips, lines written to the terminal)
+says "coding agent", or names the running agent once the page knows it. The docs
+can keep saying Claude Code until a second agent is fully supported, and code
+names like `sendToClaude` wait for that too (#30). The owner asked for this on
+2026-09-23; the UI strings that still say Claude are listed in #76.
 
 ## Check a UI change in Firefox, not only Chromium
 

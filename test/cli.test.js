@@ -45,6 +45,8 @@ test('prcoder\'s own flags', () => {
   assert.equal(parseCli(['-vv']).verbose, 2);
   assert.equal(parseCli(['--verbose', '--verbose']).verbose, 2);
   assert.equal(parseCli(['--no-open']).noOpen, true);
+  assert.equal(parseCli(['--queue', 'data/q.json']).queue, 'data/q.json');
+  assert.equal(parseCli([]).queue, undefined);
   assert.equal(parseCli(['-h']).help, true);
   assert.equal(parseCli(['--version']).version, true);
   assert.equal(parseCli(['-V']).version, true);
@@ -55,6 +57,7 @@ test('bad input is an error that names the problem', () => {
   assert.throws(() => parseCli(['--port', 'abc']), /--port/);
   assert.throws(() => parseCli(['--agent', 'gpt']), /supported: claude/);
   assert.throws(() => parseCli(['open', '123', '456']), /456/);
+  assert.throws(() => parseCli(['--queue', '']), /--queue wants a file path/);
 });
 
 // The PR used to come first. A branch is a valid target, so a word there that
@@ -70,7 +73,7 @@ test('a PR where the command goes is an error that shows the new form', () => {
 test('the help names every flag, env var and agent', () => {
   const text = usage();
   for (const s of ['--port', '--no-open', '--verbose', '--agent', '--help', '--version', '-- ',
-    'PRCODER_PORT', 'PRCODER_NO_OPEN', 'PRCODER_VERBOSE', 'PRCODER_OPEN', 'PRCODER_AGENT_BIN', ...AGENTS]) {
+    '--queue', 'PRCODER_QUEUE', 'PRCODER_PORT', 'PRCODER_NO_OPEN', 'PRCODER_VERBOSE', 'PRCODER_OPEN', 'PRCODER_AGENT_BIN', ...AGENTS]) {
     assert.ok(text.includes(s), `help mentions ${s}`);
   }
   assert.equal(VERSION, createRequire(import.meta.url)('../package.json').version);
@@ -330,6 +333,7 @@ test('quitting lists what is on Local, with links, and nothing when it is empty'
   assert.deepEqual(lines.slice(1).map((l) => l.trim()),
     ['Fix the flaky test  https://github.com/o/r/issues/91', 'plain']);
   assert.equal(queueSummary([{ text: 'one' }])[0], 'queue    1 item on Local, in .prcoder/queue.json:');
+  assert.equal(queueSummary([{ text: 'one' }], '/work/q.json')[0], 'queue    1 item on Local, in /work/q.json:');
 });
 
 // The y/N is for what quitting costs, and says what `y` does to a session.

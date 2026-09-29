@@ -30,6 +30,7 @@ const OPTIONS = {
   agent: { type: 'string', default: 'claude' },
   port: { type: 'string' },
   'no-open': { type: 'boolean' },
+  queue: { type: 'string' },
   verbose: { type: 'boolean', short: 'v', multiple: true },
 };
 
@@ -38,7 +39,7 @@ const OPTIONS = {
 const COMMANDS = { __proto__: null, open: 'open', new: 'new', gh: 'gh', github: 'gh' };
 
 export function usage() {
-  return `usage: prcoder [open|new] [<pr>] [--port <n>] [--no-open] [-v] [--agent <name>] [-- <agent args>]
+  return `usage: prcoder [open|new] [<pr>] [--port <n>] [--no-open] [--queue <file>] [-v] [--agent <name>] [-- <agent args>]
 
   open             the default: open the prcoder already running here, or start one
   new              start one even if another is running
@@ -46,6 +47,7 @@ export function usage() {
   <pr>             a pull request number, URL or branch (default: the current branch's)
   --port <n>       listen on this port for this run          env PRCODER_PORT
   --no-open        print the URL, don't open a browser        env PRCODER_NO_OPEN=1
+  --queue <file>   keep the queue here, not .prcoder/        env PRCODER_QUEUE
   -v, --verbose    narrate; -vv for debug                     env PRCODER_VERBOSE=1|2
   --agent <name>   the coding agent: ${AGENTS.join(', ')}              env PRCODER_AGENT_BIN names the executable
   -h, --help       -V, --version
@@ -84,6 +86,7 @@ export function parseCli(argv) {
   if (port !== undefined && !(Number.isInteger(port) && port > 0 && port < 65536)) {
     throw new Error(`--port wants a port number, not ${values.port}`);
   }
+  if (values.queue === '') throw new Error('--queue wants a file path');
   return {
     command,
     target: targets[0],
@@ -91,6 +94,7 @@ export function parseCli(argv) {
     agentArgs,
     port,
     noOpen: !!values['no-open'],
+    queue: values.queue,
     verbose: values.verbose?.length ?? 0,
     help: !!values.help,
     version: !!values.version,
@@ -174,13 +178,14 @@ export function statusLines(s, u = {}) {
  * issue's link where it has one, so they are in the scrollback after prcoder
  * has gone -- to copy into an issue, or to see what to restart it for.
  * Quitting loses none of them, since the queue is on disk, so this is shown
- * rather than asked about (quitRisks). An empty Local prints nothing.
+ * rather than asked about (quitRisks). An empty Local prints nothing. `file`
+ * is the queue's file when --queue moved it, since that is where to look next.
  */
-export function queueSummary(items = []) {
+export function queueSummary(items = [], file = '.prcoder/queue.json') {
   const q = counts(items);
   if (!q.local) return [];
   const rest = [q.done && `${q.done} completed`, q.deleted && `${q.deleted} deleted`].filter(Boolean);
-  const head = `${'queue'.padEnd(8)} ${q.local} item${q.local > 1 ? 's' : ''} on Local, in .prcoder/queue.json` +
+  const head = `${'queue'.padEnd(8)} ${q.local} item${q.local > 1 ? 's' : ''} on Local, in ${file}` +
     `${rest.length ? ` (and ${rest.join(', ')})` : ''}:`;
   return [head, ...items.filter(TABS.local).map((i) => `${''.padEnd(8)}   ${i.text}${i.issueUrl ? `  ${i.issueUrl}` : ''}`)];
 }

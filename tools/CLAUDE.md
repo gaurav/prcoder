@@ -69,7 +69,12 @@ timing has to be driven against that stub, not cat. cat is fine for
   driver runs investigating an always-busy tab icon came back green because
   the instrumentation had switched off the traffic causing it. Listen without
   wrapping, or, to keep the page from opening a PTY at all, use
-  `page.routeWebSocket('**/pty', () => {})` as `test/browser/suite.js` does.
+  `page.routeWebSocket(/\/pty(\?|$)/, () => {})` as `test/browser/suite.js` does.
+- **Match `/pty` with a regex, not `'**/pty'`.** A glob has to match the whole
+  URL, so it misses the exit bar's `/pty?model=...`, which then reaches the
+  in-process server and spawns a real `claude --continue` in this repo
+  (2026-09-23). `test/browser/suite.js` also sets `PRCODER_AGENT_BIN=/usr/bin/false`
+  so a socket that slips past spawns nothing.
 - **Install `MutationObserver`s after `goto`, not in `addInitScript`.** At
   init time there is no `document.head` to observe, and the throw takes the
   rest of the init script with it.

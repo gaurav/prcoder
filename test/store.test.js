@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { normalise, pick, readStore, writeStore, readPort, writePort, replaceItems } from '../store.js';
+import { normalise, pick, readStore, writeStore, readPort, writePort, replaceItems, useQueueFile } from '../store.js';
 
 const repo = () => fs.mkdtemp(path.join(os.tmpdir(), 'prcoder-store-'));
 const item = (over = {}) =>
@@ -204,3 +204,24 @@ test('the queue and the port are written independently', async () => {
   assert.deepEqual((await fs.readdir(path.join(dir, '.prcoder'))).sort(), ['.gitignore', 'queue.json']);
 });
 
+// --queue moves the queue and nothing else: the repo's own queue.json is left
+// alone -- which is the whole point, for the driver that uses it -- and the
+// port still lives in .prcoder/.
+test('a queue file named with --queue is read and written instead of the repo\'s', async () => {
+  const dir = await repo();
+  const elsewhere = path.join(dir, 'data', 'driver-queue.json');
+  await writeStore(dir, { version: 1, items: [item({ text: 'yours' })] });
+  useQueueFile(elsewhere);
+  try {
+    assert.deepEqual((await readStore(dir)).store.items, []);
+    await writeStore(dir, { version: 1, items: [item({ text: 'the driver\'s' })] });
+    assert.deepEqual((await readStore(dir)).store.items.map((i) => i.text), ['the driver\'s']);
+    await writePort(dir, 12345);
+    assert.equal(await readPort(dir), 12345);
+    // Its directory is made for it, and it is not given a .gitignore.
+    assert.deepEqual(await fs.readdir(path.join(dir, 'data')), ['driver-queue.json']);
+  } finally {
+    useQueueFile(null);
+  }
+  assert.deepEqual((await readStore(dir)).store.items.map((i) => i.text), ['yours']);
+});
