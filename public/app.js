@@ -139,9 +139,13 @@ function connect(query = '') {
       sessionStorage.setItem(PTY_SEEN, '1');
     } catch { /* private mode: no memory, so no claim about a previous session */ }
   };
-  ws.onclose = () => {
+  // 1008 is the server refusing before the spawn (sameOrigin, sessionArgs), so
+  // no agent ever ran: say why, since after a start-again with a model it would
+  // not take, the reason is the only clue that the setting was the problem.
+  ws.onclose = (e) => {
     turn(false);
-    term.write('\r\n\x1b[31m[coding agent exited]\x1b[0m\r\n');
+    const why = e.code === 1008 ? `refused: ${e.reason}` : 'coding agent exited';
+    term.write(`\r\n\x1b[31m[${why}]\x1b[0m\r\n`);
     exitForm.hidden = false;
     // Refit now rather than waiting on the ResizeObserver: in a page that isn't
     // in front it never delivered the shrink, and the terminal went on

@@ -1097,6 +1097,15 @@ test('Create PR stays disabled through a poll while the first click is pushing',
   await p.close();
 });
 
+// A setting sessionArgs will not take closes the socket before any spawn, so the
+// terminal has to say that rather than that an agent exited.
+test('a refused start says why', { skip }, async () => {
+  const p = await newPage({ pty: (ws) => ws.close({ code: 1008, reason: 'bad session settings' }) });
+  await p.locator('#term-exit').waitFor({ state: 'visible' });
+  await p.locator('#term-host .xterm-rows', { hasText: '[refused: bad session settings]' }).waitFor();
+  await p.close();
+});
+
 // The bar is the one way back once the agent is gone, so what it sends is what
 // matters: starting the agent again is a new socket carrying the settings
 // (sessionArgs in server.js turns them into flags), and Quit asks before a quit
