@@ -108,8 +108,9 @@ Each unit test file says at its top what it pins. Two run the server itself:
 `git` stubbed to fail, asserting that the routes which only read or rewrite the queue never reach
 either. Filing an item with ◎ is the one queue route that does, on purpose, and is not driven.
 `test/api.test.js` is also the one test that opens a real `/pty`: with settings `sessionArgs`
-refuses, so the claim is that it closes with 1008 before the spawn. The exit bar's Restart and Quit
-are `test/browser/suite.js`'s, against a mock socket that closes the way an exiting agent does.
+refuses, so the claim is that it closes with 1008 before the spawn. The exit bar's "Start coding
+agent again" and Quit are `test/browser/suite.js`'s, against a mock socket that closes the way an
+exiting agent does.
 
 Some things were checked against the real thing rather than a stub, and the evidence sits next to
 the code:

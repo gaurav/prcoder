@@ -162,9 +162,10 @@ test('a queue write of the wrong shape says so, rather than throwing from inside
   assert.deepEqual(await put({ items: 'not an array', branch: 'work' }), [500, want]);
 });
 
-// The exit panel's Restart sends its settings as the /pty query, and they
-// become part of a spawn's argv -- so only names and levels get through, and a
-// model that is really a flag is refused rather than handed to claude.
+// The exit panel's "Start coding agent again" sends its settings as the /pty
+// query, and they become part of a spawn's argv -- so only names and levels get
+// through, and a model that is really a flag is refused rather than handed to
+// claude.
 test('session settings become claude flags, and nothing else does', () => {
   const args = (q) => sessionArgs(new URLSearchParams(q));
   assert.deepEqual(args(''), []);

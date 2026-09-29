@@ -1098,10 +1098,11 @@ test('Create PR stays disabled through a poll while the first click is pushing',
 });
 
 // The bar is the one way back once the agent is gone, so what it sends is what
-// matters: Restart is a new socket carrying the settings (sessionArgs in
-// server.js turns them into flags), and Quit asks before a quit that costs
-// something. The mock closes each socket the way an exiting agent does.
-test('when the agent exits, Restart reconnects with the chosen settings, and Quit asks first', { skip }, async () => {
+// matters: starting the agent again is a new socket carrying the settings
+// (sessionArgs in server.js turns them into flags), and Quit asks before a quit
+// that costs something. The mock closes each socket the way an exiting agent
+// does.
+test('when the agent exits, starting it again reconnects with the chosen settings, and Quit asks first', { skip }, async () => {
   const urls = [];
   let second;
   const p = await newPage({ pty: (ws) => {

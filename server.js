@@ -489,8 +489,8 @@ const ptys = new Set();
 
 /**
  * Pure: the /pty query string -> extra arguments for this `claude`, or null to
- * refuse the socket. The exit panel's Restart sends it; a first open sends
- * nothing and gets [].
+ * refuse the socket. The exit panel's "Start coding agent again" sends it; a
+ * first open sends nothing and gets [].
  *
  * Allowlisted rather than passed through, because this is the page choosing a
  * spawn's argv. A model has to be a name, not something starting with a dash:
@@ -498,7 +498,7 @@ const ptys = new Set();
  *
  * The real spawn was driven once by hand (2026-09-23), against a stub that
  * prints its argv: `[]` on the first open, then `[--continue --model opus
- * --effort high]` after a Restart, and the server exiting 0 after Quit.
+ * --effort high]` after starting it again, and the server exiting 0 after Quit.
  */
 const EFFORTS = new Set(['low', 'medium', 'high', 'xhigh', 'max']);
 export function sessionArgs(params) {

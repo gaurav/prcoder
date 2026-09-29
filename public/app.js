@@ -18,7 +18,8 @@ term.loadAddon(new WebLinksAddon((_e, uri) => window.open(uri, '_blank', 'noopen
 term.open(document.getElementById('term-host'));
 
 const PTY_SEEN = 'prcoder:pty';
-// Replaced, not reopened, by the exit panel's Restart: one socket is one PTY.
+// Replaced, not reopened, by the exit panel's "Start coding agent again": one
+// socket is one PTY.
 let ws;
 // `WebSocket.OPEN` is read off the global constructor, so a Playwright init
 // script that wraps `window.WebSocket` without copying its four state statics
@@ -121,7 +122,8 @@ function connect(query = '') {
   // new Claude session nobody asked for. sessionStorage is per-tab and survives
   // the restore, which is exactly what tells that apart from a first open. A
   // deliberate reload lands here too, and the message is just as true there.
-  // A Restart does not: you asked for that one, and chose whether to continue.
+  // Starting the agent again from the exit panel does not: you asked for that
+  // one, and chose whether to continue.
   ws.onopen = () => {
     sent = '';   // a new PTY starts at 80x24, whatever the last one was told
     sync();
