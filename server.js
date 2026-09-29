@@ -12,7 +12,7 @@ import { text as readBody } from 'node:stream/consumers';
 import { spawn as ptySpawn } from 'node-pty';
 import { WebSocketServer } from 'ws';
 import { loadPr, prHeads, prBody, listPrs, issueLinks, setViewed, setBody, createIssue, fetchPatches, runCount } from './github.js';
-import { snapshot, currentBranch, repoInfo, prScope, compareUrl, originOwner, checkoutPr, pushBranch, remoteBranchHead, trackingHead, localPatch } from './git.js';
+import { snapshot, currentBranch, repoInfo, prScope, compareUrl, originOwner, checkoutPr, pushBranch, remoteBranchHead, trackingHead, localPatch, branchesBelow } from './git.js';
 import { bucket, fileUrl, fileViews } from './files.js';
 import { readPort, writePort, useQueueFile, movedQueue } from './store.js';
 import { readQueue, writeQueue, quote } from './queue.js';
@@ -292,6 +292,27 @@ const routes = {
     const pushed = !(await remoteBranchHead(repo, branch));
     if (pushed) await pushBranch(repo);
     return { url: compareUrl(facts.nameWithOwner, facts.defaultBranch, branch, await originOwner(repo)), pushed };
+  },
+
+  /**
+   * What a branch with no pull request is built on, from git (#93): for the
+   * branch-only pane, and for a Stack tab whose chain reached such a branch.
+   * A POST only because handlers get the body and not the query, as with
+   * /api/diff; it writes nothing. `prs` is the page's list as head/base pairs,
+   * which says what git can't -- see branchesBelow.
+   *
+   * The checked-out branch walks from HEAD, pushed or not. Any other has to be
+   * one origin has, and goes to git as a full `refs/remotes/...` path, which
+   * can't be read as an option.
+   */
+  'POST /api/below': async ({ branch, prs = [] } = {}) => {
+    if (typeof branch !== 'string' || !branch) throw new Error('no branch');
+    const current = branch === await currentBranch(repo);
+    if (!current && !(await trackingHead(repo, branch))) throw new Error(`origin has no branch ${branch}`);
+    const pairs = (Array.isArray(prs) ? prs : [])
+      .filter((p) => typeof p?.headRefName === 'string' && typeof p?.baseRefName === 'string');
+    const { defaultBranch } = await repoFacts();
+    return { branch, ...(await branchesBelow(repo, branch, defaultBranch, { current, prs: pairs })) };
   },
 
   'POST /api/pr/viewed': async ({ path: p, viewed }) => {

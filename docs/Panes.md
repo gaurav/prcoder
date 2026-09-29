@@ -34,7 +34,8 @@ tab width.
 Which pull request you are in stays at the top, in the order it is used: the title; then the way
 out of the window, with this pull request on GitHub drawn as a button beside plain links to the
 repository's issues, pulls and milestones, and the repository they are all in at the end of that
-row; then the state and the branch it targets.
+row; then the state and the branch it targets, with the pull request that branch belongs to
+beside it as `#N` when it is another open one's head, since that is the one you want next.
 
 The repository comes last in its row because it is the only thing there whose length has no
 bound. A short one fits beside the four links; a long one drops whole onto the next line, so the
@@ -63,6 +64,18 @@ opens that pull request on GitHub, so you can compare a few in other tabs; its *
 out, the same way the switcher does. Uncommitted work disables Switch for the same reason it hides
 the switcher, and leaves the links alone.
 
+On any other branch it also shows what the branch is built on, since that is where its pull
+request will go. A branch with no pull request has no base on GitHub, so prcoder asks git: the
+nearest commit on the branch's first-parent line that another branch on origin also has names the
+branch it was cut from, which still works after that one has taken more commits. It carries on down
+until it reaches the default branch or a branch with an open pull request, whose own base takes it
+from there. The list then has the whole stack, from the bottom up: the branch is marked where it
+sits, and the pull requests into it hang under it as before. Git can't always tell a parent from a
+child cut before the parent's newest commit, because the histories are the same shape either way.
+The open pull requests settle that, since a pull request says which branch it is built on; a child
+that has no pull request yet can be taken for the parent. Git is asked again whenever the list of
+pull requests is fetched again.
+
 ### The sync light
 
 Next to the switcher is a light for the one thing prcoder cannot fix for you: whether the branch
@@ -76,9 +89,16 @@ is only as fresh as the last poll.
 
 Below the head are the tabs. Reading the argument, working the files and watching CI are three
 different things and each wants the whole pane; the last, *Stack*, is the pull requests built on
-this one's branch, laid out like the list above. Each tab carries the count the others cannot show
+this one's branch, laid out like the list above. On a pull request that is itself stacked, one
+whose base is not the default branch, it is the whole stack instead: the pull requests under this
+one, down to the one into the default branch, each with the others built on it, and this one marked
+where it sits, with no Switch because you are there. A base with no open pull request, because it
+merged or never had one, is a row of its own, and git is asked what is under it the way the
+branch-only pane asks, but only once the tab is open. The line above says where the stack starts,
+or that nothing more could be found. Each tab carries the count the others cannot show
 you -- how many description boxes are still unticked, how many files are still unviewed, how many
-checks have gone green, how many pull requests are stacked on this one -- so none hides from you
+checks have gone green, and for Stack the pull requests under this one and built on it,
+`Stack (↓1 ↑2)`, leaving out a direction that has none -- so none hides from you
 while you are in another. A count that has run out keeps its numbers, `Files (11/11)`, so it
 still says how many, and ends in a green circle with a ✓ in it to say none are left. The Checks
 tab also carries a mark in front while it is not done: a yellow ring while something is still

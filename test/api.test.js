@@ -162,6 +162,23 @@ test('a queue write of the wrong shape says so, rather than throwing from inside
   assert.deepEqual(await put({ items: 'not an array', branch: 'work' }), [500, want]);
 });
 
+// The branch goes into git, so it has to be one origin has (or the one checked
+// out). Both refusals come before the gh lookup the walk itself needs.
+test('what a branch is built on is asked only of a branch origin has', async () => {
+  const ask = async (body) => {
+    const res = await fetch(`${base}/api/below`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    return [res.status, (await res.json()).error];
+  };
+  assert.deepEqual(await ask({}), [500, 'no branch']);
+  assert.deepEqual(await ask({ branch: 42 }), [500, 'no branch']);
+  assert.deepEqual(await ask({ branch: '--upload-pack=x' }), [500, 'origin has no branch --upload-pack=x']);
+  assert.deepEqual(await ask({ branch: 'no-such-branch-anywhere' }), [500, 'origin has no branch no-such-branch-anywhere']);
+});
+
 // The exit panel's "Start coding agent again" sends its settings as the /pty
 // query, and they become part of a spawn's argv -- so only names and levels get
 // through, and a model that is really a flag is refused rather than handed to

@@ -140,15 +140,20 @@ const posted = [];
 // own -- Prism loads once per page -- can open a second one. `prs` is the
 // switcher's list, empty unless a test is about it, and null for a fetch that
 // fails; `st` and `ready` are for a page with no pull request, which has no
-// title to wait on. `pty` is the mock socket's handler, for a test that needs
-// the agent to do something. A regex, not `**/pty`: a glob has to match the
-// whole URL, so the exit bar's `/pty?model=...` slipped past it to the real
-// server.
-async function newPage({ prs = [], st = status, ready = '#pr-head .pr-title', pty = () => {} } = {}) {
+// title to wait on. `below` is git's answer for a branch with no PR, and none
+// unless a test is about it, since the real one would ask this clone's git.
+// `pty` is the mock socket's handler, for a test that needs the agent to do
+// something. A regex, not `**/pty`: a glob has to match the whole URL, so the
+// exit bar's `/pty?model=...` slipped past it to the real server.
+async function newPage({ prs = [], st = status, ready = '#pr-head .pr-title', below = null, pty = () => {} } = {}) {
   const p = await browser.newPage();
   await p.routeWebSocket(/\/pty(\?|$)/, pty);
   await p.route('**/api/status', (r) => r.fulfill({ json: st }));
   await p.route('**/api/prs', (r) => (prs ? r.fulfill({ json: prs }) : r.abort()));
+  await p.route('**/api/below', (r) => {
+    p.belowAsked = r.request().postDataJSON();
+    return below ? r.fulfill({ json: below }) : r.abort();
+  });
   await p.route('**/api/queue', (r) => r.fulfill({ json: [] }));
   await p.route('**/api/diff', (r) => {
     const { path } = r.request().postDataJSON();
@@ -957,7 +962,7 @@ test('stacked PRs nest in the switcher and the Stack tab, each linked and switch
   ]);
 
   const tab = fresh.locator('#pr-head .tab', { hasText: 'Stack' });
-  assert.equal(await tab.textContent(), 'Stack (2)');
+  assert.equal(await tab.textContent(), 'Stack (↑2)');
   await tab.click();
   // The tab is read on its own, so it names the PR as well as the branch, and
   // the branch in the code face.
@@ -989,7 +994,7 @@ test('opening the Stack tab picks up a PR stacked since the page loaded', { skip
   await fetched;
   await fresh.waitForSelector('#pr-body .pr-into .pr-num');
   assert.deepEqual(await fresh.locator('#pr-body .pr-into > ul > li > .pr-row .pr-num').allTextContents(), ['#13']);
-  assert.equal(await fresh.locator('#pr-head .tab', { hasText: 'Stack' }).textContent(), 'Stack (2)');
+  assert.equal(await fresh.locator('#pr-head .tab', { hasText: 'Stack' }).textContent(), 'Stack (↑2)');
   await fresh.close();
 });
 
@@ -1006,9 +1011,45 @@ test('a failed fetch on opening the Stack tab keeps the rows it had', { skip }, 
   await failed;
   await fresh.waitForTimeout(100);
   assert.deepEqual(await fresh.locator('#pr-body .pr-into > ul > li > .pr-row .pr-num').allTextContents(), ['#13']);
-  assert.equal(await tab.textContent(), 'Stack (2)');
+  assert.equal(await tab.textContent(), 'Stack (↑2)');
   assert.equal(await fresh.locator('#pr-switch option').count(), 4, 'the switcher kept its options');
   await fresh.close();
+});
+
+// #93: the Stack tab of a pull request that is itself stacked shows what it is
+// built on too, with this one marked and nothing to switch to where you are.
+test('a stacked PR shows the stack under it in its Stack tab and its head', { skip }, async () => {
+  const on13 = { ...status, branch: 'topic-2', pr: { ...pr, number: 13, title: STACK[1].title, headRefName: 'topic-2', baseRefName: 'topic', url: STACK[1].url } };
+  const fresh = await newPage({ prs: STACK, st: on13 });
+  await fresh.waitForSelector('#pr-switch option[value="14"]', { state: 'attached' });
+  const tab = fresh.locator('#pr-head .tab', { hasText: 'Stack' });
+  assert.equal(await tab.textContent(), 'Stack (↓1 ↑1)');
+  assert.equal(await fresh.locator('#pr-head .pr-state a').textContent(), '#12');
+  assert.equal(await fresh.locator('#pr-head .pr-state a').getAttribute('href'), pr.url);
+  await tab.click();
+  assert.equal(await fresh.locator('#pr-body .pr-into-label').textContent(),
+    'The stack PR #13 (branch topic-2) is in, from main.');
+  assert.deepEqual(await fresh.locator('#pr-body .pr-into > ul > li > .pr-row .pr-num').allTextContents(), ['#12']);
+  assert.deepEqual(await fresh.locator('#pr-body .pr-row.here .pr-num').allTextContents(), ['#13']);
+  assert.equal(await fresh.locator('#pr-body .pr-row.here .pr-go').count(), 0);
+  assert.deepEqual(await fresh.locator('#pr-body .pr-into ul ul ul .pr-num').allTextContents(), ['#14']);
+  await fresh.close();
+});
+
+// A branch with no PR has no base on GitHub, so the pane asks git -- sending
+// the list's head/base pairs, which is how git tells a parent from a child.
+test('with no PR, the pane shows what git says the branch is built on, above what is built on it', { skip }, async () => {
+  const onMine = [...STACK, { number: 15, title: 'On mine', headRefName: 'on-mine', baseRefName: 'mine', isDraft: false, url: `${REPO}/pull/15` }];
+  const st = { ...status, branch: 'mine', pr: null };
+  const p = await newPage({ prs: onMine, st, ready: '#pr-body .pr-row.here',
+    below: { branch: 'mine', names: ['topic-2'], toDefault: false } });
+  assert.equal(await p.locator('#pr-body .pr-into-label').textContent(), 'The stack branch mine is in, from main.');
+  assert.deepEqual(await p.locator('#pr-body .pr-into > ul > li > .pr-row .pr-num').allTextContents(), ['#12']);
+  assert.equal(await p.locator('#pr-body .pr-row.here code.branch').textContent(), 'mine');
+  assert.deepEqual(await p.locator('#pr-body .pr-row.here + ul .pr-num').allTextContents(), ['#15']);
+  assert.equal(p.belowAsked.branch, 'mine');
+  assert.deepEqual(p.belowAsked.prs.at(-1), { headRefName: 'on-mine', baseRefName: 'mine' });
+  await p.close();
 });
 
 // With no list at all -- the first fetch still out, or every one failed -- the
