@@ -50,7 +50,7 @@ const out = await openShots(shotsRoot, label);
 // a run from any other branch drives a pull request the assertions do not fit.
 // PRCODER_PR pins one; unset is the old branch-following behaviour.
 const queueFile = path.join('data', 'browser-queue.json');
-const server = spawn('node', ['server.js', '--queue', queueFile,
+const server = spawn('node', ['server.js', 'new', '--queue', queueFile,
   ...(process.env.PRCODER_PR ? [process.env.PRCODER_PR] : [])], {
   cwd: repo,
   env: serverEnv(port),

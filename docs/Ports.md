@@ -11,8 +11,13 @@ repo keeps the same URL: one you can bookmark, add to the Dock or open in an IDE
 one that survives renaming the directory. Different repos, and different worktrees, get different
 ports, so several prcoders can run at once.
 
-If that port is busy when prcoder starts -- most often because a second prcoder is already running
-in the same repo -- it takes a free one for this run and says so, both on stderr and in the status
+A plain `prcoder` (or `prcoder open`) first asks that port who it is. If the prcoder already there
+serves this directory and the same PR target, spelled the same way, it opens that one and exits
+rather than starting a second Claude session on the same working tree. It asks only the recorded
+port (or `--port`), so an instance that had moved aside is not found.
+
+If that port is busy when prcoder starts -- after `prcoder new`, or because something else holds
+it -- it takes a free one for this run and says so, both on stderr and in the status
 block ([Terminal.md](Terminal.md)). Pane sizes and other layout choices are stored per port, so a
 run on a different port opens with the default layout ([Panes.md](Panes.md#layout)).
 
@@ -28,6 +33,8 @@ To choose a port yourself, edit `port.json` to change it for good (avoiding that
 
 One prcoder per repo, each a browser tab, is soon lost among the pull requests and diffs you
 opened while working. Cheapest first:
+
+**Run it again.** `prcoder` in the repo opens the one that is running (above).
 
 **In the tabs.** The favicon is a green *PR* square -- blue while that tab's Claude is working, so
 a turn you walked away from says whether it is still going -- and every title ends in

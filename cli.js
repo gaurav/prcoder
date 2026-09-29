@@ -1,10 +1,12 @@
 // What prcoder takes and shows at the command line: its own flags, the port a
 // repo gets, and the status block pinned under the log.
 //
-// Everything after the first `--` is the agent's, untouched; everything before
-// it is ours and parsed strictly, so a flag's value is never read as a PR
-// target and an agent flag in the wrong place is an error that says where it
-// goes, not a session started with the wrong PR.
+// The first word is a command and the PR comes after it, never first: a branch
+// is a valid target, so a bare `prcoder <word>` could not tell a command from a
+// branch of that name. Everything after the first `--` is the agent's,
+// untouched; everything before it is ours and parsed strictly, so a flag's
+// value is never read as a PR target and an agent flag in the wrong place is an
+// error that says where it goes, not a session started with the wrong PR.
 //
 // All of it pure, so test/cli.test.js checks it without starting a server;
 // server.js does the listening and term.js does the drawing.
@@ -32,9 +34,16 @@ const OPTIONS = {
   verbose: { type: 'boolean', short: 'v', multiple: true },
 };
 
-export function usage() {
-  return `usage: prcoder [<pr>] [--port <n>] [--no-open] [--queue <file>] [-v] [--agent <name>] [-- <agent args>]
+// The command each word means; `open` when there is none. No prototype, or
+// `prcoder constructor` would be a command.
+const COMMANDS = { __proto__: null, open: 'open', new: 'new', gh: 'gh', github: 'gh' };
 
+export function usage() {
+  return `usage: prcoder [open|new] [<pr>] [--port <n>] [--no-open] [--queue <file>] [-v] [--agent <name>] [-- <agent args>]
+
+  open             the default: open the prcoder already running here, or start one
+  new              start one even if another is running
+  gh, github       open the pull request on GitHub, or a pushed branch's compare page, and exit
   <pr>             a pull request number, URL or branch (default: the current branch's)
   --port <n>       listen on this port for this run          env PRCODER_PORT
   --no-open        print the URL, don't open a browser        env PRCODER_NO_OPEN=1
@@ -44,7 +53,7 @@ export function usage() {
   -h, --help       -V, --version
 
 Everything after -- goes to the agent untouched:
-  prcoder 42 --port 4000 -- --effort high --model fable
+  prcoder open 42 --port 4000 -- --effort high --model fable
 
 PRCODER_OPEN=<cmd> opens the URL with a command of your own instead of the platform's.`;
 }
@@ -66,8 +75,11 @@ export function parseCli(argv) {
     if (e.code === 'ERR_PARSE_ARGS_INVALID_OPTION_VALUE') throw new Error(e.message);
     throw e;
   }
-  if (positionals.length > 1) {
-    throw new Error(`unexpected argument ${positionals[1]}; one pull request at most, and flags for the agent go after --`);
+  const [word, ...targets] = positionals;
+  const command = word === undefined ? 'open' : COMMANDS[word];
+  if (!command) throw new Error(`unknown command ${word}; to open a pull request: prcoder open ${word}`);
+  if (targets.length > 1) {
+    throw new Error(`unexpected argument ${targets[1]}; one pull request at most, and flags for the agent go after --`);
   }
   if (!AGENTS.includes(values.agent)) throw new Error(`unknown agent ${values.agent}; supported: ${AGENTS.join(', ')}`);
   const port = values.port === undefined ? undefined : Number(values.port);
@@ -76,7 +88,8 @@ export function parseCli(argv) {
   }
   if (values.queue === '') throw new Error('--queue wants a file path');
   return {
-    target: positionals[0],
+    command,
+    target: targets[0],
     agent: values.agent,
     agentArgs,
     port,
@@ -155,7 +168,7 @@ export function statusLines(s, u = {}) {
     // the clock on every number above while the socket stays open and the count
     // keeps cheerfully saying `1 tab`.
     row('serving', u.local, u.tabs ? `${u.tabs} tab${u.tabs > 1 ? 's' : ''}` : 'no tab open',
-      ago(u.age), 'q quit · r refresh · v verbose · o open'),
+      ago(u.age), 'q quit · r refresh · v verbose · o open · g github'),
     u.moved && row('', u.moved),
   ].filter(Boolean);
 }

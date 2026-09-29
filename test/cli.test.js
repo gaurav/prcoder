@@ -4,17 +4,21 @@ import { createRequire } from 'node:module';
 import { parseCli, usage, AGENTS, VERSION, portFor, portCandidates, PORT_BASE, PORT_SPAN, statusLines, ago, queueSummary, quitRisks } from '../cli.js';
 import { queueChanges } from '../queue.js';
 
-test('a leading positional is our PR target, everything after -- is the agent\'s', () => {
+test('the PR target follows a command, everything after -- is the agent\'s', () => {
   const none = parseCli([]);
+  assert.equal(none.command, 'open');
   assert.equal(none.target, undefined);
   assert.deepEqual(none.agentArgs, []);
   assert.equal(none.agent, 'claude');
   assert.equal(none.verbose, 0);
-  assert.equal(parseCli(['123']).target, '123');
-  const both = parseCli(['123', '--', '--model', 'opus']);
+  assert.equal(parseCli(['open', '123']).target, '123');
+  assert.deepEqual([parseCli(['new', 'main']).command, parseCli(['new', 'main']).target], ['new', 'main']);
+  assert.equal(parseCli(['gh']).command, 'gh');
+  assert.deepEqual([parseCli(['github', '7']).command, parseCli(['github', '7']).target], ['gh', '7']);
+  const both = parseCli(['open', '123', '--', '--model', 'opus']);
   assert.equal(both.target, '123');
   assert.deepEqual(both.agentArgs, ['--model', 'opus']);
-  assert.deepEqual(parseCli(['42', '--']).agentArgs, []);
+  assert.deepEqual(parseCli(['open', '42', '--']).agentArgs, []);
   assert.deepEqual(parseCli(['--', '-r']).agentArgs, ['-r']);
   // Only the first -- is ours; a second one is the agent's to interpret.
   assert.deepEqual(parseCli(['--', 'a', '--', 'b']).agentArgs, ['a', '--', 'b']);
@@ -32,7 +36,7 @@ test('flag values are never read as a PR target', () => {
   // An agent flag before -- is refused rather than guessed at, and the
   // message says where it goes.
   assert.throws(() => parseCli(['--effort', 'high']), /after --/);
-  assert.throws(() => parseCli(['42', '--effort', 'high']), /after --/);
+  assert.throws(() => parseCli(['open', '42', '--effort', 'high']), /after --/);
   assert.throws(() => parseCli(['-r']), /after --/);
 });
 
@@ -52,8 +56,16 @@ test('bad input is an error that names the problem', () => {
   assert.throws(() => parseCli(['--port']), /argument missing/);
   assert.throws(() => parseCli(['--port', 'abc']), /--port/);
   assert.throws(() => parseCli(['--agent', 'gpt']), /supported: claude/);
-  assert.throws(() => parseCli(['123', '456']), /456/);
+  assert.throws(() => parseCli(['open', '123', '456']), /456/);
   assert.throws(() => parseCli(['--queue', '']), /--queue wants a file path/);
+});
+
+// The PR used to come first. A branch is a valid target, so a word there that
+// is not a command is the old form, and the error says what it is now -- not a
+// guess at whether `prcoder open` meant a branch called open.
+test('a PR where the command goes is an error that shows the new form', () => {
+  assert.throws(() => parseCli(['123']), /unknown command 123; to open a pull request: prcoder open 123/);
+  assert.throws(() => parseCli(['constructor']), /unknown command constructor/);
 });
 
 // --help is meant to replace reading the README, so every flag and every
@@ -208,11 +220,15 @@ test('prcoder --help, --version and a bad flag exit before anything starts', asy
   assert.equal(version.code, 0);
   assert.equal(version.stdout.trim(), VERSION);
 
-  const bad = await run('42', '--effort', 'high');
+  const bad = await run('open', '42', '--effort', 'high');
   assert.equal(bad.code, 2);
   assert.equal(bad.stdout, '');
   assert.match(bad.stderr, /^prcoder: unknown option --effort; flags for the agent go after --/);
   assert.match(bad.stderr, /\nusage: prcoder /);
+
+  const old = await run('42');
+  assert.equal(old.code, 2);
+  assert.match(old.stderr, /prcoder open 42/);
 
   // The old name is refused, not ignored: ignored, it would start the real agent.
   // Refused before the server starts, so this exits rather than listening.
@@ -221,6 +237,87 @@ test('prcoder --help, --version and a bad flag exit before anything starts', asy
   const stale = await runIn(env, '--no-open');
   assert.equal(stale.code, 2);
   assert.match(stale.stderr, /^prcoder: CLAUDE_BIN is now PRCODER_AGENT_BIN/);
+});
+
+// `prcoder open` hands you the instance already serving this directory and
+// target, and exits. Against a stand-in answering /api/whoami, so nothing starts
+// -- a mismatch would, and the 15s timeout would be the failure.
+test('prcoder open with this repo already running opens that one and exits', async () => {
+  const http = await import('node:http');
+  const { execFile } = await import('node:child_process');
+  const { promisify } = await import('node:util');
+  const cwd = new URL('..', import.meta.url);
+  const repo = (await import('node:url')).fileURLToPath(cwd).replace(/\/$/, '');
+  const fake = http.createServer((_, res) => res.end(JSON.stringify({ prcoder: true, repo, target: null })));
+  await new Promise((r) => fake.listen(0, '127.0.0.1', r));
+  const port = String(fake.address().port);
+  try {
+    const { stdout } = await promisify(execFile)('node', ['server.js', '--port', port, '--no-open', '--', '-r'],
+      { cwd, timeout: 15_000 });
+    assert.match(stdout, new RegExp(`already running for .* at http://localhost:${port}`));
+    assert.match(stdout, /agent flags after -- were not used/);
+  } finally {
+    fake.close();
+  }
+});
+
+// `prcoder gh` end to end, in a scratch repo: real git, and a gh stub that has
+// a PR only when PR_URL is set. The four answers are the PR, the compare page
+// once origin has the branch, and a refusal for a branch origin has never had
+// or a detached HEAD, where a compare page would show nothing.
+test('prcoder gh opens the PR, or the compare page for a pushed branch', { skip: process.platform === 'win32' && 'the gh stub is a sh script' }, async () => {
+  const fs = await import('node:fs/promises');
+  const os = await import('node:os');
+  const path = await import('node:path');
+  const { execFile } = await import('node:child_process');
+  const { promisify } = await import('node:util');
+  const exec = promisify(execFile);
+  const server = new URL('../server.js', import.meta.url).pathname;
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'prcoder-gh-'));
+  const bin = path.join(dir, 'bin');
+  const work = path.join(dir, 'work');
+  await fs.mkdir(bin);
+  await fs.mkdir(work);
+  await fs.writeFile(path.join(bin, 'gh'), `#!/bin/sh
+case "$1 $2" in
+  "pr view") [ -n "$PR_URL" ] && echo "{\\"url\\":\\"$PR_URL\\"}" && exit 0
+             echo 'no pull requests found for branch "feat"' >&2; exit 1 ;;
+  "repo view") echo '{"defaultBranchRef":{"name":"main"},"nameWithOwner":"o/r"}' ;;
+  *) exit 1 ;;
+esac
+`, { mode: 0o755 });
+  const git = (...a) => exec('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...a], { cwd: work });
+  await git('init', '-q', '-b', 'main');
+  await git('commit', '-q', '--allow-empty', '-m', 'x');
+  await git('checkout', '-q', '-b', 'feat');
+  await git('remote', 'add', 'origin', 'git@github.com:me/r.git');
+  const env = { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}` };
+  delete env.CLAUDE_BIN;
+  const gh = (extra = {}) => exec('node', [server, 'gh', '--no-open'], { cwd: work, env: { ...env, ...extra }, timeout: 15_000 })
+    .then((r) => ({ code: 0, ...r }), (e) => ({ code: e.code, stdout: e.stdout, stderr: e.stderr }));
+  try {
+    const pr = await gh({ PR_URL: 'https://github.com/o/r/pull/7' });
+    assert.equal(pr.code, 0);
+    assert.equal(pr.stdout.trim(), 'https://github.com/o/r/pull/7');
+
+    const unpushed = await gh();
+    assert.equal(unpushed.code, 1);
+    assert.match(unpushed.stderr, /feat is not on GitHub yet/);
+    assert.doesNotMatch(unpushed.stdout, /compare/);
+
+    await git('update-ref', 'refs/remotes/origin/feat', 'HEAD');
+    const pushed = await gh();
+    assert.equal(pushed.code, 0);
+    assert.match(pushed.stdout, /no pull request for feat; opening the compare page/);
+    assert.match(pushed.stdout, /^https:\/\/github\.com\/o\/r\/compare\/main\.\.\.me:feat\?expand=1$/m);
+
+    await git('checkout', '-q', '--detach');
+    const detached = await gh();
+    assert.equal(detached.code, 1);
+    assert.match(detached.stderr, /no branch to compare/);
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
 });
 
 // Quitting prints Local rather than asking about it: the queue is on disk, so

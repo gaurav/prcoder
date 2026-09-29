@@ -10,14 +10,17 @@ npm install
 npm link                   # once, to run it from any repo; edits here go live
 
 prcoder                    # the PR for the current branch
-prcoder 123                # a specific PR
-prcoder <pr-url>           # any PR, anywhere
+prcoder open 123           # a specific PR
+prcoder open <pr-url>      # any PR, anywhere
+prcoder new                # a second one, even if one is already running
+prcoder gh [123]           # open the PR on GitHub instead, and exit
 prcoder -- --model opus    # ...with flags for the Claude session, after --
 prcoder --help             # prcoder's own flags
 ```
 
 It prints the URL to open, and opens it for you unless `--no-open` (or `PRCODER_NO_OPEN`) is set.
-Each repo keeps the same port, and so the same URL, across runs.
+Each repo keeps the same port, and so the same URL, across runs. Run it again while it is running
+and it opens the one you have rather than starting another.
 
 It needs Node 22.18 or later in the 22 line, or 24.2 or later -- on older versions it exits at once
 without a word, because it starts only under `import.meta.main` -- and the
@@ -48,9 +51,10 @@ every control does.
 
 ## Arguments and settings
 
-The first argument, if it isn't a flag, is prcoder's: the PR to open. Everything after `--` is
-handed to `claude` untouched, so `prcoder 123 -- --effort high --model opus` opens PR 123 with that
-session. Before `--` a flag is prcoder's, and one it does not know is an error that says where it
+The first argument, if it isn't a flag, is a command -- `open` when there is none -- and the one
+after it is the PR to open. The PR never comes first: a branch name is a valid PR, so a word there
+could not be told from a command. Everything after `--` is handed to `claude` untouched, so
+`prcoder open 123 -- --effort high --model opus` opens PR 123 with that session. Before `--` a flag is prcoder's, and one it does not know is an error that says where it
 goes, rather than a guess at which of the two it was for. `prcoder --help` lists the flags.
 
 Most settings are a flag with an environment variable of the same meaning; the flag wins when both
@@ -93,10 +97,10 @@ prcoder  gaurav/prcoder   initial-implementation → main   2 unpushed · 8 unco
 PR #1    A browser workspace around a live Claude Code session
          https://github.com/gaurav/prcoder/pull/1
 queue    4 local · 1 done
-serving  http://localhost:17455   1 tab   q quit · r refresh · v verbose · o open
+serving  http://localhost:17455   1 tab   q quit · r refresh · v verbose · o open · g github
 ```
 
-`r` refreshes it, `v` cycles how much the log says, `o` reopens the browser, and `q` or Ctrl-C
+`r` refreshes it, `v` cycles how much the log says, `o` reopens the browser, `g` opens the PR on GitHub, and `q` or Ctrl-C
 quits, asking first if that would lose anything. [docs/Terminal.md](docs/Terminal.md) has how
 fresh the block is, what each verbosity level adds, and what a busy port looks like.
 

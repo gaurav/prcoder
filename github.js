@@ -95,8 +95,11 @@ async function viewPr(cwd, target, fields) {
   }
 }
 
-/** Just enough to know whether the PR moved, without the GraphQL viewed pass. */
-export const prHeads = (cwd, target) => viewPr(cwd, target, 'number,headRefOid,updatedAt,state');
+/**
+ * Just enough to know whether the PR moved, without the GraphQL viewed pass --
+ * and its url, which is all `prcoder gh` needs.
+ */
+export const prHeads = (cwd, target) => viewPr(cwd, target, 'number,headRefOid,updatedAt,state,url');
 
 /**
  * A description with LF line endings. One saved from github.com's editor comes

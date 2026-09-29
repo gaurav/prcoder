@@ -44,7 +44,7 @@ if (state?.state !== 'OPEN') {
 
 await free(port);
 const out = await openShots(shotsRoot, label);
-const server = spawn('node', ['server.js', String(FIXTURE)], { cwd: repo, env: serverEnv(port), stdio: 'ignore' });
+const server = spawn('node', ['server.js', 'new', String(FIXTURE)], { cwd: repo, env: serverEnv(port), stdio: 'ignore' });
 killOnExit(server);
 console.log('pr:     ', `pinned to the fixture, #${FIXTURE}`);
 

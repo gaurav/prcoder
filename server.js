@@ -241,7 +241,8 @@ const routes = {
   // Unlocked only because poll() takes the lock itself.
   'GET /api/status': poll,
 
-  'GET /api/whoami': () => ({ prcoder: true, repo, branch: last?.branch ?? null,
+  // `target` is what `prcoder open` matches on before handing you this one.
+  'GET /api/whoami': () => ({ prcoder: true, repo, branch: last?.branch ?? null, target: target ?? null,
     nameWithOwner: info?.nameWithOwner ?? null }),
 
   'GET /api/prs': () => listPrs(repo),
@@ -566,6 +567,16 @@ const wss = new WebSocketServer({ server, path: '/pty' }).on('error', () => {}).
   });
 });
 
+/** What answers on `port` at /api/whoami, or null when nothing does. */
+async function whoami(port) {
+  try {
+    const res = await fetch(`http://localhost:${port}/api/whoami`, { signal: AbortSignal.timeout(2000) });
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Who has the port we wanted. Worth asking rather than guessing: the likely
  * cause is a second prcoder in the same repo, and then the useful answer is not
@@ -574,19 +585,36 @@ const wss = new WebSocketServer({ server, path: '/pty' }).on('error', () => {}).
  * to read differently or you go hunting for a window that does not exist.
  */
 async function whoHasPort(wanted) {
-  try {
-    const res = await fetch(`http://localhost:${wanted}/api/whoami`,
-      { signal: AbortSignal.timeout(2000) });
-    const other = await res.json();
-    if (!other?.prcoder) return 'something that is not prcoder';
-    // The path only when it is not ours. Two worktrees of one repo share a
-    // nameWithOwner and are the collision worth spelling out; a second prcoder
-    // in *this* directory is the common case, and there the path says nothing.
-    return `another prcoder on ${other.nameWithOwner ?? 'an unknown repo'}` +
-      `${other.branch ? ` (${other.branch})` : ''}${other.repo === repo ? '' : ` in ${other.repo}`}`;
-  } catch {
-    return 'something that is not answering as prcoder';
-  }
+  const other = await whoami(wanted);
+  if (!other) return 'something that is not answering as prcoder';
+  if (!other.prcoder) return 'something that is not prcoder';
+  // The path only when it is not ours. Two worktrees of one repo share a
+  // nameWithOwner and are the collision worth spelling out; a second prcoder
+  // in *this* directory is the common case, and there the path says nothing.
+  return `another prcoder on ${other.nameWithOwner ?? 'an unknown repo'}` +
+    `${other.branch ? ` (${other.branch})` : ''}${other.repo === repo ? '' : ` in ${other.repo}`}`;
+}
+
+/**
+ * `prcoder open`: the prcoder already serving this repo and this target, opened
+ * rather than started again -- a second one is a second Claude session on the
+ * same working tree, on a port that is not the bookmark. True when there was
+ * one.
+ *
+ * ponytail: only the recorded (or pinned) port is asked, and the target is
+ * compared as typed. One that moved port, or holds the same PR spelled as a URL
+ * rather than a number, is missed, and a new one starts beside it with the
+ * moved-port note. #97 has what would find both.
+ */
+async function reopen() {
+  const port = pinnedPort || await readPort(repo);
+  const other = port && await whoami(port);
+  if (!other?.prcoder || other.repo !== repo || other.target !== (target ?? null)) return false;
+  urls = { local: `http://localhost:${port}` };
+  console.log(`prcoder: already running for ${repo} at ${urls.local}`);
+  if (agentArgs.length) console.log('the agent flags after -- were not used; prcoder new starts one with them');
+  if (!noOpen) openBrowser();
+  return true;
 }
 
 async function ready() {
@@ -625,8 +653,7 @@ async function ready() {
 // ponytail: the platform's own opener, not a dependency. --no-open (or
 // PRCODER_NO_OPEN=1) to skip; PRCODER_OPEN to run your own command with the URL
 // appended, which is how a browser is told "a new window, not a tab".
-function openBrowser() {
-  const url = urls.local;
+function openBrowser(url = urls.local) {
   const opener = { darwin: 'open', win32: 'start' }[process.platform] || 'xdg-open';
   const custom = process.env.PRCODER_OPEN;
   const child = custom
@@ -740,6 +767,76 @@ function askToQuit() {
   term.confirm(`quit? ${risk.join('; ')}  [y/N] `, quit);
 }
 
+/**
+ * Where this branch's work is on GitHub: the PR, or with none the compare page
+ * the Create button would open. Not pushed first, as that button does -- this
+ * only looks. A branch origin has never had is refused rather than opened,
+ * because its compare page says only "nothing to compare". Whether origin has
+ * it is git's memory (trackingHead), so a push from elsewhere needs a fetch.
+ */
+async function githubUrl() {
+  const url = (await prHeads(repo, target))?.url;
+  if (url) return url;
+  const branch = await currentBranch(repo);
+  if (!branch) throw new Error('no pull request, and no branch to compare');
+  if (!await trackingHead(repo, branch)) {
+    throw new Error(`no pull request, and ${branch} is not on GitHub yet: push it, or use Create in the pane`);
+  }
+  const { nameWithOwner, defaultBranch } = await repoFacts();
+  console.log(`no pull request for ${branch}; opening the compare page`);
+  return compareUrl(nameWithOwner, defaultBranch, branch, await originOwner(repo));
+}
+
+/** `prcoder gh`: the URL, printed and opened, and no server. */
+async function openGithub() {
+  try {
+    const url = await githubUrl();
+    console.log(url);
+    if (!noOpen) openBrowser(url);
+  } catch (e) {
+    console.error(`prcoder: ${e.message}`);
+    process.exitCode = 1;
+  }
+}
+
+/** Everything that starts this instance, once main has settled that it should. */
+async function start() {
+  // Before anything can print: init() is what routes console through the log,
+  // and a line written ahead of it would sit above the block and stay there.
+  term.init();
+  term.keys({
+    quit: askToQuit,
+    key: (ch) => {
+      if (ch === 'v') term.cycleVerbosity();
+      else if (ch === 'o') openBrowser();
+      // The PR already in hand first: a keypress that shells out can hang.
+      else if (ch === 'g') {
+        Promise.resolve(pr?.url ?? githubUrl()).then(openBrowser, (e) => console.error('github:', e.message));
+      }
+      // Serialised like any route: a poll is git and gh calls, and a keypress
+      // is no reason to run them alongside a checkout.
+      else if (ch === 'r') {
+        term.verbose('refreshing…');
+        serial(() => status({ full: true })).catch((e) => console.error('refresh:', e.message));
+      }
+    },
+  });
+  // The block is repainted by the browser's poll, which stops when its tab is
+  // hidden. This does not refresh anything -- it redraws what is already known
+  // so the age above stays honest, and term.status() writes nothing at all
+  // while the rendered lines are unchanged.
+  setInterval(repaint, 30_000).unref();
+
+  // By package: a missing Prism is eleven files and one fix.
+  const missing = new Set(missingVendor().map((f) => f.split('/').slice(0, f.startsWith('@') ? 2 : 1).join('/')));
+  if (missing.size) console.error(`not in node_modules, so npm install first: ${[...missing].join(', ')}`);
+
+  // ready() needs the port we meant to be on, so it is settled before the
+  // socket is up rather than recomputed from the path afterwards.
+  wanted = await listenOnRepoPort();
+  await ready();
+}
+
 if (import.meta.main) {
   let cli;
   try {
@@ -765,34 +862,6 @@ if (import.meta.main) {
   useQueueFile(cli.queue ?? process.env.PRCODER_QUEUE);
   if (cli.verbose) term.setVerbosity(cli.verbose);
 
-  // Before anything can print: init() is what routes console through the log,
-  // and a line written ahead of it would sit above the block and stay there.
-  term.init();
-  term.keys({
-    quit: askToQuit,
-    key: (ch) => {
-      if (ch === 'v') term.cycleVerbosity();
-      else if (ch === 'o') openBrowser();
-      // Serialised like any route: a poll is git and gh calls, and a keypress
-      // is no reason to run them alongside a checkout.
-      else if (ch === 'r') {
-        term.verbose('refreshing…');
-        serial(() => status({ full: true })).catch((e) => console.error('refresh:', e.message));
-      }
-    },
-  });
-  // The block is repainted by the browser's poll, which stops when its tab is
-  // hidden. This does not refresh anything -- it redraws what is already known
-  // so the age above stays honest, and term.status() writes nothing at all
-  // while the rendered lines are unchanged.
-  setInterval(repaint, 30_000).unref();
-
-  // By package: a missing Prism is eleven files and one fix.
-  const missing = new Set(missingVendor().map((f) => f.split('/').slice(0, f.startsWith('@') ? 2 : 1).join('/')));
-  if (missing.size) console.error(`not in node_modules, so npm install first: ${[...missing].join(', ')}`);
-
-  // ready() needs the port we meant to be on, so it is settled before the
-  // socket is up rather than recomputed from the path afterwards.
-  wanted = await listenOnRepoPort();
-  await ready();
+  if (cli.command === 'gh') await openGithub();
+  else if (!(cli.command === 'open' && await reopen())) await start();
 }
