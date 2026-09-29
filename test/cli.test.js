@@ -236,6 +236,7 @@ test('quitting lists what is on Local, with links, and nothing when it is empty'
   assert.deepEqual(lines.slice(1).map((l) => l.trim()),
     ['Fix the flaky test  https://github.com/o/r/issues/91', 'plain']);
   assert.equal(queueSummary([{ text: 'one' }])[0], 'queue    1 item on Local, in .prcoder/queue.json:');
+  assert.equal(queueSummary([{ text: 'one' }], '/work/q.json')[0], 'queue    1 item on Local, in /work/q.json:');
 });
 
 // The y/N is for what quitting costs, and says what `y` does to a session.

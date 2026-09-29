@@ -40,8 +40,8 @@ with nothing to lose it quits on one press. A second Ctrl-C at the prompt quits 
 nothing here can make prcoder unkillable. The Quit button on the Claude pane, once Claude has
 exited, is the same quit and asks the same question in the browser.
 
-The queue is not asked about, because quitting leaves it in `.prcoder/queue.json`. Instead, every
-item still on Local is printed first, with its issue's link where it has one, so the list is in
+The queue is not asked about, because quitting leaves it in `.prcoder/queue.json` (or the file
+`--queue` named). Instead, every item still on Local is printed first, under the name of that file, with its issue's link where it has one, so the list is in
 the scrollback after prcoder has gone: to copy something into an issue, or to see what to start it
 again for.
 

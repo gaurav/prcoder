@@ -165,13 +165,14 @@ export function statusLines(s, u = {}) {
  * issue's link where it has one, so they are in the scrollback after prcoder
  * has gone -- to copy into an issue, or to see what to restart it for.
  * Quitting loses none of them, since the queue is on disk, so this is shown
- * rather than asked about (quitRisks). An empty Local prints nothing.
+ * rather than asked about (quitRisks). An empty Local prints nothing. `file`
+ * is the queue's file when --queue moved it, since that is where to look next.
  */
-export function queueSummary(items = []) {
+export function queueSummary(items = [], file = '.prcoder/queue.json') {
   const q = counts(items);
   if (!q.local) return [];
   const rest = [q.done && `${q.done} completed`, q.deleted && `${q.deleted} deleted`].filter(Boolean);
-  const head = `${'queue'.padEnd(8)} ${q.local} item${q.local > 1 ? 's' : ''} on Local, in .prcoder/queue.json` +
+  const head = `${'queue'.padEnd(8)} ${q.local} item${q.local > 1 ? 's' : ''} on Local, in ${file}` +
     `${rest.length ? ` (and ${rest.join(', ')})` : ''}:`;
   return [head, ...items.filter(TABS.local).map((i) => `${''.padEnd(8)}   ${i.text}${i.issueUrl ? `  ${i.issueUrl}` : ''}`)];
 }

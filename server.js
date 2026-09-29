@@ -719,7 +719,7 @@ function quitRisk() {
 
 /** Print what is on Local. One write, not one per item: every log line erases and repaints the block. */
 function listQueue() {
-  const listed = queueSummary(last?.queue ?? []);
+  const listed = queueSummary(last?.queue ?? [], movedQueue() ?? undefined);
   if (listed.length) console.log(listed.join('\n'));
 }
 
