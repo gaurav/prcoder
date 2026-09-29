@@ -1114,6 +1114,8 @@ test('when the agent exits, starting it again reconnects with the chosen setting
   await bar.waitFor({ state: 'visible' });
   await p.fill('#term-exit [name=model]', 'opus');
   await p.selectOption('#term-exit [name=effort]', 'high');
+  assert.equal(await p.isChecked('#term-exit [name=continue]'), false, 'continue ticked by default');
+  await p.check('#term-exit [name=continue]');
   await p.click('#term-exit button:not([type])');
   // Hidden on the click, before the new socket reaches the mock -- so wait on the socket.
   for (let i = 0; urls.length < 2 && i < 100; i++) await p.waitForTimeout(50);

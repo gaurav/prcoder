@@ -155,10 +155,11 @@ always has. Links Claude prints are clickable. The tab's favicon is blue while C
 and green when it is idle, read from the timing of the PTY's output (Design.md says why only the
 timing).
 
-When Claude exits, a bar under its last output offers to start it again -- continuing the same
-conversation by default (`--continue`), and optionally with a different model or effort, which win
-over any given after `--` on prcoder's command line. Or quit prcoder from there, which asks what
-the terminal's quit asks ([Terminal.md](Terminal.md)).
+When Claude exits, a bar under its last output offers to start it again, optionally with a
+different model or effort, which win over any given after `--` on prcoder's command line, and
+optionally continuing the same conversation (`--continue`). That is unticked by default: starting
+again is more often a deliberate switch of model than a slip. Or quit prcoder from there, which
+asks what the terminal's quit asks ([Terminal.md](Terminal.md)).
 
 ## Queue
 
