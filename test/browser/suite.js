@@ -49,6 +49,12 @@ import { bucket } from '../../files.js';
 import { rollup } from '../../github.js';
 import { firefoxEnv } from '../../tools/driver.mjs';
 
+// If a socket ever gets past the mock, the in-process server spawns this (read
+// at connect time) rather than a real `claude` in this repo -- which is what the
+// first draft of the exit bar's test did, over a glob that missed a query
+// string (2026-09-23).
+process.env.PRCODER_AGENT_BIN = '/usr/bin/false';
+
 const engineName = process.env.PRCODER_TEST_BROWSER;
 let engine;
 try { engine = (await import('playwright'))[engineName]; } catch { /* not installed */ }
@@ -134,10 +140,13 @@ const posted = [];
 // own -- Prism loads once per page -- can open a second one. `prs` is the
 // switcher's list, empty unless a test is about it, and null for a fetch that
 // fails; `st` and `ready` are for a page with no pull request, which has no
-// title to wait on.
-async function newPage({ prs = [], st = status, ready = '#pr-head .pr-title' } = {}) {
+// title to wait on. `pty` is the mock socket's handler, for a test that needs
+// the agent to do something. A regex, not `**/pty`: a glob has to match the
+// whole URL, so the exit bar's `/pty?model=...` slipped past it to the real
+// server.
+async function newPage({ prs = [], st = status, ready = '#pr-head .pr-title', pty = () => {} } = {}) {
   const p = await browser.newPage();
-  await p.routeWebSocket('**/pty', () => {});
+  await p.routeWebSocket(/\/pty(\?|$)/, pty);
   await p.route('**/api/status', (r) => r.fulfill({ json: st }));
   await p.route('**/api/prs', (r) => (prs ? r.fulfill({ json: prs }) : r.abort()));
   await p.route('**/api/queue', (r) => r.fulfill({ json: [] }));
@@ -829,7 +838,7 @@ test('▶ with Claude disconnected types nothing and leaves the item active', { 
   const fresh = await newPage();
   const queue = [{ text: 'send me', done: false, issue: null, deleted: false }];
   const puts = [];
-  await fresh.routeWebSocket('**/pty', (ws) => ws.close());
+  await fresh.routeWebSocket(/\/pty(\?|$)/, (ws) => ws.close());
   await fresh.route('**/api/status', (r) => r.fulfill({ json: { ...status, queue } }));
   await fresh.route('**/api/queue', (r) => {
     if (r.request().method() === 'PUT') puts.push(r.request().postDataJSON());
@@ -837,7 +846,7 @@ test('▶ with Claude disconnected types nothing and leaves the item active', { 
   });
   await fresh.reload();
   await fresh.waitForSelector('#queue-body .item');
-  await fresh.waitForFunction(() => document.getElementById('term-host').textContent.includes('claude exited'));
+  await fresh.waitForFunction(() => document.getElementById('term-host').textContent.includes('coding agent exited'));
   await fresh.locator('#queue-body .item button[title^="type into Claude"]').click();
   await fresh.waitForFunction(() => document.getElementById('toast').textContent.includes('not connected'));
   assert.deepEqual(puts, []);
@@ -1196,5 +1205,54 @@ test('Create PR stays disabled through a poll while the first click is pushing',
   release();
   await p.locator('#pr-head .pr-links button.primary:not([disabled])').waitFor();
   assert.equal(asked, 1);
+  await p.close();
+});
+
+// A setting sessionArgs will not take closes the socket before any spawn, so the
+// terminal has to say that rather than that an agent exited.
+test('a refused start says why', { skip }, async () => {
+  const p = await newPage({ pty: (ws) => ws.close({ code: 1008, reason: 'bad session settings' }) });
+  await p.locator('#term-exit').waitFor({ state: 'visible' });
+  await p.locator('#term-host .xterm-rows', { hasText: '[refused: bad session settings]' }).waitFor();
+  await p.close();
+});
+
+// The bar is the one way back once the agent is gone, so what it sends is what
+// matters: starting the agent again is a new socket carrying the settings
+// (sessionArgs in server.js turns them into flags), and Quit asks before a quit
+// that costs something. The mock closes each socket the way an exiting agent
+// does.
+test('when the agent exits, starting it again reconnects with the chosen settings, and Quit asks first', { skip }, async () => {
+  const urls = [];
+  let second;
+  const p = await newPage({ pty: (ws) => {
+    urls.push(new URL(ws.url()).search);
+    if (urls.length === 1) ws.close();
+    else second = ws;
+  } });
+  const bar = p.locator('#term-exit');
+  await bar.waitFor({ state: 'visible' });
+  await p.fill('#term-exit [name=model]', 'opus');
+  await p.selectOption('#term-exit [name=effort]', 'high');
+  assert.equal(await p.isChecked('#term-exit [name=continue]'), false, 'continue ticked by default');
+  await p.check('#term-exit [name=continue]');
+  await p.click('#term-exit button:not([type])');
+  // Hidden on the click, before the new socket reaches the mock -- so wait on the socket.
+  for (let i = 0; urls.length < 2 && i < 100; i++) await p.waitForTimeout(50);
+  assert.equal(await bar.isHidden(), true);
+  assert.deepEqual(urls, ['', '?model=opus&effort=high&continue=on']);
+
+  second.close();
+  await bar.waitFor({ state: 'visible' });
+  const asked = [];
+  await p.route('**/api/quit', (r) => {
+    const body = r.request().postDataJSON();
+    asked.push(body);
+    return r.fulfill({ json: body.force ? { quit: true } : { risk: ['2 uncommitted files'] } });
+  });
+  p.once('dialog', (d) => { asked.push(d.message()); d.accept(); });
+  await p.click('#term-quit');
+  await bar.getByText('prcoder has quit').waitFor();
+  assert.deepEqual(asked, [{}, 'Quit prcoder? 2 uncommitted files.', { force: true }]);
   await p.close();
 });

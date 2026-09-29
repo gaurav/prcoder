@@ -14,10 +14,9 @@ import { WebSocketServer } from 'ws';
 import { loadPr, prHeads, prBody, listPrs, issueLinks, lookupRef, setViewed, setBody, createIssue, fetchPatches, runCount } from './github.js';
 import { snapshot, currentBranch, repoInfo, prScope, compareUrl, originOwner, checkoutPr, pushBranch, remoteBranchHead, trackingHead, localPatch } from './git.js';
 import { bucket, fileUrl, fileViews } from './files.js';
-import { readPort, writePort, pick } from './store.js';
+import { readPort, writePort, pick, useQueueFile, movedQueue } from './store.js';
 import { readQueue, writeQueue, quote, issueUrl } from './queue.js';
-import { parseCli, usage, VERSION, portCandidates, statusLines } from './cli.js';
-import { counts } from './public/items.js';
+import { parseCli, usage, VERSION, portCandidates, statusLines, queueSummary, quitRisks } from './cli.js';
 import * as term from './term.js';
 import { toggleTask, refs, wholeRef, resolveRef } from './public/tasks.js';
 import { grammars } from './public/diff.js';
@@ -109,9 +108,9 @@ function decorateFiles(p) {
 }
 
 /**
- * Every queue write, and the copy of the queue askToQuit counts kept up with it.
+ * Every queue write, and the copy of the queue askToQuit lists kept up with it.
  * That copy is otherwise the last poll's, so an item filed as an issue a moment
- * before `q` was still counted as "only on this machine".
+ * before `q` was still listed as on Local.
  */
 async function saveQueue(items) {
   const saved = await writeQueue(repo, items, info?.nameWithOwner);
@@ -246,6 +245,19 @@ const routes = {
     nameWithOwner: info?.nameWithOwner ?? null }),
 
   'GET /api/prs': () => listPrs(repo),
+
+  // The exit panel's Quit button, asking what the terminal's q asks. Without
+  // `force`, a quit that would cost something only says what it would cost, so
+  // the page can put the same question to you there.
+  'POST /api/quit': ({ force } = {}) => {
+    const risk = quitRisk();
+    if (risk.length && !force) return { risk };
+    // Into the terminal's scrollback, as q does: the page is about to lose it.
+    listQueue();
+    // Deferred so the reply goes out first: process.exit doesn't wait for it.
+    setTimeout(quit, 100);
+    return { quit: true };
+  },
 
   /**
    * The issues the description mentions without closing, for the queue's Issues
@@ -510,12 +522,44 @@ export const server = http.createServer(async (req, res) => {
 // prompt know whether anyone is looking, and `ptys` is how a deliberate quit
 // takes the Claude sessions with it instead of orphaning them.
 const ptys = new Set();
+
+/**
+ * Pure: the /pty query string -> extra arguments for this `claude`, or null to
+ * refuse the socket. The exit panel's "Start coding agent again" sends it; a
+ * first open sends nothing and gets [].
+ *
+ * Allowlisted rather than passed through, because this is the page choosing a
+ * spawn's argv. A model has to be a name, not something starting with a dash:
+ * `--model --dangerously-skip-permissions` must not reach claude as two flags.
+ *
+ * The real spawn was driven once by hand (2026-09-23), against a stub that
+ * prints its argv: `[]` on the first open, then `[--continue --model opus
+ * --effort high]` after starting it again, and the server exiting 0 after Quit.
+ */
+const EFFORTS = new Set(['low', 'medium', 'high', 'xhigh', 'max']);
+export function sessionArgs(params) {
+  const model = params.get('model');
+  const effort = params.get('effort');
+  if (model && !/^\w[\w.:[\]-]*$/.test(model)) return null;
+  if (effort && !EFFORTS.has(effort)) return null;
+  return [
+    ...(params.has('continue') ? ['--continue'] : []),
+    ...(model ? ['--model', model] : []),
+    ...(effort ? ['--effort', effort] : []),
+  ];
+}
+
 const wss = new WebSocketServer({ server, path: '/pty' }).on('error', () => {}).on('connection', (ws, req) => {
   // Before the spawn, not after: the PTY is the thing being protected, and one
   // that has already started has already read the repo.
   if (!sameOrigin(req)) return ws.close(1008, 'cross-origin connection refused');
 
-  const pty = ptySpawn(process.env.PRCODER_AGENT_BIN || 'claude', agentArgs, {
+  const extra = sessionArgs(new URL(req.url, 'http://localhost').searchParams);
+  if (!extra) return ws.close(1008, 'bad session settings');
+
+  // After the agent's arguments from prcoder's command line (those after --),
+  // so a setting chosen in the page overrides one given there.
+  const pty = ptySpawn(process.env.PRCODER_AGENT_BIN || 'claude', [...agentArgs, ...extra], {
     name: 'xterm-256color',
     cols: 80,
     rows: 24,
@@ -607,6 +651,9 @@ async function ready() {
   if (pr) console.log(pr.url);
   console.log(url);
   if (urls.moved) console.error(urls.moved);
+  // Said, because nothing else would: the pane looks the same whichever file
+  // it is showing, and a forgotten PRCODER_QUEUE reads as a lost queue.
+  if (movedQueue()) console.log(`queue: ${movedQueue()}`);
   if (!noOpen) openBrowser();
 }
 
@@ -695,33 +742,35 @@ async function listenOnRepoPort() {
  * is a keypress that can hang.
  *
  * An empty list is not a question worth asking, so it is not asked: no tab open,
- * nothing left in the queue, nothing in the working tree that quitting could
- * lose.
+ * and nothing in the working tree only this machine has. The queue is not in
+ * it. Quitting leaves `.prcoder/queue.json` as it is, and a question about it
+ * read as if `y` would file the items as issues; what is still on Local is
+ * printed instead, first and either way, so it is in the scrollback to copy
+ * from once prcoder has gone.
  */
-/** The queue's outstanding items. Cached by the poll and by saveQueue, so no subprocess. */
-const localOnly = () => counts(last?.queue ?? []).local;
+function quitRisk() {
+  return quitRisks({ tabs: wss.clients.size, ahead: last?.ahead, dirty: last?.dirtyFiles?.length });
+}
+
+/** Print what is on Local. One write, not one per item: every log line erases and repaints the block. */
+function listQueue() {
+  const listed = queueSummary(last?.queue ?? [], movedQueue() ?? undefined);
+  if (listed.length) console.log(listed.join('\n'));
+}
+
+// Kills the PTYs itself rather than leaving that to the close handlers:
+// process.exit doesn't wait for them, and an orphaned `claude` outlives the
+// terminal it was started from.
+function quit() {
+  for (const pty of ptys) pty.kill();
+  wss.close();
+  server.close();
+  process.exit(0);
+}
 
 function askToQuit() {
-  const risk = [
-    wss.clients.size && (wss.clients.size > 1
-      ? `${wss.clients.size} browser tabs — their Claude sessions end`
-      : '1 browser tab — the Claude session ends'),
-    last?.ahead && `${last.ahead} unpushed commit${last.ahead > 1 ? 's' : ''}`,
-    last?.dirtyFiles?.length && `${last.dirtyFiles.length} uncommitted file${last.dirtyFiles.length > 1 ? 's' : ''}`,
-    // The queue is what you meant to finish this time round, and it lives only
-    // on this machine: an item still in it never became an issue, and nobody
-    // working anywhere else will ever see it.
-    localOnly() && `${localOnly()} queue item${localOnly() > 1 ? 's' : ''} only on this machine — file them as issues to keep them past it`,
-  ].filter(Boolean);
-  // Killed here rather than left to the close handlers: process.exit does not
-  // wait for them, and an orphaned `claude` outlives the terminal it was
-  // started from.
-  const quit = () => {
-    for (const pty of ptys) pty.kill();
-    wss.close();
-    server.close();
-    process.exit(0);
-  };
+  listQueue();
+  const risk = quitRisk();
   if (!risk.length) return quit();
   term.confirm(`quit? ${risk.join('; ')}  [y/N] `, quit);
 }
@@ -747,6 +796,8 @@ if (import.meta.main) {
   // Into the variables, never the env: see pinnedPort.
   if (cli.port) pinnedPort = cli.port;
   if (cli.noOpen) noOpen = true;
+  // Into the store, not the env, for the same reason: see useQueueFile.
+  useQueueFile(cli.queue ?? process.env.PRCODER_QUEUE);
   if (cli.verbose) term.setVerbosity(cli.verbose);
 
   // Before anything can print: init() is what routes console through the log,

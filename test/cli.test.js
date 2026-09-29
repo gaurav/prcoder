@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
-import { parseCli, usage, AGENTS, VERSION, portFor, portCandidates, PORT_BASE, PORT_SPAN, statusLines, ago } from '../cli.js';
+import { parseCli, usage, AGENTS, VERSION, portFor, portCandidates, PORT_BASE, PORT_SPAN, statusLines, ago, queueSummary, quitRisks } from '../cli.js';
 import { queueChanges } from '../queue.js';
 
 test('a leading positional is our PR target, everything after -- is the agent\'s', () => {
@@ -41,6 +41,8 @@ test('prcoder\'s own flags', () => {
   assert.equal(parseCli(['-vv']).verbose, 2);
   assert.equal(parseCli(['--verbose', '--verbose']).verbose, 2);
   assert.equal(parseCli(['--no-open']).noOpen, true);
+  assert.equal(parseCli(['--queue', 'data/q.json']).queue, 'data/q.json');
+  assert.equal(parseCli([]).queue, undefined);
   assert.equal(parseCli(['-h']).help, true);
   assert.equal(parseCli(['--version']).version, true);
   assert.equal(parseCli(['-V']).version, true);
@@ -51,6 +53,7 @@ test('bad input is an error that names the problem', () => {
   assert.throws(() => parseCli(['--port', 'abc']), /--port/);
   assert.throws(() => parseCli(['--agent', 'gpt']), /supported: claude/);
   assert.throws(() => parseCli(['123', '456']), /456/);
+  assert.throws(() => parseCli(['--queue', '']), /--queue wants a file path/);
 });
 
 // --help is meant to replace reading the README, so every flag and every
@@ -58,7 +61,7 @@ test('bad input is an error that names the problem', () => {
 test('the help names every flag, env var and agent', () => {
   const text = usage();
   for (const s of ['--port', '--no-open', '--verbose', '--agent', '--help', '--version', '-- ',
-    'PRCODER_PORT', 'PRCODER_NO_OPEN', 'PRCODER_VERBOSE', 'PRCODER_OPEN', 'PRCODER_AGENT_BIN', ...AGENTS]) {
+    '--queue', 'PRCODER_QUEUE', 'PRCODER_PORT', 'PRCODER_NO_OPEN', 'PRCODER_VERBOSE', 'PRCODER_OPEN', 'PRCODER_AGENT_BIN', ...AGENTS]) {
     assert.ok(text.includes(s), `help mentions ${s}`);
   }
   assert.equal(VERSION, createRequire(import.meta.url)('../package.json').version);
@@ -218,4 +221,27 @@ test('prcoder --help, --version and a bad flag exit before anything starts', asy
   const stale = await runIn(env, '--no-open');
   assert.equal(stale.code, 2);
   assert.match(stale.stderr, /^prcoder: CLAUDE_BIN is now PRCODER_AGENT_BIN/);
+});
+
+// Quitting prints Local rather than asking about it: the queue is on disk, so
+// nothing is lost, and the list is what you would want to copy from.
+test('quitting lists what is on Local, with links, and nothing when it is empty', () => {
+  assert.deepEqual(queueSummary([]), []);
+  assert.deepEqual(queueSummary([{ text: 'done', done: true }]), []);
+  const lines = queueSummary([
+    { text: 'Fix the flaky test', issue: 91, issueUrl: 'https://github.com/o/r/issues/91' },
+    { text: 'ticked', done: true }, { text: 'gone', deleted: true }, { text: 'plain' },
+  ]);
+  assert.equal(lines[0], 'queue    2 items on Local, in .prcoder/queue.json (and 1 completed, 1 deleted):');
+  assert.deepEqual(lines.slice(1).map((l) => l.trim()),
+    ['Fix the flaky test  https://github.com/o/r/issues/91', 'plain']);
+  assert.equal(queueSummary([{ text: 'one' }])[0], 'queue    1 item on Local, in .prcoder/queue.json:');
+  assert.equal(queueSummary([{ text: 'one' }], '/work/q.json')[0], 'queue    1 item on Local, in /work/q.json:');
+});
+
+// The y/N is for what quitting costs, and says what `y` does to a session.
+test('the quit question names only what quitting costs', () => {
+  assert.deepEqual(quitRisks({}), []);
+  assert.deepEqual(quitRisks({ tabs: 1, ahead: 2 }), ['1 browser tab — its Claude session ends', '2 unpushed commits']);
+  assert.deepEqual(quitRisks({ tabs: 2, dirty: 1 }), ['2 browser tabs — their Claude sessions end', '1 uncommitted file']);
 });
