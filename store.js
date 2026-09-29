@@ -61,8 +61,18 @@ const EMPTY = { version: VERSION, items: [] };
 export const pick = (i) => ({
   text: String(i?.text ?? ''),
   done: !!i?.done,
-  // The number of the GitHub issue this item was filed as with ◎, if any.
+  // The number of the issue or pull request this item is about, if any: one
+  // pulled in from the Issues tab, or typed in as a reference (refs() in
+  // public/tasks.js).
   issue: Number.isInteger(i?.issue) ? i.issue : null,
+  // Where that is, as `owner/name`, when it is not the repo prcoder is in --
+  // null means this one, which is every item from before the field existed.
+  // Held to GitHub's own characters, since it ends up in a link's href.
+  repo: Number.isInteger(i?.issue) && /^[\w.-]+\/[\w.-]+$/.test(i?.repo ?? '') ? i.repo : null,
+  // `issue` or `pull`, so the link goes straight to a pull request's page.
+  // Null when nobody asked GitHub, and /issues/N is the link: GitHub
+  // redirects it to the pull request when that is what N is.
+  kind: Number.isInteger(i?.issue) && ['issue', 'pull'].includes(i?.kind) ? i.kind : null,
   // A tombstone, so nothing typed disappears without the Deleted tab to get it
   // back from.
   deleted: !!i?.deleted,

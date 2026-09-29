@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { toggleTask, taskLines } from '../public/tasks.js';
+import { toggleTask, taskLines, refs, wholeRef, resolveRef } from '../public/tasks.js';
 import { blocks, sectionize } from '../public/pr.js';
 
 // --- checkboxes in the description ---
@@ -262,4 +262,45 @@ test('a comment ending on a task line leaves that task a task on both sides', ()
   assert.deepEqual(paneTasks(body).map((t) => t.trim()), ['after the comment', 'last']);
   assert.deepEqual(taskLines(body), [2, 3]);
   assert.doesNotThrow(() => toggleTask(body, 1, true, 'last'));
+});
+
+// --- references typed into the queue ---
+
+const shape = (text) => refs(text).map(({ owner, name, number }) => [owner, name, number]);
+
+test('the four ways of typing a reference each read as one', () => {
+  assert.deepEqual(shape('#91'), [[null, null, 91]]);
+  assert.deepEqual(shape('prcoder#91'), [[null, 'prcoder', 91]]);
+  assert.deepEqual(shape('gaurav/prcoder#91'), [['gaurav', 'prcoder', 91]]);
+  assert.deepEqual(shape('https://github.com/gaurav/prcoder/issues/91'), [['gaurav', 'prcoder', 91]]);
+  // A PR's URL, with whatever GitHub puts after the number when you copy it.
+  assert.deepEqual(shape('https://github.com/cli/cli.go/pull/7/files'), [['cli', 'cli.go', 7]]);
+  assert.deepEqual(shape('https://github.com/o/r/issues/5#issuecomment-12'), [['o', 'r', 5]]);
+});
+
+test('a reference is only whole when there is nothing else in the text', () => {
+  assert.equal(wholeRef('  #91 ')?.number, 91);
+  assert.equal(wholeRef('https://github.com/o/r/pull/3?w=1')?.number, 3);
+  assert.equal(wholeRef('Fix #93'), null);
+  assert.equal(wholeRef('#93 and #94'), null);
+  assert.deepEqual(shape('Fix #93 and #94.'), [[null, null, 93], [null, null, 94]]);
+});
+
+// What is not one: GitHub links a `#N` only at the start of a word, and so
+// does this; and a GitHub URL that is not an issue or a PR is just a link.
+test('text that only contains a # or a GitHub link is not a reference', () => {
+  assert.deepEqual(refs('see issue#91x and a#b'), []);
+  assert.deepEqual(refs('https://github.com/o/r/blob/main/README.md'), []);
+  assert.deepEqual(refs('https://github.com/o/r/issues/'), []);
+  assert.deepEqual(refs('path/#5'), []);
+});
+
+test('a reference resolves against the repo prcoder is in', () => {
+  const home = 'gaurav/prcoder';
+  assert.deepEqual(resolveRef(refs('#91')[0], home), { repo: null, number: 91 });
+  assert.deepEqual(resolveRef(refs('prcoder#91')[0], home), { repo: null, number: 91 });
+  assert.deepEqual(resolveRef(refs('Gaurav/PRCoder#91')[0], home), { repo: null, number: 91 });
+  // The short form is this owner's other repo, as GitHub would not have it.
+  assert.deepEqual(resolveRef(refs('other#2')[0], home), { repo: 'gaurav/other', number: 2 });
+  assert.deepEqual(resolveRef(refs('cli/cli#123')[0], home), { repo: 'cli/cli', number: 123 });
 });

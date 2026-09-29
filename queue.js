@@ -79,8 +79,16 @@ export async function writeQueue(repo, items, nameWithOwner) {
  * a queue that now works with no PR loaded would otherwise render dead links.
  */
 function decorate(items, nameWithOwner) {
-  return items.map((i) => ({
-    ...i,
-    issueUrl: i.issue && nameWithOwner ? `https://github.com/${nameWithOwner}/issues/${i.issue}` : null,
-  }));
+  return items.map((i) => ({ ...i, issueUrl: issueUrl(i, nameWithOwner) }));
+}
+
+/**
+ * The link to a stored item's issue or PR, or null. An item about another
+ * repo's carries that repo, and needs no answer from `gh repo view` to link to
+ * it. Give it an item that has been through pick(), which is what holds `repo`
+ * to characters that are safe in an href.
+ */
+export function issueUrl(i, nameWithOwner) {
+  const where = i.repo ?? nameWithOwner;
+  return i.issue && where ? `https://github.com/${where}/${i.kind === 'pull' ? 'pull' : 'issues'}/${i.issue}` : null;
 }

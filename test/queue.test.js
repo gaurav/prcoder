@@ -31,6 +31,21 @@ test('an issue link is derived from owner/repo, and absent without one', async (
   }
 });
 
+// A pull request links to its own page, and an item about another repo's
+// issue links there, owner/repo known or not.
+test('an issue link follows the kind and the repo the item is about', async () => {
+  const repo = await fs.mkdtemp(path.join(os.tmpdir(), 'prcoder-queue-'));
+  try {
+    const items = [item({ issue: 8, kind: 'pull' }), item({ issue: 9, repo: 'cli/cli', kind: 'issue' })];
+    assert.deepEqual((await writeQueue(repo, items, 'o/r')).map((i) => i.issueUrl),
+      ['https://github.com/o/r/pull/8', 'https://github.com/cli/cli/issues/9']);
+    assert.deepEqual((await readQueue(repo, undefined)).map((i) => i.issueUrl),
+      [null, 'https://github.com/cli/cli/issues/9']);
+  } finally {
+    await fs.rm(repo, { recursive: true, force: true });
+  }
+});
+
 // The pane sends back whatever the last write answered, so that answer has to
 // carry the times the write stamped. When it echoed the request instead, the
 // next write stamped every earlier deletion again with its own time, and two

@@ -171,9 +171,19 @@ and ticks it off in the same click; ◎ files it as a new GitHub issue and takes
 the issue is where it lives from then on.
 
 New items go to the bottom, so typing them in builds a list in the order you mean to work through
-it. They always go on Local, whichever tab is showing -- the input's placeholder says so -- and
-adding one from another tab leaves you there and flashes the Local tab instead. The arrow next to the input flips that to the top, for the other way of using a queue -- the
-thing you must not forget to do next -- and stays flipped.
+it. The arrow next to the input flips that to the top, for the other way of using a queue -- the
+thing you must not forget to do next -- and stays flipped. They always go on Local, whichever tab
+is showing -- the input's placeholder says so -- and adding one from another tab leaves you there
+and flashes the Local tab instead.
+
+An item can be about an issue or a pull request, in this repo or any other `gh` can read. Type
+`#91`, `prcoder#91` (this repo's owner), `owner/repo#91` or a github.com link on its own and the
+item is added under that issue's title; the same thing inside longer text, `Fix #93`, keeps your
+text. Either way the row gets a tag -- `#91` here, `cli/cli#123` elsewhere -- that links to it,
+and ▶ adds the link to what it types unless the text already names that issue. A reference GitHub
+does not know is refused with GitHub's reason and left in the input to fix, and one already on
+Local is not added twice. ◎ always files in this repo, so an item about one of this repo's issues
+has none, and one about another repo's files a new issue here with the link to it as the body.
 
 **Local** is the working list, and it drains as you move and finish things, so a session you
 finished tidily ends with it empty. Only Local is yours to reorder. **Completed** is what you ticked

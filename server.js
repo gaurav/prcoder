@@ -11,14 +11,14 @@ import { fileURLToPath } from 'node:url';
 import { text as readBody } from 'node:stream/consumers';
 import { spawn as ptySpawn } from 'node-pty';
 import { WebSocketServer } from 'ws';
-import { loadPr, prHeads, prBody, listPrs, issueLinks, setViewed, setBody, createIssue, fetchPatches, runCount } from './github.js';
+import { loadPr, prHeads, prBody, listPrs, issueLinks, lookupRef, setViewed, setBody, createIssue, fetchPatches, runCount } from './github.js';
 import { snapshot, currentBranch, repoInfo, prScope, compareUrl, originOwner, checkoutPr, pushBranch, remoteBranchHead, trackingHead, localPatch } from './git.js';
 import { bucket, fileUrl, fileViews } from './files.js';
-import { readPort, writePort, useQueueFile, movedQueue } from './store.js';
-import { readQueue, writeQueue, quote } from './queue.js';
+import { readPort, writePort, pick, useQueueFile, movedQueue } from './store.js';
+import { readQueue, writeQueue, quote, issueUrl } from './queue.js';
 import { parseCli, usage, VERSION, portCandidates, statusLines, queueSummary, quitRisks } from './cli.js';
 import * as term from './term.js';
-import { toggleTask } from './public/tasks.js';
+import { toggleTask, refs, wholeRef, resolveRef } from './public/tasks.js';
 import { grammars } from './public/diff.js';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
@@ -339,11 +339,46 @@ const routes = {
 
   'PUT /api/queue': ({ items }) => saveQueue(items),
 
-  /** Filed as an issue, one item at a time: each is its own issue. */
+  /**
+   * The first issue or pull request `text` refers to, looked up so the queue
+   * can add an item about it: its title for an input that is nothing but the
+   * reference, and the number, repo and kind for the item's tag. `{ref: null}`
+   * for text with no reference, which the pane adds as it is; a reference
+   * GitHub does not know throws with GitHub's reason, which the pane shows
+   * while keeping the text in the input to be fixed.
+   *
+   * The repo is GitHub's spelling from the answer, not the typed one, so a
+   * `CLI/CLI#1` or a renamed repo is stored the way GitHub will link it.
+   */
+  'POST /api/queue/ref': async ({ text }) => {
+    const [first] = refs(String(text ?? ''));
+    if (!first) return { ref: null };
+    const home = (await repoFacts()).nameWithOwner;
+    const { repo: other, number } = resolveRef(first, home);
+    const [owner, name] = (other ?? home).split('/');
+    const found = await lookupRef(repo, owner, name, number);
+    const canonical = found.url?.match(/github\.com\/([\w.-]+\/[\w.-]+)\//)?.[1] ?? other ?? home;
+    return { ref: {
+      whole: !!wholeRef(String(text)),
+      issue: number,
+      repo: canonical.toLowerCase() === home.toLowerCase() ? null : canonical,
+      kind: found.kind,
+      title: found.title,
+    } };
+  },
+
+  /**
+   * Filed as an issue, one item at a time: each is its own issue. Always in
+   * this repo; an item about another repo's issue or PR (the pane offers ◎ on
+   * no other kind that has one) puts the link to it in the new issue's body,
+   * built here from the item rather than taken from the page.
+   */
   'POST /api/queue/to-issue': async ({ items, index }) => {
     const { nameWithOwner } = await repoFacts();
     return moveOut(items, [index], async ([item]) => {
-      const { url } = await createIssue(repo, nameWithOwner, item.text);
+      const stored = pick(item);
+      const body = stored.repo ? issueUrl(stored, nameWithOwner) : '';
+      const { url } = await createIssue(repo, nameWithOwner, item.text, body);
       term.verbose(`filed ${quote(item.text)} as ${url}`);
       return url;
     });

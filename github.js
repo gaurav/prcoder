@@ -245,9 +245,9 @@ export function issueNumber(out) {
   return { url, number: n };
 }
 
-export async function createIssue(cwd, nameWithOwner, title) {
+export async function createIssue(cwd, nameWithOwner, title, body = '') {
   return issueNumber(await gh(['issue', 'create', '--repo', nameWithOwner,
-    '--title', title, '--body', ''], { cwd }));
+    '--title', title, '--body', body], { cwd }));
 }
 
 /**
@@ -359,15 +359,46 @@ async function withLinks(cwd, prUrl, issues) {
  */
 export async function issueLinks(cwd, prUrl, numbers) {
   const { owner, repo } = parsePrUrl(prUrl);
-  const query = `query($owner:String!,$repo:String!){ repository(owner:$owner,name:$repo){ ` +
-    numbers.map((n) => `i${n}: issueOrPullRequest(number:${n})` +
-      `{ __typename ... on Issue { title url state updatedAt } ... on PullRequest { title url state updatedAt } }`).join(' ') + ` } }`;
-  const args = ['api', 'graphql', '-f', `query=${query}`, '-f', `owner=${owner}`, '-f', `repo=${repo}`];
   try {
-    return linksFrom(await gh(args, { cwd }));
+    return linksFrom(await gh(linksArgs(owner, repo, numbers), { cwd }));
   } catch (e) {
     return linksFrom(e.stdout);
   }
+}
+
+/** The one query issueLinks and lookupRef share. Numbers only are interpolated. */
+function linksArgs(owner, repo, numbers) {
+  const query = `query($owner:String!,$repo:String!){ repository(owner:$owner,name:$repo){ ` +
+    numbers.map((n) => `i${n}: issueOrPullRequest(number:${Number(n)})` +
+      `{ __typename ... on Issue { title url state updatedAt } ... on PullRequest { title url state updatedAt } }`).join(' ') + ` } }`;
+  return ['api', 'graphql', '-f', `query=${query}`, '-f', `owner=${owner}`, '-f', `repo=${repo}`];
+}
+
+/**
+ * One issue or pull request in any repo gh can read, for a reference typed
+ * into the queue: `{ title, url, state, kind, updatedAt }` as linksFrom has it.
+ *
+ * Unlike issueLinks, which is decoration and swallows its failures, this is
+ * the answer to "is that a real issue?", so it throws with the reason. GitHub
+ * gives a good one -- "Could not resolve to a Repository with the name 'o/r'",
+ * which is also what a private repo you cannot see says, and "...an issue or
+ * pull request with the number of 99999" -- as a NOT_FOUND in the JSON gh
+ * prints on stdout before exiting 1 (checked 2026-09-27). Read from there, so
+ * it arrives without gh's `gh: ` in front; anything else keeps run()'s message.
+ */
+export async function lookupRef(cwd, owner, repo, number) {
+  const where = `${owner}/${repo}#${number}`;
+  let out;
+  try {
+    out = await gh(linksArgs(owner, repo, [number]), { cwd });
+  } catch (e) {
+    let reason = e.message;
+    try { reason = JSON.parse(e.stdout).errors[0].message ?? reason; } catch { /* not GitHub's JSON */ }
+    throw new Error(`${where}: ${reason}`);
+  }
+  const found = linksFrom(out).get(number);
+  if (!found) throw new Error(`${where}: GitHub answered, but not with an issue or pull request`);
+  return found;
 }
 
 /** The `iN: { title, url, state, kind, updatedAt }` aliases of a response,
@@ -386,7 +417,10 @@ export function linksFrom(out) {
   return new Map(Object.entries(repo ?? {})
     .filter(([, v]) => v?.title)
     .map(([alias, v]) => [Number(alias.slice(1)), {
-      title: v.title,
+      // Anyone's text, which becomes a queue item's text through the Issues
+      // tab's ↓ or a typed reference -- and ▶ types that into the PTY, where a
+      // `\r` submits the turn and an escape starts a sequence (docs/Security.md).
+      title: v.title.replace(/[\u0000-\u001f\u007f-\u009f]+/g, ' ').trim(),
       url: v.url ?? null,
       state: v.state ?? null,
       kind: { Issue: 'issue', PullRequest: 'pull' }[v.__typename] ?? null,

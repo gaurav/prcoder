@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { rollup, linkedIssues, linksFrom, parsePrUrl, run, issueNumber, lf, setViewed, listPrs, loadPr, prHeads } from '../github.js';
+import { rollup, linkedIssues, linksFrom, parsePrUrl, run, issueNumber, lf, setViewed, listPrs, loadPr, prHeads, lookupRef, createIssue } from '../github.js';
 import { taskLines } from '../public/tasks.js';
 
 test('check states collapse into passed, failed and pending', () => {
@@ -258,4 +258,58 @@ test('a detached HEAD is no pull request, not an error', { skip: unix }, async (
     assert.equal(await loadPr(os.tmpdir()), null);
     assert.equal(await prHeads(os.tmpdir()), null);
   });
+});
+
+// What gh printed for each, verbatim on 2026-09-27: a found PR exits 0, and a
+// missing number or repo exits 1 with GitHub's reason in the JSON on stdout --
+// and a repo you cannot see says the same as one that does not exist.
+const answers = {
+  found: `{"data":{"repository":{"i60":{"__typename":"PullRequest","title":"Move checks into a Checks tab","url":"https://github.com/gaurav/prcoder/pull/60","state":"MERGED"}}}}`,
+  number: `{"data":{"repository":{"i99999":null}},"errors":[{"type":"NOT_FOUND","path":["repository","i99999"],"message":"Could not resolve to an issue or pull request with the number of 99999."}]}`,
+  repo: `{"data":{"repository":null},"errors":[{"type":"NOT_FOUND","path":["repository"],"message":"Could not resolve to a Repository with the name 'gaurav/nope'."}]}`,
+};
+const answering = (json, code) => () => `cat <<'JSON'\n${json}\nJSON\necho 'gh: not what the pane should show' >&2\nexit ${code}`;
+
+test('a typed reference is looked up, and says why when GitHub has no such thing', { skip: unix }, async () => {
+  await withGh(answering(answers.found, 0), async () => {
+    assert.deepEqual(await lookupRef(os.tmpdir(), 'gaurav', 'prcoder', 60), {
+      title: 'Move checks into a Checks tab', url: 'https://github.com/gaurav/prcoder/pull/60',
+      state: 'MERGED', kind: 'pull', updatedAt: null,
+    });
+  });
+  await withGh(answering(answers.number, 1), () => assert.rejects(lookupRef(os.tmpdir(), 'gaurav', 'prcoder', 99999),
+    { message: 'gaurav/prcoder#99999: Could not resolve to an issue or pull request with the number of 99999.' }));
+  await withGh(answering(answers.repo, 1), () => assert.rejects(lookupRef(os.tmpdir(), 'gaurav', 'nope', 1),
+    { message: "gaurav/nope#1: Could not resolve to a Repository with the name 'gaurav/nope'." }));
+  // Not GitHub's JSON at all -- gh itself failing -- keeps gh's own words.
+  await withGh(() => `echo 'error connecting to api.github.com' >&2\nexit 1`, () =>
+    assert.rejects(lookupRef(os.tmpdir(), 'o', 'r', 1), { message: 'o/r#1: error connecting to api.github.com' }));
+});
+
+// The owner and name come from text someone typed, so they go as variables.
+test('a typed reference reaches GitHub as variables, not inside the query', { skip: unix }, async () => {
+  const args = await ghArgs(() => lookupRef(os.tmpdir(), '12345', 'x"){ viewer', 7).catch(() => {}));
+  assert.equal(args[args.indexOf('owner=12345') - 1], '-f');
+  assert.equal(args[args.indexOf('repo=x"){ viewer') - 1], '-f');
+  assert.ok(args.find((a) => a.startsWith('query=')).includes('issueOrPullRequest(number:7)'));
+});
+
+// A title becomes a queue item that ▶ types into the PTY, where a \r would
+// submit the turn: whatever GitHub holds, no control character gets through.
+test('a title from GitHub arrives without control characters', () => {
+  const out = JSON.stringify({ data: { repository: { i5: { __typename: 'Issue', title: 'looks fine\r\u001b[2Jrm -rf', url: 'u', state: 'OPEN' } } } });
+  // The ESC goes, which leaves the rest of the sequence as harmless text.
+  assert.equal(linksFrom(out).get(5).title, 'looks fine [2Jrm -rf');
+});
+
+// ◎ on an item about another repo's issue files here, with that link as the
+// body; an ordinary item still files with an empty one, which gh needs to be
+// told about or it opens an editor.
+test('an issue is filed with the body it is given, and an empty one otherwise', { skip: unix }, async () => {
+  const filed = (...a) => ghArgs(() => createIssue(os.tmpdir(), 'o/r', 't', ...a).catch(() => {}));
+  const body = (args) => args[args.indexOf('--body') + 1];
+  assert.equal(body(await filed('https://github.com/cli/cli/issues/9')), 'https://github.com/cli/cli/issues/9');
+  // Last, and ghArgs trims the line an empty last argument would be.
+  const plain = await filed();
+  assert.equal(plain.at(-1), '--body');
 });
