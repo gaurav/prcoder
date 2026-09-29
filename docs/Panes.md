@@ -157,7 +157,7 @@ timing).
 
 ## Queue
 
-Your own TODO list for this working copy, stored in `.prcoder/queue.json`. Add an item, drag it by
+Your own TODO list for this working copy, stored in `.prcoder/queue.json` (or the file `--queue` names). Add an item, drag it by
 its grip (or focus the grip and use ↑ ↓) to reorder, tick it off. ▶ types an item into the session
 and ticks it off in the same click; ◎ files it as a new GitHub issue and takes it off the queue, so
 the issue is where it lives from then on.

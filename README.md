@@ -60,6 +60,7 @@ are given.
 | --- | --- | --- |
 | `--port <n>` | `PRCODER_PORT` | Use this port for one run, instead of the repo's own ([docs/Ports.md](docs/Ports.md)). |
 | `--no-open` | `PRCODER_NO_OPEN` | Don't open a browser; just print the URL. |
+| `--queue <file>` | `PRCODER_QUEUE` | Keep the queue in this file instead of `.prcoder/queue.json`; said at startup. |
 | `-v`, `-vv` | `PRCODER_VERBOSE` | Start the log at verbose (`1`) or debug (`2`) rather than quiet. |
 | `--agent <name>` | | The coding agent; only `claude` today. |
 | | `PRCODER_OPEN` | Open the URL with this command instead of the platform's opener; the URL is appended. |

@@ -60,9 +60,9 @@ measures, with a comment at each check saying which regression the check catches
   branch-following.
 - **What it cannot reach.** Every file in PR #1 is one the pull request adds, so the diff pane's
   DIFF and DELETED views, the hunk outline and a `.tsx` file are `tools/diff-views.mjs`'s, below.
-  The queue pane is driven against this repo's own queue, swapped for a fixture with an item in
-  every tab and put back at the end; a queue of its own is
-  [#65](https://github.com/gaurav/prcoder/issues/65).
+  The queue pane is driven against a queue of its own, `data/browser-queue.json` through
+  `--queue`, seeded with an item in every tab, so a run never writes the queue of the working copy
+  it runs in.
 - **It reports only a `pageerror`.** A Content-Security-Policy that blocks something is a console
   message, so it shows only as whichever later check needed what did not load
   ([#62](https://github.com/gaurav/prcoder/issues/62)). Add a `page.on('console')` for a run that

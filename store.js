@@ -27,7 +27,21 @@ const PORT_FILE = 'port.json';
 const VERSION = 1;
 
 const dir = (repo) => path.join(repo, DIR);
-const file = (repo) => path.join(dir(repo), FILE);
+const file = (repo) => queueFile ?? path.join(dir(repo), FILE);
+
+/**
+ * A queue file of the caller's choosing, in place of `.prcoder/queue.json`:
+ * `--queue` or PRCODER_QUEUE, set once by server.js's main. What it is for is
+ * tools/browser.mjs, which drives the queue pane against a file in `data/` and
+ * so never writes the queue of the working copy it runs in (#65). Resolved
+ * against the directory prcoder started in. Only the queue moves; port.json
+ * stays in `.prcoder/`, and so does the `.gitignore` -- a file named here is
+ * wherever you put it, ignored or not.
+ */
+let queueFile = null;
+export const useQueueFile = (p) => { queueFile = p ? path.resolve(p) : null; };
+/** The file named with useQueueFile, or null for the repo's own. */
+export const movedQueue = () => queueFile;
 const portFile = (repo) => path.join(dir(repo), PORT_FILE);
 
 const EMPTY = { version: VERSION, items: [] };
@@ -108,10 +122,11 @@ export async function writeStore(repo, store, { stale = false } = {}) {
   await writeJson(repo, file(repo), { ...store, version: VERSION });
 }
 
-/** The temp-then-rename write above, for every file in the directory. */
+/** The temp-then-rename write above, for every file in the directory -- and
+ *  for a --queue file outside it, which gets its directory but no .gitignore. */
 async function writeJson(repo, target, obj) {
-  await fs.mkdir(dir(repo), { recursive: true });
-  await writeIgnore(repo);
+  await fs.mkdir(path.dirname(target), { recursive: true });
+  if (path.dirname(target) === dir(repo)) await writeIgnore(repo);
   const tmp = `${target}.${process.pid}.tmp`;
   await fs.writeFile(tmp, `${JSON.stringify(obj, null, 2)}\n`);
   await fs.rename(tmp, target);
