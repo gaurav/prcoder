@@ -15,15 +15,15 @@ Agent HQ is a cloud fleet dashboard. None of them treats the pull request as the
 
 ## The queue is yours
 
-The queue is your own TODO list for this working copy, kept in `.prcoder/queue.json` and nowhere
-else. It started as something bigger — one list that *was* every place work lives, two-way mirrored
+The queue is your own TODO list for this working copy, kept in one file and nowhere else:
+`.prcoder/queue.json`, unless `--queue` names another. It started as something bigger — one list that *was* every place work lives, two-way mirrored
 into a block in the PR description, with guards to stop that sync burying items — and in use it
 worked best as the smaller thing. That redesign, decided 2026-09-14, is [#27](https://github.com/gaurav/prcoder/pull/27). The mirror
 is parked in [#82](https://github.com/gaurav/prcoder/pull/82), a draft kept for reference, and a
 description that still carries its block holds an ordinary checklist now.
 
 **prcoder does not edit a pull request's title or description**, and keeps no list anywhere but
-`.prcoder/`. The one exception is a checkbox you tick, in the PR pane or on the queue's PR tab: that
+that file. The one exception is a checkbox you tick, in the PR pane or on the queue's PR tab: that
 flips its one line (`toggleTask` in [`public/tasks.js`](../public/tasks.js)), re-reading the body first and
 refusing if the line has changed under it, and never falling back to a cached copy (`editBody`) — a
 read that did not happen says nothing about what the description holds now. An earlier version of
@@ -36,7 +36,7 @@ one whose failure is recoverable: a filing that did not land leaves the item whe
 store write that fails after one that did leaves it in both places and says so, rather than in
 neither. Nothing reads a description back into the queue, so there is no merge to get wrong.
 
-**Something else may edit `.prcoder/queue.json`.** Every write is a temp file and a rename, so a
+**Something else may edit the queue file.** Every write is a temp file and a rename, so a
 reader never sees half a file, and every poll re-reads it, so an outside edit shows up within a
 minute. Last write wins over the whole list, as it does between two tabs (below). For an agent the
 safer route is the server — `GET /api/queue`, then `PUT /api/queue` with `{items}` — because that

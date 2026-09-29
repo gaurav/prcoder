@@ -96,10 +96,12 @@ Two rules for them, and for any script after them:
   cursor probe a real session sends. `/bin/cat` is enough for the terminal half
   only -- anything that reads the PTY's timing passes against it for the wrong
   reason (tools/CLAUDE.md).
-- **No writes you do not undo.** The queue is safe: it writes only `.prcoder/`,
-  which is gitignored and needs no cleanup, and `browser.mjs` never touches it:
-  it runs with `--queue data/browser-queue.json`. A script of your own that
-  writes the queue should do the same. The PR is not — ticking a
+- **No writes you do not undo.** The queue is safe. By default it writes only
+  `.prcoder/`, which is gitignored and needs no cleanup, and `browser.mjs`
+  leaves even that alone: it runs with `--queue data/browser-queue.json`, in the
+  gitignored scratch directory. A script of your own that writes the queue
+  should do the same -- `--queue` makes no `.gitignore`, so a path outside
+  `data/` or `.prcoder/` would show up in `git status`. The PR is not — ticking a
   description checkbox — in the PR pane or the queue's PR tab — edits the
   description on GitHub. Filing a queue item with ◎
   writes to GitHub too, and one-way: putting the queue back does not close the
