@@ -105,7 +105,7 @@ fresh the block is, what each verbosity level adds, and what a busy port looks l
 - [docs/Panes.md](docs/Panes.md) -- each pane in detail, and why it is laid out the way it is.
 - [docs/Terminal.md](docs/Terminal.md) -- the status block, its keys, and quitting.
 - [docs/Ports.md](docs/Ports.md) -- how a repo's port is chosen, and finding a prcoder again: tabs,
-  a window or a Dock icon per repo, an IDE pane.
+  a window or a Dock icon per repo, an IDE pane, and keeping tab unloaders off it.
 - [docs/Design.md](docs/Design.md) -- why prcoder exists, and what it deliberately does not do.
 - [docs/Security.md](docs/Security.md) -- what a localhost server is exposed to, and the checks
   that close it.

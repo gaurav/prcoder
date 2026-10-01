@@ -18,6 +18,8 @@ term.loadAddon(new WebLinksAddon((_e, uri) => window.open(uri, '_blank', 'noopen
 term.open(document.getElementById('term-host'));
 
 const PTY_SEEN = 'prcoder:pty';
+// The server serves only public/, so the docs are linked where they live.
+const PORTS_DOC = 'https://github.com/gaurav/prcoder/blob/main/docs/Ports.md#finding-it-again';
 // Replaced, not reopened, by the exit panel's "Start coding agent again": one
 // socket is one PTY.
 let ws;
@@ -133,8 +135,19 @@ function connect(query = '') {
       if (sessionStorage.getItem(PTY_SEEN)) {
         // Not the error style: the session did end, but on a deliberate reload
         // that is the answer to what you just did, not something that went wrong.
-        toast('Claude was restarted — this tab\'s previous session ended when it disconnected. '
-          + '/resume picks it back up, or start prcoder with -- --continue.');
+        // A tab the browser unloaded is different: nobody asked, and the fix is
+        // in the browser, not here (Ports.md, "Tab unloaders"). document.wasDiscarded
+        // is Chrome's word for it; elsewhere a restored tab is a navigation that
+        // was not a reload. Sticky, since a link needs longer than 4s to click.
+        const nav = performance.getEntriesByType('navigation')[0]?.type;
+        if (document.wasDiscarded || (nav && nav !== 'reload')) {
+          toast('The browser unloaded this tab, and the Claude session went with it. '
+            + '/resume picks it back up, or start prcoder with -- --continue.', false, true,
+            { href: PORTS_DOC, text: 'Keep tab unloaders off prcoder' });
+        } else {
+          toast('Claude was restarted — this tab\'s previous session ended when it disconnected. '
+            + '/resume picks it back up, or start prcoder with -- --continue.');
+        }
       }
       sessionStorage.setItem(PTY_SEEN, '1');
     } catch { /* private mode: no memory, so no claim about a previous session */ }
