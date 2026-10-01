@@ -75,7 +75,8 @@
       <div id="term-host"></div>
       <!-- Once the PTY has gone, under what it last printed. Nothing will
            repaint the terminal by then, so prcoder is free to draw here.
-           Blank fields keep whatever prcoder was started with. -->
+           Filled with the model and effort prcoder's command line gave (app.js);
+           blank fields keep whatever that was. -->
       <form id="term-exit" hidden>
         <span>Coding agent has exited.</span>
         <label>Model <input name="model" list="term-models" placeholder="as started" size="10"

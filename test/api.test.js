@@ -12,7 +12,7 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import { WebSocket } from 'ws';
-import { server, sessionArgs, missingVendor } from '../server.js';
+import { server, sessionArgs, startedWith, missingVendor } from '../server.js';
 import { grammars } from '../public/diff.js';
 
 let base;
@@ -32,6 +32,7 @@ test('/api/whoami answers from cache, before any poll has run', async () => {
   assert.equal(res.headers.get('content-type'), 'application/json');
   assert.deepEqual(await res.json(), {
     prcoder: true, repo: process.cwd(), branch: null, nameWithOwner: null,
+    started: { model: '', effort: '' },
   });
 });
 
@@ -176,6 +177,26 @@ test('session settings become claude flags, and nothing else does', () => {
   assert.equal(args('model=--dangerously-skip-permissions'), null);
   assert.equal(args('model=opus --verbose'), null);
   assert.equal(args('effort=extreme'), null);
+});
+
+// Pinned so that changing it is a decision (2026-10-01): a blank field sends
+// nothing, so whatever -- gave stays in the argv. Blanking both fields is not
+// a way back to the agent's own default when prcoder's command line named one.
+test('blank settings keep the command line\'s model and effort, and chosen ones win', () => {
+  const base = ['--model', 'opus', '--effort', 'high'];
+  const args = (q) => sessionArgs(new URLSearchParams(q), base);
+  assert.deepEqual(args('model=&effort='), base);
+  assert.deepEqual(args('model=haiku'), [...base, '--model', 'haiku']);
+  assert.equal(args('effort=extreme'), null);
+});
+
+// What the exit bar is filled with: the last of each, as claude reads them.
+test('startedWith reads the model and effort from the agent\'s arguments', () => {
+  assert.deepEqual(startedWith([]), { model: '', effort: '' });
+  assert.deepEqual(startedWith(['--continue', '--model', 'opus', '--effort=high']),
+    { model: 'opus', effort: 'high' });
+  assert.deepEqual(startedWith(['--model', 'opus', '--model=haiku']), { model: 'haiku', effort: '' });
+  assert.deepEqual(startedWith(['--models', 'x', '--effort']), { model: '', effort: '' });
 });
 
 // Refused before the spawn, like a foreign origin: this opens a real /pty and

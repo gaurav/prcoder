@@ -143,10 +143,13 @@ const posted = [];
 // title to wait on. `pty` is the mock socket's handler, for a test that needs
 // the agent to do something. A regex, not `**/pty`: a glob has to match the
 // whole URL, so the exit bar's `/pty?model=...` slipped past it to the real
-// server.
-async function newPage({ prs = [], st = status, ready = '#pr-head .pr-title', pty = () => {} } = {}) {
+// server. `whoami` is the model and effort prcoder's command line started the
+// agent with, which the exit bar is filled with.
+async function newPage({ prs = [], st = status, ready = '#pr-head .pr-title', pty = () => {},
+  whoami = { model: '', effort: '' } } = {}) {
   const p = await browser.newPage();
   await p.routeWebSocket(/\/pty(\?|$)/, pty);
+  await p.route('**/api/whoami', (r) => r.fulfill({ json: { started: whoami } }));
   await p.route('**/api/status', (r) => r.fulfill({ json: st }));
   await p.route('**/api/prs', (r) => (prs ? r.fulfill({ json: prs }) : r.abort()));
   await p.route('**/api/queue', (r) => r.fulfill({ json: [] }));
@@ -1136,13 +1139,17 @@ test('a refused start says why', { skip }, async () => {
 test('when the agent exits, starting it again reconnects with the chosen settings, and Quit asks first', { skip }, async () => {
   const urls = [];
   let second;
-  const p = await newPage({ pty: (ws) => {
+  const p = await newPage({ whoami: { model: 'sonnet', effort: 'low' }, pty: (ws) => {
     urls.push(new URL(ws.url()).search);
     if (urls.length === 1) ws.close();
     else second = ws;
   } });
   const bar = p.locator('#term-exit');
   await bar.waitFor({ state: 'visible' });
+  // Filled with what the command line started it with, not left blank -- by a
+  // fetch that can land after the bar shows, so waited on.
+  await p.waitForFunction(() => document.querySelector('#term-exit [name=model]').value === 'sonnet');
+  assert.equal(await p.inputValue('#term-exit [name=effort]'), 'low');
   await p.fill('#term-exit [name=model]', 'opus');
   await p.selectOption('#term-exit [name=effort]', 'high');
   assert.equal(await p.isChecked('#term-exit [name=continue]'), false, 'continue ticked by default');
@@ -1155,6 +1162,9 @@ test('when the agent exits, starting it again reconnects with the chosen setting
 
   second.close();
   await bar.waitFor({ state: 'visible' });
+  // That start counts as one: the next exit offers what it chose.
+  assert.equal(await p.inputValue('#term-exit [name=model]'), 'opus');
+  assert.equal(await p.inputValue('#term-exit [name=effort]'), 'high');
   const asked = [];
   await p.route('**/api/quit', (r) => {
     const body = r.request().postDataJSON();

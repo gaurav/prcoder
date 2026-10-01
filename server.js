@@ -241,8 +241,11 @@ const routes = {
   // Unlocked only because poll() takes the lock itself.
   'GET /api/status': poll,
 
+  // `started` is what the exit bar fills its fields with: the model and effort
+  // given after -- on prcoder's command line, so starting the agent again offers
+  // what it was started with rather than a blank nobody remembers the meaning of.
   'GET /api/whoami': () => ({ prcoder: true, repo, branch: last?.branch ?? null,
-    nameWithOwner: info?.nameWithOwner ?? null }),
+    nameWithOwner: info?.nameWithOwner ?? null, started: startedWith(agentArgs) }),
 
   'GET /api/prs': () => listPrs(repo),
 
@@ -489,9 +492,28 @@ export const server = http.createServer(async (req, res) => {
 const ptys = new Set();
 
 /**
- * Pure: the /pty query string -> extra arguments for this `claude`, or null to
- * refuse the socket. The exit panel's "Start coding agent again" sends it; a
- * first open sends nothing and gets [].
+ * Pure: the model and effort an argv names, '' for one it doesn't. The last of
+ * each wins, as it does for claude, and both `--model x` and `--model=x` count.
+ */
+export function startedWith(args) {
+  const got = { model: '', effort: '' };
+  for (let i = 0; i < args.length; i++) {
+    const m = /^--(model|effort)(?:=(.*))?$/s.exec(args[i]);
+    if (m) got[m[1]] = m[2] ?? args[++i] ?? '';
+  }
+  return got;
+}
+
+/**
+ * Pure: the /pty query string -> this `claude`'s whole argv after `base` (the
+ * agent's arguments from prcoder's command line), or null to refuse the socket.
+ * The exit panel's "Start coding agent again" sends it; a first open sends
+ * nothing and gets `base`.
+ *
+ * Its settings go after `base`, so one chosen in the page wins over one given
+ * there -- and a blank one leaves `base`'s in place. That is why blanking both
+ * fields does not get you the agent's own default when -- named a model or
+ * effort: there is nothing to send that would unsay it.
  *
  * Allowlisted rather than passed through, because this is the page choosing a
  * spawn's argv. A model has to be a name, not something starting with a dash:
@@ -502,12 +524,13 @@ const ptys = new Set();
  * --effort high]` after starting it again, and the server exiting 0 after Quit.
  */
 const EFFORTS = new Set(['low', 'medium', 'high', 'xhigh', 'max']);
-export function sessionArgs(params) {
+export function sessionArgs(params, base = []) {
   const model = params.get('model');
   const effort = params.get('effort');
   if (model && !/^\w[\w.:[\]-]*$/.test(model)) return null;
   if (effort && !EFFORTS.has(effort)) return null;
   return [
+    ...base,
     ...(params.has('continue') ? ['--continue'] : []),
     ...(model ? ['--model', model] : []),
     ...(effort ? ['--effort', effort] : []),
@@ -519,12 +542,10 @@ const wss = new WebSocketServer({ server, path: '/pty' }).on('error', () => {}).
   // that has already started has already read the repo.
   if (!sameOrigin(req)) return ws.close(1008, 'cross-origin connection refused');
 
-  const extra = sessionArgs(new URL(req.url, 'http://localhost').searchParams);
-  if (!extra) return ws.close(1008, 'bad session settings');
+  const args = sessionArgs(new URL(req.url, 'http://localhost').searchParams, agentArgs);
+  if (!args) return ws.close(1008, 'bad session settings');
 
-  // After the agent's arguments from prcoder's command line (those after --),
-  // so a setting chosen in the page overrides one given there.
-  const pty = ptySpawn(process.env.PRCODER_AGENT_BIN || 'claude', [...agentArgs, ...extra], {
+  const pty = ptySpawn(process.env.PRCODER_AGENT_BIN || 'claude', args, {
     name: 'xterm-256color',
     cols: 80,
     rows: 24,

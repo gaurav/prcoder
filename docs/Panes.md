@@ -156,8 +156,11 @@ and green when it is idle, read from the timing of the PTY's output (Design.md s
 timing).
 
 When Claude exits, a bar under its last output offers to start it again, optionally with a
-different model or effort, which win over any given after `--` on prcoder's command line, and
-optionally continuing the repo's most recent conversation (`--continue`) -- with two tabs open,
+different model or effort. Those start out as the ones given after `--` on prcoder's command line,
+and after a start from the bar they are whatever that start chose. A change wins over the command
+line, but a field left blank keeps the command line's value -- blanking both is not a way back to
+the agent's own default when `--` named one. It can also
+continue the repo's most recent conversation (`--continue`) -- with two tabs open,
 that can be the other tab's (#77). That is unticked by default: starting again is more often a
 deliberate switch of model than a slip. A setting the server will not take is refused before
 anything starts, and the terminal says so. Or quit prcoder from there, which asks what the
