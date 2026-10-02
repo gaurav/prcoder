@@ -620,6 +620,8 @@ function renderPrHead(pr, parsed, handlers) {
   const ways = headLinks(pr);
   const state = pr.isDraft ? 'draft' : pr.state.toLowerCase();
 
+  const seen = viewedCount(pr.files);
+
   // Each row stands alone -- no row's spacing depends on which one is above it
   // -- so the order is HEAD_ORDER and nothing else.
   const rows = {
@@ -636,7 +638,10 @@ function renderPrHead(pr, parsed, handlers) {
     ),
     tabs: h('div', { className: 'tabs' },
       paneTab('detail', tabLabel('Detail', taskCount(parsed)), tabDone(taskCount(parsed)) ? 'done' : ''),
-      paneTab('files', tabLabel('Files', viewedCount(pr.files)), tabDone(viewedCount(pr.files)) ? 'done' : ''),
+      // The pie while files are left, and the ✓ circle -- a full pie with a
+      // tick in it -- once none are.
+      paneTab('files', [tabLabel('Files', seen), seen.total && !tabDone(seen) ? pie(filesProgress(pr.files)) : null],
+        tabDone(seen) ? 'done' : ''),
       pr.checks.list.length
         // All passed is the done circle every tab has, not a green dot in
         // front as well: one mark each for pending and failed, and the same
@@ -726,6 +731,34 @@ export const stackLabel = (nodes) => (nodes.length ? `Stack (${stackSize(nodes)}
 
 export const viewedCount = (files = []) =>
   ({ done: files.filter((f) => f.viewed).length, total: files.length });
+
+const lines = (f) => (f.additions ?? 0) + (f.deletions ?? 0);
+
+/** viewedCount by changed lines, additions plus deletions, rather than by files. */
+export const viewedLines = (files = []) => ({
+  done: files.filter((f) => f.viewed).reduce((n, f) => n + lines(f), 0),
+  total: files.reduce((n, f) => n + lines(f), 0),
+});
+
+/**
+ * The pie for a list of files: how much of the reviewing is left, which the
+ * tab's `(14/17)` cannot say -- fourteen of seventeen with the last three the
+ * biggest is a pie still mostly empty. So it fills by changed lines viewed, and
+ * by files only where there are no lines to weigh (renames, mode changes,
+ * binaries). Full is every file viewed, not every line: an unviewed rename
+ * weighs nothing, and must not let a pie read as finished.
+ */
+export const filesProgress = (files = []) => {
+  const count = viewedCount(files);
+  const weight = viewedLines(files);
+  const by = weight.total ? weight : count;
+  return {
+    p: by.total ? by.done / by.total : 0,
+    full: tabDone(count),
+    label: `${count.done} of ${count.total} files`
+      + (weight.total ? `, ${weight.done} of ${weight.total} changed lines viewed` : ' viewed'),
+  };
+};
 
 /**
  * The checks as the same done-over-total the other two tabs carry, so a run in
@@ -863,7 +896,7 @@ function fileGroup(label, files, handlers) {
   if (!files?.length) return null;
   const { root, dirs } = byDir(files);
   return fold({
-    className: 'group', dataset: { group: label }, title: label, progress: { ...viewedCount(files), what: 'viewed' },
+    className: 'group', dataset: { group: label }, title: label, progress: filesProgress(files),
     ...kept(closedGroups, label, 'closed'),
   }, [
     ...root.map((f) => fileRow(f, handlers)),
@@ -901,7 +934,7 @@ export const byPath = (a, b) => {
  * The largest change in a directory is usually the one to read first.
  */
 export const bySize = (x, y) =>
-  ((y.additions ?? 0) + (y.deletions ?? 0)) - ((x.additions ?? 0) + (x.deletions ?? 0)) || byPath(x.path, y.path);
+  lines(y) - lines(x) || byPath(x.path, y.path);
 
 /**
  * The files of one group, split into the ones at the top of the repository and
@@ -944,7 +977,7 @@ export const byDir = (files) => {
 function dirGroup(group, dir, files, handlers) {
   const key = `${group}/${dir}`;
   return fold({
-    className: 'dir', dataset: { dir }, title: dir, progress: { ...viewedCount(files), what: 'viewed' },
+    className: 'dir', dataset: { dir }, title: dir, progress: filesProgress(files),
     ...kept(closedGroups, key, 'closed'),
   }, files.map((f) => fileRow(f, handlers, dir)));
 }
@@ -961,14 +994,17 @@ export const nums = ({ additions, deletions }) => [
   deletions ? ['del', `−${deletions}`] : null,
 ].filter(Boolean);
 
-/** `done` of `total`, as a pie that fills; the figure is its name. */
-function pie({ done, total, what }) {
-  const label = `${done} of ${total} ${what}`;
-  const p = h('span', { className: `pie${done === total ? ' full' : ''}`, title: label });
-  p.setAttribute('role', 'img');
-  p.setAttribute('aria-label', label);   // a shape is no name, as with the glyph buttons
-  p.style.setProperty('--p', String(total ? done / total : 0));
-  return p;
+/** `done` of `total` as what pie() draws: the fraction, and the figure as its name. */
+const counted = ({ done, total }, what) =>
+  ({ p: total ? done / total : 0, full: tabDone({ done, total }), label: `${done} of ${total} ${what}` });
+
+/** A pie filled to `p`, from 0 to 1; `label`, the figure, is its name. */
+function pie({ p, full, label }) {
+  const el = h('span', { className: `pie${full ? ' full' : ''}`, title: label });
+  el.setAttribute('role', 'img');
+  el.setAttribute('aria-label', label);   // a shape is no name, as with the glyph buttons
+  el.style.setProperty('--p', String(p));
+  return el;
 }
 
 /**
@@ -1252,7 +1288,7 @@ function sectionNode(s, onTask) {
   return fold({
     className: 'md-section', dataset: { key: s.key }, title: s.title,
     // So a fold never hides work without saying so.
-    progress: count.total ? { ...count, what: 'done' } : null,
+    progress: count.total ? counted(count, 'done') : null,
     ...kept(openSections, s.key, 'open'),
   }, s.nodes.map((b) => blockNode(b, onTask)));
 }
