@@ -646,6 +646,12 @@ a { color: var(--accent); }
    otherwise keep a row as wide as its longest unbreakable run; `anywhere` lets
    a URL or a minified line fold too. */
 #diff.wrap .dl { white-space: pre-wrap; overflow-wrap: anywhere; width: auto; }
+/* A hanging indent: the padding moves the whole row in by 2ch and the negative
+   text-indent brings its first line back out, so only a continuation sits 2ch
+   past where every real line starts and the left column still reads as line
+   starts (a `+`/`-` there is a line's, never a fold's). pre-wrap keeps a line's
+   own leading spaces, and they sit on the first line as before. */
+#diff.wrap .dl { padding-left: calc(10px + 2ch); text-indent: -2ch; }
 #diff > header #diff-wrap { font-size: 12px; }
 #diff > header #diff-wrap[aria-pressed="true"] { color: var(--accent); }
 #diff-outline button {

@@ -139,11 +139,12 @@ A diff with more than one hunk gets an outline down its right edge, one row per 
 context git puts after the `@@` (the enclosing function, a heading); a click scrolls to it. Its ✕
 hides it for every file until *Outline* in the header brings it back.
 
-A line longer than the pane runs off its right edge and scrolls sideways, until *Wrap* in the
-header is pressed: then every line folds at the pane's edge. It is off for every file until
-pressed, Markdown and plain text included -- prcoder could guess from the extension, but a setting
-that turned itself on and off by file would read as the pane changing its mind, and it is one
-press. Pressed once, it stays pressed for every file, like the outline, until pressed again.
+A line longer than the pane runs off its right edge and scrolls sideways, until *Wrap* in the header
+is pressed: then every line folds at the pane's edge, and the folded part is indented two characters
+so the left column still reads as the start of each line. It is off for every file until pressed,
+Markdown and plain text included -- prcoder could guess from the extension, but a setting that
+turned itself on and off by file would read as the pane changing its mind, and it is one press.
+Pressed once, it stays pressed for every file, like the outline, until pressed again.
 
 Four links go out to GitHub, for anything the plain rendering can't do -- comments, binary and
 oversized files, highlighting of a changed file. *Diff* comes first because it is what the pane
