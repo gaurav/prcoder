@@ -16,7 +16,7 @@ import { snapshot, currentBranch, repoInfo, prScope, compareUrl, originOwner, ch
 import { bucket, fileUrl, fileViews } from './files.js';
 import { readPort, writePort, useQueueFile, movedQueue } from './store.js';
 import { readQueue, writeQueue, quote } from './queue.js';
-import { parseCli, usage, VERSION, portCandidates, statusLines } from './cli.js';
+import { parseCli, usage, VERSION, portCandidates, statusLines, openRepoArgs } from './cli.js';
 import { counts } from './public/items.js';
 import * as term from './term.js';
 import { toggleTask } from './public/tasks.js';
@@ -634,6 +634,17 @@ function openBrowser() {
   child.on('error', (e) => console.error(`could not open a browser (${e.message}) — visit ${url}`)).unref();
 }
 
+// `t` and `f`: a terminal, or the file manager, on the repo. Detached like the
+// browser above, and never from a route: the page names nothing that reaches an
+// argv here, and `repo` is the server's own cwd.
+function openRepo(what) {
+  const argv = openRepoArgs(what, process.platform, repo);
+  if (!argv) return console.error(`${what}: not implemented on ${process.platform} yet`);
+  const [bin, ...args] = argv;
+  spawn(bin, args, { detached: true, stdio: 'ignore' })
+    .on('error', (e) => console.error(`could not open a ${what} (${e.message})`)).unref();
+}
+
 /**
  * Binds the first of `ports` that is free, and answers with it; 0 means the
  * kernel picks, and always binds. Each attempt re-registers both handlers,
@@ -775,6 +786,8 @@ if (import.meta.main) {
     key: (ch) => {
       if (ch === 'v') term.cycleVerbosity();
       else if (ch === 'o') openBrowser();
+      else if (ch === 't') openRepo('terminal');
+      else if (ch === 'f') openRepo('folder');
       // Serialised like any route: a poll is git and gh calls, and a keypress
       // is no reason to run them alongside a checkout.
       else if (ch === 'r') {

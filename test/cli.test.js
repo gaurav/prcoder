@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
-import { parseCli, usage, AGENTS, VERSION, portFor, portCandidates, PORT_BASE, PORT_SPAN, statusLines, ago } from '../cli.js';
+import { openRepoArgs, parseCli, usage, AGENTS, VERSION, portFor, portCandidates, PORT_BASE, PORT_SPAN, statusLines, ago } from '../cli.js';
 import { queueChanges } from '../queue.js';
 
 test('a leading positional is our PR target, everything after -- is the agent\'s', () => {
@@ -128,6 +128,19 @@ test('the block says where the branch, the PR and the queue stand', () => {
   // The pane's tabs, counted with the pane's own predicates: 'a' links an issue
   // and is still yours to do, 'c' is a tombstone and counts as nothing.
   assert.match(out, /2 local · 1 done/);
+  // Every key the terminal answers to is in the legend, or it does not exist.
+  assert.match(out, /q quit · r refresh · v verbose · o open · t terminal · f folder/);
+});
+
+// The table behind t and f. A null is the "not implemented here" message, so
+// a platform must be null rather than a guess at a command it does not have.
+test('t and f know the platform\'s commands, and say so when they have none', () => {
+  assert.deepEqual(openRepoArgs('terminal', 'darwin', '/r'), ['open', '-a', 'Terminal', '/r']);
+  assert.deepEqual(openRepoArgs('folder', 'darwin', '/r'), ['open', '/r']);
+  assert.deepEqual(openRepoArgs('folder', 'win32', '/r'), ['explorer', '/r']);
+  assert.deepEqual(openRepoArgs('folder', 'linux', '/r'), ['xdg-open', '/r']);
+  assert.equal(openRepoArgs('terminal', 'linux', '/r'), null);
+  assert.equal(openRepoArgs('terminal', 'win32', '/r'), null);
 });
 
 test('with no PR there is no PR line to print', () => {

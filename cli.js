@@ -155,7 +155,23 @@ export function statusLines(s, u = {}) {
     // the clock on every number above while the socket stays open and the count
     // keeps cheerfully saying `1 tab`.
     row('serving', u.local, u.tabs ? `${u.tabs} tab${u.tabs > 1 ? 's' : ''}` : 'no tab open',
-      ago(u.age), 'q quit · r refresh · v verbose · o open'),
+      ago(u.age), 'q quit · r refresh · v verbose · o open · t terminal · f folder'),
     u.moved && row('', u.moved),
   ].filter(Boolean);
+}
+
+/**
+ * The argv that opens the repo in the platform's file manager (`folder`) or in
+ * a terminal there (`terminal`), or null where prcoder has no command for it
+ * yet. Pure, so the table is testable off the platform it names.
+ *
+ * ponytail: Terminal.app only, and no PRCODER_TERMINAL override. iTerm, a
+ * Linux terminal (there is no one command for one) or Windows Terminal when
+ * someone asks.
+ */
+export function openRepoArgs(what, platform, dir) {
+  return {
+    folder: { darwin: ['open', dir], win32: ['explorer', dir] }[platform] ?? ['xdg-open', dir],
+    terminal: { darwin: ['open', '-a', 'Terminal', dir] }[platform] ?? null,
+  }[what];
 }
