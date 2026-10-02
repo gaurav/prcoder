@@ -591,17 +591,17 @@ test('Wrap folds a long line inside the pane, and stays pressed across a reload'
   [long, short] = await rows();
   assert.equal(long, short, 'pressed again, the long line is one row');
 
-  // Alt+Z is the button from the keyboard -- unless a key is being typed, in
+  // Alt+W is the button from the keyboard -- unless a key is being typed, in
   // which case it is a character: the queue's input stands in for the terminal
   // and the editable items, which keys.js guards by the same rule.
   await fresh.locator('#diff-path').click();
-  await fresh.keyboard.press('Alt+KeyZ');
-  assert.equal(await pressed(), 'true', 'Alt+Z presses Wrap');
+  await fresh.keyboard.press('Alt+KeyW');
+  assert.equal(await pressed(), 'true', 'Alt+W presses Wrap');
   await fresh.locator('#queue-input').focus();
-  await fresh.keyboard.press('Alt+KeyZ');
+  await fresh.keyboard.press('Alt+KeyW');
   assert.equal(await pressed(), 'true', 'but not while typing');
   await fresh.locator('#diff-path').click();
-  await fresh.keyboard.press('Alt+KeyZ');
+  await fresh.keyboard.press('Alt+KeyW');
   assert.equal(await pressed(), 'false', 'and presses it again');
   await fresh.close();
 });

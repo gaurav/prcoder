@@ -8,8 +8,9 @@ import { bindKeys } from './keys.js';
 import './panes.js';   // draggable pane gutters; nothing here calls into it
 
 // Every shortcut the page has, in one table; keys.js says what a binding may
-// and may not do. Alt+Z is the key VS Code folds lines with.
-bindKeys({ 'Alt+KeyZ': toggleWrap });
+// and may not do. W for wrap: no browser binds Alt+W, and the owner chose it
+// over VS Code's Alt+Z.
+bindKeys({ 'Alt+KeyW': toggleWrap });
 
 const term = new Terminal({
   fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',

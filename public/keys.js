@@ -6,8 +6,8 @@
 //   textarea and every key pressed in it belongs to the agent; the queue's
 //   input is a textarea and its items are contentEditable. A shortcut that
 //   fired in any of them would steal a character from what was being typed.
-// - A binding names a physical key (`e.code`, Alt+KeyZ), not what it types:
-//   on macOS Option+Z types Ω, and on other layouts Alt+letter types other
+// - A binding names a physical key (`e.code`, Alt+KeyW), not what it types:
+//   on macOS Option+W types ∑, and on other layouts Alt+letter types other
 //   things again, while the key itself stays where it is.
 // - Modifiers are spelled in a fixed order, Ctrl+Alt+Shift+Meta, so a binding
 //   is a plain string with one spelling.
@@ -24,7 +24,7 @@ export const keyName = (e) => [
 ].filter(Boolean).join('+');
 
 /**
- * Install the page's shortcuts: `{ 'Alt+KeyZ': () => ... }`. A bound key that
+ * Install the page's shortcuts: `{ 'Alt+KeyW': () => ... }`. A bound key that
  * is not being typed runs its handler and goes no further, so the browser does
  * not also act on it.
  */
