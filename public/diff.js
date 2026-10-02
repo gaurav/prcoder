@@ -175,6 +175,25 @@ function showOutline(on) {
   el(on ? 'diff-outline-hide' : 'diff-outline-show').focus();
 }
 
+// Wrapping long lines is the same kind of preference: about the pane, not one
+// file, remembered browser-wide. It is a class on the pane and a CSS rule on
+// the rows (style.css), not anything written into the rows, so a line-number
+// gutter (#8) or a rendered view can be added beside it without touching how a
+// line folds. Off for every file until pressed, Markdown and plain text
+// included: a setting that turned itself on by extension would read as the
+// pane changing its mind, and the owner's repos wrap their Markdown anyway.
+const WRAP_KEY = 'prcoder:wrap';
+const wrapOn = () => pref(WRAP_KEY) === 'on';
+/** Paint the stored choice: the class the rows fold under, and the button's pressed state. */
+function paintWrap(on) {
+  el('diff').classList.toggle('wrap', on);
+  el('diff-wrap').setAttribute('aria-pressed', String(on));
+}
+function setWrap(on) {
+  paintWrap(on);
+  setPref(WRAP_KEY, on ? 'on' : 'off');
+}
+
 /** Ticking this here ticks the same checkbox on github.com; the file rows use it too. */
 export const setViewed = (path, viewed) => api('/api/pr/viewed', { path, viewed });
 
@@ -230,6 +249,8 @@ export async function openDiff(f, onViewed = setViewed) {
   el('diff').classList.toggle('outline-off', outlineOff());
   el('diff-outline-hide').onclick = () => showOutline(false);
   el('diff-outline-show').onclick = () => showOutline(true);
+  paintWrap(wrapOn());
+  el('diff-wrap').onclick = () => setWrap(!wrapOn());
 
   const body = el('diff-body');
   body.replaceChildren(h('div', { className: 'empty' }, 'Loading…'));

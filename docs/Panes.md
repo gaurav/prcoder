@@ -20,8 +20,8 @@ The terminal folds to its header line with a click anywhere on that line; the �
 says so, and is the keyboard's way in. The diff (or the queue, with no diff open) takes the room,
 and another click unfolds it. Folding never touches the session, which keeps running folded. While
 a turn runs, the folded header says `● working` beside its title, from the same signal as the
-tab's blue icon. Whether the terminal is folded, whether the outline is shown, and which way the
-queue adds are remembered the same way as the sizes.
+tab's blue icon. Whether the terminal is folded, whether the outline is shown, whether the diff
+wraps long lines, and which way the queue adds are remembered the same way as the sizes.
 
 Each tab names itself `owner/repo#N · pull request title` (the branch and `(no PR)` when there
 isn't one), and renames itself as the branch moves, so a row of prcoder tabs stays readable at
@@ -138,6 +138,12 @@ and a rename with no other change says only that.
 A diff with more than one hunk gets an outline down its right edge, one row per hunk, named by the
 context git puts after the `@@` (the enclosing function, a heading); a click scrolls to it. Its ✕
 hides it for every file until *Outline* in the header brings it back.
+
+A line longer than the pane runs off its right edge and scrolls sideways, until *Wrap* in the
+header is pressed: then every line folds at the pane's edge. It is off for every file until
+pressed, Markdown and plain text included -- prcoder could guess from the extension, but a setting
+that turned itself on and off by file would read as the pane changing its mind, and it is one
+press. Pressed once, it stays pressed for every file, like the outline, until pressed again.
 
 Four links go out to GitHub, for anything the plain rendering can't do -- comments, binary and
 oversized files, highlighting of a changed file. *Diff* comes first because it is what the pane
