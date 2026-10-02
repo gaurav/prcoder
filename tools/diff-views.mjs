@@ -131,6 +131,21 @@ console.log('show:    ', await page.evaluate(() => ({
   focus: document.activeElement?.id,
 })), '(want off false, focus on diff-outline-hide)');
 
+// Wrap folds service.js's one long line inside the pane; pressed again it is
+// off, which is the stored default, so the run leaves the preference as found.
+const wrapRows = () => page.evaluate(() => {
+  const rows = [...document.querySelectorAll('#diff-body .dl')].map((r) => r.getBoundingClientRect().height);
+  const body = document.getElementById('diff-body');
+  return { pressed: document.getElementById('diff-wrap').getAttribute('aria-pressed'),
+    tallest: Math.max(...rows), typical: Math.min(...rows), sideways: body.scrollWidth > body.clientWidth };
+});
+console.log('unwrapped:', JSON.stringify(await wrapRows()), '(want pressed false, tallest = typical, sideways true)');
+await page.locator('#diff-wrap').click();
+console.log('wrap:    ', JSON.stringify(await wrapRows()), '(want pressed true, tallest > typical, sideways false)');
+await page.locator('#diff').screenshot({ path: path.join(out, 'wrapped.png') });
+await page.locator('#diff-wrap').click();
+console.log('unwrap:  ', await page.getAttribute('#diff-wrap', 'aria-pressed'), '(want false, the default put back)');
+
 // --- deleted ---
 
 const del = await open('notes/old.txt');

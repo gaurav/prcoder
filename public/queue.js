@@ -63,10 +63,11 @@ let mentions = null;
 // must not forget to do next -- so the end is the user's to choose, and the
 // arrow on the button says which one is live without being clicked.
 //
-// The app's only stored preference, and a best-effort one: reading storage
-// throws outright where it is disabled, and the origin is a port -- so a repo
-// whose port moves, or one opened through PRCODER_PORT, is a different origin
-// and starts again from the default. Losing it costs a click.
+// Stored like the pane sizes, the terminal fold and the diff's outline and
+// Wrap, and best-effort like all of them: reading storage throws outright
+// where it is disabled, and the origin is a port -- so a repo whose port
+// moves, or one opened through PRCODER_PORT, is a different origin and starts
+// again from the default. Losing it costs a click.
 const ADD_TO_KEY = 'prcoder:add-to';
 let addTo = 'bottom';
 const readAddTo = () => (pref(ADD_TO_KEY) === 'top' ? 'top' : 'bottom');

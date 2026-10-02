@@ -110,12 +110,18 @@ const SOURCE = 'const s = "<script>alert(1)</script>"; // <img src=x onerror=ale
 // the jsx and typescript grammars under it, and without them the markup below
 // tokenizes as operators and bare text rather than tags and attributes.
 const TSX = 'const B = ({ n }: { n: number }) => <div className="b">{n}</div>;';
+// One line far wider than any pane, in a file no grammar claims, so the Wrap
+// test is about layout alone. Not in `added`: several tests read the Files
+// count as 2, so the page that wants it asks for it (`withLong` below).
+const LONG = 'A line that goes on ' + 'and on '.repeat(80) + 'to the end.\nShort.';
 const added = { 'evil.js': SOURCE, 'app.tsx': TSX };
-const files = Object.keys(added).map((p, i) => ({
-  path: p, group: bucket(p), additions: added[p].split('\n').length, deletions: 0, viewed: false,
+const sources = { ...added, 'long.txt': LONG };
+const fileRow = (p, i) => ({
+  path: p, group: bucket(p), additions: sources[p].split('\n').length, deletions: 0, viewed: false,
   url: `${REPO}/pull/12/files#diff-${i}`, blob: `${REPO}/blob/aaaa/${p}`,
   blame: `${REPO}/blame/aaaa/${p}`, history: `${REPO}/commits/aaaa/${p}`,
-}));
+});
+const files = Object.keys(added).map(fileRow);
 const pr = {
   number: 12, title: 'A fixture pull request', body: BODY, url: `${REPO}/pull/12`,
   state: 'OPEN', isDraft: false, headRefName: 'topic', baseRefName: 'main',
@@ -131,6 +137,8 @@ const status = {
   scope: 'current', mirrorFailed: false,
   pr, queue: [],
 };
+/** The status with `long.txt` as a third added file, for a page about long lines. */
+const withLong = (st) => ({ ...st, pr: { ...st.pr, files: [...files, fileRow('long.txt', files.length)] } });
 
 let browser;
 let page;
@@ -152,7 +160,7 @@ async function newPage({ prs = [], st = status, ready = '#pr-head .pr-title', pt
   await p.route('**/api/queue', (r) => r.fulfill({ json: [] }));
   await p.route('**/api/diff', (r) => {
     const { path } = r.request().postDataJSON();
-    const lines = added[path].split('\n');
+    const lines = sources[path].split('\n');
     return r.fulfill({ json: {
       path, patch: `@@ -0,0 +1,${lines.length} @@\n` + lines.map((l) => '+' + l).join('\n'),
     } });
@@ -536,6 +544,65 @@ test('the terminal folds to its header, the diff takes the room, and it stays fo
   await fresh.click('#term > header h1');
   assert.equal(await fresh.locator('#term-host').isVisible(), true);
   assert.equal(await fresh.getAttribute('#term-fold', 'aria-expanded'), 'true');
+  await fresh.close();
+});
+
+// Wrap is a class on the pane and a rule on the rows, so what has to hold is
+// the layout: a long line is one row high and scrolls the body sideways until
+// Wrap is pressed, then it is taller than a short one and nothing scrolls. Its
+// own page, because the choice is stored and survives a reload.
+test('Wrap folds a long line inside the pane, and stays pressed across a reload', { skip }, async () => {
+  const fresh = await newPage({ st: withLong(status) });
+  const openLong = async () => {
+    await fresh.locator('#pr-head .tab', { hasText: 'Files' }).click();
+    await fresh.locator('.file[data-path="long.txt"] .path').click();
+    await fresh.waitForSelector('#diff-body .dl');
+  };
+  const rows = () => fresh.$$eval('#diff-body .dl', (els) => els.map((el) => el.getBoundingClientRect().height));
+  const sideways = () => fresh.$eval('#diff-body', (el) => el.scrollWidth > el.clientWidth);
+  const pressed = () => fresh.getAttribute('#diff-wrap', 'aria-pressed');
+  const height = () => fresh.$eval('#diff > header', (el) => el.getBoundingClientRect().height);
+
+  await openLong();
+  assert.equal(await pressed(), 'false', 'off until pressed, for every file');
+  let [long, short] = await rows();
+  assert.equal(long, short, 'unwrapped, the long line is one row');
+  assert.ok(await sideways(), 'and the body scrolls sideways');
+  const shown = await height();
+  await fresh.$eval('#diff-wrap', (el) => { el.style.display = 'none'; });
+  assert.equal(shown, await height(), 'the Wrap button should not make the header taller');
+  await fresh.$eval('#diff-wrap', (el) => { el.style.display = ''; });
+
+  await fresh.click('#diff-wrap');
+  assert.equal(await pressed(), 'true');
+  [long, short] = await rows();
+  assert.ok(long > short, `wrapped, the long row (${long}px) should be taller than the short one (${short}px)`);
+  assert.equal(await sideways(), false, 'and nothing scrolls sideways');
+
+  await fresh.reload();
+  await fresh.waitForSelector('#pr-head .pr-title');
+  await openLong();
+  assert.equal(await pressed(), 'true', 'still pressed after a reload');
+  [long, short] = await rows();
+  assert.ok(long > short, 'and still wrapped');
+
+  await fresh.click('#diff-wrap');
+  assert.equal(await pressed(), 'false');
+  [long, short] = await rows();
+  assert.equal(long, short, 'pressed again, the long line is one row');
+
+  // Alt+W is the button from the keyboard -- unless a key is being typed, in
+  // which case it is a character: the queue's input stands in for the terminal
+  // and the editable items, which keys.js guards by the same rule.
+  await fresh.locator('#diff-path').click();
+  await fresh.keyboard.press('Alt+KeyW');
+  assert.equal(await pressed(), 'true', 'Alt+W presses Wrap');
+  await fresh.locator('#queue-input').focus();
+  await fresh.keyboard.press('Alt+KeyW');
+  assert.equal(await pressed(), 'true', 'but not while typing');
+  await fresh.locator('#diff-path').click();
+  await fresh.keyboard.press('Alt+KeyW');
+  assert.equal(await pressed(), 'false', 'and presses it again');
   await fresh.close();
 });
 

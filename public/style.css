@@ -639,6 +639,21 @@ a { color: var(--accent); }
 #diff.outline-off :is(#diff-side, #gut-outline) { display: none; }
 #diff > header #diff-outline-show { display: none; font-size: 12px; }
 #diff.outline-off:has(#diff-outline:not(:empty)) > header #diff-outline-show { display: inline; }
+/* Wrap is a view preference, so it is a class on the pane like outline-off, and
+   a rule here rather than anything in the rows: a line-number gutter (#8) would
+   be a cell beside the text, and a rendered view would hide the button under a
+   class of its own. `width: auto` undoes the max-content above, which would
+   otherwise keep a row as wide as its longest unbreakable run; `anywhere` lets
+   a URL or a minified line fold too. */
+#diff.wrap .dl { white-space: pre-wrap; overflow-wrap: anywhere; width: auto; }
+/* A hanging indent: the padding moves the whole row in by 2ch and the negative
+   text-indent brings its first line back out, so only a continuation sits 2ch
+   past where every real line starts and the left column still reads as line
+   starts (a `+`/`-` there is a line's, never a fold's). pre-wrap keeps a line's
+   own leading spaces, and they sit on the first line as before. */
+#diff.wrap .dl { padding-left: calc(10px + 2ch); text-indent: -2ch; }
+#diff > header #diff-wrap { font-size: 12px; }
+#diff > header #diff-wrap[aria-pressed="true"] { color: var(--accent); }
 #diff-outline button {
   display: block; width: 100%; max-width: 100%; text-align: left; background: none; border: 0; cursor: pointer;
   font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--dim); padding: 2px 10px;

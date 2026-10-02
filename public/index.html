@@ -41,8 +41,12 @@
           <span class="sep">·</span>
           <a id="diff-history" target="_blank" rel="noopener" title="the commits that have touched this file">History</a>
         </span>
-        <!-- Only while the outline is hidden and this file has one: style.css
-             decides, so nothing has to repaint it per file. -->
+        <!-- The view controls, kept apart from `viewed` above, which is a fact
+             about the file on GitHub rather than a way of looking at it. Wrap is
+             pressed or not (aria-pressed); the Outline button shows only while
+             the outline is hidden and this file has one: style.css decides, so
+             nothing has to repaint it per file. -->
+        <button id="diff-wrap" aria-pressed="false" title="wrap long lines (Alt+W)">Wrap</button>
         <button id="diff-outline-show" title="show the hunk outline">Outline</button>
         <button id="diff-close" title="close diff" aria-label="close diff">✕</button>
       </header>
