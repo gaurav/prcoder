@@ -85,7 +85,8 @@ fault in a later row shows only in the printed list.
 
 **`node tools/cli.mjs`** drives the terminal half in a real PTY, because the status block, the keys
 and the quit prompt all switch off when stdout is not a tty, which is what every other driver's
-server gets.
+server gets. It does not press `t` or `f`, and a scratch driver should not either unless that is
+what it is checking: each opens a real window on the machine running the driver.
 
 **`node tools/firefox-runner/probe.mjs`** is not a driver and boots no server. It asks only whether
 anything on this machine can start Firefox, with and without the workaround, and is worth running
