@@ -658,8 +658,11 @@ test('folds show progress as a pie named by its figure', { skip }, async () => {
   assert.deepEqual(tab, { label: `2 of 5 files, ${2 * n} of ${4 * n + 1} changed lines viewed`, p: String(2 * n / (4 * n + 1)) });
 
   await fresh.locator('#pr-head .tab', { hasText: 'Files' }).click();
-  assert.deepEqual(await pie('.dir[data-dir="src/"]'), { label: '1 of 2 viewed', role: 'img', p: '0.5', full: false });
-  assert.deepEqual(await pie('.dir[data-dir="src/sub/"]'), { label: '1 of 1 viewed', role: 'img', p: '1', full: true });
+  // By changed lines, as the tab's is; src/'s two files are the same size.
+  assert.deepEqual(await pie('.dir[data-dir="src/"]'),
+    { label: `1 of 2 files, ${n} of ${2 * n} changed lines viewed`, role: 'img', p: '0.5', full: false });
+  assert.deepEqual(await pie('.dir[data-dir="src/sub/"]'),
+    { label: `1 of 1 files, ${n} of ${n} changed lines viewed`, role: 'img', p: '1', full: true });
   assert.equal(await fresh.locator('#pr-body .count').count(), 0, 'no fraction left beside a fold');
   await fresh.close();
 });

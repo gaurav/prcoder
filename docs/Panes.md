@@ -112,8 +112,9 @@ below them the rest are folded by the directory they are in, a directory ahead o
 it and sibling directories alphabetical. The files in each list are ordered by lines changed,
 additions plus deletions, the largest first. A row inside a fold shows only the part of its path the directory
 above it does not, so a path is read once per directory rather than once per file. Both levels
-fold and remember what you closed. Each fold's pie fills green as its files are viewed (hover it
-for the figure). The checkbox on each file is GitHub's own "viewed" checkbox: tick it here and
+fold and remember what you closed. Each fold's pie fills green by changed lines viewed, as the
+tab's does, so a directory with one big file left still looks mostly empty (hover it for both
+figures). The checkbox on each file is GitHub's own "viewed" checkbox: tick it here and
 it's ticked on github.com. Clicking a file opens its diff in the **Diff** pane; cmd/ctrl-clicking
 opens GitHub's diff viewer at that file instead.
 

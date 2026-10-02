@@ -896,7 +896,7 @@ function fileGroup(label, files, handlers) {
   if (!files?.length) return null;
   const { root, dirs } = byDir(files);
   return fold({
-    className: 'group', dataset: { group: label }, title: label, progress: counted(viewedCount(files), 'viewed'),
+    className: 'group', dataset: { group: label }, title: label, progress: filesProgress(files),
     ...kept(closedGroups, label, 'closed'),
   }, [
     ...root.map((f) => fileRow(f, handlers)),
@@ -977,7 +977,7 @@ export const byDir = (files) => {
 function dirGroup(group, dir, files, handlers) {
   const key = `${group}/${dir}`;
   return fold({
-    className: 'dir', dataset: { dir }, title: dir, progress: counted(viewedCount(files), 'viewed'),
+    className: 'dir', dataset: { dir }, title: dir, progress: filesProgress(files),
     ...kept(closedGroups, key, 'closed'),
   }, files.map((f) => fileRow(f, handlers, dir)));
 }
