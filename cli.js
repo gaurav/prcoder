@@ -154,8 +154,10 @@ export function statusLines(s, u = {}) {
     // browser polls only while its tab is visible, so backgrounding it stops
     // the clock on every number above while the socket stays open and the count
     // keeps cheerfully saying `1 tab`.
-    row('serving', u.local, u.tabs ? `${u.tabs} tab${u.tabs > 1 ? 's' : ''}` : 'no tab open',
-      ago(u.age), 'q quit · r refresh · v verbose · o open · t terminal · f folder'),
+    row('serving', u.local, u.tabs ? `${u.tabs} tab${u.tabs > 1 ? 's' : ''}` : 'no tab open', ago(u.age)),
+    // A row of its own: on the serving row the legend ran past 80 columns and
+    // clip() cut it off at exactly the keys someone had not found yet.
+    row('keys', 'q quit · r refresh · v verbose · o open · t terminal · f folder'),
     u.moved && row('', u.moved),
   ].filter(Boolean);
 }
