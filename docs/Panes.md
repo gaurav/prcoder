@@ -23,6 +23,14 @@ a turn runs, the folded header says `● working` beside its title, from the sam
 tab's blue icon. Whether the terminal is folded, whether the outline is shown, whether the diff
 wraps long lines, and which way the queue adds are remembered the same way as the sizes.
 
+A few things have a key as well as a control. A shortcut never fires while you are typing -- in the
+terminal, which belongs to the coding agent, in the queue's input, or in an item being edited --
+and each is named by the key's position, so on a Mac Alt is Option. There is one so far:
+
+| Key   | Does                                                 |
+|-------|------------------------------------------------------|
+| Alt+Z | presses *Wrap* in the diff pane, while a file is open |
+
 Each tab names itself `owner/repo#N · pull request title` (the branch and `(no PR)` when there
 isn't one), and renames itself as the branch moves, so a row of prcoder tabs stays readable at
 tab width.

@@ -2,9 +2,14 @@ import { Terminal } from '/vendor/xterm.mjs';
 import { FitAddon } from '/vendor/addon-fit.mjs';
 import { WebLinksAddon } from '/vendor/addon-web-links.mjs';
 import { renderPr, renderNoPr, renderHeader, pageTitle, api, toast, pref, setPref } from './pr.js';
-import { openDiff, closeDiff, selectedPath, setViewed } from './diff.js';
+import { openDiff, closeDiff, selectedPath, setViewed, toggleWrap } from './diff.js';
 import { initQueue, addItem, setItems } from './queue.js';
+import { bindKeys } from './keys.js';
 import './panes.js';   // draggable pane gutters; nothing here calls into it
+
+// Every shortcut the page has, in one table; keys.js says what a binding may
+// and may not do. Alt+Z is the key VS Code folds lines with.
+bindKeys({ 'Alt+KeyZ': toggleWrap });
 
 const term = new Terminal({
   fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',

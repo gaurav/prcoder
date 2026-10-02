@@ -20,6 +20,15 @@ Put DOM work inside a function, the way `el()` in `diff.js` does. A syntax
 error in any of them breaks the server the same way; `node --check public/*.js`
 catches it, and `test/api.test.js` imports all three by importing the server.
 
+## Keyboard shortcuts go through `keys.js`
+
+`bindKeys` in `app.js` is the one table of shortcuts, and `keys.js` holds the
+rules every binding gets for free: nothing fires while a key is being typed
+into the terminal, the queue's input or an editable item, and a binding names
+a physical key (`Alt+KeyZ`), not the character it produces. A keydown listener
+beside the thing it drives would have to repeat both. `docs/Panes.md` lists the
+bindings; add a row there with the binding.
+
 ## The Claude pane is not prcoder's to draw on
 
 `term.write()` in `app.js` puts bytes into xterm's buffer without them ever

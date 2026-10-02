@@ -193,6 +193,10 @@ function setWrap(on) {
   paintWrap(on);
   setPref(WRAP_KEY, on ? 'on' : 'off');
 }
+/** The keyboard's way to the Wrap button. Nothing to flip while no file is open. */
+export function toggleWrap() {
+  if (!el('diff').hidden) setWrap(!wrapOn());
+}
 
 /** Ticking this here ticks the same checkbox on github.com; the file rows use it too. */
 export const setViewed = (path, viewed) => api('/api/pr/viewed', { path, viewed });
