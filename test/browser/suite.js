@@ -648,6 +648,15 @@ test('folds show progress as a pie named by its figure', { skip }, async () => {
   assert.deepEqual(await pie('.md-section:has(h3:text-is("Before merging"))'),
     { label: '0 of 1 done', role: 'img', p: '0', full: false });
 
+  // The Files tab's own, by changed lines rather than files: two of the five
+  // are viewed, and they are two of the four big ones. Once every file is, it
+  // is the ✓ circle instead -- the tab-done test pins that name exactly.
+  const n = files[0].additions;
+  const tab = await fresh.locator('#pr-head .tab .pie').evaluate((el) => ({
+    label: el.getAttribute('aria-label'), p: el.style.getPropertyValue('--p'),
+  }));
+  assert.deepEqual(tab, { label: `2 of 5 files, ${2 * n} of ${4 * n + 1} changed lines viewed`, p: String(2 * n / (4 * n + 1)) });
+
   await fresh.locator('#pr-head .tab', { hasText: 'Files' }).click();
   assert.deepEqual(await pie('.dir[data-dir="src/"]'), { label: '1 of 2 viewed', role: 'img', p: '0.5', full: false });
   assert.deepEqual(await pie('.dir[data-dir="src/sub/"]'), { label: '1 of 1 viewed', role: 'img', p: '1', full: true });

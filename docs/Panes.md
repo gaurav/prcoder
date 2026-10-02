@@ -80,7 +80,10 @@ this one's branch, laid out like the list above. Each tab carries the count the 
 you -- how many description boxes are still unticked, how many files are still unviewed, how many
 checks have gone green, how many pull requests are stacked on this one -- so none hides from you
 while you are in another. A count that has run out keeps its numbers, `Files (11/11)`, so it
-still says how many, and ends in a green circle with a ✓ in it to say none are left. The Checks
+still says how many, and ends in a green circle with a ✓ in it to say none are left. Until then
+the Files tab also carries a pie, filled by changed lines viewed rather than files viewed, so it
+says how much reviewing is left where the count says how many files: fourteen of seventeen viewed
+with the last three the biggest is a pie still mostly empty. Hover it for both figures. The Checks
 tab also carries a mark in front while it is not done: a yellow ring while something is still
 running, and a red ✕ as soon as anything fails, which is the part a fraction alone can't tell you.
 When everything passes it gets the green circle like any other tab. It is a shape as well as a colour so that it survives

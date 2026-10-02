@@ -480,13 +480,21 @@ a { color: var(--accent); }
    that fills green as its items are done (pie() in pr.js says why not `3/5`).
    The ring is what an empty one is -- without it, nothing done is nothing
    drawn. 10px, under every summary's line box, so the row keeps its height. */
-.fold > summary .pie {
+.pie {
   flex: none; width: 10px; height: 10px; border-radius: 50%;
-  align-self: center;   /* the row is baseline-aligned, and a box with no text sits on it by its bottom */
   background: conic-gradient(var(--add) calc(var(--p) * 1turn), transparent 0);
   box-shadow: inset 0 0 0 1px var(--dim);
 }
-.fold > summary .pie.full { box-shadow: none; }
+.pie.full { box-shadow: none; }
+.fold > summary .pie {
+  align-self: center;   /* the row is baseline-aligned, and a box with no text sits on it by its bottom */
+}
+/* The Files tab's, while files are left: the box the ✓ circle (`.tab.done`)
+   takes once none are, so the tab neither moves nor grows when it turns. */
+.tab .pie {
+  display: inline-block; box-sizing: border-box; width: 12px; height: 12px;
+  margin-left: 5px; vertical-align: -1px;
+}
 /* Indented under the title, not under the triangle. */
 .fold > .sec-body { padding: 2px 0 12px 18px; }
 
