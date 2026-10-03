@@ -46,7 +46,8 @@ export function usage() {
 Everything after -- goes to the agent untouched:
   prcoder 42 --port 4000 -- --effort high --model fable
 
-PRCODER_OPEN=<cmd> opens the URL with a command of your own instead of the platform's.`;
+PRCODER_BROWSER=<cmd> opens the URL with a command of your own instead of the platform's,
+PRCODER_TERMINAL=<cmd> is the terminal t opens, and PRCODER_OPEN=<cmd> what f opens the repo with.`;
 }
 
 export function parseCli(argv) {
@@ -154,8 +155,47 @@ export function statusLines(s, u = {}) {
     // browser polls only while its tab is visible, so backgrounding it stops
     // the clock on every number above while the socket stays open and the count
     // keeps cheerfully saying `1 tab`.
-    row('serving', u.local, u.tabs ? `${u.tabs} tab${u.tabs > 1 ? 's' : ''}` : 'no tab open',
-      ago(u.age), 'q quit · r refresh · v verbose · o open'),
+    row('serving', u.local, u.tabs ? `${u.tabs} tab${u.tabs > 1 ? 's' : ''}` : 'no tab open', ago(u.age)),
+    // A row of its own: on the serving row the legend ran past 80 columns and
+    // clip() cut it off at exactly the keys someone had not found yet.
+    row('keys', 'q quit · r refresh · v verbose · o open · t terminal · f folder'),
     u.moved && row('', u.moved),
   ].filter(Boolean);
+}
+
+/** The variable that overrides each of `t` and `f` with a command of your own. */
+export const OPEN_REPO_VARS = { terminal: 'PRCODER_TERMINAL', folder: 'PRCODER_OPEN' };
+
+/** Where an override from OPEN_REPO_VARS finds the repo's path: see openRepoArgs. */
+export const REPO_ENV = 'PRCODER_REPO';
+
+/**
+ * The argv that opens the repo in the platform's file manager (`folder`) or in
+ * a terminal there (`terminal`), or null where prcoder has no command for it
+ * yet. Pure, so the table is testable off the platform it names.
+ *
+ * `custom` is that one's variable from OPEN_REPO_VARS: a command line of your
+ * own, on any platform, run through the shell like PRCODER_BROWSER with the repo's
+ * path appended -- so it comes back as one string, not an argv. The path goes in
+ * as a reference to REPO_ENV, which the caller sets, rather than as text: a
+ * shell expands a variable's value once and never again, so no character in the
+ * path can do anything. Quoting the text would do for sh, but there is no
+ * quoting in cmd.exe that stops %NAME% expanding, and % is legal in a Windows
+ * directory name.
+ *
+ * ponytail: Terminal.app is the only built-in terminal. iTerm, a Linux terminal
+ * (there is no one command for one) or Windows Terminal are PRCODER_TERMINAL
+ * until someone wants one without setting it.
+ */
+export function openRepoArgs(what, platform, dir, custom) {
+  if (custom) return `${custom} ${platform === 'win32' ? `"%${REPO_ENV}%"` : `"$${REPO_ENV}"`}`;
+  return {
+    // xdg-open where it is the desktop's standard, and nowhere else: on AIX,
+    // SunOS or Android it would be a guess, not a command.
+    folder: {
+      darwin: ['open', dir], win32: ['explorer', dir],
+      linux: ['xdg-open', dir], freebsd: ['xdg-open', dir], openbsd: ['xdg-open', dir],
+    }[platform] ?? null,
+    terminal: { darwin: ['open', '-a', 'Terminal', dir] }[platform] ?? null,
+  }[what];
 }

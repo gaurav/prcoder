@@ -63,7 +63,9 @@ are given.
 | `--queue <file>` | `PRCODER_QUEUE` | Keep the queue in this file instead of `.prcoder/queue.json`; said at startup. |
 | `-v`, `-vv` | `PRCODER_VERBOSE` | Start the log at verbose (`1`) or debug (`2`) rather than quiet. |
 | `--agent <name>` | | The coding agent; only `claude` today. |
-| | `PRCODER_OPEN` | Open the URL with this command instead of the platform's opener; the URL is appended. |
+| | `PRCODER_BROWSER` | The browser to open the URL in, as a command, instead of the platform's opener; the URL is appended. |
+| | `PRCODER_TERMINAL` | Open `t`'s terminal with this command instead of Terminal.app; the repo's path is appended. |
+| | `PRCODER_OPEN` | Open the repo with this command when `f` is pressed, instead of the platform's opener (`open`, `explorer`, `xdg-open`); the repo's path is appended. |
 | | `PRCODER_AGENT_BIN` | Run this instead of `claude`. |
 
 ## What it writes
@@ -93,12 +95,15 @@ prcoder  gaurav/prcoder   initial-implementation → main   2 unpushed · 8 unco
 PR #1    A browser workspace around a live Claude Code session
          https://github.com/gaurav/prcoder/pull/1
 queue    4 local · 1 done
-serving  http://localhost:17455   1 tab   q quit · r refresh · v verbose · o open
+serving  http://localhost:17455   1 tab
+keys     q quit · r refresh · v verbose · o open · t terminal · f folder
 ```
 
-`r` refreshes it, `v` cycles how much the log says, `o` reopens the browser, and `q` or Ctrl-C
-quits, asking first if that would lose anything. [docs/Terminal.md](docs/Terminal.md) has how
-fresh the block is, what each verbosity level adds, and what a busy port looks like.
+`r` refreshes it, `v` cycles how much the log says, `o` reopens the browser, `t` opens a terminal
+window in the repo (Terminal.app, or the one `PRCODER_TERMINAL` names), `f` opens the repo in the
+file manager (or `PRCODER_OPEN`), and `q` or Ctrl-C quits, asking first if that would lose
+anything. [docs/Terminal.md](docs/Terminal.md) has how fresh the block is, what each verbosity
+level adds, and what a busy port looks like.
 
 ## More
 

@@ -84,7 +84,7 @@ export async function openPage(browser, port) {
  * the selection and drag bugs live. Playwright drives its own patched build,
  * never the Firefox in /Applications, so this asks whether
  * `npx playwright install firefox` has been run -- not whether the machine has
- * Firefox. Chromium is the fallback, and PRCODER_BROWSER=chromium|firefox is
+ * Firefox. Chromium is the fallback, and PRCODER_PLAYWRIGHT=chromium|firefox is
  * the override; which one ran matters for reading the output, so it is logged.
  *
  * existsSync says the build was downloaded, not that it starts -- which
@@ -102,7 +102,12 @@ export async function openPage(browser, port) {
  */
 export async function launchBrowser() {
   const { chromium, firefox } = await import('playwright');
-  const forced = { chromium, firefox }[process.env.PRCODER_BROWSER];
+  // This was PRCODER_BROWSER, which is now the browser prcoder opens, so an old
+  // `PRCODER_BROWSER=chromium` would quietly drive Firefox; say so instead.
+  if (['chromium', 'firefox'].includes(process.env.PRCODER_BROWSER) && !process.env.PRCODER_PLAYWRIGHT) {
+    throw new Error(`PRCODER_BROWSER picks prcoder's own browser now; use PRCODER_PLAYWRIGHT=${process.env.PRCODER_BROWSER}`);
+  }
+  const forced = { chromium, firefox }[process.env.PRCODER_PLAYWRIGHT];
   const engine = forced ?? (existsSync(firefox.executablePath()) ? firefox : chromium);
   console.log('engine: ', engine.name());
   try {

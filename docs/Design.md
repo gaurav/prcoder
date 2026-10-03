@@ -106,7 +106,8 @@ in [`cli.js`](../cli.js)); everything after it goes to the agent verbatim. So th
 Claude's flags to keep in step, and an agent flag written before `--` is an error that says where it
 goes, not a session started with the wrong pull request. `--port`, `--no-open`, `--queue` and `-v`
 each have an environment variable of the same meaning, which the flag overrides; `--agent` has none
-yet, and `PRCODER_OPEN` and `PRCODER_AGENT_BIN` have no flag.
+yet, and `PRCODER_BROWSER`, `PRCODER_TERMINAL`, `PRCODER_OPEN` and `PRCODER_AGENT_BIN` have
+no flag.
 `PRCODER_AGENT_BIN` is a path to run, not a name, which is why it is not `PRCODER_AGENT`: that
 would read as `--agent`'s variable, and is the name `--agent` needs if it ever gets one. It was
 `CLAUDE_BIN`, and prcoder refuses to start while only the old name is set, since ignoring it would
