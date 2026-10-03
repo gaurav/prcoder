@@ -129,7 +129,8 @@ A modified file's diff is not highlighted at all, and
   The Claude pane's "Start coding agent again" puts a model, an effort and `--continue` on the
   `/pty` query, and `sessionArgs` in `server.js` refuses the socket before the spawn for any other
   value -- a model has to be a name, so `--model --dangerously-skip-permissions` never becomes two
-  flags.
+  flags. The one exception is a value equal to what prcoder's command line already gave, which is
+  dropped as a repeat rather than checked: it came from whoever started prcoder, not the page.
 - **Text from GitHub** — descriptions, titles, issue bodies, file names — is built into the page with
   `h()` and text nodes. `innerHTML` only through `inline()`, and a new kind of link only through
   `target()`.

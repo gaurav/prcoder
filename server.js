@@ -519,14 +519,21 @@ export function startedWith(args) {
  * spawn's argv. A model has to be a name, not something starting with a dash:
  * `--model --dangerously-skip-permissions` must not reach claude as two flags.
  *
+ * A setting equal to the one `base` already ends on is dropped before the
+ * check, not checked: the exit bar is filled with `base`'s (startedWith), so an
+ * untouched restart sends them back, and the command line accepts names the
+ * allowlist doesn't know. `base` carries it already; repeating it adds nothing.
+ *
  * The real spawn was driven once by hand (2026-09-23), against a stub that
  * prints its argv: `[]` on the first open, then `[--continue --model opus
  * --effort high]` after starting it again, and the server exiting 0 after Quit.
  */
 const EFFORTS = new Set(['low', 'medium', 'high', 'xhigh', 'max']);
 export function sessionArgs(params, base = []) {
-  const model = params.get('model');
-  const effort = params.get('effort');
+  const given = startedWith(base);
+  const own = (key) => (params.get(key) === given[key] ? '' : params.get(key));
+  const model = own('model');
+  const effort = own('effort');
   if (model && !/^\w[\w.:[\]-]*$/.test(model)) return null;
   if (effort && !EFFORTS.has(effort)) return null;
   return [

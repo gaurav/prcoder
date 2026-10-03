@@ -190,6 +190,17 @@ test('blank settings keep the command line\'s model and effort, and chosen ones 
   assert.equal(args('effort=extreme'), null);
 });
 
+// The exit bar is filled with the command line's settings, so an untouched
+// restart sends them back -- and the command line takes names the allowlist
+// refuses. Sending back what -- gave must start the agent, not close the socket.
+test('settings the command line already gave are kept, not checked', () => {
+  const base = ['--model', 'my model', '--effort', 'extreme'];
+  const args = (q) => sessionArgs(new URLSearchParams(q), base);
+  assert.deepEqual(args('model=my+model&effort=extreme'), base);
+  assert.deepEqual(args('model=my+model&effort=low'), [...base, '--effort', 'low']);
+  assert.equal(args('model=other+model'), null);
+});
+
 // What the exit bar is filled with: the last of each, as claude reads them.
 test('startedWith reads the model and effort from the agent\'s arguments', () => {
   assert.deepEqual(startedWith([]), { model: '', effort: '' });

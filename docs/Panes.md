@@ -163,7 +163,8 @@ the agent's own default when `--` named one. It can also
 continue the repo's most recent conversation (`--continue`) -- with two tabs open,
 that can be the other tab's (#77). That is unticked by default: starting again is more often a
 deliberate switch of model than a slip. A setting the server will not take is refused before
-anything starts, and the terminal says so. Or quit prcoder from there, which asks what the
+anything starts, and the terminal says so -- except the command line's own, which is kept as it
+was given even when the bar would refuse it typed in. Or quit prcoder from there, which asks what the
 terminal's quit asks ([Terminal.md](Terminal.md)).
 
 ## Queue
