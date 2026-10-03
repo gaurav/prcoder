@@ -16,7 +16,7 @@ import { snapshot, currentBranch, repoInfo, prScope, compareUrl, originOwner, ch
 import { bucket, fileUrl, fileViews } from './files.js';
 import { readPort, writePort, useQueueFile, movedQueue } from './store.js';
 import { readQueue, writeQueue, quote } from './queue.js';
-import { parseCli, usage, VERSION, portCandidates, statusLines, openRepoArgs, OPEN_REPO_VARS } from './cli.js';
+import { parseCli, usage, VERSION, portCandidates, statusLines, openRepoArgs, OPEN_REPO_VARS, REPO_ENV } from './cli.js';
 import { counts } from './public/items.js';
 import * as term from './term.js';
 import { toggleTask } from './public/tasks.js';
@@ -643,7 +643,9 @@ function openRepo(what) {
   const argv = openRepoArgs(what, process.platform, repo, process.env[OPEN_REPO_VARS[what]]);
   if (!argv) return console.error(`${what}: not implemented on ${process.platform} yet; ${OPEN_REPO_VARS[what]} names one`);
   const opts = { detached: true, stdio: 'ignore' };
-  const child = typeof argv === 'string' ? spawn(argv, { ...opts, shell: true }) : spawn(argv[0], argv.slice(1), opts);
+  const child = typeof argv === 'string'
+    ? spawn(argv, { ...opts, shell: true, env: { ...process.env, [REPO_ENV]: repo } })
+    : spawn(argv[0], argv.slice(1), opts);
   child.on('error', (e) => console.error(`could not open a ${what} (${e.message})`)).unref();
 }
 

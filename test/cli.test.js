@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
-import { openRepoArgs, OPEN_REPO_VARS, parseCli, usage, AGENTS, VERSION, portFor, portCandidates, PORT_BASE, PORT_SPAN, statusLines, ago } from '../cli.js';
+import { execSync } from 'node:child_process';
+import { openRepoArgs, OPEN_REPO_VARS, REPO_ENV, parseCli, usage, AGENTS, VERSION, portFor, portCandidates, PORT_BASE, PORT_SPAN, statusLines, ago } from '../cli.js';
 import { queueChanges } from '../queue.js';
 
 test('a leading positional is our PR target, everything after -- is the agent\'s', () => {
@@ -148,14 +149,22 @@ test('t and f know the platform\'s commands, and say so when they have none', ()
 });
 
 // PRCODER_TERMINAL and PRCODER_OPEN run through the shell, so the path
-// has to survive it: a space must not split it and a quote must not end it.
-test('an override for t or f is run with the repo appended, quoted for the shell', () => {
-  assert.equal(openRepoArgs('terminal', 'linux', "/a b/it's", 'kitty --directory'),
-    "kitty --directory '/a b/it'\\''s'");
-  assert.equal(openRepoArgs('terminal', 'win32', 'C:\\a b', 'wt -d'), 'wt -d "C:\\a b"');
-  assert.equal(openRepoArgs('terminal', 'darwin', '/r', 'open -a iTerm'), "open -a iTerm '/r'");
-  assert.equal(openRepoArgs('folder', 'sunos', '/r', 'nautilus'), "nautilus '/r'", 'even where f has no built-in');
+// reaches it as a variable, not as text: a space must not split it, a quote
+// must not end it, and on Windows a %NAME% in it must not expand.
+test('an override for t or f is run with the repo appended, as a variable the shell expands once', () => {
+  assert.equal(openRepoArgs('terminal', 'linux', "/a b/it's", 'kitty --directory'), 'kitty --directory "$PRCODER_REPO"');
+  assert.equal(openRepoArgs('terminal', 'win32', 'C:\\a %TEMP%', 'wt -d'), 'wt -d "%PRCODER_REPO%"');
+  assert.equal(openRepoArgs('folder', 'sunos', '/r', 'nautilus'), 'nautilus "$PRCODER_REPO"', 'even where f has no built-in');
   assert.deepEqual(OPEN_REPO_VARS, { terminal: 'PRCODER_TERMINAL', folder: 'PRCODER_OPEN' });
+  assert.equal(REPO_ENV, 'PRCODER_REPO');
+});
+
+// What the string above relies on, against the real sh: a path that its own
+// quoting would have to get right arrives whole.
+test('sh hands an override the repo path whole, whatever is in it', () => {
+  const dir = "/a b/it's $HOME `x` \\ %TEMP%";
+  const cmd = openRepoArgs('folder', 'linux', dir, `${JSON.stringify(process.execPath)} -e 'process.stdout.write(process.argv[1])'`);
+  assert.equal(execSync(cmd, { env: { ...process.env, [REPO_ENV]: dir } }).toString(), dir);
 });
 
 test('with no PR there is no PR line to print', () => {

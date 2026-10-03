@@ -166,6 +166,9 @@ export function statusLines(s, u = {}) {
 /** The variable that overrides each of `t` and `f` with a command of your own. */
 export const OPEN_REPO_VARS = { terminal: 'PRCODER_TERMINAL', folder: 'PRCODER_OPEN' };
 
+/** Where an override from OPEN_REPO_VARS finds the repo's path: see openRepoArgs. */
+export const REPO_ENV = 'PRCODER_REPO';
+
 /**
  * The argv that opens the repo in the platform's file manager (`folder`) or in
  * a terminal there (`terminal`), or null where prcoder has no command for it
@@ -173,19 +176,19 @@ export const OPEN_REPO_VARS = { terminal: 'PRCODER_TERMINAL', folder: 'PRCODER_O
  *
  * `custom` is that one's variable from OPEN_REPO_VARS: a command line of your
  * own, on any platform, run through the shell like PRCODER_BROWSER with the repo's
- * path appended -- so it comes back as one string, not an argv. The path is
- * quoted for that shell, so a space or a quote in it stays part of the path.
+ * path appended -- so it comes back as one string, not an argv. The path goes in
+ * as a reference to REPO_ENV, which the caller sets, rather than as text: a
+ * shell expands a variable's value once and never again, so no character in the
+ * path can do anything. Quoting the text would do for sh, but there is no
+ * quoting in cmd.exe that stops %NAME% expanding, and % is legal in a Windows
+ * directory name.
  *
  * ponytail: Terminal.app is the only built-in terminal. iTerm, a Linux terminal
  * (there is no one command for one) or Windows Terminal are PRCODER_TERMINAL
  * until someone wants one without setting it.
  */
 export function openRepoArgs(what, platform, dir, custom) {
-  if (custom) {
-    // Windows forbids " in a path, so double quotes are enough there.
-    const quoted = platform === 'win32' ? `"${dir}"` : `'${dir.replaceAll("'", "'\\''")}'`;
-    return `${custom} ${quoted}`;
-  }
+  if (custom) return `${custom} ${platform === 'win32' ? `"%${REPO_ENV}%"` : `"$${REPO_ENV}"`}`;
   return {
     // xdg-open where it is the desktop's standard, and nowhere else: on AIX,
     // SunOS or Android it would be a guess, not a command.
