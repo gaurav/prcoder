@@ -68,6 +68,13 @@ timing has to be driven against that stub, not cat. cat is fine for
   in-process server and spawns a real `claude --continue` in this repo
   (2026-09-23). `test/browser/suite.js` also sets `PRCODER_AGENT_BIN=/usr/bin/false`
   so a socket that slips past spawns nothing.
+- **Tick a box that its own save redraws with `click()`, not `check()` or
+  `uncheck()`.** Those two read the box again after clicking, and a detached
+  box makes them retry on whatever the locator now finds -- so a refused queue
+  tick was ticked twice, and an untick that moves the row off its tab waits
+  30s for a box that is gone. It failed only on CI, where the stubbed save
+  answers before Playwright's re-read (2026-10-02). This goes for
+  `test/browser/suite.js` too.
 - **Install `MutationObserver`s after `goto`, not in `addInitScript`.** At
   init time there is no `document.head` to observe, and the throw takes the
   rest of the init script with it.

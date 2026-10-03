@@ -706,15 +706,22 @@ test('Completed lists the most recently finished first, and cannot be reordered'
 test('a queue change the server refuses is taken back off the screen', { skip }, async () => {
   const fresh = await newPage();
   const queue = [{ text: 'refused tick', done: false, issue: null, deleted: false }];
+  let puts = 0;
   await fresh.route('**/api/status', (r) => r.fulfill({ json: { ...status, queue } }));
   await fresh.route('**/api/queue', (r) => (r.request().method() === 'PUT'
-    ? r.fulfill({ status: 500, json: { error: 'disk full' } })
+    ? (puts++, r.fulfill({ status: 500, json: { error: 'disk full' } }))
     : r.fulfill({ json: queue })));
   await fresh.reload();
   await fresh.waitForSelector('#queue-body .item');
-  await fresh.locator('#queue-body .item input[type=checkbox]').check();
+  // click(), not check(): check() reads the box again after clicking, and when
+  // the refusal has already repainted the row that box is detached -- so it
+  // retries on the new, unticked one and ticks it a second time. That second
+  // save was still in flight when the first one's toast came up, and the
+  // assertions below saw a ticked box (CI only: there the PUT wins the race).
+  await fresh.locator('#queue-body .item input[type=checkbox]').click();
   // For this text, not any toast: the reload raises its own restart notice.
   await fresh.waitForFunction(() => document.getElementById('toast').textContent === 'disk full');
+  assert.equal(puts, 1, 'ticked once');
   // Back in Active and unticked, as the server has it.
   assert.deepEqual(await fresh.locator('#queue-body .item .text').allTextContents(), ['refused tick']);
   assert.equal(await fresh.locator('#queue-body .item input[type=checkbox]').isChecked(), false);
