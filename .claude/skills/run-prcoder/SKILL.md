@@ -22,7 +22,6 @@ directory moves aside to another port rather than taking the recorded one.
 Otherwise:
 
 ```bash
-mkdir -p data
 PRCODER_NO_OPEN=1 PRCODER_PORT=17433 node server.js > data/prcoder.log 2>&1 &
 sleep 2
 curl -s localhost:17433/api/status | head -c 200   # pr, files, queue
