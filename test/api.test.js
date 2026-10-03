@@ -174,6 +174,9 @@ test('session settings become claude flags, and nothing else does', () => {
   assert.deepEqual(args('model=opus&effort=high&continue=on'),
     ['--continue', '--model', 'opus', '--effort', 'high']);
   assert.deepEqual(args('model=claude-opus-5-5[1m]'), ['--model', 'claude-opus-5-5[1m]']);
+  assert.deepEqual(args('model=claude-sonnet-4-5@20250929'), ['--model', 'claude-sonnet-4-5@20250929']);
+  assert.deepEqual(args('model=arn:aws:bedrock:us-east-1:1:application-inference-profile/x'),
+    ['--model', 'arn:aws:bedrock:us-east-1:1:application-inference-profile/x']);
   assert.equal(args('model=--dangerously-skip-permissions'), null);
   assert.equal(args('model=opus --verbose'), null);
   assert.equal(args('effort=extreme'), null);

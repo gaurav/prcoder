@@ -518,6 +518,8 @@ export function startedWith(args) {
  * Allowlisted rather than passed through, because this is the page choosing a
  * spawn's argv. A model has to be a name, not something starting with a dash:
  * `--model --dangerously-skip-permissions` must not reach claude as two flags.
+ * `@` and `/` are in the name because Vertex IDs (`claude-sonnet-4-5@20250929`)
+ * and Bedrock ARNs use them.
  *
  * A setting equal to the one `base` already ends on is dropped before the
  * check, not checked: the exit bar is filled with `base`'s (startedWith), so an
@@ -534,7 +536,7 @@ export function sessionArgs(params, base = []) {
   const own = (key) => (params.get(key) === given[key] ? '' : params.get(key));
   const model = own('model');
   const effort = own('effort');
-  if (model && !/^\w[\w.:[\]-]*$/.test(model)) return null;
+  if (model && !/^\w[\w.:@/[\]-]*$/.test(model)) return null;
   if (effort && !EFFORTS.has(effort)) return null;
   return [
     ...base,
