@@ -173,7 +173,12 @@ export function statusLines(s, u = {}) {
  */
 export function openRepoArgs(what, platform, dir) {
   return {
-    folder: { darwin: ['open', dir], win32: ['explorer', dir] }[platform] ?? ['xdg-open', dir],
+    // xdg-open where it is the desktop's standard, and nowhere else: on AIX,
+    // SunOS or Android it would be a guess, not a command.
+    folder: {
+      darwin: ['open', dir], win32: ['explorer', dir],
+      linux: ['xdg-open', dir], freebsd: ['xdg-open', dir], openbsd: ['xdg-open', dir],
+    }[platform] ?? null,
     terminal: { darwin: ['open', '-a', 'Terminal', dir] }[platform] ?? null,
   }[what];
 }

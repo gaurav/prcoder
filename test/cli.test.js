@@ -141,6 +141,7 @@ test('t and f know the platform\'s commands, and say so when they have none', ()
   assert.deepEqual(openRepoArgs('folder', 'darwin', '/r'), ['open', '/r']);
   assert.deepEqual(openRepoArgs('folder', 'win32', '/r'), ['explorer', '/r']);
   assert.deepEqual(openRepoArgs('folder', 'linux', '/r'), ['xdg-open', '/r']);
+  assert.equal(openRepoArgs('folder', 'sunos', '/r'), null, 'not every unix is Linux');
   assert.equal(openRepoArgs('terminal', 'linux', '/r'), null);
   assert.equal(openRepoArgs('terminal', 'win32', '/r'), null);
 });
