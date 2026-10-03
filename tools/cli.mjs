@@ -31,9 +31,12 @@ for (const sig of ['SIGTERM', 'SIGHUP', 'SIGINT']) process.on(sig, () => process
 const repo = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 // What `t` and `f` run: not a terminal or a file manager, but a command that
 // writes down the path it was handed, so pressing them checks the key and the
-// override's quoting without opening a window.
+// override's quoting without opening a window. Its own output path is quoted
+// the way openRepoArgs quotes the repo's, or a checkout path with a space in it
+// would split in two and the check would fail on the recorder, not the key.
 const recorded = (what) => path.join(repo, 'data', `cli-${what}-arg`);
-const recorder = (what) => `node -e 'require("fs").writeFileSync(process.argv[1], process.argv[2])' ${recorded(what)}`;
+const shellQuoted = (s) => `'${s.replaceAll("'", "'\\''")}'`;
+const recorder = (what) => `node -e 'require("fs").writeFileSync(process.argv[1], process.argv[2])' ${shellQuoted(recorded(what))}`;
 const port = Number(process.env.PRCODER_PORT) || 17455;
 
 // server.js falls back to a free port when the one it is given is taken --
