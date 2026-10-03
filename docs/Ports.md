@@ -35,11 +35,11 @@ a turn you walked away from says whether it is still going -- and every title en
 from github.com. Amber is kept free on purpose, for a third state prcoder cannot see yet: Claude
 stopped to ask you something (#51).
 
-**A window per repo.** `PRCODER_OPEN` replaces the platform opener with your own command, with the
+**A window per repo.** `PRCODER_BROWSER` replaces the platform opener with your own command, with the
 URL appended. Firefox hands the arguments to the running copy, so
 
 ```sh
-export PRCODER_OPEN='/Applications/Firefox.app/Contents/MacOS/firefox -new-window'
+export PRCODER_BROWSER='/Applications/Firefox.app/Contents/MacOS/firefox -new-window'
 ```
 
 gives each prcoder its own window, listed by title in the Window menu and Mission Control.

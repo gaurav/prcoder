@@ -622,12 +622,12 @@ async function ready() {
 }
 
 // ponytail: the platform's own opener, not a dependency. --no-open (or
-// PRCODER_NO_OPEN=1) to skip; PRCODER_OPEN to run your own command with the URL
+// PRCODER_NO_OPEN=1) to skip; PRCODER_BROWSER to run your own command with the URL
 // appended, which is how a browser is told "a new window, not a tab".
 function openBrowser() {
   const url = urls.local;
   const opener = { darwin: 'open', win32: 'start' }[process.platform] || 'xdg-open';
-  const custom = process.env.PRCODER_OPEN;
+  const custom = process.env.PRCODER_BROWSER;
   const child = custom
     ? spawn(`${custom} ${url}`, { detached: true, stdio: 'ignore', shell: true })
     : spawn(opener, [url], { detached: true, stdio: 'ignore', shell: process.platform === 'win32' });

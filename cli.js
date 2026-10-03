@@ -46,7 +46,7 @@ export function usage() {
 Everything after -- goes to the agent untouched:
   prcoder 42 --port 4000 -- --effort high --model fable
 
-PRCODER_OPEN=<cmd> opens the URL with a command of your own instead of the platform's.`;
+PRCODER_BROWSER=<cmd> opens the URL with a command of your own instead of the platform's.`;
 }
 
 export function parseCli(argv) {
@@ -171,7 +171,7 @@ export const OPEN_REPO_VARS = { terminal: 'PRCODER_TERMINAL', folder: 'PRCODER_F
  * yet. Pure, so the table is testable off the platform it names.
  *
  * `custom` is that one's variable from OPEN_REPO_VARS: a command line of your
- * own, on any platform, run through the shell like PRCODER_OPEN with the repo's
+ * own, on any platform, run through the shell like PRCODER_BROWSER with the repo's
  * path appended -- so it comes back as one string, not an argv. The path is
  * quoted for that shell, so a space or a quote in it stays part of the path.
  *

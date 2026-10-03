@@ -63,7 +63,7 @@ are given.
 | `--queue <file>` | `PRCODER_QUEUE` | Keep the queue in this file instead of `.prcoder/queue.json`; said at startup. |
 | `-v`, `-vv` | `PRCODER_VERBOSE` | Start the log at verbose (`1`) or debug (`2`) rather than quiet. |
 | `--agent <name>` | | The coding agent; only `claude` today. |
-| | `PRCODER_OPEN` | Open the URL with this command instead of the platform's opener; the URL is appended. |
+| | `PRCODER_BROWSER` | The browser to open the URL in, as a command, instead of the platform's opener; the URL is appended. |
 | | `PRCODER_TERMINAL` | Open `t`'s terminal with this command instead of Terminal.app; the repo's path is appended. |
 | | `PRCODER_FILE_MANAGER` | Open `f`'s file manager with this command instead of the platform's; the repo's path is appended. |
 | | `PRCODER_AGENT_BIN` | Run this instead of `claude`. |

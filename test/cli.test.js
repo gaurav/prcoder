@@ -61,7 +61,7 @@ test('bad input is an error that names the problem', () => {
 test('the help names every flag, env var and agent', () => {
   const text = usage();
   for (const s of ['--port', '--no-open', '--verbose', '--agent', '--help', '--version', '-- ',
-    '--queue', 'PRCODER_QUEUE', 'PRCODER_PORT', 'PRCODER_NO_OPEN', 'PRCODER_VERBOSE', 'PRCODER_OPEN', 'PRCODER_AGENT_BIN', ...AGENTS]) {
+    '--queue', 'PRCODER_QUEUE', 'PRCODER_PORT', 'PRCODER_NO_OPEN', 'PRCODER_VERBOSE', 'PRCODER_BROWSER', 'PRCODER_AGENT_BIN', ...AGENTS]) {
     assert.ok(text.includes(s), `help mentions ${s}`);
   }
   assert.equal(VERSION, createRequire(import.meta.url)('../package.json').version);
