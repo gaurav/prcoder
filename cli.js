@@ -167,6 +167,8 @@ export function statusLines(s, u = {}) {
  * Quitting loses none of them, since the queue is on disk, so this is shown
  * rather than asked about (quitRisks). An empty Local prints nothing. `file`
  * is the queue's file when --queue moved it, since that is where to look next.
+ * An item's later lines (Shift-Enter makes them) are indented with its first,
+ * or each would read as an item of its own.
  */
 export function queueSummary(items = [], file = '.prcoder/queue.json') {
   const q = counts(items);
@@ -174,7 +176,9 @@ export function queueSummary(items = [], file = '.prcoder/queue.json') {
   const rest = [q.done && `${q.done} completed`, q.deleted && `${q.deleted} deleted`].filter(Boolean);
   const head = `${'queue'.padEnd(8)} ${q.local} item${q.local > 1 ? 's' : ''} on Local, in ${file}` +
     `${rest.length ? ` (and ${rest.join(', ')})` : ''}:`;
-  return [head, ...items.filter(TABS.local).map((i) => `${''.padEnd(8)}   ${i.text}${i.issueUrl ? `  ${i.issueUrl}` : ''}`)];
+  const indent = ' '.repeat(11);
+  return [head, ...items.filter(TABS.local).map((i) =>
+    `${indent}${i.text.replace(/\r?\n/g, `\n${indent}`)}${i.issueUrl ? `  ${i.issueUrl}` : ''}`)];
 }
 
 /**

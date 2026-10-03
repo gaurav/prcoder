@@ -239,6 +239,13 @@ test('quitting lists what is on Local, with links, and nothing when it is empty'
   assert.equal(queueSummary([{ text: 'one' }], '/work/q.json')[0], 'queue    1 item on Local, in /work/q.json:');
 });
 
+// Shift-Enter puts newlines in an item, and an unindented second line would
+// read as an item of its own.
+test('a multi-line item on Local is indented as one item', () => {
+  const [, item] = queueSummary([{ text: 'fix login\nalso check logout', issueUrl: 'https://x/1' }]);
+  assert.equal(item, '           fix login\n           also check logout  https://x/1');
+});
+
 // The y/N is for what quitting costs, and says what `y` does to a session.
 test('the quit question names only what quitting costs', () => {
   assert.deepEqual(quitRisks({}), []);
