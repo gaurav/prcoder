@@ -29,11 +29,11 @@ import { free } from './driver.mjs';
 for (const sig of ['SIGTERM', 'SIGHUP', 'SIGINT']) process.on(sig, () => process.exit(130));
 
 const repo = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-// What `t` runs: not a terminal, but a command that writes down the path it was
-// handed, so pressing t checks the key and PRCODER_TERMINAL's quoting without
-// opening a window. `f` has no override yet, so it is still not pressed here.
-const termArg = path.join(repo, 'data', 'cli-terminal-arg');
-const recorder = `node -e 'require("fs").writeFileSync(process.argv[1], process.argv[2])' ${termArg}`;
+// What `t` and `f` run: not a terminal or a file manager, but a command that
+// writes down the path it was handed, so pressing them checks the key and the
+// override's quoting without opening a window.
+const recorded = (what) => path.join(repo, 'data', `cli-${what}-arg`);
+const recorder = (what) => `node -e 'require("fs").writeFileSync(process.argv[1], process.argv[2])' ${recorded(what)}`;
 const port = Number(process.env.PRCODER_PORT) || 17455;
 
 // server.js falls back to a free port when the one it is given is taken --
@@ -49,7 +49,7 @@ function start(label) {
     rows: 30,
     cwd: repo,
     env: { ...process.env, PRCODER_PORT: String(port), PRCODER_NO_OPEN: '1', PRCODER_AGENT_BIN: '/bin/cat',
-      PRCODER_TERMINAL: recorder },
+      PRCODER_TERMINAL: recorder('terminal'), PRCODER_FILE_MANAGER: recorder('folder') },
   });
   // See the note in browser.mjs: a throw past this point would otherwise leave
   // the server running. Killing an already-killed pty throws, and the deliberate
@@ -88,13 +88,15 @@ await wait(4000);
 console.log('after r:    ', first.line('refreshing') ?? 'NO refresh line');
 console.log('  polled:   ', first.line('poll:') ?? 'NO poll line');
 
-// `t` opens PRCODER_TERMINAL with the repo's path appended; the recorder above
-// stands in for the terminal.
-rmSync(termArg, { force: true });
-first.write('t');
-await wait(1500);
-const opened = existsSync(termArg) ? readFileSync(termArg, 'utf8') : 'NOTHING recorded';
-console.log('t opened:   ', opened, opened === repo ? '(the repo)' : `(want ${repo})`);
+// `t` and `f` open PRCODER_TERMINAL and PRCODER_FILE_MANAGER with the repo's
+// path appended; the recorders above stand in for both.
+for (const [key, what] of [['t', 'terminal'], ['f', 'folder']]) {
+  rmSync(recorded(what), { force: true });
+  first.write(key);
+  await wait(1500);
+  const opened = existsSync(recorded(what)) ? readFileSync(recorded(what), 'utf8') : 'NOTHING recorded';
+  console.log(`${key} opened:   `, opened, opened === repo ? '(the repo)' : `(want ${repo})`);
+}
 
 // A second prcoder in the same repo: the case the port note is for.
 const second = start('second');
