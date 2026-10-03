@@ -46,7 +46,8 @@ export function usage() {
 Everything after -- goes to the agent untouched:
   prcoder 42 --port 4000 -- --effort high --model fable
 
-PRCODER_BROWSER=<cmd> opens the URL with a command of your own instead of the platform's.`;
+PRCODER_BROWSER=<cmd> opens the URL with a command of your own instead of the platform's,
+PRCODER_TERMINAL=<cmd> is the terminal t opens, and PRCODER_OPEN=<cmd> what f opens the repo with.`;
 }
 
 export function parseCli(argv) {
@@ -163,7 +164,7 @@ export function statusLines(s, u = {}) {
 }
 
 /** The variable that overrides each of `t` and `f` with a command of your own. */
-export const OPEN_REPO_VARS = { terminal: 'PRCODER_TERMINAL', folder: 'PRCODER_FILE_MANAGER' };
+export const OPEN_REPO_VARS = { terminal: 'PRCODER_TERMINAL', folder: 'PRCODER_OPEN' };
 
 /**
  * The argv that opens the repo in the platform's file manager (`folder`) or in

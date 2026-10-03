@@ -49,7 +49,7 @@ function start(label) {
     rows: 30,
     cwd: repo,
     env: { ...process.env, PRCODER_PORT: String(port), PRCODER_NO_OPEN: '1', PRCODER_AGENT_BIN: '/bin/cat',
-      PRCODER_TERMINAL: recorder('terminal'), PRCODER_FILE_MANAGER: recorder('folder') },
+      PRCODER_TERMINAL: recorder('terminal'), PRCODER_OPEN: recorder('folder') },
   });
   // See the note in browser.mjs: a throw past this point would otherwise leave
   // the server running. Killing an already-killed pty throws, and the deliberate
@@ -88,7 +88,7 @@ await wait(4000);
 console.log('after r:    ', first.line('refreshing') ?? 'NO refresh line');
 console.log('  polled:   ', first.line('poll:') ?? 'NO poll line');
 
-// `t` and `f` open PRCODER_TERMINAL and PRCODER_FILE_MANAGER with the repo's
+// `t` and `f` open PRCODER_TERMINAL and PRCODER_OPEN with the repo's
 // path appended; the recorders above stand in for both.
 for (const [key, what] of [['t', 'terminal'], ['f', 'folder']]) {
   rmSync(recorded(what), { force: true });

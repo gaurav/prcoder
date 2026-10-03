@@ -61,7 +61,8 @@ test('bad input is an error that names the problem', () => {
 test('the help names every flag, env var and agent', () => {
   const text = usage();
   for (const s of ['--port', '--no-open', '--verbose', '--agent', '--help', '--version', '-- ',
-    '--queue', 'PRCODER_QUEUE', 'PRCODER_PORT', 'PRCODER_NO_OPEN', 'PRCODER_VERBOSE', 'PRCODER_BROWSER', 'PRCODER_AGENT_BIN', ...AGENTS]) {
+    '--queue', 'PRCODER_QUEUE', 'PRCODER_PORT', 'PRCODER_NO_OPEN', 'PRCODER_VERBOSE', 'PRCODER_BROWSER', 'PRCODER_AGENT_BIN', ...AGENTS,
+    ...Object.values(OPEN_REPO_VARS)]) {
     assert.ok(text.includes(s), `help mentions ${s}`);
   }
   assert.equal(VERSION, createRequire(import.meta.url)('../package.json').version);
@@ -146,7 +147,7 @@ test('t and f know the platform\'s commands, and say so when they have none', ()
   assert.equal(openRepoArgs('terminal', 'win32', '/r'), null);
 });
 
-// PRCODER_TERMINAL and PRCODER_FILE_MANAGER run through the shell, so the path
+// PRCODER_TERMINAL and PRCODER_OPEN run through the shell, so the path
 // has to survive it: a space must not split it and a quote must not end it.
 test('an override for t or f is run with the repo appended, quoted for the shell', () => {
   assert.equal(openRepoArgs('terminal', 'linux', "/a b/it's", 'kitty --directory'),
@@ -154,7 +155,7 @@ test('an override for t or f is run with the repo appended, quoted for the shell
   assert.equal(openRepoArgs('terminal', 'win32', 'C:\\a b', 'wt -d'), 'wt -d "C:\\a b"');
   assert.equal(openRepoArgs('terminal', 'darwin', '/r', 'open -a iTerm'), "open -a iTerm '/r'");
   assert.equal(openRepoArgs('folder', 'sunos', '/r', 'nautilus'), "nautilus '/r'", 'even where f has no built-in');
-  assert.deepEqual(OPEN_REPO_VARS, { terminal: 'PRCODER_TERMINAL', folder: 'PRCODER_FILE_MANAGER' });
+  assert.deepEqual(OPEN_REPO_VARS, { terminal: 'PRCODER_TERMINAL', folder: 'PRCODER_OPEN' });
 });
 
 test('with no PR there is no PR line to print', () => {
