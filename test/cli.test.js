@@ -148,14 +148,14 @@ test('t and f know the platform\'s commands, and say so when they have none', ()
   assert.equal(openRepoArgs('terminal', 'win32', '/r'), null);
 });
 
-// PRCODER_TERMINAL and PRCODER_OPEN run through the shell, so the path
+// PRCODER_TERMINAL and PRCODER_FILE_MANAGER run through the shell, so the path
 // reaches it as a variable, not as text: a space must not split it, a quote
 // must not end it, and on Windows a %NAME% in it must not expand.
 test('an override for t or f is run with the repo appended, as a variable the shell expands once', () => {
   assert.equal(openRepoArgs('terminal', 'linux', "/a b/it's", 'kitty --directory'), 'kitty --directory "$PRCODER_REPO"');
   assert.equal(openRepoArgs('terminal', 'win32', 'C:\\a %TEMP%', 'wt -d'), 'wt -d "%PRCODER_REPO%"');
   assert.equal(openRepoArgs('folder', 'sunos', '/r', 'nautilus'), 'nautilus "$PRCODER_REPO"', 'even where f has no built-in');
-  assert.deepEqual(OPEN_REPO_VARS, { terminal: 'PRCODER_TERMINAL', folder: 'PRCODER_OPEN' });
+  assert.deepEqual(OPEN_REPO_VARS, { terminal: 'PRCODER_TERMINAL', folder: 'PRCODER_FILE_MANAGER' });
   assert.equal(REPO_ENV, 'PRCODER_REPO');
 });
 
