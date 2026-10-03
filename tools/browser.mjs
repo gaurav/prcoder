@@ -209,8 +209,10 @@ console.log('row ▶:  ', await local(), '+', await page.locator('#queue-body .t
 await page.locator('#queue-body .tab', { hasText: 'Completed' }).click();
 await page.waitForTimeout(150);
 // The way back, which is why this is a tick and not a delete: the box that
-// checked itself unchecks.
-await page.locator('.item', { hasText: SENT }).locator('input[type=checkbox]').uncheck();
+// checked itself unchecks. click(), not uncheck(): uncheck() reads the box
+// again after clicking, and once the save has moved the row off Completed it
+// waits for a box that is no longer there.
+await page.locator('.item', { hasText: SENT }).locator('input[type=checkbox]').click();
 await page.locator('#queue-body .tab', { hasText: 'Local (3)' }).waitFor({ timeout: 10_000 });
 await page.locator('#queue-body .tab', { hasText: 'Local' }).click();
 await page.waitForTimeout(150);
