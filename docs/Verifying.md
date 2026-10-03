@@ -85,7 +85,7 @@ fault in a later row shows only in the printed list.
 
 **`node tools/cli.mjs`** drives the terminal half in a real PTY, because the status block, the keys
 and the quit prompt all switch off when stdout is not a tty, which is what every other driver's
-server gets. It presses `t` and `f` with `PRCODER_TERMINAL` and `PRCODER_OPEN` set to a
+server gets. It presses `t` and `f` with `PRCODER_TERMINAL` and `PRCODER_FILE_MANAGER` set to a
 command that only records the path it is handed, which checks the keys and that the repo's path reaches the overrides whole,
 without opening a window. So the platform's own terminal and file manager are not driven: a scratch
 driver that presses either key without those set opens a real window on the machine running it.
