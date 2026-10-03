@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
-import { openRepoArgs, parseCli, usage, AGENTS, VERSION, portFor, portCandidates, PORT_BASE, PORT_SPAN, statusLines, ago } from '../cli.js';
+import { openRepoArgs, OPEN_REPO_VARS, parseCli, usage, AGENTS, VERSION, portFor, portCandidates, PORT_BASE, PORT_SPAN, statusLines, ago } from '../cli.js';
 import { queueChanges } from '../queue.js';
 
 test('a leading positional is our PR target, everything after -- is the agent\'s', () => {
@@ -146,15 +146,15 @@ test('t and f know the platform\'s commands, and say so when they have none', ()
   assert.equal(openRepoArgs('terminal', 'win32', '/r'), null);
 });
 
-// PRCODER_TERMINAL runs through the shell, so the path has to survive it: a
-// space must not split it and a quote must not end it.
-test('PRCODER_TERMINAL is run with the repo appended, quoted for the shell', () => {
+// PRCODER_TERMINAL and PRCODER_FILE_MANAGER run through the shell, so the path
+// has to survive it: a space must not split it and a quote must not end it.
+test('an override for t or f is run with the repo appended, quoted for the shell', () => {
   assert.equal(openRepoArgs('terminal', 'linux', "/a b/it's", 'kitty --directory'),
     "kitty --directory '/a b/it'\\''s'");
   assert.equal(openRepoArgs('terminal', 'win32', 'C:\\a b', 'wt -d'), 'wt -d "C:\\a b"');
   assert.equal(openRepoArgs('terminal', 'darwin', '/r', 'open -a iTerm'), "open -a iTerm '/r'");
-  // It is t's override only; f keeps the platform's file manager.
-  assert.deepEqual(openRepoArgs('folder', 'darwin', '/r', 'open -a iTerm'), ['open', '/r']);
+  assert.equal(openRepoArgs('folder', 'sunos', '/r', 'nautilus'), "nautilus '/r'", 'even where f has no built-in');
+  assert.deepEqual(OPEN_REPO_VARS, { terminal: 'PRCODER_TERMINAL', folder: 'PRCODER_FILE_MANAGER' });
 });
 
 test('with no PR there is no PR line to print', () => {

@@ -37,7 +37,7 @@ says `checked 7m ago` next to that count, rather than presenting them as current
   says it has none. `PRCODER_TERMINAL` names your own on any platform, run with the repo's path
   appended: `open -a iTerm`, `kitty --directory`, `wt -d`.
 - `f` opens the repo in the file manager, for moving, opening or renaming files, or browsing its
-  directories.
+  directories. `PRCODER_FILE_MANAGER` names another the same way: `open -a ForkLift`, `nautilus`.
 - `q` or Ctrl-C quits, asking first when that would cost something.
 
 ## Quitting

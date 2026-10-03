@@ -162,22 +162,25 @@ export function statusLines(s, u = {}) {
   ].filter(Boolean);
 }
 
+/** The variable that overrides each of `t` and `f` with a command of your own. */
+export const OPEN_REPO_VARS = { terminal: 'PRCODER_TERMINAL', folder: 'PRCODER_FILE_MANAGER' };
+
 /**
  * The argv that opens the repo in the platform's file manager (`folder`) or in
  * a terminal there (`terminal`), or null where prcoder has no command for it
  * yet. Pure, so the table is testable off the platform it names.
  *
- * `custom` is PRCODER_TERMINAL: a command line of your own for `t`, on any
- * platform, run through the shell like PRCODER_OPEN with the repo's path
- * appended -- so it comes back as one string, not an argv. The path is quoted
- * for that shell, so a space or a quote in it stays part of the path.
+ * `custom` is that one's variable from OPEN_REPO_VARS: a command line of your
+ * own, on any platform, run through the shell like PRCODER_OPEN with the repo's
+ * path appended -- so it comes back as one string, not an argv. The path is
+ * quoted for that shell, so a space or a quote in it stays part of the path.
  *
  * ponytail: Terminal.app is the only built-in terminal. iTerm, a Linux terminal
  * (there is no one command for one) or Windows Terminal are PRCODER_TERMINAL
  * until someone wants one without setting it.
  */
 export function openRepoArgs(what, platform, dir, custom) {
-  if (what === 'terminal' && custom) {
+  if (custom) {
     // Windows forbids " in a path, so double quotes are enough there.
     const quoted = platform === 'win32' ? `"${dir}"` : `'${dir.replaceAll("'", "'\\''")}'`;
     return `${custom} ${quoted}`;

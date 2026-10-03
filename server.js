@@ -16,7 +16,7 @@ import { snapshot, currentBranch, repoInfo, prScope, compareUrl, originOwner, ch
 import { bucket, fileUrl, fileViews } from './files.js';
 import { readPort, writePort, useQueueFile, movedQueue } from './store.js';
 import { readQueue, writeQueue, quote } from './queue.js';
-import { parseCli, usage, VERSION, portCandidates, statusLines, openRepoArgs } from './cli.js';
+import { parseCli, usage, VERSION, portCandidates, statusLines, openRepoArgs, OPEN_REPO_VARS } from './cli.js';
 import { counts } from './public/items.js';
 import * as term from './term.js';
 import { toggleTask } from './public/tasks.js';
@@ -636,14 +636,12 @@ function openBrowser() {
 
 // `t` and `f`: a terminal, or the file manager, on the repo. Detached like the
 // browser above, and never from a route: the page names nothing that reaches an
-// argv here, and `repo` is the server's own cwd. PRCODER_TERMINAL comes back
-// as a shell command line rather than an argv; openRepoArgs says why.
+// argv here, and `repo` is the server's own cwd. An override from
+// OPEN_REPO_VARS comes back as a shell command line rather than an argv;
+// openRepoArgs says why.
 function openRepo(what) {
-  const argv = openRepoArgs(what, process.platform, repo, process.env.PRCODER_TERMINAL);
-  if (!argv) {
-    const hint = what === 'terminal' ? '; PRCODER_TERMINAL names one' : '';
-    return console.error(`${what}: not implemented on ${process.platform} yet${hint}`);
-  }
+  const argv = openRepoArgs(what, process.platform, repo, process.env[OPEN_REPO_VARS[what]]);
+  if (!argv) return console.error(`${what}: not implemented on ${process.platform} yet; ${OPEN_REPO_VARS[what]} names one`);
   const opts = { detached: true, stdio: 'ignore' };
   const child = typeof argv === 'string' ? spawn(argv, { ...opts, shell: true }) : spawn(argv[0], argv.slice(1), opts);
   child.on('error', (e) => console.error(`could not open a ${what} (${e.message})`)).unref();
