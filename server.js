@@ -628,10 +628,25 @@ function openBrowser() {
   const url = urls.local;
   const opener = { darwin: 'open', win32: 'start' }[process.platform] || 'xdg-open';
   const custom = process.env.PRCODER_BROWSER;
+  const shell = Boolean(custom) || process.platform === 'win32';
   const child = custom
-    ? spawn(`${custom} ${url}`, { detached: true, stdio: 'ignore', shell: true })
-    : spawn(opener, [url], { detached: true, stdio: 'ignore', shell: process.platform === 'win32' });
-  child.on('error', (e) => console.error(`could not open a browser (${e.message}) — visit ${url}`)).unref();
+    ? spawn(`${custom} ${url}`, { detached: true, stdio: 'ignore', shell })
+    : spawn(opener, [url], { detached: true, stdio: 'ignore', shell });
+  watch(child, shell, (why) => console.error(`could not open a browser (${why}) — visit ${url}`));
+}
+
+/**
+ * Lets a detached opener go, but not unheard. Through a shell, a command that
+ * is missing or fails is no `error` -- the shell itself started -- only a
+ * nonzero exit, and with stdio ignored that is the one sign there is; so a
+ * shell's exit code is reported. An argv spawn's is not: a missing command is
+ * already an `error`, and explorer exits 1 when it has opened the window.
+ * A signal is someone closing the window, not a failure.
+ */
+function watch(child, shell, failed) {
+  child.on('error', (e) => failed(e.message));
+  if (shell) child.on('exit', (code) => code && failed(`exit ${code}`));
+  child.unref();
 }
 
 // `t` and `f`: a terminal, or the file manager, on the repo. Detached like the
@@ -646,7 +661,7 @@ function openRepo(what) {
   const child = typeof argv === 'string'
     ? spawn(argv, { ...opts, shell: true, env: { ...process.env, [REPO_ENV]: repo } })
     : spawn(argv[0], argv.slice(1), opts);
-  child.on('error', (e) => console.error(`could not open a ${what} (${e.message})`)).unref();
+  watch(child, typeof argv === 'string', (why) => console.error(`could not open a ${what} (${why})`));
 }
 
 /**
