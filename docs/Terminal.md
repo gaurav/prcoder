@@ -31,9 +31,13 @@ says `checked 7m ago` next to that count, rather than presenting them as current
   the PR has moved upstream. `-v` or `-vv` (or `PRCODER_VERBOSE=1` or `=2`) starts at a level, which
   is the only way to see startup itself.
 - `o` reopens the browser.
-- `t` opens a new terminal window in the repo, and `f` opens the repo in the file manager, for
-  the command too long for `!` in Claude Code. `t` is Terminal.app only so far; elsewhere it says
-  so. Neither prints anything when it works, like `o`.
+- `t` opens a new terminal window in the repo, for whatever is awkward to run through a coding
+  agent: several commands in a row, moving between directories, commands piped together, or trying
+  out the CLI you are working on. The built-in terminal is Terminal.app on macOS, and elsewhere `t`
+  says it has none. `PRCODER_TERMINAL` names your own on any platform, run with the repo's path
+  appended: `open -a iTerm`, `kitty --directory`, `wt -d`.
+- `f` opens the repo in the file manager, for moving, opening or renaming files, or browsing its
+  directories.
 - `q` or Ctrl-C quits, asking first when that would cost something.
 
 ## Quitting
