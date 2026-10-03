@@ -146,6 +146,17 @@ test('t and f know the platform\'s commands, and say so when they have none', ()
   assert.equal(openRepoArgs('terminal', 'win32', '/r'), null);
 });
 
+// PRCODER_TERMINAL runs through the shell, so the path has to survive it: a
+// space must not split it and a quote must not end it.
+test('PRCODER_TERMINAL is run with the repo appended, quoted for the shell', () => {
+  assert.equal(openRepoArgs('terminal', 'linux', "/a b/it's", 'kitty --directory'),
+    "kitty --directory '/a b/it'\\''s'");
+  assert.equal(openRepoArgs('terminal', 'win32', 'C:\\a b', 'wt -d'), 'wt -d "C:\\a b"');
+  assert.equal(openRepoArgs('terminal', 'darwin', '/r', 'open -a iTerm'), "open -a iTerm '/r'");
+  // It is t's override only; f keeps the platform's file manager.
+  assert.deepEqual(openRepoArgs('folder', 'darwin', '/r', 'open -a iTerm'), ['open', '/r']);
+});
+
 test('with no PR there is no PR line to print', () => {
   const out = block({ pr: null, scope: 'none', queue: [] });
   assert.match(out, /none for this branch/);

@@ -167,11 +167,21 @@ export function statusLines(s, u = {}) {
  * a terminal there (`terminal`), or null where prcoder has no command for it
  * yet. Pure, so the table is testable off the platform it names.
  *
- * ponytail: Terminal.app only, and no PRCODER_TERMINAL override. iTerm, a
- * Linux terminal (there is no one command for one) or Windows Terminal when
- * someone asks.
+ * `custom` is PRCODER_TERMINAL: a command line of your own for `t`, on any
+ * platform, run through the shell like PRCODER_OPEN with the repo's path
+ * appended -- so it comes back as one string, not an argv. The path is quoted
+ * for that shell, so a space or a quote in it stays part of the path.
+ *
+ * ponytail: Terminal.app is the only built-in terminal. iTerm, a Linux terminal
+ * (there is no one command for one) or Windows Terminal are PRCODER_TERMINAL
+ * until someone wants one without setting it.
  */
-export function openRepoArgs(what, platform, dir) {
+export function openRepoArgs(what, platform, dir, custom) {
+  if (what === 'terminal' && custom) {
+    // Windows forbids " in a path, so double quotes are enough there.
+    const quoted = platform === 'win32' ? `"${dir}"` : `'${dir.replaceAll("'", "'\\''")}'`;
+    return `${custom} ${quoted}`;
+  }
   return {
     // xdg-open where it is the desktop's standard, and nowhere else: on AIX,
     // SunOS or Android it would be a guess, not a command.

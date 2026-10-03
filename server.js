@@ -636,13 +636,17 @@ function openBrowser() {
 
 // `t` and `f`: a terminal, or the file manager, on the repo. Detached like the
 // browser above, and never from a route: the page names nothing that reaches an
-// argv here, and `repo` is the server's own cwd.
+// argv here, and `repo` is the server's own cwd. PRCODER_TERMINAL comes back
+// as a shell command line rather than an argv; openRepoArgs says why.
 function openRepo(what) {
-  const argv = openRepoArgs(what, process.platform, repo);
-  if (!argv) return console.error(`${what}: not implemented on ${process.platform} yet`);
-  const [bin, ...args] = argv;
-  spawn(bin, args, { detached: true, stdio: 'ignore' })
-    .on('error', (e) => console.error(`could not open a ${what} (${e.message})`)).unref();
+  const argv = openRepoArgs(what, process.platform, repo, process.env.PRCODER_TERMINAL);
+  if (!argv) {
+    const hint = what === 'terminal' ? '; PRCODER_TERMINAL names one' : '';
+    return console.error(`${what}: not implemented on ${process.platform} yet${hint}`);
+  }
+  const opts = { detached: true, stdio: 'ignore' };
+  const child = typeof argv === 'string' ? spawn(argv, { ...opts, shell: true }) : spawn(argv[0], argv.slice(1), opts);
+  child.on('error', (e) => console.error(`could not open a ${what} (${e.message})`)).unref();
 }
 
 /**
