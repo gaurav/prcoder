@@ -70,7 +70,7 @@ form:
 node tools/browser.mjs highlighting               # the UI, PNGs to data/shots/highlighting/;
                                                   # the label says what you were looking at. Firefox, falling
                                                   # back to Chromium if it will not start
-PRCODER_BROWSER=chromium node tools/browser.mjs   # compare engines
+PRCODER_PLAYWRIGHT=chromium node tools/browser.mjs   # compare engines
 node tools/cli.mjs                                # the terminal half, in a real PTY
 node tools/no-pr.mjs                              # the pane with no pull request, in a clone
 node tools/diff-views.mjs                         # the diff pane's DIFF, DELETED, renames, outline and .tsx, on fixture PR #87

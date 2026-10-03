@@ -13,7 +13,7 @@ terminal-launched Firefox from starting at all, and the launch hangs until the
 timeout with nothing in the output to say why. `existsSync(executablePath())`
 is true throughout, so "installed" does not mean "starts". This is a temporary
 workaround: #80 says when it comes out, and `firefox-runner/` has the whole
-story. `PRCODER_BROWSER=chromium` is the way past it for work that is not about
+story. `PRCODER_PLAYWRIGHT=chromium` is the way past it for work that is not about
 Firefox.
 
 Chromium's build is in two halves. Playwright runs a headless launch from

@@ -48,7 +48,7 @@ stray click edits a description on GitHub: undo what you write, or stay read-onl
 measures, with a comment at each check saying which regression the check catches.
 
 - **Firefox by default**, because a Firefox-only caret bug survived every Chromium screenshot
-  ([public/CLAUDE.md](../public/CLAUDE.md)). `PRCODER_BROWSER=chromium` forces the other, and
+  ([public/CLAUDE.md](../public/CLAUDE.md)). `PRCODER_PLAYWRIGHT=chromium` forces the other, and
   running both is worth the second minute. On macOS 27, Firefox starts only with the app-data
   workaround every launch takes from `firefoxEnv()` (#80);
   [tools/firefox-runner](../tools/firefox-runner/README.md) has the cause and the re-check, and
