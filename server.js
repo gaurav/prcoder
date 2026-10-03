@@ -16,8 +16,7 @@ import { snapshot, currentBranch, repoInfo, prScope, compareUrl, originOwner, ch
 import { bucket, fileUrl, fileViews } from './files.js';
 import { readPort, writePort, useQueueFile, movedQueue } from './store.js';
 import { readQueue, writeQueue, quote } from './queue.js';
-import { parseCli, usage, VERSION, portCandidates, statusLines } from './cli.js';
-import { counts } from './public/items.js';
+import { parseCli, usage, VERSION, portCandidates, statusLines, queueSummary, quitRisks } from './cli.js';
 import * as term from './term.js';
 import { toggleTask } from './public/tasks.js';
 import { grammars } from './public/diff.js';
@@ -109,9 +108,9 @@ function decorateFiles(p) {
 }
 
 /**
- * Every queue write, and the copy of the queue askToQuit counts kept up with it.
+ * Every queue write, and the copy of the queue askToQuit lists kept up with it.
  * That copy is otherwise the last poll's, so an item filed as an issue a moment
- * before `q` was still counted as "only on this machine".
+ * before `q` was still listed as on Local.
  */
 async function saveQueue(items) {
   const saved = await writeQueue(repo, items, info?.nameWithOwner);
@@ -242,8 +241,11 @@ const routes = {
   // Unlocked only because poll() takes the lock itself.
   'GET /api/status': poll,
 
+  // `started` is what the exit bar fills its fields with: the model and effort
+  // given after -- on prcoder's command line, so starting the agent again offers
+  // what it was started with rather than a blank nobody remembers the meaning of.
   'GET /api/whoami': () => ({ prcoder: true, repo, branch: last?.branch ?? null,
-    nameWithOwner: info?.nameWithOwner ?? null }),
+    nameWithOwner: info?.nameWithOwner ?? null, started: startedWith(agentArgs) }),
 
   'GET /api/prs': () => listPrs(repo),
 
@@ -253,6 +255,8 @@ const routes = {
   'POST /api/quit': ({ force } = {}) => {
     const risk = quitRisk();
     if (risk.length && !force) return { risk };
+    // Into the terminal's scrollback, as q does: the page is about to lose it.
+    listQueue();
     // Deferred so the reply goes out first: process.exit doesn't wait for it.
     setTimeout(quit, 100);
     return { quit: true };
@@ -488,25 +492,54 @@ export const server = http.createServer(async (req, res) => {
 const ptys = new Set();
 
 /**
- * Pure: the /pty query string -> extra arguments for this `claude`, or null to
- * refuse the socket. The exit panel's "Start coding agent again" sends it; a
- * first open sends nothing and gets [].
+ * Pure: the model and effort an argv names, '' for one it doesn't. The last of
+ * each wins, as it does for claude, and both `--model x` and `--model=x` count.
+ */
+export function startedWith(args) {
+  const got = { model: '', effort: '' };
+  for (let i = 0; i < args.length; i++) {
+    const m = /^--(model|effort)(?:=(.*))?$/s.exec(args[i]);
+    if (m) got[m[1]] = m[2] ?? args[++i] ?? '';
+  }
+  return got;
+}
+
+/**
+ * Pure: the /pty query string -> this `claude`'s whole argv after `base` (the
+ * agent's arguments from prcoder's command line), or null to refuse the socket.
+ * The exit panel's "Start coding agent again" sends it; a first open sends
+ * nothing and gets `base`.
+ *
+ * Its settings go after `base`, so one chosen in the page wins over one given
+ * there -- and a blank one leaves `base`'s in place. That is why blanking both
+ * fields does not get you the agent's own default when -- named a model or
+ * effort: there is nothing to send that would unsay it.
  *
  * Allowlisted rather than passed through, because this is the page choosing a
  * spawn's argv. A model has to be a name, not something starting with a dash:
  * `--model --dangerously-skip-permissions` must not reach claude as two flags.
+ * `@` and `/` are in the name because Vertex IDs (`claude-sonnet-4-5@20250929`)
+ * and Bedrock ARNs use them.
+ *
+ * A setting equal to the one `base` already ends on is dropped before the
+ * check, not checked: the exit bar is filled with `base`'s (startedWith), so an
+ * untouched restart sends them back, and the command line accepts names the
+ * allowlist doesn't know. `base` carries it already; repeating it adds nothing.
  *
  * The real spawn was driven once by hand (2026-09-23), against a stub that
  * prints its argv: `[]` on the first open, then `[--continue --model opus
  * --effort high]` after starting it again, and the server exiting 0 after Quit.
  */
 const EFFORTS = new Set(['low', 'medium', 'high', 'xhigh', 'max']);
-export function sessionArgs(params) {
-  const model = params.get('model');
-  const effort = params.get('effort');
-  if (model && !/^\w[\w.:[\]-]*$/.test(model)) return null;
+export function sessionArgs(params, base = []) {
+  const given = startedWith(base);
+  const own = (key) => (params.get(key) === given[key] ? '' : params.get(key));
+  const model = own('model');
+  const effort = own('effort');
+  if (model && !/^\w[\w.:@/[\]-]*$/.test(model)) return null;
   if (effort && !EFFORTS.has(effort)) return null;
   return [
+    ...base,
     ...(params.has('continue') ? ['--continue'] : []),
     ...(model ? ['--model', model] : []),
     ...(effort ? ['--effort', effort] : []),
@@ -518,12 +551,10 @@ const wss = new WebSocketServer({ server, path: '/pty' }).on('error', () => {}).
   // that has already started has already read the repo.
   if (!sameOrigin(req)) return ws.close(1008, 'cross-origin connection refused');
 
-  const extra = sessionArgs(new URL(req.url, 'http://localhost').searchParams);
-  if (!extra) return ws.close(1008, 'bad session settings');
+  const args = sessionArgs(new URL(req.url, 'http://localhost').searchParams, agentArgs);
+  if (!args) return ws.close(1008, 'bad session settings');
 
-  // After the agent's arguments from prcoder's command line (those after --),
-  // so a setting chosen in the page overrides one given there.
-  const pty = ptySpawn(process.env.PRCODER_AGENT_BIN || 'claude', [...agentArgs, ...extra], {
+  const pty = ptySpawn(process.env.PRCODER_AGENT_BIN || 'claude', args, {
     name: 'xterm-256color',
     cols: 80,
     rows: 24,
@@ -700,30 +731,33 @@ async function listenOnRepoPort() {
   return port;
 }
 
-/** The queue's outstanding items. Cached by the poll and by saveQueue, so no subprocess. */
-const localOnly = () => counts(last?.queue ?? []).local;
-
 /**
  * What quitting costs, so the answer is an informed one. Every number here is
  * already in hand; none of it shells out, because a keypress that waits on git
  * is a keypress that can hang.
  *
  * An empty list is not a question worth asking, so it is not asked: no tab open,
- * nothing left in the queue, nothing in the working tree that quitting could
- * lose.
+ * and nothing in the working tree only this machine has. The queue is not in
+ * it. Quitting leaves `.prcoder/queue.json` as it is, and a question about it
+ * read as if `y` would file the items as issues; what is still on Local is
+ * printed instead, first and either way, so it is in the scrollback to copy
+ * from once prcoder has gone.
  */
 function quitRisk() {
-  return [
-    wss.clients.size && (wss.clients.size > 1
-      ? `${wss.clients.size} browser tabs — their Claude sessions end`
-      : '1 browser tab — the Claude session ends'),
-    last?.ahead && `${last.ahead} unpushed commit${last.ahead > 1 ? 's' : ''}`,
-    last?.dirtyFiles?.length && `${last.dirtyFiles.length} uncommitted file${last.dirtyFiles.length > 1 ? 's' : ''}`,
-    // The queue is what you meant to finish this time round, and it lives only
-    // on this machine: an item still in it never became an issue, and nobody
-    // working anywhere else will ever see it.
-    localOnly() && `${localOnly()} queue item${localOnly() > 1 ? 's' : ''} only on this machine — file them as issues to keep them past it`,
-  ].filter(Boolean);
+  return quitRisks({ tabs: wss.clients.size, ahead: last?.ahead, dirty: last?.dirtyFiles?.length });
+}
+
+/**
+ * Print what is on Local. One write, not one per item: every log line erases
+ * and repaints the block. Not again when it is what was printed last: Ctrl-C,
+ * `n`, Ctrl-C used to list the same items twice, and the second copy only
+ * pushed the first up the scrollback. A changed queue is listed afresh.
+ */
+let listed = '';
+function listQueue() {
+  const now = queueSummary(last?.queue ?? [], movedQueue() ?? undefined).join('\n');
+  if (now && now !== listed) console.log(now);
+  listed = now;
 }
 
 // Kills the PTYs itself rather than leaving that to the close handlers:
@@ -737,6 +771,7 @@ function quit() {
 }
 
 function askToQuit() {
+  listQueue();
   const risk = quitRisk();
   if (!risk.length) return quit();
   term.confirm(`quit? ${risk.join('; ')}  [y/N] `, quit);

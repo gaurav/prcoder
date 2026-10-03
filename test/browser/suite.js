@@ -143,10 +143,13 @@ const posted = [];
 // title to wait on. `pty` is the mock socket's handler, for a test that needs
 // the agent to do something. A regex, not `**/pty`: a glob has to match the
 // whole URL, so the exit bar's `/pty?model=...` slipped past it to the real
-// server.
-async function newPage({ prs = [], st = status, ready = '#pr-head .pr-title', pty = () => {} } = {}) {
+// server. `whoami` is the model and effort prcoder's command line started the
+// agent with, which the exit bar is filled with.
+async function newPage({ prs = [], st = status, ready = '#pr-head .pr-title', pty = () => {},
+  whoami = { model: '', effort: '' } } = {}) {
   const p = await browser.newPage();
   await p.routeWebSocket(/\/pty(\?|$)/, pty);
+  await p.route('**/api/whoami', (r) => r.fulfill({ json: { started: whoami } }));
   await p.route('**/api/status', (r) => r.fulfill({ json: st }));
   await p.route('**/api/prs', (r) => (prs ? r.fulfill({ json: prs }) : r.abort()));
   await p.route('**/api/queue', (r) => r.fulfill({ json: [] }));
@@ -721,6 +724,28 @@ test('a queue change the server refuses is taken back off the screen', { skip },
   await fresh.close();
 });
 
+// Adding used to switch to Local, which threw away whatever tab you were
+// reading. It stays put now, and the Local tab flashes to say where it went.
+test('adding from another tab stays on it and flashes Local', { skip }, async () => {
+  const fresh = await newPage();
+  let queue = [{ text: 'already done', done: true, issue: null, deleted: false, doneAt: 1000 }];
+  await fresh.route('**/api/status', (r) => r.fulfill({ json: { ...status, queue } }));
+  await fresh.route('**/api/queue', (r) => {
+    if (r.request().method() === 'PUT') queue = r.request().postDataJSON().items;
+    return r.fulfill({ json: queue });
+  });
+  await fresh.reload();
+  await fresh.locator('#queue-body .tab', { hasText: 'Completed' }).click();
+  await fresh.locator('#queue-input').fill('new from Completed');
+  await fresh.locator('#queue-input').press('Enter');
+  await fresh.waitForSelector('#queue-body .tab.flash[data-tab="local"]');
+  assert.match(await fresh.locator('#queue-body .tab.on').textContent(), /^Completed/);
+  assert.deepEqual(await fresh.locator('#queue-body .item .text').allTextContents(), ['already done']);
+  assert.match(await fresh.locator('#queue-body .tab[data-tab="local"]').textContent(), /\(1\)/);
+  assert.equal(await fresh.locator('#queue-input').inputValue(), '');
+  await fresh.close();
+});
+
 // With the socket closed nothing is typed, so ▶ must not mark it done: done
 // moves it out of Active, and the item would be gone from view unsent.
 test('▶ with Claude disconnected types nothing and leaves the item active', { skip }, async () => {
@@ -1114,13 +1139,17 @@ test('a refused start says why', { skip }, async () => {
 test('when the agent exits, starting it again reconnects with the chosen settings, and Quit asks first', { skip }, async () => {
   const urls = [];
   let second;
-  const p = await newPage({ pty: (ws) => {
+  const p = await newPage({ whoami: { model: 'sonnet', effort: 'low' }, pty: (ws) => {
     urls.push(new URL(ws.url()).search);
     if (urls.length === 1) ws.close();
     else second = ws;
   } });
   const bar = p.locator('#term-exit');
   await bar.waitFor({ state: 'visible' });
+  // Filled with what the command line started it with, not left blank -- by a
+  // fetch that can land after the bar shows, so waited on.
+  await p.waitForFunction(() => document.querySelector('#term-exit [name=model]').value === 'sonnet');
+  assert.equal(await p.inputValue('#term-exit [name=effort]'), 'low');
   await p.fill('#term-exit [name=model]', 'opus');
   await p.selectOption('#term-exit [name=effort]', 'high');
   assert.equal(await p.isChecked('#term-exit [name=continue]'), false, 'continue ticked by default');
@@ -1133,6 +1162,9 @@ test('when the agent exits, starting it again reconnects with the chosen setting
 
   second.close();
   await bar.waitFor({ state: 'visible' });
+  // That start counts as one: the next exit offers what it chose.
+  assert.equal(await p.inputValue('#term-exit [name=model]'), 'opus');
+  assert.equal(await p.inputValue('#term-exit [name=effort]'), 'high');
   const asked = [];
   await p.route('**/api/quit', (r) => {
     const body = r.request().postDataJSON();

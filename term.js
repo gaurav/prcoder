@@ -56,6 +56,28 @@ const rows = () => out.rows || 24;
 const ERASE = (n) => (n ? `\x1b[${n}F\x1b[0J` : '');
 
 /**
+ * A line as text, never as instructions to the terminal. Every line here
+ * carries something prcoder did not write -- a queue item typed into any tab or
+ * edited into queue.json, a PR title, a branch name, git's stderr -- and an
+ * ESC in any of them is a sequence the terminal would run: a colour that never
+ * resets, a cursor move that breaks `painted`, a title set on the window. So
+ * control characters are shown as their Unicode pictures (ESC as `␛`) and the
+ * C1 range, which some terminals obey as UTF-8 too, as `�`.
+ *
+ * Done here rather than where item text is formatted because this is the one
+ * way out (init() routes console through log()), so a call site added later is
+ * covered without knowing to be. A log line keeps its newlines and tabs; a
+ * status row keeps neither, since each row has to be exactly one row.
+ */
+const picture = (c) => {
+  const n = c.charCodeAt(0);
+  return n < 0x20 ? String.fromCharCode(0x2400 + n) : n === 0x7f ? '\u2421' : '\ufffd';
+};
+const LOGGED = /[\x00-\x08\x0b-\x1f\x7f-\x9f]/g;
+const ROW = /[\x00-\x1f\x7f-\x9f]/g;
+const visible = (line, re = ROW) => String(line).replace(re, picture);
+
+/**
  * A line cut to `width` terminal columns. slice() counts UTF-16 units, and a PR
  * title with a CJK character or an emoji in it is wider on screen than that
  * count: it wrapped, `painted` undercounted the rows by one, and the next erase
@@ -107,7 +129,8 @@ export function paint() {
  * caller repaint on a timer to keep an age honest without writing escape
  * sequences at an idle terminal every thirty seconds.
  */
-export function status(next) {
+export function status(lines) {
+  const next = lines.map((l) => visible(l));
   if (next.length === footer.length && next.every((l, i) => l === footer[i])) return;
   footer = next;
   paint();
@@ -118,8 +141,9 @@ export function status(next) {
  * output is piped, because docs/Terminal.md promises the busy-port note there; on a
  * real terminal the two are the same screen and the split buys nothing.
  */
-export function log(line, min = QUIET, err = false) {
+export function log(raw, min = QUIET, err = false) {
   if (min > level) return;
+  const line = visible(raw, LOGGED);
   if (!live()) return void (err ? process.stderr : out).write(`${line}\n`);
   out.write(ERASE(painted));
   painted = 0;
@@ -142,7 +166,7 @@ export function cycleVerbosity() {
  * it.
  */
 export function confirm(text, onYes) {
-  prompt = { text, onYes };
+  prompt = { text: visible(text), onYes };
   paint();
 }
 

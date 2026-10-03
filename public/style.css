@@ -179,6 +179,12 @@ a { color: var(--accent); }
 .check { display: flex; align-items: center; font-size: 13px; padding: 3px 0; }
 .check-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .check-state { flex: none; margin-left: auto; padding-left: 8px; color: var(--dim); font-size: 12px; }
+/* The Local tab, when an item lands there while you are on another one
+   (flashLocal in queue.js). Colour, not movement, so it needs no
+   reduced-motion variant; twice, because once is easy to miss while your eyes
+   are on the input. */
+@keyframes tab-flash { from { background: var(--accent); color: var(--bg); } }
+.tab.flash { animation: tab-flash 0.6s ease-out 2; }
 .tab:hover, .bulk:hover { color: var(--fg); }
 .bulk { border-color: var(--line); }
 .spacer { flex: 1; }

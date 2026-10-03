@@ -158,6 +158,12 @@ function connect(query = '') {
 // What to do once Claude is gone: start it again, perhaps differently, or stop
 // prcoder from here rather than from the terminal it was started in.
 const exitForm = document.getElementById('term-exit');
+// Filled once, with what prcoder's command line started the agent with. Never
+// reset after, so the next exit offers whatever the last start chose instead.
+api('/api/whoami', undefined, 'GET').then(({ started }) => {
+  exitForm.elements.model.value = started.model;
+  exitForm.elements.effort.value = started.effort;
+}).catch(() => { /* blank fields still mean "as started" */ });
 exitForm.onsubmit = (e) => {
   e.preventDefault();
   exitForm.hidden = true;
