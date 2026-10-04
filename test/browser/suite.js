@@ -144,12 +144,14 @@ const posted = [];
 // the agent to do something. A regex, not `**/pty`: a glob has to match the
 // whole URL, so the exit bar's `/pty?model=...` slipped past it to the real
 // server. `whoami` is the model and effort prcoder's command line started the
-// agent with, which the exit bar is filled with.
+// agent with, which the exit bar is filled with -- or a function given the
+// route, for a test that answers it late.
 async function newPage({ prs = [], st = status, ready = '#pr-head .pr-title', pty = () => {},
   whoami = { model: '', effort: '' } } = {}) {
   const p = await browser.newPage();
   await p.routeWebSocket(/\/pty(\?|$)/, pty);
-  await p.route('**/api/whoami', (r) => r.fulfill({ json: { started: whoami } }));
+  await p.route('**/api/whoami', (r) => (typeof whoami === 'function'
+    ? whoami(r) : r.fulfill({ json: { started: whoami } })));
   await p.route('**/api/status', (r) => r.fulfill({ json: st }));
   await p.route('**/api/prs', (r) => (prs ? r.fulfill({ json: prs }) : r.abort()));
   await p.route('**/api/queue', (r) => r.fulfill({ json: [] }));
@@ -1175,5 +1177,23 @@ test('when the agent exits, starting it again reconnects with the chosen setting
   await p.click('#term-quit');
   await bar.getByText('prcoder has quit').waitFor();
   assert.deepEqual(asked, [{}, 'Quit prcoder? 2 uncommitted files.', { force: true }]);
+  await p.close();
+});
+
+// The fill is a fetch, so it can land after you have typed into the bar; it
+// must not take that back. And an effort the select has no option for still
+// shows, rather than reading "as started".
+test('the exit bar\'s late fill keeps what was typed, and shows an effort it has no option for', { skip }, async () => {
+  let answer;
+  const late = new Promise((resolve) => { answer = resolve; });
+  const p = await newPage({
+    whoami: async (r) => { await late; return r.fulfill({ json: { started: { model: 'sonnet', effort: 'extreme' } } }); },
+    pty: (ws) => ws.close(),
+  });
+  await p.locator('#term-exit').waitFor({ state: 'visible' });
+  await p.fill('#term-exit [name=model]', 'opus');
+  answer();
+  await p.waitForFunction(() => document.querySelector('#term-exit [name=effort]').value === 'extreme');
+  assert.equal(await p.inputValue('#term-exit [name=model]'), 'opus');
   await p.close();
 });

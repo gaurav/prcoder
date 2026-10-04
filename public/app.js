@@ -160,9 +160,16 @@ function connect(query = '') {
 const exitForm = document.getElementById('term-exit');
 // Filled once, with what prcoder's command line started the agent with. Never
 // reset after, so the next exit offers whatever the last start chose instead.
+// Only into a field still blank: one already set was set by you, or by a start
+// from the bar, and a reply landing late must not take it back. An effort the
+// select has no option for (`--effort extreme`) gets one: setting a select to
+// a value it lacks blanks it, which shows "as started" rather than the value.
 api('/api/whoami', undefined, 'GET').then(({ started }) => {
-  exitForm.elements.model.value = started.model;
-  exitForm.elements.effort.value = started.effort;
+  const { model, effort } = exitForm.elements;
+  if (!model.value) model.value = started.model;
+  if (effort.value || !started.effort) return;
+  if (![...effort.options].some((o) => o.value === started.effort)) effort.add(new Option(started.effort));
+  effort.value = started.effort;
 }).catch(() => { /* blank fields still mean "as started" */ });
 exitForm.onsubmit = (e) => {
   e.preventDefault();
