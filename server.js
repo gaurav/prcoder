@@ -763,11 +763,21 @@ function listQueue() {
 // Kills the PTYs itself rather than leaving that to the close handlers:
 // process.exit doesn't wait for them, and an orphaned `claude` outlives the
 // terminal it was started from.
+//
+// Exits once stdout has caught up, not straight away. Piped (`prcoder | tee`),
+// stdout is asynchronous on macOS and process.exit drops what is still queued
+// -- the Local list askToQuit printed a moment ago, on a reader that is behind.
+// An empty write calls back once everything ahead of it is out; the timer is
+// for a reader that never catches up, which must not keep prcoder alive.
+let quitting = false;
 function quit() {
+  if (quitting) return;
+  quitting = true;
   for (const pty of ptys) pty.kill();
   wss.close();
   server.close();
-  process.exit(0);
+  setTimeout(() => process.exit(0), 2000);
+  process.stdout.write('', () => process.exit(0));
 }
 
 function askToQuit() {
