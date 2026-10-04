@@ -628,6 +628,50 @@ test('every toast has its ✕ in the top right corner, clear of the text', { ski
   await fresh.close();
 });
 
+// A tab that had a PTY and loads again has a new session, and the toast says
+// which kind of load it was (ws.onopen in app.js). The link to keeping tab
+// unloaders off prcoder is the part that matters: a reload never gets it, and a
+// load that may be the browser's restore always does. Each new page reaches the
+// mock socket, which is what opens it and runs onopen.
+test('a page loaded again says why the session is new, and links to the fix unless it was a reload', { skip }, async () => {
+  const p = await newPage();
+  const notice = async (label) => {
+    await p.waitForFunction(() => !document.getElementById('toast').hidden, null, { timeout: 5000 })
+      .catch(() => assert.fail(`no toast after ${label}`));
+    return p.$eval('#toast', (el) => ({ text: el.textContent,
+      sticky: el.classList.contains('sticky'), href: el.querySelector('a')?.href ?? null }));
+  };
+  const ports = 'https://github.com/gaurav/prcoder/blob/main/docs/Ports.md#finding-it-again';
+
+  await p.waitForFunction(() => sessionStorage.getItem('prcoder:pty'));
+  assert.equal(await p.locator('#toast').isHidden(), true, 'a first open has nothing to say');
+
+  await p.reload();
+  let n = await notice('a reload');
+  assert.match(n.text, /^Claude was restarted/);
+  assert.deepEqual([n.sticky, n.href], [false, null], 'a reload is not sticky and has no link');
+
+  // Back to a tab you left, and a fresh navigation to it: neither is a reload,
+  // and outside Chrome either may be a restored tab.
+  await p.goto(`http://127.0.0.1:${server.address().port}/api/whoami`);
+  await p.goBack();
+  n = await notice('Back');
+  assert.match(n.text, /^This page was loaded again/);
+  assert.deepEqual([n.sticky, n.href], [true, ports], 'Back');
+  await p.goto(`http://127.0.0.1:${server.address().port}/`);
+  n = await notice('a navigation');
+  assert.match(n.text, /^This page was loaded again/);
+  assert.deepEqual([n.sticky, n.href], [true, ports], 'a navigation');
+
+  // Chrome's own word for it wins over the load being a reload.
+  await p.addInitScript(() => Object.defineProperty(document, 'wasDiscarded', { value: true }));
+  await p.reload();
+  n = await notice('a discard');
+  assert.match(n.text, /^The browser unloaded this tab/);
+  assert.deepEqual([n.sticky, n.href], [true, ports], 'a discard');
+  await p.close();
+});
+
 // A fold's progress is a pie, not `3/5`: one size at any count, and full is a
 // disc. The figure it gives up is its accessible name. A directory is needed
 // for a directory's pie, and the fixture has none, so this page adds two: one
