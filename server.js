@@ -253,10 +253,12 @@ const routes = {
   // `force`, a quit that would cost something only says what it would cost, so
   // the page can put the same question to you there.
   'POST /api/quit': ({ force } = {}) => {
+    // Into the terminal's scrollback, as q does: first, and whether or not the
+    // question that follows is answered yes. listQueue() prints nothing new on
+    // the forced request that follows a yes, and lists anything added since.
+    listQueue();
     const risk = quitRisk();
     if (risk.length && !force) return { risk };
-    // Into the terminal's scrollback, as q does: the page is about to lose it.
-    listQueue();
     // Deferred so the reply goes out first: process.exit doesn't wait for it.
     setTimeout(quit, 100);
     return { quit: true };
@@ -784,7 +786,9 @@ function askToQuit() {
   listQueue();
   const risk = quitRisk();
   if (!risk.length) return quit();
-  term.confirm(`quit? ${risk.join('; ')}  [y/N] `, quit);
+  // Listed again on yes: the queue can change while the question waits, and
+  // an item added from a tab in that time would otherwise go unprinted.
+  term.confirm(`quit? ${risk.join('; ')}  [y/N] `, () => { listQueue(); quit(); });
 }
 
 if (import.meta.main) {
