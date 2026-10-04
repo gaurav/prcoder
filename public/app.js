@@ -136,14 +136,26 @@ function connect(query = '') {
         // Not the error style: the session did end, but on a deliberate reload
         // that is the answer to what you just did, not something that went wrong.
         // A tab the browser unloaded is different: nobody asked, and the fix is
-        // in the browser, not here (Ports.md, "Tab unloaders"). document.wasDiscarded
-        // is Chrome's word for it; elsewhere a restored tab is a navigation that
-        // was not a reload. Sticky, since a link needs longer than 4s to click.
+        // in the browser, not here (Ports.md, "Tab unloaders"). Sticky, since a
+        // link needs longer than 4s to click.
+        //
+        // Only document.wasDiscarded, Chrome's, says so for certain. Elsewhere a
+        // restored tab is just a load that was not a reload, and so are Back to
+        // a tab you navigated away from and a duplicated tab, which copies
+        // sessionStorage (and whose original is still running). Firefox's
+        // restore can't be driven to see which type it reports, so none of them
+        // is ruled out: they share a toast that names the other causes rather
+        // than claiming the browser did it.
         const nav = performance.getEntriesByType('navigation')[0]?.type;
-        if (document.wasDiscarded || (nav && nav !== 'reload')) {
-          toast('The browser unloaded this tab, and the Claude session went with it. '
-            + '/resume picks it back up, or start prcoder with -- --continue.', false, true,
-            { href: PORTS_DOC, text: 'Keep tab unloaders off prcoder' });
+        const unloaders = { href: PORTS_DOC, text: 'Keep tab unloaders off prcoder' };
+        if (document.wasDiscarded) {
+          toast('The browser unloaded this tab, and the coding agent\'s session went with it. '
+            + '/resume picks it back up, or start prcoder with -- --continue.', false, true, unloaders);
+        } else if (nav && nav !== 'reload') {
+          toast('This page was loaded again, so the coding agent started a new session here. If you '
+            + 'didn\'t come back to it or duplicate it yourself, the browser unloaded the tab. '
+            + '/resume picks the old session back up, or start prcoder with -- --continue.',
+          false, true, unloaders);
         } else {
           toast('Claude was restarted — this tab\'s previous session ended when it disconnected. '
             + '/resume picks it back up, or start prcoder with -- --continue.');

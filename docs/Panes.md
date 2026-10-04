@@ -155,7 +155,9 @@ always has. Links Claude prints are clickable. The tab's favicon is blue while C
 and green when it is idle, read from the timing of the PTY's output (Design.md says why only the
 timing). A tab the browser unloaded comes back with a new session, since the old one died with the
 socket; the tab says so in a toast that links to Ports.md, where keeping tab unloaders off prcoder
-is covered. A deliberate reload gets a shorter toast without the link.
+is covered. Only Chrome says for certain that it unloaded a tab. Elsewhere, going Back to the tab or
+duplicating it looks the same, so the toast names those too rather than blaming the browser. A
+deliberate reload gets a shorter toast without the link.
 
 When Claude exits, a bar under its last output offers to start it again, optionally with a
 different model or effort. Those start out as the ones given after `--` on prcoder's command line,
