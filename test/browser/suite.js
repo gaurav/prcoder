@@ -613,12 +613,19 @@ test('Wrap folds a long line inside the pane, and stays pressed across a reload'
 });
 
 // Safari's private mode throws on every write, and setPref says a refused
-// write holds for the session -- so Wrap has to toggle both ways, and stay
-// pressed from one file to the next, without storage ever taking the choice.
-test('Wrap toggles and holds across files when storage refuses writes', { skip }, async () => {
+// write holds for the session -- so Wrap has to toggle both ways, and Wrap and
+// a hidden outline stay as set from one file to the next, without storage ever
+// taking the choice.
+test('Wrap and the outline hold across files when storage refuses writes', { skip }, async () => {
   const fresh = await newPage({ st: withLong(status) });
   await fresh.addInitScript(() => {
     Storage.prototype.setItem = () => { throw new DOMException('refused', 'QuotaExceededError'); };
+  });
+  // Two hunks, so evil.js has an outline to hide.
+  await fresh.route('**/api/diff', (r) => {
+    const { path } = r.request().postDataJSON();
+    if (path !== 'evil.js') return r.fallback();
+    return r.fulfill({ json: { path, patch: '@@ -1,1 +1,1 @@ first\n-a\n+b\n@@ -9,1 +9,1 @@ second\n-c\n+d' } });
   });
   await fresh.reload();
   await fresh.waitForSelector('#pr-head .pr-title');
@@ -638,6 +645,15 @@ test('Wrap toggles and holds across files when storage refuses writes', { skip }
   assert.equal(await pressed(), 'false', 'and unpressed by a second click');
   await fresh.keyboard.press('Alt+KeyW');
   assert.equal(await pressed(), 'true', 'and Alt+W flips it too');
+
+  // The outline is stored the same way, and a hidden one must stay hidden.
+  const hidden = () => fresh.$eval('#diff', (el) => el.classList.contains('outline-off'));
+  await fresh.waitForSelector('#diff-outline button');
+  await fresh.click('#diff-outline-hide');
+  assert.equal(await hidden(), true, 'the outline hides');
+  await open('long.txt');
+  await open('evil.js');
+  assert.equal(await hidden(), true, 'and stays hidden on the next file');
   await fresh.close();
 });
 

@@ -165,10 +165,14 @@ async function grammar(lang) {
 const el = (id) => document.getElementById(id);
 
 // Hiding the outline is a preference about the pane, not about one file, so it
-// is browser-wide and outlives a reload.
+// is browser-wide and outlives a reload. Like Wrap's below, the choice lives
+// here and storage only seeds it, so a refused write still holds from one file
+// to the next.
 const OUTLINE_KEY = 'prcoder:outline';
-const outlineOff = () => pref(OUTLINE_KEY) === 'off';
+let outlineHidden;
+const outlineOff = () => (outlineHidden ??= pref(OUTLINE_KEY) === 'off');
 function showOutline(on) {
+  outlineHidden = !on;
   el('diff').classList.toggle('outline-off', !on);
   setPref(OUTLINE_KEY, on ? 'on' : 'off');
   // The clicked control has just vanished; keep focus on the one that undoes it.
