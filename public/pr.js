@@ -335,10 +335,12 @@ export function stackUnder(here, prs, below = [], defaultBranch) {
  * the bottom of stackUnder's chain up to `here`, marked, with what is built on
  * it under it as before. Each node on the way also carries the other pull
  * requests built on it, since the list has them for nothing. Null with no
- * chain, which is the pane as it was.
+ * chain, which is the pane as it was -- except for a branch git says was cut
+ * straight from the default branch: the branch-only pane says what any branch
+ * is built on, so that one is a tree of itself, `from main`.
  */
 export function stackTree(here, prs, under) {
-  if (!under.nodes.length) return null;
+  if (!under.nodes.length && !(here.branch && under.into)) return null;
   const chain = [...under.nodes, here];
   const seen = new Set(chain.filter((n) => n.pr).map((n) => n.pr.number));
   const build = (i) => {

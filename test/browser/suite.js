@@ -1119,6 +1119,13 @@ test('with no PR, the pane shows what git says the branch is built on, above wha
   assert.equal(p.belowAsked.branch, 'mine');
   assert.deepEqual(p.belowAsked.prs.at(-1), { headRefName: 'on-mine', baseRefName: 'mine' });
   await p.close();
+
+  // Cut straight from main: no chain, but still what it is built on.
+  const onMain = await newPage({ prs: onMine, st, ready: '#pr-body .pr-row.here',
+    below: { branch: 'mine', names: [], toDefault: true } });
+  assert.equal(await onMain.locator('#pr-body .pr-into-label').textContent(), 'The stack branch mine is in, from main.');
+  assert.deepEqual(await onMain.locator('#pr-body .pr-row.here + ul .pr-num').allTextContents(), ['#15']);
+  await onMain.close();
 });
 
 // With no list at all -- the first fetch still out, or every one failed -- the

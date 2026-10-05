@@ -415,6 +415,13 @@ test('the Stack tab of a stacked pull request is the whole stack, with this one 
   const git = [{ branch: 'mine', names: ['queue-tabs'], toDefault: false }];
   const at = { branch: 'mine' };
   assert.deepEqual(tree(stackTree(at, mine, stackUnder(at, mine, git, 'main'))), [1, [27, ['mine*', [90]], 60]]);
+  // Cut straight from main, it is still a stack of its own, saying so.
+  const onMain = stackUnder(at, mine, [{ branch: 'mine', names: [], toDefault: true }], 'main');
+  assert.deepEqual(tree(stackTree(at, mine, onMain)), ['mine*', [90]]);
+  assert.equal(said(stackTitle(['branch ', { branch: 'mine' }], onMain)), 'The stack branch `mine` is in, from `main`.');
+  // Until git has said, and on the default branch itself, the pane is as it was.
+  assert.equal(stackTree(at, mine, stackUnder(at, mine, [], 'main')), null);
+  assert.equal(stackTree({ branch: 'main' }, mine, stackUnder({ branch: 'main' }, mine, [], 'main')), null);
 });
 
 test('the Stack tab counts down and up apart, and leaves out a part that is nothing', () => {
