@@ -165,14 +165,47 @@ async function grammar(lang) {
 const el = (id) => document.getElementById(id);
 
 // Hiding the outline is a preference about the pane, not about one file, so it
-// is browser-wide and outlives a reload.
+// is browser-wide and outlives a reload. Like Wrap's below, the choice lives
+// here and storage only seeds it, so a refused write still holds from one file
+// to the next.
 const OUTLINE_KEY = 'prcoder:outline';
-const outlineOff = () => pref(OUTLINE_KEY) === 'off';
+let outlineHidden;
+const outlineOff = () => (outlineHidden ??= pref(OUTLINE_KEY) === 'off');
 function showOutline(on) {
+  outlineHidden = !on;
   el('diff').classList.toggle('outline-off', !on);
   setPref(OUTLINE_KEY, on ? 'on' : 'off');
   // The clicked control has just vanished; keep focus on the one that undoes it.
   el(on ? 'diff-outline-hide' : 'diff-outline-show').focus();
+}
+
+// Wrapping long lines is the same kind of preference: about the pane, not one
+// file, remembered browser-wide. It is a class on the pane and a CSS rule on
+// the rows (style.css), not anything written into the rows, so a line-number
+// gutter (#8) or a rendered view can be added beside it without touching how a
+// line folds. Off for every file until pressed, Markdown and plain text
+// included: a setting that turned itself on by extension would read as the
+// pane changing its mind, and the owner's repos wrap their Markdown anyway.
+//
+// The choice lives here, and storage only seeds it: setPref's refused write
+// holds for the session only if nothing reads storage back, and a toggle that
+// re-read it would be stuck on in Safari's private mode.
+const WRAP_KEY = 'prcoder:wrap';
+let wrap;
+const wrapOn = () => (wrap ??= pref(WRAP_KEY) === 'on');
+/** Paint the stored choice: the class the rows fold under, and the button's pressed state. */
+function paintWrap(on) {
+  el('diff').classList.toggle('wrap', on);
+  el('diff-wrap').setAttribute('aria-pressed', String(on));
+}
+function setWrap(on) {
+  wrap = on;
+  paintWrap(on);
+  setPref(WRAP_KEY, on ? 'on' : 'off');
+}
+/** The keyboard's way to the Wrap button. Nothing to flip while no file is open. */
+export function toggleWrap() {
+  if (!el('diff').hidden) setWrap(!wrapOn());
 }
 
 /** Ticking this here ticks the same checkbox on github.com; the file rows use it too. */
@@ -230,6 +263,8 @@ export async function openDiff(f, onViewed = setViewed) {
   el('diff').classList.toggle('outline-off', outlineOff());
   el('diff-outline-hide').onclick = () => showOutline(false);
   el('diff-outline-show').onclick = () => showOutline(true);
+  paintWrap(wrapOn());
+  el('diff-wrap').onclick = () => setWrap(!wrapOn());
 
   const body = el('diff-body');
   body.replaceChildren(h('div', { className: 'empty' }, 'Loading…'));

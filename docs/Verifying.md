@@ -70,11 +70,11 @@ measures, with a comment at each check saying which regression the check catches
 
 **`node tools/diff-views.mjs`** drives the diff pane against
 [#87](https://github.com/gaurav/prcoder/pull/87), a draft fixture that is never merged: a file
-modified in two places (the DIFF view, the outline's rows, its gutter, its ✕ and *Outline*), a
-deleted one, an added `.tsx` file highlighted by the grammar built on jsx and typescript, and two
-renames, one untouched and one with a line changed. Its base is an orphan branch, so the fixture
-stays those files whatever happens to `main`, and the driver refuses to start if the fixture has
-been closed. Run it for any change to what the diff pane draws.
+modified in two places (the DIFF view, the outline's rows, its gutter, its ✕ and *Outline*, and
+*Wrap* on its one long line), a deleted one, an added `.tsx` file highlighted by the grammar built
+on jsx and typescript, and two renames, one untouched and one with a line changed. Its base is an
+orphan branch, so the fixture stays those files whatever happens to `main`, and the driver refuses
+to start if the fixture has been closed. Run it for any change to what the diff pane draws.
 
 **`node tools/no-pr.mjs`** drives the pane with **no** pull request, which `browser.mjs` cannot
 reach from a branch that has one. It clones the remote into `data/main-clone` and runs this
