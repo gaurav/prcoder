@@ -17,6 +17,7 @@
 
 import { execSync } from 'node:child_process';
 import { setTimeout as wait } from 'node:timers/promises';
+import { existsSync, readFileSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node-pty';
@@ -28,6 +29,15 @@ import { free } from './driver.mjs';
 for (const sig of ['SIGTERM', 'SIGHUP', 'SIGINT']) process.on(sig, () => process.exit(130));
 
 const repo = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
+// What `t` and `f` run: not a terminal or a file manager, but a command that
+// writes down the path it was handed, so pressing them checks the key and that
+// the repo's path reaches the override whole, without opening a window. Its own
+// output path is text in the command line, not a variable as the repo's is, so
+// it is quoted here: a checkout path with a space in it would split in two and
+// the check would fail on the recorder, not the key.
+const recorded = (what) => path.join(repo, 'data', `cli-${what}-arg`);
+const shellQuoted = (s) => `'${s.replaceAll("'", "'\\''")}'`;
+const recorder = (what) => `node -e 'require("fs").writeFileSync(process.argv[1], process.argv[2])' ${shellQuoted(recorded(what))}`;
 const port = Number(process.env.PRCODER_PORT) || 17455;
 
 // server.js falls back to a free port when the one it is given is taken --
@@ -42,7 +52,8 @@ function start(label) {
     cols: 100,
     rows: 30,
     cwd: repo,
-    env: { ...process.env, PRCODER_PORT: String(port), PRCODER_NO_OPEN: '1', PRCODER_AGENT_BIN: '/bin/cat' },
+    env: { ...process.env, PRCODER_PORT: String(port), PRCODER_NO_OPEN: '1', PRCODER_AGENT_BIN: '/bin/cat',
+      PRCODER_TERMINAL: recorder('terminal'), PRCODER_FILE_MANAGER: recorder('folder') },
   });
   // See the note in browser.mjs: a throw past this point would otherwise leave
   // the server running. Killing an already-killed pty throws, and the deliberate
@@ -81,6 +92,16 @@ await wait(4000);
 console.log('after r:    ', first.line('refreshing') ?? 'NO refresh line');
 console.log('  polled:   ', first.line('poll:') ?? 'NO poll line');
 
+// `t` and `f` open PRCODER_TERMINAL and PRCODER_FILE_MANAGER with the repo's
+// path appended; the recorders above stand in for both.
+for (const [key, what] of [['t', 'terminal'], ['f', 'folder']]) {
+  rmSync(recorded(what), { force: true });
+  first.write(key);
+  await wait(1500);
+  const opened = existsSync(recorded(what)) ? readFileSync(recorded(what), 'utf8') : 'NOTHING recorded';
+  console.log(`${key} opened:   `, opened, opened === repo ? '(the repo)' : `(want ${repo})`);
+}
+
 // A second prcoder in the same repo: the case the port note is for.
 const second = start('second');
 await wait(8000);
@@ -107,8 +128,11 @@ first.write('n');
 await wait(400);
 first.show('declined');
 
+// Asked again, the list is not: it is still just above, unchanged.
+first.buf = '';
 first.write('\x03');
 await wait(400);
+console.log('  again:    ', first.line('on Local') ?? 'not listed twice');
 first.write('y');
 await wait(1500);
 // The stub stands in for `claude`: anything left here is an orphaned session.

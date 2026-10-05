@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   pageTitle, withoutHtml, inline, headLinks, noPrLinks, prsInto, prTree, stackOn, stackLabel, stackUnder, stackTree, stackTitle, stackBase, stackOrder, stackEmpty, intoEmpty, switcherRows,
-  HEADING, blocks, sectionize, tabLabel, taskCount, viewedCount, checkCount, checksName, tabDone, worst, byPath, bySize, byDir, nums,
+  HEADING, blocks, sectionize, tabLabel, taskCount, viewedCount, viewedLines, filesProgress, checkCount, checksName, tabDone, worst, byPath, bySize, byDir, nums,
 } from '../public/pr.js';
 import { fences, TASK, taskLines } from '../public/tasks.js';
 
@@ -761,6 +761,34 @@ test('the file count is files viewed on GitHub, over files changed', () => {
   // than throw at it -- renderPrHead runs on the first paint either way.
   assert.deepEqual(viewedCount(), { done: 0, total: 0 });
   assert.deepEqual(viewedCount([]), { done: 0, total: 0 });
+});
+
+// The Files pie says how much reviewing is left, not how many files: a big file
+// left unviewed keeps it mostly empty however many small ones are ticked.
+test('the files pie fills by changed lines viewed', () => {
+  const big = { additions: 100, deletions: 100, viewed: false };
+  const small = { additions: 30, deletions: 5, viewed: true };
+  assert.deepEqual(viewedLines([big, small]), { done: 35, total: 235 });
+  assert.deepEqual(filesProgress([big, small]),
+    { p: 35 / 235, full: false, label: '1 of 2 files, 35 of 235 changed lines viewed' });
+  // GitHub's count can be missing, as bySize allows for.
+  assert.deepEqual(viewedLines([{ viewed: true }]), { done: 0, total: 0 });
+  assert.deepEqual(viewedLines(), { done: 0, total: 0 });
+});
+
+test('a files pie with no lines to weigh fills by files', () => {
+  const rename = (viewed) => ({ additions: 0, deletions: 0, viewed });
+  assert.deepEqual(filesProgress([rename(true), rename(false)]),
+    { p: 0.5, full: false, label: '1 of 2 files viewed' });
+  assert.deepEqual(filesProgress([]), { p: 0, full: false, label: '0 of 0 files viewed' });
+});
+
+// Every line viewed is not every file: an unviewed rename weighs nothing, and
+// must not let the pie say it is finished.
+test('a files pie is full only when every file is viewed', () => {
+  const files = [{ additions: 9, deletions: 0, viewed: true }, { additions: 0, deletions: 0, viewed: false }];
+  assert.deepEqual(filesProgress(files), { p: 1, full: false, label: '1 of 2 files, 9 of 9 changed lines viewed' });
+  assert.equal(filesProgress(files.map((f) => ({ ...f, viewed: true }))).full, true);
 });
 
 test('paths order like a tree, a directory ahead of what is inside it', () => {

@@ -18,6 +18,8 @@ term.loadAddon(new WebLinksAddon((_e, uri) => window.open(uri, '_blank', 'noopen
 term.open(document.getElementById('term-host'));
 
 const PTY_SEEN = 'prcoder:pty';
+// The server serves only public/, so the docs are linked where they live.
+const PORTS_DOC = 'https://github.com/gaurav/prcoder/blob/main/docs/Ports.md#finding-it-again';
 // Replaced, not reopened, by the exit panel's "Start coding agent again": one
 // socket is one PTY.
 let ws;
@@ -133,8 +135,31 @@ function connect(query = '') {
       if (sessionStorage.getItem(PTY_SEEN)) {
         // Not the error style: the session did end, but on a deliberate reload
         // that is the answer to what you just did, not something that went wrong.
-        toast('Claude was restarted — this tab\'s previous session ended when it disconnected. '
-          + '/resume picks it back up, or start prcoder with -- --continue.');
+        // A tab the browser unloaded is different: nobody asked, and the fix is
+        // in the browser, not here (Ports.md, "Tab unloaders"). Sticky, since a
+        // link needs longer than 4s to click.
+        //
+        // Only document.wasDiscarded, Chrome's, says so for certain. Elsewhere a
+        // restored tab is just a load that was not a reload, and so are Back to
+        // a tab you navigated away from and a duplicated tab, which copies
+        // sessionStorage (and whose original is still running). Firefox's
+        // restore can't be driven to see which type it reports, so none of them
+        // is ruled out: they share a toast that names the other causes rather
+        // than claiming the browser did it.
+        const nav = performance.getEntriesByType('navigation')[0]?.type;
+        const unloaders = { href: PORTS_DOC, text: 'Keep tab unloaders off prcoder' };
+        if (document.wasDiscarded) {
+          toast('The browser unloaded this tab, and the coding agent\'s session went with it. '
+            + '/resume picks it back up, or start prcoder with -- --continue.', false, true, unloaders);
+        } else if (nav && nav !== 'reload') {
+          toast('This page was loaded again, so the coding agent started a new session here. If you '
+            + 'didn\'t come back to it or duplicate it yourself, the browser unloaded the tab. '
+            + '/resume picks the old session back up, or start prcoder with -- --continue.',
+          false, true, unloaders);
+        } else {
+          toast('Claude was restarted — this tab\'s previous session ended when it disconnected. '
+            + '/resume picks it back up, or start prcoder with -- --continue.');
+        }
       }
       sessionStorage.setItem(PTY_SEEN, '1');
     } catch { /* private mode: no memory, so no claim about a previous session */ }
@@ -158,6 +183,19 @@ function connect(query = '') {
 // What to do once Claude is gone: start it again, perhaps differently, or stop
 // prcoder from here rather than from the terminal it was started in.
 const exitForm = document.getElementById('term-exit');
+// Filled once, with what prcoder's command line started the agent with. Never
+// reset after, so the next exit offers whatever the last start chose instead.
+// Only into a field still blank: one already set was set by you, or by a start
+// from the bar, and a reply landing late must not take it back. An effort the
+// select has no option for (`--effort extreme`) gets one: setting a select to
+// a value it lacks blanks it, which shows "as started" rather than the value.
+api('/api/whoami', undefined, 'GET').then(({ started }) => {
+  const { model, effort } = exitForm.elements;
+  if (!model.value) model.value = started.model;
+  if (effort.value || !started.effort) return;
+  if (![...effort.options].some((o) => o.value === started.effort)) effort.add(new Option(started.effort));
+  effort.value = started.effort;
+}).catch(() => { /* blank fields still mean "as started" */ });
 exitForm.onsubmit = (e) => {
   e.preventDefault();
   exitForm.hidden = true;

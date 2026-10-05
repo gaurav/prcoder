@@ -35,11 +35,20 @@ a turn you walked away from says whether it is still going -- and every title en
 from github.com. Amber is kept free on purpose, for a third state prcoder cannot see yet: Claude
 stopped to ask you something (#51).
 
-**A window per repo.** `PRCODER_OPEN` replaces the platform opener with your own command, with the
+**Tab unloaders.** A tab discarded by Firefox under memory pressure, or by an extension such as
+[Auto Tab Discard](https://addons.mozilla.org/en-US/firefox/addon/auto-tab-discard/), closes its
+socket, and the Claude session goes with it (Terminal.md). A page has no standard way to ask not
+to be discarded -- the only signals that extension reads off a page are playing audio and
+half-typed form input, and faking either is a hack -- so tell the extension instead: add
+`localhost` to Auto Tab Discard's exceptions (right-click its toolbar button, or its options
+page). It matches on hostname alone, so that one entry covers every prcoder whatever its port.
+A tab brought back after a discard says so in a toast that links here.
+
+**A window per repo.** `PRCODER_BROWSER` replaces the platform opener with your own command, with the
 URL appended. Firefox hands the arguments to the running copy, so
 
 ```sh
-export PRCODER_OPEN='/Applications/Firefox.app/Contents/MacOS/firefox -new-window'
+export PRCODER_BROWSER='/Applications/Firefox.app/Contents/MacOS/firefox -new-window'
 ```
 
 gives each prcoder its own window, listed by title in the Window menu and Mission Control.

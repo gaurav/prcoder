@@ -100,7 +100,10 @@ you -- how many description boxes are still unticked, how many files are still u
 checks have gone green, and for Stack the pull requests under this one and built on it,
 `Stack (↓1 ↑2)`, leaving out a direction that has none -- so none hides from you
 while you are in another. A count that has run out keeps its numbers, `Files (11/11)`, so it
-still says how many, and ends in a green circle with a ✓ in it to say none are left. The Checks
+still says how many, and ends in a green circle with a ✓ in it to say none are left. Until then
+the Files tab also carries a pie, filled by changed lines viewed rather than files viewed, so it
+says how much reviewing is left where the count says how many files: fourteen of seventeen viewed
+with the last three the biggest is a pie still mostly empty. Hover it for both figures. The Checks
 tab also carries a mark in front while it is not done: a yellow ring while something is still
 running, and a red ✕ as soon as anything fails, which is the part a fraction alone can't tell you.
 When everything passes it gets the green circle like any other tab. It is a shape as well as a colour so that it survives
@@ -129,8 +132,9 @@ below them the rest are folded by the directory they are in, a directory ahead o
 it and sibling directories alphabetical. The files in each list are ordered by lines changed,
 additions plus deletions, the largest first. A row inside a fold shows only the part of its path the directory
 above it does not, so a path is read once per directory rather than once per file. Both levels
-fold and remember what you closed. Each fold's pie fills green as its files are viewed (hover it
-for the figure). The checkbox on each file is GitHub's own "viewed" checkbox: tick it here and
+fold and remember what you closed. Each fold's pie fills green by changed lines viewed, as the
+tab's does, so a directory with one big file left still looks mostly empty (hover it for both
+figures). The checkbox on each file is GitHub's own "viewed" checkbox: tick it here and
 it's ticked on github.com. Clicking a file opens its diff in the **Diff** pane; cmd/ctrl-clicking
 opens GitHub's diff viewer at that file instead.
 
@@ -173,14 +177,22 @@ The real `claude` binary in a PTY, so Escape still interrupts, slash commands st
 permission prompts still appear, and typing while Claude is mid-turn queues the message the way it
 always has. Links Claude prints are clickable. The tab's favicon is blue while Claude is working
 and green when it is idle, read from the timing of the PTY's output (Design.md says why only the
-timing).
+timing). A tab the browser unloaded comes back with a new session, since the old one died with the
+socket; the tab says so in a toast that links to Ports.md, where keeping tab unloaders off prcoder
+is covered. Only Chrome says for certain that it unloaded a tab. Elsewhere, going Back to the tab or
+duplicating it looks the same, so the toast names those too rather than blaming the browser. A
+deliberate reload gets a shorter toast without the link.
 
 When Claude exits, a bar under its last output offers to start it again, optionally with a
-different model or effort, which win over any given after `--` on prcoder's command line, and
-optionally continuing the repo's most recent conversation (`--continue`) -- with two tabs open,
+different model or effort. Those start out as the ones given after `--` on prcoder's command line,
+and after a start from the bar they are whatever that start chose. A change wins over the command
+line, but a field left blank keeps the command line's value -- blanking both is not a way back to
+the agent's own default when `--` named one. It can also
+continue the repo's most recent conversation (`--continue`) -- with two tabs open,
 that can be the other tab's (#77). That is unticked by default: starting again is more often a
 deliberate switch of model than a slip. A setting the server will not take is refused before
-anything starts, and the terminal says so. Or quit prcoder from there, which asks what the
+anything starts, and the terminal says so -- except the command line's own, which is kept as it
+was given even when the bar would refuse it typed in. Or quit prcoder from there, which asks what the
 terminal's quit asks ([Terminal.md](Terminal.md)).
 
 ## Queue

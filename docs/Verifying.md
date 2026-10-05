@@ -48,7 +48,7 @@ stray click edits a description on GitHub: undo what you write, or stay read-onl
 measures, with a comment at each check saying which regression the check catches.
 
 - **Firefox by default**, because a Firefox-only caret bug survived every Chromium screenshot
-  ([public/CLAUDE.md](../public/CLAUDE.md)). `PRCODER_BROWSER=chromium` forces the other, and
+  ([public/CLAUDE.md](../public/CLAUDE.md)). `PRCODER_PLAYWRIGHT=chromium` forces the other, and
   running both is worth the second minute. On macOS 27, Firefox starts only with the app-data
   workaround every launch takes from `firefoxEnv()` (#80);
   [tools/firefox-runner](../tools/firefox-runner/README.md) has the cause and the re-check, and
@@ -85,7 +85,10 @@ fault in a later row shows only in the printed list.
 
 **`node tools/cli.mjs`** drives the terminal half in a real PTY, because the status block, the keys
 and the quit prompt all switch off when stdout is not a tty, which is what every other driver's
-server gets.
+server gets. It presses `t` and `f` with `PRCODER_TERMINAL` and `PRCODER_FILE_MANAGER` set to a
+command that only records the path it is handed, which checks the keys and that the repo's path reaches the overrides whole,
+without opening a window. So the platform's own terminal and file manager are not driven: a scratch
+driver that presses either key without those set opens a real window on the machine running it.
 
 **`node tools/firefox-runner/probe.mjs`** is not a driver and boots no server. It asks only whether
 anything on this machine can start Firefox, with and without the workaround, and is worth running
