@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { syncState, compareUrl, originOwner, prScope, userDirt, remoteBranchHead, trackingHead, snapshot, localPatch } from '../git.js';
+import { syncState, compareUrl, originOwner, prScope, userDirt, remoteBranchHead, trackingHead, snapshot, localPatch, branchesBelow } from '../git.js';
 
 const git = promisify(execFile);
 // For the throwaway repos below. The identity goes on the command, not into a
@@ -15,10 +15,8 @@ const git = promisify(execFile);
 // signs every commit hands a throwaway repo's commit to its signer, and a
 // locked 1Password agent failed a test after a minute's wait with nothing to do
 // with what it was testing.
-const testGit = (cwd, ...args) => git('git', [
-  '-c', 'user.name=prcoder tests', '-c', 'user.email=tests@prcoder.invalid',
-  '-c', 'commit.gpgsign=false', ...args,
-], { cwd });
+const TEST_CONFIG = ['-c', 'user.name=prcoder tests', '-c', 'user.email=tests@prcoder.invalid', '-c', 'commit.gpgsign=false'];
+const testGit = (cwd, ...args) => git('git', [...TEST_CONFIG, ...args], { cwd });
 
 // The four inputs come from `git rev-parse --verify` and `git merge-base
 // --is-ancestor`; the exit codes those return are checked in git.js, not here.
@@ -173,6 +171,59 @@ test('a branch name that is the tail of another branch is not mistaken for it', 
     const snap = await snapshot(work, await trackingHead(work, 'feature/topic'), 'feature/topic');
     assert.equal(snap.sync, 'ahead');
     assert.equal(snap.ahead, 1);
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
+
+// #93: what a branch with no pull request is built on, from git alone. Against
+// a real repo, because the claims are about which commits git names from where.
+test('the branches under a branch are found even after the one below took more commits', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'prcoder-below-'));
+  const bare = path.join(dir, 'origin.git');
+  const work = path.join(dir, 'work');
+  const run = testGit;
+  // A second apart, in the order they are made: name-rev breaks a tie between
+  // branches by the older tip, so commits that share a second -- the usual case
+  // in a test, never outside one -- hid that this picked `a`'s sibling.
+  let at = 1700000000;
+  const commit = (m) => {
+    const date = `${at++} +0000`;
+    return git('git', [...TEST_CONFIG, 'commit', '-q', '--allow-empty', '-m', m],
+      { cwd: work, env: { ...process.env, GIT_AUTHOR_DATE: date, GIT_COMMITTER_DATE: date } });
+  };
+  try {
+    await git('git', ['init', '-q', '--bare', bare]);
+    await git('git', ['init', '-q', '-b', 'main', work]);
+    await run(work, 'remote', 'add', 'origin', bare);
+    await commit('root');
+    await run(work, 'checkout', '-q', '-b', 'a');
+    await commit('a1');
+    await run(work, 'checkout', '-q', '-b', 'b');
+    await commit('b1');
+    // `c` is cut from `a` before a2, so it has a1 and would name it as its own.
+    await run(work, 'checkout', '-q', '-b', 'c', 'a');
+    await commit('c1');
+    await run(work, 'checkout', '-q', 'a');
+    await commit('a2');
+    await run(work, 'push', '-q', 'origin', 'main', 'a', 'b', 'c');
+
+    // The tip of `a` is no ancestor of `b` any more; its a1 still is, and so
+    // is `c`'s, at the same distance. Git alone takes `c`, whose tip is older,
+    // and finds `a` under it: the two histories are the same shape either way
+    // round (the ponytail note on parentBranch). The pull request `c` would
+    // have says which way round it is.
+    const cOnA = [{ headRefName: 'c', baseRefName: 'a' }];
+    assert.deepEqual(await branchesBelow(work, 'b', 'main', { prs: cOnA }), { names: ['a'], toDefault: true });
+    assert.deepEqual(await branchesBelow(work, 'b', 'main'), { names: ['c', 'a'], toDefault: true });
+    // A pull request's head is where git stops: its base is GitHub's to say.
+    assert.deepEqual(await branchesBelow(work, 'b', 'main', { prs: [...cOnA, { headRefName: 'a', baseRefName: 'main' }] }),
+      { names: ['a'], toDefault: false });
+
+    // Cut and not pushed: HEAD, sitting exactly on the branch it came from.
+    await run(work, 'checkout', '-q', '-b', 'fresh', 'b');
+    assert.deepEqual(await branchesBelow(work, 'fresh', 'main', { current: true, prs: cOnA }), { names: ['b', 'a'], toDefault: true });
+    assert.deepEqual(await branchesBelow(work, 'main', 'main'), { names: [], toDefault: true });
   } finally {
     await fs.rm(dir, { recursive: true, force: true });
   }

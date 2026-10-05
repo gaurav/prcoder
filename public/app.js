@@ -280,7 +280,31 @@ const loadPrs = () => api('/api/prs', undefined, 'GET')
   // poll — the switcher only rebuilds its options when the set changes. The
   // whole status, because the branch-only pane reads this list too; `last` is
   // already the branch this fetch was for, so nothing asks for it again.
-  .then((l) => { prs = l; if (last) paint(last); }, () => {});
+  .then((l) => {
+    prs = l;
+    // The list is what says which branches have a pull request, so what git
+    // said under the others is asked again against it, in place.
+    asked.clear();
+    [...below.keys()].forEach(loadBelow);
+    if (last) paint(last);
+  }, () => {});
+
+// What git says each branch with no pull request is built on (#93), for the
+// branch-only pane and a Stack tab that reaches one: branch -> `{ branch,
+// names, toDefault }`. Asked for by the pane that needs it, once per list. A
+// map rather than the last answer, or a stack with two such branches in it
+// asks for one, loses the other, and asks for that again. A failed ask keeps
+// what we had, as loadPrs does.
+const below = new Map();
+const asked = new Set();
+const loadBelow = (branch) => {
+  if (asked.has(branch)) return;
+  asked.add(branch);
+  const pairs = (prs ?? []).filter((p) => !p.isCrossRepository)
+    .map(({ headRefName, baseRefName }) => ({ headRefName, baseRefName }));
+  api('/api/below', { branch, prs: pairs })
+    .then((b) => { below.set(branch, b); if (last) paint(last); }, () => {});
+};
 document.getElementById('pr-switch').addEventListener('mousedown', loadPrs);
 
 const NOTES = {
@@ -360,7 +384,7 @@ function paint(status) {
     const blocked = status.dirtyFiles.length > 0;
     // Everything the pane is drawn from, the Stack tab's inputs included: a
     // fresh PR list, or a tree going dirty, is a redraw even when the PR is not.
-    const key = JSON.stringify([status.pr, status.scope, stack, blocked]);
+    const key = JSON.stringify([status.pr, status.scope, stack, blocked, [...below.values()]]);
     if (key !== drawn) {
       drawn = key;
       renderPr({ ...status.pr, note: NOTES[status.scope] }, {
@@ -369,15 +393,23 @@ function paint(status) {
         prs: stack,
         otherRepo,
         onStackOpen: loadPrs,
+        below: [...below.values()],
+        onBelow: loadBelow,
+        defaultBranch: status.defaultBranch,
         onSwitch: switchPr,
         blocked,
       });
     }
   } else {
     drawn = null;
-    renderNoPr(status, prs, { onCreate: createPr, onSwitch: switchPr, creating });
+    renderNoPr(status, prs, { onCreate: createPr, onSwitch: switchPr, onBelow: loadBelow, below: [...below.values()], creating });
   }
-  if (switched) loadPrs();
+  // What was under the old branch is not what is under this one.
+  if (switched) {
+    below.clear();
+    asked.clear();
+    loadPrs();
+  }
   // Reading its checklist into the PR tab needs only a PR on screen.
   if (status.queue) setItems(status.queue, status.pr);
 
