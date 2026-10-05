@@ -93,6 +93,8 @@ second.buf = '';
 second.write('\x03');
 await wait(600);
 console.log('no prompt:  ', second.line('quit?') ?? 'exited without asking');
+// Asked or not, Local is printed first -- whatever this repo's queue holds.
+console.log('  listed:   ', second.line('on Local') ?? 'nothing (Local is empty)');
 second.kill();
 
 // Quitting has to say what it costs, and take the PTYs with it.
@@ -100,12 +102,16 @@ first.buf = '';
 first.write('\x03');
 await wait(600);
 console.log('quit prompt:', first.line('quit?'));
+console.log('  listed:   ', first.line('on Local') ?? 'nothing (Local is empty)');
 first.write('n');
 await wait(400);
 first.show('declined');
 
+// Asked again, the list is not: it is still just above, unchanged.
+first.buf = '';
 first.write('\x03');
 await wait(400);
+console.log('  again:    ', first.line('on Local') ?? 'not listed twice');
 first.write('y');
 await wait(1500);
 // The stub stands in for `claude`: anything left here is an orphaned session.

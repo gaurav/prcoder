@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
-import { parseCli, usage, AGENTS, VERSION, portFor, portCandidates, PORT_BASE, PORT_SPAN, statusLines, ago } from '../cli.js';
+import { parseCli, usage, AGENTS, VERSION, portFor, portCandidates, PORT_BASE, PORT_SPAN, statusLines, ago, queueSummary, quitRisks } from '../cli.js';
 import { queueChanges } from '../queue.js';
 
 test('a leading positional is our PR target, everything after -- is the agent\'s', () => {
@@ -221,4 +221,34 @@ test('prcoder --help, --version and a bad flag exit before anything starts', asy
   const stale = await runIn(env, '--no-open');
   assert.equal(stale.code, 2);
   assert.match(stale.stderr, /^prcoder: CLAUDE_BIN is now PRCODER_AGENT_BIN/);
+});
+
+// Quitting prints Local rather than asking about it: the queue is on disk, so
+// nothing is lost, and the list is what you would want to copy from.
+test('quitting lists what is on Local, with links, and nothing when it is empty', () => {
+  assert.deepEqual(queueSummary([]), []);
+  assert.deepEqual(queueSummary([{ text: 'done', done: true }]), []);
+  const lines = queueSummary([
+    { text: 'Fix the flaky test', issue: 91, issueUrl: 'https://github.com/o/r/issues/91' },
+    { text: 'ticked', done: true }, { text: 'gone', deleted: true }, { text: 'plain' },
+  ]);
+  assert.equal(lines[0], 'queue    2 items on Local, in .prcoder/queue.json (and 1 completed, 1 deleted):');
+  assert.deepEqual(lines.slice(1).map((l) => l.trim()),
+    ['Fix the flaky test  https://github.com/o/r/issues/91', 'plain']);
+  assert.equal(queueSummary([{ text: 'one' }])[0], 'queue    1 item on Local, in .prcoder/queue.json:');
+  assert.equal(queueSummary([{ text: 'one' }], '/work/q.json')[0], 'queue    1 item on Local, in /work/q.json:');
+});
+
+// Shift-Enter puts newlines in an item, and an unindented second line would
+// read as an item of its own.
+test('a multi-line item on Local is indented as one item', () => {
+  const [, item] = queueSummary([{ text: 'fix login\nalso check logout', issueUrl: 'https://x/1' }]);
+  assert.equal(item, '           fix login\n           also check logout  https://x/1');
+});
+
+// The y/N is for what quitting costs, and says what `y` does to a session.
+test('the quit question names only what quitting costs', () => {
+  assert.deepEqual(quitRisks({}), []);
+  assert.deepEqual(quitRisks({ tabs: 1, ahead: 2 }), ['1 browser tab — its Claude session ends', '2 unpushed commits']);
+  assert.deepEqual(quitRisks({ tabs: 2, dirty: 1 }), ['2 browser tabs — their Claude sessions end', '1 uncommitted file']);
 });
