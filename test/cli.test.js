@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
-import { parseCli, usage, AGENTS, VERSION, portFor, portCandidates, PORT_BASE, PORT_SPAN, statusLines, ago, queueSummary, quitRisks } from '../cli.js';
+import { execSync } from 'node:child_process';
+import { openRepoArgs, OPEN_REPO_VARS, REPO_ENV, parseCli, usage, AGENTS, VERSION, portFor, portCandidates, PORT_BASE, PORT_SPAN, statusLines, ago, queueSummary, quitRisks } from '../cli.js';
 import { queueChanges } from '../queue.js';
 
 test('a leading positional is our PR target, everything after -- is the agent\'s', () => {
@@ -61,7 +62,8 @@ test('bad input is an error that names the problem', () => {
 test('the help names every flag, env var and agent', () => {
   const text = usage();
   for (const s of ['--port', '--no-open', '--verbose', '--agent', '--help', '--version', '-- ',
-    '--queue', 'PRCODER_QUEUE', 'PRCODER_PORT', 'PRCODER_NO_OPEN', 'PRCODER_VERBOSE', 'PRCODER_OPEN', 'PRCODER_AGENT_BIN', ...AGENTS]) {
+    '--queue', 'PRCODER_QUEUE', 'PRCODER_PORT', 'PRCODER_NO_OPEN', 'PRCODER_VERBOSE', 'PRCODER_BROWSER', 'PRCODER_AGENT_BIN', ...AGENTS,
+    ...Object.values(OPEN_REPO_VARS)]) {
     assert.ok(text.includes(s), `help mentions ${s}`);
   }
   assert.equal(VERSION, createRequire(import.meta.url)('../package.json').version);
@@ -128,6 +130,41 @@ test('the block says where the branch, the PR and the queue stand', () => {
   // The pane's tabs, counted with the pane's own predicates: 'a' links an issue
   // and is still yours to do, 'c' is a tombstone and counts as nothing.
   assert.match(out, /2 local · 1 done/);
+  // Every key the terminal answers to is in the legend, or it does not exist.
+  assert.match(out, /^keys +q quit · r refresh · v verbose · o open · t terminal · f folder$/m);
+  // ...and on a row that fits an 80-column window, which the serving row did not.
+  assert.ok(out.split('\n').every((l) => !l.startsWith('keys') || l.length < 80));
+});
+
+// The table behind t and f. A null is the "not implemented here" message, so
+// a platform must be null rather than a guess at a command it does not have.
+test('t and f know the platform\'s commands, and say so when they have none', () => {
+  assert.deepEqual(openRepoArgs('terminal', 'darwin', '/r'), ['open', '-a', 'Terminal', '/r']);
+  assert.deepEqual(openRepoArgs('folder', 'darwin', '/r'), ['open', '/r']);
+  assert.deepEqual(openRepoArgs('folder', 'win32', '/r'), ['explorer', '/r']);
+  assert.deepEqual(openRepoArgs('folder', 'linux', '/r'), ['xdg-open', '/r']);
+  assert.equal(openRepoArgs('folder', 'sunos', '/r'), null, 'not every unix is Linux');
+  assert.equal(openRepoArgs('terminal', 'linux', '/r'), null);
+  assert.equal(openRepoArgs('terminal', 'win32', '/r'), null);
+});
+
+// PRCODER_TERMINAL and PRCODER_FILE_MANAGER run through the shell, so the path
+// reaches it as a variable, not as text: a space must not split it, a quote
+// must not end it, and on Windows a %NAME% in it must not expand.
+test('an override for t or f is run with the repo appended, as a variable the shell expands once', () => {
+  assert.equal(openRepoArgs('terminal', 'linux', "/a b/it's", 'kitty --directory'), 'kitty --directory "$PRCODER_REPO"');
+  assert.equal(openRepoArgs('terminal', 'win32', 'C:\\a %TEMP%', 'wt -d'), 'wt -d "%PRCODER_REPO%"');
+  assert.equal(openRepoArgs('folder', 'sunos', '/r', 'nautilus'), 'nautilus "$PRCODER_REPO"', 'even where f has no built-in');
+  assert.deepEqual(OPEN_REPO_VARS, { terminal: 'PRCODER_TERMINAL', folder: 'PRCODER_FILE_MANAGER' });
+  assert.equal(REPO_ENV, 'PRCODER_REPO');
+});
+
+// What the string above relies on, against the real sh: a path that its own
+// quoting would have to get right arrives whole.
+test('sh hands an override the repo path whole, whatever is in it', () => {
+  const dir = "/a b/it's $HOME `x` \\ %TEMP%";
+  const cmd = openRepoArgs('folder', 'linux', dir, `${JSON.stringify(process.execPath)} -e 'process.stdout.write(process.argv[1])'`);
+  assert.equal(execSync(cmd, { env: { ...process.env, [REPO_ENV]: dir } }).toString(), dir);
 });
 
 test('with no PR there is no PR line to print', () => {
