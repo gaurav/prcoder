@@ -103,9 +103,13 @@ export async function openPage(browser, port) {
 export async function launchBrowser() {
   const { chromium, firefox } = await import('playwright');
   // This was PRCODER_BROWSER, which is now the browser prcoder opens, so an old
-  // `PRCODER_BROWSER=chromium` would quietly drive Firefox; say so instead.
-  if (['chromium', 'firefox'].includes(process.env.PRCODER_BROWSER) && !process.env.PRCODER_PLAYWRIGHT) {
-    throw new Error(`PRCODER_BROWSER picks prcoder's own browser now; use PRCODER_PLAYWRIGHT=${process.env.PRCODER_BROWSER}`);
+  // `PRCODER_BROWSER=chromium` would quietly drive Firefox; say so. Said, not
+  // thrown: `PRCODER_BROWSER=firefox` in a Linux profile is a correct setting
+  // for prcoder, and the drivers run it with PRCODER_NO_OPEN, so it is no reason
+  // to refuse to run.
+  const old = process.env.PRCODER_BROWSER;
+  if (['chromium', 'firefox'].includes(old) && !process.env.PRCODER_PLAYWRIGHT) {
+    console.log(`engine:  PRCODER_BROWSER=${old} is prcoder's browser, not the driver's; PRCODER_PLAYWRIGHT=${old} picks this one`);
   }
   const forced = { chromium, firefox }[process.env.PRCODER_PLAYWRIGHT];
   const engine = forced ?? (existsSync(firefox.executablePath()) ? firefox : chromium);
