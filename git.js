@@ -194,7 +194,7 @@ export async function branchesBelow(cwd, branch, defaultBranch, { current = fals
   const seen = new Set([branch]);
   let ref = current ? 'HEAD' : `refs/remotes/origin/${branch}`;
   for (let i = 0; i < 10; i++) {
-    const parent = await parentBranch(cwd, ref, defaultBranch, [...seen, ...stackedOn(prs, seen)]);
+    const parent = await parentBranch(cwd, ref, defaultBranch, [...seen, ...stackedOn(prs, seen)], prs);
     if (parent === defaultBranch) return { names, toDefault: true };
     if (!parent) break;
     seen.add(parent);
@@ -232,14 +232,21 @@ function stackedOn(prs, branches) {
  * kept, since a branch just cut from another sits exactly there. So is every
  * branch in `skip`: the walk so far, and what is stacked on it.
  *
+ * Two branches can name the same commit at the same distance -- a sibling cut
+ * before the parent's newest commit has the parent's older ones too -- and
+ * name-rev breaks that tie by the older tip, so by commit dates. When `prs`
+ * says the branch it picked is stacked on another that also has the commit,
+ * that one is lower, and the pick is dropped and name-rev asked again.
+ *
  * ponytail: a child cut from `ref` before its newest commit has `ref`'s older
  * commits, and the history is the same shape as if `ref` had been cut from it,
  * so git alone can take the child for the parent. A child with a pull request
- * is never taken -- branchesBelow skips what is stacked on the walk -- so this
- * is only a bare child. Local reflogs ("Created from") would say, where they
- * exist; test/git.test.js pins it.
+ * is never taken -- branchesBelow skips what is stacked on the walk, and the
+ * tie above drops one stacked on a rival -- so this is only a bare child. Local
+ * reflogs ("Created from") would say, where they exist; test/git.test.js pins
+ * it.
  */
-async function parentBranch(cwd, ref, defaultBranch, skip) {
+async function parentBranch(cwd, ref, defaultBranch, skip, prs = []) {
   const tip = await text(['rev-parse', '--verify', `${ref}^{commit}`], cwd);
   const above = (await text(['for-each-ref', '--contains', tip, '--format=%(objectname) %(refname)', 'refs/remotes/origin'], cwd))
     .split('\n').filter(Boolean).map((l) => l.split(' '))
@@ -249,11 +256,31 @@ async function parentBranch(cwd, ref, defaultBranch, skip) {
   // Nothing of its own above the default branch: cut from it, or merged into it.
   if (!own.length) return defaultBranch;
   const refs = [...above, ...skip.map((b) => `refs/remotes/origin/${b}`), 'refs/remotes/origin/HEAD'];
-  const named = (await text(['name-rev', '--name-only', '--refs=refs/remotes/origin/*',
-    ...refs.map((r) => `--exclude=${r}`), ...own], cwd)).split('\n');
-  const hit = named.find((n) => n !== 'undefined');
-  // Every commit is this branch's alone, so it forks off the default branch.
-  return hit ? hit.replace(/^remotes\/origin\//, '').replace(/[~^].*$/, '') : defaultBranch;
+  for (;;) {
+    const named = (await text(['name-rev', '--name-only', '--refs=refs/remotes/origin/*',
+      ...refs.map((r) => `--exclude=${r}`), ...own], cwd)).split('\n');
+    const at = named.findIndex((n) => n !== 'undefined');
+    // Every commit is this branch's alone, so it forks off the default branch.
+    if (at < 0) return defaultBranch;
+    const hit = named[at].replace(/^remotes\/origin\//, '').replace(/[~^].*$/, '');
+    const under = basesOf(prs, hit, defaultBranch);
+    if (!under.length) return hit;
+    const holders = new Set((await text(['for-each-ref', '--contains', own[at], '--format=%(refname:lstrip=3)',
+      'refs/remotes/origin'], cwd)).split('\n'));
+    if (!under.some((b) => holders.has(b))) return hit;
+    refs.push(`refs/remotes/origin/${hit}`);
+  }
+}
+
+/** The bases under `head` by its pull request, its base's, and so on, short of the default branch. */
+function basesOf(prs, head, defaultBranch) {
+  const out = [];
+  for (let at = head; ;) {
+    const base = prs.find((p) => p.headRefName === at)?.baseRefName;
+    if (!base || base === defaultBranch || base === head || out.includes(base)) return out;
+    out.push(base);
+    at = base;
+  }
 }
 
 // ponytail: a fixed cap. GitHub's own per-file patches run to ~50 KB on a big
