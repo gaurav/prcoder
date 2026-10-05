@@ -197,6 +197,7 @@ const wrapOn = () => (wrap ??= pref(WRAP_KEY) === 'on');
 function paintWrap(on) {
   el('diff').classList.toggle('wrap', on);
   el('diff-wrap').setAttribute('aria-pressed', String(on));
+  el('diff-wrap').title = `${on ? 'unwrap' : 'wrap'} long lines (Alt+W)`;
 }
 function setWrap(on) {
   wrap = on;

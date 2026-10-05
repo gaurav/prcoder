@@ -172,7 +172,7 @@ context git puts after the `@@` (the enclosing function, a heading); a click scr
 hides it for every file until *Outline* in the header brings it back.
 
 A line longer than the pane runs off its right edge and scrolls sideways, until *Wrap* in the header
-is pressed: then every line folds at the pane's edge, and the folded part is indented two characters
+is pressed (it fills in while pressed): then every line folds at the pane's edge, and the folded part is indented two characters
 so the left column still reads as the start of each line. It is off for every file until pressed,
 Markdown and plain text included -- prcoder could guess from the extension, but a setting that
 turned itself on and off by file would read as the pane changing its mind, and it is one press.

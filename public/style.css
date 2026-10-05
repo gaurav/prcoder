@@ -666,8 +666,11 @@ a { color: var(--accent); }
    starts (a `+`/`-` there is a line's, never a fold's). pre-wrap keeps a line's
    own leading spaces, and they sit on the first line as before. */
 #diff.wrap .dl { padding-left: calc(10px + 2ch); text-indent: -2ch; }
-#diff > header #diff-wrap { font-size: 12px; }
-#diff > header #diff-wrap[aria-pressed="true"] { color: var(--accent); }
+/* Pressed, Wrap fills in rather than changing colour: the links beside it are
+   already --accent, so accent text alone read as one more link. No border and no
+   vertical padding, which would make the header taller (the suite checks). */
+#diff > header #diff-wrap { font-size: 12px; padding: 0 6px; border-radius: 3px; }
+#diff > header #diff-wrap[aria-pressed="true"] { color: var(--bg); background: var(--accent); }
 #diff-outline button {
   display: block; width: 100%; max-width: 100%; text-align: left; background: none; border: 0; cursor: pointer;
   font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--dim); padding: 2px 10px;
