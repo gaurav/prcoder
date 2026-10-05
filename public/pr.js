@@ -57,9 +57,15 @@ export const api = async (url, body, method = 'POST') => {
  * adds; a sticky one also has a border of its own.
  */
 let toastTimer;
-export function toast(msg, bad = false, sticky = false) {
+export function toast(msg, bad = false, sticky = false, link = null) {
   const el = document.getElementById('toast');
+  // textContent, never innerHTML: msg is often a server error. A link is the
+  // one thing a message can carry past that, so it is a separate argument.
   el.textContent = msg;
+  if (link) {
+    el.append(' ', Object.assign(document.createElement('a'),
+      { href: link.href, textContent: link.text, target: '_blank', rel: 'noopener' }));
+  }
   el.className = `${bad ? 'bad' : ''} ${sticky ? 'sticky' : ''}`.trim();
   el.hidden = false;
   // One slot, so a later toast replaces whatever is up -- including a sticky
