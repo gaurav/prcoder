@@ -16,7 +16,7 @@ import { snapshot, currentBranch, repoInfo, prScope, compareUrl, originOwner, ch
 import { bucket, fileUrl, fileViews } from './files.js';
 import { readPort, writePort, useQueueFile, movedQueue } from './store.js';
 import { readQueue, writeQueue, quote } from './queue.js';
-import { parseCli, usage, VERSION, portCandidates, statusLines, queueSummary, quitRisks } from './cli.js';
+import { parseCli, usage, VERSION, portCandidates, statusLines, openRepoArgs, OPEN_REPO_VARS, REPO_ENV, queueSummary, quitRisks } from './cli.js';
 import * as term from './term.js';
 import { toggleTask } from './public/tasks.js';
 import { grammars } from './public/diff.js';
@@ -253,10 +253,12 @@ const routes = {
   // `force`, a quit that would cost something only says what it would cost, so
   // the page can put the same question to you there.
   'POST /api/quit': ({ force } = {}) => {
+    // Into the terminal's scrollback, as q does: first, and whether or not the
+    // question that follows is answered yes. listQueue() prints nothing new on
+    // the forced request that follows a yes, and lists anything added since.
+    listQueue();
     const risk = quitRisk();
     if (risk.length && !force) return { risk };
-    // Into the terminal's scrollback, as q does: the page is about to lose it.
-    listQueue();
     // Deferred so the reply goes out first: process.exit doesn't wait for it.
     setTimeout(quit, 100);
     return { quit: true };
@@ -518,6 +520,13 @@ export function startedWith(args) {
  * Allowlisted rather than passed through, because this is the page choosing a
  * spawn's argv. A model has to be a name, not something starting with a dash:
  * `--model --dangerously-skip-permissions` must not reach claude as two flags.
+ * `@` and `/` are in the name because Vertex IDs (`claude-sonnet-4-5@20250929`)
+ * and Bedrock ARNs use them.
+ *
+ * A setting equal to the one `base` already ends on is dropped before the
+ * check, not checked: the exit bar is filled with `base`'s (startedWith), so an
+ * untouched restart sends them back, and the command line accepts names the
+ * allowlist doesn't know. `base` carries it already; repeating it adds nothing.
  *
  * The real spawn was driven once by hand (2026-09-23), against a stub that
  * prints its argv: `[]` on the first open, then `[--continue --model opus
@@ -525,9 +534,11 @@ export function startedWith(args) {
  */
 const EFFORTS = new Set(['low', 'medium', 'high', 'xhigh', 'max']);
 export function sessionArgs(params, base = []) {
-  const model = params.get('model');
-  const effort = params.get('effort');
-  if (model && !/^\w[\w.:[\]-]*$/.test(model)) return null;
+  const given = startedWith(base);
+  const own = (key) => (params.get(key) === given[key] ? '' : params.get(key));
+  const model = own('model');
+  const effort = own('effort');
+  if (model && !/^\w[\w.:@/[\]-]*$/.test(model)) return null;
   if (effort && !EFFORTS.has(effort)) return null;
   return [
     ...base,
@@ -644,16 +655,52 @@ async function ready() {
 }
 
 // ponytail: the platform's own opener, not a dependency. --no-open (or
-// PRCODER_NO_OPEN=1) to skip; PRCODER_OPEN to run your own command with the URL
+// PRCODER_NO_OPEN=1) to skip; PRCODER_BROWSER to run your own command with the URL
 // appended, which is how a browser is told "a new window, not a tab".
 function openBrowser() {
   const url = urls.local;
   const opener = { darwin: 'open', win32: 'start' }[process.platform] || 'xdg-open';
-  const custom = process.env.PRCODER_OPEN;
+  const custom = process.env.PRCODER_BROWSER;
+  // Renamed, and only warned about: unlike a leftover CLAUDE_BIN, ignoring it
+  // opens the default browser, which is wrong but harmless -- yet with no word,
+  // the window someone set up just stops appearing.
+  if (!custom && process.env.PRCODER_OPEN) {
+    console.error('prcoder: PRCODER_OPEN is now PRCODER_BROWSER; rename it -- opening the default browser');
+  }
+  const shell = Boolean(custom) || process.platform === 'win32';
   const child = custom
-    ? spawn(`${custom} ${url}`, { detached: true, stdio: 'ignore', shell: true })
-    : spawn(opener, [url], { detached: true, stdio: 'ignore', shell: process.platform === 'win32' });
-  child.on('error', (e) => console.error(`could not open a browser (${e.message}) — visit ${url}`)).unref();
+    ? spawn(`${custom} ${url}`, { detached: true, stdio: 'ignore', shell })
+    : spawn(opener, [url], { detached: true, stdio: 'ignore', shell });
+  watch(child, shell, (why) => console.error(`could not open a browser (${why}) — visit ${url}`));
+}
+
+/**
+ * Lets a detached opener go, but not unheard. Through a shell, a command that
+ * is missing or fails is no `error` -- the shell itself started -- only a
+ * nonzero exit, and with stdio ignored that is the one sign there is; so a
+ * shell's exit code is reported. An argv spawn's is not: a missing command is
+ * already an `error`, and explorer exits 1 when it has opened the window.
+ * A signal is someone closing the window, not a failure.
+ */
+function watch(child, shell, failed) {
+  child.on('error', (e) => failed(e.message));
+  if (shell) child.on('exit', (code) => code && failed(`exit ${code}`));
+  child.unref();
+}
+
+// `t` and `f`: a terminal, or the file manager, on the repo. Detached like the
+// browser above, and never from a route: the page names nothing that reaches an
+// argv here, and `repo` is the server's own cwd. An override from
+// OPEN_REPO_VARS comes back as a shell command line rather than an argv;
+// openRepoArgs says why.
+function openRepo(what) {
+  const argv = openRepoArgs(what, process.platform, repo, process.env[OPEN_REPO_VARS[what]]);
+  if (!argv) return console.error(`${what}: not implemented on ${process.platform} yet; ${OPEN_REPO_VARS[what]} names one`);
+  const opts = { detached: true, stdio: 'ignore' };
+  const child = typeof argv === 'string'
+    ? spawn(argv, { ...opts, shell: true, env: { ...process.env, [REPO_ENV]: repo } })
+    : spawn(argv[0], argv.slice(1), opts);
+  watch(child, typeof argv === 'string', (why) => console.error(`could not open a ${what} (${why})`));
 }
 
 /**
@@ -754,18 +801,30 @@ function listQueue() {
 // Kills the PTYs itself rather than leaving that to the close handlers:
 // process.exit doesn't wait for them, and an orphaned `claude` outlives the
 // terminal it was started from.
+//
+// Exits once stdout has caught up, not straight away. Piped (`prcoder | tee`),
+// stdout is asynchronous on macOS and process.exit drops what is still queued
+// -- the Local list askToQuit printed a moment ago, on a reader that is behind.
+// An empty write calls back once everything ahead of it is out; the timer is
+// for a reader that never catches up, which must not keep prcoder alive.
+let quitting = false;
 function quit() {
+  if (quitting) return;
+  quitting = true;
   for (const pty of ptys) pty.kill();
   wss.close();
   server.close();
-  process.exit(0);
+  setTimeout(() => process.exit(0), 2000);
+  process.stdout.write('', () => process.exit(0));
 }
 
 function askToQuit() {
   listQueue();
   const risk = quitRisk();
   if (!risk.length) return quit();
-  term.confirm(`quit? ${risk.join('; ')}  [y/N] `, quit);
+  // Listed again on yes: the queue can change while the question waits, and
+  // an item added from a tab in that time would otherwise go unprinted.
+  term.confirm(`quit? ${risk.join('; ')}  [y/N] `, () => { listQueue(); quit(); });
 }
 
 if (import.meta.main) {
@@ -801,6 +860,8 @@ if (import.meta.main) {
     key: (ch) => {
       if (ch === 'v') term.cycleVerbosity();
       else if (ch === 'o') openBrowser();
+      else if (ch === 't') openRepo('terminal');
+      else if (ch === 'f') openRepo('folder');
       // Serialised like any route: a poll is git and gh calls, and a keypress
       // is no reason to run them alongside a checkout.
       else if (ch === 'r') {

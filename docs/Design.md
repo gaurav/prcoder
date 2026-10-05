@@ -107,11 +107,19 @@ in [`cli.js`](../cli.js)); everything after it goes to the agent verbatim. So th
 Claude's flags to keep in step, and an agent flag written before `--` is an error that says where it
 goes, not a session started with the wrong pull request. `--port`, `--no-open`, `--queue` and `-v`
 each have an environment variable of the same meaning, which the flag overrides; `--agent` has none
-yet, and `PRCODER_OPEN` and `PRCODER_AGENT_BIN` have no flag.
+yet, and `PRCODER_BROWSER`, `PRCODER_TERMINAL`, `PRCODER_FILE_MANAGER` and `PRCODER_AGENT_BIN`
+have no flag.
+The three opener variables each name the kind of program a key launches, and there is no generic
+`PRCODER_OPEN`: the platform's own opener (`open`, `start`, `xdg-open`) already is one, and the
+only reason to override it is to want a particular browser for URLs, or a particular file manager
+for folders, which no one command gives. A key that opens a file would hand it to an editor, a
+third kind, with a variable of its own. `PRCODER_NO_OPEN` is about the browser.
 `PRCODER_AGENT_BIN` is a path to run, not a name, which is why it is not `PRCODER_AGENT`: that
 would read as `--agent`'s variable, and is the name `--agent` needs if it ever gets one. It was
 `CLAUDE_BIN`, and prcoder refuses to start while only the old name is set, since ignoring it would
-spawn the real `claude` in place of whatever stub it named.
+spawn the real `claude` in place of whatever stub it named. `PRCODER_BROWSER` was `PRCODER_OPEN`,
+and a leftover one is warned about rather than refused: ignoring it opens the default browser,
+which is wrong but harmless.
 
 The other side of that line, prcoder adding nothing of its own to `claude`'s arguments, is what
 keeps one gap open.

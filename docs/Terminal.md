@@ -7,7 +7,8 @@ prcoder  gaurav/prcoder   initial-implementation → main   2 unpushed · 8 unco
 PR #1    A browser workspace around a live Claude Code session
          https://github.com/gaurav/prcoder/pull/1
 queue    4 local · 1 done
-serving  http://localhost:17455   1 tab   q quit · r refresh · v verbose · o open
+serving  http://localhost:17455   1 tab
+keys     q quit · r refresh · v verbose · o open · t terminal · f folder
 ```
 
 The block is redrawn in place and the log scrolls above it, so what happened stays in the
@@ -30,6 +31,14 @@ says `checked 7m ago` next to that count, rather than presenting them as current
   the PR has moved upstream. `-v` or `-vv` (or `PRCODER_VERBOSE=1` or `=2`) starts at a level, which
   is the only way to see startup itself.
 - `o` reopens the browser.
+- `t` opens a new terminal window in the repo, for whatever is awkward to run through a coding
+  agent: several commands in a row, moving between directories, commands piped together, or trying
+  out the CLI you are working on. The built-in terminal is Terminal.app on macOS, and elsewhere `t`
+  says it has none. `PRCODER_TERMINAL` names your own on any platform, run with the repo's path
+  appended: `open -a iTerm`, `kitty --directory`, `wt -d`.
+- `f` opens the repo in the file manager, for moving, opening or renaming files, or browsing its
+  directories. `PRCODER_FILE_MANAGER` replaces the platform's opener the same way:
+  `open -a ForkLift`, `nautilus`.
 - `q` or Ctrl-C quits, asking first when that would cost something.
 
 ## Quitting

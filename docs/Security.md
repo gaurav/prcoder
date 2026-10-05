@@ -87,7 +87,10 @@ The log and the status block print text prcoder did not write: queue items, whic
 and anyone can edit into `queue.json`, PR titles, branch names, git's stderr. An ESC in any of them
 is a sequence the terminal would run -- a colour that never resets, a cursor move that throws off
 the block's erase, a window title set. `visible()` in [`term.js`](../term.js) shows every control
-character as its Unicode picture instead (ESC as `␛`), and the C1 range as `�`. It runs inside
+character as its Unicode picture instead (ESC as `␛`), and the C1 range as `�`. The one exception
+is a log line's newline and tab, which `log()` keeps so a multi-line item still reads as lines; a
+status row and the quit question keep neither, so a new caller that needs one row gets it from
+`status()` or `confirm()`, not from `log()`. It runs inside
 `log()`, `status()` and `confirm()`, which are the only ways out: `init()` routes `console` through
 `log()`. `test/term.test.js` pins it.
 
@@ -129,7 +132,8 @@ A modified file's diff is not highlighted at all, and
   The Claude pane's "Start coding agent again" puts a model, an effort and `--continue` on the
   `/pty` query, and `sessionArgs` in `server.js` refuses the socket before the spawn for any other
   value -- a model has to be a name, so `--model --dangerously-skip-permissions` never becomes two
-  flags.
+  flags. The one exception is a value equal to what prcoder's command line already gave, which is
+  dropped as a repeat rather than checked: it came from whoever started prcoder, not the page.
 - **Text from GitHub** — descriptions, titles, issue bodies, file names — is built into the page with
   `h()` and text nodes. `innerHTML` only through `inline()`, and a new kind of link only through
   `target()`.

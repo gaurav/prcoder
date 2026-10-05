@@ -4,14 +4,14 @@
 //
 //   node tools/browser.mjs [label]         # PNGs to ./data/shots/<label>/ (gitignored)
 //                                         # the label says what the run was for; default `latest`
-//   PRCODER_BROWSER=firefox node tools/browser.mjs
+//   PRCODER_PLAYWRIGHT=firefox node tools/browser.mjs
 //
 // Firefox is a separate download: `npx playwright install firefox` once.
 //
 // Scratch driver, not a test: add clicks and locators for whatever you are
 // looking at. Two rules for anything you add.
 //
-// PRCODER_BROWSER=firefox drives Firefox instead. Worth having rather than
+// PRCODER_PLAYWRIGHT=firefox drives Firefox instead. Worth having rather than
 // trusting one engine: the caret in a queue item landed at the start in Firefox
 // and nowhere else, because a mousedown inside a draggable element goes to the
 // drag machinery there, and every screenshot before that had been Chromium.
@@ -209,8 +209,10 @@ console.log('row ▶:  ', await local(), '+', await page.locator('#queue-body .t
 await page.locator('#queue-body .tab', { hasText: 'Completed' }).click();
 await page.waitForTimeout(150);
 // The way back, which is why this is a tick and not a delete: the box that
-// checked itself unchecks.
-await page.locator('.item', { hasText: SENT }).locator('input[type=checkbox]').uncheck();
+// checked itself unchecks. click(), not uncheck(): uncheck() reads the box
+// again after clicking, and once the save has moved the row off Completed it
+// waits for a box that is no longer there.
+await page.locator('.item', { hasText: SENT }).locator('input[type=checkbox]').click();
 await page.locator('#queue-body .tab', { hasText: 'Local (3)' }).waitFor({ timeout: 10_000 });
 await page.locator('#queue-body .tab', { hasText: 'Local' }).click();
 await page.waitForTimeout(150);
@@ -672,7 +674,7 @@ await page.waitForSelector('.item .text');
 
 // The bug above, pinned: a click in the middle of an item's text has to land
 // in the middle of it. Silent in Chromium either way, so this only earns its
-// keep under PRCODER_BROWSER=firefox.
+// keep under PRCODER_PLAYWRIGHT=firefox.
 //
 // Aimed at the glyphs and not at the box. `.item .text` is `flex: 1`, so its
 // box runs to the end of the row and the middle of *that* is well past the end

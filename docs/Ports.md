@@ -44,11 +44,11 @@ half-typed form input, and faking either is a hack -- so tell the extension inst
 page). It matches on hostname alone, so that one entry covers every prcoder whatever its port.
 A tab brought back after a discard says so in a toast that links here.
 
-**A window per repo.** `PRCODER_OPEN` replaces the platform opener with your own command, with the
+**A window per repo.** `PRCODER_BROWSER` replaces the platform opener with your own command, with the
 URL appended. Firefox hands the arguments to the running copy, so
 
 ```sh
-export PRCODER_OPEN='/Applications/Firefox.app/Contents/MacOS/firefox -new-window'
+export PRCODER_BROWSER='/Applications/Firefox.app/Contents/MacOS/firefox -new-window'
 ```
 
 gives each prcoder its own window, listed by title in the Window menu and Mission Control.

@@ -144,12 +144,14 @@ const posted = [];
 // the agent to do something. A regex, not `**/pty`: a glob has to match the
 // whole URL, so the exit bar's `/pty?model=...` slipped past it to the real
 // server. `whoami` is the model and effort prcoder's command line started the
-// agent with, which the exit bar is filled with.
+// agent with, which the exit bar is filled with -- or a function given the
+// route, for a test that answers it late.
 async function newPage({ prs = [], st = status, ready = '#pr-head .pr-title', pty = () => {},
   whoami = { model: '', effort: '' } } = {}) {
   const p = await browser.newPage();
   await p.routeWebSocket(/\/pty(\?|$)/, pty);
-  await p.route('**/api/whoami', (r) => r.fulfill({ json: { started: whoami } }));
+  await p.route('**/api/whoami', (r) => (typeof whoami === 'function'
+    ? whoami(r) : r.fulfill({ json: { started: whoami } })));
   await p.route('**/api/status', (r) => r.fulfill({ json: st }));
   await p.route('**/api/prs', (r) => (prs ? r.fulfill({ json: prs }) : r.abort()));
   await p.route('**/api/queue', (r) => r.fulfill({ json: [] }));
@@ -695,9 +697,21 @@ test('folds show progress as a pie named by its figure', { skip }, async () => {
   assert.deepEqual(await pie('.md-section:has(h3:text-is("Before merging"))'),
     { label: '0 of 1 done', role: 'img', p: '0', full: false });
 
+  // The Files tab's own, by changed lines rather than files: two of the five
+  // are viewed, and they are two of the four big ones. Once every file is, it
+  // is the ✓ circle instead -- the tab-done test pins that name exactly.
+  const n = files[0].additions;
+  const tab = await fresh.locator('#pr-head .tab .pie').evaluate((el) => ({
+    label: el.getAttribute('aria-label'), p: el.style.getPropertyValue('--p'),
+  }));
+  assert.deepEqual(tab, { label: `2 of 5 files, ${2 * n} of ${4 * n + 1} changed lines viewed`, p: String(2 * n / (4 * n + 1)) });
+
   await fresh.locator('#pr-head .tab', { hasText: 'Files' }).click();
-  assert.deepEqual(await pie('.dir[data-dir="src/"]'), { label: '1 of 2 viewed', role: 'img', p: '0.5', full: false });
-  assert.deepEqual(await pie('.dir[data-dir="src/sub/"]'), { label: '1 of 1 viewed', role: 'img', p: '1', full: true });
+  // By changed lines, as the tab's is; src/'s two files are the same size.
+  assert.deepEqual(await pie('.dir[data-dir="src/"]'),
+    { label: `1 of 2 files, ${n} of ${2 * n} changed lines viewed`, role: 'img', p: '0.5', full: false });
+  assert.deepEqual(await pie('.dir[data-dir="src/sub/"]'),
+    { label: `1 of 1 files, ${n} of ${n} changed lines viewed`, role: 'img', p: '1', full: true });
   assert.equal(await fresh.locator('#pr-body .count').count(), 0, 'no fraction left beside a fold');
   await fresh.close();
 });
@@ -753,15 +767,22 @@ test('Completed lists the most recently finished first, and cannot be reordered'
 test('a queue change the server refuses is taken back off the screen', { skip }, async () => {
   const fresh = await newPage();
   const queue = [{ text: 'refused tick', done: false, issue: null, deleted: false }];
+  let puts = 0;
   await fresh.route('**/api/status', (r) => r.fulfill({ json: { ...status, queue } }));
   await fresh.route('**/api/queue', (r) => (r.request().method() === 'PUT'
-    ? r.fulfill({ status: 500, json: { error: 'disk full' } })
+    ? (puts++, r.fulfill({ status: 500, json: { error: 'disk full' } }))
     : r.fulfill({ json: queue })));
   await fresh.reload();
   await fresh.waitForSelector('#queue-body .item');
-  await fresh.locator('#queue-body .item input[type=checkbox]').check();
+  // click(), not check(): check() reads the box again after clicking, and when
+  // the refusal has already repainted the row that box is detached -- so it
+  // retries on the new, unticked one and ticks it a second time. That second
+  // save was still in flight when the first one's toast came up, and the
+  // assertions below saw a ticked box (CI only: there the PUT wins the race).
+  await fresh.locator('#queue-body .item input[type=checkbox]').click();
   // For this text, not any toast: the reload raises its own restart notice.
   await fresh.waitForFunction(() => document.getElementById('toast').textContent === 'disk full');
+  assert.equal(puts, 1, 'ticked once');
   // Back in Active and unticked, as the server has it.
   assert.deepEqual(await fresh.locator('#queue-body .item .text').allTextContents(), ['refused tick']);
   assert.equal(await fresh.locator('#queue-body .item input[type=checkbox]').isChecked(), false);
@@ -1219,5 +1240,23 @@ test('when the agent exits, starting it again reconnects with the chosen setting
   await p.click('#term-quit');
   await bar.getByText('prcoder has quit').waitFor();
   assert.deepEqual(asked, [{}, 'Quit prcoder? 2 uncommitted files.', { force: true }]);
+  await p.close();
+});
+
+// The fill is a fetch, so it can land after you have typed into the bar; it
+// must not take that back. And an effort the select has no option for still
+// shows, rather than reading "as started".
+test('the exit bar\'s late fill keeps what was typed, and shows an effort it has no option for', { skip }, async () => {
+  let answer;
+  const late = new Promise((resolve) => { answer = resolve; });
+  const p = await newPage({
+    whoami: async (r) => { await late; return r.fulfill({ json: { started: { model: 'sonnet', effort: 'extreme' } } }); },
+    pty: (ws) => ws.close(),
+  });
+  await p.locator('#term-exit').waitFor({ state: 'visible' });
+  await p.fill('#term-exit [name=model]', 'opus');
+  answer();
+  await p.waitForFunction(() => document.querySelector('#term-exit [name=effort]').value === 'extreme');
+  assert.equal(await p.inputValue('#term-exit [name=model]'), 'opus');
   await p.close();
 });

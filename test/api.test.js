@@ -174,6 +174,9 @@ test('session settings become claude flags, and nothing else does', () => {
   assert.deepEqual(args('model=opus&effort=high&continue=on'),
     ['--continue', '--model', 'opus', '--effort', 'high']);
   assert.deepEqual(args('model=claude-opus-5-5[1m]'), ['--model', 'claude-opus-5-5[1m]']);
+  assert.deepEqual(args('model=claude-sonnet-4-5@20250929'), ['--model', 'claude-sonnet-4-5@20250929']);
+  assert.deepEqual(args('model=arn:aws:bedrock:us-east-1:1:application-inference-profile/x'),
+    ['--model', 'arn:aws:bedrock:us-east-1:1:application-inference-profile/x']);
   assert.equal(args('model=--dangerously-skip-permissions'), null);
   assert.equal(args('model=opus --verbose'), null);
   assert.equal(args('effort=extreme'), null);
@@ -188,6 +191,17 @@ test('blank settings keep the command line\'s model and effort, and chosen ones 
   assert.deepEqual(args('model=&effort='), base);
   assert.deepEqual(args('model=haiku'), [...base, '--model', 'haiku']);
   assert.equal(args('effort=extreme'), null);
+});
+
+// The exit bar is filled with the command line's settings, so an untouched
+// restart sends them back -- and the command line takes names the allowlist
+// refuses. Sending back what -- gave must start the agent, not close the socket.
+test('settings the command line already gave are kept, not checked', () => {
+  const base = ['--model', 'my model', '--effort', 'extreme'];
+  const args = (q) => sessionArgs(new URLSearchParams(q), base);
+  assert.deepEqual(args('model=my+model&effort=extreme'), base);
+  assert.deepEqual(args('model=my+model&effort=low'), [...base, '--effort', 'low']);
+  assert.equal(args('model=other+model'), null);
 });
 
 // What the exit bar is filled with: the last of each, as claude reads them.
