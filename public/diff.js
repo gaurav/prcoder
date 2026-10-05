@@ -182,14 +182,20 @@ function showOutline(on) {
 // line folds. Off for every file until pressed, Markdown and plain text
 // included: a setting that turned itself on by extension would read as the
 // pane changing its mind, and the owner's repos wrap their Markdown anyway.
+//
+// The choice lives here, and storage only seeds it: setPref's refused write
+// holds for the session only if nothing reads storage back, and a toggle that
+// re-read it would be stuck on in Safari's private mode.
 const WRAP_KEY = 'prcoder:wrap';
-const wrapOn = () => pref(WRAP_KEY) === 'on';
+let wrap;
+const wrapOn = () => (wrap ??= pref(WRAP_KEY) === 'on');
 /** Paint the stored choice: the class the rows fold under, and the button's pressed state. */
 function paintWrap(on) {
   el('diff').classList.toggle('wrap', on);
   el('diff-wrap').setAttribute('aria-pressed', String(on));
 }
 function setWrap(on) {
+  wrap = on;
   paintWrap(on);
   setPref(WRAP_KEY, on ? 'on' : 'off');
 }

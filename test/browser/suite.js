@@ -612,6 +612,35 @@ test('Wrap folds a long line inside the pane, and stays pressed across a reload'
   await fresh.close();
 });
 
+// Safari's private mode throws on every write, and setPref says a refused
+// write holds for the session -- so Wrap has to toggle both ways, and stay
+// pressed from one file to the next, without storage ever taking the choice.
+test('Wrap toggles and holds across files when storage refuses writes', { skip }, async () => {
+  const fresh = await newPage({ st: withLong(status) });
+  await fresh.addInitScript(() => {
+    Storage.prototype.setItem = () => { throw new DOMException('refused', 'QuotaExceededError'); };
+  });
+  await fresh.reload();
+  await fresh.waitForSelector('#pr-head .pr-title');
+  const open = async (path) => {
+    await fresh.locator('.file[data-path="' + path + '"] .path').click();
+    await fresh.waitForSelector('#diff-body .dl');
+  };
+  const pressed = () => fresh.getAttribute('#diff-wrap', 'aria-pressed');
+
+  await fresh.locator('#pr-head .tab', { hasText: 'Files' }).click();
+  await open('long.txt');
+  await fresh.click('#diff-wrap');
+  assert.equal(await pressed(), 'true', 'pressed');
+  await open('evil.js');
+  assert.equal(await pressed(), 'true', 'still pressed on the next file');
+  await fresh.click('#diff-wrap');
+  assert.equal(await pressed(), 'false', 'and unpressed by a second click');
+  await fresh.keyboard.press('Alt+KeyW');
+  assert.equal(await pressed(), 'true', 'and Alt+W flips it too');
+  await fresh.close();
+});
+
 // The ⟳ is drawn larger than the header's text, because at the same size this
 // font makes it a speck -- and a glyph at a bigger size is how a header grows.
 // So the header has to be the height it is with the ⟳ at the header's own
