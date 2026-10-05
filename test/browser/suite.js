@@ -1100,6 +1100,7 @@ test('a stacked PR shows the stack under it in its Stack tab and its head', { sk
     'The stack PR #13 (branch topic-2) is in, from main.');
   assert.deepEqual(await fresh.locator('#pr-body .pr-into > ul > li > .pr-row .pr-num').allTextContents(), ['#12']);
   assert.deepEqual(await fresh.locator('#pr-body .pr-row.here .pr-num').allTextContents(), ['#13']);
+  assert.deepEqual(await fresh.locator('#pr-body li[aria-current="true"] > .pr-row .pr-num').allTextContents(), ['#13']);
   assert.equal(await fresh.locator('#pr-body .pr-row.here .pr-go').count(), 0);
   assert.deepEqual(await fresh.locator('#pr-body .pr-into ul ul ul .pr-num').allTextContents(), ['#14']);
   await fresh.close();
@@ -1115,6 +1116,7 @@ test('with no PR, the pane shows what git says the branch is built on, above wha
   assert.equal(await p.locator('#pr-body .pr-into-label').textContent(), 'The stack branch mine is in, from main.');
   assert.deepEqual(await p.locator('#pr-body .pr-into > ul > li > .pr-row .pr-num').allTextContents(), ['#12']);
   assert.equal(await p.locator('#pr-body .pr-row.here code.branch').textContent(), 'mine');
+  assert.equal(await p.locator('#pr-body li[aria-current="true"] > .pr-row code.branch').textContent(), 'mine');
   assert.deepEqual(await p.locator('#pr-body .pr-row.here + ul .pr-num').allTextContents(), ['#15']);
   assert.equal(p.belowAsked.branch, 'mine');
   assert.deepEqual(p.belowAsked.prs.at(-1), { headRefName: 'on-mine', baseRefName: 'mine' });

@@ -484,12 +484,15 @@ export const stackBase = (pr) => [`PR #${pr.number} (branch `, { branch: pr.head
 const stackList = (nodes, opts) => h('ul', {},
   ...nodes.map((n) => (n.pr ? prRow : bareRow)(n, opts, n.kids.length ? stackList(n.kids, opts) : null)));
 
+/** The row you are on, for a screen reader: bold is only the mark you see. */
+const current = (here) => (here ? { ariaCurrent: 'true' } : {});
+
 /**
  * One open pull request: the link to it, what it is called, and the checkout.
  * The one you are looking at is marked instead of offering to go there: the
  * switcher in the head is the way to check it out.
  */
-const prRow = ({ pr: p, here }, { blocked, onSwitch }, kids) => h('li', {},
+const prRow = ({ pr: p, here }, { blocked, onSwitch }, kids) => h('li', current(here),
   h('div', { className: here ? 'pr-row here' : 'pr-row' },
     ext(p.url, `#${p.number}`, { className: 'pr-num' }),
     p.isDraft ? badge('draft', 'draft') : null,
@@ -505,7 +508,7 @@ const prRow = ({ pr: p, here }, { blocked, onSwitch }, kids) => h('li', {},
  * branch-only pane, or one a stack is built on that has merged or never had
  * one. Nothing to link to or check out -- Switch is `gh pr checkout`.
  */
-const bareRow = ({ branch, here }, _opts, kids) => h('li', {},
+const bareRow = ({ branch, here }, _opts, kids) => h('li', current(here),
   h('div', { className: here ? 'pr-row pr-bare here' : 'pr-row pr-bare' },
     h('code', { className: 'branch' }, branch),
     h('span', { className: 'pr-row-title' }, here ? 'this branch' : 'no open pull request')),
