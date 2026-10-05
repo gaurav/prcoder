@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { syncState, compareUrl, originOwner, prScope, userDirt, remoteBranchHead, trackingHead, snapshot, localPatch, branchesBelow } from '../git.js';
+import { syncState, compareUrl, githubUrl, originOwner, prScope, userDirt, remoteBranchHead, trackingHead, snapshot, localPatch, branchesBelow } from '../git.js';
 
 const git = promisify(execFile);
 // For the throwaway repos below. The identity goes on the command, not into a
@@ -68,6 +68,17 @@ test('a branch name is encoded in the compare URL, its slashes kept', () => {
   assert.equal(
     compareUrl('gaurav/prcoder', 'main', 'fix/issue#12'),
     'https://github.com/gaurav/prcoder/compare/main...fix/issue%2312?expand=1');
+});
+
+// `g`: the PR when there is one, the repo where there is nothing to compare,
+// and a refusal for a branch GitHub has never seen, whose compare page is empty.
+test('the g key opens the PR, the compare page, or the repo', () => {
+  const at = { nameWithOwner: 'o/r', defaultBranch: 'main', branch: 'feat', pushed: true, owner: 'me' };
+  assert.equal(githubUrl({ ...at, prUrl: 'https://github.com/o/r/pull/7' }), 'https://github.com/o/r/pull/7');
+  assert.equal(githubUrl(at), 'https://github.com/o/r/compare/main...me:feat?expand=1');
+  assert.equal(githubUrl({ ...at, branch: 'main' }), 'https://github.com/o/r');
+  assert.equal(githubUrl({ ...at, branch: null }), 'https://github.com/o/r');
+  assert.throws(() => githubUrl({ ...at, pushed: false }), /feat is not on GitHub yet/);
 });
 
 test("origin's owner comes off every shape of GitHub remote URL", async () => {
