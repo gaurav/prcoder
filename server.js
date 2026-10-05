@@ -628,6 +628,12 @@ function openBrowser() {
   const url = urls.local;
   const opener = { darwin: 'open', win32: 'start' }[process.platform] || 'xdg-open';
   const custom = process.env.PRCODER_BROWSER;
+  // Renamed, and only warned about: unlike a leftover CLAUDE_BIN, ignoring it
+  // opens the default browser, which is wrong but harmless -- yet with no word,
+  // the window someone set up just stops appearing.
+  if (!custom && process.env.PRCODER_OPEN) {
+    console.error('prcoder: PRCODER_OPEN is now PRCODER_BROWSER; rename it -- opening the default browser');
+  }
   const shell = Boolean(custom) || process.platform === 'win32';
   const child = custom
     ? spawn(`${custom} ${url}`, { detached: true, stdio: 'ignore', shell })
