@@ -82,7 +82,7 @@ a pull request pushes the branch and opens GitHub's compare page.
 The queue is one list per working copy, whatever branch is checked out, and it stays on this
 machine. `queue.json` is safe for something else to edit, but while prcoder is running the server
 is the better way in: `GET /api/queue`, then `PUT /api/queue` with `{items}`.
-Quitting with items still on Local says how many, since nothing but this machine has them.
+Quitting prints what is still on Local, since nothing but this machine has it.
 [docs/Design.md](docs/Design.md#the-queue-is-yours) has the reasons for all of this.
 
 ## The terminal you started it from

@@ -156,11 +156,15 @@ and green when it is idle, read from the timing of the PTY's output (Design.md s
 timing).
 
 When Claude exits, a bar under its last output offers to start it again, optionally with a
-different model or effort, which win over any given after `--` on prcoder's command line, and
-optionally continuing the repo's most recent conversation (`--continue`) -- with two tabs open,
+different model or effort. Those start out as the ones given after `--` on prcoder's command line,
+and after a start from the bar they are whatever that start chose. A change wins over the command
+line, but a field left blank keeps the command line's value -- blanking both is not a way back to
+the agent's own default when `--` named one. It can also
+continue the repo's most recent conversation (`--continue`) -- with two tabs open,
 that can be the other tab's (#77). That is unticked by default: starting again is more often a
 deliberate switch of model than a slip. A setting the server will not take is refused before
-anything starts, and the terminal says so. Or quit prcoder from there, which asks what the
+anything starts, and the terminal says so -- except the command line's own, which is kept as it
+was given even when the bar would refuse it typed in. Or quit prcoder from there, which asks what the
 terminal's quit asks ([Terminal.md](Terminal.md)).
 
 ## Queue
@@ -171,7 +175,8 @@ and ticks it off in the same click; ◎ files it as a new GitHub issue and takes
 the issue is where it lives from then on.
 
 New items go to the bottom, so typing them in builds a list in the order you mean to work through
-it. The arrow next to the input flips that to the top, for the other way of using a queue -- the
+it. They always go on Local, whichever tab is showing -- the input's placeholder says so -- and
+adding one from another tab leaves you there and flashes the Local tab instead. The arrow next to the input flips that to the top, for the other way of using a queue -- the
 thing you must not forget to do next -- and stays flipped.
 
 **Local** is the working list, and it drains as you move and finish things, so a session you

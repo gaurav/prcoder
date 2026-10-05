@@ -13,7 +13,7 @@ import { parseArgs } from 'node:util';
 import { createRequire } from 'node:module';
 import { createHash } from 'node:crypto';
 import { syncPhrase } from './public/pr.js';
-import { counts } from './public/items.js';
+import { counts, TABS } from './public/items.js';
 
 export const VERSION = createRequire(import.meta.url)('./package.json').version;
 
@@ -199,4 +199,38 @@ export function openRepoArgs(what, platform, dir, custom) {
     }[platform] ?? null,
     terminal: { darwin: ['open', '-a', 'Terminal', dir] }[platform] ?? null,
   }[what];
+}
+
+/**
+ * What quitting prints first: every item still on Local, one to a line with its
+ * issue's link where it has one, so they are in the scrollback after prcoder
+ * has gone -- to copy into an issue, or to see what to restart it for.
+ * Quitting loses none of them, since the queue is on disk, so this is shown
+ * rather than asked about (quitRisks). An empty Local prints nothing. `file`
+ * is the queue's file when --queue moved it, since that is where to look next.
+ * An item's later lines (Shift-Enter makes them) are indented with its first,
+ * or each would read as an item of its own.
+ */
+export function queueSummary(items = [], file = '.prcoder/queue.json') {
+  const q = counts(items);
+  if (!q.local) return [];
+  const rest = [q.done && `${q.done} completed`, q.deleted && `${q.deleted} deleted`].filter(Boolean);
+  const head = `${'queue'.padEnd(8)} ${q.local} item${q.local > 1 ? 's' : ''} on Local, in ${file}` +
+    `${rest.length ? ` (and ${rest.join(', ')})` : ''}:`;
+  const indent = ' '.repeat(11);
+  return [head, ...items.filter(TABS.local).map((i) =>
+    `${indent}${i.text.replace(/\r?\n/g, `\n${indent}`)}${i.issueUrl ? `  ${i.issueUrl}` : ''}`)];
+}
+
+/**
+ * What quitting would cost, as the clauses of the y/N: the Claude sessions the
+ * open tabs hold, which end with it, and work only this working copy has. Not
+ * the queue, which quitting does not touch (queueSummary).
+ */
+export function quitRisks({ tabs = 0, ahead = 0, dirty = 0 } = {}) {
+  return [
+    tabs && (tabs > 1 ? `${tabs} browser tabs — their Claude sessions end` : '1 browser tab — its Claude session ends'),
+    ahead && `${ahead} unpushed commit${ahead > 1 ? 's' : ''}`,
+    dirty && `${dirty} uncommitted file${dirty > 1 ? 's' : ''}`,
+  ].filter(Boolean);
 }

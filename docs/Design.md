@@ -51,8 +51,9 @@ of them writes a description.
 Issues is the issues the description mentions without closing; pulling from either copies the item
 into Local and leaves the source alone, since a checkbox is the PR's record and an issue is the
 project's. Issues is deliberately that narrow for now: an upcoming milestone to focus on, search, and
-showing an issue in the pane are a design still to be settled. Quitting with items still on Local
-offering to file them as issues is a follow-up of its own. FUTURE.md is not a source and
+showing an issue in the pane are a design still to be settled. Quitting does not offer to file
+what is left on Local as issues: it prints the list, which is on disk anyway, and filing is ◎'s
+job, where you can see each item. FUTURE.md is not a source and
 will not be one (retired 2026-09-26): its items were all either done or already issues, and a
 tracked file of TODOs is a third place for work to live where the queue and issues cover it.
 

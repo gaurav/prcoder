@@ -75,7 +75,8 @@
       <div id="term-host"></div>
       <!-- Once the PTY has gone, under what it last printed. Nothing will
            repaint the terminal by then, so prcoder is free to draw here.
-           Blank fields keep whatever prcoder was started with. -->
+           Filled with the model and effort prcoder's command line gave (app.js);
+           blank fields keep whatever that was. -->
       <form id="term-exit" hidden>
         <span>Coding agent has exited.</span>
         <label>Model <input name="model" list="term-models" placeholder="as started" size="10"
@@ -101,7 +102,9 @@
     <section id="queue" class="pane">
       <header>
         <h1>Queue</h1>
-        <textarea id="queue-input" rows="1" placeholder="Add an item, Enter to save" autocomplete="off"></textarea>
+        <!-- Adding always lands in Local, whichever tab is showing, so the
+             placeholder names it: from Issues or Completed it is not obvious. -->
+        <textarea id="queue-input" rows="1" placeholder="Add to Local…" autocomplete="off"></textarea>
         <button id="queue-where" class="where" title="new items go to the bottom — click for the top">↓</button>
       </header>
       <div id="queue-body" class="scroll"></div>
