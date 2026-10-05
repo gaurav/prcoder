@@ -998,19 +998,8 @@ export const nums = ({ additions, deletions }) => [
 const counted = ({ done, total }, what) =>
   ({ p: total ? done / total : 0, full: tabDone({ done, total }), label: `${done} of ${total} ${what}` });
 
-/** A pie filled to `p`, from 0 to 1; `label`, the figure, is its name. */
-function pie({ p, full, label }) {
-  const el = h('span', { className: `pie${full ? ' full' : ''}`, title: label });
-  el.setAttribute('role', 'img');
-  el.setAttribute('aria-label', label);   // a shape is no name, as with the glyph buttons
-  el.style.setProperty('--p', String(p));
-  return el;
-}
-
 /**
- * A <details> fold with a heading and an optional progress pie, the shape both
- * the file groups and the description's sections take. `onToggle` fires for a
- * click and for the initial `open`, so it has to be idempotent.
+ * A pie filled to `p`, from 0 to 1; `label`, the figure, is its name.
  *
  * A pie rather than `3/5`: a fraction in small dim type beside a dim title had
  * to be read and worked out, and a finished one looked like any other. A pie is
@@ -1020,6 +1009,14 @@ function pie({ p, full, label }) {
  * Not a dot per item, which is exact but grows with the count: a 35-file group
  * would be a row of dots.
  */
+function pie({ p, full, label }) {
+  const el = h('span', { className: `pie${full ? ' full' : ''}`, title: label });
+  el.setAttribute('role', 'img');
+  el.setAttribute('aria-label', label);   // a shape is no name, as with the glyph buttons
+  el.style.setProperty('--p', String(p));
+  return el;
+}
+
 /**
  * A fold's `open` and `onToggle`, remembered in `set` -- which holds the keys
  * that are `holds`: the file groups record what was closed (they open by
@@ -1030,6 +1027,11 @@ const kept = (set, key, holds) => ({
   onToggle: (open) => { if (open === (holds === 'open')) set.add(key); else set.delete(key); },
 });
 
+/**
+ * A <details> fold with a heading and an optional progress pie, the shape both
+ * the file groups and the description's sections take. `onToggle` fires for a
+ * click and for the initial `open`, so it has to be idempotent.
+ */
 function fold({ className, dataset, title, progress, open, onToggle }, children) {
   const d = h('details', { className: `fold ${className}`, open, dataset },
     h('summary', {}, h('h3', {}, title), progress ? pie(progress) : null),
