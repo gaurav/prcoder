@@ -24,8 +24,8 @@ tab's blue icon. Whether the terminal is folded, whether the outline is shown, w
 wraps long lines, and which way the queue adds are remembered the same way as the sizes.
 
 A few things have a key as well as a control. A shortcut never fires while you are typing -- in the
-terminal, which belongs to the coding agent, in the queue's input, or in an item being edited --
-and each is named by the key's position, so on a Mac Alt is Option. There is one so far:
+terminal, which belongs to the coding agent, in the queue's input, or in an item being edited, though
+a checkbox you have just ticked, such as *viewed*, does not count -- and each is named by the key's position, so on a Mac Alt is Option. There is one so far:
 
 | Key   | Does                                                 |
 |-------|------------------------------------------------------|

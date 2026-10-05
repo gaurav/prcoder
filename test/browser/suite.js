@@ -603,6 +603,12 @@ test('Wrap folds a long line inside the pane, and stays pressed across a reload'
   await fresh.locator('#diff-path').click();
   await fresh.keyboard.press('Alt+KeyW');
   assert.equal(await pressed(), 'false', 'and presses it again');
+  // A clicked checkbox keeps focus, and nothing is typed into one: ticking
+  // *viewed* and reading on is the usual order, so Alt+W has to work from it.
+  await fresh.locator('#diff-viewed').focus();
+  assert.equal(await fresh.evaluate(() => document.activeElement.id), 'diff-viewed');
+  await fresh.keyboard.press('Alt+KeyW');
+  assert.equal(await pressed(), 'true', 'and works from a checkbox');
   await fresh.close();
 });
 

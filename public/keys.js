@@ -6,6 +6,9 @@
 //   textarea and every key pressed in it belongs to the agent; the queue's
 //   input is a textarea and its items are contentEditable. A shortcut that
 //   fired in any of them would steal a character from what was being typed.
+//   An input that takes no text is not typing, though: a checkbox keeps focus
+//   after it is clicked, so counting it would leave Alt+W dead after a tick
+//   of *viewed*, which is the usual thing to do just before reading on.
 // - A binding names a physical key (`e.code`, Alt+KeyW), not what it types:
 //   on macOS Option+W types ∑, and on other layouts Alt+letter types other
 //   things again, while the key itself stays where it is.
@@ -14,9 +17,13 @@
 //
 // This file loads only in the browser; nothing on the server imports it.
 
+/** The inputs nothing is typed into, which a shortcut may fire from. */
+const NOT_TEXT = ['checkbox', 'radio', 'button', 'submit', 'reset', 'image', 'file', 'color', 'range']
+  .map((t) => `[type=${t}]`).join(', ');
+
 /** Whether a key pressed on `target` is text being typed, and so not ours. */
 export const isTyping = (target) => target instanceof Element
-  && (target.closest('input, textarea, select, [contenteditable]') != null);
+  && (target.closest(`input:not(${NOT_TEXT}), textarea, select, [contenteditable]`) != null);
 
 /** The name a keydown event binds under: its modifiers, then its physical key. */
 export const keyName = (e) => [
