@@ -2,6 +2,10 @@
   --bg: #14161a; --panel: #1c1f26; --line: #2c313c;
   --fg: #d5d9e0; --dim: #8c93a1; --accent: #7aa2f7;
   --add: #7fd88f; --del: #f08b8b;   /* the file rows' +/- counts and the diff pane's NEW / DELETED */
+  /* What a state is coloured, wherever it is drawn: a failed check, a closed
+     pull request and an error toast are one red; anything still waiting is one
+     yellow. Passed is --add -- green-for-done is the same green everywhere. */
+  --fail: #f5a3a3; --warn: #f0dc9a;
   color-scheme: dark;
   /* The description and the pull request's title -- the two things in this
      window that are read rather than operated. Every face here ships with an OS
@@ -169,11 +173,11 @@ a { color: var(--accent); }
   margin-right: 5px; vertical-align: baseline;
   background: var(--line);
 }
-.dot.pass::before { background: #7fd88f; }
-.dot.pend::before { background: none; border: 1.5px solid #f0dc9a; }
+.dot.pass::before { background: var(--add); }
+.dot.pend::before { background: none; border: 1.5px solid var(--warn); }
 .dot.fail::before {
   content: '✕'; content: '✕' / '';
-  background: none; border-radius: 0; color: #f5a3a3;
+  background: none; border-radius: 0; color: var(--fail);
   font-size: 9px; font-weight: 700; line-height: 7px; text-align: center;
 }
 .check { display: flex; align-items: center; font-size: 13px; padding: 3px 0; }
@@ -410,9 +414,9 @@ a { color: var(--accent); }
 .badge { padding: 1px 6px; border-radius: 9px; background: var(--line); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; }
 .badge.open { background: #1f4d2e; color: #9ae6b4; }
 .badge.merged { background: #3d2a56; color: #d0b0f5; }
-.badge.closed, .badge.fail { background: #4d1f24; color: #f5a3a3; }
+.badge.closed, .badge.fail { background: #4d1f24; color: var(--fail); }
 .badge.pass { background: #1f4d2e; color: #9ae6b4; }
-.badge.pend { background: #4d411f; color: #f0dc9a; }
+.badge.pend { background: #4d411f; color: var(--warn); }
 
 /* A pull request description is prose, and with the title above it the only
    part of this window that is read rather than operated. It gets a reading
@@ -678,7 +682,7 @@ a { color: var(--accent); }
 }
 #diff-outline button:hover { color: var(--fg); }
 .dl.add { color: #9ae6b4; background: #1f4d2e33; }
-.dl.del { color: #f5a3a3; background: #4d1f2433; }
+.dl.del { color: var(--fail); background: #4d1f2433; }
 .dl.hunk { color: var(--accent); margin-top: 4px; }
 /* Token colours for a highlighted NEW file (highlightLines in diff.js). The
    classes are prcoder's own `tok-` names, not Prism's, so nothing else on the
@@ -765,11 +769,11 @@ a { color: var(--accent); }
   content: ''; width: 7px; height: 7px; border-radius: 50%;
   background: var(--line); flex: none;
 }
-.light.warn { color: #f0dc9a; }
+.light.warn { color: var(--warn); }
 /* The favicon's busy blue (BUSY in app.js, from the icon in index.html), on
    the dot only: the words stay dim, so a folded turn is noticeable, not loud. */
 .light.busy::before { background: #1f6feb; }
-.light.warn::before { background: #f0dc9a; }
+.light.warn::before { background: var(--warn); }
 .light.unknown::before { background: transparent; box-shadow: inset 0 0 0 1px var(--dim); }
 
 /* Sits over the panes so it never reflows them. Above the terminal pane rather
@@ -782,7 +786,7 @@ a { color: var(--accent); }
   box-shadow: 0 3px 14px #0008; z-index: 10; cursor: pointer;
 }
 #toast[hidden] { display: none; }
-#toast.bad { background: #4d1f24; color: #f5a3a3; border-color: #f5a3a3; }
+#toast.bad { background: #4d1f24; color: var(--fail); border-color: var(--fail); }
 /* Every toast closes on a click, so every one says so -- a sticky one most of
    all, since it waits for that click, which is what its border marks. The
    glyph is a pseudo-element because toast() sets textContent. In the top right
@@ -795,7 +799,7 @@ a { color: var(--accent); }
 #toast:hover::after { color: var(--fg); }
 #toast.bad::after { color: inherit; opacity: .7; }
 #toast.bad:hover::after { opacity: 1; }
-#toast.sticky { border-color: #f0dc9a; }
+#toast.sticky { border-color: var(--warn); }
 
 /* A row per pull request that merges into this branch: the #N is a link out,
    Switch is the checkout, and the title sits between them and gives way first. */
