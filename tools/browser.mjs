@@ -275,10 +275,16 @@ await page.waitForFunction(() => ![...document.querySelectorAll('#queue-body .it
 await page.locator('#queue').screenshot({ path: path.join(out, 'queue-issues.png') });
 console.log('issues: ', await page.locator('#queue-body .tab', { hasText: /^Issues/ }).innerText(),
   JSON.stringify(await page.locator('#queue-body .item.source').allInnerTexts()));
-const localBefore = await local();
-await page.locator('#queue-body .item.source .actions button').first().click();
-await page.locator('#queue-body .tab', { hasText: /^Local \(4\)/ }).waitFor({ timeout: 10_000 });
-console.log('  pulled: ', localBefore, '->', await local(), '(want one more)');
+// Only a pull request that mentions an issue has one here to pull; without
+// that the click below waited out its 30s and the run ended before the PR
+// pane's half (2026-10-06, on #118), the same way the ticking above is skipped
+// for a description with no checkboxes.
+if (await page.locator('#queue-body .item.source').count()) {
+  const localBefore = await local();
+  await page.locator('#queue-body .item.source .actions button').first().click();
+  await page.locator('#queue-body .tab', { hasText: /^Local \(4\)/ }).waitFor({ timeout: 10_000 });
+  console.log('  pulled: ', localBefore, '->', await local(), '(want one more)');
+} else console.log('  no issues this pull request mentions to pull');
 await page.locator('#queue-body .tab', { hasText: /^Local/ }).click();
 await page.waitForTimeout(150);
 
