@@ -235,7 +235,14 @@ a { color: var(--accent); }
    offset of its own to be restored to (see renderPrTab). */
 #pr-head { flex: none; padding: 10px 10px 8px; border-bottom: 1px solid var(--line); }
 #pr-head:empty { display: none; }
-#pr-head .tabs { margin-bottom: 0; }
+/* Four tabs, three of them led by a mark, in a 355px row at the pane's 375px
+   default: `◔ Detail (2/5)  ◔ Files (1/3)  ✕ Checks (1/3)  Stack` wanted
+   356px at 8px a side (2026-10-06), and a row one pixel short squeezes every
+   tab's label onto two lines. 6px a side gives 16px back. A label never breaks
+   inside its tab; when a long count still does not fit, the row wraps whole
+   tabs, so Stack goes to a line of its own rather than every word to two. */
+#pr-head .tabs { margin-bottom: 0; flex-wrap: wrap; }
+#pr-head .tab { padding: 2px 6px; white-space: nowrap; }
 #pr-head > :last-child { margin-bottom: 0; }
 
 .empty { color: var(--dim); }

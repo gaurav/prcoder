@@ -291,6 +291,16 @@ test('a tab with nothing left keeps its count and leads with a green ✓ circle'
     String(1 / 3));
   assert.equal(await p.getByRole('button', { name: 'Files (2/2)', exact: true }).count(), 1);
   assert.equal(await p.getByRole('button', { name: 'Checks (1/1)', exact: true }).count(), 1);
+  // A row too narrow for its tabs wraps whole tabs, never a label inside one
+  // (`#pr-head .tab` says why). Squeezed rather than measured at the default
+  // width, where whether it fits is a pixel or two that differs by font.
+  const rows = await p.$eval('#pr-head .tabs', (row) => {
+    row.style.width = '200px';
+    const tabs = [...row.querySelectorAll('.tab')];
+    return { heights: new Set(tabs.map((t) => t.offsetHeight)).size, lines: new Set(tabs.map((t) => t.offsetTop)).size };
+  });
+  assert.equal(rows.heights, 1, 'every tab is one line tall');
+  assert.ok(rows.lines > 1, 'and the row wrapped between them');
   await p.close();
 });
 
