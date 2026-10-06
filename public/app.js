@@ -5,6 +5,7 @@ import { renderPr, renderNoPr, renderHeader, pageTitle, api, toast, pref, setPre
 import { openDiff, closeDiff, selectedPath, setViewed, toggleWrap } from './diff.js';
 import { initQueue, addItem, setItems } from './queue.js';
 import { bindKeys } from './keys.js';
+import { fold, folded, canFold } from './folds.js';
 import './panes.js';   // draggable pane gutters; nothing here calls into it
 
 // Every shortcut the page has, in one table; keys.js says what a binding may
@@ -226,28 +227,34 @@ connect();
 term.onData((d) => send({ type: 'input', data: d }));
 new ResizeObserver(sync).observe(document.getElementById('term-host'));
 
-// Folding the terminal to its header, stored like the outline's ✕ in diff.js.
-// The PTY keeps its size while folded: a display:none host has no height, so
-// fit() gets NaN rows and returns without resizing, and the ResizeObserver
-// above re-fits it on the way back out.
+// Folding a pane to its header line (folds.js paints; this is the rules).
+// The PTY keeps its size while the terminal is folded: a display:none host has
+// no height, so fit() gets NaN rows and returns without resizing, and the
+// ResizeObserver above re-fits it on the way back out. The terminal's fold is
+// stored, like the outline's ✕ in diff.js; the diff's is not (closeDiff says
+// why).
 const TERM_KEY = 'prcoder:term';
-const fold = document.getElementById('term-fold');
-function foldTerm(off, save = true) {
-  document.querySelector('main').classList.toggle('term-off', off);
-  fold.setAttribute('aria-expanded', String(!off));
-  fold.textContent = off ? '▶\uFE0E' : '▼';   // FE0E: text, never macOS's emoji ▶
-  fold.title = `${off ? 'expand' : 'collapse'} the coding agent pane`;
-  fold.setAttribute('aria-label', fold.title);   // a glyph is no name, as in queue.js
-  if (save) setPref(TERM_KEY, off ? 'off' : 'on');
-  if (!off) term.focus();   // expanding it is to talk to it
+function setFold(pane, off) {
+  fold(pane, off);
+  if (pane === 'term') {
+    setPref(TERM_KEY, off ? 'off' : 'on');
+    if (!off) term.focus();   // expanding it is to talk to it
+  }
 }
-if (pref(TERM_KEY) === 'off') foldTerm(true, false);
-const folded = () => document.querySelector('main').classList.contains('term-off');
-// The whole header is the toggle, and the ▼ is only the part of it that says
-// so -- and the part a keyboard can reach, since a button's Enter is a click
-// and bubbles here. One listener for both, so a click on the ▼ toggles once.
+if (canFold('term') && pref(TERM_KEY) === 'off') fold('term', true);
+// The whole bar is the toggle, and the ▼ is only the part of it that says so
+// -- and the part a keyboard can reach, since a button's Enter is a click and
+// bubbles here. One listener for both, so a click on the ▼ toggles once. A
+// control on the bar -- the diff's viewed box, its links, Wrap -- keeps its own
+// click, so the fold is the rest of the bar: the title, the path, the gaps.
 // No double-click: two clicks would already have folded and unfolded it.
-document.querySelector('#term > header').addEventListener('click', () => foldTerm(!folded()));
+for (const pane of ['diff', 'term']) {
+  document.querySelector(`#${pane} > header`).addEventListener('click', (e) => {
+    const control = e.target.closest('a, button, label, input, textarea, select');
+    if (!canFold(pane) || (control && control.id !== `${pane}-fold`)) return;
+    setFold(pane, !folded(pane));
+  });
+}
 
 // Type an item into Claude's prompt. If Claude is mid-turn it queues the
 // message itself, which is exactly the behaviour we want.
@@ -353,7 +360,10 @@ async function markViewed(path, viewed) {
   if (selectedPath() === path) document.getElementById('diff-viewed').checked = viewed;
 }
 
-const openFile = (f) => openDiff(f, markViewed);
+// A click on a row unfolds the pane: you asked for the file. The refresh in
+// paint() below does not -- a push from the agent must not undo a fold made to
+// talk to it.
+const openFile = (f) => { fold('diff', false); return openDiff(f, markViewed); };
 const fileHandlers = {
   onViewed: markViewed,
   onOpen: openFile,
@@ -426,7 +436,7 @@ function paint(status) {
   if (!open) return;
   const f = status.pr?.files.find((x) => x.path === open);
   if (!f) closeDiff();
-  else if (moved) openFile(f);
+  else if (moved) openDiff(f, markViewed);   // not openFile: keeps the fold
 }
 
 /**

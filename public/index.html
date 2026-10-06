@@ -8,7 +8,10 @@
 <link rel="stylesheet" href="/style.css">
 </head>
 <body>
-  <main>
+  <!-- data-folds is the switch for which panes fold to their header line
+       (folds.js, and the fold rules in app.js): a pane named here gets a ▼
+       before its title and a bar that folds on a click. -->
+  <main data-folds="diff term">
     <section id="pr" class="pane">
       <header>
         <h1>Pull request</h1>
@@ -26,6 +29,7 @@
 
     <section id="diff" class="pane" hidden>
       <header>
+        <button id="diff-fold" aria-expanded="true" aria-controls="diff-main" title="collapse the diff pane" aria-label="collapse the diff pane">▼</button>
         <h1>Diff</h1>
         <span id="diff-path"></span>
         <label id="diff-viewed-label"><input id="diff-viewed" type="checkbox" title="mark viewed on GitHub"> viewed</label>

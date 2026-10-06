@@ -46,7 +46,13 @@ body {
 main {
   height: 100%; display: grid; background: var(--line);
   grid-template-columns: clamp(180px, var(--w-pr, 375px), 60%) 1px 1fr;
-  grid-template-rows: 1fr 1px clamp(120px, var(--h-queue, 227px), 40%);
+  /* One length per row of the right-hand column, and the folds below only
+     rewrite these: a template per combination of folds was four already and
+     grew with every pane that learned to fold. */
+  --r-diff: clamp(140px, var(--h-diff, 40%), 50%);
+  --r-term: 1fr;
+  --r-queue: clamp(120px, var(--h-queue, 227px), 40%);
+  grid-template-rows: var(--r-term) 1px var(--r-queue);
   grid-template-areas:
     "pr gpr term"
     "pr gpr gqueue"
@@ -54,8 +60,7 @@ main {
 }
 #pr { grid-area: pr; } #term { grid-area: term; } #queue { grid-area: queue; }
 main.diff-open {
-  grid-template-rows:
-    clamp(140px, var(--h-diff, 40%), 50%) 1px 1fr 1px clamp(120px, var(--h-queue, 227px), 40%);
+  grid-template-rows: var(--r-diff) 1px var(--r-term) 1px var(--r-queue);
   grid-template-areas:
     "pr gpr diff"
     "pr gpr gdiff"
@@ -65,41 +70,56 @@ main.diff-open {
 }
 #diff { grid-area: diff; }
 #diff[hidden] { display: none; }
-/* The terminal folded to its header row, for reading a diff by eye: whatever
-   sits above or below it takes the room. Its gutter to that pane goes too --
-   the pane is 1fr now, so there is nothing for a drag to set -- and the empty
-   1px track still draws the line. */
-main.term-off { grid-template-rows: auto 1px 1fr; }
-main.diff-open.term-off {
-  grid-template-rows: 1fr 1px auto 1px clamp(120px, var(--h-queue, 227px), 40%);
-}
+/* A pane folded to its header row (folds.js): its body goes, `auto` is then
+   exactly the header, and whatever sits beside it takes the room. The terminal
+   folds for reading a diff by eye, so the diff takes its room, or the queue
+   with no diff open; the diff folds for talking to the agent with the file
+   still named on its bar, so the terminal takes its room. The empty 1px track
+   between still draws the line. The two are never folded together (app.js);
+   if they were, the queue would get the room. */
+main.term-off { --r-term: auto; --r-diff: 1fr; }
+main.term-off:not(.diff-open), main.term-off.diff-off { --r-queue: 1fr; }
+main.diff-off { --r-diff: auto; }   /* after term-off's 1fr, so both folded is two bars */
+main.diff-off #diff-main,
 main.term-off #term-host,
 main.term-off:not(.diff-open) #gut-queue { display: none; }
-/* A click anywhere on it folds or unfolds, so it looks pressable across its
-   whole width: the pointer, and a hover that darkens the bar and brings the ▼
-   and the title up to full colour. user-select, or a quick second click
+/* A click anywhere on a folding pane's bar folds or unfolds it -- anywhere
+   that is not a control, on a bar that has them -- so it looks pressable across
+   its whole width: the pointer, and a hover that darkens the bar and brings the
+   ▼ and the title up to full colour. user-select, or a quick second click
    selects the title. Background only -- a border or padding here would make
-   the folded header a different height from the open one. */
-#term > header { user-select: none; cursor: pointer; }
+   the folded header a different height from the open one. Keyed on the
+   data-folds switch in index.html, so a pane whose fold is off keeps a plain
+   bar and no ▼. */
+main[data-folds~="term"] #term > header,
+main[data-folds~="diff"] #diff > header { user-select: none; cursor: pointer; }
+main[data-folds~="term"] #term > header:hover,
+main[data-folds~="diff"] #diff > header:hover { background: var(--bg); }
+/* The diff's NEW / DELETED title keeps its colour: an id here outranks
+   `.pane h1.add` below. */
+main[data-folds~="term"] #term > header:hover :is(h1, #term-fold),
+main[data-folds~="diff"] #diff > header:hover :is(h1:not(.add, .del), #diff-fold) { color: var(--fg); }
+main:not([data-folds~="term"]) #term-fold,
+main:not([data-folds~="diff"]) #diff-fold { display: none; }
 /* `● working` while a turn runs, and only folded: open, the terminal says so
    itself. `hidden` stays the busy switch; this is the folded one. */
 main:not(.term-off) #term-busy { display: none; }
-#term > header:hover { background: var(--bg); }
-#term > header:hover h1, #term > header:hover #term-fold { color: var(--fg); }
 /* Before the title, like a disclosure triangle, at the title's own size and
    line-height so the two centre together. ▼/▶ rather than the small ▾/▸, which
-   sit low and needed a bigger font that then sat lower still. */
-#term-fold { margin-left: 0; padding: 0; font-size: 12px; line-height: 18px; }
+   sit low and needed a bigger font that then sat lower still. margin-left,
+   because every header button is pushed to the far end below. */
+#term-fold, #diff-fold { margin-left: 0; padding: 0; font-size: 12px; line-height: 18px; }
 
 #gut-pr { grid-area: gpr; } #gut-queue { grid-area: gqueue; } #gut-diff { grid-area: gdiff; }
 /* Only the diff-open template has a slot for it; left displayed it would
    auto-place itself into a row of its own and shove the layout sideways. */
 #gut-diff { display: none; }
 main.diff-open #gut-diff { display: block; }
-/* Under a folded terminal the diff is 1fr, so there is nothing for a drag to
-   set. After the rule above, which it ties with on specificity: written before
-   it, this lost and the line stayed draggable. */
-main.term-off #gut-diff { display: none; }
+/* Under a folded terminal the diff is 1fr, and folded itself it is a bar, so
+   there is nothing for a drag to set. After the rule above, which they tie
+   with on specificity: written before it, this lost and the line stayed
+   draggable. */
+main.term-off #gut-diff, main.diff-off #gut-diff { display: none; }
 /* 1px of line, ±3px of grab, above the panes so the cursor changes over it. */
 .gut { position: relative; z-index: 3; touch-action: none; }
 .gut::after { content: ''; position: absolute; }

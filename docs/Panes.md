@@ -20,8 +20,21 @@ The terminal folds to its header line with a click anywhere on that line; the �
 says so, and is the keyboard's way in. The diff (or the queue, with no diff open) takes the room,
 and another click unfolds it. Folding never touches the session, which keeps running folded. While
 a turn runs, the folded header says `● working` beside its title, from the same signal as the
-tab's blue icon. Whether the terminal is folded, whether the outline is shown, whether the diff
-wraps long lines, and which way the queue adds are remembered the same way as the sizes.
+tab's blue icon.
+
+The diff folds the same way, to the terminal's gain, for getting a file out of the way without
+closing it: closing says you are done with the file, and folding does not. Its bar keeps the path,
+the *viewed* box and the links out, and a click on any of those does what it says; a click on the
+rest of the bar, the ▼ included, folds or unfolds. Clicking a file in the list, the open one
+included, unfolds it; a push that refreshes the open file does not, since a fold made to talk to
+the agent must survive the agent's own push; closing the pane forgets the fold.
+
+Which panes fold is one list in `index.html`, `data-folds` on `<main>`: `diff term` today. A pane
+left out keeps a plain bar and no ▼.
+
+Whether the terminal is folded, whether the outline is shown, whether the diff wraps long lines,
+and which way the queue adds are remembered the same way as the sizes. The diff's fold is not:
+nothing is open after a reload, and the next click on a file would unfold it anyway.
 
 A few things have a key as well as a control. A shortcut never fires while you are typing -- in the
 terminal, which belongs to the coding agent, in the queue's input, or in an item being edited, though
@@ -160,7 +173,9 @@ The selected file's patch, drawn above the terminal, so select → read → tick
 never leaves the window. It shows the same hunks GitHub does (fetched once per push and cached),
 or, for a file GitHub sent no patch for, the same change as local git sees it: GitHub stops
 sending patches partway through a large pull request, and git in this clone can usually still
-make them. It refreshes itself when the branch head moves.
+make them. It refreshes itself when the branch head moves. It folds to its bar the way the
+terminal does ([Layout](#layout)), so the file stays named above the terminal while you talk to
+the agent.
 
 A file the pull request adds or deletes is shown as its own text under a green **NEW** or red
 **DELETED** title rather than as a wall of `+` or `-`, since a patch that is all one sign has

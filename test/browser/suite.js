@@ -629,14 +629,15 @@ test('Wrap folds a long line inside the pane, and stays pressed across a reload'
 
   // Alt+W is the button from the keyboard -- unless a key is being typed, in
   // which case it is a character: the queue's input stands in for the terminal
-  // and the editable items, which keys.js guards by the same rule.
-  await fresh.locator('#diff-path').click();
+  // and the editable items, which keys.js guards by the same rule. The body is
+  // clicked only to take focus off the input; the bar would fold the pane.
+  await fresh.locator('#diff-body').click();
   await fresh.keyboard.press('Alt+KeyW');
   assert.equal(await pressed(), 'true', 'Alt+W presses Wrap');
   await fresh.locator('#queue-input').focus();
   await fresh.keyboard.press('Alt+KeyW');
   assert.equal(await pressed(), 'true', 'but not while typing');
-  await fresh.locator('#diff-path').click();
+  await fresh.locator('#diff-body').click();
   await fresh.keyboard.press('Alt+KeyW');
   assert.equal(await pressed(), 'false', 'and presses it again');
   // A clicked checkbox keeps focus, and nothing is typed into one: ticking
@@ -750,6 +751,54 @@ test('a click anywhere on the terminal\'s header folds and unfolds it, the ▼ i
   assert.equal(await shown(), false, 'the ▼ toggles once, not once for itself and again for the bar');
   await fresh.click('#term-fold');
   assert.equal(await shown(), true);
+  await fresh.close();
+});
+
+// Folding the diff is for talking to the agent with the file still named on
+// the bar, so the terminal is what takes the room. The bar is busy with
+// controls, each of which keeps its own click; the rest of it, ▼ included, is
+// the fold. Not stored (nothing is open after a reload), so no reload here.
+test('the diff folds to its header, the terminal takes the room, and a file click unfolds it', { skip }, async () => {
+  const fresh = await newPage();
+  await fresh.route('**/api/pr/viewed', (r) => r.fulfill({ json: { ok: true } }));
+  const height = (sel) => fresh.$eval(sel, (el) => el.getBoundingClientRect().height);
+  const shown = () => fresh.locator('#diff-main').isVisible();
+  const open = async (p) => {
+    await fresh.locator(`.file[data-path="${p}"] .path`).click();
+    await fresh.waitForFunction((p) => document.getElementById('diff-path').textContent === p
+      && document.querySelectorAll('#diff-body .dl').length > 0, p);
+  };
+  await fresh.locator('#pr-head .tab', { hasText: 'Files' }).click();
+  await open('evil.js');
+  const bar = await height('#diff > header');
+  const term = await height('#term');
+
+  await fresh.click('#diff > header h1');
+  assert.equal(await shown(), false, 'the title folds it');
+  assert.equal(await height('#diff'), bar, 'folded, the pane is its header');
+  assert.ok(await height('#term') > term, `terminal was ${term}px, is ${await height('#term')}px`);
+  assert.equal(await fresh.getAttribute('#diff-fold', 'aria-expanded'), 'false');
+  assert.equal(await fresh.locator('#gut-diff').isVisible(), false, 'nothing to drag');
+  await fresh.locator('#diff-viewed-label').click();   // the label's text, which ticks the box
+  assert.equal(await fresh.locator('#diff-viewed').isChecked(), true, 'the controls keep their clicks');
+  assert.equal(await shown(), false, 'and do not fold');
+
+  await fresh.click('#diff-fold');
+  assert.equal(await shown(), true, 'the ▼ toggles once, not for itself and again for the bar');
+  assert.equal(await height('#diff > header'), bar, 'the header keeps its height either way');
+  await fresh.click('#diff-path');
+  assert.equal(await shown(), false, 'the path folds it');
+  await open('app.tsx');
+  assert.equal(await shown(), true, 'opening a file unfolds it');
+  await fresh.click('#diff-path');
+  await open('app.tsx');
+  assert.equal(await shown(), true, 'the open one included');
+
+  await fresh.click('#diff > header h1');
+  await fresh.click('#diff-close');
+  assert.equal(await fresh.$eval('main', (m) => m.classList.contains('diff-off')), false, 'closing forgets the fold');
+  await open('evil.js');
+  assert.equal(await shown(), true, 'so the next open is unfolded');
   await fresh.close();
 });
 

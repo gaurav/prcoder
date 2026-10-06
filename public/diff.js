@@ -3,6 +3,7 @@
 // the fancy view.
 
 import { h, btn, ext, api, writeThrough, pref, setPref } from './pr.js';
+import { fold } from './folds.js';
 
 // Lives outside the render because the 60s poll rebuilds #pr-body from
 // scratch; #diff itself is never repainted by the poll (queue.js does the
@@ -325,5 +326,10 @@ export function closeDiff() {
   openPath = null;
   el('diff').hidden = true;
   document.querySelector('main').classList.remove('diff-open');
+  // A closed pane forgets its fold, so the next file opens unfolded. The fold
+  // is not stored either, unlike the terminal's, the outline and Wrap: nothing
+  // is open after a reload, and a click on a file unfolds it anyway, so a
+  // stored value would never be read.
+  fold('diff', false);
   markSelected(null);
 }
