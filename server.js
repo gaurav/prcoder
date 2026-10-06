@@ -12,7 +12,7 @@ import { text as readBody } from 'node:stream/consumers';
 import { spawn as ptySpawn } from 'node-pty';
 import { WebSocketServer } from 'ws';
 import { loadPr, prHeads, prBody, listPrs, issueLinks, setViewed, setBody, createIssue, fetchPatches, runCount } from './github.js';
-import { snapshot, currentBranch, repoInfo, prScope, compareUrl, originOwner, checkoutPr, pushBranch, remoteBranchHead, trackingHead, localPatch, branchesBelow } from './git.js';
+import { snapshot, currentBranch, repoInfo, prScope, compareUrl, githubUrl, originOwner, checkoutPr, pushBranch, remoteBranchHead, trackingHead, localPatch, branchesBelow } from './git.js';
 import { bucket, fileUrl, fileViews } from './files.js';
 import { readPort, writePort, useQueueFile, movedQueue } from './store.js';
 import { readQueue, writeQueue, quote } from './queue.js';
@@ -678,8 +678,7 @@ async function ready() {
 // ponytail: the platform's own opener, not a dependency. --no-open (or
 // PRCODER_NO_OPEN=1) to skip; PRCODER_BROWSER to run your own command with the URL
 // appended, which is how a browser is told "a new window, not a tab".
-function openBrowser() {
-  const url = urls.local;
+function openBrowser(url = urls.local) {
   const opener = { darwin: 'open', win32: 'start' }[process.platform] || 'xdg-open';
   const custom = process.env.PRCODER_BROWSER;
   // Renamed, and only warned about: unlike a leftover CLAUDE_BIN, ignoring it
@@ -707,6 +706,21 @@ function watch(child, shell, failed) {
   child.on('error', (e) => failed(e.message));
   if (shell) child.on('exit', (code) => code && failed(`exit ${code}`));
   child.unref();
+}
+
+/**
+ * `g`: the PR on GitHub, or what githubUrl() opens without one. gh is asked
+ * again rather than trusting `pr`, which is only as fresh as the last poll --
+ * and polls stop while no tab is visible, which is exactly when someone is at
+ * this terminal pressing keys, and the agent may have switched branches since.
+ */
+async function openGithub() {
+  const branch = await currentBranch(repo);
+  const { nameWithOwner, defaultBranch } = await repoFacts();
+  openBrowser(githubUrl({
+    prUrl: (await prHeads(repo, target))?.url, nameWithOwner, defaultBranch, branch,
+    pushed: Boolean(await trackingHead(repo, branch)), owner: await originOwner(repo),
+  }));
 }
 
 // `t` and `f`: a terminal, or the file manager, on the repo. Detached like the
@@ -881,6 +895,7 @@ if (import.meta.main) {
     key: (ch) => {
       if (ch === 'v') term.cycleVerbosity();
       else if (ch === 'o') openBrowser();
+      else if (ch === 'g') openGithub().catch((e) => console.error('github:', e.message));
       else if (ch === 't') openRepo('terminal');
       else if (ch === 'f') openRepo('folder');
       // Serialised like any route: a poll is git and gh calls, and a keypress

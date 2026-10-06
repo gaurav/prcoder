@@ -53,7 +53,7 @@ function start(label) {
     rows: 30,
     cwd: repo,
     env: { ...process.env, PRCODER_PORT: String(port), PRCODER_NO_OPEN: '1', PRCODER_AGENT_BIN: '/bin/cat',
-      PRCODER_TERMINAL: recorder('terminal'), PRCODER_FILE_MANAGER: recorder('folder') },
+      PRCODER_TERMINAL: recorder('terminal'), PRCODER_FILE_MANAGER: recorder('folder'), PRCODER_BROWSER: recorder('browser') },
   });
   // See the note in browser.mjs: a throw past this point would otherwise leave
   // the server running. Killing an already-killed pty throws, and the deliberate
@@ -101,6 +101,16 @@ for (const [key, what] of [['t', 'terminal'], ['f', 'folder']]) {
   const opened = existsSync(recorded(what)) ? readFileSync(recorded(what), 'utf8') : 'NOTHING recorded';
   console.log(`${key} opened:   `, opened, opened === repo ? '(the repo)' : `(want ${repo})`);
 }
+
+// `g` opens GitHub through PRCODER_BROWSER: the PR, the compare page, or the
+// repo, depending on where this checkout is -- or a refusal, printed in the log,
+// for a branch that is not pushed yet.
+rmSync(recorded('browser'), { force: true });
+first.buf = '';
+first.write('g');
+await wait(4000);
+console.log('g opened:   ', existsSync(recorded('browser')) ? readFileSync(recorded('browser'), 'utf8')
+  : first.line('github:') ?? 'NOTHING recorded or said');
 
 // A second prcoder in the same repo: the case the port note is for.
 const second = start('second');

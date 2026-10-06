@@ -105,7 +105,12 @@ actually observed, is an id per item and a union by id.
 **prcoder's flags end at `--`.** Everything before it is prcoder's and parsed strictly (`parseCli`
 in [`cli.js`](../cli.js)); everything after it goes to the agent verbatim. So there is no list of
 Claude's flags to keep in step, and an agent flag written before `--` is an error that says where it
-goes, not a session started with the wrong pull request. `--port`, `--no-open`, `--queue` and `-v`
+goes, not a session started with the wrong pull request. The one positional is the pull request,
+and there are no subcommands. [#99](https://github.com/gaurav/prcoder/pull/99) tried `prcoder open`,
+`new` and `gh`, and they were dropped. The running prcoder's keys (`o`, `g`) do the same job in
+fewer keystrokes, and a command word in front of the target clashes with a branch of that name, so
+the PR had to move behind a verb, which broke the CLI. `prcoder queue` (#95) or `status` (#96)
+will have to settle that clash first. `--port`, `--no-open`, `--queue` and `-v`
 each have an environment variable of the same meaning, which the flag overrides; `--agent` has none
 yet, and `PRCODER_BROWSER`, `PRCODER_TERMINAL`, `PRCODER_FILE_MANAGER` and `PRCODER_AGENT_BIN`
 have no flag.
