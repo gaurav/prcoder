@@ -25,7 +25,8 @@ tab's blue icon.
 The diff folds the same way, to the terminal's gain, for getting a file out of the way without
 closing it: closing says you are done with the file, and folding does not. Its bar keeps the path,
 the *viewed* box and the links out, and a click on any of those does what it says; a click on the
-rest of the bar, the ▼ included, folds or unfolds. Clicking a file in the list, the open one
+rest of the bar, the ▼ included, folds or unfolds. *Wrap* and *Outline* go with the body they act
+on, and Alt+W presses nothing until it is back. Clicking a file in the list, the open one
 included, unfolds it; a push that refreshes the open file does not, since a fold made to talk to
 the agent must survive the agent's own push; closing the pane forgets the fold.
 
@@ -42,7 +43,7 @@ a checkbox you have just ticked, such as *viewed*, does not count -- and each is
 
 | Key   | Does                                                 |
 |-------|------------------------------------------------------|
-| Alt+W | presses *Wrap* in the diff pane, while a file is open |
+| Alt+W | presses *Wrap* in the diff pane, while a file is open and the pane is not folded |
 
 Each tab names itself `owner/repo#N · pull request title` (the branch and `(no PR)` when there
 isn't one), and renames itself as the branch moves, so a row of prcoder tabs stays readable at

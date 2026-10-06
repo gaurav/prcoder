@@ -779,6 +779,10 @@ test('the diff folds to its header, the terminal takes the room, and a file clic
   assert.ok(await height('#term') > term, `terminal was ${term}px, is ${await height('#term')}px`);
   assert.equal(await fresh.getAttribute('#diff-fold', 'aria-expanded'), 'false');
   assert.equal(await fresh.locator('#gut-diff').isVisible(), false, 'nothing to drag');
+  assert.equal(await fresh.locator('#diff-wrap').isVisible(), false, 'Wrap acts on a body that is not shown');
+  await fresh.locator('#diff-fold').focus();   // off the queue input, or Alt+W is typing
+  await fresh.keyboard.press('Alt+KeyW');
+  assert.equal(await fresh.getAttribute('#diff-wrap', 'aria-pressed'), 'false', 'so Alt+W presses nothing');
   await fresh.locator('#diff-viewed-label').click();   // the label's text, which ticks the box
   assert.equal(await fresh.locator('#diff-viewed').isChecked(), true, 'the controls keep their clicks');
   assert.equal(await shown(), false, 'and do not fold');

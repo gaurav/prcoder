@@ -674,7 +674,11 @@ a { color: var(--accent); }
 #diff-main:has(#diff-outline:empty) :is(#diff-side, #gut-outline),
 #diff.outline-off :is(#diff-side, #gut-outline) { display: none; }
 #diff > header #diff-outline-show { display: none; font-size: 12px; }
-#diff.outline-off:has(#diff-outline:not(:empty)) > header #diff-outline-show { display: inline; }
+main:not(.diff-off) #diff.outline-off:has(#diff-outline:not(:empty)) > header #diff-outline-show { display: inline; }
+/* Folded, the bar keeps what is about the file -- path, viewed, the links out
+   -- and loses the two that act on a body that is not shown. Outline's show
+   rule above carries the same condition, since its :has() outranks a hide. */
+main.diff-off #diff-wrap { display: none; }
 /* Wrap is a view preference, so it is a class on the pane like outline-off, and
    a rule here rather than anything in the rows: a line-number gutter (#8) would
    be a cell beside the text, and a rendered view would hide the button under a
