@@ -108,15 +108,17 @@ you -- how many description boxes are still unticked, how many files are still u
 checks have gone green, and for Stack the pull requests under this one and built on it,
 `Stack (↓1 ↑2)`, leaving out a direction that has none -- so none hides from you
 while you are in another. A count that has run out keeps its numbers, `Files (11/11)`, so it
-still says how many, and ends in a green circle with a ✓ in it to say none are left. Until then
-the Files tab also carries a pie, filled by changed lines viewed rather than files viewed, so it
-says how much reviewing is left where the count says how many files: fourteen of seventeen viewed
-with the last three the biggest is a pie still mostly empty. Hover it for both figures. The Checks
-tab also carries a mark in front while it is not done: a yellow ring while something is still
-running, and a red ✕ as soon as anything fails, which is the part a fraction alone can't tell you.
-When everything passes it gets the green circle like any other tab. It is a shape as well as a colour so that it survives
-colour blindness, and the tab's name, read by a screen reader and shown on hover, says the same in
-words: `Checks (1/3): 1 failed, 1 pending`.
+still says how many.
+
+Each tab with a count is led by one mark, the same one the check rows and the folds below use: a
+pie that fills green as the work is done, and a green circle with a ✓ in it once none is left. The
+Files tab's pie fills by changed lines viewed rather than files viewed, so it says how much
+reviewing is left where the count says how many files: fourteen of seventeen viewed with the last
+three the biggest is a pie still mostly empty. Hover the tab for both figures. The Checks tab's pie
+has a yellow ring while something is still running, and turns into a red circle with a ✕ as soon as
+anything fails, which is the part a fraction alone can't tell you. Each is a shape as well as a
+colour so that it survives colour blindness, and the tab's name, read by a screen reader and shown
+on hover, says the same in words: `Checks (1/3): 1 failed, 1 pending`.
 
 The list of open pull requests is fetched when the page loads, when you open the switcher, and
 after a checkout, not on every poll, so the Stack count can be a few minutes old. Opening the tab

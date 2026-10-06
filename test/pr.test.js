@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   pageTitle, withoutHtml, inline, headLinks, noPrLinks, prsInto, prTree, stackOn, stackLabel, stackUnder, stackTree, stackTitle, stackBase, stackOrder, stackEmpty, intoEmpty, switcherRows,
-  HEADING, blocks, sectionize, tabLabel, taskCount, viewedCount, viewedLines, filesProgress, checkCount, checksName, tabDone, worst, byPath, bySize, byDir, nums,
+  HEADING, blocks, sectionize, tabLabel, taskCount, viewedCount, viewedLines, filesProgress, filesName, checkCount, checksName, tabDone, worst, byPath, bySize, byDir, nums,
 } from '../public/pr.js';
 import { fences, TASK, taskLines } from '../public/tasks.js';
 
@@ -744,6 +744,18 @@ test('the Checks tab is named in words, so a failed 1/3 and a pending one differ
   assert.equal(checksName({ passed: 1, failed: 1, pending: 1 }), 'Checks (1/3): 1 failed, 1 pending');
   assert.equal(checksName({ passed: 0, failed: 2, pending: 0 }), 'Checks (0/2): 2 failed');
   assert.equal(checksName({ passed: 3, failed: 0, pending: 0 }), 'Checks (3/3)');
+});
+
+// The Files tab's mark is hidden like every tab's, so what its pie says that
+// the count does not -- how much of the reviewing is by lines -- goes in the
+// name, after the label as shown. Nothing to add once every file is viewed, or
+// when nothing has lines to weigh.
+test('the Files tab is named with the changed lines its pie fills by', () => {
+  const f = (additions, deletions, viewed) => ({ additions, deletions, viewed });
+  assert.equal(filesName([f(30, 10, true), f(70, 10, false)]), 'Files (1/2): 40 of 120 changed lines viewed');
+  assert.equal(filesName([f(30, 10, true), f(70, 10, true)]), 'Files (2/2)');
+  assert.equal(filesName([f(0, 0, true), f(0, 0, false)]), 'Files (1/2)', 'a rename has no lines to weigh');
+  assert.equal(filesName([]), 'Files');
 });
 
 // And the mark: one failure is the thing to know, whatever is still running.

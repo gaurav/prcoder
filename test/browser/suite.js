@@ -262,24 +262,29 @@ test('the tab carries the task count', { skip }, async () => {
   await fresh.close();
 });
 
-// A finished count keeps its numbers and gains the green circle after them;
-// the ✓ glyph alone, in the tab's dim grey, was too faint to see. Read off the
-// computed ::after, since the class only promises the stylesheet draws it, and
-// the name is asserted exactly so the ✓ is not read out beside `(2/2)`. A
-// Checks tab where everything passed is the same circle, not a dot as well.
-test('a tab with nothing left keeps its count and ends in a green ✓ circle', { skip }, async () => {
+// A finished count keeps its numbers and its mark turns into the green ✓
+// circle; the ✓ glyph alone, in the tab's dim grey, was too faint to see. Read
+// off the computed ::after, since the class only promises the stylesheet draws
+// it, and the name is asserted exactly so the ✓ is not read out beside `(2/2)`.
+// A Checks tab where everything passed is the same circle as any other. The
+// mark leads the tab, on every tab, so it is the button's first child.
+test('a tab with nothing left keeps its count and leads with a green ✓ circle', { skip }, async () => {
   const p = await newPage({ st: { ...status, pr: { ...pr,
     files: files.map((f) => ({ ...f, viewed: true })),
     checks: rollup([{ workflowName: 'CI', name: 'test', conclusion: 'SUCCESS' }]) } } });
   const circle = (name) => p.locator('#pr-head .tab', { hasText: name }).evaluate((el) => {
-    const s = getComputedStyle(el, '::after');
-    return { cls: el.className, text: el.textContent, glyph: /✓/.test(s.content),
-      filled: s.backgroundColor !== 'rgba(0, 0, 0, 0)', round: parseFloat(s.borderTopLeftRadius) > 0 };
+    const m = el.querySelector('.mark');
+    const s = m && getComputedStyle(m);
+    return { text: el.textContent, mark: m?.className ?? null, first: el.firstChild === m,
+      glyph: !!m && /✓/.test(getComputedStyle(m, '::after').content),
+      filled: !!m && s.backgroundColor !== 'rgba(0, 0, 0, 0)', round: !!m && parseFloat(s.borderTopLeftRadius) > 0 };
   });
-  assert.deepEqual(await circle('Files'), { cls: 'tab done', text: 'Files (2/2)', glyph: true, filled: true, round: true });
-  assert.deepEqual(await circle('Checks'), { cls: 'tab done', text: 'Checks (1/1)', glyph: true, filled: true, round: true });
+  const done = { mark: 'mark full', first: true, glyph: true, filled: true, round: true };
+  assert.deepEqual(await circle('Files'), { text: 'Files (2/2)', ...done });
+  assert.deepEqual(await circle('Checks'), { text: 'Checks (1/1)', ...done });
   assert.equal((await circle('Detail')).glyph, false, 'Detail (1/3) is not done');
   assert.equal(await p.getByRole('button', { name: 'Files (2/2)', exact: true }).count(), 1);
+  assert.equal(await p.getByRole('button', { name: 'Checks (1/1)', exact: true }).count(), 1);
   await p.close();
 });
 
@@ -302,7 +307,7 @@ test('the Checks tab lists each check, and a poll that empties it moves you to D
   assert.equal(await tab.textContent(), 'Checks (1/3)');
   assert.equal(await p.getByRole('button', { name: 'Checks (1/3): 1 failed, 1 pending', exact: true }).count(), 1,
     'the name says in words what the mark says in shape');
-  assert.match(await tab.getAttribute('class'), /\bdot fail\b/, 'a failure beats a pending check');
+  assert.equal(await tab.locator('.mark').getAttribute('class'), 'mark fail', 'a failure beats a pending check');
   await tab.click();
   assert.deepEqual(await p.locator('#pr-body .check-name').allTextContents(), ['CI / test', 'deploy', 'lint']);
   assert.deepEqual(await p.locator('#pr-body .check-state').allTextContents(), ['pending', 'failed'],
@@ -311,16 +316,16 @@ test('the Checks tab lists each check, and a poll that empties it moves you to D
     [`${REPO}/actions/runs/1`], 'only the http(s) link is a link');
   // Shape, not only colour: read off the computed ::before, since the class is
   // only a promise that the stylesheet draws something different for it.
-  const marks = await p.$$eval('#pr-body .check .dot', (ds) => ds.map((d) => {
-    const s = getComputedStyle(d, '::before');
-    return { filled: s.backgroundColor !== 'rgba(0, 0, 0, 0)', ring: parseFloat(s.borderTopWidth) > 0,
-      glyph: /✕/.test(s.content) };
+  const marks = await p.$$eval('#pr-body .check .mark', (ms) => ms.map((m) => {
+    const s = getComputedStyle(m);
+    return { filled: s.backgroundImage === 'none' && s.backgroundColor !== 'rgba(0, 0, 0, 0)',
+      ring: s.boxShadow !== 'none', glyph: getComputedStyle(m, '::after').content.match(/[✓✕]/)?.[0] ?? null };
   }));
   assert.deepEqual(marks, [
-    { filled: true, ring: false, glyph: false },
-    { filled: false, ring: true, glyph: false },
-    { filled: false, ring: false, glyph: true },
-  ], 'a dot passed, a ring is pending, a ✕ failed');
+    { filled: true, ring: false, glyph: '✓' },
+    { filled: false, ring: true, glyph: null },
+    { filled: true, ring: false, glyph: '✕' },
+  ], 'a ✓ disc passed, a ring is pending, a ✕ disc failed');
 
   await p.route('**/api/status', (r) => r.fulfill({ json: { ...withChecks, pr: { ...pr, checks: rollup([]) } } }));
   const polled = p.waitForResponse('**/api/status');
@@ -812,7 +817,7 @@ test('folds show progress as a pie named by its figure', { skip }, async () => {
   } }));
   await fresh.reload();
   await fresh.waitForSelector('#pr-head .pr-title');
-  const pie = (sel) => fresh.locator(`${sel} > summary .pie`).evaluate((el) => ({
+  const pie = (sel) => fresh.locator(`${sel} > summary .mark`).evaluate((el) => ({
     label: el.getAttribute('aria-label'), role: el.getAttribute('role'),
     p: el.style.getPropertyValue('--p'), full: el.classList.contains('full'),
   }));
@@ -822,13 +827,18 @@ test('folds show progress as a pie named by its figure', { skip }, async () => {
     { label: '0 of 1 done', role: 'img', p: '0', full: false });
 
   // The Files tab's own, by changed lines rather than files: two of the five
-  // are viewed, and they are two of the four big ones. Once every file is, it
-  // is the ✓ circle instead -- the tab-done test pins that name exactly.
+  // are viewed, and they are two of the four big ones. The figure is the tab's
+  // name and tooltip, not the mark's, which is hidden: the label beside it
+  // already says what a name on it would. Once every file is viewed it is the
+  // ✓ circle instead -- the tab-done test pins that name exactly.
   const n = files[0].additions;
-  const tab = await fresh.locator('#pr-head .tab .pie').evaluate((el) => ({
-    label: el.getAttribute('aria-label'), p: el.style.getPropertyValue('--p'),
+  const tab = await fresh.locator('#pr-head .tab', { hasText: 'Files' }).evaluate((el) => ({
+    name: el.getAttribute('aria-label'), title: el.title,
+    p: el.querySelector('.mark').style.getPropertyValue('--p'),
+    hidden: el.querySelector('.mark').getAttribute('aria-hidden'),
   }));
-  assert.deepEqual(tab, { label: `2 of 5 files, ${2 * n} of ${4 * n + 1} changed lines viewed`, p: String(2 * n / (4 * n + 1)) });
+  const name = `Files (2/5): ${2 * n} of ${4 * n + 1} changed lines viewed`;
+  assert.deepEqual(tab, { name, title: name, p: String(2 * n / (4 * n + 1)), hidden: 'true' });
 
   await fresh.locator('#pr-head .tab', { hasText: 'Files' }).click();
   // By changed lines, as the tab's is; src/'s two files are the same size.
