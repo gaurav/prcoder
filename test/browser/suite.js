@@ -259,6 +259,8 @@ test('the tab carries the task count', { skip }, async () => {
   const fresh = await newPage();
   const tabs = await fresh.locator('#pr-head .tab').allTextContents();
   assert.ok(tabs.includes('Detail (1/3)'), JSON.stringify(tabs));
+  // Stack's count is pull requests, not work left, so it has nothing to fill.
+  assert.equal(await fresh.locator('#pr-head .tab', { hasText: 'Stack' }).locator('.mark').count(), 0);
   await fresh.close();
 });
 
@@ -282,7 +284,11 @@ test('a tab with nothing left keeps its count and leads with a green ✓ circle'
   const done = { mark: 'mark full', first: true, glyph: true, filled: true, round: true };
   assert.deepEqual(await circle('Files'), { text: 'Files (2/2)', ...done });
   assert.deepEqual(await circle('Checks'), { text: 'Checks (1/1)', ...done });
-  assert.equal((await circle('Detail')).glyph, false, 'Detail (1/3) is not done');
+  // Detail's mark is a pie like Files', filling by boxes ticked.
+  const detail = await circle('Detail');
+  assert.deepEqual([detail.mark, detail.first, detail.glyph], ['mark', true, false], 'Detail (1/3) is a pie, not done');
+  assert.equal(await p.locator('#pr-head .tab', { hasText: 'Detail' }).locator('.mark').evaluate((m) => m.style.getPropertyValue('--p')),
+    String(1 / 3));
   assert.equal(await p.getByRole('button', { name: 'Files (2/2)', exact: true }).count(), 1);
   assert.equal(await p.getByRole('button', { name: 'Checks (1/1)', exact: true }).count(), 1);
   await p.close();

@@ -762,7 +762,8 @@ function renderPrHead(pr, parsed, handlers) {
     // mark is hidden from a screen reader, so whatever it says that the label
     // does not goes in the button's name -- filesName, checksName.
     tabs: h('div', { className: 'tabs' },
-      paneTab('detail', [tabDone(tasks) ? mark({ full: true }) : null, tabLabel('Detail', tasks)]),
+      paneTab('detail', [tasks.total ? mark({ p: tasks.done / tasks.total, full: tabDone(tasks) }) : null,
+        tabLabel('Detail', tasks)]),
       paneTab('files', [seen.total ? mark({ p: filesProgress(pr.files).p, full: tabDone(seen) }) : null,
         tabLabel('Files', seen)], '', said(filesName(pr.files))),
       pr.checks.list.length
