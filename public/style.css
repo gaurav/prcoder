@@ -170,7 +170,7 @@ a { color: var(--accent); }
 .mark.pend { box-shadow: inset 0 0 0 1.5px var(--warn); }
 .mark.full { background: var(--add); box-shadow: none; }
 .mark.fail { background: var(--fail); box-shadow: none; }
-.tab .mark.full::after, .check .mark.full::after { content: '✓'; content: '✓' / ''; }
+.mark.full::after { content: '✓'; content: '✓' / ''; }
 .mark.fail::after { content: '✕'; content: '✕' / ''; }
 .tab .mark {
   width: 12px; height: 12px; margin-right: 5px; vertical-align: -1px;

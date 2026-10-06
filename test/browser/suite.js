@@ -836,11 +836,12 @@ test('folds show progress as a pie named by its figure', { skip }, async () => {
   const pie = (sel) => fresh.locator(`${sel} > summary .mark`).evaluate((el) => ({
     label: el.getAttribute('aria-label'), role: el.getAttribute('role'),
     p: el.style.getPropertyValue('--p'), full: el.classList.contains('full'),
+    tick: /✓/.test(getComputedStyle(el, '::after').content),
   }));
 
   // The description's section holding the queue's unticked line.
   assert.deepEqual(await pie('.md-section:has(h3:text-is("Before merging"))'),
-    { label: '0 of 1 done', role: 'img', p: '0', full: false });
+    { label: '0 of 1 done', role: 'img', p: '0', full: false, tick: false });
 
   // The Files tab's own, by changed lines rather than files: two of the five
   // are viewed, and they are two of the four big ones. The figure is the tab's
@@ -859,9 +860,10 @@ test('folds show progress as a pie named by its figure', { skip }, async () => {
   await fresh.locator('#pr-head .tab', { hasText: 'Files' }).click();
   // By changed lines, as the tab's is; src/'s two files are the same size.
   assert.deepEqual(await pie('.dir[data-dir="src/"]'),
-    { label: `1 of 2 files, ${n} of ${2 * n} changed lines viewed`, role: 'img', p: '0.5', full: false });
+    { label: `1 of 2 files, ${n} of ${2 * n} changed lines viewed`, role: 'img', p: '0.5', full: false, tick: false });
+  // And a full one is the ✓ circle a finished tab leads with.
   assert.deepEqual(await pie('.dir[data-dir="src/sub/"]'),
-    { label: `1 of 1 files, ${n} of ${n} changed lines viewed`, role: 'img', p: '1', full: true });
+    { label: `1 of 1 files, ${n} of ${n} changed lines viewed`, role: 'img', p: '1', full: true, tick: true });
   assert.equal(await fresh.locator('#pr-body .count').count(), 0, 'no fraction left beside a fold');
   await fresh.close();
 });
