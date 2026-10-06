@@ -74,8 +74,7 @@ main.diff-open.term-off {
   grid-template-rows: 1fr 1px auto 1px clamp(120px, var(--h-queue, 227px), 40%);
 }
 main.term-off #term-host,
-main.term-off:not(.diff-open) #gut-queue,
-main.term-off #gut-diff { display: none; }
+main.term-off:not(.diff-open) #gut-queue { display: none; }
 /* A click anywhere on it folds or unfolds, so it looks pressable across its
    whole width: the pointer, and a hover that darkens the bar and brings the ▼
    and the title up to full colour. user-select, or a quick second click
@@ -97,6 +96,10 @@ main:not(.term-off) #term-busy { display: none; }
    auto-place itself into a row of its own and shove the layout sideways. */
 #gut-diff { display: none; }
 main.diff-open #gut-diff { display: block; }
+/* Under a folded terminal the diff is 1fr, so there is nothing for a drag to
+   set. After the rule above, which it ties with on specificity: written before
+   it, this lost and the line stayed draggable. */
+main.term-off #gut-diff { display: none; }
 /* 1px of line, ±3px of grab, above the panes so the cursor changes over it. */
 .gut { position: relative; z-index: 3; touch-action: none; }
 .gut::after { content: ''; position: absolute; }
