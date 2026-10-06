@@ -758,7 +758,7 @@ test('a click anywhere on the terminal\'s header folds and unfolds it, the ▼ i
 // the bar, so the terminal is what takes the room. The bar is busy with
 // controls, each of which keeps its own click; the rest of it, ▼ included, is
 // the fold. Not stored (nothing is open after a reload), so no reload here.
-test('the diff folds to its header, the terminal takes the room, and a file click unfolds it', { skip }, async () => {
+test('the diff folds to its header, the terminal takes the room, and the two never fold together', { skip }, async () => {
   const fresh = await newPage();
   await fresh.route('**/api/pr/viewed', (r) => r.fulfill({ json: { ok: true } }));
   const height = (sel) => fresh.$eval(sel, (el) => el.getBoundingClientRect().height);
@@ -797,6 +797,17 @@ test('the diff folds to its header, the terminal takes the room, and a file clic
   await fresh.click('#diff-path');
   await open('app.tsx');
   assert.equal(await shown(), true, 'the open one included');
+
+  await fresh.click('#term-fold');
+  assert.equal(await fresh.locator('#term-host').isVisible(), false);
+  await fresh.click('#diff > header h1');
+  assert.equal(await shown(), false);
+  assert.equal(await fresh.locator('#term-host').isVisible(), true, 'folding the diff unfolds the terminal');
+  assert.equal(await fresh.getAttribute('#term-fold', 'aria-expanded'), 'true');
+  await fresh.click('#term-fold');
+  assert.equal(await shown(), true, 'and folding the terminal unfolds the diff');
+  assert.equal(await fresh.getAttribute('#diff-fold', 'aria-expanded'), 'true');
+  await fresh.click('#term-fold');
 
   await fresh.click('#diff > header h1');
   await fresh.click('#diff-close');

@@ -28,7 +28,9 @@ the *viewed* box and the links out, and a click on any of those does what it say
 rest of the bar, the ▼ included, folds or unfolds. *Wrap* and *Outline* go with the body they act
 on, and Alt+W presses nothing until it is back. Clicking a file in the list, the open one
 included, unfolds it; a push that refreshes the open file does not, since a fold made to talk to
-the agent must survive the agent's own push; closing the pane forgets the fold.
+the agent must survive the agent's own push; closing the pane forgets the fold. The two never fold
+together: folding one unfolds the other, since each hands its room to the other, and both folded
+would hand it to the queue.
 
 Which panes fold is one list in `index.html`, `data-folds` on `<main>`: `diff term` today. A pane
 left out keeps a plain bar and no ▼.

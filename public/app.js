@@ -236,6 +236,10 @@ new ResizeObserver(sync).observe(document.getElementById('term-host'));
 const TERM_KEY = 'prcoder:term';
 function setFold(pane, off) {
   fold(pane, off);
+  // Never both: each fold hands its room to the other, and both folded would
+  // hand it to the queue, which nobody asked for.
+  if (off && pane === 'diff' && folded('term')) setFold('term', false);
+  if (off && pane === 'term' && folded('diff')) fold('diff', false);
   if (pane === 'term') {
     setPref(TERM_KEY, off ? 'off' : 'on');
     if (!off) term.focus();   // expanding it is to talk to it
