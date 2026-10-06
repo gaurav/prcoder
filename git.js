@@ -78,6 +78,21 @@ export const compareUrl = (nameWithOwner, base, branch, owner) =>
   `https://github.com/${nameWithOwner}/compare/${urlPath(base)}...${owner ? `${owner}:` : ''}${urlPath(branch)}?expand=1`;
 
 /**
+ * Where `g` sends you on GitHub: the PR, or with none the compare page the
+ * Create button would open. On the default branch or a detached HEAD there is
+ * nothing to compare, so the repo itself. An unpushed branch is refused rather
+ * than pushed -- Create pushes, this only looks -- because its compare page
+ * says only "nothing to compare". `pushed` is trackingHead's answer, so a push
+ * from another machine needs a fetch before it counts.
+ */
+export function githubUrl({ prUrl, nameWithOwner, defaultBranch, branch, pushed, owner }) {
+  if (prUrl) return prUrl;
+  if (!branch || branch === defaultBranch) return `https://github.com/${nameWithOwner}`;
+  if (!pushed) throw new Error(`no pull request, and ${branch} is not on GitHub yet: push it, or use Create in the pane`);
+  return compareUrl(nameWithOwner, defaultBranch, branch, owner);
+}
+
+/**
  * Who owns origin, read off its URL -- `git@github.com:o/r.git`,
  * `https://github.com/o/r`, `ssh://git@github.com/o/r.git` alike. Null for a
  * URL with no `owner/repo` tail. get-url applies `insteadOf`, so this is the

@@ -8,7 +8,8 @@ PR #1    A browser workspace around a live Claude Code session
          https://github.com/gaurav/prcoder/pull/1
 queue    4 local · 1 done
 serving  http://localhost:17455   1 tab
-keys     q quit · r refresh · v verbose · o open · t terminal · f folder
+keys     q quit · r refresh · v verbose
+open     o prcoder · g github · t terminal · f folder
 ```
 
 The block is redrawn in place and the log scrolls above it, so what happened stays in the
@@ -30,7 +31,11 @@ says `checked 7m ago` next to that count, rather than presenting them as current
   and `gh` subprocess with its timing, the per-poll count of them, route timings, and a line when
   the PR has moved upstream. `-v` or `-vv` (or `PRCODER_VERBOSE=1` or `=2`) starts at a level, which
   is the only way to see startup itself.
-- `o` reopens the browser.
+- `o` reopens prcoder in the browser.
+- `g` opens the pull request on GitHub, in the same browser (`PRCODER_BROWSER` applies). With no
+  pull request it opens the compare page that Create would, but only for a branch that has been
+  pushed, since for any other the page shows nothing; it never pushes. On the default branch or a
+  detached HEAD there is nothing to compare, so it opens the repo.
 - `t` opens a new terminal window in the repo, for whatever is awkward to run through a coding
   agent: several commands in a row, moving between directories, commands piped together, or trying
   out the CLI you are working on. The built-in terminal is Terminal.app on macOS, and elsewhere `t`
