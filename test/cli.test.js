@@ -131,9 +131,10 @@ test('the block says where the branch, the PR and the queue stand', () => {
   // and is still yours to do, 'c' is a tombstone and counts as nothing.
   assert.match(out, /2 local · 1 done/);
   // Every key the terminal answers to is in the legend, or it does not exist.
-  assert.match(out, /^keys +q quit  r refresh  v verbose  o open  g github  t terminal  f folder$/m);
-  // ...and on a row that fits an 80-column window, which the serving row did not.
-  assert.ok(out.split('\n').every((l) => !l.startsWith('keys') || l.length < 80));
+  assert.match(out, /^keys +q quit · r refresh · v verbose$/m);
+  assert.match(out, /^open +o prcoder · g github · t terminal · f folder$/m);
+  // ...and on rows that fit an 80-column window, which the serving row did not.
+  assert.ok(out.split('\n').every((l) => !/^(keys|open) /.test(l) || l.length < 80));
 });
 
 // The table behind t and f. A null is the "not implemented here" message, so

@@ -96,11 +96,12 @@ PR #1    A browser workspace around a live Claude Code session
          https://github.com/gaurav/prcoder/pull/1
 queue    4 local · 1 done
 serving  http://localhost:17455   1 tab
-keys     q quit  r refresh  v verbose  o open  g github  t terminal  f folder
+keys     q quit · r refresh · v verbose
+open     o prcoder · g github · t terminal · f folder
 ```
 
-`r` refreshes it, `v` cycles how much the log says, `o` reopens the browser, `g` opens the pull request on
-GitHub (or the branch's compare page), `t` opens a terminal
+`r` refreshes it, `v` cycles how much the log says, `o` reopens prcoder in the browser,
+`g` opens the pull request on GitHub (or the branch's compare page), `t` opens a terminal
 window in the repo (Terminal.app, or the one `PRCODER_TERMINAL` names), `f` opens the repo in the
 file manager (or `PRCODER_FILE_MANAGER`), and `q` or Ctrl-C quits, asking first if that would lose
 anything. [docs/Terminal.md](docs/Terminal.md) has how fresh the block is, what each verbosity

@@ -157,10 +157,13 @@ export function statusLines(s, u = {}) {
     // the clock on every number above while the socket stays open and the count
     // keeps cheerfully saying `1 tab`.
     row('serving', u.local, u.tabs ? `${u.tabs} tab${u.tabs > 1 ? 's' : ''}` : 'no tab open', ago(u.age)),
-    // A row of its own: on the serving row the legend ran past 80 columns and
-    // clip() cut it off at exactly the keys someone had not found yet. Two
-    // spaces apart, not ` · `, for the same reason: with `g` that ran to 83.
-    row('keys', 'q quit  r refresh  v verbose  o open  g github  t terminal  f folder'),
+    // Rows of their own: on the serving row the legend ran past 80 columns and
+    // clip() cut it off at exactly the keys someone had not found yet. The ` · `
+    // is what makes a one-letter key findable -- two spaces apart, they blurred
+    // into the words -- and with `g` one row of them ran to 83. So the legend is
+    // split by kind: what prcoder does, then everything that opens something.
+    row('keys', 'q quit · r refresh · v verbose'),
+    row('open', 'o prcoder · g github · t terminal · f folder'),
     u.moved && row('', u.moved),
   ].filter(Boolean);
 }
