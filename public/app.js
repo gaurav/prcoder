@@ -230,29 +230,30 @@ new ResizeObserver(sync).observe(document.getElementById('term-host'));
 // Folding a pane to its header line (folds.js paints; this is the rules).
 // The PTY keeps its size while the terminal is folded: a display:none host has
 // no height, so fit() gets NaN rows and returns without resizing, and the
-// ResizeObserver above re-fits it on the way back out. The terminal's fold is
-// stored, like the outline's ✕ in diff.js; the diff's is not (closeDiff says
-// why).
-const TERM_KEY = 'prcoder:term';
+// ResizeObserver above re-fits it on the way back out. The panes that are
+// always there remember their fold, like the outline's ✕ in diff.js; the
+// diff's is not stored (closeDiff says why).
+const FOLD_KEY = { term: 'prcoder:term', queue: 'prcoder:queue' };
 function setFold(pane, off) {
   fold(pane, off);
   // Never both: each fold hands its room to the other, and both folded would
   // hand it to the queue, which nobody asked for.
   if (off && pane === 'diff' && folded('term')) setFold('term', false);
   if (off && pane === 'term' && folded('diff')) fold('diff', false);
-  if (pane === 'term') {
-    setPref(TERM_KEY, off ? 'off' : 'on');
-    if (!off) term.focus();   // expanding it is to talk to it
-  }
+  // And never every pane: the queue folds beside either, but under a folded
+  // terminal with no diff to take the room it was the last one open.
+  if (off && pane === 'queue' && folded('term') && !selectedPath()) setFold('term', false);
+  if (FOLD_KEY[pane]) setPref(FOLD_KEY[pane], off ? 'off' : 'on');
+  if (pane === 'term' && !off) term.focus();   // expanding it is to talk to it
 }
-if (canFold('term') && pref(TERM_KEY) === 'off') fold('term', true);
+for (const pane of ['term', 'queue']) if (canFold(pane) && pref(FOLD_KEY[pane]) === 'off') fold(pane, true);
 // The whole bar is the toggle, and the ▼ is only the part of it that says so
 // -- and the part a keyboard can reach, since a button's Enter is a click and
 // bubbles here. One listener for both, so a click on the ▼ toggles once. A
 // control on the bar -- the diff's viewed box, its links, Wrap -- keeps its own
 // click, so the fold is the rest of the bar: the title, the path, the gaps.
 // No double-click: two clicks would already have folded and unfolded it.
-for (const pane of ['diff', 'term']) {
+for (const pane of ['diff', 'term', 'queue']) {
   document.querySelector(`#${pane} > header`).addEventListener('click', (e) => {
     const control = e.target.closest('a, button, label, input, textarea, select');
     if (!canFold(pane) || (control && control.id !== `${pane}-fold`)) return;

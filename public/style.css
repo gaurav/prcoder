@@ -80,9 +80,15 @@ main.diff-open {
 main.term-off { --r-term: auto; --r-diff: 1fr; }
 main.term-off:not(.diff-open), main.term-off.diff-off { --r-queue: 1fr; }
 main.diff-off { --r-diff: auto; }   /* after term-off's 1fr, so both folded is two bars */
+/* The queue, when its fold is on (index.html), folds beside either; app.js
+   keeps it from being the last pane open. After the 1fr above, for the same
+   reason. */
+main.queue-off { --r-queue: auto; }
 main.diff-off #diff-main,
 main.term-off #term-host,
-main.term-off:not(.diff-open) #gut-queue { display: none; }
+main.queue-off #queue-body,
+main.term-off:not(.diff-open) #gut-queue,
+main.queue-off #gut-queue { display: none; }
 /* A click anywhere on a folding pane's bar folds or unfolds it -- anywhere
    that is not a control, on a bar that has them -- so it looks pressable across
    its whole width: the pointer, and a hover that darkens the bar and brings the
@@ -92,15 +98,21 @@ main.term-off:not(.diff-open) #gut-queue { display: none; }
    data-folds switch in index.html, so a pane whose fold is off keeps a plain
    bar and no ▼. */
 main[data-folds~="term"] #term > header,
-main[data-folds~="diff"] #diff > header { user-select: none; cursor: pointer; }
+main[data-folds~="diff"] #diff > header,
+main[data-folds~="queue"] #queue > header { user-select: none; cursor: pointer; }
 main[data-folds~="term"] #term > header:hover,
-main[data-folds~="diff"] #diff > header:hover { background: var(--bg); }
+main[data-folds~="diff"] #diff > header:hover,
+main[data-folds~="queue"] #queue > header:hover { background: var(--bg); }
 /* The diff's NEW / DELETED title keeps its colour: an id here outranks
    `.pane h1.add` below. */
 main[data-folds~="term"] #term > header:hover :is(h1, #term-fold),
-main[data-folds~="diff"] #diff > header:hover :is(h1:not(.add, .del), #diff-fold) { color: var(--fg); }
+main[data-folds~="diff"] #diff > header:hover :is(h1:not(.add, .del), #diff-fold),
+main[data-folds~="queue"] #queue > header:hover :is(h1, #queue-fold) { color: var(--fg); }
 main:not([data-folds~="term"]) #term-fold,
-main:not([data-folds~="diff"]) #diff-fold { display: none; }
+main:not([data-folds~="diff"]) #diff-fold,
+main:not([data-folds~="queue"]) #queue-fold { display: none; }
+/* The bar's user-select: none must not reach the one thing typed into there. */
+#queue-input { user-select: text; }
 /* `● working` while a turn runs, and only folded: open, the terminal says so
    itself. `hidden` stays the busy switch; this is the folded one. */
 main:not(.term-off) #term-busy { display: none; }
@@ -108,7 +120,7 @@ main:not(.term-off) #term-busy { display: none; }
    line-height so the two centre together. ▼/▶ rather than the small ▾/▸, which
    sit low and needed a bigger font that then sat lower still. margin-left,
    because every header button is pushed to the far end below. */
-#term-fold, #diff-fold { margin-left: 0; padding: 0; font-size: 12px; line-height: 18px; }
+#term-fold, #diff-fold, #queue-fold { margin-left: 0; padding: 0; font-size: 12px; line-height: 18px; }
 
 #gut-pr { grid-area: gpr; } #gut-queue { grid-area: gqueue; } #gut-diff { grid-area: gdiff; }
 /* Only the diff-open template has a slot for it; left displayed it would

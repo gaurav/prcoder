@@ -33,10 +33,15 @@ together: folding one unfolds the other, since each hands its room to the other,
 would hand it to the queue.
 
 Which panes fold is one list in `index.html`, `data-folds` on `<main>`: `diff term` today. A pane
-left out keeps a plain bar and no ▼.
+left out keeps a plain bar and no ▼. The queue's fold is built and left off, because prcoder is
+queue-first and hiding the queue should stay hard until there is a reason for it; adding `queue`
+to the list turns it on. Switched on, it folds the same way, to the terminal's gain, with its
+input still on the bar, and it folds beside either of the other two -- but never as the last pane
+open: folding it under a folded terminal with no diff to take the room unfolds the terminal.
 
 Whether the terminal is folded, whether the outline is shown, whether the diff wraps long lines,
-and which way the queue adds are remembered the same way as the sizes. The diff's fold is not:
+and which way the queue adds are remembered the same way as the sizes, and so is the queue's fold
+when it is on. The diff's fold is not:
 nothing is open after a reload, and the next click on a file would unfold it anyway.
 
 A few things have a key as well as a control. A shortcut never fires while you are typing -- in the

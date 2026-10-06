@@ -10,7 +10,9 @@
 <body>
   <!-- data-folds is the switch for which panes fold to their header line
        (folds.js, and the fold rules in app.js): a pane named here gets a ▼
-       before its title and a bar that folds on a click. -->
+       before its title and a bar that folds on a click. The queue's fold is
+       built and left off: prcoder is queue-first, so hiding the queue should
+       stay hard until there is a reason for it. Add `queue` to turn it on. -->
   <main data-folds="diff term">
     <section id="pr" class="pane">
       <header>
@@ -109,6 +111,7 @@
 
     <section id="queue" class="pane">
       <header>
+        <button id="queue-fold" aria-expanded="true" aria-controls="queue-body" title="collapse the queue pane" aria-label="collapse the queue pane">▼</button>
         <h1>Queue</h1>
         <!-- Adding always lands in Local, whichever tab is showing, so the
              placeholder names it: from Issues or Completed it is not obvious. -->

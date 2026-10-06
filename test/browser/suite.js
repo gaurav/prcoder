@@ -817,6 +817,54 @@ test('the diff folds to its header, the terminal takes the room, and the two nev
   await fresh.close();
 });
 
+// The queue's fold is built and switched off in index.html (Panes.md says
+// why), so the shipped page shows no ▼ there and its bar is plain; the page is
+// then served with `queue` in the list, which is what turning it on is. Its own
+// page: the fold is stored, and the never-last rule needs a folded terminal
+// with no diff.
+test('the queue folds only when data-folds says so, and never as the last pane open', { skip }, async () => {
+  const fresh = await newPage();
+  const shown = () => fresh.locator('#queue-body').isVisible();
+  const height = (sel) => fresh.$eval(sel, (el) => el.getBoundingClientRect().height);
+  assert.equal(await fresh.locator('#queue-fold').isVisible(), false, 'off, there is no ▼');
+  await fresh.click('#queue > header h1');
+  assert.equal(await shown(), true, 'and the bar is not a toggle');
+
+  // Turned on the way it would be: the page served with `queue` in the list.
+  await fresh.route((u) => u.pathname === '/', async (r) => {
+    const res = await r.fetch();
+    const body = (await res.text()).replace('data-folds="diff term"', 'data-folds="diff term queue"');
+    assert.notEqual(body, await res.text(), 'the switch is where index.html says');
+    return r.fulfill({ response: res, body });
+  });
+  await fresh.reload();
+  await fresh.waitForSelector('#pr-head .pr-title');
+  assert.equal(await fresh.locator('#queue-fold').isVisible(), true);
+  const bar = await height('#queue > header');
+  const term = await height('#term');
+  await fresh.click('#queue > header h1');
+  assert.equal(await shown(), false, 'on, the title folds it');
+  assert.equal(await height('#queue'), bar, 'to its bar');
+  assert.ok(await height('#term') > term, `terminal was ${term}px, is ${await height('#term')}px`);
+  assert.equal(await fresh.locator('#gut-queue').isVisible(), false, 'nothing to drag');
+  await fresh.locator('#queue-input').click();
+  assert.equal(await fresh.evaluate(() => document.activeElement.id), 'queue-input', 'the input keeps its click');
+  assert.equal(await shown(), false);
+
+  await fresh.reload();
+  await fresh.waitForSelector('#pr-head .pr-title');
+  assert.equal(await shown(), false, 'stored, like the terminal\'s');
+  await fresh.click('#queue-fold');
+  assert.equal(await shown(), true);
+
+  await fresh.click('#term-fold');
+  assert.equal(await fresh.locator('#term-host').isVisible(), false);
+  await fresh.click('#queue > header h1');
+  assert.equal(await shown(), false);
+  assert.equal(await fresh.locator('#term-host').isVisible(), true, 'the last pane open cannot fold away: the terminal comes back');
+  await fresh.close();
+});
+
 // Every toast closes on a click, so every one has a ✕, where a close button is
 // looked for: the top right corner. After the text, it ended whichever line the
 // text wrapped to. It is a pseudo-element, which has no box to measure, so this
