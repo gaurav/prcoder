@@ -1204,7 +1204,7 @@ test('marking a file viewed moves the tab count and the open diff\'s box with it
 // path through paint() that does it runs only when the head moves, which no
 // other test here makes happen -- and it once called a helper a local variable
 // had shadowed, which would have thrown on every such poll.
-test('a poll that moves the head re-opens the open file without an error', { skip }, async () => {
+test('a poll that moves the head re-opens the open file without an error, and keeps its fold', { skip }, async () => {
   const fresh = await newPage();
   const errors = [];
   fresh.on('pageerror', (e) => errors.push(e.message));
@@ -1219,11 +1219,15 @@ test('a poll that moves the head re-opens the open file without an error', { ski
   await fresh.route('**/api/status', (r) => r.fulfill({ json: {
     ...status, pr: { ...pr, headRefOid: 'c'.repeat(40) },
   } }));
+  // Folded first: the refresh goes through openDiff, not the row click's
+  // openFile, so a push from the agent does not undo a fold made to talk to it.
+  await fresh.click('#diff > header h1');
   await fresh.click('#pr-refresh');
   await fresh.waitForFunction(() => document.getElementById('diff-path').textContent === 'evil.js');
   await fresh.waitForTimeout(300);
   assert.deepEqual(errors, []);
   assert.equal(diffs, 2, 'the open file was fetched again');
+  assert.equal(await fresh.locator('#diff-main').isVisible(), false, 'and the fold held');
   await fresh.close();
 });
 
