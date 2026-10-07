@@ -553,6 +553,15 @@ console.log('highlight:', `${hi.n} spans:`, hi.names || '(none)',
   '\n           (want spans in tok- classes: comment, keyword, string at least)');
 await page.locator('#diff').screenshot({ path: path.join(out, 'diff.png') });
 
+// The header's @ types the file's mention into the agent's prompt, unsent. The
+// stub echoes its input, so the terminal is the evidence it reached the PTY --
+// and the prompt is then left holding it, which the stub does not mind.
+const openPath = await page.locator('#diff-path').innerText();
+await page.locator('#diff-mention').click();
+await page.waitForTimeout(400);   // the stub echoes on the PTY's own schedule
+console.log('diff @:  ', `terminal echoed @${openPath}:`,
+  (await page.locator('#term-host').innerText()).includes(`@${openPath}`), ' (want true)');
+
 // The diff pane's two ways out: the file itself at this PR's head, and the
 // patch in GitHub's diff viewer. Both hrefs are read rather than assumed
 // because the blob one is assembled from a sha the payload carries -- a missing
