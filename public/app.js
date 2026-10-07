@@ -252,19 +252,26 @@ document.querySelector('#term > header').addEventListener('click', () => foldTer
 // Type an item into Claude's prompt. If Claude is mid-turn it queues the
 // message itself, which is exactly the behaviour we want.
 //
+// Types `data` into the agent's prompt exactly as given, as keystrokes, and
+// puts the focus there so typing carries on where it landed. Whether it went is
+// the return value: `send` refuses on a socket that is not open -- a dead PTY,
+// a reload in flight.
+function typeIntoAgent(data) {
+  const sent = send({ type: 'input', data });
+  term.focus();
+  return sent;
+}
+
 // `submit` false types the text and stops there: the prompt is left ready to
 // edit and send by hand, which is what the queue's ▶ wants. Trailing
 // whitespace is cut either way -- a newline in the text *is* the Enter that
 // would have sent it half-written.
 //
-// Whether it went is the return value, because the queue ticks an item off on
-// the strength of it: `send` refuses on a socket that is not open -- a dead PTY,
-// a reload in flight -- and an item checked off after a refused send is one
-// nobody has done and nobody is going to be reminded of.
+// The queue ticks an item off on the strength of the return value, and an item
+// checked off after a refused send is one nobody has done and nobody is going
+// to be reminded of.
 function sendToClaude(text, submit = true) {
-  const sent = send({ type: 'input', data: text.replace(/\s+$/, '') + (submit ? '\r' : '') });
-  term.focus();
-  return sent;
+  return typeIntoAgent(text.replace(/\s+$/, '') + (submit ? '\r' : ''));
 }
 
 // The switcher only changes when PRs are opened or closed, so it is not worth a
