@@ -167,6 +167,15 @@ prcoder ships a grammar for; it is the one view where a tokenizer sees a whole f
 hunk that starts in the middle of one. A renamed file says where it came from on its first line,
 and a rename with no other change says only that.
 
+The **@** right after the filename types ` @path ` into the coding agent's prompt, for "@path
+should be fixed…" or "an example of this is @path": the path from the repo root, which is the
+agent's working directory since prcoder runs there, in a form the agent's `@` reads (quoted, if
+the path has a space). It does not press Enter, and leaves the focus in the terminal to finish the
+sentence. The spaces either side are deliberate: `@` is a mention only at the start of a word, and
+the trailing space closes the menu typing `@` opens, so Enter sends the prompt instead of picking a
+suggestion. A deleted file has no **@**, since there is nothing left to attach. With no agent
+connected it types nothing and says so.
+
 A diff with more than one hunk gets an outline down its right edge, one row per hunk, named by the
 context git puts after the `@@` (the enclosing function, a heading); a click scrolls to it. Its ✕
 hides it for every file until *Outline* in the header brings it back.

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { diffRows, diffKind, outline, language, grammars, highlightLines } from '../public/diff.js';
+import { diffRows, diffKind, outline, language, grammars, highlightLines, mention } from '../public/diff.js';
 
 const modified = '@@ -1,2 +1,3 @@\n ctx\n-old\n+new\n\\ No newline at end of file';
 
@@ -129,4 +129,13 @@ test('highlightLines uses the innermost token and carries aliases', async () => 
   assert.ok(classes.includes('tok-template-punctuation tok-string'), classes.join());
   assert.deepEqual(lines[0].find((s) => s.text === 'b'), { cls: 'tok-interpolation', text: 'b' });
   assert.ok(classes.every((c) => /^tok-[\w-]+( tok-[\w-]+)*$/.test(c)), classes.join());
+});
+
+// Spaced both sides: the agent takes `@` as a mention only at a word's start,
+// and the trailing space closes its @-autocomplete menu. A path with a space in
+// it is quoted, the form Claude Code's prompt parser reads one in.
+test('a mention is spaced on both sides, and quoted around a space', () => {
+  assert.equal(mention('public/diff.js'), ' @public/diff.js ');
+  assert.equal(mention('.claude/skills/run-prcoder/SKILL.md'), ' @.claude/skills/run-prcoder/SKILL.md ');
+  assert.equal(mention('docs/My Notes.md'), ' @"docs/My Notes.md" ');
 });

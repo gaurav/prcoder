@@ -2,7 +2,7 @@ import { Terminal } from '/vendor/xterm.mjs';
 import { FitAddon } from '/vendor/addon-fit.mjs';
 import { WebLinksAddon } from '/vendor/addon-web-links.mjs';
 import { renderPr, renderNoPr, renderHeader, pageTitle, api, toast, pref, setPref } from './pr.js';
-import { openDiff, closeDiff, selectedPath, setViewed, toggleWrap } from './diff.js';
+import { openDiff, closeDiff, selectedPath, setViewed, toggleWrap, openMention } from './diff.js';
 import { initQueue, addItem, setItems } from './queue.js';
 import { bindKeys } from './keys.js';
 import './panes.js';   // draggable pane gutters; nothing here calls into it
@@ -273,6 +273,15 @@ function typeIntoAgent(data) {
 function sendToClaude(text, submit = true) {
   return typeIntoAgent(text.replace(/\s+$/, '') + (submit ? '\r' : ''));
 }
+
+// The diff header's @: the open file's mention, typed and not sent, so the
+// sentence about it can go on around it. Nothing while no file is open or the
+// open one was deleted (openMention says which).
+function mentionOpenFile() {
+  const text = openMention();
+  if (text != null && !typeIntoAgent(text)) toast('The coding agent is not connected — nothing was typed.', true);
+}
+document.getElementById('diff-mention').onclick = mentionOpenFile;
 
 // The switcher only changes when PRs are opened or closed, so it is not worth a
 // call every minute — page load, opening the dropdown, opening the Stack tab,

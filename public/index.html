@@ -28,6 +28,10 @@
       <header>
         <h1>Diff</h1>
         <span id="diff-path"></span>
+        <!-- Types an @ mention of this file into the coding agent's prompt;
+             app.js wires it, and diff.js titles it and hides it for a deleted
+             file. Not the queue's ▶, which would read as running the file. -->
+        <button id="diff-mention" aria-label="mention this file to the coding agent">@</button>
         <label id="diff-viewed-label"><input id="diff-viewed" type="checkbox" title="mark viewed on GitHub"> viewed</label>
         <!-- Diff first: it is what the pane itself shows. The other three need
              the PR's head commit and hide together, separators included, when a

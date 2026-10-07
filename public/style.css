@@ -604,11 +604,18 @@ a { color: var(--accent); }
 .file .nums { font-size: 11px; white-space: nowrap; }
 
 /* --- Diff pane --- */
+/* As wide as the path and no wider, shrinking (and cutting at the head) only
+   when the header runs out of room, so the @ after it sits against the
+   filename. The auto margin on *viewed* is what pushes the rest right, and so
+   the only one here: a second, on Wrap from `.pane > header button`, would
+   split the room with it and strand *viewed* to History mid-header. */
 #diff-path {
-  flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+  flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis;
   white-space: nowrap; direction: rtl; text-align: left; font-size: 12px; color: var(--dim);
 }
-#diff-viewed-label { font-size: 12px; color: var(--dim); white-space: nowrap; }
+#diff > header button { margin-left: 0; }
+#diff > header #diff-mention { margin-left: 2px; flex: none; font-size: 12px; }
+#diff-viewed-label { margin-left: auto; font-size: 12px; color: var(--dim); white-space: nowrap; }
 /* The ways out of the pane, as one menu rather than four buttons, and none
    marked ↗ -- see headLinks. `nowrap` on the group keeps a separator from
    starting a line. */
