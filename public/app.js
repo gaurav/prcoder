@@ -9,8 +9,10 @@ import './panes.js';   // draggable pane gutters; nothing here calls into it
 
 // Every shortcut the page has, in one table; keys.js says what a binding may
 // and may not do. W for wrap: no browser binds Alt+W, and the owner chose it
-// over VS Code's Alt+Z.
-bindKeys({ 'Alt+KeyW': toggleWrap });
+// over VS Code's Alt+Z. M for mention, the diff header's @: not Alt+2, the key
+// @ is on, because Chrome and Firefox on Linux and Windows switch tabs with
+// Alt+digit, and M is none of Firefox's menu letters.
+bindKeys({ 'Alt+KeyW': toggleWrap, 'Alt+KeyM': mentionOpenFile });
 
 const term = new Terminal({
   fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',

@@ -263,7 +263,7 @@ export async function openDiff(f, onViewed = setViewed) {
   el('diff-path').title = f.path;
   // Shown until the patch says the file was deleted (setMentionable below).
   setMentionable(true);
-  el('diff-mention').title = `type @${f.path} into the coding agent's prompt`;
+  el('diff-mention').title = `type @${f.path} into the coding agent's prompt (Alt+M)`;
   // Four ways to read the same file on GitHub, and the pane is a fifth: the
   // patch is what changed, and the other three are what a patch cannot say --
   // what the file became (a Markdown one rendered rather than as source), who

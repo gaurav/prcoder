@@ -1019,6 +1019,26 @@ test('@ types the open file\'s mention, spaced and unsent, and leaves the focus 
   await fresh.close();
 });
 
+// The keyboard's way to the same button -- and, as for every shortcut, not
+// while typing in the terminal, where Alt+M belongs to the agent.
+test('Alt+M types the mention outside the terminal and nothing inside it', { skip }, async () => {
+  const frames = [];
+  const fresh = await newPage({ pty: (ws) => ws.onMessage((m) => frames.push(JSON.parse(m))) });
+  const typed = () => frames.filter((f) => f.type === 'input');
+  await fresh.locator('#pr-head .tab', { hasText: 'Files' }).click();
+  await fresh.locator('.file[data-path="app.tsx"] .path').click();
+  await fresh.waitForSelector('#diff-body .dl');
+  await fresh.locator('#diff-body').click();
+  await fresh.keyboard.press('Alt+KeyM');
+  for (let i = 0; !typed().length && i < 100; i++) await fresh.waitForTimeout(50);
+  assert.deepEqual(typed(), [{ type: 'input', data: ' @app.tsx ' }]);
+  // The press above left the focus in the terminal, so this one is the agent's.
+  await fresh.keyboard.press('Alt+KeyM');
+  await fresh.waitForTimeout(200);
+  assert.equal(typed().filter((f) => f.data === ' @app.tsx ').length, 1);
+  await fresh.close();
+});
+
 // Right after the name, not across the header beside *viewed*: the path is as
 // wide as its text, and the auto margin is on what comes after the @. Only
 // there -- a second one on Wrap left *viewed* to History mid-header.
