@@ -570,6 +570,13 @@ await page.waitForTimeout(400);   // the stub echoes on the PTY's own schedule
 console.log('diff @:  ', `terminal echoed @${openPath}:`,
   (await page.locator('#term-host').innerText()).replace(/\n/g, '').includes(`@${openPath}`), ' (want true)');
 
+// The header with Wrap pressed, which fills it in, beside the @ and the links
+// out: the one header everything above competes for room in. Pressed back
+// after, since the choice is remembered and the shots below expect it off.
+await page.locator('#diff-wrap').click();
+await page.locator('#diff > header').screenshot({ path: path.join(out, 'diff-header-wrap.png') });
+await page.locator('#diff-wrap').click();
+
 // The diff pane's two ways out: the file itself at this PR's head, and the
 // patch in GitHub's diff viewer. Both hrefs are read rather than assumed
 // because the blob one is assembled from a sha the payload carries -- a missing
