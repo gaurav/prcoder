@@ -213,14 +213,15 @@ export async function setViewed(cwd, nodeId, path, viewed) {
  * `from` is `previous_filename`, set only when GitHub saw the file as renamed
  * (cli/cli#14116, checked 2026-09-18: `status: "renamed"`, a patch when it was
  * edited too). Without it a pure rename is a file with no patch, and the pane
- * would call it binary.
+ * would call it binary. `deleted` is `status: "removed"`, the one word for a
+ * deleted file that has no patch to show it -- the diff header's @ reads it.
  */
 export async function fetchPatches(cwd, prUrl) {
   const { owner, repo, number } = parsePrUrl(prUrl);
   const out = await gh(['api', '--paginate', '--slurp',
     `repos/${owner}/${repo}/pulls/${number}/files`], { cwd });
   return new Map(JSON.parse(out).flat().map((f) =>
-    [f.filename, { patch: f.patch ?? null, from: f.previous_filename }]));
+    [f.filename, { patch: f.patch ?? null, from: f.previous_filename, deleted: f.status === 'removed' }]));
 }
 
 export function parsePrUrl(url) {

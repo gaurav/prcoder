@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { diffRows, diffKind, outline, language, grammars, highlightLines } from '../public/diff.js';
+import { diffRows, diffKind, outline, language, grammars, highlightLines, mention, fromDir } from '../public/diff.js';
 
 const modified = '@@ -1,2 +1,3 @@\n ctx\n-old\n+new\n\\ No newline at end of file';
 
@@ -129,4 +129,34 @@ test('highlightLines uses the innermost token and carries aliases', async () => 
   assert.ok(classes.includes('tok-template-punctuation tok-string'), classes.join());
   assert.deepEqual(lines[0].find((s) => s.text === 'b'), { cls: 'tok-interpolation', text: 'b' });
   assert.ok(classes.every((c) => /^tok-[\w-]+( tok-[\w-]+)*$/.test(c)), classes.join());
+});
+
+// Spaced both sides: the agent takes `@` as a mention only at a word's start,
+// and the trailing space closes its @-autocomplete menu. A path with a space in
+// it is quoted, the form Claude Code's prompt parser reads one in.
+test('a mention is spaced on both sides, and quoted around a space', () => {
+  assert.equal(mention('public/diff.js'), ' @public/diff.js ');
+  assert.equal(mention('.claude/skills/run-prcoder/SKILL.md'), ' @.claude/skills/run-prcoder/SKILL.md ');
+  assert.equal(mention('docs/My Notes.md'), ' @"docs/My Notes.md" ');
+});
+
+// The agent's PTY starts where prcoder did, which need not be the repo root,
+// and a mention the agent cannot find is worse than none.
+test('a mention is from the directory the agent runs in', () => {
+  assert.equal(fromDir('', 'public/diff.js'), 'public/diff.js');
+  assert.equal(fromDir('public/', 'public/diff.js'), 'diff.js');
+  assert.equal(fromDir('public/', 'docs/Panes.md'), '../docs/Panes.md');
+  assert.equal(fromDir('test/browser/', 'test/diff.test.js'), '../diff.test.js');
+  // A file named like the directory is still a file, not a step down.
+  assert.equal(fromDir('docs/', 'docs'), '../docs');
+  assert.equal(mention('docs/My Notes.md', 'public/'), ' @"../docs/My Notes.md" ');
+});
+
+// `@"..."` has no escape for a quote, and a control character would be typed
+// as a keystroke -- a tab completes, a newline breaks the prompt. #124 is the
+// recheck for a form that can write them, which would change these to mentions.
+test('a path with a quote or a control character has no mention', () => {
+  assert.equal(mention('docs/a "b".md'), null);
+  assert.equal(mention('docs/a\nb.md'), null);
+  assert.equal(mention('docs/a\tb.md'), null);
 });

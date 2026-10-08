@@ -66,6 +66,7 @@ async function open(file) {
       title: document.querySelector('#diff h1').innerText,
       rows: [...document.querySelectorAll('#diff-outline button')].map((b) => b.textContent),
       side: shown('diff-side'),
+      at: shown('diff-mention'),
       spans: spans.length,
       classes: [...new Set(spans.flatMap((s) => [...s.classList]))].sort().join(' '),
     };
@@ -75,7 +76,7 @@ async function open(file) {
 // --- modified: the plain DIFF view and its outline ---
 
 const mod = await open('src/service.js');
-console.log('modified:', mod.title, `(want DIFF)`);
+console.log('modified:', mod.title, `(want DIFF)`, '@', mod.at ? 'shown' : 'hidden', '(want shown)');
 console.log('          ', mod.spans, 'token spans', '(want 0: only a file the PR adds is highlighted, #68)');
 console.log('outline: ', mod.rows.length, 'rows:', mod.rows.join(' | '), mod.side ? '' : '  <-- hidden',
   '\n           (want 2 rows, named by the function git puts after each @@)');
@@ -150,6 +151,7 @@ console.log('unwrap:  ', await page.getAttribute('#diff-wrap', 'aria-pressed'), 
 
 const del = await open('notes/old.txt');
 console.log('deleted: ', del.title, `(want DELETED)`, del.rows.length, 'outline rows', '(want 0: a whole file has no hunks)');
+console.log('          ', '@', del.at ? 'shown' : 'hidden', '(want hidden: nothing left to attach)');
 await page.locator('#diff').screenshot({ path: path.join(out, 'deleted.png') });
 
 // --- added .tsx: NEW, highlighted by the grammar built on jsx and typescript ---
@@ -168,6 +170,7 @@ const moved = await open('lib/formatting.js');
 const movedRows = await rows();
 console.log('renamed: ', moved.title, JSON.stringify(movedRows),
   '(want only ["renamed from lib/format.js"]: nothing else changed)');
+console.log('          ', '@ title:', await page.getAttribute('#diff-mention', 'title'), '(want the new name, lib/formatting.js)');
 await page.locator('#diff').screenshot({ path: path.join(out, 'renamed.png') });
 await open('lib/text.js');
 const edited = await rows();

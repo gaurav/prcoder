@@ -25,11 +25,12 @@ wraps long lines, and which way the queue adds are remembered the same way as th
 
 A few things have a key as well as a control. A shortcut never fires while you are typing -- in the
 terminal, which belongs to the coding agent, in the queue's input, or in an item being edited, though
-a checkbox you have just ticked, such as *viewed*, does not count -- and each is named by the key's position, so on a Mac Alt is Option. There is one so far:
+a checkbox you have just ticked, such as *viewed*, does not count -- and each is named by the key's position, so on a Mac Alt is Option:
 
-| Key   | Does                                                 |
-|-------|------------------------------------------------------|
-| Alt+W | presses *Wrap* in the diff pane, while a file is open |
+| Key   | Does                                                          |
+|-------|---------------------------------------------------------------|
+| Alt+W | presses *Wrap* in the diff pane, while a file is open          |
+| Alt+M | presses **@** in the diff pane, while a file that has one is open |
 
 Each tab names itself `owner/repo#N · pull request title` (the branch and `(no PR)` when there
 isn't one), and renames itself as the branch moves, so a row of prcoder tabs stays readable at
@@ -166,6 +167,17 @@ nothing to contrast. A **NEW** file is syntax-highlighted when its extension nam
 prcoder ships a grammar for; it is the one view where a tokenizer sees a whole file rather than a
 hunk that starts in the middle of one. A renamed file says where it came from on its first line,
 and a rename with no other change says only that.
+
+The **@** right after the filename types ` @path ` into the coding agent's prompt, for "@path
+should be fixed…" or "an example of this is @path": the path from the agent's working directory,
+which is wherever in the repo prcoder was started (so `../docs/Panes.md` from `public/`), in a
+form the agent's `@` reads (quoted, if the path has a space). It does not press Enter, and leaves the focus in the terminal to finish the
+sentence. The spaces either side are deliberate: `@` is a mention only at the start of a word, and
+the trailing space closes the menu typing `@` opens, so Enter sends the prompt instead of picking a
+suggestion. A deleted file has no **@**, since there is nothing left to attach, and neither does
+a file until its diff has loaded and said it was not deleted. Nor does a path with a `"` or a
+control character in it, which the `@` form has no way to write yet (#124). With no agent connected it types
+nothing, says so, and leaves the focus where it was.
 
 A diff with more than one hunk gets an outline down its right edge, one row per hunk, named by the
 context git puts after the `@@` (the enclosing function, a heading); a click scrolls to it. Its ✕
