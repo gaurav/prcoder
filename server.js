@@ -530,7 +530,7 @@ export function startedWith(args) {
 /**
  * Pure: the /pty query string -> this `claude`'s whole argv after `base` (the
  * agent's arguments from prcoder's command line), or null to refuse the socket.
- * The exit panel's "Start coding agent again" sends it; a first open sends
+ * The exit panel's "Start coding agent" sends it; a first open sends
  * nothing and gets `base`.
  *
  * Its settings go after `base`, so one chosen in the page wins over one given

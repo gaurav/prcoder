@@ -180,7 +180,7 @@ test('what a branch is built on is asked only of a branch origin has', async () 
   assert.deepEqual(await ask({ branch: 'no-such-branch-anywhere' }), [500, 'origin has no branch no-such-branch-anywhere']);
 });
 
-// The exit panel's "Start coding agent again" sends its settings as the /pty
+// The exit panel's "Start coding agent" sends its settings as the /pty
 // query, and they become part of a spawn's argv -- so only names and levels get
 // through, and a model that is really a flag is refused rather than handed to
 // claude.

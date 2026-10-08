@@ -118,8 +118,16 @@ main.diff-open #gut-diff { display: block; }
   padding: 8px 10px; border-top: 1px solid var(--line); font-size: 13px;
 }
 #term-exit[hidden] { display: none; }
-#term-exit > span { color: var(--del); }
-#term-exit button { cursor: pointer; }
+/* Two buttons stand out, Quit (`.danger`) and Start (`.primary`); the labels
+   and the note are dimmed so they read as the buttons' options and a caption,
+   not as a third thing. The note was `--del` when it was the bar's one red
+   thing; Quit is that now, and the terminal's own red line is a line up. The
+   checkbox takes the slack, which puts it and the note at the right edge, or,
+   where the bar wraps, at the right of its own line. The buttons get 2px more
+   than the head's `.primary` on each side: this bar is 13px to the head's 12. */
+#term-exit label, #term-exit > span { color: var(--dim); }
+#term-exit label:has([name=continue]) { margin-left: auto; }
+#term-exit .primary, #term-exit .danger { padding: 3px 10px; }
 a { color: var(--accent); }
 
 /* --- Tabs and the small buttons beside them ---
