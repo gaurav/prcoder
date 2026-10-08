@@ -2,15 +2,17 @@ import { Terminal } from '/vendor/xterm.mjs';
 import { FitAddon } from '/vendor/addon-fit.mjs';
 import { WebLinksAddon } from '/vendor/addon-web-links.mjs';
 import { renderPr, renderNoPr, renderHeader, pageTitle, api, toast, pref, setPref } from './pr.js';
-import { openDiff, closeDiff, selectedPath, setViewed, toggleWrap } from './diff.js';
+import { openDiff, closeDiff, selectedPath, setViewed, toggleWrap, openMention } from './diff.js';
 import { initQueue, addItem, setItems } from './queue.js';
 import { bindKeys } from './keys.js';
 import './panes.js';   // draggable pane gutters; nothing here calls into it
 
 // Every shortcut the page has, in one table; keys.js says what a binding may
 // and may not do. W for wrap: no browser binds Alt+W, and the owner chose it
-// over VS Code's Alt+Z.
-bindKeys({ 'Alt+KeyW': toggleWrap });
+// over VS Code's Alt+Z. M for mention, the diff header's @: not Alt+2, the key
+// @ is on, because Chrome and Firefox on Linux and Windows switch tabs with
+// Alt+digit, and M is none of Firefox's menu letters.
+bindKeys({ 'Alt+KeyW': toggleWrap, 'Alt+KeyM': mentionOpenFile });
 
 const term = new Terminal({
   fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
@@ -26,7 +28,7 @@ term.open(document.getElementById('term-host'));
 const PTY_SEEN = 'prcoder:pty';
 // The server serves only public/, so the docs are linked where they live.
 const PORTS_DOC = 'https://github.com/gaurav/prcoder/blob/main/docs/Ports.md#finding-it-again';
-// Replaced, not reopened, by the exit panel's "Start coding agent again": one
+// Replaced, not reopened, by the exit panel's "Start coding agent": one
 // socket is one PTY.
 let ws;
 // `WebSocket.OPEN` is read off the global constructor, so a Playwright init
@@ -177,12 +179,17 @@ function connect(query = '') {
     turn(false);
     const why = e.code === 1008 ? `refused: ${e.reason}` : 'coding agent exited';
     term.write(`\r\n\x1b[31m[${why}]\x1b[0m\r\n`);
+    // The bar's note repeats the terminal's line, not the reason: that is
+    // already there in red, a line up.
+    exitForm.querySelector('span').textContent = e.code === 1008 ? 'Start refused.' : 'Coding agent has exited.';
     exitForm.hidden = false;
     // Refit now rather than waiting on the ResizeObserver: in a page that isn't
     // in front it never delivered the shrink, and the terminal went on
     // covering the bar -- Playwright could not click Quit (2026-09-23).
     sync();
-    exitForm.querySelector('button').focus();
+    // Start, not the first button: Quit is first in the bar, and Enter after
+    // an exit should start again rather than ask about quitting.
+    document.getElementById('term-start').focus();
   };
 }
 
@@ -249,6 +256,17 @@ const folded = () => document.querySelector('main').classList.contains('term-off
 // No double-click: two clicks would already have folded and unfolded it.
 document.querySelector('#term > header').addEventListener('click', () => foldTerm(!folded()));
 
+// Types `data` into the agent's prompt exactly as given, as keystrokes, and
+// puts the focus there so typing carries on where it landed. Whether it went is
+// the return value: `send` refuses on a socket that is not open -- a dead PTY,
+// a reload in flight -- and then the focus stays where it was, rather than
+// moving to a terminal nothing is reading, where the page's shortcuts are off.
+function typeIntoAgent(data) {
+  const sent = send({ type: 'input', data });
+  if (sent) term.focus();
+  return sent;
+}
+
 // Type an item into Claude's prompt. If Claude is mid-turn it queues the
 // message itself, which is exactly the behaviour we want.
 //
@@ -257,15 +275,22 @@ document.querySelector('#term > header').addEventListener('click', () => foldTer
 // whitespace is cut either way -- a newline in the text *is* the Enter that
 // would have sent it half-written.
 //
-// Whether it went is the return value, because the queue ticks an item off on
-// the strength of it: `send` refuses on a socket that is not open -- a dead PTY,
-// a reload in flight -- and an item checked off after a refused send is one
-// nobody has done and nobody is going to be reminded of.
+// The queue ticks an item off on the strength of the return value, and an item
+// checked off after a refused send is one nobody has done and nobody is going
+// to be reminded of.
 function sendToClaude(text, submit = true) {
-  const sent = send({ type: 'input', data: text.replace(/\s+$/, '') + (submit ? '\r' : '') });
-  term.focus();
-  return sent;
+  return typeIntoAgent(text.replace(/\s+$/, '') + (submit ? '\r' : ''));
 }
+
+// The diff header's @: the open file's mention, typed and not sent, so the
+// sentence about it can go on around it. Nothing while no file is open or the
+// open one was deleted (openMention says which). The path is from where the
+// agent runs, which the status carries as `prefix`.
+function mentionOpenFile() {
+  const text = openMention(last?.prefix ?? '');
+  if (text != null && !typeIntoAgent(text)) toast('The coding agent is not connected — nothing was typed.', true);
+}
+document.getElementById('diff-mention').onclick = mentionOpenFile;
 
 // The switcher only changes when PRs are opened or closed, so it is not worth a
 // call every minute — page load, opening the dropdown, opening the Stack tab,

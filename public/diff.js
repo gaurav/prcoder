@@ -11,6 +11,47 @@ let openPath = null;
 
 export const selectedPath = () => openPath;
 
+// Whether the open file is one the @ button may name: false while none is open,
+// and for a deleted file, which leaves nothing in the working tree to attach.
+let mentionable = false;
+
+/**
+ * Pure: `path`, which is from the repo root, as seen from `dir`, the repo-root
+ * path of the directory the agent runs in (`git rev-parse --show-prefix`, so
+ * '' at the root and 'public/' below it). prcoder can be started anywhere in
+ * the repo, and the agent's PTY starts where prcoder did.
+ */
+export function fromDir(dir, path) {
+  const up = dir.split('/').filter(Boolean);
+  const down = path.split('/');
+  while (up.length && down.length > 1 && up[0] === down[0]) { up.shift(); down.shift(); }
+  return '../'.repeat(up.length) + down.join('/');
+}
+
+/**
+ * Pure: what the @ button types for `path`, as the agent in `dir` names it
+ * (fromDir), or null for a path it cannot be typed as.
+ *
+ * Spaced on both sides. The agent reads `@` as a mention only at the start of
+ * a word, so the leading space keeps a click straight after one from making
+ * `word@path`; the trailing one closes the @-autocomplete menu that typing `@`
+ * opens, so Enter then sends the prompt instead of picking a suggestion. A
+ * path with a space in it is quoted, `@"a b"`, which is the form Claude Code's
+ * prompt parser takes for one (read from its bundle, 2.1.293; still so in
+ * 2.1.295). That form has no escape for a `"`, and a control character -- a
+ * newline or a tab, both legal in a git path -- would be typed as a keystroke,
+ * so a path with either gets no mention at all, until the parser can quote one
+ * (#124).
+ */
+export function mention(path, dir = '') {
+  const rel = fromDir(dir, path);
+  if (/["\x00-\x1f\x7f]/.test(rel)) return null;
+  return ` @${rel.includes(' ') ? `"${rel}"` : rel} `;
+}
+
+/** What the @ button types for the open file, from the agent's `dir`, or null when there is none to name. */
+export const openMention = (dir) => (mentionable ? mention(openPath, dir) : null);
+
 /**
  * Pure: whether the patch is a whole file rather than a change to one. GitHub's
  * `patch` for a file the PR adds is one hunk from nothing, `@@ -0,0 +1,N @@`,
@@ -212,6 +253,11 @@ export function toggleWrap() {
 /** Ticking this here ticks the same checkbox on github.com; the file rows use it too. */
 export const setViewed = (path, viewed) => api('/api/pr/viewed', { path, viewed });
 
+function setMentionable(on) {
+  mentionable = on;
+  el('diff-mention').hidden = !on;
+}
+
 /** Highlight the open file's row, or none. */
 const markSelected = (path) => {
   for (const r of document.querySelectorAll('.file')) r.classList.toggle('sel', r.dataset.path === path);
@@ -237,6 +283,10 @@ export async function openDiff(f, onViewed = setViewed) {
   // move a leading dot to the other end.
   el('diff-path').replaceChildren(h('bdi', {}, f.path));
   el('diff-path').title = f.path;
+  // Hidden until /api/diff says whether the file was deleted (below), so a
+  // click or Alt+M during the load cannot name a file that is gone.
+  setMentionable(false);
+  el('diff-mention').title = `type @${f.path} into the coding agent's prompt (Alt+M)`;
   // Four ways to read the same file on GitHub, and the pane is a fifth: the
   // patch is what changed, and the other three are what a patch cannot say --
   // what the file became (a Markdown one rendered rather than as source), who
@@ -273,15 +323,20 @@ export async function openDiff(f, onViewed = setViewed) {
   // outline is rebuilt, and kept the last file's hunks to jump to.
   el('diff-outline').replaceChildren();
   setTitle(null);
-  let patch, from;
+  let patch, from, deleted;
   try {
-    ({ patch, from } = await api('/api/diff', { path: f.path }));
+    ({ patch, from, deleted } = await api('/api/diff', { path: f.path }));
   } catch (e) {
     patch = undefined;
     console.error('diff', e);
   }
   // Two quick clicks can resolve out of order; only the current file may paint.
   if (openPath !== f.path) return;
+  // Before the no-patch return: a deleted binary has no patch to say so, only
+  // GitHub's `deleted`. A file past its 300-file cap has neither, and the
+  // patch's own kind is the check left.
+  const kind = patch == null ? null : diffKind(patch);
+  setMentionable(!deleted && kind !== 'del' && mention(f.path) != null);
 
   if (patch == null && !from) {
     body.replaceChildren(h('p', { className: 'empty' },
@@ -289,7 +344,6 @@ export async function openDiff(f, onViewed = setViewed) {
       ext(f.url, 'view it on GitHub')));
     return;
   }
-  const kind = patch == null ? null : diffKind(patch);
   setTitle(kind);
   // Only a whole added file is highlighted: it is the one body a tokenizer sees
   // from its first line. A modified file's hunks start mid-file and would
@@ -323,6 +377,7 @@ export async function openDiff(f, onViewed = setViewed) {
 
 export function closeDiff() {
   openPath = null;
+  mentionable = false;
   el('diff').hidden = true;
   document.querySelector('main').classList.remove('diff-open');
   markSelected(null);

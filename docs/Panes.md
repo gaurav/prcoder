@@ -25,11 +25,12 @@ wraps long lines, and which way the queue adds are remembered the same way as th
 
 A few things have a key as well as a control. A shortcut never fires while you are typing -- in the
 terminal, which belongs to the coding agent, in the queue's input, or in an item being edited, though
-a checkbox you have just ticked, such as *viewed*, does not count -- and each is named by the key's position, so on a Mac Alt is Option. There is one so far:
+a checkbox you have just ticked, such as *viewed*, does not count -- and each is named by the key's position, so on a Mac Alt is Option:
 
-| Key   | Does                                                 |
-|-------|------------------------------------------------------|
-| Alt+W | presses *Wrap* in the diff pane, while a file is open |
+| Key   | Does                                                          |
+|-------|---------------------------------------------------------------|
+| Alt+W | presses *Wrap* in the diff pane, while a file is open          |
+| Alt+M | presses **@** in the diff pane, while a file that has one is open |
 
 Each tab names itself `owner/repo#N · pull request title` (the branch and `(no PR)` when there
 isn't one), and renames itself as the branch moves, so a row of prcoder tabs stays readable at
@@ -169,6 +170,17 @@ prcoder ships a grammar for; it is the one view where a tokenizer sees a whole f
 hunk that starts in the middle of one. A renamed file says where it came from on its first line,
 and a rename with no other change says only that.
 
+The **@** right after the filename types ` @path ` into the coding agent's prompt, for "@path
+should be fixed…" or "an example of this is @path": the path from the agent's working directory,
+which is wherever in the repo prcoder was started (so `../docs/Panes.md` from `public/`), in a
+form the agent's `@` reads (quoted, if the path has a space). It does not press Enter, and leaves the focus in the terminal to finish the
+sentence. The spaces either side are deliberate: `@` is a mention only at the start of a word, and
+the trailing space closes the menu typing `@` opens, so Enter sends the prompt instead of picking a
+suggestion. A deleted file has no **@**, since there is nothing left to attach, and neither does
+a file until its diff has loaded and said it was not deleted. Nor does a path with a `"` or a
+control character in it, which the `@` form has no way to write yet (#124). With no agent connected it types
+nothing, says so, and leaves the focus where it was.
+
 A diff with more than one hunk gets an outline down its right edge, one row per hunk, named by the
 context git puts after the `@@` (the enclosing function, a heading); a click scrolls to it. Its ✕
 hides it for every file until *Outline* in the header brings it back.
@@ -201,16 +213,21 @@ duplicating it looks the same, so the toast names those too rather than blaming 
 deliberate reload gets a shorter toast without the link.
 
 When Claude exits, a bar under its last output offers to start it again, optionally with a
-different model or effort. Those start out as the ones given after `--` on prcoder's command line,
-and after a start from the bar they are whatever that start chose. A change wins over the command
-line, but a field left blank keeps the command line's value -- blanking both is not a way back to
-the agent's own default when `--` named one. It can also
-continue the repo's most recent conversation (`--continue`) -- with two tabs open,
-that can be the other tab's (#77). That is unticked by default: starting again is more often a
-deliberate switch of model than a slip. A setting the server will not take is refused before
+different model or effort, or to quit prcoder. Left to right: **Quit prcoder**, outlined in red
+and standing alone, so it is found without reading the bar; the Model and Effort fields; **Start
+coding agent**, the filled button, which holds focus, so Enter starts again; and at the right
+edge the Continue checkbox and a note that the agent exited (or that a start was refused). The two
+buttons are never side by side on one line; a pane too narrow for one line wraps the bar in that
+order, which can put Start under Quit. The model and effort start out as the ones given after `--`
+on prcoder's command line, and after a start from the bar they are whatever that start chose. A
+change wins over the command line, but a field left blank keeps the command line's value --
+blanking both is not a way back to the agent's own default when `--` named one. The checkbox
+continues the repo's most recent conversation (`--continue`) -- with two tabs open, that can be
+the other tab's (#77). It is unticked by default and last in the bar: starting again is more often
+a deliberate switch of model than a slip. A setting the server will not take is refused before
 anything starts, and the terminal says so -- except the command line's own, which is kept as it
-was given even when the bar would refuse it typed in. Or quit prcoder from there, which asks what the
-terminal's quit asks ([Terminal.md](Terminal.md)).
+was given even when the bar would refuse it typed in. Quit asks what the terminal's quit asks
+([Terminal.md](Terminal.md)).
 
 ## Queue
 
