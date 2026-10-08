@@ -281,8 +281,9 @@ export async function openDiff(f, onViewed = setViewed) {
   // move a leading dot to the other end.
   el('diff-path').replaceChildren(h('bdi', {}, f.path));
   el('diff-path').title = f.path;
-  // Shown until the patch says the file was deleted (setMentionable below).
-  setMentionable(true);
+  // Hidden until /api/diff says whether the file was deleted (below), so a
+  // click or Alt+M during the load cannot name a file that is gone.
+  setMentionable(false);
   el('diff-mention').title = `type @${f.path} into the coding agent's prompt (Alt+M)`;
   // Four ways to read the same file on GitHub, and the pane is a fifth: the
   // patch is what changed, and the other three are what a patch cannot say --
@@ -320,15 +321,20 @@ export async function openDiff(f, onViewed = setViewed) {
   // outline is rebuilt, and kept the last file's hunks to jump to.
   el('diff-outline').replaceChildren();
   setTitle(null);
-  let patch, from;
+  let patch, from, deleted;
   try {
-    ({ patch, from } = await api('/api/diff', { path: f.path }));
+    ({ patch, from, deleted } = await api('/api/diff', { path: f.path }));
   } catch (e) {
     patch = undefined;
     console.error('diff', e);
   }
   // Two quick clicks can resolve out of order; only the current file may paint.
   if (openPath !== f.path) return;
+  // Before the no-patch return: a deleted binary has no patch to say so, only
+  // GitHub's `deleted`. A file past its 300-file cap has neither, and the
+  // patch's own kind is the check left.
+  const kind = patch == null ? null : diffKind(patch);
+  setMentionable(!deleted && kind !== 'del' && mention(f.path) != null);
 
   if (patch == null && !from) {
     body.replaceChildren(h('p', { className: 'empty' },
@@ -336,9 +342,7 @@ export async function openDiff(f, onViewed = setViewed) {
       ext(f.url, 'view it on GitHub')));
     return;
   }
-  const kind = patch == null ? null : diffKind(patch);
   setTitle(kind);
-  setMentionable(kind !== 'del' && mention(f.path) != null);
   // Only a whole added file is highlighted: it is the one body a tokenizer sees
   // from its first line. A modified file's hunks start mid-file and would
   // colour wrongly from inside a comment or string -- #68 has the safe way.

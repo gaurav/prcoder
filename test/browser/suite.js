@@ -1074,6 +1074,24 @@ test('a deleted file has no @, and the next file has it back', { skip }, async (
   await fresh.close();
 });
 
+// A deleted binary has no patch for the title to read DELETED from, so only
+// GitHub's `deleted` says so -- and until /api/diff answers nothing does, so
+// the @ waits for it rather than naming a file that may be gone.
+test('a deleted file with no patch has no @, nor one while it loads', { skip }, async () => {
+  const fresh = await newPage();
+  let answer;
+  await fresh.route('**/api/diff', (r) => { answer = () => r.fulfill({ json: { path: 'evil.js', patch: null, deleted: true } }); });
+  await fresh.locator('#pr-head .tab', { hasText: 'Files' }).click();
+  await fresh.locator('.file[data-path="evil.js"] .path').click();
+  await fresh.waitForSelector('#diff-body .empty');
+  for (let i = 0; !answer && i < 100; i++) await fresh.waitForTimeout(50);
+  assert.equal(await fresh.locator('#diff-mention').isHidden(), true);
+  answer();
+  await fresh.waitForFunction(() => document.querySelector('#diff-body .empty')?.textContent.includes('No diff'));
+  assert.equal(await fresh.locator('#diff-mention').isHidden(), true);
+  await fresh.close();
+});
+
 test('@ with the agent disconnected types nothing and says so', { skip }, async () => {
   const fresh = await newPage({ pty: (ws) => ws.close() });
   await fresh.waitForFunction(() => document.getElementById('term-host').textContent.includes('coding agent exited'));
