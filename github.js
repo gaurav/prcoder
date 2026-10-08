@@ -132,7 +132,7 @@ export async function prBody(cwd, prUrl) {
  * Open PRs, for the switcher -- and, filtered by `baseRefName`, for the list of
  * pull requests into the branch you are on that the pane with no pull request
  * shows. That field is not spare: it is free here, where a `gh pr list --base`
- * of its own would be a call on a poll that already has seven. `url` is for the
+ * of its own would be one more call on every poll. `url` is for the
  * pane's links, read off GitHub rather than built from a host (#53).
  * `isCrossRepository` is what stops a fork's `main` looking like a base here.
  */
