@@ -16,20 +16,40 @@ export const selectedPath = () => openPath;
 let mentionable = false;
 
 /**
- * Pure: what the @ button types for `path`, a path from the repo root -- which
- * is the agent's working directory, as prcoder runs from there.
+ * Pure: `path`, which is from the repo root, as seen from `dir`, the repo-root
+ * path of the directory the agent runs in (`git rev-parse --show-prefix`, so
+ * '' at the root and 'public/' below it). prcoder can be started anywhere in
+ * the repo, and the agent's PTY starts where prcoder did.
+ */
+export function fromDir(dir, path) {
+  const up = dir.split('/').filter(Boolean);
+  const down = path.split('/');
+  while (up.length && down.length > 1 && up[0] === down[0]) { up.shift(); down.shift(); }
+  return '../'.repeat(up.length) + down.join('/');
+}
+
+/**
+ * Pure: what the @ button types for `path`, as the agent in `dir` names it
+ * (fromDir), or null for a path it cannot be typed as.
  *
  * Spaced on both sides. The agent reads `@` as a mention only at the start of
  * a word, so the leading space keeps a click straight after one from making
  * `word@path`; the trailing one closes the @-autocomplete menu that typing `@`
  * opens, so Enter then sends the prompt instead of picking a suggestion. A
- * path with whitespace in it is quoted, `@"a b"`, which is the form Claude
- * Code's prompt parser takes for one (read from its bundle, 2.1.293).
+ * path with a space in it is quoted, `@"a b"`, which is the form Claude Code's
+ * prompt parser takes for one (read from its bundle, 2.1.293). That form has
+ * no escape for a `"`, and a control character -- a newline or a tab, both
+ * legal in a git path -- would be typed as a keystroke, so a path with either
+ * gets no mention at all.
  */
-export const mention = (path) => ` @${/\s/.test(path) ? `"${path}"` : path} `;
+export function mention(path, dir = '') {
+  const rel = fromDir(dir, path);
+  if (/["\x00-\x1f\x7f]/.test(rel)) return null;
+  return ` @${rel.includes(' ') ? `"${rel}"` : rel} `;
+}
 
-/** What the @ button types for the open file, or null when there is none to name. */
-export const openMention = () => (mentionable ? mention(openPath) : null);
+/** What the @ button types for the open file, from the agent's `dir`, or null when there is none to name. */
+export const openMention = (dir) => (mentionable ? mention(openPath, dir) : null);
 
 /**
  * Pure: whether the patch is a whole file rather than a change to one. GitHub's
@@ -318,7 +338,7 @@ export async function openDiff(f, onViewed = setViewed) {
   }
   const kind = patch == null ? null : diffKind(patch);
   setTitle(kind);
-  setMentionable(kind !== 'del');
+  setMentionable(kind !== 'del' && mention(f.path) != null);
   // Only a whole added file is highlighted: it is the one body a tokenizer sees
   // from its first line. A modified file's hunks start mid-file and would
   // colour wrongly from inside a comment or string -- #68 has the safe way.

@@ -1,7 +1,7 @@
 // Where the local repo actually is. Nothing here is cached: every fact is one
 // cheap `git` call away, and a cache is just a thing that can disagree with the
-// working tree. The one exception is repoInfo(), which asks GitHub for facts
-// that cannot change while the process runs.
+// working tree. The one exception is repoInfo(), which asks for facts that
+// cannot change while the process runs.
 
 import { run, parsePrUrl } from './github.js';
 import { urlPath } from './public/tasks.js';
@@ -115,11 +115,15 @@ export function prScope(pr, { branch, nameWithOwner }) {
   return pr.headRefName === branch ? 'current' : 'other-branch';
 }
 
-/** Constant for the life of the process, so worth asking once. */
+/**
+ * Constant for the life of the process, so worth asking once. `prefix` is
+ * where in the repo prcoder -- and so the agent's PTY -- was started: '' at
+ * the root, 'public/' below it. The diff header's @ names a file from there.
+ */
 export async function repoInfo(cwd) {
   const { defaultBranchRef, nameWithOwner } =
     JSON.parse(await run('gh', ['repo', 'view', '--json', 'defaultBranchRef,nameWithOwner'], { cwd }));
-  return { defaultBranch: defaultBranchRef.name, nameWithOwner };
+  return { defaultBranch: defaultBranchRef.name, nameWithOwner, prefix: await text(['rev-parse', '--show-prefix'], cwd) };
 }
 
 /**

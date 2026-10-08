@@ -278,9 +278,10 @@ function sendToClaude(text, submit = true) {
 
 // The diff header's @: the open file's mention, typed and not sent, so the
 // sentence about it can go on around it. Nothing while no file is open or the
-// open one was deleted (openMention says which).
+// open one was deleted (openMention says which). The path is from where the
+// agent runs, which the status carries as `prefix`.
 function mentionOpenFile() {
-  const text = openMention();
+  const text = openMention(last?.prefix ?? '');
   if (text != null && !typeIntoAgent(text)) toast('The coding agent is not connected — nothing was typed.', true);
 }
 document.getElementById('diff-mention').onclick = mentionOpenFile;
