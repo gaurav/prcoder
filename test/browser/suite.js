@@ -1380,6 +1380,11 @@ test('when the agent exits, starting it again reconnects with the chosen setting
   } });
   const bar = p.locator('#term-exit');
   await bar.waitFor({ state: 'visible' });
+  // Quit is first in the bar and red; Start is the filled one and holds focus,
+  // so Enter starts again rather than asking about quitting (2026-10-07).
+  assert.equal(await p.getAttribute('#term-quit', 'class'), 'danger');
+  assert.equal(await p.getAttribute('#term-start', 'class'), 'primary');
+  assert.equal(await p.evaluate(() => document.activeElement.id), 'term-start');
   // Filled with what the command line started it with, not left blank -- by a
   // fetch that can land after the bar shows, so waited on.
   await p.waitForFunction(() => document.querySelector('#term-exit [name=model]').value === 'sonnet');
@@ -1388,7 +1393,7 @@ test('when the agent exits, starting it again reconnects with the chosen setting
   await p.selectOption('#term-exit [name=effort]', 'high');
   assert.equal(await p.isChecked('#term-exit [name=continue]'), false, 'continue ticked by default');
   await p.check('#term-exit [name=continue]');
-  await p.click('#term-exit button:not([type])');
+  await p.click('#term-start');
   // Hidden on the click, before the new socket reaches the mock -- so wait on the socket.
   for (let i = 0; urls.length < 2 && i < 100; i++) await p.waitForTimeout(50);
   assert.equal(await bar.isHidden(), true);

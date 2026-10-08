@@ -199,16 +199,21 @@ duplicating it looks the same, so the toast names those too rather than blaming 
 deliberate reload gets a shorter toast without the link.
 
 When Claude exits, a bar under its last output offers to start it again, optionally with a
-different model or effort. Those start out as the ones given after `--` on prcoder's command line,
-and after a start from the bar they are whatever that start chose. A change wins over the command
-line, but a field left blank keeps the command line's value -- blanking both is not a way back to
-the agent's own default when `--` named one. It can also
-continue the repo's most recent conversation (`--continue`) -- with two tabs open,
-that can be the other tab's (#77). That is unticked by default: starting again is more often a
-deliberate switch of model than a slip. A setting the server will not take is refused before
+different model or effort, or to quit prcoder. Left to right: **Quit prcoder**, outlined in red
+and standing alone, so it is found without reading the bar; the Model and Effort fields; **Start
+coding agent**, the filled button, which holds focus, so Enter starts again; and at the right
+edge the Continue checkbox and a note that the agent exited (or that a start was refused). The two
+buttons are never side by side on one line; a pane too narrow for one line wraps the bar in that
+order, which can put Start under Quit. The model and effort start out as the ones given after `--`
+on prcoder's command line, and after a start from the bar they are whatever that start chose. A
+change wins over the command line, but a field left blank keeps the command line's value --
+blanking both is not a way back to the agent's own default when `--` named one. The checkbox
+continues the repo's most recent conversation (`--continue`) -- with two tabs open, that can be
+the other tab's (#77). It is unticked by default and last in the bar: starting again is more often
+a deliberate switch of model than a slip. A setting the server will not take is refused before
 anything starts, and the terminal says so -- except the command line's own, which is kept as it
-was given even when the bar would refuse it typed in. Or quit prcoder from there, which asks what the
-terminal's quit asks ([Terminal.md](Terminal.md)).
+was given even when the bar would refuse it typed in. Quit asks what the terminal's quit asks
+([Terminal.md](Terminal.md)).
 
 ## Queue
 

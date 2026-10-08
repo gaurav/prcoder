@@ -118,8 +118,16 @@ main.diff-open #gut-diff { display: block; }
   padding: 8px 10px; border-top: 1px solid var(--line); font-size: 13px;
 }
 #term-exit[hidden] { display: none; }
-#term-exit > span { color: var(--del); }
-#term-exit button { cursor: pointer; }
+/* Two buttons stand out, Quit (`.danger`) and Start (`.primary`); the labels
+   and the note are dimmed so they read as the buttons' options and a caption,
+   not as a third thing. The note was `--del` when it was the bar's one red
+   thing; Quit is that now, and the terminal's own red line is a line up. The
+   checkbox takes the slack, which puts it and the note at the right edge, or,
+   where the bar wraps, at the right of its own line. The buttons get 2px more
+   than the head's `.primary` on each side: this bar is 13px to the head's 12. */
+#term-exit label, #term-exit > span { color: var(--dim); }
+#term-exit label:has([name=continue]) { margin-left: auto; }
+#term-exit .primary, #term-exit .danger { padding: 3px 10px; }
 a { color: var(--accent); }
 
 /* --- Tabs and the small buttons beside them ---
@@ -358,14 +366,27 @@ a { color: var(--accent); }
    and rtl leaves `…tewards` where the spans leave `heal-dat…`. */
 /* On a branch with no pull request the same slot holds Create PR, a <button>
    rather than a link because it pushes before it opens anything -- hence the
-   reset, and a disabled state for while it does. */
-.pr-links .primary {
+   reset, and a disabled state for while it does.
+
+   `.primary` and `.danger` are the window's two treatments for a button that
+   is the point of its region, not scoped to the head: the coding agent's exit
+   bar wears both (#term-exit). Filled `--accent` is the one thing a region is
+   for -- the pull request here, starting the agent there. Outlined `--del` is
+   the one that ends something -- quitting prcoder -- and it is an outline
+   rather than a second fill so the two never compete for the eye in a bar
+   that holds both; red text in a red ring is still the first thing seen on a
+   grey panel, which the browser-default grey button it replaced was not
+   (2026-10-07). The ring is an inset shadow, not a border, so the two boxes
+   stay the same size and the head's row is no taller than it was. */
+.primary, .danger {
   padding: 1px 8px; border-radius: 9px; text-decoration: none; font-weight: 600;
-  background: var(--accent); color: var(--bg);
   border: 0; font-family: inherit; font-size: inherit; line-height: inherit; cursor: pointer;
 }
-.pr-links .primary:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 80%, white); }
-.pr-links .primary:disabled { opacity: .5; cursor: progress; }
+.primary { background: var(--accent); color: var(--bg); }
+.primary:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 80%, white); }
+.primary:disabled { opacity: .5; cursor: progress; }
+.danger { background: transparent; color: var(--del); box-shadow: inset 0 0 0 1px var(--del); }
+.danger:hover:not(:disabled) { background: color-mix(in srgb, var(--del) 22%, transparent); }
 .pr-repo {
   display: inline-flex; min-width: 0;
   text-decoration: none; padding: 1px 7px;

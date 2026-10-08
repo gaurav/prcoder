@@ -26,7 +26,7 @@ term.open(document.getElementById('term-host'));
 const PTY_SEEN = 'prcoder:pty';
 // The server serves only public/, so the docs are linked where they live.
 const PORTS_DOC = 'https://github.com/gaurav/prcoder/blob/main/docs/Ports.md#finding-it-again';
-// Replaced, not reopened, by the exit panel's "Start coding agent again": one
+// Replaced, not reopened, by the exit panel's "Start coding agent": one
 // socket is one PTY.
 let ws;
 // `WebSocket.OPEN` is read off the global constructor, so a Playwright init
@@ -177,12 +177,17 @@ function connect(query = '') {
     turn(false);
     const why = e.code === 1008 ? `refused: ${e.reason}` : 'coding agent exited';
     term.write(`\r\n\x1b[31m[${why}]\x1b[0m\r\n`);
+    // The bar's note repeats the terminal's line, not the reason: that is
+    // already there in red, a line up.
+    exitForm.querySelector('span').textContent = e.code === 1008 ? 'Start refused.' : 'Coding agent has exited.';
     exitForm.hidden = false;
     // Refit now rather than waiting on the ResizeObserver: in a page that isn't
     // in front it never delivered the shrink, and the terminal went on
     // covering the bar -- Playwright could not click Quit (2026-09-23).
     sync();
-    exitForm.querySelector('button').focus();
+    // Start, not the first button: Quit is first in the bar, and Enter after
+    // an exit should start again rather than ask about quitting.
+    document.getElementById('term-start').focus();
   };
 }
 
