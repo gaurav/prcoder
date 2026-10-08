@@ -560,8 +560,8 @@ console.log('highlight:', `${hi.n} spans:`, hi.names || '(none)',
 await page.locator('#diff').screenshot({ path: path.join(out, 'diff.png') });
 
 // Folded to its bar by a click on its title, the terminal taking the room:
-// the pane should be one line -- ▶, title, path, viewed, the links out, no
-// Wrap -- and the terminal under it taller than before. The ✕ folds nothing;
+// the pane should be one line -- ▶, title, path and its @, viewed, the links
+// out, no Wrap -- and the terminal under it taller than before. The ✕ folds nothing;
 // the title click back unfolds it for the checks below.
 const tall = (sel) => page.locator(sel).evaluate((el) => el.getBoundingClientRect().height);
 const termBefore = await tall('#term');

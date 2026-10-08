@@ -1163,6 +1163,31 @@ test('@ types the open file\'s mention, spaced and unsent, and leaves the focus 
   await fresh.close();
 });
 
+// Folding the diff is for talking to the agent with the file still named on
+// the bar, which is when the @ is wanted: it stays there, keeps its own click
+// rather than being part of the bar's toggle, and Alt+M works as well.
+test('@ and Alt+M type the mention from a folded diff and leave it folded', { skip }, async () => {
+  const frames = [];
+  const fresh = await newPage({ pty: (ws) => ws.onMessage((m) => frames.push(JSON.parse(m))) });
+  const typed = () => frames.filter((f) => f.type === 'input');
+  const folded = () => fresh.$eval('main', (m) => m.classList.contains('diff-off'));
+  await fresh.locator('#pr-head .tab', { hasText: 'Files' }).click();
+  await fresh.locator('.file[data-path="evil.js"] .path').click();
+  await fresh.waitForSelector('#diff-body .dl');
+  await fresh.click('#diff > header h1');
+  assert.equal(await folded(), true);
+  await fresh.locator('#diff-mention').click();
+  for (let i = 0; !typed().length && i < 100; i++) await fresh.waitForTimeout(50);
+  assert.deepEqual(typed(), [{ type: 'input', data: ' @evil.js ' }]);
+  assert.equal(await folded(), true, 'the @ is not the bar');
+  await fresh.locator('#diff-fold').focus();   // out of the terminal the click left it in
+  await fresh.keyboard.press('Alt+KeyM');
+  for (let i = 0; typed().length < 2 && i < 100; i++) await fresh.waitForTimeout(50);
+  assert.equal(typed().length, 2, 'Alt+M typed it again');
+  assert.equal(await folded(), true);
+  await fresh.close();
+});
+
 // The keyboard's way to the same button -- and, as for every shortcut, not
 // while typing in the terminal, where Alt+M belongs to the agent.
 test('Alt+M types the mention outside the terminal and nothing inside it', { skip }, async () => {

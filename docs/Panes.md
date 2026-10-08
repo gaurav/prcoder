@@ -23,12 +23,13 @@ a turn runs, the folded header says `● working` beside its title, from the sam
 tab's blue icon.
 
 The diff folds the same way, to the terminal's gain, for getting a file out of the way without
-closing it: closing says you are done with the file, and folding does not. Its bar keeps the path,
-the *viewed* box and the links out, and a click on any of those does what it says; a click on the
-rest of the bar, the ▼ included, folds or unfolds. *Wrap* and *Outline* go with the body they act
-on, and Alt+W presses nothing until it is back. Clicking a file in the list, the open one
-included, unfolds it; a push that refreshes the open file does not, since a fold made to talk to
-the agent must survive the agent's own push; closing the pane forgets the fold. The two never fold
+closing it: closing says you are done with the file, and folding does not. Its bar keeps the path
+and its **@**, the *viewed* box and the links out. Each control there keeps its own click, and a
+click on the rest of the bar -- the title, the path, the gaps, the ▼ -- folds or unfolds. *Wrap*
+and *Outline* go with the body they act on, and Alt+W presses nothing until it is back; the **@**
+and Alt+M still work folded. Clicking a file in the list, the open one included, unfolds it; a
+push that refreshes the open file does not, since a fold made to talk to the agent must survive
+the agent's own push; closing the pane forgets the fold. The two never fold
 together: folding one unfolds the other, since each hands its room to the other, and both folded
 would hand it to the queue.
 
