@@ -37,10 +37,11 @@ export function fromDir(dir, path) {
  * `word@path`; the trailing one closes the @-autocomplete menu that typing `@`
  * opens, so Enter then sends the prompt instead of picking a suggestion. A
  * path with a space in it is quoted, `@"a b"`, which is the form Claude Code's
- * prompt parser takes for one (read from its bundle, 2.1.293). That form has
- * no escape for a `"`, and a control character -- a newline or a tab, both
- * legal in a git path -- would be typed as a keystroke, so a path with either
- * gets no mention at all.
+ * prompt parser takes for one (read from its bundle, 2.1.293; still so in
+ * 2.1.295). That form has no escape for a `"`, and a control character -- a
+ * newline or a tab, both legal in a git path -- would be typed as a keystroke,
+ * so a path with either gets no mention at all, until the parser can quote one
+ * (#124).
  */
 export function mention(path, dir = '') {
   const rel = fromDir(dir, path);

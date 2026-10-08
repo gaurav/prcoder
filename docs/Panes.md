@@ -176,7 +176,7 @@ sentence. The spaces either side are deliberate: `@` is a mention only at the st
 the trailing space closes the menu typing `@` opens, so Enter sends the prompt instead of picking a
 suggestion. A deleted file has no **@**, since there is nothing left to attach, and neither does
 a file until its diff has loaded and said it was not deleted. Nor does a path with a `"` or a
-control character in it, which the `@` form has no way to write. With no agent connected it types
+control character in it, which the `@` form has no way to write yet (#124). With no agent connected it types
 nothing, says so, and leaves the focus where it was.
 
 A diff with more than one hunk gets an outline down its right edge, one row per hunk, named by the

@@ -153,7 +153,8 @@ test('a mention is from the directory the agent runs in', () => {
 });
 
 // `@"..."` has no escape for a quote, and a control character would be typed
-// as a keystroke -- a tab completes, a newline breaks the prompt.
+// as a keystroke -- a tab completes, a newline breaks the prompt. #124 is the
+// recheck for a form that can write them, which would change these to mentions.
 test('a path with a quote or a control character has no mention', () => {
   assert.equal(mention('docs/a "b".md'), null);
   assert.equal(mention('docs/a\nb.md'), null);
