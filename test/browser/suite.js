@@ -1145,6 +1145,110 @@ test('a file with no diff does not keep the last file\'s outline', { skip }, asy
   await fresh.close();
 });
 
+// The diff header's @ types the open file's mention into the agent's prompt
+// and stops there: no Enter, so the sentence about the file goes on around it,
+// and the focus is in the terminal to carry on typing it.
+test('@ types the open file\'s mention, spaced and unsent, and leaves the focus in the terminal', { skip }, async () => {
+  const frames = [];
+  const fresh = await newPage({ pty: (ws) => ws.onMessage((m) => frames.push(JSON.parse(m))) });
+  await fresh.locator('#pr-head .tab', { hasText: 'Files' }).click();
+  await fresh.locator('.file[data-path="evil.js"] .path').click();
+  await fresh.waitForSelector('#diff-body .dl');
+  const at = fresh.locator('#diff-mention');
+  assert.match(await at.getAttribute('title'), /@evil\.js/);
+  await at.click();
+  for (let i = 0; !frames.some((f) => f.type === 'input') && i < 100; i++) await fresh.waitForTimeout(50);
+  assert.deepEqual(frames.filter((f) => f.type === 'input'), [{ type: 'input', data: ' @evil.js ' }]);
+  assert.equal(await fresh.evaluate(() => document.activeElement.closest('#term-host') != null), true);
+  await fresh.close();
+});
+
+// The keyboard's way to the same button -- and, as for every shortcut, not
+// while typing in the terminal, where Alt+M belongs to the agent.
+test('Alt+M types the mention outside the terminal and nothing inside it', { skip }, async () => {
+  const frames = [];
+  const fresh = await newPage({ pty: (ws) => ws.onMessage((m) => frames.push(JSON.parse(m))) });
+  const typed = () => frames.filter((f) => f.type === 'input');
+  await fresh.locator('#pr-head .tab', { hasText: 'Files' }).click();
+  await fresh.locator('.file[data-path="app.tsx"] .path').click();
+  await fresh.waitForSelector('#diff-body .dl');
+  await fresh.locator('#diff-body').click();
+  await fresh.keyboard.press('Alt+KeyM');
+  for (let i = 0; !typed().length && i < 100; i++) await fresh.waitForTimeout(50);
+  assert.deepEqual(typed(), [{ type: 'input', data: ' @app.tsx ' }]);
+  // The press above left the focus in the terminal, so this one is the agent's.
+  await fresh.keyboard.press('Alt+KeyM');
+  await fresh.waitForTimeout(200);
+  assert.equal(typed().filter((f) => f.data === ' @app.tsx ').length, 1);
+  await fresh.close();
+});
+
+// Right after the name, not across the header beside *viewed*: the path is as
+// wide as its text, and the auto margin is on what comes after the @. Only
+// there -- a second one on Wrap left *viewed* to History mid-header.
+test('@ sits against the end of the filename, and the rest stays packed at the right', { skip }, async () => {
+  const fresh = await newPage();
+  await fresh.locator('#pr-head .tab', { hasText: 'Files' }).click();
+  await fresh.locator('.file[data-path="evil.js"] .path').click();
+  await fresh.waitForSelector('#diff-body .dl');
+  const gap = await fresh.evaluate(() => document.getElementById('diff-mention').getBoundingClientRect().left
+    - document.querySelector('#diff-path bdi').getBoundingClientRect().right);
+  assert.ok(gap >= 0 && gap < 12, `@ is ${gap}px from the filename`);
+  const before = await fresh.evaluate(() => document.getElementById('diff-wrap').getBoundingClientRect().left
+    - document.getElementById('diff-out').getBoundingClientRect().right);
+  assert.ok(before < 12, `Wrap is ${before}px after History`);
+  await fresh.close();
+});
+
+// A deleted file leaves nothing in the working tree for a mention to attach,
+// so its @ hides once the patch says so -- and the next file brings it back.
+test('a deleted file has no @, and the next file has it back', { skip }, async () => {
+  const fresh = await newPage();
+  await fresh.route('**/api/diff', (r) => {
+    const { path } = r.request().postDataJSON();
+    return r.fulfill({ json: { path, patch: path === 'evil.js' ? '@@ -1,1 +0,0 @@\n-gone' : '@@ -0,0 +1,1 @@\n+here' } });
+  });
+  await fresh.locator('#pr-head .tab', { hasText: 'Files' }).click();
+  await fresh.locator('.file[data-path="evil.js"] .path').click();
+  await fresh.waitForSelector('#diff h1.del');
+  assert.equal(await fresh.locator('#diff-mention').isHidden(), true);
+  await fresh.locator('.file[data-path="app.tsx"] .path').click();
+  await fresh.waitForSelector('#diff h1.add');
+  assert.equal(await fresh.locator('#diff-mention').isVisible(), true);
+  await fresh.close();
+});
+
+// A deleted binary has no patch for the title to read DELETED from, so only
+// GitHub's `deleted` says so -- and until /api/diff answers nothing does, so
+// the @ waits for it rather than naming a file that may be gone.
+test('a deleted file with no patch has no @, nor one while it loads', { skip }, async () => {
+  const fresh = await newPage();
+  let answer;
+  await fresh.route('**/api/diff', (r) => { answer = () => r.fulfill({ json: { path: 'evil.js', patch: null, deleted: true } }); });
+  await fresh.locator('#pr-head .tab', { hasText: 'Files' }).click();
+  await fresh.locator('.file[data-path="evil.js"] .path').click();
+  await fresh.waitForSelector('#diff-body .empty');
+  for (let i = 0; !answer && i < 100; i++) await fresh.waitForTimeout(50);
+  assert.equal(await fresh.locator('#diff-mention').isHidden(), true);
+  answer();
+  await fresh.waitForFunction(() => document.querySelector('#diff-body .empty')?.textContent.includes('No diff'));
+  assert.equal(await fresh.locator('#diff-mention').isHidden(), true);
+  await fresh.close();
+});
+
+test('@ with the agent disconnected types nothing and says so', { skip }, async () => {
+  const fresh = await newPage({ pty: (ws) => ws.close() });
+  await fresh.waitForFunction(() => document.getElementById('term-host').textContent.includes('coding agent exited'));
+  await fresh.locator('#pr-head .tab', { hasText: 'Files' }).click();
+  await fresh.locator('.file[data-path="evil.js"] .path').click();
+  await fresh.waitForSelector('#diff-body .dl');
+  await fresh.locator('#diff-mention').click();
+  await fresh.waitForFunction(() => document.getElementById('toast').textContent.includes('not connected'));
+  // Not moved to a terminal nothing reads, where Alt+M and Alt+W are off.
+  assert.equal(await fresh.evaluate(() => document.activeElement.closest('#term-host') == null), true);
+  await fresh.close();
+});
+
 // A separator moves on one axis, and says which with aria-orientation. Up and
 // Down used to resize the vertical ones too.
 test('a separator moves only on the arrows along its own axis', { skip }, async () => {
@@ -1528,6 +1632,11 @@ test('when the agent exits, starting it again reconnects with the chosen setting
   } });
   const bar = p.locator('#term-exit');
   await bar.waitFor({ state: 'visible' });
+  // Quit is first in the bar and red; Start is the filled one and holds focus,
+  // so Enter starts again rather than asking about quitting (2026-10-07).
+  assert.equal(await p.getAttribute('#term-quit', 'class'), 'danger');
+  assert.equal(await p.getAttribute('#term-start', 'class'), 'primary');
+  assert.equal(await p.evaluate(() => document.activeElement.id), 'term-start');
   // Filled with what the command line started it with, not left blank -- by a
   // fetch that can land after the bar shows, so waited on.
   await p.waitForFunction(() => document.querySelector('#term-exit [name=model]').value === 'sonnet');
@@ -1536,7 +1645,7 @@ test('when the agent exits, starting it again reconnects with the chosen setting
   await p.selectOption('#term-exit [name=effort]', 'high');
   assert.equal(await p.isChecked('#term-exit [name=continue]'), false, 'continue ticked by default');
   await p.check('#term-exit [name=continue]');
-  await p.click('#term-exit button:not([type])');
+  await p.click('#term-start');
   // Hidden on the click, before the new socket reaches the mock -- so wait on the socket.
   for (let i = 0; urls.length < 2 && i < 100; i++) await p.waitForTimeout(50);
   assert.equal(await bar.isHidden(), true);
