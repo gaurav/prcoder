@@ -554,13 +554,15 @@ console.log('highlight:', `${hi.n} spans:`, hi.names || '(none)',
 await page.locator('#diff').screenshot({ path: path.join(out, 'diff.png') });
 
 // The header's @ types the file's mention into the agent's prompt, unsent. The
-// stub echoes its input, so the terminal is the evidence it reached the PTY --
-// and the prompt is then left holding it, which the stub does not mind.
+// stub echoes its input, so the terminal is the evidence it reached the PTY.
+// The stub is raw and keeps no line, so the mention left on screen is only
+// text in front of the icon check's `hello` below. The rows are joined first:
+// xterm draws one per div, and a long path wraps across two.
 const openPath = await page.locator('#diff-path').innerText();
 await page.locator('#diff-mention').click();
 await page.waitForTimeout(400);   // the stub echoes on the PTY's own schedule
 console.log('diff @:  ', `terminal echoed @${openPath}:`,
-  (await page.locator('#term-host').innerText()).includes(`@${openPath}`), ' (want true)');
+  (await page.locator('#term-host').innerText()).replace(/\n/g, '').includes(`@${openPath}`), ' (want true)');
 
 // The diff pane's two ways out: the file itself at this PR's head, and the
 // patch in GitHub's diff viewer. Both hrefs are read rather than assumed
