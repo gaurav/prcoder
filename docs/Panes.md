@@ -177,7 +177,7 @@ the trailing space closes the menu typing `@` opens, so Enter sends the prompt i
 suggestion. A deleted file has no **@**, since there is nothing left to attach, and neither does
 a file until its diff has loaded and said it was not deleted. Nor does a path with a `"` or a
 control character in it, which the `@` form has no way to write. With no agent connected it types
-nothing and says so.
+nothing, says so, and leaves the focus where it was.
 
 A diff with more than one hunk gets an outline down its right edge, one row per hunk, named by the
 context git puts after the `@@` (the enclosing function, a heading); a click scrolls to it. Its ✕

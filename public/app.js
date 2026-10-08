@@ -251,19 +251,20 @@ const folded = () => document.querySelector('main').classList.contains('term-off
 // No double-click: two clicks would already have folded and unfolded it.
 document.querySelector('#term > header').addEventListener('click', () => foldTerm(!folded()));
 
-// Type an item into Claude's prompt. If Claude is mid-turn it queues the
-// message itself, which is exactly the behaviour we want.
-//
 // Types `data` into the agent's prompt exactly as given, as keystrokes, and
 // puts the focus there so typing carries on where it landed. Whether it went is
 // the return value: `send` refuses on a socket that is not open -- a dead PTY,
-// a reload in flight.
+// a reload in flight -- and then the focus stays where it was, rather than
+// moving to a terminal nothing is reading, where the page's shortcuts are off.
 function typeIntoAgent(data) {
   const sent = send({ type: 'input', data });
-  term.focus();
+  if (sent) term.focus();
   return sent;
 }
 
+// Type an item into Claude's prompt. If Claude is mid-turn it queues the
+// message itself, which is exactly the behaviour we want.
+//
 // `submit` false types the text and stops there: the prompt is left ready to
 // edit and send by hand, which is what the queue's ▶ wants. Trailing
 // whitespace is cut either way -- a newline in the text *is* the Enter that
