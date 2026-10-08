@@ -71,7 +71,8 @@ const PR_FIELDS = [
   'additions', 'deletions', 'changedFiles', 'files', 'statusCheckRollup',
   'closingIssuesReferences', 'reviewDecision', 'comments', 'reviews',
   // headRefOid is GitHub's view of the branch head, which is what lets the sync
-  // light work without a fetch. updatedAt gates the expensive full reload.
+  // light work without a fetch. updatedAt gates the expensive full reload --
+  // all but the checks, which prHeads reads on every poll.
   'headRefOid', 'updatedAt', 'isCrossRepository',
   // What /api/diff diffs from when GitHub sends a file no patch.
   'baseRefOid',
@@ -98,8 +99,19 @@ async function viewPr(cwd, target, fields) {
 /**
  * Just enough to know whether the PR moved, without the GraphQL viewed pass --
  * and its url, which is all the `g` key needs.
+ *
+ * Plus the checks, which move without the PR: a check run belongs to the
+ * commit, so finishing one leaves `updatedAt` where it was. On #120 the PR's
+ * was 22:43:48Z and its one check completed at 22:45:16Z (2026-10-08), and the
+ * Checks tab said pending until something else touched the PR. Same call, so
+ * the poll's count is unchanged; summarised here, as in loadPr.
  */
-export const prHeads = (cwd, target) => viewPr(cwd, target, 'number,headRefOid,updatedAt,state,url');
+export async function prHeads(cwd, target) {
+  const heads = await viewPr(cwd, target, 'number,headRefOid,updatedAt,state,url,statusCheckRollup');
+  if (!heads) return null;
+  const { statusCheckRollup, ...rest } = heads;
+  return { ...rest, checks: rollup(statusCheckRollup) };
+}
 
 /**
  * A description with LF line endings. One saved from github.com's editor comes

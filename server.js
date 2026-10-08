@@ -172,6 +172,9 @@ async function status({ full = false } = {}) {
   if (full || heads?.updatedAt !== pr?.updatedAt || heads?.number !== pr?.number) {
     if (!full && pr) term.debug(`PR #${pr.number} changed upstream — reloading into the UI`);
     await refreshPr();
+  } else if (pr) {
+    // Not behind updatedAt: a check finishing does not move it (prHeads).
+    pr.checks = heads.checks;
   }
   // After the PR, so a startup whose repo lookup fails still has the PR to report.
   const facts = await repoFacts();

@@ -259,3 +259,20 @@ test('a detached HEAD is no pull request, not an error', { skip: unix }, async (
     assert.equal(await prHeads(os.tmpdir()), null);
   });
 });
+
+// A check finishing does not move the PR's updatedAt, so the cheap per-poll
+// call is the only one that would see it: on #120 the tab said pending after CI
+// had passed, because only the full reload read the checks.
+test('the cheap per-poll call carries the checks, summarised', { skip: unix }, async () => {
+  const rollupJson = JSON.stringify({ number: 1, updatedAt: 'x', statusCheckRollup: [
+    { name: 'test', status: 'COMPLETED', conclusion: 'SUCCESS' },
+    { name: 'lint', status: 'IN_PROGRESS', conclusion: '' },
+  ] });
+  await withGh((dir) => `printf '%s\\n' "$@" > "${dir}/args"\necho '${rollupJson}'`, async (dir) => {
+    const heads = await prHeads(os.tmpdir());
+    const args = await fs.readFile(path.join(dir, 'args'), 'utf8');
+    assert.match(args, /statusCheckRollup/);
+    assert.equal(heads.statusCheckRollup, undefined);
+    assert.deepEqual([heads.checks.passed, heads.checks.pending], [1, 1]);
+  });
+});

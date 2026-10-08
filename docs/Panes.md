@@ -150,7 +150,9 @@ opens GitHub's diff viewer at that file instead.
 check that has not passed. Each links to its run -- or is plain text, when GitHub gave no
 link or one that is not `http(s)` ([Security.md](Security.md#the-pull-request-description)). The
 tab is there only when the pull request has any, and a poll that empties the list moves you back
-to *Detail* rather than leaving you on a tab that is no longer drawn.
+to *Detail* rather than leaving you on a tab that is no longer drawn. The checks are read on every
+poll and every ⟳, so a check that finishes shows within a minute even though nothing else on the
+pull request changed.
 
 ## Diff
 
