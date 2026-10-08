@@ -386,7 +386,7 @@ a { color: var(--accent); }
 .primary:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 80%, white); }
 .primary:disabled { opacity: .5; cursor: progress; }
 .danger { background: transparent; color: var(--del); box-shadow: inset 0 0 0 1px var(--del); }
-.danger:hover:not(:disabled) { background: color-mix(in srgb, var(--del) 15%, transparent); }
+.danger:hover:not(:disabled) { background: color-mix(in srgb, var(--del) 22%, transparent); }
 .pr-repo {
   display: inline-flex; min-width: 0;
   text-decoration: none; padding: 1px 7px;
