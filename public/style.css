@@ -52,11 +52,12 @@ main {
   --r-diff: clamp(140px, var(--h-diff, 40%), 50%);
   --r-term: 1fr;
   --r-queue: clamp(120px, var(--h-queue, 227px), 40%);
-  grid-template-rows: var(--r-term) 1px var(--r-queue);
+  grid-template-rows: var(--r-term) 1px var(--r-queue) var(--r-rest, 0);
   grid-template-areas:
     "pr gpr term"
     "pr gpr gqueue"
-    "pr gpr queue";
+    "pr gpr queue"
+    "pr gpr .";
 }
 #pr { grid-area: pr; } #term { grid-area: term; } #queue { grid-area: queue; }
 main.diff-open {
@@ -78,12 +79,17 @@ main.diff-open {
    between still draws the line. The two are never folded together (app.js);
    if they were, the queue would get the room. */
 main.term-off { --r-term: auto; --r-diff: 1fr; }
-main.term-off:not(.diff-open), main.term-off.diff-off { --r-queue: 1fr; }
+main.term-off:not(.diff-open, .queue-off), main.term-off.diff-off:not(.queue-off) { --r-queue: 1fr; }
 main.diff-off { --r-diff: auto; }   /* after term-off's 1fr, so both folded is two bars */
 /* The queue, when its fold is on (index.html), folds beside either; app.js
-   keeps it from being the last pane open. After the 1fr above, for the same
-   reason. */
+   keeps it from being the last pane open. The :not(.queue-off) above is what
+   lets this win, not source order: those selectors carry two classes to this
+   one's one, so without it a folded queue under a folded terminal would keep
+   its 1fr and stretch into an empty block below its bar. Even then, a grid
+   whose rows are all `auto` stretches them all to fill the column, so the
+   empty row at the bottom of the template takes what is left. */
 main.queue-off { --r-queue: auto; }
+main.term-off.queue-off:not(.diff-open) { --r-rest: 1fr; }
 main.diff-off #diff-main,
 main.term-off #term-host,
 main.queue-off #queue-body,

@@ -880,6 +880,7 @@ test('no way in folds every pane: the terminal\'s fold, a reload, a closed diff'
   await fresh.waitForSelector('#pr-head .pr-title');
   const termShown = () => fresh.locator('#term-host').isVisible();
   const queueShown = () => fresh.locator('#queue-body').isVisible();
+  const height = (sel) => fresh.$eval(sel, (el) => el.getBoundingClientRect().height);
 
   await fresh.click('#queue-fold');
   await fresh.click('#term-fold');
@@ -903,6 +904,12 @@ test('no way in folds every pane: the terminal\'s fold, a reload, a closed diff'
   await fresh.click('#diff-close');
   assert.equal(await termShown(), true, 'closing the diff brings the terminal back');
   assert.equal(await queueShown(), false);
+
+  // Should the rules ever slip, a folded queue is still a bar: style.css's
+  // queue-off has to beat the term-off rules that give the queue the room.
+  const bar = await height('#queue > header');
+  await fresh.evaluate(() => document.querySelector('main').classList.add('term-off'));
+  assert.equal(await height('#queue'), bar, 'a folded queue under a folded terminal is its bar');
   await fresh.close();
 });
 
