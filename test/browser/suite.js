@@ -155,10 +155,22 @@ const posted = [];
 // exit bar's `/pty?model=...` slipped past it to the real server. `whoami` is
 // the model and effort prcoder's command line started the agent with, which
 // the exit bar is filled with -- or a function given the route, for a test
-// that answers it late.
+// that answers it late. `folds` serves index.html with that list in place of
+// its `data-folds`, which is how a pane's fold is switched on, and `init` runs
+// in the page before its own scripts, for a stub of a browser API.
 async function newPage({ prs = [], st = status, ready = '#pr-head .pr-title', below = null, pty = () => {},
-  whoami = { model: '', effort: '' } } = {}) {
+  whoami = { model: '', effort: '' }, folds = null, init = null } = {}) {
   const p = await browser.newPage();
+  if (init) await p.addInitScript(init);
+  if (folds) {
+    await p.route((u) => u.pathname === '/', async (r) => {
+      const res = await r.fetch();
+      const html = await res.text();
+      const body = html.replace('data-folds="diff term"', `data-folds="${folds}"`);
+      assert.notEqual(body, html, 'the switch is where index.html says');
+      return r.fulfill({ response: res, body });
+    });
+  }
   await p.routeWebSocket(/\/pty(\?|$)/, pty);
   await p.route('**/api/whoami', (r) => (typeof whoami === 'function'
     ? whoami(r) : r.fulfill({ json: { started: whoami } })));
@@ -169,6 +181,7 @@ async function newPage({ prs = [], st = status, ready = '#pr-head .pr-title', be
     return below ? r.fulfill({ json: below }) : r.abort();
   });
   await p.route('**/api/queue', (r) => r.fulfill({ json: [] }));
+  await p.route('**/api/pr/viewed', (r) => r.fulfill({ json: { ok: true } }));
   await p.route('**/api/diff', (r) => {
     const { path } = r.request().postDataJSON();
     const lines = sources[path].split('\n');
@@ -189,6 +202,14 @@ async function newPage({ prs = [], st = status, ready = '#pr-head .pr-title', be
   await p.goto(`http://127.0.0.1:${server.address().port}/`);
   await p.waitForSelector(ready);
   return p;
+}
+
+/** Opens `path` from the Files tab, and waits for the diff pane to show it. */
+async function openFile(p, path = 'evil.js') {
+  await p.locator('#pr-head .tab', { hasText: 'Files' }).click();
+  await p.locator(`.file[data-path="${path}"] .path`).click();
+  await p.waitForFunction((path) => document.getElementById('diff-path').textContent === path
+    && document.querySelectorAll('#diff-body .dl').length > 0, path);
 }
 
 before(async () => {
@@ -759,15 +780,9 @@ test('a click anywhere on the terminal\'s header folds and unfolds it, the ▼ i
 // the fold. Not stored (nothing is open after a reload), so no reload here.
 test('the diff folds to its header, the terminal takes the room, and the two never fold together', { skip }, async () => {
   const fresh = await newPage();
-  await fresh.route('**/api/pr/viewed', (r) => r.fulfill({ json: { ok: true } }));
   const height = (sel) => fresh.$eval(sel, (el) => el.getBoundingClientRect().height);
   const shown = () => fresh.locator('#diff-main').isVisible();
-  const open = async (p) => {
-    await fresh.locator(`.file[data-path="${p}"] .path`).click();
-    await fresh.waitForFunction((p) => document.getElementById('diff-path').textContent === p
-      && document.querySelectorAll('#diff-body .dl').length > 0, p);
-  };
-  await fresh.locator('#pr-head .tab', { hasText: 'Files' }).click();
+  const open = (path) => openFile(fresh, path);
   await open('evil.js');
   const bar = await height('#diff > header');
   const term = await height('#term');
@@ -822,22 +837,16 @@ test('the diff folds to its header, the terminal takes the room, and the two nev
 // page: the fold is stored, and the never-last rule needs a folded terminal
 // with no diff.
 test('the queue folds only when data-folds says so, and never as the last pane open', { skip }, async () => {
-  const fresh = await newPage();
-  const shown = () => fresh.locator('#queue-body').isVisible();
-  const height = (sel) => fresh.$eval(sel, (el) => el.getBoundingClientRect().height);
-  assert.equal(await fresh.locator('#queue-fold').isVisible(), false, 'off, there is no ▼');
-  await fresh.click('#queue > header h1');
-  assert.equal(await shown(), true, 'and the bar is not a toggle');
+  const off = await newPage();
+  assert.equal(await off.locator('#queue-fold').isVisible(), false, 'off, there is no ▼');
+  await off.click('#queue > header h1');
+  assert.equal(await off.locator('#queue-body').isVisible(), true, 'and the bar is not a toggle');
+  await off.close();
 
   // Turned on the way it would be: the page served with `queue` in the list.
-  await fresh.route((u) => u.pathname === '/', async (r) => {
-    const res = await r.fetch();
-    const body = (await res.text()).replace('data-folds="diff term"', 'data-folds="diff term queue"');
-    assert.notEqual(body, await res.text(), 'the switch is where index.html says');
-    return r.fulfill({ response: res, body });
-  });
-  await fresh.reload();
-  await fresh.waitForSelector('#pr-head .pr-title');
+  const fresh = await newPage({ folds: 'diff term queue' });
+  const shown = () => fresh.locator('#queue-body').isVisible();
+  const height = (sel) => fresh.$eval(sel, (el) => el.getBoundingClientRect().height);
   assert.equal(await fresh.locator('#queue-fold').isVisible(), true);
   const bar = await height('#queue > header');
   const term = await height('#term');
@@ -869,14 +878,7 @@ test('the queue folds only when data-folds says so, and never as the last pane o
 // that way and restored on a reload, and a closed diff that was holding the
 // room between them. Its own page, for the queue switch and the stored folds.
 test('no way in folds every pane: the terminal\'s fold, a reload, a closed diff', { skip }, async () => {
-  const fresh = await newPage();
-  await fresh.route('**/api/pr/viewed', (r) => r.fulfill({ json: { ok: true } }));
-  await fresh.route((u) => u.pathname === '/', async (r) => {
-    const res = await r.fetch();
-    return r.fulfill({ response: res, body: (await res.text()).replace('data-folds="diff term"', 'data-folds="diff term queue"') });
-  });
-  await fresh.reload();
-  await fresh.waitForSelector('#pr-head .pr-title');
+  const fresh = await newPage({ folds: 'diff term queue' });
   const termShown = () => fresh.locator('#term-host').isVisible();
   const queueShown = () => fresh.locator('#queue-body').isVisible();
   const height = (sel) => fresh.$eval(sel, (el) => el.getBoundingClientRect().height);
@@ -894,9 +896,7 @@ test('no way in folds every pane: the terminal\'s fold, a reload, a closed diff'
   assert.equal(await fresh.evaluate(() => localStorage.getItem('prcoder:term')), 'on', 'stored, so the next reload agrees');
 
   // With a diff open both may fold, and closing it is what would empty the column.
-  await fresh.locator('#pr-head .tab', { hasText: 'Files' }).click();
-  await fresh.locator('.file[data-path="evil.js"] .path').click();
-  await fresh.waitForFunction(() => document.querySelectorAll('#diff-body .dl').length > 0);
+  await openFile(fresh);
   await fresh.click('#term-fold');
   assert.equal(await termShown(), false);
   assert.equal(await queueShown(), false);
@@ -918,20 +918,15 @@ test('no way in folds every pane: the terminal\'s fold, a reload, a closed diff'
 // Chromium only with a permission. The real writeText on localhost was
 // checked by hand in both engines (2026-10-09).
 test('⧉ copies the open file\'s path, folded or not, and says when it cannot', { skip }, async () => {
-  const fresh = await newPage();
-  await fresh.addInitScript(() => {
+  const fresh = await newPage({ init: () => {
     window.copiedText = [];
     Object.defineProperty(navigator, 'clipboard', { value: { writeText: async (t) => {
       if (window.refuseClipboard) throw new DOMException('refused', 'NotAllowedError');
       window.copiedText.push(t);
     } } });
-  });
-  await fresh.reload();
-  await fresh.waitForSelector('#pr-head .pr-title');
+  } });
   const copied = () => fresh.evaluate(() => window.copiedText);
-  await fresh.locator('#pr-head .tab', { hasText: 'Files' }).click();
-  await fresh.locator('.file[data-path="evil.js"] .path').click();
-  await fresh.waitForSelector('#diff-body .dl');
+  await openFile(fresh);
   await fresh.click('#diff-copy');
   assert.deepEqual(await copied(), ['evil.js']);
   assert.equal(await fresh.textContent('#diff-copy'), '✓', 'and says it went');
@@ -953,9 +948,7 @@ test('⧉ copies the open file\'s path, folded or not, and says when it cannot',
 test('folding a pane with the focus inside hands the focus to its ▼', { skip }, async () => {
   const fresh = await newPage();
   const focused = () => fresh.evaluate(() => document.activeElement.id);
-  await fresh.locator('#pr-head .tab', { hasText: 'Files' }).click();
-  await fresh.locator('.file[data-path="evil.js"] .path').click();
-  await fresh.waitForFunction(() => document.querySelectorAll('#diff-body .dl').length > 0);
+  await openFile(fresh);
   await fresh.locator('#diff-wrap').focus();
   await fresh.dispatchEvent('#diff > header h1', 'click');
   assert.equal(await fresh.locator('#diff-main').isVisible(), false);
@@ -1278,9 +1271,7 @@ test('@ and Alt+M type the mention from a folded diff and leave it folded', { sk
   const fresh = await newPage({ pty: (ws) => ws.onMessage((m) => frames.push(JSON.parse(m))) });
   const typed = () => frames.filter((f) => f.type === 'input');
   const folded = () => fresh.$eval('main', (m) => m.classList.contains('diff-off'));
-  await fresh.locator('#pr-head .tab', { hasText: 'Files' }).click();
-  await fresh.locator('.file[data-path="evil.js"] .path').click();
-  await fresh.waitForSelector('#diff-body .dl');
+  await openFile(fresh);
   await fresh.click('#diff > header h1');
   assert.equal(await folded(), true);
   await fresh.locator('#diff-mention').click();
@@ -1424,7 +1415,6 @@ test('a folded terminal says it is working while a turn runs, and not after', { 
 // not the one box that was clicked, with the rest a poll behind.
 test('marking a file viewed moves the tab count and the open diff\'s box with it', { skip }, async () => {
   const fresh = await newPage();
-  await fresh.route('**/api/pr/viewed', (r) => r.fulfill({ json: { ok: true } }));
   await fresh.locator('#pr-head .tab', { hasText: 'Files' }).click();
   await fresh.locator('.file[data-path="evil.js"] .path').click();
   await fresh.waitForSelector('#diff-body .dl');
