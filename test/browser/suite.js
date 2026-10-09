@@ -865,6 +865,47 @@ test('the queue folds only when data-folds says so, and never as the last pane o
   await fresh.close();
 });
 
+// The never-last rule holds on every way to the all-folded state, not only a
+// fold of the queue: folding the terminal with the queue folded, folds stored
+// that way and restored on a reload, and a closed diff that was holding the
+// room between them. Its own page, for the queue switch and the stored folds.
+test('no way in folds every pane: the terminal\'s fold, a reload, a closed diff', { skip }, async () => {
+  const fresh = await newPage();
+  await fresh.route('**/api/pr/viewed', (r) => r.fulfill({ json: { ok: true } }));
+  await fresh.route((u) => u.pathname === '/', async (r) => {
+    const res = await r.fetch();
+    return r.fulfill({ response: res, body: (await res.text()).replace('data-folds="diff term"', 'data-folds="diff term queue"') });
+  });
+  await fresh.reload();
+  await fresh.waitForSelector('#pr-head .pr-title');
+  const termShown = () => fresh.locator('#term-host').isVisible();
+  const queueShown = () => fresh.locator('#queue-body').isVisible();
+
+  await fresh.click('#queue-fold');
+  await fresh.click('#term-fold');
+  assert.equal(await termShown(), false, 'the fold asked for is the one that holds');
+  assert.equal(await queueShown(), true, 'and the queue comes back to take the room');
+
+  await fresh.evaluate(() => { localStorage.setItem('prcoder:term', 'off'); localStorage.setItem('prcoder:queue', 'off'); });
+  await fresh.reload();
+  await fresh.waitForSelector('#pr-head .pr-title');
+  assert.equal(await termShown(), true, 'both stored folded, the terminal comes back on a reload');
+  assert.equal(await queueShown(), false, 'and the queue keeps its fold');
+  assert.equal(await fresh.evaluate(() => localStorage.getItem('prcoder:term')), 'on', 'stored, so the next reload agrees');
+
+  // With a diff open both may fold, and closing it is what would empty the column.
+  await fresh.locator('#pr-head .tab', { hasText: 'Files' }).click();
+  await fresh.locator('.file[data-path="evil.js"] .path').click();
+  await fresh.waitForFunction(() => document.querySelectorAll('#diff-body .dl').length > 0);
+  await fresh.click('#term-fold');
+  assert.equal(await termShown(), false);
+  assert.equal(await queueShown(), false);
+  await fresh.click('#diff-close');
+  assert.equal(await termShown(), true, 'closing the diff brings the terminal back');
+  assert.equal(await queueShown(), false);
+  await fresh.close();
+});
+
 // Every toast closes on a click, so every one has a ✕, where a close button is
 // looked for: the top right corner. After the text, it ended whichever line the
 // text wrapped to. It is a pseudo-element, which has no box to measure, so this

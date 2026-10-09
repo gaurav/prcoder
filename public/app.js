@@ -243,17 +243,29 @@ new ResizeObserver(sync).observe(document.getElementById('term-host'));
 const FOLD_KEY = { term: 'prcoder:term', queue: 'prcoder:queue' };
 function setFold(pane, off) {
   fold(pane, off);
-  // Never both: each fold hands its room to the other, and both folded would
-  // hand it to the queue, which nobody asked for.
-  if (off && pane === 'diff' && folded('term')) setFold('term', false);
-  if (off && pane === 'term' && folded('diff')) fold('diff', false);
-  // And never every pane: the queue folds beside either, but under a folded
-  // terminal with no diff to take the room it was the last one open.
-  if (off && pane === 'queue' && folded('term') && !selectedPath()) setFold('term', false);
   if (FOLD_KEY[pane]) setPref(FOLD_KEY[pane], off ? 'off' : 'on');
+  settleFolds(off ? pane : null);
   if (pane === 'term' && !off) term.focus();   // expanding it is to talk to it
 }
+// Two rules, checked after everything that changes what is folded or open --
+// a click on a bar, the folds a reload restores, a closed diff -- rather than
+// beside each one, which is how a way round them got in. Never the diff and
+// the terminal both: each fold hands its room to the other, and both folded
+// would hand it to the queue, which nobody asked for. And never every pane:
+// with no diff open, a folded terminal and a folded queue leave the column
+// empty. Whichever pane was just folded keeps its fold and the other comes
+// back; with none (a reload, a closed diff) the terminal does.
+function settleFolds(just) {
+  const other = folded('diff') && folded('term') ? 'diff'
+    : !selectedPath() && folded('term') && folded('queue') ? 'queue' : null;
+  if (!other) return;
+  const back = just === 'term' ? other : 'term';
+  fold(back, false);
+  if (FOLD_KEY[back]) setPref(FOLD_KEY[back], 'on');
+  if (back === 'term' && just) term.focus();   // a fold made to talk to it
+}
 for (const pane of ['term', 'queue']) if (canFold(pane) && pref(FOLD_KEY[pane]) === 'off') fold(pane, true);
+settleFolds(null);
 // The whole bar is the toggle, and the ▼ is only the part of it that says so
 // -- and the part a keyboard can reach, since a button's Enter is a click and
 // bubbles here. One listener for both, so a click on the ▼ toggles once. A
@@ -393,7 +405,13 @@ async function markViewed(path, viewed) {
 // A click on a row unfolds the pane: you asked for the file. The refresh in
 // paint() below does not -- a push from the agent must not undo a fold made to
 // talk to it.
-const openFile = (f) => { fold('diff', false); return openDiff(f, markViewed); };
+const openFile = (f) => { fold('diff', false); return openDiff(f, markViewed, closeFile); };
+// Closing unfolds the diff (closeDiff says why), and can leave the terminal and
+// the queue folded with nothing between them; settleFolds brings one back.
+function closeFile() {
+  closeDiff();
+  settleFolds(null);
+}
 const fileHandlers = {
   onViewed: markViewed,
   onOpen: openFile,
@@ -465,8 +483,8 @@ function paint(status) {
   const open = selectedPath();
   if (!open) return;
   const f = status.pr?.files.find((x) => x.path === open);
-  if (!f) closeDiff();
-  else if (moved) openDiff(f, markViewed);   // not openFile: keeps the fold
+  if (!f) closeFile();
+  else if (moved) openDiff(f, markViewed, closeFile);   // not openFile: keeps the fold
 }
 
 /**

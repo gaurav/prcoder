@@ -38,7 +38,10 @@ left out keeps a plain bar and no ▼. The queue's fold is built and left off, b
 queue-first and hiding the queue should stay hard until there is a reason for it; adding `queue`
 to the list turns it on. Switched on, it folds the same way, to the terminal's gain, with its
 input still on the bar, and it folds beside either of the other two -- but never as the last pane
-open: folding it under a folded terminal with no diff to take the room unfolds the terminal.
+open. With no diff to take the room, folding the queue under a folded terminal unfolds the
+terminal, and folding the terminal over a folded queue unfolds the queue: the pane you just folded
+stays folded. A reload that would restore both folded, or closing the diff that sat between them,
+brings the terminal back.
 
 Whether the terminal is folded, whether the outline is shown, whether the diff wraps long lines,
 and which way the queue adds are remembered the same way as the sizes, and so is the queue's fold

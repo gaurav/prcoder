@@ -277,7 +277,7 @@ function setTitle(kind) {
 }
 
 /** `onViewed` is what the viewed box calls: app.js's, which repaints the file rows too. */
-export async function openDiff(f, onViewed = setViewed) {
+export async function openDiff(f, onViewed = setViewed, onClose = closeDiff) {
   openPath = f.path;
   // A <bdi>, for the reason spelled out at fileRow in pr.js: this element is
   // `direction: rtl` so a long path is cut at the head, and that alone would
@@ -311,7 +311,7 @@ export async function openDiff(f, onViewed = setViewed) {
   box.checked = f.viewed;
   writeThrough(box, (v) => onViewed(f.path, v));
 
-  el('diff-close').onclick = closeDiff;
+  el('diff-close').onclick = onClose;
   el('diff').classList.toggle('outline-off', outlineOff());
   el('diff-outline-hide').onclick = () => showOutline(false);
   el('diff-outline-show').onclick = () => showOutline(true);
