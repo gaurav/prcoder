@@ -99,14 +99,14 @@ how to read it.
 
 - **A poll that reloads nothing costs six subprocess calls with a pull request**, seven on a
   branch without one that origin has, and five on one never pushed; one more for a branch ahead
-  of its remote, and the same clean tree or dirty (re-measured on `43e3700`, 2026-10-09). A poll that reloads
-  the pull request adds `loadPr`'s GraphQL calls on top. `PRCODER_VERBOSE=2` prints the count on
-  every poll, so a change that adds a call shows up.
-- **The checks are most of what the poll's cheap `gh pr view` fetches.** prHeads asks for them on every poll
-  (#120), and on cli/cli#14634's 30 checks they took its answer from 108 bytes to 9KB and the
-  call from about 0.42s to 0.54s (2026-10-09); prcoder's one check is 293 bytes. The call count
-  above cannot show this growing, so time `gh pr view --json
-  number,headRefOid,updatedAt,statusCheckRollup` against a PR with many checks.
+  of its remote, and the same clean tree or dirty (re-measured on `43e3700`, 2026-10-09). A poll
+  that reloads the pull request adds `loadPr`'s GraphQL calls on top. `PRCODER_VERBOSE=2` prints
+  the count on every poll, so a change that adds a call shows up.
+- **The checks are most of what the poll's cheap `gh pr view` fetches.** prHeads asks for them
+  on every poll (#120), and on cli/cli#14634's 30 checks they took its answer from 108 bytes to
+  9KB and the call from about 0.42s to 0.54s (2026-10-09); prcoder's one check is 293 bytes. The
+  call count above cannot show this growing, so time
+  `gh pr view --json number,headRefOid,updatedAt,statusCheckRollup` on a PR with many checks.
 - **The description's prose is 568px wide in Firefox and 567px in Chromium**, in an 864px pane
   (on `23b192f`). `browser.mjs` prints it every run; a line-length cap is not something the
   stylesheet can be read for.
