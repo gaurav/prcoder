@@ -3,7 +3,7 @@
 // the fancy view.
 
 import { h, btn, ext, api, writeThrough, pref, setPref } from './pr.js';
-import { fold, folded } from './folds.js';
+import { fold } from './folds.js';
 
 // Lives outside the render because the 60s poll rebuilds #pr-body from
 // scratch; #diff itself is never repainted by the poll (queue.js does the
@@ -246,9 +246,9 @@ function setWrap(on) {
   paintWrap(on);
   setPref(WRAP_KEY, on ? 'on' : 'off');
 }
-/** The keyboard's way to the Wrap button: nothing to press while no file is open or the pane is folded. */
+/** The keyboard's way to the Wrap button: nothing to press while it is not shown -- no file open, or the pane folded. */
 export function toggleWrap() {
-  if (!el('diff').hidden && !folded('diff')) setWrap(!wrapOn());
+  if (el('diff-wrap').checkVisibility()) setWrap(!wrapOn());
 }
 
 /** Ticking this here ticks the same checkbox on github.com; the file rows use it too. */
