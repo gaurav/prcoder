@@ -316,6 +316,29 @@ function mentionOpenFile() {
 }
 document.getElementById('diff-mention').onclick = mentionOpenFile;
 
+// The diff header's ⧉: the open file's path from the repository root, the way
+// the bar and GitHub name it, onto the clipboard, with a ✓ for a moment to say
+// it went. It is a button because the path itself cannot be selected off the
+// bar: the bar is user-select: none so a quick second click does not select its
+// title, and giving the path alone user-select: text let Chromium select it with
+// a drag but not Firefox, where a drag selected nothing although the computed
+// style said text and a Range set from script selected it fine. The drag also
+// ends in a click, which would have folded the pane.
+const copyButton = document.getElementById('diff-copy');
+let copied;
+copyButton.onclick = async () => {
+  const path = selectedPath();
+  if (path == null) return;
+  try {
+    await navigator.clipboard.writeText(path);
+  } catch {
+    return toast('The browser refused the clipboard — the path was not copied.', true);
+  }
+  copyButton.textContent = '✓';
+  clearTimeout(copied);
+  copied = setTimeout(() => { copyButton.textContent = '⧉'; }, 1200);
+};
+
 // The switcher only changes when PRs are opened or closed, so it is not worth a
 // call every minute — page load, opening the dropdown, opening the Stack tab,
 // and a checkout are enough. The branch-only pane's list of what merges into

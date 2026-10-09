@@ -913,6 +913,38 @@ test('no way in folds every pane: the terminal\'s fold, a reload, a closed diff'
   await fresh.close();
 });
 
+// The bar's path cannot be selected (app.js says why), so ⧉ copies it: from
+// the repository root, open or folded, without folding, and a refusal says so.
+test('⧉ copies the open file\'s path, folded or not, and says when it cannot', { skip }, async () => {
+  const fresh = await newPage();
+  await fresh.addInitScript(() => {
+    window.copiedText = [];
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText: async (t) => {
+      if (window.refuseClipboard) throw new DOMException('refused', 'NotAllowedError');
+      window.copiedText.push(t);
+    } } });
+  });
+  await fresh.reload();
+  await fresh.waitForSelector('#pr-head .pr-title');
+  const copied = () => fresh.evaluate(() => window.copiedText);
+  await fresh.locator('#pr-head .tab', { hasText: 'Files' }).click();
+  await fresh.locator('.file[data-path="evil.js"] .path').click();
+  await fresh.waitForSelector('#diff-body .dl');
+  await fresh.click('#diff-copy');
+  assert.deepEqual(await copied(), ['evil.js']);
+  assert.equal(await fresh.textContent('#diff-copy'), '✓', 'and says it went');
+  assert.equal(await fresh.locator('#diff-main').isVisible(), true, 'a control, not the fold');
+  await fresh.waitForFunction(() => document.getElementById('diff-copy').textContent === '⧉');
+  await fresh.click('#diff > header h1');
+  await fresh.click('#diff-copy');
+  assert.deepEqual(await copied(), ['evil.js', 'evil.js'], 'folded too');
+  await fresh.evaluate(() => { window.refuseClipboard = true; });
+  await fresh.click('#diff-copy');
+  await fresh.waitForSelector('#toast:not([hidden])');
+  assert.match(await fresh.textContent('#toast'), /not copied/);
+  await fresh.close();
+});
+
 // A fold hides its pane's body, and the focus with it if it was in there, so
 // the ▼ takes it: the key that brings the rest back. dispatchEvent, because a
 // real click on the bar would move the focus to <body> itself first.
@@ -1278,15 +1310,19 @@ test('Alt+M types the mention outside the terminal and nothing inside it', { ski
 
 // Right after the name, not across the header beside *viewed*: the path is as
 // wide as its text, and the auto margin is on what comes after the @. Only
-// there -- a second one on Wrap left *viewed* to History mid-header.
-test('@ sits against the end of the filename, and the rest stays packed at the right', { skip }, async () => {
+// there -- a second one on Wrap left *viewed* to History mid-header. The copy
+// button comes first, against the name it copies, and the @ after it.
+test('copy and @ sit against the end of the filename, and the rest stays packed at the right', { skip }, async () => {
   const fresh = await newPage();
   await fresh.locator('#pr-head .tab', { hasText: 'Files' }).click();
   await fresh.locator('.file[data-path="evil.js"] .path').click();
   await fresh.waitForSelector('#diff-body .dl');
-  const gap = await fresh.evaluate(() => document.getElementById('diff-mention').getBoundingClientRect().left
-    - document.querySelector('#diff-path bdi').getBoundingClientRect().right);
-  assert.ok(gap >= 0 && gap < 12, `@ is ${gap}px from the filename`);
+  const gap = (a, b) => fresh.evaluate(([a, b]) => document.querySelector(b).getBoundingClientRect().left
+    - document.querySelector(a).getBoundingClientRect().right, [a, b]);
+  const copy = await gap('#diff-path bdi', '#diff-copy');
+  assert.ok(copy >= 0 && copy < 12, `copy is ${copy}px from the filename`);
+  const at = await gap('#diff-copy', '#diff-mention');
+  assert.ok(at >= 0 && at < 12, `@ is ${at}px from copy`);
   const before = await fresh.evaluate(() => document.getElementById('diff-wrap').getBoundingClientRect().left
     - document.getElementById('diff-out').getBoundingClientRect().right);
   assert.ok(before < 12, `Wrap is ${before}px after History`);

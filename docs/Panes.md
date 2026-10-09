@@ -24,7 +24,7 @@ tab's blue icon.
 
 The diff folds the same way, to the terminal's gain, for getting a file out of the way without
 closing it: closing says you are done with the file, and folding does not. Its bar keeps the path
-and its **@**, the *viewed* box and the links out. Each control there keeps its own click, and a
+with its ⧉ and **@**, the *viewed* box and the links out. Each control there keeps its own click, and a
 click on the rest of the bar -- the title, the path, the gaps, the ▼ -- folds or unfolds. *Wrap*
 and *Outline* go with the body they act on, and Alt+W presses nothing until it is back; the **@**
 and Alt+M still work folded. Clicking a file in the list, the open one included, unfolds it; a
@@ -200,7 +200,12 @@ prcoder ships a grammar for; it is the one view where a tokenizer sees a whole f
 hunk that starts in the middle of one. A renamed file says where it came from on its first line,
 and a rename with no other change says only that.
 
-The **@** right after the filename types ` @path ` into the coding agent's prompt, for "@path
+The ⧉ right after the filename copies its path from the repository root, as the bar shows it,
+and turns to ✓ for a moment to say it went; a browser that refuses the clipboard gets a toast
+instead. It is a button because the bar is `user-select: none`, and the path cannot be selected
+off it (`app.js` says why selecting the path alone was not the answer).
+
+The **@** after it types ` @path ` into the coding agent's prompt, for "@path
 should be fixed…" or "an example of this is @path": the path from the agent's working directory,
 which is wherever in the repo prcoder was started (so `../docs/Panes.md` from `public/`), in a
 form the agent's `@` reads (quoted, if the path has a space). It does not press Enter, and leaves the focus in the terminal to finish the
