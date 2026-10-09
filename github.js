@@ -106,7 +106,8 @@ export const prUrl = async (cwd, target) => (await viewPr(cwd, target, 'url'))?.
  * commit, so finishing one leaves `updatedAt` where it was. On #120 the PR's
  * was 22:43:48Z and its one check completed at 22:45:16Z (2026-10-08), and the
  * Checks tab said pending until something else touched the PR. Same call, so
- * the poll's count is unchanged.
+ * the poll's count is unchanged, but the call is heavier: gh fetches every
+ * check on the head commit, on every poll. docs/Verifying.md has the figure.
  */
 export async function prHeads(cwd, target) {
   const heads = await viewPr(cwd, target, 'number,headRefOid,updatedAt,statusCheckRollup');
