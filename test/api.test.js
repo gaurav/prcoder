@@ -12,7 +12,7 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import { WebSocket } from 'ws';
-import { server, sessionArgs, startedWith, missingVendor } from '../server.js';
+import { server, sessionArgs, startedWith, missingVendor, keepPr } from '../server.js';
 import { grammars } from '../public/diff.js';
 
 let base;
@@ -248,4 +248,18 @@ test('missingVendor names the vendor files that are not installed', () => {
   assert.ok(all.includes('@xterm/xterm/lib/xterm.mjs'));
   assert.ok(all.includes('prismjs/prism.js'));
   assert.equal(all.length, 5 + grammars.length);
+});
+
+// The half of #120's fix that matters: a check finishing leaves updatedAt where
+// it was, so a poll that keeps the PR has to take the checks from the cheap call
+// or the Checks tab says pending until something else touches the PR.
+test('a poll that keeps the PR still takes its checks from prHeads', () => {
+  const pr = { number: 1, updatedAt: 'a', checks: { pending: 1 } };
+  assert.equal(keepPr(pr, { number: 1, updatedAt: 'a', checks: { passed: 1 } }), true);
+  assert.deepEqual(pr.checks, { passed: 1 });
+  assert.equal(keepPr(pr, { number: 1, updatedAt: 'b' }), false);
+  assert.equal(keepPr(pr, { number: 2, updatedAt: 'a' }), false);
+  assert.equal(keepPr(pr, null), false);
+  // No PR then or now: nothing to reload.
+  assert.equal(keepPr(null, null), true);
 });

@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { text as readBody } from 'node:stream/consumers';
 import { spawn as ptySpawn } from 'node-pty';
 import { WebSocketServer } from 'ws';
-import { loadPr, prHeads, prBody, listPrs, issueLinks, setViewed, setBody, createIssue, fetchPatches, runCount } from './github.js';
+import { loadPr, prHeads, prUrl, prBody, listPrs, issueLinks, setViewed, setBody, createIssue, fetchPatches, runCount } from './github.js';
 import { snapshot, currentBranch, repoInfo, prScope, compareUrl, githubUrl, originOwner, checkoutPr, pushBranch, remoteBranchHead, trackingHead, localPatch, branchesBelow } from './git.js';
 import { bucket, fileUrl, fileViews } from './files.js';
 import { readPort, writePort, useQueueFile, movedQueue } from './store.js';
@@ -154,6 +154,20 @@ async function editBody(edit) {
 }
 
 /**
+ * Whether the PR the last poll loaded still stands, by what prHeads answered --
+ * and if it does, it takes its checks from that answer. updatedAt decides,
+ * because loadPr also runs a paginated GraphQL pass, far too much for a 60s
+ * poll; but not for the checks, since one finishing leaves updatedAt alone
+ * (prHeads). No PR before and none now stands too, or a branch without one
+ * would pay for a loadPr on every poll.
+ */
+export function keepPr(pr, heads) {
+  if (heads?.updatedAt !== pr?.updatedAt || heads?.number !== pr?.number) return false;
+  if (pr) pr.checks = heads.checks;
+  return true;
+}
+
+/**
  * Where the repo is, plus the PR and queue that go with it. The client polls
  * this; nothing is stored between calls, so an outside `git checkout` or an
  * edit on github.com is picked up without prcoder having to be told.
@@ -167,9 +181,7 @@ async function status({ full = false } = {}) {
   // A full refresh reloads regardless, so it has no use for the cheap check.
   const heads = full ? null : await prHeads(repo, target);
 
-  // The cheap call decides whether the expensive one is needed: loadPr also
-  // runs a paginated GraphQL pass, which is far too much for a 60s poll.
-  if (full || heads?.updatedAt !== pr?.updatedAt || heads?.number !== pr?.number) {
+  if (full || !keepPr(pr, heads)) {
     if (!full && pr) term.debug(`PR #${pr.number} changed upstream — reloading into the UI`);
     await refreshPr();
   }
@@ -204,9 +216,9 @@ async function status({ full = false } = {}) {
   };
   checkedAt = Date.now();
   repaint();
-  // Seven on a clean tree or a dirty one, with or without a pull request.
-  // Printed at PRCODER_VERBOSE=2 so a change that adds one shows up as a
-  // number rather than as a slower poll.
+  // How many depends on the branch, not the tree; docs/Verifying.md has the
+  // figures. Printed at PRCODER_VERBOSE=2 so a change that adds one shows up
+  // as a number rather than as a slower poll.
   term.debug(`poll: ${runCount() - calls} subprocess calls`);
   return last;
 }
@@ -718,7 +730,7 @@ async function openGithub() {
   const branch = await currentBranch(repo);
   const { nameWithOwner, defaultBranch } = await repoFacts();
   openBrowser(githubUrl({
-    prUrl: (await prHeads(repo, target))?.url, nameWithOwner, defaultBranch, branch,
+    prUrl: await prUrl(repo, target), nameWithOwner, defaultBranch, branch,
     pushed: Boolean(await trackingHead(repo, branch)), owner: await originOwner(repo),
   }));
 }

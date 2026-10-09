@@ -71,7 +71,8 @@ const PR_FIELDS = [
   'additions', 'deletions', 'changedFiles', 'files', 'statusCheckRollup',
   'closingIssuesReferences', 'reviewDecision', 'comments', 'reviews',
   // headRefOid is GitHub's view of the branch head, which is what lets the sync
-  // light work without a fetch. updatedAt gates the expensive full reload.
+  // light work without a fetch. updatedAt gates the expensive full reload --
+  // all but the checks, which prHeads reads on every poll.
   'headRefOid', 'updatedAt', 'isCrossRepository',
   // What /api/diff diffs from when GitHub sends a file no patch.
   'baseRefOid',
@@ -95,11 +96,30 @@ async function viewPr(cwd, target, fields) {
   }
 }
 
+/** The PR's url and nothing else, which is all the `g` key needs. */
+export const prUrl = async (cwd, target) => (await viewPr(cwd, target, 'url'))?.url;
+
 /**
- * Just enough to know whether the PR moved, without the GraphQL viewed pass --
- * and its url, which is all the `g` key needs.
+ * Just enough to know whether the PR moved, without the GraphQL viewed pass.
+ *
+ * Plus the checks, which move without the PR: a check run belongs to the
+ * commit, so finishing one leaves `updatedAt` where it was. On #120 the PR's
+ * was 22:43:48Z and its one check completed at 22:45:16Z (2026-10-08), and the
+ * Checks tab said pending until something else touched the PR. Same call, so
+ * the poll's count is unchanged, but the call is heavier: gh fetches every
+ * check on the head commit, on every poll. docs/Verifying.md has the figure.
  */
-export const prHeads = (cwd, target) => viewPr(cwd, target, 'number,headRefOid,updatedAt,state,url');
+export async function prHeads(cwd, target) {
+  const heads = await viewPr(cwd, target, 'number,headRefOid,updatedAt,statusCheckRollup');
+  return heads && withChecks(heads);
+}
+
+/**
+ * A `gh pr view` answer with its checks summarised. prHeads and loadPr both go
+ * through this, so the Checks tab gets one shape whichever of them the poll
+ * read the checks from.
+ */
+const withChecks = ({ statusCheckRollup, ...rest }) => ({ ...rest, checks: rollup(statusCheckRollup) });
 
 /**
  * A description with LF line endings. One saved from github.com's editor comes
@@ -120,7 +140,7 @@ export async function prBody(cwd, prUrl) {
  * Open PRs, for the switcher -- and, filtered by `baseRefName`, for the list of
  * pull requests into the branch you are on that the pane with no pull request
  * shows. That field is not spare: it is free here, where a `gh pr list --base`
- * of its own would be a call on a poll that already has seven. `url` is for the
+ * of its own would be one more call on every poll. `url` is for the
  * pane's links, read off GitHub rather than built from a host (#53).
  * `isCrossRepository` is what stops a fork's `main` looking like a base here.
  */
@@ -150,13 +170,12 @@ export async function loadPr(cwd, target) {
   ]);
   // The raw lists are summarised here and not sent on: every poll carries this
   // object to every tab, and nothing reads them past this point.
-  const { statusCheckRollup, closingIssuesReferences, comments, reviews, ...rest } = pr;
+  const { closingIssuesReferences, comments, reviews, ...rest } = withChecks(pr);
 
   return {
     ...rest,
     files: pr.files.map((f) => ({ ...f, viewed: viewed.get(f.path) === 'VIEWED' })),
     nodeId,
-    checks: rollup(statusCheckRollup),
     issues,
     counts: { comments: comments?.length ?? 0, reviews: reviews?.length ?? 0 },
   };
