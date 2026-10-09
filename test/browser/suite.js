@@ -609,6 +609,8 @@ test('Wrap folds a long line inside the pane, and stays pressed across a reload'
 
   await fresh.click('#diff-wrap');
   assert.equal(await pressed(), 'true');
+  assert.equal(await fresh.getAttribute('#diff-wrap', 'title'), 'wrap long lines (Alt+W)',
+    'the state is aria-pressed alone, not a title flipped to "unwrap" as well');
   [long, short] = await rows();
   assert.ok(long > short, `wrapped, the long row (${long}px) should be taller than the short one (${short}px)`);
   assert.equal(await sideways(), false, 'and nothing scrolls sideways');
