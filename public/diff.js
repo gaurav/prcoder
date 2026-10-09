@@ -3,6 +3,7 @@
 // the fancy view.
 
 import { h, btn, ext, api, writeThrough, pref, setPref } from './pr.js';
+import { fold } from './folds.js';
 
 // Lives outside the render because the 60s poll rebuilds #pr-body from
 // scratch; #diff itself is never repainted by the poll (queue.js does the
@@ -249,9 +250,9 @@ function setWrap(on) {
   paintWrap(on);
   setPref(WRAP_KEY, on ? 'on' : 'off');
 }
-/** The keyboard's way to the Wrap button. Nothing to flip while no file is open. */
+/** The keyboard's way to the Wrap button: nothing to press while it is not shown -- no file open, or the pane folded. */
 export function toggleWrap() {
-  if (!el('diff').hidden) setWrap(!wrapOn());
+  if (el('diff-wrap').checkVisibility()) setWrap(!wrapOn());
 }
 
 /** Ticking this here ticks the same checkbox on github.com; the file rows use it too. */
@@ -314,7 +315,6 @@ export async function openDiff(f, onViewed = setViewed) {
   box.checked = f.viewed;
   writeThrough(box, (v) => onViewed(f.path, v));
 
-  el('diff-close').onclick = closeDiff;
   el('diff').classList.toggle('outline-off', outlineOff());
   el('diff-outline-hide').onclick = () => showOutline(false);
   el('diff-outline-show').onclick = () => showOutline(true);
@@ -384,5 +384,10 @@ export function closeDiff() {
   mentionable = false;
   el('diff').hidden = true;
   document.querySelector('main').classList.remove('diff-open');
+  // A closed pane forgets its fold, so the next file opens unfolded. The fold
+  // is not stored either, unlike the terminal's, the outline and Wrap: nothing
+  // is open after a reload, and a click on a file unfolds it anyway, so a
+  // stored value would never be read.
+  fold('diff', false);
   markSelected(null);
 }

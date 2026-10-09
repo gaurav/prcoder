@@ -5,6 +5,7 @@ import { renderPr, renderNoPr, renderHeader, pageTitle, api, toast, pref, setPre
 import { openDiff, closeDiff, selectedPath, setViewed, toggleWrap, openMention } from './diff.js';
 import { initQueue, addItem, setItems } from './queue.js';
 import { bindKeys } from './keys.js';
+import { fold, folded, canFold } from './folds.js';
 import './panes.js';   // draggable pane gutters; nothing here calls into it
 
 // Every shortcut the page has, in one table; keys.js says what a binding may
@@ -233,28 +234,53 @@ connect();
 term.onData((d) => send({ type: 'input', data: d }));
 new ResizeObserver(sync).observe(document.getElementById('term-host'));
 
-// Folding the terminal to its header, stored like the outline's ✕ in diff.js.
-// The PTY keeps its size while folded: a display:none host has no height, so
-// fit() gets NaN rows and returns without resizing, and the ResizeObserver
-// above re-fits it on the way back out.
-const TERM_KEY = 'prcoder:term';
-const fold = document.getElementById('term-fold');
-function foldTerm(off, save = true) {
-  document.querySelector('main').classList.toggle('term-off', off);
-  fold.setAttribute('aria-expanded', String(!off));
-  fold.textContent = off ? '▶\uFE0E' : '▼';   // FE0E: text, never macOS's emoji ▶
-  fold.title = `${off ? 'expand' : 'collapse'} the coding agent pane`;
-  fold.setAttribute('aria-label', fold.title);   // a glyph is no name, as in queue.js
-  if (save) setPref(TERM_KEY, off ? 'off' : 'on');
-  if (!off) term.focus();   // expanding it is to talk to it
+// Folding a pane to its header line (folds.js paints; this is the rules).
+// The PTY keeps its size while the terminal is folded: a display:none host has
+// no height, so fit() gets NaN rows and returns without resizing, and the
+// ResizeObserver above re-fits it on the way back out. The panes that are
+// always there remember their fold, like the outline's ✕ in diff.js; the
+// diff's is not stored (closeDiff says why).
+const FOLD_KEY = { term: 'prcoder:term', queue: 'prcoder:queue' };
+function foldAndStore(pane, off) {
+  fold(pane, off);
+  if (FOLD_KEY[pane]) setPref(FOLD_KEY[pane], off ? 'off' : 'on');
 }
-if (pref(TERM_KEY) === 'off') foldTerm(true, false);
-const folded = () => document.querySelector('main').classList.contains('term-off');
-// The whole header is the toggle, and the ▼ is only the part of it that says
-// so -- and the part a keyboard can reach, since a button's Enter is a click
-// and bubbles here. One listener for both, so a click on the ▼ toggles once.
+function setFold(pane, off) {
+  foldAndStore(pane, off);
+  settleFolds(off ? pane : null);
+  if (pane === 'term' && !off) term.focus();   // expanding it is to talk to it
+}
+// Two rules, checked after everything that changes what is folded or open --
+// a click on a bar, the folds a reload restores, a closed diff -- rather than
+// beside each one, which is how a way round them got in. Never the diff and
+// the terminal both: each fold hands its room to the other, and both folded
+// would hand it to the queue, which nobody asked for. And never every pane:
+// with no diff open, a folded terminal and a folded queue leave the column
+// empty. Whichever pane was just folded keeps its fold and the other comes
+// back; with none (a reload, a closed diff) the terminal does.
+function settleFolds(just) {
+  const other = folded('diff') && folded('term') ? 'diff'
+    : !selectedPath() && folded('term') && folded('queue') ? 'queue' : null;
+  if (!other) return;
+  const back = just === 'term' ? other : 'term';
+  foldAndStore(back, false);
+  if (back === 'term' && just) term.focus();   // a fold made to talk to it
+}
+for (const pane in FOLD_KEY) if (canFold(pane) && pref(FOLD_KEY[pane]) === 'off') fold(pane, true);
+settleFolds(null);
+// The whole bar is the toggle, and the ▼ is only the part of it that says so
+// -- and the part a keyboard can reach, since a button's Enter is a click and
+// bubbles here. One listener for both, so a click on the ▼ toggles once. A
+// control on the bar -- the diff's viewed box, its links, Wrap -- keeps its own
+// click, so the fold is the rest of the bar: the title, the path, the gaps.
 // No double-click: two clicks would already have folded and unfolded it.
-document.querySelector('#term > header').addEventListener('click', () => foldTerm(!folded()));
+for (const pane of ['diff', 'term', 'queue']) {
+  document.querySelector(`#${pane} > header`).addEventListener('click', (e) => {
+    const control = e.target.closest('a, button, label, input, textarea, select');
+    if (!canFold(pane) || (control && control.id !== `${pane}-fold`)) return;
+    setFold(pane, !folded(pane));
+  });
+}
 
 // Types `data` into the agent's prompt exactly as given, as keystrokes, and
 // puts the focus there so typing carries on where it landed. Whether it went is
@@ -291,6 +317,29 @@ function mentionOpenFile() {
   if (text != null && !typeIntoAgent(text)) toast('The coding agent is not connected — nothing was typed.', true);
 }
 document.getElementById('diff-mention').onclick = mentionOpenFile;
+
+// The diff header's ⧉: the open file's path from the repository root, the way
+// the bar and GitHub name it, onto the clipboard, with a ✓ for a moment to say
+// it went. It is a button because the path itself cannot be selected off the
+// bar: the bar is user-select: none so a quick second click does not select its
+// title, and giving the path alone user-select: text let Chromium select it with
+// a drag but not Firefox, where a drag selected nothing although the computed
+// style said text and a Range set from script selected it fine. The drag also
+// ends in a click, which would have folded the pane.
+const copyButton = document.getElementById('diff-copy');
+let copied;
+copyButton.onclick = async () => {
+  const path = selectedPath();
+  if (path == null) return;
+  try {
+    await navigator.clipboard.writeText(path);
+  } catch {
+    return toast('The browser refused the clipboard — the path was not copied.', true);
+  }
+  copyButton.textContent = '✓';
+  clearTimeout(copied);
+  copied = setTimeout(() => { copyButton.textContent = '⧉'; }, 1200);
+};
 
 // The switcher only changes when PRs are opened or closed, so it is not worth a
 // call every minute — page load, opening the dropdown, opening the Stack tab,
@@ -378,7 +427,17 @@ async function markViewed(path, viewed) {
   if (selectedPath() === path) document.getElementById('diff-viewed').checked = viewed;
 }
 
-const openFile = (f) => openDiff(f, markViewed);
+// A click on a row unfolds the pane: you asked for the file. The refresh in
+// paint() below does not -- a push from the agent must not undo a fold made to
+// talk to it.
+const openFile = (f) => { fold('diff', false); return openDiff(f, markViewed); };
+// Closing unfolds the diff (closeDiff says why), and can leave the terminal and
+// the queue folded with nothing between them; settleFolds brings one back.
+function closeFile() {
+  closeDiff();
+  settleFolds(null);
+}
+document.getElementById('diff-close').onclick = closeFile;
 const fileHandlers = {
   onViewed: markViewed,
   onOpen: openFile,
@@ -450,8 +509,8 @@ function paint(status) {
   const open = selectedPath();
   if (!open) return;
   const f = status.pr?.files.find((x) => x.path === open);
-  if (!f) closeDiff();
-  else if (moved) openFile(f);
+  if (!f) closeFile();
+  else if (moved) openDiff(f, markViewed);   // not openFile: keeps the fold
 }
 
 /**

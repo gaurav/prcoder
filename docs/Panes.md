@@ -20,17 +20,45 @@ The terminal folds to its header line with a click anywhere on that line; the �
 says so, and is the keyboard's way in. The diff (or the queue, with no diff open) takes the room,
 and another click unfolds it. Folding never touches the session, which keeps running folded. While
 a turn runs, the folded header says `● working` beside its title, from the same signal as the
-tab's blue icon. Whether the terminal is folded, whether the outline is shown, whether the diff
-wraps long lines, and which way the queue adds are remembered the same way as the sizes.
+tab's blue icon.
+
+The diff folds the same way, to the terminal's gain, for getting a file out of the way without
+closing it: closing says you are done with the file, and folding does not. Its bar keeps the path
+with its ⧉ and **@**, the *viewed* box and the links out. Each control there keeps its own click, and a
+click on the rest of the bar -- the title, the path, the gaps, the ▼ -- folds or unfolds. *Wrap*
+and *Outline* go with the body they act on, and Alt+W presses nothing until it is back; the **@**
+and Alt+M still work folded. Clicking a file in the list, the open one included, unfolds it; a
+push that refreshes the open file does not, since a fold made to talk to the agent must survive
+the agent's own push; closing the pane forgets the fold. The two never fold
+together: folding one unfolds the other, since each hands its room to the other, and both folded
+would hand it to the queue.
+
+Which panes fold is one list in `index.html`, `data-folds` on `<main>`: `diff term` today. A pane
+left out keeps a plain bar and no ▼. The queue's fold is built and left off, because prcoder is
+queue-first and hiding the queue should stay hard until there is a reason for it; adding `queue`
+to the list turns it on. Switched on, it folds the same way, to the terminal's gain, with its
+input still on the bar, and it folds beside either of the other two -- but never as the last pane
+open. With no diff to take the room, folding the queue under a folded terminal unfolds the
+terminal, and folding the terminal over a folded queue unfolds the queue: the pane you just folded
+stays folded. A reload that would restore both folded, or closing the diff that sat between them,
+brings the terminal back.
+
+A fold that hides the keyboard focus -- on *Wrap*, an outline entry, the terminal -- moves it to
+that pane's ▼, the key that unfolds it.
+
+Whether the terminal is folded, whether the outline is shown, whether the diff wraps long lines,
+and which way the queue adds are remembered the same way as the sizes, and so is the queue's fold
+when it is on. The diff's fold is not:
+nothing is open after a reload, and the next click on a file would unfold it anyway.
 
 A few things have a key as well as a control. A shortcut never fires while you are typing -- in the
 terminal, which belongs to the coding agent, in the queue's input, or in an item being edited, though
 a checkbox you have just ticked, such as *viewed*, does not count -- and each is named by the key's position, so on a Mac Alt is Option:
 
-| Key   | Does                                                          |
-|-------|---------------------------------------------------------------|
-| Alt+W | presses *Wrap* in the diff pane, while a file is open          |
-| Alt+M | presses **@** in the diff pane, while a file that has one is open |
+| Key   | Does                                                                             |
+|-------|----------------------------------------------------------------------------------|
+| Alt+W | presses *Wrap* in the diff pane, while a file is open and the pane is not folded |
+| Alt+M | presses **@** in the diff pane, while a file that has one is open                |
 
 Each tab names itself `owner/repo#N · pull request title` (the branch and `(no PR)` when there
 isn't one), and renames itself as the branch moves, so a row of prcoder tabs stays readable at
@@ -162,7 +190,9 @@ The selected file's patch, drawn above the terminal, so select → read → tick
 never leaves the window. It shows the same hunks GitHub does (fetched once per push and cached),
 or, for a file GitHub sent no patch for, the same change as local git sees it: GitHub stops
 sending patches partway through a large pull request, and git in this clone can usually still
-make them. It refreshes itself when the branch head moves.
+make them. It refreshes itself when the branch head moves. It folds to its bar the way the
+terminal does ([Layout](#layout)), so the file stays named above the terminal while you talk to
+the agent.
 
 A file the pull request adds or deletes is shown as its own text under a green **NEW** or red
 **DELETED** title rather than as a wall of `+` or `-`, since a patch that is all one sign has
@@ -171,7 +201,13 @@ prcoder ships a grammar for; it is the one view where a tokenizer sees a whole f
 hunk that starts in the middle of one. A renamed file says where it came from on its first line,
 and a rename with no other change says only that.
 
-The **@** right after the filename types ` @path ` into the coding agent's prompt, for "@path
+The ⧉ right after the filename copies its path from the repository root, as the bar shows it,
+and turns to ✓ for a moment to say it went; a browser that refuses the clipboard gets a toast
+instead. It is a button because the bar is `user-select: none`, and the path cannot be selected
+off it (`app.js` says why selecting the path alone was not the answer). It is only that way
+out, for the occasional paste somewhere else, so unlike the **@** it has no key.
+
+The **@** after it types ` @path ` into the coding agent's prompt, for "@path
 should be fixed…" or "an example of this is @path": the path from the agent's working directory,
 which is wherever in the repo prcoder was started (so `../docs/Panes.md` from `public/`), in a
 form the agent's `@` reads (quoted, if the path has a space). It does not press Enter, and leaves the focus in the terminal to finish the

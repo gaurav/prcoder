@@ -559,6 +559,22 @@ console.log('highlight:', `${hi.n} spans:`, hi.names || '(none)',
   '\n           (want spans in tok- classes: comment, keyword, string at least)');
 await page.locator('#diff').screenshot({ path: path.join(out, 'diff.png') });
 
+// Folded to its bar by a click on its title, the terminal taking the room:
+// the pane should be one line -- ▶, title, path with its ⧉ and @, viewed, the
+// links out, no Wrap -- and the terminal under it taller than before. A second
+// click on the title unfolds it for the checks below.
+const tall = (sel) => page.locator(sel).evaluate((el) => el.getBoundingClientRect().height);
+const termBefore = await tall('#term');
+await page.locator('#diff > header h1').click();
+await page.waitForSelector('main.diff-off');
+console.log('folded:', `diff ${await tall('#diff')}px = bar ${await tall('#diff > header')}px,`,
+  `terminal ${termBefore}px -> ${await tall('#term')}px,`,
+  `Wrap ${await page.locator('#diff-wrap').isVisible() ? 'shown' : 'hidden'}`,
+  '\n        (want the pane as tall as its bar, the terminal taller, Wrap hidden)');
+await page.locator('main').screenshot({ path: path.join(out, 'diff-folded.png') });
+await page.locator('#diff > header h1').click();
+await page.waitForSelector('main:not(.diff-off)');
+
 // The header's @ types the file's mention into the agent's prompt, unsent. The
 // stub echoes its input, so the terminal is the evidence it reached the PTY.
 // The stub is raw and keeps no line, so the mention left on screen is only

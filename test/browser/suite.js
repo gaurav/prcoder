@@ -155,10 +155,22 @@ const posted = [];
 // exit bar's `/pty?model=...` slipped past it to the real server. `whoami` is
 // the model and effort prcoder's command line started the agent with, which
 // the exit bar is filled with -- or a function given the route, for a test
-// that answers it late.
+// that answers it late. `folds` serves index.html with that list in place of
+// its `data-folds`, which is how a pane's fold is switched on, and `init` runs
+// in the page before its own scripts, for a stub of a browser API.
 async function newPage({ prs = [], st = status, ready = '#pr-head .pr-title', below = null, pty = () => {},
-  whoami = { model: '', effort: '' } } = {}) {
+  whoami = { model: '', effort: '' }, folds = null, init = null } = {}) {
   const p = await browser.newPage();
+  if (init) await p.addInitScript(init);
+  if (folds) {
+    await p.route((u) => u.pathname === '/', async (r) => {
+      const res = await r.fetch();
+      const html = await res.text();
+      const body = html.replace('data-folds="diff term"', `data-folds="${folds}"`);
+      assert.notEqual(body, html, 'the switch is where index.html says');
+      return r.fulfill({ response: res, body });
+    });
+  }
   await p.routeWebSocket(/\/pty(\?|$)/, pty);
   await p.route('**/api/whoami', (r) => (typeof whoami === 'function'
     ? whoami(r) : r.fulfill({ json: { started: whoami } })));
@@ -169,6 +181,7 @@ async function newPage({ prs = [], st = status, ready = '#pr-head .pr-title', be
     return below ? r.fulfill({ json: below }) : r.abort();
   });
   await p.route('**/api/queue', (r) => r.fulfill({ json: [] }));
+  await p.route('**/api/pr/viewed', (r) => r.fulfill({ json: { ok: true } }));
   await p.route('**/api/diff', (r) => {
     const { path } = r.request().postDataJSON();
     const lines = sources[path].split('\n');
@@ -189,6 +202,14 @@ async function newPage({ prs = [], st = status, ready = '#pr-head .pr-title', be
   await p.goto(`http://127.0.0.1:${server.address().port}/`);
   await p.waitForSelector(ready);
   return p;
+}
+
+/** Opens `path` from the Files tab, and waits for the diff pane to show it. */
+async function openFile(p, path = 'evil.js') {
+  await p.locator('#pr-head .tab', { hasText: 'Files' }).click();
+  await p.locator(`.file[data-path="${path}"] .path`).click();
+  await p.waitForFunction((path) => document.getElementById('diff-path').textContent === path
+    && document.querySelectorAll('#diff-body .dl').length > 0, path);
 }
 
 before(async () => {
@@ -570,6 +591,9 @@ test('the terminal folds to its header, the diff takes the room, and it stays fo
   assert.equal(await height('#term'), await height('#term > header'));
   assert.ok(await height('#diff') > open, `diff was ${open}px, is ${await height('#diff')}px`);
   assert.equal(await fresh.getAttribute('#term-fold', 'aria-expanded'), 'false');
+  // The diff is 1fr now, so a drag of the line under it would set a height
+  // nothing reads. A separate hide rule once lost to the show rule on order.
+  assert.equal(await fresh.locator('#gut-diff').isVisible(), false, 'nothing to drag under a folded terminal');
 
   await fresh.reload();
   await fresh.waitForSelector('#pr-head .pr-title');
@@ -629,14 +653,15 @@ test('Wrap folds a long line inside the pane, and stays pressed across a reload'
 
   // Alt+W is the button from the keyboard -- unless a key is being typed, in
   // which case it is a character: the queue's input stands in for the terminal
-  // and the editable items, which keys.js guards by the same rule.
-  await fresh.locator('#diff-path').click();
+  // and the editable items, which keys.js guards by the same rule. The body is
+  // clicked only to take focus off the input; the bar would fold the pane.
+  await fresh.locator('#diff-body').click();
   await fresh.keyboard.press('Alt+KeyW');
   assert.equal(await pressed(), 'true', 'Alt+W presses Wrap');
   await fresh.locator('#queue-input').focus();
   await fresh.keyboard.press('Alt+KeyW');
   assert.equal(await pressed(), 'true', 'but not while typing');
-  await fresh.locator('#diff-path').click();
+  await fresh.locator('#diff-body').click();
   await fresh.keyboard.press('Alt+KeyW');
   assert.equal(await pressed(), 'false', 'and presses it again');
   // A clicked checkbox keeps focus, and nothing is typed into one: ticking
@@ -750,6 +775,197 @@ test('a click anywhere on the terminal\'s header folds and unfolds it, the ▼ i
   assert.equal(await shown(), false, 'the ▼ toggles once, not once for itself and again for the bar');
   await fresh.click('#term-fold');
   assert.equal(await shown(), true);
+  await fresh.close();
+});
+
+// Folding the diff is for talking to the agent with the file still named on
+// the bar, so the terminal is what takes the room. The bar is busy with
+// controls, each of which keeps its own click; the rest of it, ▼ included, is
+// the fold. Not stored (nothing is open after a reload), so no reload here.
+test('the diff folds to its header, the terminal takes the room, and the two never fold together', { skip }, async () => {
+  const fresh = await newPage();
+  const height = (sel) => fresh.$eval(sel, (el) => el.getBoundingClientRect().height);
+  const shown = () => fresh.locator('#diff-main').isVisible();
+  const open = (path) => openFile(fresh, path);
+  await open('evil.js');
+  const bar = await height('#diff > header');
+  const term = await height('#term');
+
+  await fresh.click('#diff > header h1');
+  assert.equal(await shown(), false, 'the title folds it');
+  assert.equal(await height('#diff'), bar, 'folded, the pane is its header');
+  assert.ok(await height('#term') > term, `terminal was ${term}px, is ${await height('#term')}px`);
+  assert.equal(await fresh.getAttribute('#diff-fold', 'aria-expanded'), 'false');
+  assert.equal(await fresh.locator('#gut-diff').isVisible(), false, 'nothing to drag');
+  assert.equal(await fresh.locator('#diff-wrap').isVisible(), false, 'Wrap acts on a body that is not shown');
+  await fresh.locator('#diff-fold').focus();   // off the queue input, or Alt+W is typing
+  await fresh.keyboard.press('Alt+KeyW');
+  assert.equal(await fresh.getAttribute('#diff-wrap', 'aria-pressed'), 'false', 'so Alt+W presses nothing');
+  await fresh.locator('#diff-viewed-label').click();   // the label's text, which ticks the box
+  assert.equal(await fresh.locator('#diff-viewed').isChecked(), true, 'the controls keep their clicks');
+  assert.equal(await shown(), false, 'and do not fold');
+
+  await fresh.click('#diff-fold');
+  assert.equal(await shown(), true, 'the ▼ toggles once, not for itself and again for the bar');
+  assert.equal(await height('#diff > header'), bar, 'the header keeps its height either way');
+  await fresh.click('#diff-path');
+  assert.equal(await shown(), false, 'the path folds it');
+  await open('app.tsx');
+  assert.equal(await shown(), true, 'opening a file unfolds it');
+  await fresh.click('#diff-path');
+  await open('app.tsx');
+  assert.equal(await shown(), true, 'the open one included');
+
+  await fresh.click('#term-fold');
+  assert.equal(await fresh.locator('#term-host').isVisible(), false);
+  await fresh.click('#diff > header h1');
+  assert.equal(await shown(), false);
+  assert.equal(await fresh.locator('#term-host').isVisible(), true, 'folding the diff unfolds the terminal');
+  assert.equal(await fresh.getAttribute('#term-fold', 'aria-expanded'), 'true');
+  await fresh.click('#term-fold');
+  assert.equal(await shown(), true, 'and folding the terminal unfolds the diff');
+  assert.equal(await fresh.getAttribute('#diff-fold', 'aria-expanded'), 'true');
+  await fresh.click('#term-fold');
+
+  await fresh.click('#diff > header h1');
+  await fresh.click('#diff-close');
+  assert.equal(await fresh.$eval('main', (m) => m.classList.contains('diff-off')), false, 'closing forgets the fold');
+  await open('evil.js');
+  assert.equal(await shown(), true, 'so the next open is unfolded');
+  await fresh.close();
+});
+
+// The queue's fold is built and switched off in index.html (Panes.md says
+// why), so the shipped page shows no ▼ there and its bar is plain; the page is
+// then served with `queue` in the list, which is what turning it on is. Its own
+// page: the fold is stored, and the never-last rule needs a folded terminal
+// with no diff.
+test('the queue folds only when data-folds says so, and never as the last pane open', { skip }, async () => {
+  const off = await newPage();
+  assert.equal(await off.locator('#queue-fold').isVisible(), false, 'off, there is no ▼');
+  await off.click('#queue > header h1');
+  assert.equal(await off.locator('#queue-body').isVisible(), true, 'and the bar is not a toggle');
+  await off.close();
+
+  // Turned on the way it would be: the page served with `queue` in the list.
+  const fresh = await newPage({ folds: 'diff term queue' });
+  const shown = () => fresh.locator('#queue-body').isVisible();
+  const height = (sel) => fresh.$eval(sel, (el) => el.getBoundingClientRect().height);
+  assert.equal(await fresh.locator('#queue-fold').isVisible(), true);
+  const bar = await height('#queue > header');
+  const term = await height('#term');
+  await fresh.click('#queue > header h1');
+  assert.equal(await shown(), false, 'on, the title folds it');
+  assert.equal(await height('#queue'), bar, 'to its bar');
+  assert.ok(await height('#term') > term, `terminal was ${term}px, is ${await height('#term')}px`);
+  assert.equal(await fresh.locator('#gut-queue').isVisible(), false, 'nothing to drag');
+  await fresh.locator('#queue-input').click();
+  assert.equal(await fresh.evaluate(() => document.activeElement.id), 'queue-input', 'the input keeps its click');
+  assert.equal(await shown(), false);
+
+  await fresh.reload();
+  await fresh.waitForSelector('#pr-head .pr-title');
+  assert.equal(await shown(), false, 'stored, like the terminal\'s');
+  await fresh.click('#queue-fold');
+  assert.equal(await shown(), true);
+
+  await fresh.click('#term-fold');
+  assert.equal(await fresh.locator('#term-host').isVisible(), false);
+  await fresh.click('#queue > header h1');
+  assert.equal(await shown(), false);
+  assert.equal(await fresh.locator('#term-host').isVisible(), true, 'the last pane open cannot fold away: the terminal comes back');
+  await fresh.close();
+});
+
+// The never-last rule holds on every way to the all-folded state, not only a
+// fold of the queue: folding the terminal with the queue folded, folds stored
+// that way and restored on a reload, and a closed diff that was holding the
+// room between them. Its own page, for the queue switch and the stored folds.
+test('no way in folds every pane: the terminal\'s fold, a reload, a closed diff', { skip }, async () => {
+  const fresh = await newPage({ folds: 'diff term queue' });
+  const termShown = () => fresh.locator('#term-host').isVisible();
+  const queueShown = () => fresh.locator('#queue-body').isVisible();
+  const height = (sel) => fresh.$eval(sel, (el) => el.getBoundingClientRect().height);
+
+  await fresh.click('#queue-fold');
+  await fresh.click('#term-fold');
+  assert.equal(await termShown(), false, 'the fold asked for is the one that holds');
+  assert.equal(await queueShown(), true, 'and the queue comes back to take the room');
+
+  await fresh.evaluate(() => { localStorage.setItem('prcoder:term', 'off'); localStorage.setItem('prcoder:queue', 'off'); });
+  await fresh.reload();
+  await fresh.waitForSelector('#pr-head .pr-title');
+  assert.equal(await termShown(), true, 'both stored folded, the terminal comes back on a reload');
+  assert.equal(await queueShown(), false, 'and the queue keeps its fold');
+  assert.equal(await fresh.evaluate(() => localStorage.getItem('prcoder:term')), 'on', 'stored, so the next reload agrees');
+
+  // With a diff open both may fold, and closing it is what would empty the column.
+  await openFile(fresh);
+  await fresh.click('#term-fold');
+  assert.equal(await termShown(), false);
+  assert.equal(await queueShown(), false);
+  await fresh.click('#diff-close');
+  assert.equal(await termShown(), true, 'closing the diff brings the terminal back');
+  assert.equal(await queueShown(), false);
+
+  // Should the rules ever slip, a folded queue is still a bar: style.css's
+  // queue-off has to beat the term-off rules that give the queue the room.
+  const bar = await height('#queue > header');
+  await fresh.evaluate(() => document.querySelector('main').classList.add('term-off'));
+  assert.equal(await height('#queue'), bar, 'a folded queue under a folded terminal is its bar');
+  await fresh.close();
+});
+
+// The bar's path cannot be selected (app.js says why), so ⧉ copies it: from
+// the repository root, open or folded, without folding, and a refusal says so.
+// The clipboard is a stub: Firefox gives a page no way to read it back, and
+// Chromium only with a permission. The real writeText on localhost was
+// checked by hand in both engines (2026-10-09).
+test('⧉ copies the open file\'s path, folded or not, and says when it cannot', { skip }, async () => {
+  const fresh = await newPage({ init: () => {
+    window.copiedText = [];
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText: async (t) => {
+      if (window.refuseClipboard) throw new DOMException('refused', 'NotAllowedError');
+      window.copiedText.push(t);
+    } } });
+  } });
+  const copied = () => fresh.evaluate(() => window.copiedText);
+  await openFile(fresh);
+  await fresh.click('#diff-copy');
+  assert.deepEqual(await copied(), ['evil.js']);
+  assert.equal(await fresh.textContent('#diff-copy'), '✓', 'and says it went');
+  assert.equal(await fresh.locator('#diff-main').isVisible(), true, 'a control, not the fold');
+  await fresh.waitForFunction(() => document.getElementById('diff-copy').textContent === '⧉');
+  await fresh.click('#diff > header h1');
+  await fresh.click('#diff-copy');
+  assert.deepEqual(await copied(), ['evil.js', 'evil.js'], 'folded too');
+  await fresh.evaluate(() => { window.refuseClipboard = true; });
+  await fresh.click('#diff-copy');
+  await fresh.waitForSelector('#toast:not([hidden])');
+  assert.match(await fresh.textContent('#toast'), /not copied/);
+  await fresh.close();
+});
+
+// A fold hides its pane's body, and the focus with it if it was in there, so
+// the ▼ takes it: the key that brings the rest back. dispatchEvent, because a
+// real click on the bar would move the focus to <body> itself first.
+test('folding a pane with the focus inside hands the focus to its ▼', { skip }, async () => {
+  const fresh = await newPage();
+  const focused = () => fresh.evaluate(() => document.activeElement.id);
+  await openFile(fresh);
+  await fresh.locator('#diff-wrap').focus();
+  await fresh.dispatchEvent('#diff > header h1', 'click');
+  assert.equal(await fresh.locator('#diff-main').isVisible(), false);
+  assert.equal(await focused(), 'diff-fold', 'Wrap went with the body');
+  await fresh.dispatchEvent('#diff > header h1', 'click');
+  await fresh.locator('#diff-viewed').focus();
+  await fresh.dispatchEvent('#diff > header h1', 'click');
+  assert.equal(await focused(), 'diff-viewed', 'focus on the bar stays where it was');
+  await fresh.click('#term-host');
+  assert.equal(await fresh.evaluate(() => document.getElementById('term-host').contains(document.activeElement)), true);
+  await fresh.dispatchEvent('#term > header h1', 'click');
+  assert.equal(await fresh.locator('#term-host').isVisible(), false);
+  assert.equal(await focused(), 'term-fold', 'the terminal\'s focus goes to its ▼ too');
   await fresh.close();
 });
 
@@ -1051,6 +1267,29 @@ test('@ types the open file\'s mention, spaced and unsent, and leaves the focus 
   await fresh.close();
 });
 
+// Folding the diff is for talking to the agent with the file still named on
+// the bar, which is when the @ is wanted: it stays there, keeps its own click
+// rather than being part of the bar's toggle, and Alt+M works as well.
+test('@ and Alt+M type the mention from a folded diff and leave it folded', { skip }, async () => {
+  const frames = [];
+  const fresh = await newPage({ pty: (ws) => ws.onMessage((m) => frames.push(JSON.parse(m))) });
+  const typed = () => frames.filter((f) => f.type === 'input');
+  const folded = () => fresh.$eval('main', (m) => m.classList.contains('diff-off'));
+  await openFile(fresh);
+  await fresh.click('#diff > header h1');
+  assert.equal(await folded(), true);
+  await fresh.locator('#diff-mention').click();
+  for (let i = 0; !typed().length && i < 100; i++) await fresh.waitForTimeout(50);
+  assert.deepEqual(typed(), [{ type: 'input', data: ' @evil.js ' }]);
+  assert.equal(await folded(), true, 'the @ is not the bar');
+  await fresh.locator('#diff-fold').focus();   // out of the terminal the click left it in
+  await fresh.keyboard.press('Alt+KeyM');
+  for (let i = 0; typed().length < 2 && i < 100; i++) await fresh.waitForTimeout(50);
+  assert.equal(typed().length, 2, 'Alt+M typed it again');
+  assert.equal(await folded(), true);
+  await fresh.close();
+});
+
 // The keyboard's way to the same button -- and, as for every shortcut, not
 // while typing in the terminal, where Alt+M belongs to the agent.
 test('Alt+M types the mention outside the terminal and nothing inside it', { skip }, async () => {
@@ -1073,15 +1312,19 @@ test('Alt+M types the mention outside the terminal and nothing inside it', { ski
 
 // Right after the name, not across the header beside *viewed*: the path is as
 // wide as its text, and the auto margin is on what comes after the @. Only
-// there -- a second one on Wrap left *viewed* to History mid-header.
-test('@ sits against the end of the filename, and the rest stays packed at the right', { skip }, async () => {
+// there -- a second one on Wrap left *viewed* to History mid-header. The copy
+// button comes first, against the name it copies, and the @ after it.
+test('copy and @ sit against the end of the filename, and the rest stays packed at the right', { skip }, async () => {
   const fresh = await newPage();
   await fresh.locator('#pr-head .tab', { hasText: 'Files' }).click();
   await fresh.locator('.file[data-path="evil.js"] .path').click();
   await fresh.waitForSelector('#diff-body .dl');
-  const gap = await fresh.evaluate(() => document.getElementById('diff-mention').getBoundingClientRect().left
-    - document.querySelector('#diff-path bdi').getBoundingClientRect().right);
-  assert.ok(gap >= 0 && gap < 12, `@ is ${gap}px from the filename`);
+  const gap = (a, b) => fresh.evaluate(([a, b]) => document.querySelector(b).getBoundingClientRect().left
+    - document.querySelector(a).getBoundingClientRect().right, [a, b]);
+  const copy = await gap('#diff-path bdi', '#diff-copy');
+  assert.ok(copy >= 0 && copy < 12, `copy is ${copy}px from the filename`);
+  const at = await gap('#diff-copy', '#diff-mention');
+  assert.ok(at >= 0 && at < 12, `@ is ${at}px from copy`);
   const before = await fresh.evaluate(() => document.getElementById('diff-wrap').getBoundingClientRect().left
     - document.getElementById('diff-out').getBoundingClientRect().right);
   assert.ok(before < 12, `Wrap is ${before}px after History`);
@@ -1176,7 +1419,6 @@ test('a folded terminal says it is working while a turn runs, and not after', { 
 // not the one box that was clicked, with the rest a poll behind.
 test('marking a file viewed moves the tab count and the open diff\'s box with it', { skip }, async () => {
   const fresh = await newPage();
-  await fresh.route('**/api/pr/viewed', (r) => r.fulfill({ json: { ok: true } }));
   await fresh.locator('#pr-head .tab', { hasText: 'Files' }).click();
   await fresh.locator('.file[data-path="evil.js"] .path').click();
   await fresh.waitForSelector('#diff-body .dl');
@@ -1196,7 +1438,7 @@ test('marking a file viewed moves the tab count and the open diff\'s box with it
 // path through paint() that does it runs only when the head moves, which no
 // other test here makes happen -- and it once called a helper a local variable
 // had shadowed, which would have thrown on every such poll.
-test('a poll that moves the head re-opens the open file without an error', { skip }, async () => {
+test('a poll that moves the head re-opens the open file without an error, and keeps its fold', { skip }, async () => {
   const fresh = await newPage();
   const errors = [];
   fresh.on('pageerror', (e) => errors.push(e.message));
@@ -1211,11 +1453,15 @@ test('a poll that moves the head re-opens the open file without an error', { ski
   await fresh.route('**/api/status', (r) => r.fulfill({ json: {
     ...status, pr: { ...pr, headRefOid: 'c'.repeat(40) },
   } }));
+  // Folded first: the refresh goes through openDiff, not the row click's
+  // openFile, so a push from the agent does not undo a fold made to talk to it.
+  await fresh.click('#diff > header h1');
   await fresh.click('#pr-refresh');
   await fresh.waitForFunction(() => document.getElementById('diff-path').textContent === 'evil.js');
   await fresh.waitForTimeout(300);
   assert.deepEqual(errors, []);
   assert.equal(diffs, 2, 'the open file was fetched again');
+  assert.equal(await fresh.locator('#diff-main').isVisible(), false, 'and the fold held');
   await fresh.close();
 });
 

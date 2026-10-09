@@ -46,16 +46,22 @@ body {
 main {
   height: 100%; display: grid; background: var(--line);
   grid-template-columns: clamp(180px, var(--w-pr, 375px), 60%) 1px 1fr;
-  grid-template-rows: 1fr 1px clamp(120px, var(--h-queue, 227px), 40%);
+  /* One length per row of the right-hand column, and the folds below only
+     rewrite these: a template per combination of folds was four already and
+     grew with every pane that learned to fold. */
+  --r-diff: clamp(140px, var(--h-diff, 40%), 50%);
+  --r-term: 1fr;
+  --r-queue: clamp(120px, var(--h-queue, 227px), 40%);
+  grid-template-rows: var(--r-term) 1px var(--r-queue) var(--r-rest, 0);
   grid-template-areas:
     "pr gpr term"
     "pr gpr gqueue"
-    "pr gpr queue";
+    "pr gpr queue"
+    "pr gpr .";
 }
 #pr { grid-area: pr; } #term { grid-area: term; } #queue { grid-area: queue; }
 main.diff-open {
-  grid-template-rows:
-    clamp(140px, var(--h-diff, 40%), 50%) 1px 1fr 1px clamp(120px, var(--h-queue, 227px), 40%);
+  grid-template-rows: var(--r-diff) 1px var(--r-term) 1px var(--r-queue);
   grid-template-areas:
     "pr gpr diff"
     "pr gpr gdiff"
@@ -65,38 +71,71 @@ main.diff-open {
 }
 #diff { grid-area: diff; }
 #diff[hidden] { display: none; }
-/* The terminal folded to its header row, for reading a diff by eye: whatever
-   sits above or below it takes the room. Its gutter to that pane goes too --
-   the pane is 1fr now, so there is nothing for a drag to set -- and the empty
-   1px track still draws the line. */
-main.term-off { grid-template-rows: auto 1px 1fr; }
-main.diff-open.term-off {
-  grid-template-rows: 1fr 1px auto 1px clamp(120px, var(--h-queue, 227px), 40%);
-}
+/* A pane folded to its header row (folds.js): its body goes, `auto` is then
+   exactly the header, and whatever sits beside it takes the room. The terminal
+   folds for reading a diff by eye, so the diff takes its room, or the queue
+   with no diff open; the diff folds for talking to the agent with the file
+   still named on its bar, so the terminal takes its room. The empty 1px track
+   between still draws the line. The two are never folded together (app.js);
+   if they were, the queue would get the room. */
+main.term-off { --r-term: auto; --r-diff: 1fr; }
+main.term-off:not(.diff-open, .queue-off), main.term-off.diff-off:not(.queue-off) { --r-queue: 1fr; }
+main.diff-off { --r-diff: auto; }   /* after term-off's 1fr, so both folded is two bars */
+/* The queue, when its fold is on (index.html), folds beside either; app.js
+   keeps it from being the last pane open. The :not(.queue-off) above is what
+   lets this win, not source order: those selectors carry two classes to this
+   one's one, so without it a folded queue under a folded terminal would keep
+   its 1fr and stretch into an empty block below its bar. Even then, a grid
+   whose rows are all `auto` stretches them all to fill the column, so the
+   empty row at the bottom of the template takes what is left. */
+main.queue-off { --r-queue: auto; }
+main.term-off.queue-off:not(.diff-open) { --r-rest: 1fr; }
+main.diff-off #diff-main,
 main.term-off #term-host,
+main.queue-off #queue-body,
 main.term-off:not(.diff-open) #gut-queue,
-main.term-off #gut-diff { display: none; }
-/* A click anywhere on it folds or unfolds, so it looks pressable across its
-   whole width: the pointer, and a hover that darkens the bar and brings the ▼
-   and the title up to full colour. user-select, or a quick second click
+main.queue-off #gut-queue { display: none; }
+/* A click anywhere on a folding pane's bar folds or unfolds it -- anywhere
+   that is not a control, on a bar that has them -- so it looks pressable across
+   its whole width: the pointer, and a hover that darkens the bar and brings the
+   ▼ and the title up to full colour. user-select, or a quick second click
    selects the title. Background only -- a border or padding here would make
-   the folded header a different height from the open one. */
-#term > header { user-select: none; cursor: pointer; }
+   the folded header a different height from the open one. Keyed on the
+   data-folds switch in index.html, so a pane whose fold is off keeps a plain
+   bar and no ▼. */
+main[data-folds~="term"] #term > header,
+main[data-folds~="diff"] #diff > header,
+main[data-folds~="queue"] #queue > header { user-select: none; cursor: pointer; }
+main[data-folds~="term"] #term > header:hover,
+main[data-folds~="diff"] #diff > header:hover,
+main[data-folds~="queue"] #queue > header:hover { background: var(--bg); }
+/* The diff's NEW / DELETED title keeps its colour: an id here outranks
+   `.pane h1.add` below. */
+main[data-folds~="term"] #term > header:hover :is(h1, #term-fold),
+main[data-folds~="diff"] #diff > header:hover :is(h1:not(.add, .del), #diff-fold),
+main[data-folds~="queue"] #queue > header:hover :is(h1, #queue-fold) { color: var(--fg); }
+main:not([data-folds~="term"]) #term-fold,
+main:not([data-folds~="diff"]) #diff-fold,
+main:not([data-folds~="queue"]) #queue-fold { display: none; }
+/* The bar's user-select: none must not reach the one thing typed into there. */
+#queue-input { user-select: text; }
 /* `● working` while a turn runs, and only folded: open, the terminal says so
    itself. `hidden` stays the busy switch; this is the folded one. */
 main:not(.term-off) #term-busy { display: none; }
-#term > header:hover { background: var(--bg); }
-#term > header:hover h1, #term > header:hover #term-fold { color: var(--fg); }
 /* Before the title, like a disclosure triangle, at the title's own size and
    line-height so the two centre together. ▼/▶ rather than the small ▾/▸, which
-   sit low and needed a bigger font that then sat lower still. */
-#term-fold { margin-left: 0; padding: 0; font-size: 12px; line-height: 18px; }
+   sit low and needed a bigger font that then sat lower still. margin-left,
+   because every header button is pushed to the far end below. */
+#term-fold, #diff-fold, #queue-fold { margin-left: 0; padding: 0; font-size: 12px; line-height: 18px; }
 
 #gut-pr { grid-area: gpr; } #gut-queue { grid-area: gqueue; } #gut-diff { grid-area: gdiff; }
 /* Only the diff-open template has a slot for it; left displayed it would
    auto-place itself into a row of its own and shove the layout sideways. */
 #gut-diff { display: none; }
-main.diff-open #gut-diff { display: block; }
+/* Under a folded terminal the diff is 1fr, and folded itself it is a bar, so
+   there is nothing for a drag to set. One rule rather than a later hide: the
+   two tie on specificity, and the hide written first once lost to this. */
+main.diff-open:not(.term-off, .diff-off) #gut-diff { display: block; }
 /* 1px of line, ±3px of grab, above the panes so the cursor changes over it. */
 .gut { position: relative; z-index: 3; touch-action: none; }
 .gut::after { content: ''; position: absolute; }
@@ -625,18 +664,19 @@ a { color: var(--accent); }
 .file .nums { font-size: 11px; white-space: nowrap; }
 
 /* --- Diff pane --- */
-/* The name and its @ grow together, as the path alone did before the @, which
-   is what leaves the header's other buttons no room for their auto margins.
-   Inside, the path is as wide as its text and no wider, shrinking (and
-   cutting at the head) only when the header runs out of room, so the @ sits
-   against the filename -- by the id's own margin, which outranks the auto one
-   every header button gets. */
+/* The name, its copy button and its @ grow together, as the path alone did
+   before them, which is what leaves the header's other buttons no room for
+   their auto margins. Inside, the path is as wide as its text and no wider,
+   shrinking (and cutting at the head) only when the header runs out of room,
+   so the two buttons sit against the filename -- by the ids' own margins,
+   which outrank the auto one every header button gets. */
 #diff-name { flex: 1; min-width: 0; display: flex; align-items: center; }
 #diff-path {
   flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis;
   white-space: nowrap; direction: rtl; text-align: left; font-size: 12px; color: var(--dim);
 }
-#diff-mention { margin-left: 2px; flex: none; font-size: 12px; }
+#diff-copy, #diff-mention { margin-left: 2px; flex: none; font-size: 12px; }
+#diff-copy { font-size: 14px; }   /* ⧉ draws smaller than @ at the same size */
 #diff-viewed-label { font-size: 12px; color: var(--dim); white-space: nowrap; }
 /* The ways out of the pane, as one menu rather than four buttons, and none
    marked ↗ -- see headLinks. `nowrap` on the group keeps a separator from
@@ -681,7 +721,11 @@ a { color: var(--accent); }
 #diff-main:has(#diff-outline:empty) :is(#diff-side, #gut-outline),
 #diff.outline-off :is(#diff-side, #gut-outline) { display: none; }
 #diff > header #diff-outline-show { display: none; font-size: 12px; }
-#diff.outline-off:has(#diff-outline:not(:empty)) > header #diff-outline-show { display: inline; }
+main:not(.diff-off) #diff.outline-off:has(#diff-outline:not(:empty)) > header #diff-outline-show { display: inline; }
+/* Folded, the bar keeps what is about the file -- path, viewed, the links out
+   -- and loses the two that act on a body that is not shown. Outline's show
+   rule above carries the same condition, since its :has() outranks a hide. */
+main.diff-off #diff-wrap { display: none; }
 /* Wrap is a view preference, so it is a class on the pane like outline-off, and
    a rule here rather than anything in the rows: a line-number gutter (#8) would
    be a cell beside the text, and a rendered view would hide the button under a

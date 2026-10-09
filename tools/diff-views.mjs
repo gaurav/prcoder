@@ -120,6 +120,15 @@ const hidden = await page.evaluate(() => ({
 }));
 console.log('hide:    ', JSON.stringify(hidden), '(want off, show button visible, focus on diff-outline-show)');
 await page.locator('#diff').screenshot({ path: path.join(out, 'outline-hidden.png') });
+// Folded, the bar loses *Outline* with Wrap: the suite's fixture has no hunks,
+// so this is the one place the show button is there to hide. Left folded:
+// the reload below forgets a fold.
+await page.locator('#diff > header h1').click();
+await page.waitForSelector('main.diff-off');
+console.log('folded:  ', JSON.stringify({
+  outline: await page.locator('#diff-outline-show').isVisible(), wrap: await page.locator('#diff-wrap').isVisible(),
+}), '(want both false: nothing to show or wrap on a bar)');
+await page.locator('#diff').screenshot({ path: path.join(out, 'folded.png') });
 await page.reload();
 await page.waitForSelector('#pr-head .pr-title');
 await page.getByRole('button', { name: /^Files/ }).click();
