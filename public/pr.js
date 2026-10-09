@@ -762,12 +762,12 @@ function renderPrHead(pr, parsed, handlers) {
     // front). The mark is hidden from a screen reader, so whatever it says that
     // the label does not goes in the button's name -- filesName, checksName.
     tabs: h('div', { className: 'tabs' },
-      paneTab('detail', [tasks.total ? mark({ p: tasks.done / tasks.total, full: tabDone(tasks) }) : null,
+      paneTab('detail', [tasks.total ? mark(fraction(tasks)) : null,
         tabLabel('Detail', tasks)]),
       paneTab('files', [seen.total ? mark({ p: filesProgress(pr.files).p, full: tabDone(seen) }) : null,
         tabLabel('Files', seen)], '', said(filesName(pr.files))),
       pr.checks.list.length
-        ? paneTab('checks', [mark({ p: checks.done / checks.total, full: tabDone(checks), state: worst(pr.checks) }),
+        ? paneTab('checks', [mark({ ...fraction(checks), state: worst(pr.checks) }),
           tabLabel('Checks', checks)], '', said(checksName(pr.checks)))
         : null,
       paneTab('stack', stackLabel(stackOn(pr, handlers.prs), stackUnder({ pr }, handlers.prs, handlers.below, handlers.defaultBranch).nodes))),
@@ -1159,9 +1159,11 @@ export const nums = ({ additions, deletions }) => [
   deletions ? ['del', `−${deletions}`] : null,
 ].filter(Boolean);
 
-/** `done` of `total` as what mark() draws: the fraction, and the figure as its name. */
-const counted = ({ done, total }, what) =>
-  ({ p: total ? done / total : 0, full: tabDone({ done, total }), label: `${done} of ${total} ${what}` });
+/** `done` of `total` as the pie mark() draws: how far, and whether it is finished. */
+const fraction = ({ done, total }) => ({ p: total ? done / total : 0, full: tabDone({ done, total }) });
+
+/** fraction, with the figure as the mark's name -- for a fold, where no label beside it says it. */
+const counted = (count, what) => ({ ...fraction(count), label: `${count.done} of ${count.total} ${what}` });
 
 /**
  * The pane's one status mark: a pie filled to `p`, from 0 to 1, that becomes a
