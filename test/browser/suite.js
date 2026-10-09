@@ -328,6 +328,8 @@ test('the Checks tab lists each check, and a poll that empties it moves you to D
   assert.deepEqual(await p.locator('#pr-body .check-name').allTextContents(), ['CI / test', 'deploy', 'lint']);
   assert.deepEqual(await p.locator('#pr-body .check-state').allTextContents(), ['pending', 'failed'],
     'a word beside every check that did not pass');
+  assert.deepEqual(await p.locator('#pr-body .check').evaluateAll((rs) => rs.map((r) => r.querySelector('.mark').getAttribute('aria-label'))),
+    ['passed', null, null], 'and a passed one is named by its mark, so a screen reader hears it passed');
   assert.deepEqual(await p.$$eval('#pr-body .check a', (as) => as.map((a) => a.getAttribute('href'))),
     [`${REPO}/actions/runs/1`], 'only the http(s) link is a link');
   // Shape, not only colour: read off the computed ::before, since the class is

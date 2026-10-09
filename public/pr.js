@@ -942,7 +942,12 @@ export const checksName = (checks) => {
   return words.some(Boolean) ? `${label}: ${words.filter(Boolean).join(', ')}` : label;
 };
 
-/** The word a check row carries beside its mark. A pass carries none: it is the state you stop reading at. */
+/**
+ * The word a check row carries beside its mark. A pass carries none: it is the
+ * state you stop reading at. A screen reader still needs one, since the mark is
+ * otherwise hidden from it, so a passed row's mark is named instead -- an image
+ * called `passed` -- and the ✓ is what a sighted reader gets for the word.
+ */
 const CHECK_WORD = { pend: 'pending', fail: 'failed' };
 
 /**
@@ -984,7 +989,7 @@ function renderPrTab(pr, parsed, handlers) {
       : h('p', { className: 'empty' }, ...named(stackEmpty(pr, handlers.prs, handlers.otherRepo))),
   ] : tab === 'checks' ? [
     ...pr.checks.list.map((c) => h('div', { className: 'check' },
-      mark({ full: c.state === 'pass', state: c.state }),
+      mark({ full: c.state === 'pass', state: c.state, label: CHECK_WORD[c.state] ? undefined : 'passed' }),
       // A check GitHub gave no URL for is rare and not worth a dead link, so it
       // stays plain text rather than becoming an <a> to nowhere.
       c.url ? ext(c.url, c.name, { className: 'check-name' }) : h('span', { className: 'check-name' }, c.name),

@@ -159,7 +159,8 @@ a { color: var(--accent); }
    colour alone was what told a failed check from a pending one in places --
    red against yellow, pastel ones at that, which is exactly the pair
    red-green colour blindness loses. The words carry it for a screen reader --
-   checksName and filesName in pr.js for a tab, `.check-state` for a row -- so
+   checksName and filesName in pr.js for a tab, `.check-state` for a row, and
+   a passed row's mark is itself named `passed` (CHECK_WORD says why) -- so
    the glyphs are given empty alt text (`/ ''`) rather than being read out as
    "multiplication x" ahead of them. The first `content` is the fallback for an
    engine without the alt syntax, which then just reads the glyph. Drawn rather
