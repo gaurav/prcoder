@@ -111,8 +111,9 @@ checks have gone green, and for Stack the pull requests under this one and built
 while you are in another. A count that has run out keeps its numbers, `Files (11/11)`, so it
 still says how many.
 
-Each tab with a count is led by one mark, the same one the check rows and the folds below use: a
-pie that fills green as the work is done, and a green circle with a ✓ in it once none is left. The
+Each tab that counts work left -- Detail, Files and Checks, not Stack -- is led by one mark, the
+same one the check rows and the folds below use: a pie that fills green as the work is done, and a
+green circle with a ✓ in it once none is left. The
 Files tab's pie fills by changed lines viewed rather than files viewed, so it says how much
 reviewing is left where the count says how many files: fourteen of seventeen viewed with the last
 three the biggest is a pie still mostly empty. Hover the tab for both figures. The Checks tab's pie

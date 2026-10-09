@@ -758,9 +758,9 @@ function renderPrHead(pr, parsed, handlers) {
       h('span', { className: 'add' }, `+${pr.additions}`),
       h('span', { className: 'del' }, `−${pr.deletions}`),
     ),
-    // Each counted tab leads with its mark (tabLabel says why in front). The
-    // mark is hidden from a screen reader, so whatever it says that the label
-    // does not goes in the button's name -- filesName, checksName.
+    // Each tab that counts work left leads with its mark (tabLabel says why in
+    // front). The mark is hidden from a screen reader, so whatever it says that
+    // the label does not goes in the button's name -- filesName, checksName.
     tabs: h('div', { className: 'tabs' },
       paneTab('detail', [tasks.total ? mark({ p: tasks.done / tasks.total, full: tabDone(tasks) }) : null,
         tabLabel('Detail', tasks)]),
