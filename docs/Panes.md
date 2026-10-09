@@ -203,7 +203,8 @@ and a rename with no other change says only that.
 The ⧉ right after the filename copies its path from the repository root, as the bar shows it,
 and turns to ✓ for a moment to say it went; a browser that refuses the clipboard gets a toast
 instead. It is a button because the bar is `user-select: none`, and the path cannot be selected
-off it (`app.js` says why selecting the path alone was not the answer).
+off it (`app.js` says why selecting the path alone was not the answer). It is only that way
+out, for the occasional paste somewhere else, so unlike the **@** it has no key.
 
 The **@** after it types ` @path ` into the coding agent's prompt, for "@path
 should be fixed…" or "an example of this is @path": the path from the agent's working directory,
