@@ -1290,9 +1290,10 @@ test('@ and Alt+M type the mention from a folded diff and leave it folded', { sk
   await fresh.close();
 });
 
-// The keyboard's way to the same button -- and, as for every shortcut, not
-// while typing in the terminal, where Alt+M belongs to the agent.
-test('Alt+M types the mention outside the terminal and nothing inside it', { skip }, async () => {
+// The keyboard's way to the same button -- and, unlike every other shortcut,
+// from inside the terminal too, which is where a request about the file is
+// being typed.
+test('Alt+M types the mention from the diff and from the terminal', { skip }, async () => {
   const frames = [];
   const fresh = await newPage({ pty: (ws) => ws.onMessage((m) => frames.push(JSON.parse(m))) });
   const typed = () => frames.filter((f) => f.type === 'input');
@@ -1303,10 +1304,13 @@ test('Alt+M types the mention outside the terminal and nothing inside it', { ski
   await fresh.keyboard.press('Alt+KeyM');
   for (let i = 0; !typed().length && i < 100; i++) await fresh.waitForTimeout(50);
   assert.deepEqual(typed(), [{ type: 'input', data: ' @app.tsx ' }]);
-  // The press above left the focus in the terminal, so this one is the agent's.
+  // The press above left the focus in the terminal, and this one types it
+  // again -- and nothing else: not the µ or ESC m the key would send.
+  assert.ok(await fresh.evaluate(() => !!document.activeElement?.closest('#term-host')), 'focus in the terminal');
   await fresh.keyboard.press('Alt+KeyM');
+  for (let i = 0; typed().length < 2 && i < 100; i++) await fresh.waitForTimeout(50);
   await fresh.waitForTimeout(200);
-  assert.equal(typed().filter((f) => f.data === ' @app.tsx ').length, 1);
+  assert.deepEqual(typed(), [{ type: 'input', data: ' @app.tsx ' }, { type: 'input', data: ' @app.tsx ' }]);
   await fresh.close();
 });
 

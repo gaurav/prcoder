@@ -4,7 +4,7 @@ import { WebLinksAddon } from '/vendor/addon-web-links.mjs';
 import { renderPr, renderNoPr, renderHeader, pageTitle, api, toast, pref, setPref, debug } from './pr.js';
 import { openDiff, closeDiff, selectedPath, setViewed, toggleWrap, openMention } from './diff.js';
 import { initQueue, addItem, setItems } from './queue.js';
-import { bindKeys } from './keys.js';
+import { bindKeys, keyName } from './keys.js';
 import { fold, folded, canFold } from './folds.js';
 import './panes.js';   // draggable pane gutters; nothing here calls into it
 
@@ -25,6 +25,19 @@ const fit = new FitAddon();
 term.loadAddon(fit);
 term.loadAddon(new WebLinksAddon((_e, uri) => window.open(uri, '_blank', 'noopener')));
 term.open(document.getElementById('term-host'));
+// Alt+M is the one shortcut that also fires from the terminal, since that is
+// where you are when you want it: halfway through typing a request about the
+// open file. xterm handles its keydowns itself and stops them there, so the
+// document listener bindKeys installs never sees this one -- the hook has to
+// be xterm's. The agent no longer gets Alt+M: µ on a Mac, ESC m elsewhere.
+term.attachCustomKeyEventHandler((e) => {
+  if (keyName(e) !== 'Alt+KeyM') return true;
+  if (e.type === 'keydown') {
+    e.preventDefault();
+    mentionOpenFile();
+  }
+  return false;
+});
 
 const PTY_SEEN = 'prcoder:pty';
 // The server serves only public/, so the docs are linked where they live.
