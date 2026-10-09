@@ -49,6 +49,13 @@ export const api = async (url, body, method = 'POST') => {
 };
 
 /**
+ * A line in the browser console, for the paths whose failures leave nothing on
+ * screen -- switching pull requests after a merge was one. Debug level,
+ * so it shows only with the console's Verbose/Debug filter on.
+ */
+export const debug = (...args) => console.debug('[prcoder]', ...args);
+
+/**
  * A line over the panes: the app's one notification surface.
  *
  * `sticky` is for a notice that stays true until you act on it, rather than one
@@ -182,13 +189,18 @@ export function renderHeader(status, prs, { onSwitch, onCommit }) {
 
   const keys = (prs ? '' : '?') + shown.map(({ pr, depth }) => `${pr.number}:${depth}`).join(',');
   if (sel.dataset.keys !== keys) {
+    debug('switcher options rebuilt:', sel.dataset.keys ?? '(none)', '->', keys,
+      document.activeElement === sel ? '(while focused)' : '');
     sel.dataset.keys = keys;
     sel.replaceChildren(
       h('option', { value: '' }, shown.length ? 'no pull request' : prs ? 'no open pull requests' : 'no list of pull requests yet'),
       ...shown.map(({ pr: p, depth }) => h('option', { value: String(p.number) },
         `${depth ? `${'\u00a0\u00a0'.repeat(depth)}└\u00a0` : ''}#${p.number} ${p.isDraft ? '(draft) ' : ''}${p.title}`)),
     );
-    sel.onchange = () => sel.value && onSwitch(Number(sel.value));
+    sel.onchange = () => {
+      debug('switcher picked', sel.value || '(none)');
+      if (sel.value) onSwitch(Number(sel.value));
+    };
   }
   // Always re-assert: a failed switch has to snap back to the real branch.
   sel.value = status.pr ? String(status.pr.number) : '';

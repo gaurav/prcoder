@@ -1,7 +1,7 @@
 import { Terminal } from '/vendor/xterm.mjs';
 import { FitAddon } from '/vendor/addon-fit.mjs';
 import { WebLinksAddon } from '/vendor/addon-web-links.mjs';
-import { renderPr, renderNoPr, renderHeader, pageTitle, api, toast, pref, setPref } from './pr.js';
+import { renderPr, renderNoPr, renderHeader, pageTitle, api, toast, pref, setPref, debug } from './pr.js';
 import { openDiff, closeDiff, selectedPath, setViewed, toggleWrap, openMention } from './diff.js';
 import { initQueue, addItem, setItems } from './queue.js';
 import { bindKeys } from './keys.js';
@@ -355,19 +355,24 @@ copyButton.onclick = async () => {
 // the pull requests it showed a moment ago had gone, because gh had a blip.
 let prs = null;
 let last = null;
-const loadPrs = () => api('/api/prs', undefined, 'GET')
+// `why` is only for the console: which of the triggers above asked.
+const loadPrs = (why) => {
+  debug('fetching the PR list:', why);
   // Repaint, or a PR opened since page load stays invisible until the next
   // poll — the switcher only rebuilds its options when the set changes. The
   // whole status, because the branch-only pane reads this list too; `last` is
   // already the branch this fetch was for, so nothing asks for it again.
-  .then((l) => {
+  return api('/api/prs', undefined, 'GET').then((l) => {
+    debug('PR list landed:', l.map((p) => p.number).join(',') || '(empty)',
+      document.activeElement?.id === 'pr-switch' ? '(switcher focused)' : '');
     prs = l;
     // The list is what says which branches have a pull request, so what git
     // said under the others is asked again against it, in place.
     asked.clear();
     [...below.keys()].forEach(loadBelow);
     if (last) paint(last);
-  }, () => {});
+  }, (e) => debug('PR list failed:', e.message));
+};
 
 // What git says each branch with no pull request is built on (#93), for the
 // branch-only pane and a Stack tab that reaches one: branch -> `{ branch,
@@ -385,7 +390,7 @@ const loadBelow = (branch) => {
   api('/api/below', { branch, prs: pairs })
     .then((b) => { below.set(branch, b); if (last) paint(last); }, () => {});
 };
-document.getElementById('pr-switch').addEventListener('mousedown', loadPrs);
+document.getElementById('pr-switch').addEventListener('mousedown', () => loadPrs('switcher opened'));
 
 const NOTES = {
   'other-branch': 'Not checked out — this pull request is on another branch.',
@@ -482,7 +487,7 @@ function paint(status) {
         selected: selectedPath(),
         prs: stack,
         otherRepo,
-        onStackOpen: loadPrs,
+        onStackOpen: () => loadPrs('Stack tab opened'),
         below: [...below.values()],
         onBelow: loadBelow,
         defaultBranch: status.defaultBranch,
@@ -498,7 +503,7 @@ function paint(status) {
   if (switched) {
     below.clear();
     asked.clear();
-    loadPrs();
+    loadPrs('branch changed');
   }
   // Reading its checklist into the PR tab needs only a PR on screen.
   if (status.queue) setItems(status.queue, status.pr);
@@ -529,8 +534,10 @@ async function loadStatus() {
 }
 
 async function switchPr(number) {
+  debug('switching to', number);
   try {
     const status = await api('/api/pr/switch', { number });
+    debug('switched: now on', status.branch, `#${status.pr?.number}`);
     paint(status);
     // Claude's cwd survives a checkout, but its idea of the files does not, and
     // nothing tells it: prcoder has no channel into the session that isn't a
@@ -540,6 +547,7 @@ async function switchPr(number) {
       + " branch's files in mind — tell it to re-read anything it had open.",
     false, true);
   } catch (e) {
+    debug('switch failed:', e.message);
     toast(e.message, true);
     await loadStatus();   // re-derive: the checkout may have half-succeeded
   }
@@ -615,6 +623,6 @@ input.addEventListener('input', grow);
 // Not awaited: the switcher's list is a whole `gh pr list` and nothing below
 // needs it — renderHeader synthesises an option for the current PR until it
 // lands, and loadPrs repaints the header itself when it does.
-loadPrs();
+loadPrs('page load');
 await initQueue({ sendToClaude, onTask: toggleTask });
 loadStatus();
