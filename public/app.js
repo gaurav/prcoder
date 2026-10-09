@@ -241,9 +241,12 @@ new ResizeObserver(sync).observe(document.getElementById('term-host'));
 // always there remember their fold, like the outline's ✕ in diff.js; the
 // diff's is not stored (closeDiff says why).
 const FOLD_KEY = { term: 'prcoder:term', queue: 'prcoder:queue' };
-function setFold(pane, off) {
+function foldAndStore(pane, off) {
   fold(pane, off);
   if (FOLD_KEY[pane]) setPref(FOLD_KEY[pane], off ? 'off' : 'on');
+}
+function setFold(pane, off) {
+  foldAndStore(pane, off);
   settleFolds(off ? pane : null);
   if (pane === 'term' && !off) term.focus();   // expanding it is to talk to it
 }
@@ -260,11 +263,10 @@ function settleFolds(just) {
     : !selectedPath() && folded('term') && folded('queue') ? 'queue' : null;
   if (!other) return;
   const back = just === 'term' ? other : 'term';
-  fold(back, false);
-  if (FOLD_KEY[back]) setPref(FOLD_KEY[back], 'on');
+  foldAndStore(back, false);
   if (back === 'term' && just) term.focus();   // a fold made to talk to it
 }
-for (const pane of ['term', 'queue']) if (canFold(pane) && pref(FOLD_KEY[pane]) === 'off') fold(pane, true);
+for (const pane in FOLD_KEY) if (canFold(pane) && pref(FOLD_KEY[pane]) === 'off') fold(pane, true);
 settleFolds(null);
 // The whole bar is the toggle, and the ▼ is only the part of it that says so
 // -- and the part a keyboard can reach, since a button's Enter is a click and
