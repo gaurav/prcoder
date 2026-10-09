@@ -132,12 +132,10 @@ main:not(.term-off) #term-busy { display: none; }
 /* Only the diff-open template has a slot for it; left displayed it would
    auto-place itself into a row of its own and shove the layout sideways. */
 #gut-diff { display: none; }
-main.diff-open #gut-diff { display: block; }
 /* Under a folded terminal the diff is 1fr, and folded itself it is a bar, so
-   there is nothing for a drag to set. After the rule above, which they tie
-   with on specificity: written before it, this lost and the line stayed
-   draggable. */
-main.term-off #gut-diff, main.diff-off #gut-diff { display: none; }
+   there is nothing for a drag to set. One rule rather than a later hide: the
+   two tie on specificity, and the hide written first once lost to this. */
+main.diff-open:not(.term-off, .diff-off) #gut-diff { display: block; }
 /* 1px of line, ±3px of grab, above the panes so the cursor changes over it. */
 .gut { position: relative; z-index: 3; touch-action: none; }
 .gut::after { content: ''; position: absolute; }

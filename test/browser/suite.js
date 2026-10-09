@@ -569,8 +569,7 @@ test('the terminal folds to its header, the diff takes the room, and it stays fo
   assert.ok(await height('#diff') > open, `diff was ${open}px, is ${await height('#diff')}px`);
   assert.equal(await fresh.getAttribute('#term-fold', 'aria-expanded'), 'false');
   // The diff is 1fr now, so a drag of the line under it would set a height
-  // nothing reads. The hide rule lost to the show rule on order (same
-  // specificity) until it was moved below it.
+  // nothing reads. A separate hide rule once lost to the show rule on order.
   assert.equal(await fresh.locator('#gut-diff').isVisible(), false, 'nothing to drag under a folded terminal');
 
   await fresh.reload();
