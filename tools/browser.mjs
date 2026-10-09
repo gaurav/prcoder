@@ -851,7 +851,7 @@ await page.waitForTimeout(200);
 const busy = await iconFill();
 await page.waitForTimeout(2500);
 console.log('icon:   ', `${typing} while typing, ${busy} after Enter, ${await iconFill()} after 2.5s of probes only`,
-  '  (want 238636, 1f6feb, 238636)');
+  '  (want 238636, f85149, 238636)');
 
 console.log('title: ', await page.title());
 console.log('panes: ', await page.evaluate(() => getComputedStyle(document.querySelector('main')).gridTemplateColumns));

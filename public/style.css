@@ -839,9 +839,9 @@ main.diff-off #diff-wrap { display: none; }
   background: var(--line); flex: none;
 }
 .light.warn { color: var(--warn); }
-/* The favicon's busy blue (BUSY in app.js, from the icon in index.html), on
-   the dot only: the words stay dim, so a folded turn is noticeable, not loud. */
-.light.busy::before { background: #1f6feb; }
+/* The favicon's busy red (`data-busy` on the icon in index.html), on the dot
+   only: the words stay dim, so a folded turn is noticeable, not loud. */
+.light.busy::before { background: #f85149; }
 .light.warn::before { background: var(--warn); }
 .light.unknown::before { background: transparent; box-shadow: inset 0 0 0 1px var(--dim); }
 
