@@ -99,7 +99,7 @@ how to read it.
 
 - **A poll that reloads nothing costs six subprocess calls with a pull request**, seven on a
   branch without one that origin has, and five on one never pushed; one more for a branch ahead
-  of its remote, and the same clean tree or dirty (on `8c3a7ce`, 2026-10-08). A poll that reloads
+  of its remote, and the same clean tree or dirty (re-measured on `43e3700`, 2026-10-09). A poll that reloads
   the pull request adds `loadPr`'s GraphQL calls on top. `PRCODER_VERBOSE=2` prints the count on
   every poll, so a change that adds a call shows up.
 - **The checks are most of what the poll's cheap `gh pr view` fetches.** prHeads asks for them on every poll
