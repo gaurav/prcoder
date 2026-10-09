@@ -27,4 +27,9 @@ export function fold(pane, off) {
   b.textContent = off ? '▶︎' : '▼';   // FE0E: text, never macOS's emoji ▶
   b.title = `${off ? 'expand' : 'collapse'} the ${NAME[pane]} pane`;
   b.setAttribute('aria-label', b.title);   // a glyph is no name, as in queue.js
+  // A fold that hides the focus -- Wrap, an outline entry, the terminal --
+  // would drop it on <body> and lose a keyboard user their place. The ▼ is on
+  // the bar that stays, and is the key that brings the rest back.
+  const at = document.activeElement;
+  if (off && document.getElementById(pane).contains(at) && !at.checkVisibility()) b.focus();
 }

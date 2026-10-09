@@ -43,6 +43,9 @@ terminal, and folding the terminal over a folded queue unfolds the queue: the pa
 stays folded. A reload that would restore both folded, or closing the diff that sat between them,
 brings the terminal back.
 
+A fold that hides the keyboard focus -- on *Wrap*, an outline entry, the terminal -- moves it to
+that pane's ▼, the key that unfolds it.
+
 Whether the terminal is folded, whether the outline is shown, whether the diff wraps long lines,
 and which way the queue adds are remembered the same way as the sizes, and so is the queue's fold
 when it is on. The diff's fold is not:

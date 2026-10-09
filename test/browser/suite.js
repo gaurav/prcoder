@@ -913,6 +913,26 @@ test('no way in folds every pane: the terminal\'s fold, a reload, a closed diff'
   await fresh.close();
 });
 
+// A fold hides its pane's body, and the focus with it if it was in there, so
+// the ▼ takes it: the key that brings the rest back. dispatchEvent, because a
+// real click on the bar would move the focus to <body> itself first.
+test('folding a pane with the focus inside hands the focus to its ▼', { skip }, async () => {
+  const fresh = await newPage();
+  const focused = () => fresh.evaluate(() => document.activeElement.id);
+  await fresh.locator('#pr-head .tab', { hasText: 'Files' }).click();
+  await fresh.locator('.file[data-path="evil.js"] .path').click();
+  await fresh.waitForFunction(() => document.querySelectorAll('#diff-body .dl').length > 0);
+  await fresh.locator('#diff-wrap').focus();
+  await fresh.dispatchEvent('#diff > header h1', 'click');
+  assert.equal(await fresh.locator('#diff-main').isVisible(), false);
+  assert.equal(await focused(), 'diff-fold', 'Wrap went with the body');
+  await fresh.dispatchEvent('#diff > header h1', 'click');
+  await fresh.locator('#diff-viewed').focus();
+  await fresh.dispatchEvent('#diff > header h1', 'click');
+  assert.equal(await focused(), 'diff-viewed', 'focus on the bar stays where it was');
+  await fresh.close();
+});
+
 // Every toast closes on a click, so every one has a ✕, where a close button is
 // looked for: the top right corner. After the text, it ended whichever line the
 // text wrapped to. It is a pseudo-element, which has no box to measure, so this
