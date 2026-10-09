@@ -2,6 +2,10 @@
   --bg: #14161a; --panel: #1c1f26; --line: #2c313c;
   --fg: #d5d9e0; --dim: #8c93a1; --accent: #7aa2f7;
   --add: #7fd88f; --del: #f08b8b;   /* the file rows' +/- counts and the diff pane's NEW / DELETED */
+  /* What a state is coloured, wherever it is drawn: a failed check, a closed
+     pull request and an error toast are one red; anything still waiting is one
+     yellow. Passed is --add -- green-for-done is the same green everywhere. */
+  --fail: #f5a3a3; --warn: #f0dc9a;
   color-scheme: dark;
   /* The description and the pull request's title -- the two things in this
      window that are read rather than operated. Every face here ships with an OS
@@ -140,50 +144,51 @@ a { color: var(--accent); }
   font: inherit; font-size: 12px; padding: 2px 8px; border-radius: 4px; cursor: pointer;
 }
 .tab.on { color: var(--fg); border-color: var(--line); background: var(--bg); }
-/* A tab whose count has run out -- every box ticked, every file viewed, every
-   check passed -- ends in a green circle with a ✓ in it, after the count
-   (tabLabel in pr.js says why the count stays). It is the fold pie's full
-   state (`.pie.full`) with a tick in it, so green-and-round means "none left"
-   everywhere in the pane. Drawn rather than an emoji: ✅ is a square on macOS
-   and whatever the font has elsewhere. The ✓ has empty alt text, since
-   `(11/11)` already says it to a screen reader. 12px, inside the tab's line
-   box, so the tab row keeps its height. */
-.tab.done::after {
-  content: '✓'; content: '✓' / '';
-  display: inline-block; box-sizing: border-box; width: 12px; height: 12px;
-  margin-left: 5px; border-radius: 50%; vertical-align: -1px;
-  background: var(--add); color: var(--bg);
-  font-size: 9px; font-weight: 700; line-height: 12px; text-align: center;
+/* The pane's one status mark (mark() in pr.js): in front of each counted tab's
+   name, at the start of each check row, and at the end of each fold's summary.
+   One shape everywhere, so a shape means one thing:
+
+     pie       a dim ring filling green as the work is done -- the ring is
+               what an empty one is, or nothing done would be nothing drawn
+     ✓ disc    none left: every box ticked, every file viewed, every check
+               passed
+     yellow    the pie's ring when a check is still running
+     ✕ disc    a check failed, in red, whatever else is true
+
+   Shape as well as colour. When the checks were a dot, a ring and a bare ✕,
+   colour alone was what told a failed check from a pending one in places --
+   red against yellow, pastel ones at that, which is exactly the pair
+   red-green colour blindness loses. The words carry it for a screen reader --
+   checksName and filesName in pr.js for a tab, `.check-state` for a row, and
+   a passed row's mark is itself named `passed` (CHECK_WORD says why) -- so
+   the glyphs are given empty alt text (`/ ''`) rather than being read out as
+   "multiplication x" ahead of them. The first `content` is the fallback for an
+   engine without the alt syntax, which then just reads the glyph. Drawn rather
+   than an emoji: ✅ is a square on macOS and whatever the font has elsewhere.
+
+   12px in a tab and 10px in a row, each inside its line box, so neither the
+   tab row nor a summary grows for it. `.light` has a dot of its own and is a
+   whole labelled control about the branch, not a count; it is not this. */
+.mark {
+  display: inline-block; flex: none; box-sizing: border-box;
+  width: 10px; height: 10px; border-radius: 50%;
+  background: conic-gradient(var(--add) calc(var(--p) * 1turn), transparent 0);
+  box-shadow: inset 0 0 0 1px var(--dim);
+  color: var(--bg); font-size: 8px; font-weight: 700; line-height: 10px; text-align: center;
 }
+.mark.pend { box-shadow: inset 0 0 0 1.5px var(--warn); }
+.mark.full { background: var(--add); box-shadow: none; }
+.mark.fail { background: var(--fail); box-shadow: none; }
+.mark.full::after { content: '✓'; content: '✓' / ''; }
+.mark.fail::after { content: '✕'; content: '✕' / ''; }
+.tab .mark {
+  width: 12px; height: 12px; margin-right: 5px; vertical-align: -1px;
+  font-size: 9px; line-height: 12px;
+}
+.check .mark { margin-right: 6px; }
 /* The checks, as a mark rather than the row of badges they used to be above the
    title: three counts in colour, at the top of the pane, read as the loudest
-   thing about a pull request when they are mostly a thing to glance at. The
-   same mark leads each row inside the tab, so it means one thing in both
-   places -- except that a tab where every check passed has no dot in front,
-   only the done circle after it that any finished tab has (`.tab.done`). `.light` has a dot of its own and is a whole labelled control; this is
-   just the mark.
-
-   Shape as well as colour: a filled dot passed, a ring is still pending, a ✕
-   failed. Colour alone left a failed and a pending check telling apart only
-   by red against yellow, pastel ones at that, which is exactly the pair
-   red-green colour blindness loses. The words carry it for a screen reader --
-   checksName in pr.js for the tab, `.check-state` for a row -- so the ✕ is
-   given empty alt text (`/ ''`) rather than being read out as "multiplication
-   x" ahead of them. The first `content` is the fallback for an engine without
-   the alt syntax, which then just reads the glyph. */
-.dot::before {
-  content: ''; display: inline-block; flex: none; box-sizing: border-box;
-  width: 7px; height: 7px; border-radius: 50%;
-  margin-right: 5px; vertical-align: baseline;
-  background: var(--line);
-}
-.dot.pass::before { background: #7fd88f; }
-.dot.pend::before { background: none; border: 1.5px solid #f0dc9a; }
-.dot.fail::before {
-  content: '✕'; content: '✕' / '';
-  background: none; border-radius: 0; color: #f5a3a3;
-  font-size: 9px; font-weight: 700; line-height: 7px; text-align: center;
-}
+   thing about a pull request when they are mostly a thing to glance at. */
 .check { display: flex; align-items: center; font-size: 13px; padding: 3px 0; }
 .check-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .check-state { flex: none; margin-left: auto; padding-left: 8px; color: var(--dim); font-size: 12px; }
@@ -239,7 +244,14 @@ a { color: var(--accent); }
    offset of its own to be restored to (see renderPrTab). */
 #pr-head { flex: none; padding: 10px 10px 8px; border-bottom: 1px solid var(--line); }
 #pr-head:empty { display: none; }
-#pr-head .tabs { margin-bottom: 0; }
+/* Four tabs, three of them led by a mark, in a 355px row at the pane's 375px
+   default: `◔ Detail (2/5)  ◔ Files (1/3)  ✕ Checks (1/3)  Stack` wanted
+   356px at 8px a side (2026-10-06), and a row one pixel short squeezes every
+   tab's label onto two lines. 6px a side gives 16px back. A label never breaks
+   inside its tab; when a long count still does not fit, the row wraps whole
+   tabs, so Stack goes to a line of its own rather than every word to two. */
+#pr-head .tabs { margin-bottom: 0; flex-wrap: wrap; }
+#pr-head .tab { padding: 2px 6px; white-space: nowrap; }
 #pr-head > :last-child { margin-bottom: 0; }
 
 .empty { color: var(--dim); }
@@ -431,9 +443,9 @@ a { color: var(--accent); }
 .badge { padding: 1px 6px; border-radius: 9px; background: var(--line); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; }
 .badge.open { background: #1f4d2e; color: #9ae6b4; }
 .badge.merged { background: #3d2a56; color: #d0b0f5; }
-.badge.closed, .badge.fail { background: #4d1f24; color: #f5a3a3; }
+.badge.closed, .badge.fail { background: #4d1f24; color: var(--fail); }
 .badge.pass { background: #1f4d2e; color: #9ae6b4; }
-.badge.pend { background: #4d411f; color: #f0dc9a; }
+.badge.pend { background: #4d411f; color: var(--warn); }
 
 /* A pull request description is prose, and with the title above it the only
    part of this window that is read rather than operated. It gets a reading
@@ -503,24 +515,12 @@ a { color: var(--accent); }
 .fold > summary:hover, .fold > summary:hover::before { color: var(--accent); }
 .fold > summary:focus-visible { outline: 1px solid var(--accent); border-radius: 3px; }
 .fold > summary h3 { display: inline; margin: 0; font: inherit; flex: 1; min-width: 0; }
-/* What is still outstanding inside, so a fold never hides work silently: a pie
-   that fills green as its items are done (pie() in pr.js says why not `3/5`).
-   The ring is what an empty one is -- without it, nothing done is nothing
-   drawn. 10px, under every summary's line box, so the row keeps its height. */
-.pie {
-  flex: none; width: 10px; height: 10px; border-radius: 50%;
-  background: conic-gradient(var(--add) calc(var(--p) * 1turn), transparent 0);
-  box-shadow: inset 0 0 0 1px var(--dim);
-}
-.pie.full { box-shadow: none; }
-.fold > summary .pie {
+/* What is still outstanding inside, so a fold never hides work silently: the
+   mark, filling green as its items are done (mark() in pr.js says why not
+   `3/5`). At the end of the summary rather than in front like a tab's: the
+   front is the triangle's, and at the end they line up down the list. */
+.fold > summary .mark {
   align-self: center;   /* the row is baseline-aligned, and a box with no text sits on it by its bottom */
-}
-/* The Files tab's, while files are left: the box the ✓ circle (`.tab.done`)
-   takes once none are, so the tab neither moves nor grows when it turns. */
-.tab .pie {
-  display: inline-block; box-sizing: border-box; width: 12px; height: 12px;
-  margin-left: 5px; vertical-align: -1px;
 }
 /* Indented under the title, not under the triangle. */
 .fold > .sec-body { padding: 2px 0 12px 18px; }
@@ -695,8 +695,11 @@ a { color: var(--accent); }
    starts (a `+`/`-` there is a line's, never a fold's). pre-wrap keeps a line's
    own leading spaces, and they sit on the first line as before. */
 #diff.wrap .dl { padding-left: calc(10px + 2ch); text-indent: -2ch; }
-#diff > header #diff-wrap { font-size: 12px; }
-#diff > header #diff-wrap[aria-pressed="true"] { color: var(--accent); }
+/* Pressed, Wrap fills in rather than changing colour: the links beside it are
+   already --accent, so accent text alone read as one more link. No border and no
+   vertical padding, which would make the header taller (the suite checks). */
+#diff > header #diff-wrap { font-size: 12px; padding: 0 6px; border-radius: 3px; }
+#diff > header #diff-wrap[aria-pressed="true"] { color: var(--bg); background: var(--accent); }
 #diff-outline button {
   display: block; width: 100%; max-width: 100%; text-align: left; background: none; border: 0; cursor: pointer;
   font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--dim); padding: 2px 10px;
@@ -704,7 +707,7 @@ a { color: var(--accent); }
 }
 #diff-outline button:hover { color: var(--fg); }
 .dl.add { color: #9ae6b4; background: #1f4d2e33; }
-.dl.del { color: #f5a3a3; background: #4d1f2433; }
+.dl.del { color: var(--fail); background: #4d1f2433; }
 .dl.hunk { color: var(--accent); margin-top: 4px; }
 /* Token colours for a highlighted NEW file (highlightLines in diff.js). The
    classes are prcoder's own `tok-` names, not Prism's, so nothing else on the
@@ -791,11 +794,11 @@ a { color: var(--accent); }
   content: ''; width: 7px; height: 7px; border-radius: 50%;
   background: var(--line); flex: none;
 }
-.light.warn { color: #f0dc9a; }
+.light.warn { color: var(--warn); }
 /* The favicon's busy blue (BUSY in app.js, from the icon in index.html), on
    the dot only: the words stay dim, so a folded turn is noticeable, not loud. */
 .light.busy::before { background: #1f6feb; }
-.light.warn::before { background: #f0dc9a; }
+.light.warn::before { background: var(--warn); }
 .light.unknown::before { background: transparent; box-shadow: inset 0 0 0 1px var(--dim); }
 
 /* Sits over the panes so it never reflows them. Above the terminal pane rather
@@ -808,7 +811,7 @@ a { color: var(--accent); }
   box-shadow: 0 3px 14px #0008; z-index: 10; cursor: pointer;
 }
 #toast[hidden] { display: none; }
-#toast.bad { background: #4d1f24; color: #f5a3a3; border-color: #f5a3a3; }
+#toast.bad { background: #4d1f24; color: var(--fail); border-color: var(--fail); }
 /* Every toast closes on a click, so every one says so -- a sticky one most of
    all, since it waits for that click, which is what its border marks. The
    glyph is a pseudo-element because toast() sets textContent. In the top right
@@ -821,7 +824,7 @@ a { color: var(--accent); }
 #toast:hover::after { color: var(--fg); }
 #toast.bad::after { color: inherit; opacity: .7; }
 #toast.bad:hover::after { opacity: 1; }
-#toast.sticky { border-color: #f0dc9a; }
+#toast.sticky { border-color: var(--warn); }
 
 /* A row per pull request that merges into this branch: the #N is a link out,
    Switch is the checkout, and the title sits between them and gives way first. */

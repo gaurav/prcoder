@@ -737,7 +737,11 @@ function renderPrHead(pr, parsed, handlers) {
   // thing you want next to it. From the list, so it costs nothing.
   const under = handlers.prs?.find((p) => !p.isCrossRepository && p.headRefName === pr.baseRefName);
 
-  const seen = viewedCount(pr.files);
+  const files = filesProgress(pr.files);
+  const tasks = taskCount(parsed);
+  const checks = checkCount(pr.checks);
+  // A tab's accessible name and its tooltip, which say the same thing.
+  const said = (name) => ({ ariaLabel: name, title: name });
 
   // Each row stands alone -- no row's spacing depends on which one is above it
   // -- so the order is HEAD_ORDER and nothing else.
@@ -754,19 +758,17 @@ function renderPrHead(pr, parsed, handlers) {
       h('span', { className: 'add' }, `+${pr.additions}`),
       h('span', { className: 'del' }, `−${pr.deletions}`),
     ),
+    // Each tab that counts work left leads with its mark (tabLabel says why in
+    // front). The mark is hidden from a screen reader, so whatever it says that
+    // the label does not goes in the button's name -- filesName, checksName.
     tabs: h('div', { className: 'tabs' },
-      paneTab('detail', tabLabel('Detail', taskCount(parsed)), tabDone(taskCount(parsed)) ? 'done' : ''),
-      // The pie while files are left, and the ✓ circle -- a full pie with a
-      // tick in it -- once none are.
-      paneTab('files', [tabLabel('Files', seen), seen.total && !tabDone(seen) ? pie(filesProgress(pr.files)) : null],
-        tabDone(seen) ? 'done' : ''),
+      paneTab('detail', [tasks.total ? mark(fraction(tasks)) : null,
+        tabLabel('Detail', tasks)]),
+      paneTab('files', [files.count.total ? mark({ p: files.p, full: files.full }) : null,
+        tabLabel('Files', files.count)], '', said(filesName(files))),
       pr.checks.list.length
-        // All passed is the done circle every tab has, not a green dot in
-        // front as well: one mark each for pending and failed, and the same
-        // one as Files and Detail for nothing left.
-        ? paneTab('checks', tabLabel('Checks', checkCount(pr.checks)),
-          tabDone(checkCount(pr.checks)) ? 'done' : `dot ${worst(pr.checks)}`,
-          { ariaLabel: checksName(pr.checks), title: checksName(pr.checks) })
+        ? paneTab('checks', [mark({ ...fraction(checks), state: worst(pr.checks) }),
+          tabLabel('Checks', checks)], '', said(checksName(pr.checks)))
         : null,
       paneTab('stack', stackLabel(stackOn(pr, handlers.prs), stackUnder({ pr }, handlers.prs, handlers.below, handlers.defaultBranch).nodes))),
   };
@@ -801,12 +803,18 @@ const paintHead = (rows) =>
  * larger; but `(11/11)` is what says all eleven files were viewed rather than
  * that some rule decided it was finished, and the ✓, a 12px glyph in the tab's
  * dim grey, was too faint to notice (2026-09-27). So the count says how many,
- * and tabDone puts a green ✓ circle after it (`.tab.done` in the stylesheet)
- * to say none are left.
+ * and the tab's mark (mark()) turns into a green ✓ circle to say none are left.
+ *
+ * The mark goes in front of the name, on every tab. For a while Files and
+ * Detail carried theirs after the count and Checks carried its own in front,
+ * so one tab moved its mark across the label when it went green, and the eye
+ * had two places to look (2026-10-06). In front it sits beside the word it is
+ * about rather than the parenthesis, at a place that does not move with the
+ * count's width, and it is where a check row's mark already was.
  */
 export const tabLabel = (name, { done, total }) => (total ? `${name} (${done}/${total})` : name);
 
-/** Whether a tab's count has run out, which is what draws the circle. Never for nothing to count. */
+/** Whether a tab's count has run out, which is what fills its mark. Never for nothing to count. */
 export const tabDone = ({ done, total }) => total > 0 && done === total;
 
 /** Over blocks() rather than the body, so a caller that has parsed it once reuses that. */
@@ -879,31 +887,47 @@ export const viewedLines = (files = []) => ({
 export const filesProgress = (files = []) => {
   const count = viewedCount(files);
   const weight = viewedLines(files);
-  const by = weight.total ? weight : count;
+  // The part the count cannot say, written once for this label and filesName.
+  const lines = weight.total ? `${weight.done} of ${weight.total} changed lines viewed` : null;
   return {
-    p: by.total ? by.done / by.total : 0,
+    p: fraction(weight.total ? weight : count).p,
     full: tabDone(count),
-    label: `${count.done} of ${count.total} files`
-      + (weight.total ? `, ${weight.done} of ${weight.total} changed lines viewed` : ' viewed'),
+    label: `${count.done} of ${count.total} files` + (lines ? `, ${lines}` : ' viewed'),
+    count,
+    lines,
   };
+};
+
+/**
+ * The Files tab's accessible name and tooltip: its label, then what its pie
+ * says that the label does not -- `Files (2/5): 40 of 120 changed lines
+ * viewed`. The pie was its own tooltip once, a 12px target; on the button the
+ * whole tab is. Plain label once every file is viewed, or when there are no
+ * lines to weigh, since the pie then says nothing the count does not. Takes
+ * filesProgress, so the tab walks its files once and says what the pie says.
+ */
+export const filesName = ({ count, lines, full }) => {
+  const label = tabLabel('Files', count);
+  return lines && !full ? `${label}: ${lines}` : label;
 };
 
 /**
  * The checks as the same done-over-total the other two tabs carry, so a run in
  * progress reads as `Checks (1/3)` and a green one as `Checks (3/3)` with the
- * done circle.
+ * done circle, and the mark in front fills by the same fraction.
  *
  * A failure is not "done": it is counted in the total and not in the done, so
  * the fraction stays short of the total for as long as something is red. That
- * leaves a pending 1/3 and a failed 1/3 as the same fraction: the mark beside
- * it tells them apart on screen, and checksName in words.
+ * leaves a pending 1/3 and a failed 1/3 as the same fraction: the mark in
+ * front tells them apart on screen -- a yellow ring round the pie, or a red ✕
+ * in place of it -- and checksName in words.
  */
 export const checkCount = ({ passed, failed, pending }) =>
   ({ done: passed, total: passed + failed + pending });
 
 /**
  * The Checks tab's accessible name and tooltip: its label, then what the mark
- * beside it means -- `Checks (1/3): 1 failed, 1 pending`. The mark is shape and
+ * in front of it means -- `Checks (1/3): 1 failed, 1 pending`. The mark is shape and
  * colour, which a screen reader does not get, and the fraction alone cannot say
  * whether what is missing failed or is still running.
  *
@@ -919,7 +943,12 @@ export const checksName = (checks) => {
   return words.some(Boolean) ? `${label}: ${words.filter(Boolean).join(', ')}` : label;
 };
 
-/** The word a check row carries beside its mark. A pass carries none: it is the state you stop reading at. */
+/**
+ * The word a check row carries beside its mark. A pass carries none: it is the
+ * state you stop reading at. A screen reader still needs one, since the mark is
+ * otherwise hidden from it, so a passed row's mark is named instead -- an image
+ * called `passed` -- and the ✓ is what a sighted reader gets for the word.
+ */
 const CHECK_WORD = { pend: 'pending', fail: 'failed' };
 
 /**
@@ -961,7 +990,7 @@ function renderPrTab(pr, parsed, handlers) {
       : h('p', { className: 'empty' }, ...named(stackEmpty(pr, handlers.prs, handlers.otherRepo))),
   ] : tab === 'checks' ? [
     ...pr.checks.list.map((c) => h('div', { className: 'check' },
-      h('span', { className: `dot ${c.state}` }),
+      mark({ full: c.state === 'pass', state: c.state, label: CHECK_WORD[c.state] ? undefined : 'passed' }),
       // A check GitHub gave no URL for is rare and not worth a dead link, so it
       // stays plain text rather than becoming an <a> to nowhere.
       c.url ? ext(c.url, c.name, { className: 'check-name' }) : h('span', { className: 'check-name' }, c.name),
@@ -1131,12 +1160,19 @@ export const nums = ({ additions, deletions }) => [
   deletions ? ['del', `−${deletions}`] : null,
 ].filter(Boolean);
 
-/** `done` of `total` as what pie() draws: the fraction, and the figure as its name. */
-const counted = ({ done, total }, what) =>
-  ({ p: total ? done / total : 0, full: tabDone({ done, total }), label: `${done} of ${total} ${what}` });
+/** `done` of `total` as the pie mark() draws: how far, and whether it is finished. */
+const fraction = ({ done, total }) => ({ p: total ? done / total : 0, full: tabDone({ done, total }) });
+
+/** fraction, with the figure as the mark's name -- for a fold, where no label beside it says it. */
+const counted = (count, what) => ({ ...fraction(count), label: `${count.done} of ${count.total} ${what}` });
 
 /**
- * A pie filled to `p`, from 0 to 1; `label`, the figure, is its name.
+ * The pane's one status mark: a pie filled to `p`, from 0 to 1, that becomes a
+ * green disc with a ✓ once `full` -- nothing left. For a check, `state` can
+ * also be `pend`, the pie with a yellow ring, or `fail`, a red disc with a ✕,
+ * which beats the other two. Every tab with a count, every check row and every
+ * fold draws this and nothing else, so a shape means one thing all over the
+ * pane; the stylesheet's `.mark` sizes it for where it sits.
  *
  * A pie rather than `3/5`: a fraction in small dim type beside a dim title had
  * to be read and worked out, and a finished one looked like any other. A pie is
@@ -1145,11 +1181,21 @@ const counted = ({ done, total }, what) =>
  * -- so that is its name and its tooltip, and the tab label keeps the numbers.
  * Not a dot per item, which is exact but grows with the count: a 35-file group
  * would be a row of dots.
+ *
+ * With a `label` it is an image of that name. Without one it is hidden from a
+ * screen reader, for a mark whose words are already beside it: a tab's own
+ * name, a check row's `pending`.
  */
-function pie({ p, full, label }) {
-  const el = h('span', { className: `pie${full ? ' full' : ''}`, title: label });
-  el.setAttribute('role', 'img');
-  el.setAttribute('aria-label', label);   // a shape is no name, as with the glyph buttons
+function mark({ p = 0, full = false, state, label }) {
+  const look = state === 'fail' ? 'fail' : full ? 'full' : state === 'pend' ? 'pend' : '';
+  const el = h('span', { className: `mark ${look}`.trim() });
+  if (label) {
+    el.title = label;
+    el.setAttribute('role', 'img');
+    el.setAttribute('aria-label', label);   // a shape is no name, as with the glyph buttons
+  } else {
+    el.setAttribute('aria-hidden', 'true');
+  }
   el.style.setProperty('--p', String(p));
   return el;
 }
@@ -1171,7 +1217,7 @@ const kept = (set, key, holds) => ({
  */
 function fold({ className, dataset, title, progress, open, onToggle }, children) {
   const d = h('details', { className: `fold ${className}`, open, dataset },
-    h('summary', {}, h('h3', {}, title), progress ? pie(progress) : null),
+    h('summary', {}, h('h3', {}, title), progress ? mark(progress) : null),
     h('div', { className: 'sec-body' }, ...children));
   d.addEventListener('toggle', () => onToggle(d.open));
   return d;

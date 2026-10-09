@@ -275,10 +275,16 @@ await page.waitForFunction(() => ![...document.querySelectorAll('#queue-body .it
 await page.locator('#queue').screenshot({ path: path.join(out, 'queue-issues.png') });
 console.log('issues: ', await page.locator('#queue-body .tab', { hasText: /^Issues/ }).innerText(),
   JSON.stringify(await page.locator('#queue-body .item.source').allInnerTexts()));
-const localBefore = await local();
-await page.locator('#queue-body .item.source .actions button').first().click();
-await page.locator('#queue-body .tab', { hasText: /^Local \(4\)/ }).waitFor({ timeout: 10_000 });
-console.log('  pulled: ', localBefore, '->', await local(), '(want one more)');
+// Only a pull request that mentions an issue has one here to pull; without
+// that the click below waited out its 30s and the run ended before the PR
+// pane's half (2026-10-06, on #118), the same way the ticking above is skipped
+// for a description with no checkboxes.
+if (await page.locator('#queue-body .item.source').count()) {
+  const localBefore = await local();
+  await page.locator('#queue-body .item.source .actions button').first().click();
+  await page.locator('#queue-body .tab', { hasText: /^Local \(4\)/ }).waitFor({ timeout: 10_000 });
+  console.log('  pulled: ', localBefore, '->', await local(), '(want one more)');
+} else console.log('  no issues this pull request mentions to pull');
 await page.locator('#queue-body .tab', { hasText: /^Local/ }).click();
 await page.waitForTimeout(150);
 
@@ -291,28 +297,28 @@ console.log('switch:  ', (await page.$$eval('#pr-switch option', (os) => os.slic
   .map((o) => o.textContent.slice(0, 12)))).join('  |  '), '  (want the pinned PR first if it is not open, then each open PR with its stack indented under it)');
 
 // The checks, which are a tab and a mark rather than the badges they used to be
-// above the title: the green done circle every tab gets once everything passed,
-// a yellow ring while one is pending, a red ✕ once one failed. The mark is read off the computed ::before rather than the class
-// name, because the class is only a promise that the stylesheet has a rule.
+// above the title: the green ✓ circle every tab gets once everything passed,
+// a pie with a yellow ring while one is pending, a red ✕ circle once one
+// failed. The mark is read off its computed style rather than its class name,
+// because the class is only a promise that the stylesheet has a rule.
 // This repo's own PR is the fixture, so what it says depends on what CI is
 // doing right now: the assertion is that the mark and the label agree, not
 // what either one is. test/browser/suite.js pins all three against a fixture.
 const checksTab = page.locator('#pr-head .tab', { hasText: /^Checks/ });
 if (await checksTab.count()) {
   const label = await checksTab.innerText();
-  const dot = await checksTab.evaluate((e) => {
-    if (e.classList.contains('done')) return `done circle ${getComputedStyle(e, '::after').backgroundColor}`;
-    const s = getComputedStyle(e, '::before');
-    return /✕/.test(s.content) ? `✕ ${s.color}`
-      : parseFloat(s.borderTopWidth) ? `ring ${s.borderTopColor}` : `dot ${s.backgroundColor}`;
+  const mark = await checksTab.locator('.mark').evaluate((m) => {
+    const s = getComputedStyle(m);
+    const glyph = getComputedStyle(m, '::after').content.match(/[✓✕]/)?.[0];
+    return glyph ? `${glyph} circle ${s.backgroundColor}` : `ring ${s.boxShadow}`;
   });
-  const cls = await checksTab.getAttribute('class');
+  const cls = await checksTab.locator('.mark').getAttribute('class');
   await checksTab.click();
   await page.waitForSelector('.check');
   const rows = await page.locator('.check').allInnerTexts();
   const linked = await page.locator('.check a').count();
-  console.log('checks:  ', JSON.stringify(label), cls, dot,
-    ` (want N/N with the done circle 127,216,143, or a ring 240,220,154 while pending or a ✕ 245,163,163 once any failed)`);
+  console.log('checks:  ', JSON.stringify(label), cls, mark,
+    ` (want N/N with the ✓ circle 127,216,143, or a ring 240,220,154 while pending or a ✕ circle 245,163,163 once any failed)`);
   console.log('check rows:', rows.join(' | '), `, ${linked} of ${rows.length} link out`,
     ' (want one row per check, each linking to its run)');
   await page.locator('#pr').screenshot({ path: path.join(out, 'pr-checks.png') });
@@ -563,6 +569,13 @@ await page.locator('#diff-mention').click();
 await page.waitForTimeout(400);   // the stub echoes on the PTY's own schedule
 console.log('diff @:  ', `terminal echoed @${openPath}:`,
   (await page.locator('#term-host').innerText()).replace(/\n/g, '').includes(`@${openPath}`), ' (want true)');
+
+// The header with Wrap pressed, which fills it in, beside the @ and the links
+// out: the one header everything above competes for room in. Pressed back
+// after, since the choice is remembered and the shots below expect it off.
+await page.locator('#diff-wrap').click();
+await page.locator('#diff > header').screenshot({ path: path.join(out, 'diff-header-wrap.png') });
+await page.locator('#diff-wrap').click();
 
 // The diff pane's two ways out: the file itself at this PR's head, and the
 // patch in GitHub's diff viewer. Both hrefs are read rather than assumed

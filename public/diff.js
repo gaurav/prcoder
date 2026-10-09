@@ -234,7 +234,12 @@ function showOutline(on) {
 const WRAP_KEY = 'prcoder:wrap';
 let wrap;
 const wrapOn = () => (wrap ??= pref(WRAP_KEY) === 'on');
-/** Paint the stored choice: the class the rows fold under, and the button's pressed state. */
+/**
+ * Paint the stored choice: the class the rows fold under, and the button's
+ * pressed state. Only the state: the title stays index.html's "wrap long
+ * lines", since one that flipped to "unwrap" while pressed read out as
+ * "pressed, unwrap long lines", the state twice and in opposite words.
+ */
 function paintWrap(on) {
   el('diff').classList.toggle('wrap', on);
   el('diff-wrap').setAttribute('aria-pressed', String(on));
