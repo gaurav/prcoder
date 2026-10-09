@@ -97,6 +97,11 @@ how to read it.
 
 ## Figures worth re-measuring
 
+[#129](https://github.com/gaurav/prcoder/issues/129) has a box for each figure here. Add one when
+you add a figure, and tick it when you re-measure one, writing the new commit and date next to the
+figure. Nobody is waiting on them, so re-measure one when other work makes it cheap: the server is
+already up with `PRCODER_VERBOSE=2`, or a `browser.mjs` run is already printing the width.
+
 - **A poll that reloads nothing costs six subprocess calls with a pull request**, seven on a
   branch without one that origin has, and five on one never pushed; one more for a branch ahead
   of its remote, and the same clean tree or dirty (re-measured on `43e3700`, 2026-10-09). A poll
