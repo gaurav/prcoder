@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { text as readBody } from 'node:stream/consumers';
 import { spawn as ptySpawn } from 'node-pty';
 import { WebSocketServer } from 'ws';
-import { loadPr, prHeads, prBody, listPrs, issueLinks, setViewed, setBody, createIssue, fetchPatches, runCount } from './github.js';
+import { loadPr, prHeads, prUrl, prBody, listPrs, issueLinks, setViewed, setBody, createIssue, fetchPatches, runCount } from './github.js';
 import { snapshot, currentBranch, repoInfo, prScope, compareUrl, githubUrl, originOwner, checkoutPr, pushBranch, remoteBranchHead, trackingHead, localPatch, branchesBelow } from './git.js';
 import { bucket, fileUrl, fileViews } from './files.js';
 import { readPort, writePort, useQueueFile, movedQueue } from './store.js';
@@ -730,7 +730,7 @@ async function openGithub() {
   const branch = await currentBranch(repo);
   const { nameWithOwner, defaultBranch } = await repoFacts();
   openBrowser(githubUrl({
-    prUrl: (await prHeads(repo, target))?.url, nameWithOwner, defaultBranch, branch,
+    prUrl: await prUrl(repo, target), nameWithOwner, defaultBranch, branch,
     pushed: Boolean(await trackingHead(repo, branch)), owner: await originOwner(repo),
   }));
 }

@@ -96,9 +96,11 @@ async function viewPr(cwd, target, fields) {
   }
 }
 
+/** The PR's url and nothing else, which is all the `g` key needs. */
+export const prUrl = async (cwd, target) => (await viewPr(cwd, target, 'url'))?.url;
+
 /**
- * Just enough to know whether the PR moved, without the GraphQL viewed pass --
- * and its url, which is all the `g` key needs.
+ * Just enough to know whether the PR moved, without the GraphQL viewed pass.
  *
  * Plus the checks, which move without the PR: a check run belongs to the
  * commit, so finishing one leaves `updatedAt` where it was. On #120 the PR's
@@ -107,7 +109,7 @@ async function viewPr(cwd, target, fields) {
  * the poll's count is unchanged; summarised here, as in loadPr.
  */
 export async function prHeads(cwd, target) {
-  const heads = await viewPr(cwd, target, 'number,headRefOid,updatedAt,state,url,statusCheckRollup');
+  const heads = await viewPr(cwd, target, 'number,headRefOid,updatedAt,statusCheckRollup');
   if (!heads) return null;
   const { statusCheckRollup, ...rest } = heads;
   return { ...rest, checks: rollup(statusCheckRollup) };
