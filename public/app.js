@@ -428,13 +428,14 @@ async function markViewed(path, viewed) {
 // A click on a row unfolds the pane: you asked for the file. The refresh in
 // paint() below does not -- a push from the agent must not undo a fold made to
 // talk to it.
-const openFile = (f) => { fold('diff', false); return openDiff(f, markViewed, closeFile); };
+const openFile = (f) => { fold('diff', false); return openDiff(f, markViewed); };
 // Closing unfolds the diff (closeDiff says why), and can leave the terminal and
 // the queue folded with nothing between them; settleFolds brings one back.
 function closeFile() {
   closeDiff();
   settleFolds(null);
 }
+document.getElementById('diff-close').onclick = closeFile;
 const fileHandlers = {
   onViewed: markViewed,
   onOpen: openFile,
@@ -507,7 +508,7 @@ function paint(status) {
   if (!open) return;
   const f = status.pr?.files.find((x) => x.path === open);
   if (!f) closeFile();
-  else if (moved) openDiff(f, markViewed, closeFile);   // not openFile: keeps the fold
+  else if (moved) openDiff(f, markViewed);   // not openFile: keeps the fold
 }
 
 /**
