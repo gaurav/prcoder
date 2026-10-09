@@ -737,7 +737,7 @@ function renderPrHead(pr, parsed, handlers) {
   // thing you want next to it. From the list, so it costs nothing.
   const under = handlers.prs?.find((p) => !p.isCrossRepository && p.headRefName === pr.baseRefName);
 
-  const seen = viewedCount(pr.files);
+  const files = filesProgress(pr.files);
   const tasks = taskCount(parsed);
   const checks = checkCount(pr.checks);
   // A tab's accessible name and its tooltip, which say the same thing.
@@ -764,8 +764,8 @@ function renderPrHead(pr, parsed, handlers) {
     tabs: h('div', { className: 'tabs' },
       paneTab('detail', [tasks.total ? mark(fraction(tasks)) : null,
         tabLabel('Detail', tasks)]),
-      paneTab('files', [seen.total ? mark({ p: filesProgress(pr.files).p, full: tabDone(seen) }) : null,
-        tabLabel('Files', seen)], '', said(filesName(pr.files))),
+      paneTab('files', [files.count.total ? mark({ p: files.p, full: files.full }) : null,
+        tabLabel('Files', files.count)], '', said(filesName(files))),
       pr.checks.list.length
         ? paneTab('checks', [mark({ ...fraction(checks), state: worst(pr.checks) }),
           tabLabel('Checks', checks)], '', said(checksName(pr.checks)))
@@ -887,12 +887,14 @@ export const viewedLines = (files = []) => ({
 export const filesProgress = (files = []) => {
   const count = viewedCount(files);
   const weight = viewedLines(files);
-  const by = weight.total ? weight : count;
+  // The part the count cannot say, written once for this label and filesName.
+  const lines = weight.total ? `${weight.done} of ${weight.total} changed lines viewed` : null;
   return {
-    p: by.total ? by.done / by.total : 0,
+    p: fraction(weight.total ? weight : count).p,
     full: tabDone(count),
-    label: `${count.done} of ${count.total} files`
-      + (weight.total ? `, ${weight.done} of ${weight.total} changed lines viewed` : ' viewed'),
+    label: `${count.done} of ${count.total} files` + (lines ? `, ${lines}` : ' viewed'),
+    count,
+    lines,
   };
 };
 
@@ -901,13 +903,12 @@ export const filesProgress = (files = []) => {
  * says that the label does not -- `Files (2/5): 40 of 120 changed lines
  * viewed`. The pie was its own tooltip once, a 12px target; on the button the
  * whole tab is. Plain label once every file is viewed, or when there are no
- * lines to weigh, since the pie then says nothing the count does not.
+ * lines to weigh, since the pie then says nothing the count does not. Takes
+ * filesProgress, so the tab walks its files once and says what the pie says.
  */
-export const filesName = (files = []) => {
-  const count = viewedCount(files);
-  const weight = viewedLines(files);
+export const filesName = ({ count, lines, full }) => {
   const label = tabLabel('Files', count);
-  return weight.total && !tabDone(count) ? `${label}: ${weight.done} of ${weight.total} changed lines viewed` : label;
+  return lines && !full ? `${label}: ${lines}` : label;
 };
 
 /**

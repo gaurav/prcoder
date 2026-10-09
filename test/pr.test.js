@@ -752,10 +752,10 @@ test('the Checks tab is named in words, so a failed 1/3 and a pending one differ
 // when nothing has lines to weigh.
 test('the Files tab is named with the changed lines its pie fills by', () => {
   const f = (additions, deletions, viewed) => ({ additions, deletions, viewed });
-  assert.equal(filesName([f(30, 10, true), f(70, 10, false)]), 'Files (1/2): 40 of 120 changed lines viewed');
-  assert.equal(filesName([f(30, 10, true), f(70, 10, true)]), 'Files (2/2)');
-  assert.equal(filesName([f(0, 0, true), f(0, 0, false)]), 'Files (1/2)', 'a rename has no lines to weigh');
-  assert.equal(filesName([]), 'Files');
+  assert.equal(filesName(filesProgress([f(30, 10, true), f(70, 10, false)])), 'Files (1/2): 40 of 120 changed lines viewed');
+  assert.equal(filesName(filesProgress([f(30, 10, true), f(70, 10, true)])), 'Files (2/2)');
+  assert.equal(filesName(filesProgress([f(0, 0, true), f(0, 0, false)])), 'Files (1/2)', 'a rename has no lines to weigh');
+  assert.equal(filesName(filesProgress([])), 'Files');
 });
 
 // And the mark: one failure is the thing to know, whatever is still running.
@@ -789,7 +789,8 @@ test('the files pie fills by changed lines viewed', () => {
   const small = { additions: 30, deletions: 5, viewed: true };
   assert.deepEqual(viewedLines([big, small]), { done: 35, total: 235 });
   assert.deepEqual(filesProgress([big, small]),
-    { p: 35 / 235, full: false, label: '1 of 2 files, 35 of 235 changed lines viewed' });
+    { p: 35 / 235, full: false, label: '1 of 2 files, 35 of 235 changed lines viewed',
+      count: { done: 1, total: 2 }, lines: '35 of 235 changed lines viewed' });
   // GitHub's count can be missing, as bySize allows for.
   assert.deepEqual(viewedLines([{ viewed: true }]), { done: 0, total: 0 });
   assert.deepEqual(viewedLines(), { done: 0, total: 0 });
@@ -798,15 +799,16 @@ test('the files pie fills by changed lines viewed', () => {
 test('a files pie with no lines to weigh fills by files', () => {
   const rename = (viewed) => ({ additions: 0, deletions: 0, viewed });
   assert.deepEqual(filesProgress([rename(true), rename(false)]),
-    { p: 0.5, full: false, label: '1 of 2 files viewed' });
-  assert.deepEqual(filesProgress([]), { p: 0, full: false, label: '0 of 0 files viewed' });
+    { p: 0.5, full: false, label: '1 of 2 files viewed', count: { done: 1, total: 2 }, lines: null });
+  assert.deepEqual(filesProgress([]), { p: 0, full: false, label: '0 of 0 files viewed', count: { done: 0, total: 0 }, lines: null });
 });
 
 // Every line viewed is not every file: an unviewed rename weighs nothing, and
 // must not let the pie say it is finished.
 test('a files pie is full only when every file is viewed', () => {
   const files = [{ additions: 9, deletions: 0, viewed: true }, { additions: 0, deletions: 0, viewed: false }];
-  assert.deepEqual(filesProgress(files), { p: 1, full: false, label: '1 of 2 files, 9 of 9 changed lines viewed' });
+  assert.deepEqual(filesProgress(files), { p: 1, full: false, label: '1 of 2 files, 9 of 9 changed lines viewed',
+    count: { done: 1, total: 2 }, lines: '9 of 9 changed lines viewed' });
   assert.equal(filesProgress(files.map((f) => ({ ...f, viewed: true }))).full, true);
 });
 
