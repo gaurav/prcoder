@@ -150,8 +150,10 @@ anything fails, which is the part a fraction alone can't tell you. Each is a sha
 colour so that it survives colour blindness, and the tab's name, read by a screen reader and shown
 on hover, says the same in words: `Checks (1/3): 1 failed, 1 pending`.
 
-The list of open pull requests is fetched when the page loads, when you open the switcher, and
-after a checkout, not on every poll, so the Stack count can be a few minutes old. Opening the tab
+The list of open pull requests is fetched when the page loads, when you open the switcher, after
+a checkout, and when the pull request on screen merges or closes, not on every poll, so the Stack
+count can be a few minutes old. The fetch on opening the switcher lands after the dropdown is open,
+so the one on a merge is what has the list right by the time you pick from it. Opening the tab
 fetches the list again, so a pull request stacked from the terminal shows up there, and one that
 merged drops out. A fetch that fails keeps the list it had, and until the first one lands the tab,
 and the list of pull requests into a branch, say there is no list yet rather than that it is empty.

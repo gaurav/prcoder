@@ -462,6 +462,13 @@ function paint(status) {
   // `last &&`, or the first paint counts as a change and fetches the list a
   // second time behind the one the page load already asked for.
   const switched = last && last.branch !== status.branch;
+  // The PR on screen merging or closing takes it out of the open list, and
+  // GitHub retargets the ones stacked on it. Fetched now, from the poll that
+  // noticed -- the one that runs as you come back to the tab -- because the
+  // fetch on opening the switcher lands after the dropdown is already open:
+  // you picked from the old list, or had the options rebuilt under the pick.
+  const ended = last?.pr && last.pr.number === status.pr?.number
+    && last.pr.state !== status.pr.state;
   last = status;
   // Named for the tab strip, not the page: which PR, in which repo. A poll
   // that fails leaves the last good name up rather than reverting to
@@ -504,7 +511,7 @@ function paint(status) {
     below.clear();
     asked.clear();
     loadPrs('branch changed');
-  }
+  } else if (ended) loadPrs(`#${status.pr.number} is now ${status.pr.state}`);
   // Reading its checklist into the PR tab needs only a PR on screen.
   if (status.queue) setItems(status.queue, status.pr);
 
