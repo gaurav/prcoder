@@ -3,12 +3,12 @@
 // around, and a ▼/▶ button before the pane's title that says which way it is.
 //
 // Which panes fold is `data-folds` on <main> in index.html, a space-separated
-// list read on every call rather than once, so a test can flip one on with a
-// single attribute write. The rules for what a fold does to the other panes
-// are in app.js, which owns all the listeners; this file only paints.
+// list. The rules for what a fold does to the other panes are in app.js,
+// which owns all the listeners; this file only paints.
 //
 // diff.js imports this and the server imports diff.js, so nothing here may
-// touch the DOM at module scope (public/CLAUDE.md).
+// touch the DOM at module scope (public/CLAUDE.md) -- which is why the list is
+// read on every call rather than once.
 
 const NAME = { diff: 'diff', term: 'coding agent', queue: 'queue' };
 
