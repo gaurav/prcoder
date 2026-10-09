@@ -154,6 +154,20 @@ async function editBody(edit) {
 }
 
 /**
+ * Whether the PR the last poll loaded still stands, by what prHeads answered --
+ * and if it does, it takes its checks from that answer. updatedAt decides,
+ * because loadPr also runs a paginated GraphQL pass, far too much for a 60s
+ * poll; but not for the checks, since one finishing leaves updatedAt alone
+ * (prHeads). No PR before and none now stands too, or a branch without one
+ * would pay for a loadPr on every poll.
+ */
+export function keepPr(pr, heads) {
+  if (heads?.updatedAt !== pr?.updatedAt || heads?.number !== pr?.number) return false;
+  if (pr) pr.checks = heads.checks;
+  return true;
+}
+
+/**
  * Where the repo is, plus the PR and queue that go with it. The client polls
  * this; nothing is stored between calls, so an outside `git checkout` or an
  * edit on github.com is picked up without prcoder having to be told.
@@ -167,14 +181,9 @@ async function status({ full = false } = {}) {
   // A full refresh reloads regardless, so it has no use for the cheap check.
   const heads = full ? null : await prHeads(repo, target);
 
-  // The cheap call decides whether the expensive one is needed: loadPr also
-  // runs a paginated GraphQL pass, which is far too much for a 60s poll.
-  if (full || heads?.updatedAt !== pr?.updatedAt || heads?.number !== pr?.number) {
+  if (full || !keepPr(pr, heads)) {
     if (!full && pr) term.debug(`PR #${pr.number} changed upstream — reloading into the UI`);
     await refreshPr();
-  } else if (pr) {
-    // Not behind updatedAt: a check finishing does not move it (prHeads).
-    pr.checks = heads.checks;
   }
   // After the PR, so a startup whose repo lookup fails still has the PR to report.
   const facts = await repoFacts();
