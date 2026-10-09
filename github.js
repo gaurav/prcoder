@@ -106,14 +106,19 @@ export const prUrl = async (cwd, target) => (await viewPr(cwd, target, 'url'))?.
  * commit, so finishing one leaves `updatedAt` where it was. On #120 the PR's
  * was 22:43:48Z and its one check completed at 22:45:16Z (2026-10-08), and the
  * Checks tab said pending until something else touched the PR. Same call, so
- * the poll's count is unchanged; summarised here, as in loadPr.
+ * the poll's count is unchanged.
  */
 export async function prHeads(cwd, target) {
   const heads = await viewPr(cwd, target, 'number,headRefOid,updatedAt,statusCheckRollup');
-  if (!heads) return null;
-  const { statusCheckRollup, ...rest } = heads;
-  return { ...rest, checks: rollup(statusCheckRollup) };
+  return heads && withChecks(heads);
 }
+
+/**
+ * A `gh pr view` answer with its checks summarised. prHeads and loadPr both go
+ * through this, so the Checks tab gets one shape whichever of them the poll
+ * read the checks from.
+ */
+const withChecks = ({ statusCheckRollup, ...rest }) => ({ ...rest, checks: rollup(statusCheckRollup) });
 
 /**
  * A description with LF line endings. One saved from github.com's editor comes
@@ -164,13 +169,12 @@ export async function loadPr(cwd, target) {
   ]);
   // The raw lists are summarised here and not sent on: every poll carries this
   // object to every tab, and nothing reads them past this point.
-  const { statusCheckRollup, closingIssuesReferences, comments, reviews, ...rest } = pr;
+  const { closingIssuesReferences, comments, reviews, ...rest } = withChecks(pr);
 
   return {
     ...rest,
     files: pr.files.map((f) => ({ ...f, viewed: viewed.get(f.path) === 'VIEWED' })),
     nodeId,
-    checks: rollup(statusCheckRollup),
     issues,
     counts: { comments: comments?.length ?? 0, reviews: reviews?.length ?? 0 },
   };
