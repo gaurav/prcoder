@@ -9,6 +9,8 @@
 //   An input that takes no text is not typing, though: a checkbox keeps focus
 //   after it is clicked, so counting it would leave Alt+W dead after a tick
 //   of *viewed*, which is the usual thing to do just before reading on.
+//   The one exception is Alt+M in the terminal, which app.js hooks into xterm
+//   itself, because naming the open file mid-sentence is what it is for.
 // - A binding names a physical key (`e.code`, Alt+KeyW), not what it types:
 //   on macOS Option+W types ∑, and on other layouts Alt+letter types other
 //   things again, while the key itself stays where it is.
