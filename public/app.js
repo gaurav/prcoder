@@ -69,7 +69,7 @@ const sync = () => {
   if (dims !== sent && send({ type: 'resize', cols: term.cols, rows: term.rows })) sent = dims;
 };
 
-// The tab icon, blue while a turn is running, so a session left in a
+// The tab icon, a red octagon while a turn is running, so a session left in a
 // background tab says whether it is still going without switching to it. The
 // folded pane's header says the same with `● working`, from the same state, so
 // a session you folded away says when it is done without unfolding it.
@@ -101,10 +101,11 @@ const sync = () => {
 const PROBE = /^(?:\x1b\[\?6n)+$/;
 const link = document.querySelector('link[rel=icon]');
 const busyLabel = document.getElementById('term-busy');
-// Derived, not written out a second time -- so the icon in index.html stays the
-// one definition of it. Change its colour there and change this to match.
+// Both from index.html, where the busy one sits on the link as `data-busy`.
+// A red octagon rather than the green square recoloured: plenty of sites have
+// a blue square icon, and a busy prcoder was lost among them in a row of tabs.
 const IDLE = link.href;
-const BUSY = IDLE.replace('%23238636', '%231f6feb');
+const BUSY = link.dataset.busy;
 // Re-inserted rather than mutated in place: browsers disagree about whether an
 // href changed on a live <link rel=icon> is noticed at all.
 // Tracked here rather than read back off the element: `link.href` returns the
