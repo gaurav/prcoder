@@ -44,6 +44,18 @@ that looks like a hung server, not a stale selector. So a change to what the
 panes show first -- the default tab, the order of the file groups -- needs a
 driver run in the same commit, not the next one.
 
+## Driving another branch's PR without a checkout here
+
+The owner's own prcoder is often this working tree: the global `prcoder` is an
+npm link to it, so it serves `public/` from here and runs its checkouts here.
+A driver that needs a branch with a PR (or a merged one) must not `git
+checkout` it in this tree. Use `git worktree add data/wt-<name> <branch>`, and
+spawn `server.js` *from this tree* with `cwd` set to the worktree: the server
+takes its repo from `cwd` and its page from its own directory, so you drive
+this tree's code against that branch's PR. A switch the driver makes then
+happens in the worktree. Remove the worktree when done, and any local branch
+`gh pr checkout` made there.
+
 ## A stub that only echoes is not a session
 
 A real Claude session asks the terminal for the cursor position every ~200ms,

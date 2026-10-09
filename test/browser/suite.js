@@ -1567,6 +1567,32 @@ test('opening the Stack tab picks up a PR stacked since the page loaded', { skip
   await fresh.close();
 });
 
+// The switcher's own fetch, on mousedown, lands after its dropdown is open, so
+// the pick after a merge came from the list as it was before (#131). The poll
+// that sees the PR on screen change state fetches it instead; one that sees
+// nothing new does not.
+test('a poll that finds the PR on screen merged fetches the PR list, and no other poll does', { skip }, async () => {
+  const fresh = await newPage({ prs: STACK });
+  await fresh.waitForSelector('#pr-switch option[value="14"]', { state: 'attached' });
+  let lists = 0;
+  fresh.on('request', (q) => { if (q.url().endsWith('/api/prs')) lists++; });
+  const poll = async () => {
+    const polled = fresh.waitForResponse('**/api/status');
+    await fresh.click('#pr-refresh');
+    await polled;
+    await fresh.waitForTimeout(300);
+  };
+  await poll();
+  assert.equal(lists, 0, 'nothing changed, so no fetch');
+  await fresh.route('**/api/status', (r) => r.fulfill({ json: { ...status, pr: { ...pr, state: 'MERGED' } } }));
+  await fresh.route('**/api/prs', (r) => r.fulfill({ json: STACK.slice(1) }));
+  await poll();
+  assert.equal(lists, 1, 'the merge fetched the list');
+  await poll();
+  assert.equal(lists, 1, 'still merged is not a change');
+  await fresh.close();
+});
+
 // Opening the tab fetches the list, and gh can fail. The list it had is still
 // the best it knows; an empty one in its place said "Nothing is stacked" over
 // the rows it had just shown.
