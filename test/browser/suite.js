@@ -915,6 +915,9 @@ test('no way in folds every pane: the terminal\'s fold, a reload, a closed diff'
 
 // The bar's path cannot be selected (app.js says why), so ⧉ copies it: from
 // the repository root, open or folded, without folding, and a refusal says so.
+// The clipboard is a stub: Firefox gives a page no way to read it back, and
+// Chromium only with a permission. The real writeText on localhost was
+// checked by hand in both engines (2026-10-09).
 test('⧉ copies the open file\'s path, folded or not, and says when it cannot', { skip }, async () => {
   const fresh = await newPage();
   await fresh.addInitScript(() => {
@@ -962,6 +965,11 @@ test('folding a pane with the focus inside hands the focus to its ▼', { skip }
   await fresh.locator('#diff-viewed').focus();
   await fresh.dispatchEvent('#diff > header h1', 'click');
   assert.equal(await focused(), 'diff-viewed', 'focus on the bar stays where it was');
+  await fresh.click('#term-host');
+  assert.equal(await fresh.evaluate(() => document.getElementById('term-host').contains(document.activeElement)), true);
+  await fresh.dispatchEvent('#term > header h1', 'click');
+  assert.equal(await fresh.locator('#term-host').isVisible(), false);
+  assert.equal(await focused(), 'term-fold', 'the terminal\'s focus goes to its ▼ too');
   await fresh.close();
 });
 
