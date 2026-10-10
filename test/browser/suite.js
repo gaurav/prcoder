@@ -1593,6 +1593,40 @@ test('a poll that finds the PR on screen merged fetches the PR list, and no othe
   await fresh.close();
 });
 
+// The list once #12 has merged: GitHub retargets #13 at main, so it is no
+// longer nested under #12 in the switcher.
+const MERGED = [{ ...STACK[1], baseRefName: 'main' }, STACK[2]];
+const merged = { ...status, pr: { ...pr, state: 'MERGED' } };
+const switcherLabels = (p) => p.$$eval('#pr-switch option', (os) => os.map((o) => o.textContent.replaceAll(' ', ' ')));
+
+// `gh pr list` can take seconds. A fetch from before the merge that lands after
+// the one the merge asked for would put the old nesting back, and nothing
+// would fetch the list again.
+test('a PR list that lands after a later fetch was asked for is dropped', { skip }, async () => {
+  const fresh = await newPage({ prs: STACK });
+  await fresh.waitForSelector('#pr-switch option[value="14"]', { state: 'attached' });
+  let held;
+  await fresh.route('**/api/prs', (r) => { held = r; });
+  const asked = fresh.waitForRequest('**/api/prs');
+  await fresh.locator('#pr-head .tab', { hasText: 'Stack' }).click();
+  await asked;
+  await fresh.route('**/api/prs', (r) => r.fulfill({ json: MERGED }));
+  await fresh.route('**/api/status', (r) => r.fulfill({ json: merged }));
+  await fresh.click('#pr-refresh');
+  await fresh.waitForFunction(() => !document.querySelector('#pr-switch option[value="13"]')?.textContent.includes('└'));
+  const late = fresh.waitForResponse('**/api/prs');
+  await held.fulfill({ json: STACK });
+  await late;
+  await fresh.waitForTimeout(200);
+  assert.deepEqual(await switcherLabels(fresh), [
+    'no pull request',
+    '#12 A fixture pull request',
+    '#13 (draft) Built on the fixture',
+    '  └ #14 Built on that',
+  ]);
+  await fresh.close();
+});
+
 // Opening the tab fetches the list, and gh can fail. The list it had is still
 // the best it knows; an empty one in its place said "Nothing is stacked" over
 // the rows it had just shown.

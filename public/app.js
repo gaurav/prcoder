@@ -356,13 +356,21 @@ copyButton.onclick = async () => {
 let prs = null;
 let last = null;
 // `why` is only for the console: which of the triggers above asked.
+//
+// Numbered, and a list that lands after a later fetch was asked for is
+// dropped: `gh pr list` can take seconds, and a slow one from before a merge,
+// landing after the one the merge asked for, put the merged PR back with
+// nothing left to fetch it again.
+let asks = 0;
 const loadPrs = (why) => {
+  const n = ++asks;
   debug('fetching the PR list:', why);
   // Repaint, or a PR opened since page load stays invisible until the next
   // poll — the switcher only rebuilds its options when the set changes. The
   // whole status, because the branch-only pane reads this list too; `last` is
   // already the branch this fetch was for, so nothing asks for it again.
   return api('/api/prs', undefined, 'GET').then((l) => {
+    if (n !== asks) return debug('PR list dropped: a later fetch was asked for', why);
     debug('PR list landed:', l.map((p) => p.number).join(',') || '(empty)',
       document.activeElement?.id === 'pr-switch' ? '(switcher focused)' : '');
     prs = l;
@@ -371,7 +379,7 @@ const loadPrs = (why) => {
     asked.clear();
     [...below.keys()].forEach(loadBelow);
     if (last) paint(last);
-  }, (e) => debug('PR list failed:', e.message));
+  }, (e) => debug('PR list failed:', why, e.message));
 };
 
 // What git says each branch with no pull request is built on (#93), for the
