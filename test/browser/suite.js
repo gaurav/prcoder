@@ -157,11 +157,13 @@ const posted = [];
 // the exit bar is filled with -- or a function given the route, for a test
 // that answers it late. `folds` serves index.html with that list in place of
 // its `data-folds`, which is how a pane's fold is switched on, and `init` runs
-// in the page before its own scripts, for a stub of a browser API.
+// in the page before its own scripts, for a stub of a browser API. `clock`
+// installs Playwright's, for a test that moves time on with `p.clock`.
 async function newPage({ prs = [], st = status, ready = '#pr-head .pr-title', below = null, pty = () => {},
-  whoami = { model: '', effort: '' }, folds = null, init = null } = {}) {
+  whoami = { model: '', effort: '' }, folds = null, init = null, clock = false } = {}) {
   const p = await browser.newPage();
   if (init) await p.addInitScript(init);
+  if (clock) await p.clock.install();
   if (folds) {
     await p.route((u) => u.pathname === '/', async (r) => {
       const res = await r.fetch();
@@ -1564,6 +1566,219 @@ test('opening the Stack tab picks up a PR stacked since the page loaded', { skip
   await fresh.waitForSelector('#pr-body .pr-into .pr-num');
   assert.deepEqual(await fresh.locator('#pr-body .pr-into > ul > li > .pr-row .pr-num').allTextContents(), ['#13']);
   assert.equal(await fresh.locator('#pr-head .tab', { hasText: 'Stack' }).textContent(), 'Stack (↑2)');
+  await fresh.close();
+});
+
+// The list once #12 has merged: GitHub retargets #13 at main, so it is no
+// longer nested under #12 in the switcher.
+const MERGED = [{ ...STACK[1], baseRefName: 'main' }, STACK[2]];
+const merged = { ...status, pr: { ...pr, state: 'MERGED' } };
+const switcherLabels = (p) => p.$$eval('#pr-switch option', (os) => os.map((o) => o.textContent.replaceAll('\u00a0', ' ')));
+
+// A list landing while the switcher's dropdown is open replaced the options
+// under it, which closed it or moved the pick. Focus is the page's one sign
+// that it may be open, so the options wait for the switcher to lose it.
+test('the switcher keeps its options while it has focus, and takes the new list as it loses it', { skip }, async () => {
+  const fresh = await newPage({ prs: STACK });
+  await fresh.waitForSelector('#pr-switch option[value="14"]', { state: 'attached' });
+  const before = await switcherLabels(fresh);
+  await fresh.focus('#pr-switch');
+  await fresh.route('**/api/prs', (r) => r.fulfill({ json: MERGED }));
+  await fresh.route('**/api/status', (r) => r.fulfill({ json: merged }));
+  // Clicked from script, so focus stays on the switcher.
+  const landed = fresh.waitForResponse('**/api/prs');
+  await fresh.evaluate(() => document.getElementById('pr-refresh').click());
+  await landed;
+  await fresh.waitForTimeout(200);
+  assert.deepEqual(await switcherLabels(fresh), before, 'held while focused');
+  assert.equal(await fresh.inputValue('#pr-switch'), '12');
+  await fresh.evaluate(() => document.activeElement.blur());
+  assert.deepEqual(await switcherLabels(fresh), [
+    'no pull request',
+    '#12 A fixture pull request',
+    '#13 (draft) Built on the fixture',
+    '  └ #14 Built on that',
+  ]);
+  await fresh.close();
+});
+
+// Fetched on mousedown, the list landed with the dropdown already open. The
+// pointer reaching the switcher is a head start; the click that follows it,
+// within ten seconds of a list landing, asks for nothing more.
+test('reaching for the switcher fetches the PR list, and a click right after does not', { skip }, async () => {
+  const fresh = await newPage({ prs: STACK, clock: true });
+  await fresh.waitForSelector('#pr-switch option[value="14"]', { state: 'attached' });
+  let lists = 0;
+  fresh.on('request', (q) => { if (q.url().endsWith('/api/prs')) lists++; });
+  await fresh.hover('#pr-switch');
+  await fresh.waitForTimeout(200);
+  assert.equal(lists, 0, 'the page load\'s list is fresh');
+  await fresh.mouse.move(0, 0);
+  await fresh.clock.fastForward(11_000);
+  const landed = fresh.waitForResponse('**/api/prs');
+  await fresh.hover('#pr-switch');
+  await landed;
+  assert.equal(lists, 1, 'hovering fetched it');
+  await fresh.focus('#pr-switch');
+  await fresh.waitForTimeout(200);
+  assert.equal(lists, 1, 'focusing it just after did not');
+  await fresh.close();
+});
+
+// A fetch that starts as you reach for the switcher can land after its
+// dropdown is open, so the pick after a merge came from the list as it was
+// before (#131). The poll
+// that sees the PR on screen change fetches it instead -- a merge, a close, or
+// another PR in its place -- and one that sees nothing new does not.
+const pollCounting = async (p) => {
+  let lists = 0;
+  p.on('request', (q) => { if (q.url().endsWith('/api/prs')) lists++; });
+  const poll = async (st) => {
+    if (st) await p.route('**/api/status', (r) => r.fulfill({ json: st }));
+    const polled = p.waitForResponse('**/api/status');
+    await p.click('#pr-refresh');
+    await polled;
+    await p.waitForTimeout(300);
+    return lists;
+  };
+  return poll;
+};
+
+test('a poll that finds the PR on screen merged fetches the PR list, and no other poll does', { skip }, async () => {
+  const fresh = await newPage({ prs: STACK });
+  await fresh.waitForSelector('#pr-switch option[value="14"]', { state: 'attached' });
+  const poll = await pollCounting(fresh);
+  assert.equal(await poll(), 0, 'nothing changed, so no fetch');
+  await fresh.route('**/api/prs', (r) => r.fulfill({ json: MERGED }));
+  assert.equal(await poll(merged), 1, 'the merge fetched the list');
+  // #12 stays, as the PR on screen, but #13 is no longer built on it.
+  assert.deepEqual(await switcherLabels(fresh), [
+    'no pull request',
+    '#12 A fixture pull request',
+    '#13 (draft) Built on the fixture',
+    '  └ #14 Built on that',
+  ]);
+  assert.equal(await poll(), 1, 'still merged is not a change');
+  await fresh.close();
+});
+
+test('a poll that finds the PR on screen closed, or another PR in its place, fetches the PR list', { skip }, async () => {
+  const fresh = await newPage({ prs: STACK });
+  await fresh.waitForSelector('#pr-switch option[value="14"]', { state: 'attached' });
+  const poll = await pollCounting(fresh);
+  assert.equal(await poll({ ...status, pr: { ...pr, state: 'CLOSED' } }), 1, 'closed');
+  assert.equal(await poll({ ...status, pr: { ...pr, state: 'OPEN' } }), 2, 'reopened');
+  // Closed and replaced from the terminal: same branch, a new number.
+  assert.equal(await poll({ ...status, pr: { ...pr, number: 15 } }), 3, 'a new PR on the branch');
+  await fresh.close();
+
+  // A PR opened on a branch that had none.
+  const bare = await newPage({ prs: STACK, st: { ...status, pr: null }, ready: '#pr-head .pr-branch-name' });
+  const pollBare = await pollCounting(bare);
+  assert.equal(await pollBare(), 0, 'still no PR is not a change');
+  assert.equal(await pollBare(status), 1, 'a PR opened on the branch');
+  await bare.close();
+});
+
+// `gh pr list` can take seconds. A fetch from before the merge that lands after
+// the one the merge asked for would put the old nesting back, and nothing
+// would fetch the list again.
+test('a PR list that lands after a later fetch was asked for is dropped', { skip }, async () => {
+  const fresh = await newPage({ prs: STACK });
+  await fresh.waitForSelector('#pr-switch option[value="14"]', { state: 'attached' });
+  let held;
+  await fresh.route('**/api/prs', (r) => { held = r; });
+  const asked = fresh.waitForRequest('**/api/prs');
+  await fresh.locator('#pr-head .tab', { hasText: 'Stack' }).click();
+  await asked;
+  await fresh.route('**/api/prs', (r) => r.fulfill({ json: MERGED }));
+  await fresh.route('**/api/status', (r) => r.fulfill({ json: merged }));
+  await fresh.click('#pr-refresh');
+  await fresh.waitForFunction(() => !document.querySelector('#pr-switch option[value="13"]')?.textContent.includes('└'));
+  const late = fresh.waitForResponse('**/api/prs');
+  await held.fulfill({ json: STACK });
+  await late;
+  await fresh.waitForTimeout(200);
+  assert.deepEqual(await switcherLabels(fresh), [
+    'no pull request',
+    '#12 A fixture pull request',
+    '#13 (draft) Built on the fixture',
+    '  └ #14 Built on that',
+  ]);
+  await fresh.close();
+});
+
+// Coming back to the tab within ten seconds of a poll skipped the poll, so a
+// merge made in another tab in that time waited for the minute's poll. It is
+// put off to the ten-second mark instead; later than that, it runs at once.
+test('coming back to the tab polls, ten seconds after the last poll at the soonest', { skip }, async () => {
+  const fresh = await newPage({ clock: true, init: () => {
+    Object.defineProperty(document, 'visibilityState', { get: () => (window.hidden_ ? 'hidden' : 'visible') });
+  } });
+  let polls = 0;
+  fresh.on('request', (q) => { if (q.url().endsWith('/api/status')) polls++; });
+  const away = (hidden) => fresh.evaluate((h) => {
+    window.hidden_ = h;
+    document.dispatchEvent(new Event('visibilitychange'));
+  }, hidden);
+  await away(true);
+  await away(false);
+  await fresh.waitForTimeout(200);
+  assert.equal(polls, 0, 'not straight after the page load\'s poll');
+  const polled = fresh.waitForResponse('**/api/status');
+  await fresh.clock.fastForward(10_000);
+  await polled;
+  assert.equal(polls, 1, 'but at the ten-second mark');
+  await fresh.clock.fastForward(11_000);
+  await away(true);
+  const again = fresh.waitForResponse('**/api/status');
+  await away(false);
+  await again;
+  assert.equal(polls, 2, 'and at once when the last poll is older than that');
+  await fresh.close();
+});
+
+// The switcher's console lines are for chasing a failure that leaves nothing
+// on screen, and cost a join over every open PR on each fetch, so they are
+// written only with the preference on.
+test('the console lines are off unless prcoder:debug is on', { skip }, async () => {
+  const lines = async (init) => {
+    const p = await newPage({ prs: STACK, init });
+    const seen = [];
+    p.on('console', (m) => { if (m.text().startsWith('[prcoder]')) seen.push(m.text()); });
+    await p.waitForSelector('#pr-switch option[value="14"]', { state: 'attached' });
+    const fetched = p.waitForResponse('**/api/prs');
+    await p.locator('#pr-head .tab', { hasText: 'Stack' }).click();
+    await fetched;
+    await p.waitForTimeout(100);
+    await p.close();
+    return seen;
+  };
+  assert.deepEqual(await lines(null), []);
+  const on = await lines(() => localStorage.setItem('prcoder:debug', 'on'));
+  assert.ok(on.includes('[prcoder] PR list landed: 12,13,14 '), on.join('\n'));
+});
+
+// A merge seen by a poll and the Stack tab opened a moment later were two whole
+// `gh pr list` calls, one behind the other on the server's lock. The tab joins
+// the fetch in flight; only a trigger that knows the list changed starts one.
+test('opening the Stack tab while a PR list fetch is out joins it', { skip }, async () => {
+  const fresh = await newPage({ prs: STACK });
+  await fresh.waitForSelector('#pr-switch option[value="14"]', { state: 'attached' });
+  let lists = 0;
+  fresh.on('request', (q) => { if (q.url().endsWith('/api/prs')) lists++; });
+  let held;
+  await fresh.route('**/api/prs', (r) => { held = r; });
+  await fresh.route('**/api/status', (r) => r.fulfill({ json: merged }));
+  const asked = fresh.waitForRequest('**/api/prs');
+  await fresh.click('#pr-refresh');
+  await asked;
+  await fresh.locator('#pr-head .tab', { hasText: 'Stack' }).click();
+  await fresh.waitForTimeout(300);
+  assert.equal(lists, 1, 'the tab joined the fetch the merge asked for');
+  await held.fulfill({ json: MERGED });
+  await fresh.waitForFunction(() => !document.querySelector('#pr-switch option[value="13"]')?.textContent.includes('└'));
+  assert.deepEqual(await fresh.locator('#pr-body .pr-into .pr-num').allTextContents(), [], 'nothing is built on #12 now');
   await fresh.close();
 });
 

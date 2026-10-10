@@ -49,6 +49,21 @@ export const api = async (url, body, method = 'POST') => {
 };
 
 /**
+ * A line in the browser console, for the paths whose failures leave nothing on
+ * screen -- switching pull requests after a merge was one. Off unless the
+ * `prcoder:debug` preference is `on` (`localStorage['prcoder:debug'] = 'on'`
+ * in the console, then reload), so a line nobody reads costs nothing to build;
+ * an argument that is a function is called only when the line is written, for
+ * one that takes work to put together. Debug level, so it shows only with the
+ * console's Verbose/Debug filter on.
+ */
+let debugging;
+export const debug = (...args) => {
+  if (!(debugging ??= pref('prcoder:debug') === 'on')) return;
+  console.debug('[prcoder]', ...args.map((a) => (typeof a === 'function' ? a() : a)));
+};
+
+/**
  * A line over the panes: the app's one notification surface.
  *
  * `sticky` is for a notice that stays true until you act on it, rather than one
@@ -164,7 +179,8 @@ function clamp(head, tail) {
  * switcher and the light live there — a poll landing mid-click would otherwise
  * close an open dropdown.
  */
-export function renderHeader(status, prs, { onSwitch, onCommit }) {
+export function renderHeader(status, prs, handlers) {
+  const { onSwitch, onCommit } = handlers;
   const sel = document.getElementById('pr-switch');
   const commit = document.getElementById('pr-commit');
 
@@ -181,14 +197,26 @@ export function renderHeader(status, prs, { onSwitch, onCommit }) {
   const shown = switcherRows(prs ?? [], status.pr);
 
   const keys = (prs ? '' : '?') + shown.map(({ pr, depth }) => `${pr.number}:${depth}`).join(',');
-  if (sel.dataset.keys !== keys) {
+  // Nor while it has focus, the one sign a page gets that its dropdown may be
+  // open: a list landing then replaced the options under the open dropdown,
+  // which closed it or moved the pick. It is rebuilt as it loses focus, from
+  // the status painted last -- each call here replaces the one before.
+  const stale = sel.dataset.keys !== keys;
+  const open = document.activeElement === sel;
+  sel.onblur = stale && open ? () => renderHeader(status, prs, handlers) : null;
+  if (stale && open) debug('switcher options held while it has focus:', keys);
+  else if (stale) {
+    debug('switcher options rebuilt:', sel.dataset.keys ?? '(none)', '->', keys);
     sel.dataset.keys = keys;
     sel.replaceChildren(
       h('option', { value: '' }, shown.length ? 'no pull request' : prs ? 'no open pull requests' : 'no list of pull requests yet'),
       ...shown.map(({ pr: p, depth }) => h('option', { value: String(p.number) },
         `${depth ? `${'\u00a0\u00a0'.repeat(depth)}└\u00a0` : ''}#${p.number} ${p.isDraft ? '(draft) ' : ''}${p.title}`)),
     );
-    sel.onchange = () => sel.value && onSwitch(Number(sel.value));
+    sel.onchange = () => {
+      debug('switcher picked', sel.value || '(none)');
+      if (sel.value) onSwitch(Number(sel.value));
+    };
   }
   // Always re-assert: a failed switch has to snap back to the real branch.
   sel.value = status.pr ? String(status.pr.number) : '';

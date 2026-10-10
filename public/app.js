@@ -1,7 +1,7 @@
 import { Terminal } from '/vendor/xterm.mjs';
 import { FitAddon } from '/vendor/addon-fit.mjs';
 import { WebLinksAddon } from '/vendor/addon-web-links.mjs';
-import { renderPr, renderNoPr, renderHeader, pageTitle, api, toast, pref, setPref } from './pr.js';
+import { renderPr, renderNoPr, renderHeader, pageTitle, api, toast, pref, setPref, debug } from './pr.js';
 import { openDiff, closeDiff, selectedPath, setViewed, toggleWrap, openMention } from './diff.js';
 import { initQueue, addItem, setItems } from './queue.js';
 import { bindKeys } from './keys.js';
@@ -342,8 +342,8 @@ copyButton.onclick = async () => {
 };
 
 // The switcher only changes when PRs are opened or closed, so it is not worth a
-// call every minute — page load, opening the dropdown, opening the Stack tab,
-// and a checkout are enough. The branch-only pane's list of what merges into
+// call every minute — page load, reaching for the dropdown, opening the Stack
+// tab, a checkout and the PR on screen changing are enough. The branch-only pane's list of what merges into
 // this branch comes out of the same array, and is as fresh as that. The Stack
 // tab is too, but it states outright that nothing is stacked on a branch, so it
 // asks for the list itself rather than trust one from minutes ago.
@@ -355,19 +355,47 @@ copyButton.onclick = async () => {
 // the pull requests it showed a moment ago had gone, because gh had a blip.
 let prs = null;
 let last = null;
-const loadPrs = () => api('/api/prs', undefined, 'GET')
+// `why` is only for the console: which of the triggers above asked.
+//
+// Numbered, and a list that lands after a later fetch was asked for is
+// dropped: `gh pr list` can take seconds, and a slow one from before a merge,
+// landing after the one the merge asked for, put the merged PR back with
+// nothing left to fetch it again.
+//
+// A trigger that only means someone is looking -- the switcher, the Stack tab
+// -- joins a fetch already in flight rather than queueing a second whole
+// `gh pr list` behind it on the server's lock, which the next poll then waits
+// behind too. `fresh` is for one that knows the list has changed since a fetch
+// in flight left: a checkout, the PR on screen merging.
+let asks = 0;
+let asking = null;
+let listedAt = 0;
+const loadPrs = (why, { fresh = false } = {}) => {
+  if (asking && !fresh) {
+    debug('joining the PR list fetch in flight:', why);
+    return asking;
+  }
+  const n = ++asks;
+  debug('fetching the PR list:', why);
   // Repaint, or a PR opened since page load stays invisible until the next
   // poll — the switcher only rebuilds its options when the set changes. The
   // whole status, because the branch-only pane reads this list too; `last` is
   // already the branch this fetch was for, so nothing asks for it again.
-  .then((l) => {
+  asking = api('/api/prs', undefined, 'GET').then((l) => {
+    if (n !== asks) return debug('PR list dropped: a later fetch was asked for', why);
+    debug('PR list landed:', () => l.map((p) => p.number).join(',') || '(empty)',
+      document.activeElement?.id === 'pr-switch' ? '(switcher focused)' : '');
     prs = l;
+    listedAt = Date.now();
     // The list is what says which branches have a pull request, so what git
     // said under the others is asked again against it, in place.
     asked.clear();
     [...below.keys()].forEach(loadBelow);
     if (last) paint(last);
-  }, () => {});
+  }, (e) => debug('PR list failed:', why, e.message))
+    .finally(() => { if (n === asks) asking = null; });
+  return asking;
+};
 
 // What git says each branch with no pull request is built on (#93), for the
 // branch-only pane and a Stack tab that reaches one: branch -> `{ branch,
@@ -385,7 +413,15 @@ const loadBelow = (branch) => {
   api('/api/below', { branch, prs: pairs })
     .then((b) => { below.set(branch, b); if (last) paint(last); }, () => {});
 };
-document.getElementById('pr-switch').addEventListener('mousedown', loadPrs);
+// Asked for as the pointer or the keyboard reaches the switcher, not on
+// mousedown: by the time a fetch from there landed the dropdown was open, too
+// late for the pick, and renderHeader holds the options while it has focus.
+// Not again within ten seconds of a list landing, or hovering and then
+// clicking would be two fetches.
+const reachSwitcher = (how) => { if (Date.now() - listedAt > 10_000) loadPrs(how); };
+const switcher = document.getElementById('pr-switch');
+switcher.addEventListener('pointerenter', () => reachSwitcher('pointer reached the switcher'));
+switcher.addEventListener('focus', () => reachSwitcher('switcher focused'));
 
 const NOTES = {
   'other-branch': 'Not checked out — this pull request is on another branch.',
@@ -457,6 +493,17 @@ function paint(status) {
   // `last &&`, or the first paint counts as a change and fetches the list a
   // second time behind the one the page load already asked for.
   const switched = last && last.branch !== status.branch;
+  // The PR on screen merging or closing takes it out of the open list, and
+  // GitHub retargets the ones stacked on it. Fetched now, from the poll that
+  // noticed -- the one that runs as you come back to the tab -- rather than
+  // left to reaching for the switcher: a fetch that starts then can still land
+  // with the dropdown open, and renderHeader holds the options until it closes,
+  // so the pick would be from the old list.
+  // Any change to which PR is on the branch, not only its state: one closed and
+  // another opened in its place from the terminal is the same branch with a
+  // new number, and a PR opened on a bare branch is a new entry in the list.
+  const replaced = last && (last.pr?.number !== status.pr?.number
+    || last.pr?.state !== status.pr?.state);
   last = status;
   // Named for the tab strip, not the page: which PR, in which repo. A poll
   // that fails leaves the last good name up rather than reverting to
@@ -482,7 +529,7 @@ function paint(status) {
         selected: selectedPath(),
         prs: stack,
         otherRepo,
-        onStackOpen: loadPrs,
+        onStackOpen: () => loadPrs('Stack tab opened'),
         below: [...below.values()],
         onBelow: loadBelow,
         defaultBranch: status.defaultBranch,
@@ -498,7 +545,10 @@ function paint(status) {
   if (switched) {
     below.clear();
     asked.clear();
-    loadPrs();
+    loadPrs('branch changed', { fresh: true });
+  } else if (replaced) {
+    loadPrs(status.pr ? `#${status.pr.number} is now ${status.pr.state}` : 'no PR on this branch now',
+      { fresh: true });
   }
   // Reading its checklist into the PR tab needs only a PR on screen.
   if (status.queue) setItems(status.queue, status.pr);
@@ -529,8 +579,10 @@ async function loadStatus() {
 }
 
 async function switchPr(number) {
+  debug('switching to', number);
   try {
     const status = await api('/api/pr/switch', { number });
+    debug('switched: now on', status.branch, `#${status.pr?.number}`);
     paint(status);
     // Claude's cwd survives a checkout, but its idea of the files does not, and
     // nothing tells it: prcoder has no channel into the session that isn't a
@@ -540,6 +592,7 @@ async function switchPr(number) {
       + " branch's files in mind — tell it to re-read anything it had open.",
     false, true);
   } catch (e) {
+    debug('switch failed:', e.message);
     toast(e.message, true);
     await loadStatus();   // re-derive: the checkout may have half-succeeded
   }
@@ -584,11 +637,20 @@ document.getElementById('pr-refresh').onclick = loadStatus;
 
 // Polling is the client's job: no server timer, and a hidden tab costs nothing.
 setInterval(() => { if (document.visibilityState === 'visible') loadStatus(); }, 60_000);
-// Coming back to the tab polls too, but not one that just ran: a poll is a gh
-// call plus half a dozen git spawns behind the server's serial lock, and
-// alt-tabbing to Claude and back is a thing you do every few seconds.
+// Coming back to the tab polls too, but no sooner than ten seconds after the
+// last poll: a poll is a gh call plus half a dozen git spawns behind the
+// server's serial lock, and alt-tabbing to Claude and back is a thing you do
+// every few seconds. Put off rather than skipped -- skipping it lost a merge
+// made in another tab within ten seconds of the last poll until the minute's
+// poll came round -- and dropped if another poll runs first.
+let returning;
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible' && Date.now() - polledAt > 10_000) loadStatus();
+  if (document.visibilityState !== 'visible') return;
+  clearTimeout(returning);
+  const since = polledAt;
+  returning = setTimeout(() => {
+    if (document.visibilityState === 'visible' && polledAt === since) loadStatus();
+  }, Math.max(0, since + 10_000 - Date.now()));
 });
 
 const input = document.getElementById('queue-input');
@@ -615,6 +677,6 @@ input.addEventListener('input', grow);
 // Not awaited: the switcher's list is a whole `gh pr list` and nothing below
 // needs it — renderHeader synthesises an option for the current PR until it
 // lands, and loadPrs repaints the header itself when it does.
-loadPrs();
+loadPrs('page load');
 await initQueue({ sendToClaude, onTask: toggleTask });
 loadStatus();
