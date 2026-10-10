@@ -155,9 +155,9 @@ reaches the switcher, after a checkout, and when a poll finds the pull request o
 closed, reopened or replaced by another, not on every poll, so the Stack count can be a few minutes
 old. While the switcher has focus its options stay as they are, since replacing them under an open
 dropdown closes it or moves your pick; a list that lands then shows once it loses focus. So after a
-merge on github.com the switcher is right if the poll as you come back to the tab, and the `gh pr
-list` it starts, finish before you open it -- a few seconds -- and otherwise you pick from the list
-as it was until you open it again. Opening the tab fetches the list again, so a pull request stacked from the terminal shows up there, and one that
+merge on github.com the switcher is right if the poll as you come back to the tab -- put off to ten
+seconds after the last one, if that was sooner -- and the `gh pr list` it starts finish before you
+open it, and otherwise you pick from the list as it was until you open it again. Opening the tab fetches the list again, so a pull request stacked from the terminal shows up there, and one that
 merged drops out. A fetch that fails keeps the list it had, and until the first one lands the tab,
 and the list of pull requests into a branch, say there is no list yet rather than that it is empty.
 

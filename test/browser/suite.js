@@ -1708,6 +1708,36 @@ test('a PR list that lands after a later fetch was asked for is dropped', { skip
   await fresh.close();
 });
 
+// Coming back to the tab within ten seconds of a poll skipped the poll, so a
+// merge made in another tab in that time waited for the minute's poll. It is
+// put off to the ten-second mark instead; later than that, it runs at once.
+test('coming back to the tab polls, ten seconds after the last poll at the soonest', { skip }, async () => {
+  const fresh = await newPage({ clock: true, init: () => {
+    Object.defineProperty(document, 'visibilityState', { get: () => (window.hidden_ ? 'hidden' : 'visible') });
+  } });
+  let polls = 0;
+  fresh.on('request', (q) => { if (q.url().endsWith('/api/status')) polls++; });
+  const away = (hidden) => fresh.evaluate((h) => {
+    window.hidden_ = h;
+    document.dispatchEvent(new Event('visibilitychange'));
+  }, hidden);
+  await away(true);
+  await away(false);
+  await fresh.waitForTimeout(200);
+  assert.equal(polls, 0, 'not straight after the page load\'s poll');
+  const polled = fresh.waitForResponse('**/api/status');
+  await fresh.clock.fastForward(10_000);
+  await polled;
+  assert.equal(polls, 1, 'but at the ten-second mark');
+  await fresh.clock.fastForward(11_000);
+  await away(true);
+  const again = fresh.waitForResponse('**/api/status');
+  await away(false);
+  await again;
+  assert.equal(polls, 2, 'and at once when the last poll is older than that');
+  await fresh.close();
+});
+
 // A merge seen by a poll and the Stack tab opened a moment later were two whole
 // `gh pr list` calls, one behind the other on the server's lock. The tab joins
 // the fetch in flight; only a trigger that knows the list changed starts one.

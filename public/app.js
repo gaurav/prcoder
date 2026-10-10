@@ -637,11 +637,20 @@ document.getElementById('pr-refresh').onclick = loadStatus;
 
 // Polling is the client's job: no server timer, and a hidden tab costs nothing.
 setInterval(() => { if (document.visibilityState === 'visible') loadStatus(); }, 60_000);
-// Coming back to the tab polls too, but not one that just ran: a poll is a gh
-// call plus half a dozen git spawns behind the server's serial lock, and
-// alt-tabbing to Claude and back is a thing you do every few seconds.
+// Coming back to the tab polls too, but no sooner than ten seconds after the
+// last poll: a poll is a gh call plus half a dozen git spawns behind the
+// server's serial lock, and alt-tabbing to Claude and back is a thing you do
+// every few seconds. Put off rather than skipped -- skipping it lost a merge
+// made in another tab within ten seconds of the last poll until the minute's
+// poll came round -- and dropped if another poll runs first.
+let returning;
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible' && Date.now() - polledAt > 10_000) loadStatus();
+  if (document.visibilityState !== 'visible') return;
+  clearTimeout(returning);
+  const since = polledAt;
+  returning = setTimeout(() => {
+    if (document.visibilityState === 'visible' && polledAt === since) loadStatus();
+  }, Math.max(0, since + 10_000 - Date.now()));
 });
 
 const input = document.getElementById('queue-input');
