@@ -488,8 +488,11 @@ function paint(status) {
   // noticed -- the one that runs as you come back to the tab -- because the
   // fetch on opening the switcher lands after the dropdown is already open:
   // you picked from the old list, or had the options rebuilt under the pick.
-  const ended = last?.pr && last.pr.number === status.pr?.number
-    && last.pr.state !== status.pr.state;
+  // Any change to which PR is on the branch, not only its state: one closed and
+  // another opened in its place from the terminal is the same branch with a
+  // new number, and a PR opened on a bare branch is a new entry in the list.
+  const replaced = last && (last.pr?.number !== status.pr?.number
+    || last.pr?.state !== status.pr?.state);
   last = status;
   // Named for the tab strip, not the page: which PR, in which repo. A poll
   // that fails leaves the last good name up rather than reverting to
@@ -532,7 +535,10 @@ function paint(status) {
     below.clear();
     asked.clear();
     loadPrs('branch changed', { fresh: true });
-  } else if (ended) loadPrs(`#${status.pr.number} is now ${status.pr.state}`, { fresh: true });
+  } else if (replaced) {
+    loadPrs(status.pr ? `#${status.pr.number} is now ${status.pr.state}` : 'no PR on this branch now',
+      { fresh: true });
+  }
   // Reading its checklist into the PR tab needs only a PR on screen.
   if (status.queue) setItems(status.queue, status.pr);
 

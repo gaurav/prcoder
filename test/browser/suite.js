@@ -1567,37 +1567,65 @@ test('opening the Stack tab picks up a PR stacked since the page loaded', { skip
   await fresh.close();
 });
 
-// The switcher's own fetch, on mousedown, lands after its dropdown is open, so
-// the pick after a merge came from the list as it was before (#131). The poll
-// that sees the PR on screen change state fetches it instead; one that sees
-// nothing new does not.
-test('a poll that finds the PR on screen merged fetches the PR list, and no other poll does', { skip }, async () => {
-  const fresh = await newPage({ prs: STACK });
-  await fresh.waitForSelector('#pr-switch option[value="14"]', { state: 'attached' });
-  let lists = 0;
-  fresh.on('request', (q) => { if (q.url().endsWith('/api/prs')) lists++; });
-  const poll = async () => {
-    const polled = fresh.waitForResponse('**/api/status');
-    await fresh.click('#pr-refresh');
-    await polled;
-    await fresh.waitForTimeout(300);
-  };
-  await poll();
-  assert.equal(lists, 0, 'nothing changed, so no fetch');
-  await fresh.route('**/api/status', (r) => r.fulfill({ json: { ...status, pr: { ...pr, state: 'MERGED' } } }));
-  await fresh.route('**/api/prs', (r) => r.fulfill({ json: STACK.slice(1) }));
-  await poll();
-  assert.equal(lists, 1, 'the merge fetched the list');
-  await poll();
-  assert.equal(lists, 1, 'still merged is not a change');
-  await fresh.close();
-});
-
 // The list once #12 has merged: GitHub retargets #13 at main, so it is no
 // longer nested under #12 in the switcher.
 const MERGED = [{ ...STACK[1], baseRefName: 'main' }, STACK[2]];
 const merged = { ...status, pr: { ...pr, state: 'MERGED' } };
-const switcherLabels = (p) => p.$$eval('#pr-switch option', (os) => os.map((o) => o.textContent.replaceAll(' ', ' ')));
+const switcherLabels = (p) => p.$$eval('#pr-switch option', (os) => os.map((o) => o.textContent.replaceAll('\u00a0', ' ')));
+
+// The switcher's own fetch, on mousedown, lands after its dropdown is open, so
+// the pick after a merge came from the list as it was before (#131). The poll
+// that sees the PR on screen change fetches it instead -- a merge, a close, or
+// another PR in its place -- and one that sees nothing new does not.
+const pollCounting = async (p) => {
+  let lists = 0;
+  p.on('request', (q) => { if (q.url().endsWith('/api/prs')) lists++; });
+  const poll = async (st) => {
+    if (st) await p.route('**/api/status', (r) => r.fulfill({ json: st }));
+    const polled = p.waitForResponse('**/api/status');
+    await p.click('#pr-refresh');
+    await polled;
+    await p.waitForTimeout(300);
+    return lists;
+  };
+  return poll;
+};
+
+test('a poll that finds the PR on screen merged fetches the PR list, and no other poll does', { skip }, async () => {
+  const fresh = await newPage({ prs: STACK });
+  await fresh.waitForSelector('#pr-switch option[value="14"]', { state: 'attached' });
+  const poll = await pollCounting(fresh);
+  assert.equal(await poll(), 0, 'nothing changed, so no fetch');
+  await fresh.route('**/api/prs', (r) => r.fulfill({ json: MERGED }));
+  assert.equal(await poll(merged), 1, 'the merge fetched the list');
+  // #12 stays, as the PR on screen, but #13 is no longer built on it.
+  assert.deepEqual(await switcherLabels(fresh), [
+    'no pull request',
+    '#12 A fixture pull request',
+    '#13 (draft) Built on the fixture',
+    '  └ #14 Built on that',
+  ]);
+  assert.equal(await poll(), 1, 'still merged is not a change');
+  await fresh.close();
+});
+
+test('a poll that finds the PR on screen closed, or another PR in its place, fetches the PR list', { skip }, async () => {
+  const fresh = await newPage({ prs: STACK });
+  await fresh.waitForSelector('#pr-switch option[value="14"]', { state: 'attached' });
+  const poll = await pollCounting(fresh);
+  assert.equal(await poll({ ...status, pr: { ...pr, state: 'CLOSED' } }), 1, 'closed');
+  assert.equal(await poll({ ...status, pr: { ...pr, state: 'OPEN' } }), 2, 'reopened');
+  // Closed and replaced from the terminal: same branch, a new number.
+  assert.equal(await poll({ ...status, pr: { ...pr, number: 15 } }), 3, 'a new PR on the branch');
+  await fresh.close();
+
+  // A PR opened on a branch that had none.
+  const bare = await newPage({ prs: STACK, st: { ...status, pr: null }, ready: '#pr-head .pr-branch-name' });
+  const pollBare = await pollCounting(bare);
+  assert.equal(await pollBare(), 0, 'still no PR is not a change');
+  assert.equal(await pollBare(status), 1, 'a PR opened on the branch');
+  await bare.close();
+});
 
 // `gh pr list` can take seconds. A fetch from before the merge that lands after
 // the one the merge asked for would put the old nesting back, and nothing
