@@ -50,10 +50,18 @@ export const api = async (url, body, method = 'POST') => {
 
 /**
  * A line in the browser console, for the paths whose failures leave nothing on
- * screen -- switching pull requests after a merge was one. Debug level,
- * so it shows only with the console's Verbose/Debug filter on.
+ * screen -- switching pull requests after a merge was one. Off unless the
+ * `prcoder:debug` preference is `on` (`localStorage['prcoder:debug'] = 'on'`
+ * in the console, then reload), so a line nobody reads costs nothing to build;
+ * an argument that is a function is called only when the line is written, for
+ * one that takes work to put together. Debug level, so it shows only with the
+ * console's Verbose/Debug filter on.
  */
-export const debug = (...args) => console.debug('[prcoder]', ...args);
+let debugging;
+export const debug = (...args) => {
+  if (!(debugging ??= pref('prcoder:debug') === 'on')) return;
+  console.debug('[prcoder]', ...args.map((a) => (typeof a === 'function' ? a() : a)));
+};
 
 /**
  * A line over the panes: the app's one notification surface.

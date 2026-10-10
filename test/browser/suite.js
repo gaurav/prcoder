@@ -1738,6 +1738,27 @@ test('coming back to the tab polls, ten seconds after the last poll at the soone
   await fresh.close();
 });
 
+// The switcher's console lines are for chasing a failure that leaves nothing
+// on screen, and cost a join over every open PR on each fetch, so they are
+// written only with the preference on.
+test('the console lines are off unless prcoder:debug is on', { skip }, async () => {
+  const lines = async (init) => {
+    const p = await newPage({ prs: STACK, init });
+    const seen = [];
+    p.on('console', (m) => { if (m.text().startsWith('[prcoder]')) seen.push(m.text()); });
+    await p.waitForSelector('#pr-switch option[value="14"]', { state: 'attached' });
+    const fetched = p.waitForResponse('**/api/prs');
+    await p.locator('#pr-head .tab', { hasText: 'Stack' }).click();
+    await fetched;
+    await p.waitForTimeout(100);
+    await p.close();
+    return seen;
+  };
+  assert.deepEqual(await lines(null), []);
+  const on = await lines(() => localStorage.setItem('prcoder:debug', 'on'));
+  assert.ok(on.includes('[prcoder] PR list landed: 12,13,14 '), on.join('\n'));
+});
+
 // A merge seen by a poll and the Stack tab opened a moment later were two whole
 // `gh pr list` calls, one behind the other on the server's lock. The tab joins
 // the fetch in flight; only a trigger that knows the list changed starts one.

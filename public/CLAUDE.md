@@ -74,3 +74,13 @@ retry those. The bug was still live on 2026-09-17;
 `tools/browser.mjs` defaults to Firefox for this reason, and `test/browser/`
 runs its suite in both engines: a header-height test written against Chromium
 failed in Firefox (2026-09-26).
+
+## Console lines go through `debug()`
+
+`debug()` in `pr.js` is the page's one way to write to the browser console,
+for a path that fails with nothing on screen. It writes only when the
+`prcoder:debug` preference is `on` -- `localStorage['prcoder:debug'] = 'on'`
+in the console, then reload -- so a line can be as chatty as it needs to be
+without costing anything when it is off. An argument that takes work to build,
+like a list of every open PR's number, goes in as a function; it is called only
+when the line is written.

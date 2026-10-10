@@ -383,7 +383,7 @@ const loadPrs = (why, { fresh = false } = {}) => {
   // already the branch this fetch was for, so nothing asks for it again.
   asking = api('/api/prs', undefined, 'GET').then((l) => {
     if (n !== asks) return debug('PR list dropped: a later fetch was asked for', why);
-    debug('PR list landed:', l.map((p) => p.number).join(',') || '(empty)',
+    debug('PR list landed:', () => l.map((p) => p.number).join(',') || '(empty)',
       document.activeElement?.id === 'pr-switch' ? '(switcher focused)' : '');
     prs = l;
     listedAt = Date.now();
