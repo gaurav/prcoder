@@ -361,15 +361,26 @@ let last = null;
 // dropped: `gh pr list` can take seconds, and a slow one from before a merge,
 // landing after the one the merge asked for, put the merged PR back with
 // nothing left to fetch it again.
+//
+// A trigger that only means someone is looking -- the switcher, the Stack tab
+// -- joins a fetch already in flight rather than queueing a second whole
+// `gh pr list` behind it on the server's lock, which the next poll then waits
+// behind too. `fresh` is for one that knows the list has changed since a fetch
+// in flight left: a checkout, the PR on screen merging.
 let asks = 0;
-const loadPrs = (why) => {
+let asking = null;
+const loadPrs = (why, { fresh = false } = {}) => {
+  if (asking && !fresh) {
+    debug('joining the PR list fetch in flight:', why);
+    return asking;
+  }
   const n = ++asks;
   debug('fetching the PR list:', why);
   // Repaint, or a PR opened since page load stays invisible until the next
   // poll — the switcher only rebuilds its options when the set changes. The
   // whole status, because the branch-only pane reads this list too; `last` is
   // already the branch this fetch was for, so nothing asks for it again.
-  return api('/api/prs', undefined, 'GET').then((l) => {
+  asking = api('/api/prs', undefined, 'GET').then((l) => {
     if (n !== asks) return debug('PR list dropped: a later fetch was asked for', why);
     debug('PR list landed:', l.map((p) => p.number).join(',') || '(empty)',
       document.activeElement?.id === 'pr-switch' ? '(switcher focused)' : '');
@@ -379,7 +390,9 @@ const loadPrs = (why) => {
     asked.clear();
     [...below.keys()].forEach(loadBelow);
     if (last) paint(last);
-  }, (e) => debug('PR list failed:', why, e.message));
+  }, (e) => debug('PR list failed:', why, e.message))
+    .finally(() => { if (n === asks) asking = null; });
+  return asking;
 };
 
 // What git says each branch with no pull request is built on (#93), for the
@@ -518,8 +531,8 @@ function paint(status) {
   if (switched) {
     below.clear();
     asked.clear();
-    loadPrs('branch changed');
-  } else if (ended) loadPrs(`#${status.pr.number} is now ${status.pr.state}`);
+    loadPrs('branch changed', { fresh: true });
+  } else if (ended) loadPrs(`#${status.pr.number} is now ${status.pr.state}`, { fresh: true });
   // Reading its checklist into the PR tab needs only a PR on screen.
   if (status.queue) setItems(status.queue, status.pr);
 

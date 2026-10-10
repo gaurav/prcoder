@@ -1627,6 +1627,29 @@ test('a PR list that lands after a later fetch was asked for is dropped', { skip
   await fresh.close();
 });
 
+// A merge seen by a poll and the Stack tab opened a moment later were two whole
+// `gh pr list` calls, one behind the other on the server's lock. The tab joins
+// the fetch in flight; only a trigger that knows the list changed starts one.
+test('opening the Stack tab while a PR list fetch is out joins it', { skip }, async () => {
+  const fresh = await newPage({ prs: STACK });
+  await fresh.waitForSelector('#pr-switch option[value="14"]', { state: 'attached' });
+  let lists = 0;
+  fresh.on('request', (q) => { if (q.url().endsWith('/api/prs')) lists++; });
+  let held;
+  await fresh.route('**/api/prs', (r) => { held = r; });
+  await fresh.route('**/api/status', (r) => r.fulfill({ json: merged }));
+  const asked = fresh.waitForRequest('**/api/prs');
+  await fresh.click('#pr-refresh');
+  await asked;
+  await fresh.locator('#pr-head .tab', { hasText: 'Stack' }).click();
+  await fresh.waitForTimeout(300);
+  assert.equal(lists, 1, 'the tab joined the fetch the merge asked for');
+  await held.fulfill({ json: MERGED });
+  await fresh.waitForFunction(() => !document.querySelector('#pr-switch option[value="13"]')?.textContent.includes('└'));
+  assert.deepEqual(await fresh.locator('#pr-body .pr-into .pr-num').allTextContents(), [], 'nothing is built on #12 now');
+  await fresh.close();
+});
+
 // Opening the tab fetches the list, and gh can fail. The list it had is still
 // the best it knows; an empty one in its place said "Nothing is stacked" over
 // the rows it had just shown.
