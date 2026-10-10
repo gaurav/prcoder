@@ -342,8 +342,8 @@ copyButton.onclick = async () => {
 };
 
 // The switcher only changes when PRs are opened or closed, so it is not worth a
-// call every minute — page load, opening the dropdown, opening the Stack tab,
-// and a checkout are enough. The branch-only pane's list of what merges into
+// call every minute — page load, reaching for the dropdown, opening the Stack
+// tab, a checkout and the PR on screen changing are enough. The branch-only pane's list of what merges into
 // this branch comes out of the same array, and is as fresh as that. The Stack
 // tab is too, but it states outright that nothing is stacked on a branch, so it
 // asks for the list itself rather than trust one from minutes ago.
@@ -369,6 +369,7 @@ let last = null;
 // in flight left: a checkout, the PR on screen merging.
 let asks = 0;
 let asking = null;
+let listedAt = 0;
 const loadPrs = (why, { fresh = false } = {}) => {
   if (asking && !fresh) {
     debug('joining the PR list fetch in flight:', why);
@@ -385,6 +386,7 @@ const loadPrs = (why, { fresh = false } = {}) => {
     debug('PR list landed:', l.map((p) => p.number).join(',') || '(empty)',
       document.activeElement?.id === 'pr-switch' ? '(switcher focused)' : '');
     prs = l;
+    listedAt = Date.now();
     // The list is what says which branches have a pull request, so what git
     // said under the others is asked again against it, in place.
     asked.clear();
@@ -411,7 +413,15 @@ const loadBelow = (branch) => {
   api('/api/below', { branch, prs: pairs })
     .then((b) => { below.set(branch, b); if (last) paint(last); }, () => {});
 };
-document.getElementById('pr-switch').addEventListener('mousedown', () => loadPrs('switcher opened'));
+// Asked for as the pointer or the keyboard reaches the switcher, not on
+// mousedown: by the time a fetch from there landed the dropdown was open, too
+// late for the pick, and renderHeader holds the options while it has focus.
+// Not again within ten seconds of a list landing, or hovering and then
+// clicking would be two fetches.
+const reachSwitcher = (how) => { if (Date.now() - listedAt > 10_000) loadPrs(how); };
+const switcher = document.getElementById('pr-switch');
+switcher.addEventListener('pointerenter', () => reachSwitcher('pointer reached the switcher'));
+switcher.addEventListener('focus', () => reachSwitcher('switcher focused'));
 
 const NOTES = {
   'other-branch': 'Not checked out — this pull request is on another branch.',
@@ -485,9 +495,10 @@ function paint(status) {
   const switched = last && last.branch !== status.branch;
   // The PR on screen merging or closing takes it out of the open list, and
   // GitHub retargets the ones stacked on it. Fetched now, from the poll that
-  // noticed -- the one that runs as you come back to the tab -- because the
-  // fetch on opening the switcher lands after the dropdown is already open:
-  // you picked from the old list, or had the options rebuilt under the pick.
+  // noticed -- the one that runs as you come back to the tab -- rather than
+  // left to reaching for the switcher: a fetch that starts then can still land
+  // with the dropdown open, and renderHeader holds the options until it closes,
+  // so the pick would be from the old list.
   // Any change to which PR is on the branch, not only its state: one closed and
   // another opened in its place from the terminal is the same branch with a
   // new number, and a PR opened on a bare branch is a new entry in the list.

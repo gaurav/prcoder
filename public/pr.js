@@ -171,7 +171,8 @@ function clamp(head, tail) {
  * switcher and the light live there — a poll landing mid-click would otherwise
  * close an open dropdown.
  */
-export function renderHeader(status, prs, { onSwitch, onCommit }) {
+export function renderHeader(status, prs, handlers) {
+  const { onSwitch, onCommit } = handlers;
   const sel = document.getElementById('pr-switch');
   const commit = document.getElementById('pr-commit');
 
@@ -188,9 +189,16 @@ export function renderHeader(status, prs, { onSwitch, onCommit }) {
   const shown = switcherRows(prs ?? [], status.pr);
 
   const keys = (prs ? '' : '?') + shown.map(({ pr, depth }) => `${pr.number}:${depth}`).join(',');
-  if (sel.dataset.keys !== keys) {
-    debug('switcher options rebuilt:', sel.dataset.keys ?? '(none)', '->', keys,
-      document.activeElement === sel ? '(while focused)' : '');
+  // Nor while it has focus, the one sign a page gets that its dropdown may be
+  // open: a list landing then replaced the options under the open dropdown,
+  // which closed it or moved the pick. It is rebuilt as it loses focus, from
+  // the status painted last -- each call here replaces the one before.
+  const stale = sel.dataset.keys !== keys;
+  const open = document.activeElement === sel;
+  sel.onblur = stale && open ? () => renderHeader(status, prs, handlers) : null;
+  if (stale && open) debug('switcher options held while it has focus:', keys);
+  else if (stale) {
+    debug('switcher options rebuilt:', sel.dataset.keys ?? '(none)', '->', keys);
     sel.dataset.keys = keys;
     sel.replaceChildren(
       h('option', { value: '' }, shown.length ? 'no pull request' : prs ? 'no open pull requests' : 'no list of pull requests yet'),

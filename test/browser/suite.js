@@ -157,11 +157,13 @@ const posted = [];
 // the exit bar is filled with -- or a function given the route, for a test
 // that answers it late. `folds` serves index.html with that list in place of
 // its `data-folds`, which is how a pane's fold is switched on, and `init` runs
-// in the page before its own scripts, for a stub of a browser API.
+// in the page before its own scripts, for a stub of a browser API. `clock`
+// installs Playwright's, for a test that moves time on with `p.clock`.
 async function newPage({ prs = [], st = status, ready = '#pr-head .pr-title', below = null, pty = () => {},
-  whoami = { model: '', effort: '' }, folds = null, init = null } = {}) {
+  whoami = { model: '', effort: '' }, folds = null, init = null, clock = false } = {}) {
   const p = await browser.newPage();
   if (init) await p.addInitScript(init);
+  if (clock) await p.clock.install();
   if (folds) {
     await p.route((u) => u.pathname === '/', async (r) => {
       const res = await r.fetch();
@@ -1573,8 +1575,59 @@ const MERGED = [{ ...STACK[1], baseRefName: 'main' }, STACK[2]];
 const merged = { ...status, pr: { ...pr, state: 'MERGED' } };
 const switcherLabels = (p) => p.$$eval('#pr-switch option', (os) => os.map((o) => o.textContent.replaceAll('\u00a0', ' ')));
 
-// The switcher's own fetch, on mousedown, lands after its dropdown is open, so
-// the pick after a merge came from the list as it was before (#131). The poll
+// A list landing while the switcher's dropdown is open replaced the options
+// under it, which closed it or moved the pick. Focus is the page's one sign
+// that it may be open, so the options wait for the switcher to lose it.
+test('the switcher keeps its options while it has focus, and takes the new list as it loses it', { skip }, async () => {
+  const fresh = await newPage({ prs: STACK });
+  await fresh.waitForSelector('#pr-switch option[value="14"]', { state: 'attached' });
+  const before = await switcherLabels(fresh);
+  await fresh.focus('#pr-switch');
+  await fresh.route('**/api/prs', (r) => r.fulfill({ json: MERGED }));
+  await fresh.route('**/api/status', (r) => r.fulfill({ json: merged }));
+  // Clicked from script, so focus stays on the switcher.
+  const landed = fresh.waitForResponse('**/api/prs');
+  await fresh.evaluate(() => document.getElementById('pr-refresh').click());
+  await landed;
+  await fresh.waitForTimeout(200);
+  assert.deepEqual(await switcherLabels(fresh), before, 'held while focused');
+  assert.equal(await fresh.inputValue('#pr-switch'), '12');
+  await fresh.evaluate(() => document.activeElement.blur());
+  assert.deepEqual(await switcherLabels(fresh), [
+    'no pull request',
+    '#12 A fixture pull request',
+    '#13 (draft) Built on the fixture',
+    '  └ #14 Built on that',
+  ]);
+  await fresh.close();
+});
+
+// Fetched on mousedown, the list landed with the dropdown already open. The
+// pointer reaching the switcher is a head start; the click that follows it,
+// within ten seconds of a list landing, asks for nothing more.
+test('reaching for the switcher fetches the PR list, and a click right after does not', { skip }, async () => {
+  const fresh = await newPage({ prs: STACK, clock: true });
+  await fresh.waitForSelector('#pr-switch option[value="14"]', { state: 'attached' });
+  let lists = 0;
+  fresh.on('request', (q) => { if (q.url().endsWith('/api/prs')) lists++; });
+  await fresh.hover('#pr-switch');
+  await fresh.waitForTimeout(200);
+  assert.equal(lists, 0, 'the page load\'s list is fresh');
+  await fresh.mouse.move(0, 0);
+  await fresh.clock.fastForward(11_000);
+  const landed = fresh.waitForResponse('**/api/prs');
+  await fresh.hover('#pr-switch');
+  await landed;
+  assert.equal(lists, 1, 'hovering fetched it');
+  await fresh.focus('#pr-switch');
+  await fresh.waitForTimeout(200);
+  assert.equal(lists, 1, 'focusing it just after did not');
+  await fresh.close();
+});
+
+// A fetch that starts as you reach for the switcher can land after its
+// dropdown is open, so the pick after a merge came from the list as it was
+// before (#131). The poll
 // that sees the PR on screen change fetches it instead -- a merge, a close, or
 // another PR in its place -- and one that sees nothing new does not.
 const pollCounting = async (p) => {
