@@ -48,7 +48,7 @@ stray click edits a description on GitHub: undo what you write, or stay read-onl
 measures, with a comment at each check saying which regression the check catches.
 
 - **Firefox by default**, because a Firefox-only caret bug survived every Chromium screenshot
-  ([public/CLAUDE.md](../public/CLAUDE.md)). `PRCODER_BROWSER=chromium` forces the other, and
+  ([public/CLAUDE.md](../public/CLAUDE.md)). `PRCODER_PLAYWRIGHT=chromium` forces the other, and
   running both is worth the second minute. On macOS 27, Firefox starts only with the app-data
   workaround every launch takes from `firefoxEnv()` (#80);
   [tools/firefox-runner](../tools/firefox-runner/README.md) has the cause and the re-check, and
@@ -70,11 +70,11 @@ measures, with a comment at each check saying which regression the check catches
 
 **`node tools/diff-views.mjs`** drives the diff pane against
 [#87](https://github.com/gaurav/prcoder/pull/87), a draft fixture that is never merged: a file
-modified in two places (the DIFF view, the outline's rows, its gutter, its ✕ and *Outline*), a
-deleted one, an added `.tsx` file highlighted by the grammar built on jsx and typescript, and two
-renames, one untouched and one with a line changed. Its base is an orphan branch, so the fixture
-stays those files whatever happens to `main`, and the driver refuses to start if the fixture has
-been closed. Run it for any change to what the diff pane draws.
+modified in two places (the DIFF view, the outline's rows, its gutter, its ✕ and *Outline*, and
+*Wrap* on its one long line), a deleted one, an added `.tsx` file highlighted by the grammar built
+on jsx and typescript, and two renames, one untouched and one with a line changed. Its base is an
+orphan branch, so the fixture stays those files whatever happens to `main`, and the driver refuses
+to start if the fixture has been closed. Run it for any change to what the diff pane draws.
 
 **`node tools/no-pr.mjs`** drives the pane with **no** pull request, which `browser.mjs` cannot
 reach from a branch that has one. It clones the remote into `data/main-clone` and runs this
@@ -85,7 +85,10 @@ fault in a later row shows only in the printed list.
 
 **`node tools/cli.mjs`** drives the terminal half in a real PTY, because the status block, the keys
 and the quit prompt all switch off when stdout is not a tty, which is what every other driver's
-server gets.
+server gets. It presses `t` and `f` with `PRCODER_TERMINAL` and `PRCODER_FILE_MANAGER` set to a
+command that only records the path it is handed, which checks the keys and that the repo's path reaches the overrides whole,
+without opening a window. So the platform's own terminal and file manager are not driven: a scratch
+driver that presses either key without those set opens a real window on the machine running it.
 
 **`node tools/firefox-runner/probe.mjs`** is not a driver and boots no server. It asks only whether
 anything on this machine can start Firefox, with and without the workaround, and is worth running
@@ -94,8 +97,21 @@ how to read it.
 
 ## Figures worth re-measuring
 
-- **A poll costs seven subprocess calls**, clean tree or dirty, with or without a pull request.
-  `PRCODER_VERBOSE=2` prints the count on every poll, so a change that adds a call shows up.
+[#129](https://github.com/gaurav/prcoder/issues/129) has a box for each figure here. Add one when
+you add a figure, and tick it when you re-measure one, writing the new commit and date next to the
+figure. Nobody is waiting on them, so re-measure one when other work makes it cheap: the server is
+already up with `PRCODER_VERBOSE=2`, or a `browser.mjs` run is already printing the width.
+
+- **A poll that reloads nothing costs six subprocess calls with a pull request**, seven on a
+  branch without one that origin has, and five on one never pushed; one more for a branch ahead
+  of its remote, and the same clean tree or dirty (re-measured on `43e3700`, 2026-10-09). A poll
+  that reloads the pull request adds `loadPr`'s GraphQL calls on top. `PRCODER_VERBOSE=2` prints
+  the count on every poll, so a change that adds a call shows up.
+- **The checks are most of what the poll's cheap `gh pr view` fetches.** prHeads asks for them
+  on every poll (#120), and on cli/cli#14634's 30 checks they took its answer from 108 bytes to
+  9KB and the call from about 0.42s to 0.54s (2026-10-09); prcoder's one check is 293 bytes. The
+  call count above cannot show this growing, so time
+  `gh pr view --json number,headRefOid,updatedAt,statusCheckRollup` on a PR with many checks.
 - **The description's prose is 568px wide in Firefox and 567px in Chromium**, in an 864px pane
   (on `23b192f`). `browser.mjs` prints it every run; a line-length cap is not something the
   stylesheet can be read for.
@@ -109,7 +125,7 @@ Each unit test file says at its top what it pins. Two run the server itself:
 either. Filing an item with ◎ is the one queue route that does, on purpose, and is not driven.
 `test/api.test.js` is also the one test that opens a real `/pty`: with settings `sessionArgs`
 refuses, so the claim is that it closes with 1008 before the spawn. The exit bar's "Start coding
-agent again" and Quit are `test/browser/suite.js`'s, against a mock socket that closes the way an
+agent" and Quit are `test/browser/suite.js`'s, against a mock socket that closes the way an
 exiting agent does.
 
 Some things were checked against the real thing rather than a stub, and the evidence sits next to

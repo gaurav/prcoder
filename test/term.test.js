@@ -141,3 +141,20 @@ test('a two-row terminal still shows the question', () => {
   confirm('quit? [y/N] ', () => {});
   assert.match(out.text, /quit\? \[y\/N\]/);
 });
+
+// A queue item is typed into any tab, so its text reaches this terminal from
+// whoever can reach the page. An ESC in it must print, not run.
+test('control characters are shown, not sent to the terminal', () => {
+  const out = fake(true);
+  log('queued \'\x1b]0;owned\x07\x1b[31mred\'');
+  status(['PR #1   a\x1b[2Jb\nc']);
+  confirm('quit? \x9b2J [y/N] ', () => {});
+  const ours = out.text.replaceAll(/\x1b\[(\d*F|0J|\?25[lh]|2m|0m)/g, '');
+  assert.doesNotMatch(ours, /[\x07\x1b\x9b]/);
+  assert.match(ours, /queued '␛\]0;owned␇␛\[31mred'/);
+  assert.match(ours, /a␛\[2Jb␊c/);
+  assert.match(ours, /quit\? �2J/);
+  // A log line keeps its newlines and tabs: a stack trace is one log line.
+  log('Error: x\n\tat y');
+  assert.match(out.text, /Error: x\n\tat y/);
+});

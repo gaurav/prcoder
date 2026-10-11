@@ -12,7 +12,7 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import { WebSocket } from 'ws';
-import { server, sessionArgs, missingVendor } from '../server.js';
+import { server, sessionArgs, startedWith, missingVendor, keepPr } from '../server.js';
 import { grammars } from '../public/diff.js';
 
 let base;
@@ -32,6 +32,7 @@ test('/api/whoami answers from cache, before any poll has run', async () => {
   assert.equal(res.headers.get('content-type'), 'application/json');
   assert.deepEqual(await res.json(), {
     prcoder: true, repo: process.cwd(), branch: null, nameWithOwner: null,
+    started: { model: '', effort: '' },
   });
 });
 
@@ -162,7 +163,24 @@ test('a queue write of the wrong shape says so, rather than throwing from inside
   assert.deepEqual(await put({ items: 'not an array', branch: 'work' }), [500, want]);
 });
 
-// The exit panel's "Start coding agent again" sends its settings as the /pty
+// The branch goes into git, so it has to be one origin has (or the one checked
+// out). Both refusals come before the gh lookup the walk itself needs.
+test('what a branch is built on is asked only of a branch origin has', async () => {
+  const ask = async (body) => {
+    const res = await fetch(`${base}/api/below`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    return [res.status, (await res.json()).error];
+  };
+  assert.deepEqual(await ask({}), [500, 'no branch']);
+  assert.deepEqual(await ask({ branch: 42 }), [500, 'no branch']);
+  assert.deepEqual(await ask({ branch: '--upload-pack=x' }), [500, 'origin has no branch --upload-pack=x']);
+  assert.deepEqual(await ask({ branch: 'no-such-branch-anywhere' }), [500, 'origin has no branch no-such-branch-anywhere']);
+});
+
+// The exit panel's "Start coding agent" sends its settings as the /pty
 // query, and they become part of a spawn's argv -- so only names and levels get
 // through, and a model that is really a flag is refused rather than handed to
 // claude.
@@ -173,9 +191,43 @@ test('session settings become claude flags, and nothing else does', () => {
   assert.deepEqual(args('model=opus&effort=high&continue=on'),
     ['--continue', '--model', 'opus', '--effort', 'high']);
   assert.deepEqual(args('model=claude-opus-5-5[1m]'), ['--model', 'claude-opus-5-5[1m]']);
+  assert.deepEqual(args('model=claude-sonnet-4-5@20250929'), ['--model', 'claude-sonnet-4-5@20250929']);
+  assert.deepEqual(args('model=arn:aws:bedrock:us-east-1:1:application-inference-profile/x'),
+    ['--model', 'arn:aws:bedrock:us-east-1:1:application-inference-profile/x']);
   assert.equal(args('model=--dangerously-skip-permissions'), null);
   assert.equal(args('model=opus --verbose'), null);
   assert.equal(args('effort=extreme'), null);
+});
+
+// Pinned so that changing it is a decision (2026-10-01): a blank field sends
+// nothing, so whatever -- gave stays in the argv. Blanking both fields is not
+// a way back to the agent's own default when prcoder's command line named one.
+test('blank settings keep the command line\'s model and effort, and chosen ones win', () => {
+  const base = ['--model', 'opus', '--effort', 'high'];
+  const args = (q) => sessionArgs(new URLSearchParams(q), base);
+  assert.deepEqual(args('model=&effort='), base);
+  assert.deepEqual(args('model=haiku'), [...base, '--model', 'haiku']);
+  assert.equal(args('effort=extreme'), null);
+});
+
+// The exit bar is filled with the command line's settings, so an untouched
+// restart sends them back -- and the command line takes names the allowlist
+// refuses. Sending back what -- gave must start the agent, not close the socket.
+test('settings the command line already gave are kept, not checked', () => {
+  const base = ['--model', 'my model', '--effort', 'extreme'];
+  const args = (q) => sessionArgs(new URLSearchParams(q), base);
+  assert.deepEqual(args('model=my+model&effort=extreme'), base);
+  assert.deepEqual(args('model=my+model&effort=low'), [...base, '--effort', 'low']);
+  assert.equal(args('model=other+model'), null);
+});
+
+// What the exit bar is filled with: the last of each, as claude reads them.
+test('startedWith reads the model and effort from the agent\'s arguments', () => {
+  assert.deepEqual(startedWith([]), { model: '', effort: '' });
+  assert.deepEqual(startedWith(['--continue', '--model', 'opus', '--effort=high']),
+    { model: 'opus', effort: 'high' });
+  assert.deepEqual(startedWith(['--model', 'opus', '--model=haiku']), { model: 'haiku', effort: '' });
+  assert.deepEqual(startedWith(['--models', 'x', '--effort']), { model: '', effort: '' });
 });
 
 // Refused before the spawn, like a foreign origin: this opens a real /pty and
@@ -196,4 +248,18 @@ test('missingVendor names the vendor files that are not installed', () => {
   assert.ok(all.includes('@xterm/xterm/lib/xterm.mjs'));
   assert.ok(all.includes('prismjs/prism.js'));
   assert.equal(all.length, 5 + grammars.length);
+});
+
+// The half of #120's fix that matters: a check finishing leaves updatedAt where
+// it was, so a poll that keeps the PR has to take the checks from the cheap call
+// or the Checks tab says pending until something else touches the PR.
+test('a poll that keeps the PR still takes its checks from prHeads', () => {
+  const pr = { number: 1, updatedAt: 'a', checks: { pending: 1 } };
+  assert.equal(keepPr(pr, { number: 1, updatedAt: 'a', checks: { passed: 1 } }), true);
+  assert.deepEqual(pr.checks, { passed: 1 });
+  assert.equal(keepPr(pr, { number: 1, updatedAt: 'b' }), false);
+  assert.equal(keepPr(pr, { number: 2, updatedAt: 'a' }), false);
+  assert.equal(keepPr(pr, null), false);
+  // No PR then or now: nothing to reload.
+  assert.equal(keepPr(null, null), true);
 });

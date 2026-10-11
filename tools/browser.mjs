@@ -4,14 +4,14 @@
 //
 //   node tools/browser.mjs [label]         # PNGs to ./data/shots/<label>/ (gitignored)
 //                                         # the label says what the run was for; default `latest`
-//   PRCODER_BROWSER=firefox node tools/browser.mjs
+//   PRCODER_PLAYWRIGHT=firefox node tools/browser.mjs
 //
 // Firefox is a separate download: `npx playwright install firefox` once.
 //
 // Scratch driver, not a test: add clicks and locators for whatever you are
 // looking at. Two rules for anything you add.
 //
-// PRCODER_BROWSER=firefox drives Firefox instead. Worth having rather than
+// PRCODER_PLAYWRIGHT=firefox drives Firefox instead. Worth having rather than
 // trusting one engine: the caret in a queue item landed at the start in Firefox
 // and nowhere else, because a mousedown inside a draggable element goes to the
 // drag machinery there, and every screenshot before that had been Chromium.
@@ -209,8 +209,10 @@ console.log('row ▶:  ', await local(), '+', await page.locator('#queue-body .t
 await page.locator('#queue-body .tab', { hasText: 'Completed' }).click();
 await page.waitForTimeout(150);
 // The way back, which is why this is a tick and not a delete: the box that
-// checked itself unchecks.
-await page.locator('.item', { hasText: SENT }).locator('input[type=checkbox]').uncheck();
+// checked itself unchecks. click(), not uncheck(): uncheck() reads the box
+// again after clicking, and once the save has moved the row off Completed it
+// waits for a box that is no longer there.
+await page.locator('.item', { hasText: SENT }).locator('input[type=checkbox]').click();
 await page.locator('#queue-body .tab', { hasText: 'Local (3)' }).waitFor({ timeout: 10_000 });
 await page.locator('#queue-body .tab', { hasText: 'Local' }).click();
 await page.waitForTimeout(150);
@@ -273,10 +275,16 @@ await page.waitForFunction(() => ![...document.querySelectorAll('#queue-body .it
 await page.locator('#queue').screenshot({ path: path.join(out, 'queue-issues.png') });
 console.log('issues: ', await page.locator('#queue-body .tab', { hasText: /^Issues/ }).innerText(),
   JSON.stringify(await page.locator('#queue-body .item.source').allInnerTexts()));
-const localBefore = await local();
-await page.locator('#queue-body .item.source .actions button').first().click();
-await page.locator('#queue-body .tab', { hasText: /^Local \(4\)/ }).waitFor({ timeout: 10_000 });
-console.log('  pulled: ', localBefore, '->', await local(), '(want one more)');
+// Only a pull request that mentions an issue has one here to pull; without
+// that the click below waited out its 30s and the run ended before the PR
+// pane's half (2026-10-06, on #118), the same way the ticking above is skipped
+// for a description with no checkboxes.
+if (await page.locator('#queue-body .item.source').count()) {
+  const localBefore = await local();
+  await page.locator('#queue-body .item.source .actions button').first().click();
+  await page.locator('#queue-body .tab', { hasText: /^Local \(4\)/ }).waitFor({ timeout: 10_000 });
+  console.log('  pulled: ', localBefore, '->', await local(), '(want one more)');
+} else console.log('  no issues this pull request mentions to pull');
 await page.locator('#queue-body .tab', { hasText: /^Local/ }).click();
 await page.waitForTimeout(150);
 
@@ -289,28 +297,28 @@ console.log('switch:  ', (await page.$$eval('#pr-switch option', (os) => os.slic
   .map((o) => o.textContent.slice(0, 12)))).join('  |  '), '  (want the pinned PR first if it is not open, then each open PR with its stack indented under it)');
 
 // The checks, which are a tab and a mark rather than the badges they used to be
-// above the title: the green done circle every tab gets once everything passed,
-// a yellow ring while one is pending, a red ✕ once one failed. The mark is read off the computed ::before rather than the class
-// name, because the class is only a promise that the stylesheet has a rule.
+// above the title: the green ✓ circle every tab gets once everything passed,
+// a pie with a yellow ring while one is pending, a red ✕ circle once one
+// failed. The mark is read off its computed style rather than its class name,
+// because the class is only a promise that the stylesheet has a rule.
 // This repo's own PR is the fixture, so what it says depends on what CI is
 // doing right now: the assertion is that the mark and the label agree, not
 // what either one is. test/browser/suite.js pins all three against a fixture.
 const checksTab = page.locator('#pr-head .tab', { hasText: /^Checks/ });
 if (await checksTab.count()) {
   const label = await checksTab.innerText();
-  const dot = await checksTab.evaluate((e) => {
-    if (e.classList.contains('done')) return `done circle ${getComputedStyle(e, '::after').backgroundColor}`;
-    const s = getComputedStyle(e, '::before');
-    return /✕/.test(s.content) ? `✕ ${s.color}`
-      : parseFloat(s.borderTopWidth) ? `ring ${s.borderTopColor}` : `dot ${s.backgroundColor}`;
+  const mark = await checksTab.locator('.mark').evaluate((m) => {
+    const s = getComputedStyle(m);
+    const glyph = getComputedStyle(m, '::after').content.match(/[✓✕]/)?.[0];
+    return glyph ? `${glyph} circle ${s.backgroundColor}` : `ring ${s.boxShadow}`;
   });
-  const cls = await checksTab.getAttribute('class');
+  const cls = await checksTab.locator('.mark').getAttribute('class');
   await checksTab.click();
   await page.waitForSelector('.check');
   const rows = await page.locator('.check').allInnerTexts();
   const linked = await page.locator('.check a').count();
-  console.log('checks:  ', JSON.stringify(label), cls, dot,
-    ` (want N/N with the done circle 127,216,143, or a ring 240,220,154 while pending or a ✕ 245,163,163 once any failed)`);
+  console.log('checks:  ', JSON.stringify(label), cls, mark,
+    ` (want N/N with the ✓ circle 127,216,143, or a ring 240,220,154 while pending or a ✕ circle 245,163,163 once any failed)`);
   console.log('check rows:', rows.join(' | '), `, ${linked} of ${rows.length} link out`,
     ' (want one row per check, each linking to its run)');
   await page.locator('#pr').screenshot({ path: path.join(out, 'pr-checks.png') });
@@ -551,6 +559,40 @@ console.log('highlight:', `${hi.n} spans:`, hi.names || '(none)',
   '\n           (want spans in tok- classes: comment, keyword, string at least)');
 await page.locator('#diff').screenshot({ path: path.join(out, 'diff.png') });
 
+// Folded to its bar by a click on its title, the terminal taking the room:
+// the pane should be one line -- ▶, title, path with its ⧉ and @, viewed, the
+// links out, no Wrap -- and the terminal under it taller than before. A second
+// click on the title unfolds it for the checks below.
+const tall = (sel) => page.locator(sel).evaluate((el) => el.getBoundingClientRect().height);
+const termBefore = await tall('#term');
+await page.locator('#diff > header h1').click();
+await page.waitForSelector('main.diff-off');
+console.log('folded:', `diff ${await tall('#diff')}px = bar ${await tall('#diff > header')}px,`,
+  `terminal ${termBefore}px -> ${await tall('#term')}px,`,
+  `Wrap ${await page.locator('#diff-wrap').isVisible() ? 'shown' : 'hidden'}`,
+  '\n        (want the pane as tall as its bar, the terminal taller, Wrap hidden)');
+await page.locator('main').screenshot({ path: path.join(out, 'diff-folded.png') });
+await page.locator('#diff > header h1').click();
+await page.waitForSelector('main:not(.diff-off)');
+
+// The header's @ types the file's mention into the agent's prompt, unsent. The
+// stub echoes its input, so the terminal is the evidence it reached the PTY.
+// The stub is raw and keeps no line, so the mention left on screen is only
+// text in front of the icon check's `hello` below. The rows are joined first:
+// xterm draws one per div, and a long path wraps across two.
+const openPath = await page.locator('#diff-path').innerText();
+await page.locator('#diff-mention').click();
+await page.waitForTimeout(400);   // the stub echoes on the PTY's own schedule
+console.log('diff @:  ', `terminal echoed @${openPath}:`,
+  (await page.locator('#term-host').innerText()).replace(/\n/g, '').includes(`@${openPath}`), ' (want true)');
+
+// The header with Wrap pressed, which fills it in, beside the @ and the links
+// out: the one header everything above competes for room in. Pressed back
+// after, since the choice is remembered and the shots below expect it off.
+await page.locator('#diff-wrap').click();
+await page.locator('#diff > header').screenshot({ path: path.join(out, 'diff-header-wrap.png') });
+await page.locator('#diff-wrap').click();
+
 // The diff pane's two ways out: the file itself at this PR's head, and the
 // patch in GitHub's diff viewer. Both hrefs are read rather than assumed
 // because the blob one is assembled from a sha the payload carries -- a missing
@@ -672,7 +714,7 @@ await page.waitForSelector('.item .text');
 
 // The bug above, pinned: a click in the middle of an item's text has to land
 // in the middle of it. Silent in Chromium either way, so this only earns its
-// keep under PRCODER_BROWSER=firefox.
+// keep under PRCODER_PLAYWRIGHT=firefox.
 //
 // Aimed at the glyphs and not at the box. `.item .text` is `flex: 1`, so its
 // box runs to the end of the row and the middle of *that* is well past the end
@@ -786,16 +828,17 @@ try {
 console.log('queue:  ', (await getQueue()).length, 'items  (want', queue.length + ')');
 
 
-// The tab icon, which goes blue while a turn is running and back to green two
-// seconds after its output stops -- prcoder's only reading of "Claude is
-// working". A PTY echoes what is typed at it, which is what the first half
-// turns on: the echo of a keystroke is output, and the icon has to stay green
-// through it or it reports busy while Claude is waiting on the operator. Enter
-// starts the turn; the stub's echo of the line is then what holds it open.
+// The tab icon, which is a red octagon while a turn is running and a green
+// square again five seconds after its output stops -- prcoder's only reading of
+// "Claude is working". A PTY echoes what is typed at it, which is what the
+// first half turns on: the echo of a keystroke is output, and the icon has to
+// stay green through it or it reports busy while Claude is waiting on the
+// operator. Enter starts the turn; the stub's echo of the line is then what
+// holds it open.
 //
 // The last reading is the other bug: the stub keeps sending the cursor-position
 // probe throughout, five times a second, exactly as a real session does. Green
-// after 2.5s means those are being skipped rather than holding the turn open.
+// after 6s means those are being skipped rather than holding the turn open.
 // Before they were, the icon stayed busy from the first paint until the tab
 // closed, and every check on a /bin/cat stub passed, because cat never asks.
 const iconFill = () => page.evaluate(() =>
@@ -807,9 +850,13 @@ const typing = await iconFill();
 await page.keyboard.press('Enter');
 await page.waitForTimeout(200);
 const busy = await iconFill();
-await page.waitForTimeout(2500);
-console.log('icon:   ', `${typing} while typing, ${busy} after Enter, ${await iconFill()} after 2.5s of probes only`,
-  '  (want 238636, 1f6feb, 238636)');
+await page.waitForTimeout(6000);
+// The red is read off the page's --busy, which test/browser/suite.js holds to
+// the icon's, rather than written out here a third time.
+const red = await page.evaluate(() =>
+  getComputedStyle(document.documentElement).getPropertyValue('--busy').trim().slice(1));
+console.log('icon:   ', `${typing} while typing, ${busy} after Enter, ${await iconFill()} after 6s of probes only`,
+  `  (want 238636, ${red}, 238636)`);
 
 console.log('title: ', await page.title());
 console.log('panes: ', await page.evaluate(() => getComputedStyle(document.querySelector('main')).gridTemplateColumns));

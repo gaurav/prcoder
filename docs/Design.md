@@ -69,7 +69,7 @@ file the PR adds is highlighted, because a whole file is what a tokenizer can re
 line and a hunk is not; [#68](https://github.com/gaurav/prcoder/issues/68) has the safe way for the
 rest), multi-session and worktree management, and a queue API made for an agent (#21 decides that). No auto-pull, and nothing
 parses the terminal. The tab icon does read whether Claude is working, but from the *timing* of the
-PTY's output rather than its content — blue while frames are arriving, green two seconds after they
+PTY's output rather than its content — red while frames are arriving, green five seconds after they
 stop — and that is the whole of prcoder's idea of what the session is doing.
 
 One sequence is taken out of that stream before the timing is read, and it is the exception that
@@ -105,13 +105,26 @@ actually observed, is an id per item and a union by id.
 **prcoder's flags end at `--`.** Everything before it is prcoder's and parsed strictly (`parseCli`
 in [`cli.js`](../cli.js)); everything after it goes to the agent verbatim. So there is no list of
 Claude's flags to keep in step, and an agent flag written before `--` is an error that says where it
-goes, not a session started with the wrong pull request. `--port`, `--no-open`, `--queue` and `-v`
+goes, not a session started with the wrong pull request. The one positional is the pull request,
+and there are no subcommands. [#99](https://github.com/gaurav/prcoder/pull/99) tried `prcoder open`,
+`new` and `gh`, and they were dropped. The running prcoder's keys (`o`, `g`) do the same job in
+fewer keystrokes, and a command word in front of the target clashes with a branch of that name, so
+the PR had to move behind a verb, which broke the CLI. `prcoder queue` (#95) or `status` (#96)
+will have to settle that clash first. `--port`, `--no-open`, `--queue` and `-v`
 each have an environment variable of the same meaning, which the flag overrides; `--agent` has none
-yet, and `PRCODER_OPEN` and `PRCODER_AGENT_BIN` have no flag.
+yet, and `PRCODER_BROWSER`, `PRCODER_TERMINAL`, `PRCODER_FILE_MANAGER` and `PRCODER_AGENT_BIN`
+have no flag.
+The three opener variables each name the kind of program a key launches, and there is no generic
+`PRCODER_OPEN`: the platform's own opener (`open`, `start`, `xdg-open`) already is one, and the
+only reason to override it is to want a particular browser for URLs, or a particular file manager
+for folders, which no one command gives. A key that opens a file would hand it to an editor, a
+third kind, with a variable of its own. `PRCODER_NO_OPEN` is about the browser.
 `PRCODER_AGENT_BIN` is a path to run, not a name, which is why it is not `PRCODER_AGENT`: that
 would read as `--agent`'s variable, and is the name `--agent` needs if it ever gets one. It was
 `CLAUDE_BIN`, and prcoder refuses to start while only the old name is set, since ignoring it would
-spawn the real `claude` in place of whatever stub it named.
+spawn the real `claude` in place of whatever stub it named. `PRCODER_BROWSER` was `PRCODER_OPEN`,
+and a leftover one is warned about rather than refused: ignoring it opens the default browser,
+which is wrong but harmless.
 
 The other side of that line, prcoder adding nothing of its own to `claude`'s arguments, is what
 keeps one gap open.

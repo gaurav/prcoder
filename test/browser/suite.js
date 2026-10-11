@@ -110,12 +110,18 @@ const SOURCE = 'const s = "<script>alert(1)</script>"; // <img src=x onerror=ale
 // the jsx and typescript grammars under it, and without them the markup below
 // tokenizes as operators and bare text rather than tags and attributes.
 const TSX = 'const B = ({ n }: { n: number }) => <div className="b">{n}</div>;';
+// One line far wider than any pane, in a file no grammar claims, so the Wrap
+// test is about layout alone. Not in `added`: several tests read the Files
+// count as 2, so the page that wants it asks for it (`withLong` below).
+const LONG = 'A line that goes on ' + 'and on '.repeat(80) + 'to the end.\nShort.';
 const added = { 'evil.js': SOURCE, 'app.tsx': TSX };
-const files = Object.keys(added).map((p, i) => ({
-  path: p, group: bucket(p), additions: added[p].split('\n').length, deletions: 0, viewed: false,
+const sources = { ...added, 'long.txt': LONG };
+const fileRow = (p, i) => ({
+  path: p, group: bucket(p), additions: sources[p].split('\n').length, deletions: 0, viewed: false,
   url: `${REPO}/pull/12/files#diff-${i}`, blob: `${REPO}/blob/aaaa/${p}`,
   blame: `${REPO}/blame/aaaa/${p}`, history: `${REPO}/commits/aaaa/${p}`,
-}));
+});
+const files = Object.keys(added).map(fileRow);
 const pr = {
   number: 12, title: 'A fixture pull request', body: BODY, url: `${REPO}/pull/12`,
   state: 'OPEN', isDraft: false, headRefName: 'topic', baseRefName: 'main',
@@ -131,6 +137,8 @@ const status = {
   scope: 'current', mirrorFailed: false,
   pr, queue: [],
 };
+/** The status with `long.txt` as a third added file, for a page about long lines. */
+const withLong = (st) => ({ ...st, pr: { ...st.pr, files: [...files, fileRow('long.txt', files.length)] } });
 
 let browser;
 let page;
@@ -140,19 +148,45 @@ const posted = [];
 // own -- Prism loads once per page -- can open a second one. `prs` is the
 // switcher's list, empty unless a test is about it, and null for a fetch that
 // fails; `st` and `ready` are for a page with no pull request, which has no
-// title to wait on. `pty` is the mock socket's handler, for a test that needs
-// the agent to do something. A regex, not `**/pty`: a glob has to match the
-// whole URL, so the exit bar's `/pty?model=...` slipped past it to the real
-// server.
-async function newPage({ prs = [], st = status, ready = '#pr-head .pr-title', pty = () => {} } = {}) {
+// title to wait on. `below` is git's answer for a branch with no PR, and none
+// unless a test is about it, since the real one would ask this clone's git.
+// `pty` is the mock socket's handler, for a test that needs the agent to do
+// something. A regex, not `**/pty`: a glob has to match the whole URL, so the
+// exit bar's `/pty?model=...` slipped past it to the real server. `whoami` is
+// the model and effort prcoder's command line started the agent with, which
+// the exit bar is filled with -- or a function given the route, for a test
+// that answers it late. `folds` serves index.html with that list in place of
+// its `data-folds`, which is how a pane's fold is switched on, and `init` runs
+// in the page before its own scripts, for a stub of a browser API. `clock`
+// installs Playwright's, for a test that moves time on with `p.clock`.
+async function newPage({ prs = [], st = status, ready = '#pr-head .pr-title', below = null, pty = () => {},
+  whoami = { model: '', effort: '' }, folds = null, init = null, clock = false } = {}) {
   const p = await browser.newPage();
+  if (init) await p.addInitScript(init);
+  if (clock) await p.clock.install();
+  if (folds) {
+    await p.route((u) => u.pathname === '/', async (r) => {
+      const res = await r.fetch();
+      const html = await res.text();
+      const body = html.replace('data-folds="diff term"', `data-folds="${folds}"`);
+      assert.notEqual(body, html, 'the switch is where index.html says');
+      return r.fulfill({ response: res, body });
+    });
+  }
   await p.routeWebSocket(/\/pty(\?|$)/, pty);
+  await p.route('**/api/whoami', (r) => (typeof whoami === 'function'
+    ? whoami(r) : r.fulfill({ json: { started: whoami } })));
   await p.route('**/api/status', (r) => r.fulfill({ json: st }));
   await p.route('**/api/prs', (r) => (prs ? r.fulfill({ json: prs }) : r.abort()));
+  await p.route('**/api/below', (r) => {
+    p.belowAsked = r.request().postDataJSON();
+    return below ? r.fulfill({ json: below }) : r.abort();
+  });
   await p.route('**/api/queue', (r) => r.fulfill({ json: [] }));
+  await p.route('**/api/pr/viewed', (r) => r.fulfill({ json: { ok: true } }));
   await p.route('**/api/diff', (r) => {
     const { path } = r.request().postDataJSON();
-    const lines = added[path].split('\n');
+    const lines = sources[path].split('\n');
     return r.fulfill({ json: {
       path, patch: `@@ -0,0 +1,${lines.length} @@\n` + lines.map((l) => '+' + l).join('\n'),
     } });
@@ -170,6 +204,14 @@ async function newPage({ prs = [], st = status, ready = '#pr-head .pr-title', pt
   await p.goto(`http://127.0.0.1:${server.address().port}/`);
   await p.waitForSelector(ready);
   return p;
+}
+
+/** Opens `path` from the Files tab, and waits for the diff pane to show it. */
+async function openFile(p, path = 'evil.js') {
+  await p.locator('#pr-head .tab', { hasText: 'Files' }).click();
+  await p.locator(`.file[data-path="${path}"] .path`).click();
+  await p.waitForFunction((path) => document.getElementById('diff-path').textContent === path
+    && document.querySelectorAll('#diff-body .dl').length > 0, path);
 }
 
 before(async () => {
@@ -240,27 +282,48 @@ test('the tab carries the task count', { skip }, async () => {
   const fresh = await newPage();
   const tabs = await fresh.locator('#pr-head .tab').allTextContents();
   assert.ok(tabs.includes('Detail (1/3)'), JSON.stringify(tabs));
+  // Stack's count is pull requests, not work left, so it has nothing to fill.
+  assert.equal(await fresh.locator('#pr-head .tab', { hasText: 'Stack' }).locator('.mark').count(), 0);
   await fresh.close();
 });
 
-// A finished count keeps its numbers and gains the green circle after them;
-// the ✓ glyph alone, in the tab's dim grey, was too faint to see. Read off the
-// computed ::after, since the class only promises the stylesheet draws it, and
-// the name is asserted exactly so the ✓ is not read out beside `(2/2)`. A
-// Checks tab where everything passed is the same circle, not a dot as well.
-test('a tab with nothing left keeps its count and ends in a green ✓ circle', { skip }, async () => {
+// A finished count keeps its numbers and its mark turns into the green ✓
+// circle; the ✓ glyph alone, in the tab's dim grey, was too faint to see. Read
+// off the computed ::after, since the class only promises the stylesheet draws
+// it, and the name is asserted exactly so the ✓ is not read out beside `(2/2)`.
+// A Checks tab where everything passed is the same circle as any other. The
+// mark leads the tab, on every tab, so it is the button's first child.
+test('a tab with nothing left keeps its count and leads with a green ✓ circle', { skip }, async () => {
   const p = await newPage({ st: { ...status, pr: { ...pr,
     files: files.map((f) => ({ ...f, viewed: true })),
     checks: rollup([{ workflowName: 'CI', name: 'test', conclusion: 'SUCCESS' }]) } } });
   const circle = (name) => p.locator('#pr-head .tab', { hasText: name }).evaluate((el) => {
-    const s = getComputedStyle(el, '::after');
-    return { cls: el.className, text: el.textContent, glyph: /✓/.test(s.content),
-      filled: s.backgroundColor !== 'rgba(0, 0, 0, 0)', round: parseFloat(s.borderTopLeftRadius) > 0 };
+    const m = el.querySelector('.mark');
+    const s = m && getComputedStyle(m);
+    return { text: el.textContent, mark: m?.className ?? null, first: el.firstChild === m,
+      glyph: !!m && /✓/.test(getComputedStyle(m, '::after').content),
+      filled: !!m && s.backgroundColor !== 'rgba(0, 0, 0, 0)', round: !!m && parseFloat(s.borderTopLeftRadius) > 0 };
   });
-  assert.deepEqual(await circle('Files'), { cls: 'tab done', text: 'Files (2/2)', glyph: true, filled: true, round: true });
-  assert.deepEqual(await circle('Checks'), { cls: 'tab done', text: 'Checks (1/1)', glyph: true, filled: true, round: true });
-  assert.equal((await circle('Detail')).glyph, false, 'Detail (1/3) is not done');
+  const done = { mark: 'mark full', first: true, glyph: true, filled: true, round: true };
+  assert.deepEqual(await circle('Files'), { text: 'Files (2/2)', ...done });
+  assert.deepEqual(await circle('Checks'), { text: 'Checks (1/1)', ...done });
+  // Detail's mark is a pie like Files', filling by boxes ticked.
+  const detail = await circle('Detail');
+  assert.deepEqual([detail.mark, detail.first, detail.glyph], ['mark', true, false], 'Detail (1/3) is a pie, not done');
+  assert.equal(await p.locator('#pr-head .tab', { hasText: 'Detail' }).locator('.mark').evaluate((m) => m.style.getPropertyValue('--p')),
+    String(1 / 3));
   assert.equal(await p.getByRole('button', { name: 'Files (2/2)', exact: true }).count(), 1);
+  assert.equal(await p.getByRole('button', { name: 'Checks (1/1)', exact: true }).count(), 1);
+  // A row too narrow for its tabs wraps whole tabs, never a label inside one
+  // (`#pr-head .tab` says why). Squeezed rather than measured at the default
+  // width, where whether it fits is a pixel or two that differs by font.
+  const rows = await p.$eval('#pr-head .tabs', (row) => {
+    row.style.width = '200px';
+    const tabs = [...row.querySelectorAll('.tab')];
+    return { heights: new Set(tabs.map((t) => t.offsetHeight)).size, lines: new Set(tabs.map((t) => t.offsetTop)).size };
+  });
+  assert.equal(rows.heights, 1, 'every tab is one line tall');
+  assert.ok(rows.lines > 1, 'and the row wrapped between them');
   await p.close();
 });
 
@@ -283,25 +346,27 @@ test('the Checks tab lists each check, and a poll that empties it moves you to D
   assert.equal(await tab.textContent(), 'Checks (1/3)');
   assert.equal(await p.getByRole('button', { name: 'Checks (1/3): 1 failed, 1 pending', exact: true }).count(), 1,
     'the name says in words what the mark says in shape');
-  assert.match(await tab.getAttribute('class'), /\bdot fail\b/, 'a failure beats a pending check');
+  assert.equal(await tab.locator('.mark').getAttribute('class'), 'mark fail', 'a failure beats a pending check');
   await tab.click();
   assert.deepEqual(await p.locator('#pr-body .check-name').allTextContents(), ['CI / test', 'deploy', 'lint']);
   assert.deepEqual(await p.locator('#pr-body .check-state').allTextContents(), ['pending', 'failed'],
     'a word beside every check that did not pass');
+  assert.deepEqual(await p.locator('#pr-body .check').evaluateAll((rs) => rs.map((r) => r.querySelector('.mark').getAttribute('aria-label'))),
+    ['passed', null, null], 'and a passed one is named by its mark, so a screen reader hears it passed');
   assert.deepEqual(await p.$$eval('#pr-body .check a', (as) => as.map((a) => a.getAttribute('href'))),
     [`${REPO}/actions/runs/1`], 'only the http(s) link is a link');
   // Shape, not only colour: read off the computed ::before, since the class is
   // only a promise that the stylesheet draws something different for it.
-  const marks = await p.$$eval('#pr-body .check .dot', (ds) => ds.map((d) => {
-    const s = getComputedStyle(d, '::before');
-    return { filled: s.backgroundColor !== 'rgba(0, 0, 0, 0)', ring: parseFloat(s.borderTopWidth) > 0,
-      glyph: /✕/.test(s.content) };
+  const marks = await p.$$eval('#pr-body .check .mark', (ms) => ms.map((m) => {
+    const s = getComputedStyle(m);
+    return { filled: s.backgroundImage === 'none' && s.backgroundColor !== 'rgba(0, 0, 0, 0)',
+      ring: s.boxShadow !== 'none', glyph: getComputedStyle(m, '::after').content.match(/[✓✕]/)?.[0] ?? null };
   }));
   assert.deepEqual(marks, [
-    { filled: true, ring: false, glyph: false },
-    { filled: false, ring: true, glyph: false },
-    { filled: false, ring: false, glyph: true },
-  ], 'a dot passed, a ring is pending, a ✕ failed');
+    { filled: true, ring: false, glyph: '✓' },
+    { filled: false, ring: true, glyph: null },
+    { filled: true, ring: false, glyph: '✕' },
+  ], 'a ✓ disc passed, a ring is pending, a ✕ disc failed');
 
   await p.route('**/api/status', (r) => r.fulfill({ json: { ...withChecks, pr: { ...pr, checks: rollup([]) } } }));
   const polled = p.waitForResponse('**/api/status');
@@ -528,6 +593,9 @@ test('the terminal folds to its header, the diff takes the room, and it stays fo
   assert.equal(await height('#term'), await height('#term > header'));
   assert.ok(await height('#diff') > open, `diff was ${open}px, is ${await height('#diff')}px`);
   assert.equal(await fresh.getAttribute('#term-fold', 'aria-expanded'), 'false');
+  // The diff is 1fr now, so a drag of the line under it would set a height
+  // nothing reads. A separate hide rule once lost to the show rule on order.
+  assert.equal(await fresh.locator('#gut-diff').isVisible(), false, 'nothing to drag under a folded terminal');
 
   await fresh.reload();
   await fresh.waitForSelector('#pr-head .pr-title');
@@ -536,6 +604,119 @@ test('the terminal folds to its header, the diff takes the room, and it stays fo
   await fresh.click('#term > header h1');
   assert.equal(await fresh.locator('#term-host').isVisible(), true);
   assert.equal(await fresh.getAttribute('#term-fold', 'aria-expanded'), 'true');
+  await fresh.close();
+});
+
+// Wrap is a class on the pane and a rule on the rows, so what has to hold is
+// the layout: a long line is one row high and scrolls the body sideways until
+// Wrap is pressed, then it is taller than a short one and nothing scrolls. Its
+// own page, because the choice is stored and survives a reload.
+test('Wrap folds a long line inside the pane, and stays pressed across a reload', { skip }, async () => {
+  const fresh = await newPage({ st: withLong(status) });
+  const openLong = async () => {
+    await fresh.locator('#pr-head .tab', { hasText: 'Files' }).click();
+    await fresh.locator('.file[data-path="long.txt"] .path').click();
+    await fresh.waitForSelector('#diff-body .dl');
+  };
+  const rows = () => fresh.$$eval('#diff-body .dl', (els) => els.map((el) => el.getBoundingClientRect().height));
+  const sideways = () => fresh.$eval('#diff-body', (el) => el.scrollWidth > el.clientWidth);
+  const pressed = () => fresh.getAttribute('#diff-wrap', 'aria-pressed');
+  const height = () => fresh.$eval('#diff > header', (el) => el.getBoundingClientRect().height);
+
+  await openLong();
+  assert.equal(await pressed(), 'false', 'off until pressed, for every file');
+  let [long, short] = await rows();
+  assert.equal(long, short, 'unwrapped, the long line is one row');
+  assert.ok(await sideways(), 'and the body scrolls sideways');
+  const shown = await height();
+  await fresh.$eval('#diff-wrap', (el) => { el.style.display = 'none'; });
+  assert.equal(shown, await height(), 'the Wrap button should not make the header taller');
+  await fresh.$eval('#diff-wrap', (el) => { el.style.display = ''; });
+
+  await fresh.click('#diff-wrap');
+  assert.equal(await pressed(), 'true');
+  assert.equal(await fresh.getAttribute('#diff-wrap', 'title'), 'wrap long lines (Alt+W)',
+    'the state is aria-pressed alone, not a title flipped to "unwrap" as well');
+  [long, short] = await rows();
+  assert.ok(long > short, `wrapped, the long row (${long}px) should be taller than the short one (${short}px)`);
+  assert.equal(await sideways(), false, 'and nothing scrolls sideways');
+
+  await fresh.reload();
+  await fresh.waitForSelector('#pr-head .pr-title');
+  await openLong();
+  assert.equal(await pressed(), 'true', 'still pressed after a reload');
+  [long, short] = await rows();
+  assert.ok(long > short, 'and still wrapped');
+
+  await fresh.click('#diff-wrap');
+  assert.equal(await pressed(), 'false');
+  [long, short] = await rows();
+  assert.equal(long, short, 'pressed again, the long line is one row');
+
+  // Alt+W is the button from the keyboard -- unless a key is being typed, in
+  // which case it is a character: the queue's input stands in for the terminal
+  // and the editable items, which keys.js guards by the same rule. The body is
+  // clicked only to take focus off the input; the bar would fold the pane.
+  await fresh.locator('#diff-body').click();
+  await fresh.keyboard.press('Alt+KeyW');
+  assert.equal(await pressed(), 'true', 'Alt+W presses Wrap');
+  await fresh.locator('#queue-input').focus();
+  await fresh.keyboard.press('Alt+KeyW');
+  assert.equal(await pressed(), 'true', 'but not while typing');
+  await fresh.locator('#diff-body').click();
+  await fresh.keyboard.press('Alt+KeyW');
+  assert.equal(await pressed(), 'false', 'and presses it again');
+  // A clicked checkbox keeps focus, and nothing is typed into one: ticking
+  // *viewed* and reading on is the usual order, so Alt+W has to work from it.
+  await fresh.locator('#diff-viewed').focus();
+  assert.equal(await fresh.evaluate(() => document.activeElement.id), 'diff-viewed');
+  await fresh.keyboard.press('Alt+KeyW');
+  assert.equal(await pressed(), 'true', 'and works from a checkbox');
+  await fresh.close();
+});
+
+// Safari's private mode throws on every write, and setPref says a refused
+// write holds for the session -- so Wrap has to toggle both ways, and Wrap and
+// a hidden outline stay as set from one file to the next, without storage ever
+// taking the choice.
+test('Wrap and the outline hold across files when storage refuses writes', { skip }, async () => {
+  const fresh = await newPage({ st: withLong(status) });
+  await fresh.addInitScript(() => {
+    Storage.prototype.setItem = () => { throw new DOMException('refused', 'QuotaExceededError'); };
+  });
+  // Two hunks, so evil.js has an outline to hide.
+  await fresh.route('**/api/diff', (r) => {
+    const { path } = r.request().postDataJSON();
+    if (path !== 'evil.js') return r.fallback();
+    return r.fulfill({ json: { path, patch: '@@ -1,1 +1,1 @@ first\n-a\n+b\n@@ -9,1 +9,1 @@ second\n-c\n+d' } });
+  });
+  await fresh.reload();
+  await fresh.waitForSelector('#pr-head .pr-title');
+  const open = async (path) => {
+    await fresh.locator('.file[data-path="' + path + '"] .path').click();
+    await fresh.waitForSelector('#diff-body .dl');
+  };
+  const pressed = () => fresh.getAttribute('#diff-wrap', 'aria-pressed');
+
+  await fresh.locator('#pr-head .tab', { hasText: 'Files' }).click();
+  await open('long.txt');
+  await fresh.click('#diff-wrap');
+  assert.equal(await pressed(), 'true', 'pressed');
+  await open('evil.js');
+  assert.equal(await pressed(), 'true', 'still pressed on the next file');
+  await fresh.click('#diff-wrap');
+  assert.equal(await pressed(), 'false', 'and unpressed by a second click');
+  await fresh.keyboard.press('Alt+KeyW');
+  assert.equal(await pressed(), 'true', 'and Alt+W flips it too');
+
+  // The outline is stored the same way, and a hidden one must stay hidden.
+  const hidden = () => fresh.$eval('#diff', (el) => el.classList.contains('outline-off'));
+  await fresh.waitForSelector('#diff-outline button');
+  await fresh.click('#diff-outline-hide');
+  assert.equal(await hidden(), true, 'the outline hides');
+  await open('long.txt');
+  await open('evil.js');
+  assert.equal(await hidden(), true, 'and stays hidden on the next file');
   await fresh.close();
 });
 
@@ -599,6 +780,197 @@ test('a click anywhere on the terminal\'s header folds and unfolds it, the ▼ i
   await fresh.close();
 });
 
+// Folding the diff is for talking to the agent with the file still named on
+// the bar, so the terminal is what takes the room. The bar is busy with
+// controls, each of which keeps its own click; the rest of it, ▼ included, is
+// the fold. Not stored (nothing is open after a reload), so no reload here.
+test('the diff folds to its header, the terminal takes the room, and the two never fold together', { skip }, async () => {
+  const fresh = await newPage();
+  const height = (sel) => fresh.$eval(sel, (el) => el.getBoundingClientRect().height);
+  const shown = () => fresh.locator('#diff-main').isVisible();
+  const open = (path) => openFile(fresh, path);
+  await open('evil.js');
+  const bar = await height('#diff > header');
+  const term = await height('#term');
+
+  await fresh.click('#diff > header h1');
+  assert.equal(await shown(), false, 'the title folds it');
+  assert.equal(await height('#diff'), bar, 'folded, the pane is its header');
+  assert.ok(await height('#term') > term, `terminal was ${term}px, is ${await height('#term')}px`);
+  assert.equal(await fresh.getAttribute('#diff-fold', 'aria-expanded'), 'false');
+  assert.equal(await fresh.locator('#gut-diff').isVisible(), false, 'nothing to drag');
+  assert.equal(await fresh.locator('#diff-wrap').isVisible(), false, 'Wrap acts on a body that is not shown');
+  await fresh.locator('#diff-fold').focus();   // off the queue input, or Alt+W is typing
+  await fresh.keyboard.press('Alt+KeyW');
+  assert.equal(await fresh.getAttribute('#diff-wrap', 'aria-pressed'), 'false', 'so Alt+W presses nothing');
+  await fresh.locator('#diff-viewed-label').click();   // the label's text, which ticks the box
+  assert.equal(await fresh.locator('#diff-viewed').isChecked(), true, 'the controls keep their clicks');
+  assert.equal(await shown(), false, 'and do not fold');
+
+  await fresh.click('#diff-fold');
+  assert.equal(await shown(), true, 'the ▼ toggles once, not for itself and again for the bar');
+  assert.equal(await height('#diff > header'), bar, 'the header keeps its height either way');
+  await fresh.click('#diff-path');
+  assert.equal(await shown(), false, 'the path folds it');
+  await open('app.tsx');
+  assert.equal(await shown(), true, 'opening a file unfolds it');
+  await fresh.click('#diff-path');
+  await open('app.tsx');
+  assert.equal(await shown(), true, 'the open one included');
+
+  await fresh.click('#term-fold');
+  assert.equal(await fresh.locator('#term-host').isVisible(), false);
+  await fresh.click('#diff > header h1');
+  assert.equal(await shown(), false);
+  assert.equal(await fresh.locator('#term-host').isVisible(), true, 'folding the diff unfolds the terminal');
+  assert.equal(await fresh.getAttribute('#term-fold', 'aria-expanded'), 'true');
+  await fresh.click('#term-fold');
+  assert.equal(await shown(), true, 'and folding the terminal unfolds the diff');
+  assert.equal(await fresh.getAttribute('#diff-fold', 'aria-expanded'), 'true');
+  await fresh.click('#term-fold');
+
+  await fresh.click('#diff > header h1');
+  await fresh.click('#diff-close');
+  assert.equal(await fresh.$eval('main', (m) => m.classList.contains('diff-off')), false, 'closing forgets the fold');
+  await open('evil.js');
+  assert.equal(await shown(), true, 'so the next open is unfolded');
+  await fresh.close();
+});
+
+// The queue's fold is built and switched off in index.html (Panes.md says
+// why), so the shipped page shows no ▼ there and its bar is plain; the page is
+// then served with `queue` in the list, which is what turning it on is. Its own
+// page: the fold is stored, and the never-last rule needs a folded terminal
+// with no diff.
+test('the queue folds only when data-folds says so, and never as the last pane open', { skip }, async () => {
+  const off = await newPage();
+  assert.equal(await off.locator('#queue-fold').isVisible(), false, 'off, there is no ▼');
+  await off.click('#queue > header h1');
+  assert.equal(await off.locator('#queue-body').isVisible(), true, 'and the bar is not a toggle');
+  await off.close();
+
+  // Turned on the way it would be: the page served with `queue` in the list.
+  const fresh = await newPage({ folds: 'diff term queue' });
+  const shown = () => fresh.locator('#queue-body').isVisible();
+  const height = (sel) => fresh.$eval(sel, (el) => el.getBoundingClientRect().height);
+  assert.equal(await fresh.locator('#queue-fold').isVisible(), true);
+  const bar = await height('#queue > header');
+  const term = await height('#term');
+  await fresh.click('#queue > header h1');
+  assert.equal(await shown(), false, 'on, the title folds it');
+  assert.equal(await height('#queue'), bar, 'to its bar');
+  assert.ok(await height('#term') > term, `terminal was ${term}px, is ${await height('#term')}px`);
+  assert.equal(await fresh.locator('#gut-queue').isVisible(), false, 'nothing to drag');
+  await fresh.locator('#queue-input').click();
+  assert.equal(await fresh.evaluate(() => document.activeElement.id), 'queue-input', 'the input keeps its click');
+  assert.equal(await shown(), false);
+
+  await fresh.reload();
+  await fresh.waitForSelector('#pr-head .pr-title');
+  assert.equal(await shown(), false, 'stored, like the terminal\'s');
+  await fresh.click('#queue-fold');
+  assert.equal(await shown(), true);
+
+  await fresh.click('#term-fold');
+  assert.equal(await fresh.locator('#term-host').isVisible(), false);
+  await fresh.click('#queue > header h1');
+  assert.equal(await shown(), false);
+  assert.equal(await fresh.locator('#term-host').isVisible(), true, 'the last pane open cannot fold away: the terminal comes back');
+  await fresh.close();
+});
+
+// The never-last rule holds on every way to the all-folded state, not only a
+// fold of the queue: folding the terminal with the queue folded, folds stored
+// that way and restored on a reload, and a closed diff that was holding the
+// room between them. Its own page, for the queue switch and the stored folds.
+test('no way in folds every pane: the terminal\'s fold, a reload, a closed diff', { skip }, async () => {
+  const fresh = await newPage({ folds: 'diff term queue' });
+  const termShown = () => fresh.locator('#term-host').isVisible();
+  const queueShown = () => fresh.locator('#queue-body').isVisible();
+  const height = (sel) => fresh.$eval(sel, (el) => el.getBoundingClientRect().height);
+
+  await fresh.click('#queue-fold');
+  await fresh.click('#term-fold');
+  assert.equal(await termShown(), false, 'the fold asked for is the one that holds');
+  assert.equal(await queueShown(), true, 'and the queue comes back to take the room');
+
+  await fresh.evaluate(() => { localStorage.setItem('prcoder:term', 'off'); localStorage.setItem('prcoder:queue', 'off'); });
+  await fresh.reload();
+  await fresh.waitForSelector('#pr-head .pr-title');
+  assert.equal(await termShown(), true, 'both stored folded, the terminal comes back on a reload');
+  assert.equal(await queueShown(), false, 'and the queue keeps its fold');
+  assert.equal(await fresh.evaluate(() => localStorage.getItem('prcoder:term')), 'on', 'stored, so the next reload agrees');
+
+  // With a diff open both may fold, and closing it is what would empty the column.
+  await openFile(fresh);
+  await fresh.click('#term-fold');
+  assert.equal(await termShown(), false);
+  assert.equal(await queueShown(), false);
+  await fresh.click('#diff-close');
+  assert.equal(await termShown(), true, 'closing the diff brings the terminal back');
+  assert.equal(await queueShown(), false);
+
+  // Should the rules ever slip, a folded queue is still a bar: style.css's
+  // queue-off has to beat the term-off rules that give the queue the room.
+  const bar = await height('#queue > header');
+  await fresh.evaluate(() => document.querySelector('main').classList.add('term-off'));
+  assert.equal(await height('#queue'), bar, 'a folded queue under a folded terminal is its bar');
+  await fresh.close();
+});
+
+// The bar's path cannot be selected (app.js says why), so ⧉ copies it: from
+// the repository root, open or folded, without folding, and a refusal says so.
+// The clipboard is a stub: Firefox gives a page no way to read it back, and
+// Chromium only with a permission. The real writeText on localhost was
+// checked by hand in both engines (2026-10-09).
+test('⧉ copies the open file\'s path, folded or not, and says when it cannot', { skip }, async () => {
+  const fresh = await newPage({ init: () => {
+    window.copiedText = [];
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText: async (t) => {
+      if (window.refuseClipboard) throw new DOMException('refused', 'NotAllowedError');
+      window.copiedText.push(t);
+    } } });
+  } });
+  const copied = () => fresh.evaluate(() => window.copiedText);
+  await openFile(fresh);
+  await fresh.click('#diff-copy');
+  assert.deepEqual(await copied(), ['evil.js']);
+  assert.equal(await fresh.textContent('#diff-copy'), '✓', 'and says it went');
+  assert.equal(await fresh.locator('#diff-main').isVisible(), true, 'a control, not the fold');
+  await fresh.waitForFunction(() => document.getElementById('diff-copy').textContent === '⧉');
+  await fresh.click('#diff > header h1');
+  await fresh.click('#diff-copy');
+  assert.deepEqual(await copied(), ['evil.js', 'evil.js'], 'folded too');
+  await fresh.evaluate(() => { window.refuseClipboard = true; });
+  await fresh.click('#diff-copy');
+  await fresh.waitForSelector('#toast:not([hidden])');
+  assert.match(await fresh.textContent('#toast'), /not copied/);
+  await fresh.close();
+});
+
+// A fold hides its pane's body, and the focus with it if it was in there, so
+// the ▼ takes it: the key that brings the rest back. dispatchEvent, because a
+// real click on the bar would move the focus to <body> itself first.
+test('folding a pane with the focus inside hands the focus to its ▼', { skip }, async () => {
+  const fresh = await newPage();
+  const focused = () => fresh.evaluate(() => document.activeElement.id);
+  await openFile(fresh);
+  await fresh.locator('#diff-wrap').focus();
+  await fresh.dispatchEvent('#diff > header h1', 'click');
+  assert.equal(await fresh.locator('#diff-main').isVisible(), false);
+  assert.equal(await focused(), 'diff-fold', 'Wrap went with the body');
+  await fresh.dispatchEvent('#diff > header h1', 'click');
+  await fresh.locator('#diff-viewed').focus();
+  await fresh.dispatchEvent('#diff > header h1', 'click');
+  assert.equal(await focused(), 'diff-viewed', 'focus on the bar stays where it was');
+  await fresh.click('#term-host');
+  assert.equal(await fresh.evaluate(() => document.getElementById('term-host').contains(document.activeElement)), true);
+  await fresh.dispatchEvent('#term > header h1', 'click');
+  assert.equal(await fresh.locator('#term-host').isVisible(), false);
+  assert.equal(await focused(), 'term-fold', 'the terminal\'s focus goes to its ▼ too');
+  await fresh.close();
+});
+
 // Every toast closes on a click, so every one has a ✕, where a close button is
 // looked for: the top right corner. After the text, it ended whichever line the
 // text wrapped to. It is a pseudo-element, which has no box to measure, so this
@@ -625,6 +997,50 @@ test('every toast has its ✕ in the top right corner, clear of the text', { ski
   await fresh.close();
 });
 
+// A tab that had a PTY and loads again has a new session, and the toast says
+// which kind of load it was (ws.onopen in app.js). The link to keeping tab
+// unloaders off prcoder is the part that matters: a reload never gets it, and a
+// load that may be the browser's restore always does. Each new page reaches the
+// mock socket, which is what opens it and runs onopen.
+test('a page loaded again says why the session is new, and links to the fix unless it was a reload', { skip }, async () => {
+  const p = await newPage();
+  const notice = async (label) => {
+    await p.waitForFunction(() => !document.getElementById('toast').hidden, null, { timeout: 5000 })
+      .catch(() => assert.fail(`no toast after ${label}`));
+    return p.$eval('#toast', (el) => ({ text: el.textContent,
+      sticky: el.classList.contains('sticky'), href: el.querySelector('a')?.href ?? null }));
+  };
+  const ports = 'https://github.com/gaurav/prcoder/blob/main/docs/Ports.md#finding-it-again';
+
+  await p.waitForFunction(() => sessionStorage.getItem('prcoder:pty'));
+  assert.equal(await p.locator('#toast').isHidden(), true, 'a first open has nothing to say');
+
+  await p.reload();
+  let n = await notice('a reload');
+  assert.match(n.text, /^Claude was restarted/);
+  assert.deepEqual([n.sticky, n.href], [false, null], 'a reload is not sticky and has no link');
+
+  // Back to a tab you left, and a fresh navigation to it: neither is a reload,
+  // and outside Chrome either may be a restored tab.
+  await p.goto(`http://127.0.0.1:${server.address().port}/api/whoami`);
+  await p.goBack();
+  n = await notice('Back');
+  assert.match(n.text, /^This page was loaded again/);
+  assert.deepEqual([n.sticky, n.href], [true, ports], 'Back');
+  await p.goto(`http://127.0.0.1:${server.address().port}/`);
+  n = await notice('a navigation');
+  assert.match(n.text, /^This page was loaded again/);
+  assert.deepEqual([n.sticky, n.href], [true, ports], 'a navigation');
+
+  // Chrome's own word for it wins over the load being a reload.
+  await p.addInitScript(() => Object.defineProperty(document, 'wasDiscarded', { value: true }));
+  await p.reload();
+  n = await notice('a discard');
+  assert.match(n.text, /^The browser unloaded this tab/);
+  assert.deepEqual([n.sticky, n.href], [true, ports], 'a discard');
+  await p.close();
+});
+
 // A fold's progress is a pie, not `3/5`: one size at any count, and full is a
 // disc. The figure it gives up is its accessible name. A directory is needed
 // for a directory's pie, and the fixture has none, so this page adds two: one
@@ -639,18 +1055,37 @@ test('folds show progress as a pie named by its figure', { skip }, async () => {
   } }));
   await fresh.reload();
   await fresh.waitForSelector('#pr-head .pr-title');
-  const pie = (sel) => fresh.locator(`${sel} > summary .pie`).evaluate((el) => ({
+  const pie = (sel) => fresh.locator(`${sel} > summary .mark`).evaluate((el) => ({
     label: el.getAttribute('aria-label'), role: el.getAttribute('role'),
     p: el.style.getPropertyValue('--p'), full: el.classList.contains('full'),
+    tick: /✓/.test(getComputedStyle(el, '::after').content),
   }));
 
   // The description's section holding the queue's unticked line.
   assert.deepEqual(await pie('.md-section:has(h3:text-is("Before merging"))'),
-    { label: '0 of 1 done', role: 'img', p: '0', full: false });
+    { label: '0 of 1 done', role: 'img', p: '0', full: false, tick: false });
+
+  // The Files tab's own, by changed lines rather than files: two of the five
+  // are viewed, and they are two of the four big ones. The figure is the tab's
+  // name and tooltip, not the mark's, which is hidden: the label beside it
+  // already says what a name on it would. Once every file is viewed it is the
+  // ✓ circle instead -- the tab-done test pins that name exactly.
+  const n = files[0].additions;
+  const tab = await fresh.locator('#pr-head .tab', { hasText: 'Files' }).evaluate((el) => ({
+    name: el.getAttribute('aria-label'), title: el.title,
+    p: el.querySelector('.mark').style.getPropertyValue('--p'),
+    hidden: el.querySelector('.mark').getAttribute('aria-hidden'),
+  }));
+  const name = `Files (2/5): ${2 * n} of ${4 * n + 1} changed lines viewed`;
+  assert.deepEqual(tab, { name, title: name, p: String(2 * n / (4 * n + 1)), hidden: 'true' });
 
   await fresh.locator('#pr-head .tab', { hasText: 'Files' }).click();
-  assert.deepEqual(await pie('.dir[data-dir="src/"]'), { label: '1 of 2 viewed', role: 'img', p: '0.5', full: false });
-  assert.deepEqual(await pie('.dir[data-dir="src/sub/"]'), { label: '1 of 1 viewed', role: 'img', p: '1', full: true });
+  // By changed lines, as the tab's is; src/'s two files are the same size.
+  assert.deepEqual(await pie('.dir[data-dir="src/"]'),
+    { label: `1 of 2 files, ${n} of ${2 * n} changed lines viewed`, role: 'img', p: '0.5', full: false, tick: false });
+  // And a full one is the ✓ circle a finished tab leads with.
+  assert.deepEqual(await pie('.dir[data-dir="src/sub/"]'),
+    { label: `1 of 1 files, ${n} of ${n} changed lines viewed`, role: 'img', p: '1', full: true, tick: true });
   assert.equal(await fresh.locator('#pr-body .count').count(), 0, 'no fraction left beside a fold');
   await fresh.close();
 });
@@ -706,15 +1141,22 @@ test('Completed lists the most recently finished first, and cannot be reordered'
 test('a queue change the server refuses is taken back off the screen', { skip }, async () => {
   const fresh = await newPage();
   const queue = [{ text: 'refused tick', done: false, issue: null, deleted: false }];
+  let puts = 0;
   await fresh.route('**/api/status', (r) => r.fulfill({ json: { ...status, queue } }));
   await fresh.route('**/api/queue', (r) => (r.request().method() === 'PUT'
-    ? r.fulfill({ status: 500, json: { error: 'disk full' } })
+    ? (puts++, r.fulfill({ status: 500, json: { error: 'disk full' } }))
     : r.fulfill({ json: queue })));
   await fresh.reload();
   await fresh.waitForSelector('#queue-body .item');
-  await fresh.locator('#queue-body .item input[type=checkbox]').check();
+  // click(), not check(): check() reads the box again after clicking, and when
+  // the refusal has already repainted the row that box is detached -- so it
+  // retries on the new, unticked one and ticks it a second time. That second
+  // save was still in flight when the first one's toast came up, and the
+  // assertions below saw a ticked box (CI only: there the PUT wins the race).
+  await fresh.locator('#queue-body .item input[type=checkbox]').click();
   // For this text, not any toast: the reload raises its own restart notice.
   await fresh.waitForFunction(() => document.getElementById('toast').textContent === 'disk full');
+  assert.equal(puts, 1, 'ticked once');
   // Back in Active and unticked, as the server has it.
   assert.deepEqual(await fresh.locator('#queue-body .item .text').allTextContents(), ['refused tick']);
   assert.equal(await fresh.locator('#queue-body .item input[type=checkbox]').isChecked(), false);
@@ -898,6 +1340,199 @@ test('a file with no diff does not keep the last file\'s outline', { skip }, asy
   await fresh.close();
 });
 
+// The diff header's @ types the open file's mention into the agent's prompt
+// and stops there: no Enter, so the sentence about the file goes on around it,
+// and the focus is in the terminal to carry on typing it.
+test('@ types the open file\'s mention, spaced and unsent, and leaves the focus in the terminal', { skip }, async () => {
+  const frames = [];
+  const fresh = await newPage({ pty: (ws) => ws.onMessage((m) => frames.push(JSON.parse(m))) });
+  await fresh.locator('#pr-head .tab', { hasText: 'Files' }).click();
+  await fresh.locator('.file[data-path="evil.js"] .path').click();
+  await fresh.waitForSelector('#diff-body .dl');
+  const at = fresh.locator('#diff-mention');
+  assert.match(await at.getAttribute('title'), /@evil\.js/);
+  await at.click();
+  for (let i = 0; !frames.some((f) => f.type === 'input') && i < 100; i++) await fresh.waitForTimeout(50);
+  assert.deepEqual(frames.filter((f) => f.type === 'input'), [{ type: 'input', data: ' @evil.js ' }]);
+  assert.equal(await fresh.evaluate(() => document.activeElement.closest('#term-host') != null), true);
+  await fresh.close();
+});
+
+// Folding the diff is for talking to the agent with the file still named on
+// the bar, which is when the @ is wanted: it stays there, keeps its own click
+// rather than being part of the bar's toggle, and Alt+M works as well.
+test('@ and Alt+M type the mention from a folded diff and leave it folded', { skip }, async () => {
+  const frames = [];
+  const fresh = await newPage({ pty: (ws) => ws.onMessage((m) => frames.push(JSON.parse(m))) });
+  const typed = () => frames.filter((f) => f.type === 'input');
+  const folded = () => fresh.$eval('main', (m) => m.classList.contains('diff-off'));
+  await openFile(fresh);
+  await fresh.click('#diff > header h1');
+  assert.equal(await folded(), true);
+  await fresh.locator('#diff-mention').click();
+  for (let i = 0; !typed().length && i < 100; i++) await fresh.waitForTimeout(50);
+  assert.deepEqual(typed(), [{ type: 'input', data: ' @evil.js ' }]);
+  assert.equal(await folded(), true, 'the @ is not the bar');
+  await fresh.locator('#diff-fold').focus();   // out of the terminal the click left it in
+  await fresh.keyboard.press('Alt+KeyM');
+  for (let i = 0; typed().length < 2 && i < 100; i++) await fresh.waitForTimeout(50);
+  assert.equal(typed().length, 2, 'Alt+M typed it again');
+  assert.equal(await folded(), true);
+  await fresh.close();
+});
+
+// What xterm sends for Alt+M depends on the platform it reads: on a Mac it
+// leaves the key to the browser, which under Playwright types nothing, so a
+// test there could not tell a key the agent got from one it lost. On Linux it
+// sends ESC m on the keydown, so the Alt+M tests pretend to be on Linux.
+const onLinux = () => Object.defineProperty(Navigator.prototype, 'platform', { get: () => 'Linux x86_64' });
+
+// The keyboard's way to the same button -- and, unlike every other shortcut,
+// from inside the terminal too, which is where a request about the file is
+// being typed.
+test('Alt+M types the mention from the diff and from the terminal', { skip }, async () => {
+  const frames = [];
+  const fresh = await newPage({ init: onLinux, pty: (ws) => ws.onMessage((m) => frames.push(JSON.parse(m))) });
+  const typed = () => frames.filter((f) => f.type === 'input');
+  await fresh.locator('#pr-head .tab', { hasText: 'Files' }).click();
+  await fresh.locator('.file[data-path="app.tsx"] .path').click();
+  await fresh.waitForSelector('#diff-body .dl');
+  await fresh.locator('#diff-body').click();
+  await fresh.keyboard.press('Alt+KeyM');
+  for (let i = 0; !typed().length && i < 100; i++) await fresh.waitForTimeout(50);
+  assert.deepEqual(typed(), [{ type: 'input', data: ' @app.tsx ' }]);
+  // The press above left the focus in the terminal, and this one types it
+  // again -- and nothing else: not the µ or ESC m the key would send.
+  assert.ok(await fresh.evaluate(() => !!document.activeElement?.closest('#term-host')), 'focus in the terminal');
+  await fresh.keyboard.press('Alt+KeyM');
+  for (let i = 0; typed().length < 2 && i < 100; i++) await fresh.waitForTimeout(50);
+  await fresh.waitForTimeout(200);
+  assert.deepEqual(typed(), [{ type: 'input', data: ' @app.tsx ' }, { type: 'input', data: ' @app.tsx ' }]);
+  await fresh.close();
+});
+
+// Held a moment too long, Alt+M still types the mention once: its repeats
+// are dropped, rather than each typing it again or sending ESC m.
+test('Alt+M held down in the terminal types the mention once', { skip }, async () => {
+  const frames = [];
+  const fresh = await newPage({ init: onLinux, pty: (ws) => ws.onMessage((m) => frames.push(JSON.parse(m))) });
+  const typed = () => frames.filter((f) => f.type === 'input');
+  await openFile(fresh, 'app.tsx');
+  await fresh.locator('#term-host').click();
+  await fresh.keyboard.down('Alt');
+  for (let i = 0; i < 3; i++) await fresh.keyboard.down('KeyM');   // the second and third are repeats
+  await fresh.keyboard.up('KeyM');
+  await fresh.keyboard.up('Alt');
+  for (let i = 0; !typed().length && i < 100; i++) await fresh.waitForTimeout(50);
+  await fresh.waitForTimeout(200);
+  assert.deepEqual(typed(), [{ type: 'input', data: ' @app.tsx ' }]);
+  await fresh.close();
+});
+
+// In the middle of an IME composition the key is xterm's, so the mention does
+// not go out ahead of the text still being composed. Playwright has no IME,
+// so the keydown is dispatched with isComposing set.
+test('Alt+M during a composition in the terminal is left to xterm', { skip }, async () => {
+  const frames = [];
+  const fresh = await newPage({ init: onLinux, pty: (ws) => ws.onMessage((m) => frames.push(JSON.parse(m))) });
+  const typed = () => frames.filter((f) => f.type === 'input');
+  await openFile(fresh, 'app.tsx');
+  await fresh.locator('#term-host').click();
+  const press = (isComposing) => fresh.evaluate((isComposing) => document.activeElement.dispatchEvent(new KeyboardEvent('keydown',
+    { code: 'KeyM', key: 'm', keyCode: 77, altKey: true, isComposing, bubbles: true, cancelable: true })), isComposing);
+  await press(true);
+  await fresh.waitForTimeout(300);
+  assert.equal(typed().filter((f) => f.data.includes('@')).length, 0, 'no mention mid-composition');
+  await press(false);   // the same event out of a composition is the shortcut's, so the one above was a fair test
+  for (let i = 0; !typed().some((f) => f.data.includes('@')) && i < 100; i++) await fresh.waitForTimeout(50);
+  assert.deepEqual(typed().filter((f) => f.data.includes('@')), [{ type: 'input', data: ' @app.tsx ' }]);
+  await fresh.close();
+});
+
+// With no file open there is nothing to name, so the terminal leaves Alt+M
+// to the agent, as it did before Alt+M fired there at all.
+test('Alt+M in the terminal with no file open goes to the agent', { skip }, async () => {
+  const frames = [];
+  const fresh = await newPage({ init: onLinux, pty: (ws) => ws.onMessage((m) => frames.push(JSON.parse(m))) });
+  const typed = () => frames.filter((f) => f.type === 'input');
+  await fresh.locator('#term-host').click();
+  await fresh.keyboard.press('Alt+KeyM');
+  for (let i = 0; !typed().length && i < 100; i++) await fresh.waitForTimeout(50);
+  await fresh.waitForTimeout(200);
+  assert.deepEqual(typed(), [{ type: 'input', data: '\x1bm' }]);
+  await fresh.close();
+});
+
+// Right after the name, not across the header beside *viewed*: the path is as
+// wide as its text, and the auto margin is on what comes after the @. Only
+// there -- a second one on Wrap left *viewed* to History mid-header. The copy
+// button comes first, against the name it copies, and the @ after it.
+test('copy and @ sit against the end of the filename, and the rest stays packed at the right', { skip }, async () => {
+  const fresh = await newPage();
+  await fresh.locator('#pr-head .tab', { hasText: 'Files' }).click();
+  await fresh.locator('.file[data-path="evil.js"] .path').click();
+  await fresh.waitForSelector('#diff-body .dl');
+  const gap = (a, b) => fresh.evaluate(([a, b]) => document.querySelector(b).getBoundingClientRect().left
+    - document.querySelector(a).getBoundingClientRect().right, [a, b]);
+  const copy = await gap('#diff-path bdi', '#diff-copy');
+  assert.ok(copy >= 0 && copy < 12, `copy is ${copy}px from the filename`);
+  const at = await gap('#diff-copy', '#diff-mention');
+  assert.ok(at >= 0 && at < 12, `@ is ${at}px from copy`);
+  const before = await fresh.evaluate(() => document.getElementById('diff-wrap').getBoundingClientRect().left
+    - document.getElementById('diff-out').getBoundingClientRect().right);
+  assert.ok(before < 12, `Wrap is ${before}px after History`);
+  await fresh.close();
+});
+
+// A deleted file leaves nothing in the working tree for a mention to attach,
+// so its @ hides once the patch says so -- and the next file brings it back.
+test('a deleted file has no @, and the next file has it back', { skip }, async () => {
+  const fresh = await newPage();
+  await fresh.route('**/api/diff', (r) => {
+    const { path } = r.request().postDataJSON();
+    return r.fulfill({ json: { path, patch: path === 'evil.js' ? '@@ -1,1 +0,0 @@\n-gone' : '@@ -0,0 +1,1 @@\n+here' } });
+  });
+  await fresh.locator('#pr-head .tab', { hasText: 'Files' }).click();
+  await fresh.locator('.file[data-path="evil.js"] .path').click();
+  await fresh.waitForSelector('#diff h1.del');
+  assert.equal(await fresh.locator('#diff-mention').isHidden(), true);
+  await fresh.locator('.file[data-path="app.tsx"] .path').click();
+  await fresh.waitForSelector('#diff h1.add');
+  assert.equal(await fresh.locator('#diff-mention').isVisible(), true);
+  await fresh.close();
+});
+
+// A deleted binary has no patch for the title to read DELETED from, so only
+// GitHub's `deleted` says so -- and until /api/diff answers nothing does, so
+// the @ waits for it rather than naming a file that may be gone.
+test('a deleted file with no patch has no @, nor one while it loads', { skip }, async () => {
+  const fresh = await newPage();
+  let answer;
+  await fresh.route('**/api/diff', (r) => { answer = () => r.fulfill({ json: { path: 'evil.js', patch: null, deleted: true } }); });
+  await fresh.locator('#pr-head .tab', { hasText: 'Files' }).click();
+  await fresh.locator('.file[data-path="evil.js"] .path').click();
+  await fresh.waitForSelector('#diff-body .empty');
+  for (let i = 0; !answer && i < 100; i++) await fresh.waitForTimeout(50);
+  assert.equal(await fresh.locator('#diff-mention').isHidden(), true);
+  answer();
+  await fresh.waitForFunction(() => document.querySelector('#diff-body .empty')?.textContent.includes('No diff'));
+  assert.equal(await fresh.locator('#diff-mention').isHidden(), true);
+  await fresh.close();
+});
+
+test('@ with the agent disconnected types nothing and says so', { skip }, async () => {
+  const fresh = await newPage({ pty: (ws) => ws.close() });
+  await fresh.waitForFunction(() => document.getElementById('term-host').textContent.includes('coding agent exited'));
+  await fresh.locator('#pr-head .tab', { hasText: 'Files' }).click();
+  await fresh.locator('.file[data-path="evil.js"] .path').click();
+  await fresh.waitForSelector('#diff-body .dl');
+  await fresh.locator('#diff-mention').click();
+  await fresh.waitForFunction(() => document.getElementById('toast').textContent.includes('not connected'));
+  // Not moved to a terminal nothing reads, where Alt+W is off.
+  assert.equal(await fresh.evaluate(() => document.activeElement.closest('#term-host') == null), true);
+  await fresh.close();
+});
+
 // A separator moves on one axis, and says which with aria-orientation. Up and
 // Down used to resize the vertical ones too.
 test('a separator moves only on the arrows along its own axis', { skip }, async () => {
@@ -912,7 +1547,7 @@ test('a separator moves only on the arrows along its own axis', { skip }, async 
 });
 
 // A folded pane still says when Claude is working, from the same bracketed turn
-// as the tab icon -- so it appears on Enter and goes after 2s of quiet, and the
+// as the tab icon -- so it appears on Enter and goes after 5s of quiet, and the
 // mocked /pty here sends nothing to hold the turn open. Only folded: open, the
 // terminal shows the turn itself.
 test('a folded terminal says it is working while a turn runs, and not after', { skip }, async () => {
@@ -927,8 +1562,34 @@ test('a folded terminal says it is working while a turn runs, and not after', { 
   // Folding must not make the header a different height from the open one.
   assert.equal(await fresh.$eval('#term', (el) => el.getBoundingClientRect().height),
     await fresh.$eval('#term > header', (el) => el.getBoundingClientRect().height));
-  await fresh.waitForFunction(() => document.getElementById('term-busy').hidden, null, { timeout: 5000 });
+  await fresh.waitForFunction(() => document.getElementById('term-busy').hidden, null, { timeout: 10000 });
   assert.equal(await busy(), false, 'gone when the turn ends');
+  await fresh.close();
+});
+
+// The busy icon is written out in index.html (`data-busy`) and its red again in
+// style.css (`--busy`), for the folded header's octagon. Nothing else would
+// notice the attribute going missing -- the icon would turn into a fetch of
+// /undefined while #term-busy above stayed right -- or the two reds parting.
+test('a turn swaps the tab icon for the busy one, in the folded header\'s red', { skip }, async () => {
+  const fresh = await newPage();
+  const icon = () => fresh.evaluate(() => {
+    const link = document.querySelector('link[rel=icon]');
+    return { href: link.getAttribute('href'), busy: link.dataset.busy };
+  });
+  const idle = await icon();
+  assert.match(idle.busy ?? '', /^data:image\/svg\+xml,/, 'data-busy is on the icon link');
+  assert.notEqual(idle.href, idle.busy);
+  await fresh.click('#term-host');
+  await fresh.keyboard.press('Enter');
+  assert.equal((await icon()).href, idle.busy, 'busy while the turn runs');
+  const fill = decodeURIComponent(idle.busy).match(/fill='(#\w{6})'/)?.[1];
+  const token = await fresh.evaluate(() =>
+    getComputedStyle(document.documentElement).getPropertyValue('--busy').trim());
+  assert.equal(fill?.toLowerCase(), token.toLowerCase(), 'data-busy and --busy are one red');
+  await fresh.waitForFunction((busy) => document.querySelector('link[rel=icon]').getAttribute('href') !== busy,
+    idle.busy, { timeout: 10000 });
+  assert.equal((await icon()).href, idle.href, 'idle again once the turn ends');
   await fresh.close();
 });
 
@@ -937,7 +1598,6 @@ test('a folded terminal says it is working while a turn runs, and not after', { 
 // not the one box that was clicked, with the rest a poll behind.
 test('marking a file viewed moves the tab count and the open diff\'s box with it', { skip }, async () => {
   const fresh = await newPage();
-  await fresh.route('**/api/pr/viewed', (r) => r.fulfill({ json: { ok: true } }));
   await fresh.locator('#pr-head .tab', { hasText: 'Files' }).click();
   await fresh.locator('.file[data-path="evil.js"] .path').click();
   await fresh.waitForSelector('#diff-body .dl');
@@ -957,7 +1617,7 @@ test('marking a file viewed moves the tab count and the open diff\'s box with it
 // path through paint() that does it runs only when the head moves, which no
 // other test here makes happen -- and it once called a helper a local variable
 // had shadowed, which would have thrown on every such poll.
-test('a poll that moves the head re-opens the open file without an error', { skip }, async () => {
+test('a poll that moves the head re-opens the open file without an error, and keeps its fold', { skip }, async () => {
   const fresh = await newPage();
   const errors = [];
   fresh.on('pageerror', (e) => errors.push(e.message));
@@ -972,11 +1632,15 @@ test('a poll that moves the head re-opens the open file without an error', { ski
   await fresh.route('**/api/status', (r) => r.fulfill({ json: {
     ...status, pr: { ...pr, headRefOid: 'c'.repeat(40) },
   } }));
+  // Folded first: the refresh goes through openDiff, not the row click's
+  // openFile, so a push from the agent does not undo a fold made to talk to it.
+  await fresh.click('#diff > header h1');
   await fresh.click('#pr-refresh');
   await fresh.waitForFunction(() => document.getElementById('diff-path').textContent === 'evil.js');
   await fresh.waitForTimeout(300);
   assert.deepEqual(errors, []);
   assert.equal(diffs, 2, 'the open file was fetched again');
+  assert.equal(await fresh.locator('#diff-main').isVisible(), false, 'and the fold held');
   await fresh.close();
 });
 
@@ -1046,7 +1710,7 @@ test('stacked PRs nest in the switcher and the Stack tab, each linked and switch
   ]);
 
   const tab = fresh.locator('#pr-head .tab', { hasText: 'Stack' });
-  assert.equal(await tab.textContent(), 'Stack (2)');
+  assert.equal(await tab.textContent(), 'Stack (↑2)');
   await tab.click();
   // The tab is read on its own, so it names the PR as well as the branch, and
   // the branch in the code face.
@@ -1078,7 +1742,220 @@ test('opening the Stack tab picks up a PR stacked since the page loaded', { skip
   await fetched;
   await fresh.waitForSelector('#pr-body .pr-into .pr-num');
   assert.deepEqual(await fresh.locator('#pr-body .pr-into > ul > li > .pr-row .pr-num').allTextContents(), ['#13']);
-  assert.equal(await fresh.locator('#pr-head .tab', { hasText: 'Stack' }).textContent(), 'Stack (2)');
+  assert.equal(await fresh.locator('#pr-head .tab', { hasText: 'Stack' }).textContent(), 'Stack (↑2)');
+  await fresh.close();
+});
+
+// The list once #12 has merged: GitHub retargets #13 at main, so it is no
+// longer nested under #12 in the switcher.
+const MERGED = [{ ...STACK[1], baseRefName: 'main' }, STACK[2]];
+const merged = { ...status, pr: { ...pr, state: 'MERGED' } };
+const switcherLabels = (p) => p.$$eval('#pr-switch option', (os) => os.map((o) => o.textContent.replaceAll('\u00a0', ' ')));
+
+// A list landing while the switcher's dropdown is open replaced the options
+// under it, which closed it or moved the pick. Focus is the page's one sign
+// that it may be open, so the options wait for the switcher to lose it.
+test('the switcher keeps its options while it has focus, and takes the new list as it loses it', { skip }, async () => {
+  const fresh = await newPage({ prs: STACK });
+  await fresh.waitForSelector('#pr-switch option[value="14"]', { state: 'attached' });
+  const before = await switcherLabels(fresh);
+  await fresh.focus('#pr-switch');
+  await fresh.route('**/api/prs', (r) => r.fulfill({ json: MERGED }));
+  await fresh.route('**/api/status', (r) => r.fulfill({ json: merged }));
+  // Clicked from script, so focus stays on the switcher.
+  const landed = fresh.waitForResponse('**/api/prs');
+  await fresh.evaluate(() => document.getElementById('pr-refresh').click());
+  await landed;
+  await fresh.waitForTimeout(200);
+  assert.deepEqual(await switcherLabels(fresh), before, 'held while focused');
+  assert.equal(await fresh.inputValue('#pr-switch'), '12');
+  await fresh.evaluate(() => document.activeElement.blur());
+  assert.deepEqual(await switcherLabels(fresh), [
+    'no pull request',
+    '#12 A fixture pull request',
+    '#13 (draft) Built on the fixture',
+    '  └ #14 Built on that',
+  ]);
+  await fresh.close();
+});
+
+// Fetched on mousedown, the list landed with the dropdown already open. The
+// pointer reaching the switcher is a head start; the click that follows it,
+// within ten seconds of a list landing, asks for nothing more.
+test('reaching for the switcher fetches the PR list, and a click right after does not', { skip }, async () => {
+  const fresh = await newPage({ prs: STACK, clock: true });
+  await fresh.waitForSelector('#pr-switch option[value="14"]', { state: 'attached' });
+  let lists = 0;
+  fresh.on('request', (q) => { if (q.url().endsWith('/api/prs')) lists++; });
+  await fresh.hover('#pr-switch');
+  await fresh.waitForTimeout(200);
+  assert.equal(lists, 0, 'the page load\'s list is fresh');
+  await fresh.mouse.move(0, 0);
+  await fresh.clock.fastForward(11_000);
+  const landed = fresh.waitForResponse('**/api/prs');
+  await fresh.hover('#pr-switch');
+  await landed;
+  assert.equal(lists, 1, 'hovering fetched it');
+  await fresh.focus('#pr-switch');
+  await fresh.waitForTimeout(200);
+  assert.equal(lists, 1, 'focusing it just after did not');
+  await fresh.close();
+});
+
+// A fetch that starts as you reach for the switcher can land after its
+// dropdown is open, so the pick after a merge came from the list as it was
+// before (#131). The poll
+// that sees the PR on screen change fetches it instead -- a merge, a close, or
+// another PR in its place -- and one that sees nothing new does not.
+const pollCounting = async (p) => {
+  let lists = 0;
+  p.on('request', (q) => { if (q.url().endsWith('/api/prs')) lists++; });
+  const poll = async (st) => {
+    if (st) await p.route('**/api/status', (r) => r.fulfill({ json: st }));
+    const polled = p.waitForResponse('**/api/status');
+    await p.click('#pr-refresh');
+    await polled;
+    await p.waitForTimeout(300);
+    return lists;
+  };
+  return poll;
+};
+
+test('a poll that finds the PR on screen merged fetches the PR list, and no other poll does', { skip }, async () => {
+  const fresh = await newPage({ prs: STACK });
+  await fresh.waitForSelector('#pr-switch option[value="14"]', { state: 'attached' });
+  const poll = await pollCounting(fresh);
+  assert.equal(await poll(), 0, 'nothing changed, so no fetch');
+  await fresh.route('**/api/prs', (r) => r.fulfill({ json: MERGED }));
+  assert.equal(await poll(merged), 1, 'the merge fetched the list');
+  // #12 stays, as the PR on screen, but #13 is no longer built on it.
+  assert.deepEqual(await switcherLabels(fresh), [
+    'no pull request',
+    '#12 A fixture pull request',
+    '#13 (draft) Built on the fixture',
+    '  └ #14 Built on that',
+  ]);
+  assert.equal(await poll(), 1, 'still merged is not a change');
+  await fresh.close();
+});
+
+test('a poll that finds the PR on screen closed, or another PR in its place, fetches the PR list', { skip }, async () => {
+  const fresh = await newPage({ prs: STACK });
+  await fresh.waitForSelector('#pr-switch option[value="14"]', { state: 'attached' });
+  const poll = await pollCounting(fresh);
+  assert.equal(await poll({ ...status, pr: { ...pr, state: 'CLOSED' } }), 1, 'closed');
+  assert.equal(await poll({ ...status, pr: { ...pr, state: 'OPEN' } }), 2, 'reopened');
+  // Closed and replaced from the terminal: same branch, a new number.
+  assert.equal(await poll({ ...status, pr: { ...pr, number: 15 } }), 3, 'a new PR on the branch');
+  await fresh.close();
+
+  // A PR opened on a branch that had none.
+  const bare = await newPage({ prs: STACK, st: { ...status, pr: null }, ready: '#pr-head .pr-branch-name' });
+  const pollBare = await pollCounting(bare);
+  assert.equal(await pollBare(), 0, 'still no PR is not a change');
+  assert.equal(await pollBare(status), 1, 'a PR opened on the branch');
+  await bare.close();
+});
+
+// `gh pr list` can take seconds. A fetch from before the merge that lands after
+// the one the merge asked for would put the old nesting back, and nothing
+// would fetch the list again.
+test('a PR list that lands after a later fetch was asked for is dropped', { skip }, async () => {
+  const fresh = await newPage({ prs: STACK });
+  await fresh.waitForSelector('#pr-switch option[value="14"]', { state: 'attached' });
+  let held;
+  await fresh.route('**/api/prs', (r) => { held = r; });
+  const asked = fresh.waitForRequest('**/api/prs');
+  await fresh.locator('#pr-head .tab', { hasText: 'Stack' }).click();
+  await asked;
+  await fresh.route('**/api/prs', (r) => r.fulfill({ json: MERGED }));
+  await fresh.route('**/api/status', (r) => r.fulfill({ json: merged }));
+  await fresh.click('#pr-refresh');
+  await fresh.waitForFunction(() => !document.querySelector('#pr-switch option[value="13"]')?.textContent.includes('└'));
+  const late = fresh.waitForResponse('**/api/prs');
+  await held.fulfill({ json: STACK });
+  await late;
+  await fresh.waitForTimeout(200);
+  assert.deepEqual(await switcherLabels(fresh), [
+    'no pull request',
+    '#12 A fixture pull request',
+    '#13 (draft) Built on the fixture',
+    '  └ #14 Built on that',
+  ]);
+  await fresh.close();
+});
+
+// Coming back to the tab within ten seconds of a poll skipped the poll, so a
+// merge made in another tab in that time waited for the minute's poll. It is
+// put off to the ten-second mark instead; later than that, it runs at once.
+test('coming back to the tab polls, ten seconds after the last poll at the soonest', { skip }, async () => {
+  const fresh = await newPage({ clock: true, init: () => {
+    Object.defineProperty(document, 'visibilityState', { get: () => (window.hidden_ ? 'hidden' : 'visible') });
+  } });
+  let polls = 0;
+  fresh.on('request', (q) => { if (q.url().endsWith('/api/status')) polls++; });
+  const away = (hidden) => fresh.evaluate((h) => {
+    window.hidden_ = h;
+    document.dispatchEvent(new Event('visibilitychange'));
+  }, hidden);
+  await away(true);
+  await away(false);
+  await fresh.waitForTimeout(200);
+  assert.equal(polls, 0, 'not straight after the page load\'s poll');
+  const polled = fresh.waitForResponse('**/api/status');
+  await fresh.clock.fastForward(10_000);
+  await polled;
+  assert.equal(polls, 1, 'but at the ten-second mark');
+  await fresh.clock.fastForward(11_000);
+  await away(true);
+  const again = fresh.waitForResponse('**/api/status');
+  await away(false);
+  await again;
+  assert.equal(polls, 2, 'and at once when the last poll is older than that');
+  await fresh.close();
+});
+
+// The switcher's console lines are for chasing a failure that leaves nothing
+// on screen, and cost a join over every open PR on each fetch, so they are
+// written only with the preference on.
+test('the console lines are off unless prcoder:debug is on', { skip }, async () => {
+  const lines = async (init) => {
+    const p = await newPage({ prs: STACK, init });
+    const seen = [];
+    p.on('console', (m) => { if (m.text().startsWith('[prcoder]')) seen.push(m.text()); });
+    await p.waitForSelector('#pr-switch option[value="14"]', { state: 'attached' });
+    const fetched = p.waitForResponse('**/api/prs');
+    await p.locator('#pr-head .tab', { hasText: 'Stack' }).click();
+    await fetched;
+    await p.waitForTimeout(100);
+    await p.close();
+    return seen;
+  };
+  assert.deepEqual(await lines(null), []);
+  const on = await lines(() => localStorage.setItem('prcoder:debug', 'on'));
+  assert.ok(on.includes('[prcoder] PR list landed: 12,13,14 '), on.join('\n'));
+});
+
+// A merge seen by a poll and the Stack tab opened a moment later were two whole
+// `gh pr list` calls, one behind the other on the server's lock. The tab joins
+// the fetch in flight; only a trigger that knows the list changed starts one.
+test('opening the Stack tab while a PR list fetch is out joins it', { skip }, async () => {
+  const fresh = await newPage({ prs: STACK });
+  await fresh.waitForSelector('#pr-switch option[value="14"]', { state: 'attached' });
+  let lists = 0;
+  fresh.on('request', (q) => { if (q.url().endsWith('/api/prs')) lists++; });
+  let held;
+  await fresh.route('**/api/prs', (r) => { held = r; });
+  await fresh.route('**/api/status', (r) => r.fulfill({ json: merged }));
+  const asked = fresh.waitForRequest('**/api/prs');
+  await fresh.click('#pr-refresh');
+  await asked;
+  await fresh.locator('#pr-head .tab', { hasText: 'Stack' }).click();
+  await fresh.waitForTimeout(300);
+  assert.equal(lists, 1, 'the tab joined the fetch the merge asked for');
+  await held.fulfill({ json: MERGED });
+  await fresh.waitForFunction(() => !document.querySelector('#pr-switch option[value="13"]')?.textContent.includes('└'));
+  assert.deepEqual(await fresh.locator('#pr-body .pr-into .pr-num').allTextContents(), [], 'nothing is built on #12 now');
   await fresh.close();
 });
 
@@ -1095,9 +1972,54 @@ test('a failed fetch on opening the Stack tab keeps the rows it had', { skip }, 
   await failed;
   await fresh.waitForTimeout(100);
   assert.deepEqual(await fresh.locator('#pr-body .pr-into > ul > li > .pr-row .pr-num').allTextContents(), ['#13']);
-  assert.equal(await tab.textContent(), 'Stack (2)');
+  assert.equal(await tab.textContent(), 'Stack (↑2)');
   assert.equal(await fresh.locator('#pr-switch option').count(), 4, 'the switcher kept its options');
   await fresh.close();
+});
+
+// #93: the Stack tab of a pull request that is itself stacked shows what it is
+// built on too, with this one marked and nothing to switch to where you are.
+test('a stacked PR shows the stack under it in its Stack tab and its head', { skip }, async () => {
+  const on13 = { ...status, branch: 'topic-2', pr: { ...pr, number: 13, title: STACK[1].title, headRefName: 'topic-2', baseRefName: 'topic', url: STACK[1].url } };
+  const fresh = await newPage({ prs: STACK, st: on13 });
+  await fresh.waitForSelector('#pr-switch option[value="14"]', { state: 'attached' });
+  const tab = fresh.locator('#pr-head .tab', { hasText: 'Stack' });
+  assert.equal(await tab.textContent(), 'Stack (↓1 ↑1)');
+  assert.equal(await fresh.locator('#pr-head .pr-state a').textContent(), '#12');
+  assert.equal(await fresh.locator('#pr-head .pr-state a').getAttribute('href'), pr.url);
+  await tab.click();
+  assert.equal(await fresh.locator('#pr-body .pr-into-label').textContent(),
+    'The stack PR #13 (branch topic-2) is in, from main.');
+  assert.deepEqual(await fresh.locator('#pr-body .pr-into > ul > li > .pr-row .pr-num').allTextContents(), ['#12']);
+  assert.deepEqual(await fresh.locator('#pr-body .pr-row.here .pr-num').allTextContents(), ['#13']);
+  assert.deepEqual(await fresh.locator('#pr-body li[aria-current="true"] > .pr-row .pr-num').allTextContents(), ['#13']);
+  assert.equal(await fresh.locator('#pr-body .pr-row.here .pr-go').count(), 0);
+  assert.deepEqual(await fresh.locator('#pr-body .pr-into ul ul ul .pr-num').allTextContents(), ['#14']);
+  await fresh.close();
+});
+
+// A branch with no PR has no base on GitHub, so the pane asks git -- sending
+// the list's head/base pairs, which is how git tells a parent from a child.
+test('with no PR, the pane shows what git says the branch is built on, above what is built on it', { skip }, async () => {
+  const onMine = [...STACK, { number: 15, title: 'On mine', headRefName: 'on-mine', baseRefName: 'mine', isDraft: false, url: `${REPO}/pull/15` }];
+  const st = { ...status, branch: 'mine', pr: null };
+  const p = await newPage({ prs: onMine, st, ready: '#pr-body .pr-row.here',
+    below: { branch: 'mine', names: ['topic-2'], toDefault: false } });
+  assert.equal(await p.locator('#pr-body .pr-into-label').textContent(), 'The stack branch mine is in, from main.');
+  assert.deepEqual(await p.locator('#pr-body .pr-into > ul > li > .pr-row .pr-num').allTextContents(), ['#12']);
+  assert.equal(await p.locator('#pr-body .pr-row.here code.branch').textContent(), 'mine');
+  assert.equal(await p.locator('#pr-body li[aria-current="true"] > .pr-row code.branch').textContent(), 'mine');
+  assert.deepEqual(await p.locator('#pr-body .pr-row.here + ul .pr-num').allTextContents(), ['#15']);
+  assert.equal(p.belowAsked.branch, 'mine');
+  assert.deepEqual(p.belowAsked.prs.at(-1), { headRefName: 'on-mine', baseRefName: 'mine' });
+  await p.close();
+
+  // Cut straight from main: no chain, but still what it is built on.
+  const onMain = await newPage({ prs: onMine, st, ready: '#pr-body .pr-row.here',
+    below: { branch: 'mine', names: [], toDefault: true } });
+  assert.equal(await onMain.locator('#pr-body .pr-into-label').textContent(), 'The stack branch mine is in, from main.');
+  assert.deepEqual(await onMain.locator('#pr-body .pr-row.here + ul .pr-num').allTextContents(), ['#15']);
+  await onMain.close();
 });
 
 // With no list at all -- the first fetch still out, or every one failed -- the
@@ -1225,18 +2147,27 @@ test('a refused start says why', { skip }, async () => {
 test('when the agent exits, starting it again reconnects with the chosen settings, and Quit asks first', { skip }, async () => {
   const urls = [];
   let second;
-  const p = await newPage({ pty: (ws) => {
+  const p = await newPage({ whoami: { model: 'sonnet', effort: 'low' }, pty: (ws) => {
     urls.push(new URL(ws.url()).search);
     if (urls.length === 1) ws.close();
     else second = ws;
   } });
   const bar = p.locator('#term-exit');
   await bar.waitFor({ state: 'visible' });
+  // Quit is first in the bar and red; Start is the filled one and holds focus,
+  // so Enter starts again rather than asking about quitting (2026-10-07).
+  assert.equal(await p.getAttribute('#term-quit', 'class'), 'danger');
+  assert.equal(await p.getAttribute('#term-start', 'class'), 'primary');
+  assert.equal(await p.evaluate(() => document.activeElement.id), 'term-start');
+  // Filled with what the command line started it with, not left blank -- by a
+  // fetch that can land after the bar shows, so waited on.
+  await p.waitForFunction(() => document.querySelector('#term-exit [name=model]').value === 'sonnet');
+  assert.equal(await p.inputValue('#term-exit [name=effort]'), 'low');
   await p.fill('#term-exit [name=model]', 'opus');
   await p.selectOption('#term-exit [name=effort]', 'high');
   assert.equal(await p.isChecked('#term-exit [name=continue]'), false, 'continue ticked by default');
   await p.check('#term-exit [name=continue]');
-  await p.click('#term-exit button:not([type])');
+  await p.click('#term-start');
   // Hidden on the click, before the new socket reaches the mock -- so wait on the socket.
   for (let i = 0; urls.length < 2 && i < 100; i++) await p.waitForTimeout(50);
   assert.equal(await bar.isHidden(), true);
@@ -1244,6 +2175,9 @@ test('when the agent exits, starting it again reconnects with the chosen setting
 
   second.close();
   await bar.waitFor({ state: 'visible' });
+  // That start counts as one: the next exit offers what it chose.
+  assert.equal(await p.inputValue('#term-exit [name=model]'), 'opus');
+  assert.equal(await p.inputValue('#term-exit [name=effort]'), 'high');
   const asked = [];
   await p.route('**/api/quit', (r) => {
     const body = r.request().postDataJSON();
@@ -1254,5 +2188,23 @@ test('when the agent exits, starting it again reconnects with the chosen setting
   await p.click('#term-quit');
   await bar.getByText('prcoder has quit').waitFor();
   assert.deepEqual(asked, [{}, 'Quit prcoder? 2 uncommitted files.', { force: true }]);
+  await p.close();
+});
+
+// The fill is a fetch, so it can land after you have typed into the bar; it
+// must not take that back. And an effort the select has no option for still
+// shows, rather than reading "as started".
+test('the exit bar\'s late fill keeps what was typed, and shows an effort it has no option for', { skip }, async () => {
+  let answer;
+  const late = new Promise((resolve) => { answer = resolve; });
+  const p = await newPage({
+    whoami: async (r) => { await late; return r.fulfill({ json: { started: { model: 'sonnet', effort: 'extreme' } } }); },
+    pty: (ws) => ws.close(),
+  });
+  await p.locator('#term-exit').waitFor({ state: 'visible' });
+  await p.fill('#term-exit [name=model]', 'opus');
+  answer();
+  await p.waitForFunction(() => document.querySelector('#term-exit [name=effort]').value === 'extreme');
+  assert.equal(await p.inputValue('#term-exit [name=model]'), 'opus');
   await p.close();
 });

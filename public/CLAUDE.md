@@ -20,6 +20,16 @@ Put DOM work inside a function, the way `el()` in `diff.js` does. A syntax
 error in any of them breaks the server the same way; `node --check public/*.js`
 catches it, and `test/api.test.js` imports all three by importing the server.
 
+## Keyboard shortcuts go through `keys.js`
+
+`bindKeys` in `app.js` is the one table of shortcuts, and `keys.js` holds the
+rules every binding gets for free: nothing fires while a key is being typed
+into the terminal (except a binding marked `terminal`, which is only Alt+M), the queue's
+input or an editable item, and a binding names
+a physical key (`Alt+KeyW`), not the character it produces. A keydown listener
+beside the thing it drives would have to repeat both. `docs/Panes.md` lists the
+bindings; add a row there with the binding.
+
 ## The Claude pane is not prcoder's to draw on
 
 `term.write()` in `app.js` puts bytes into xterm's buffer without them ever
@@ -65,3 +75,13 @@ retry those. The bug was still live on 2026-09-17;
 `tools/browser.mjs` defaults to Firefox for this reason, and `test/browser/`
 runs its suite in both engines: a header-height test written against Chromium
 failed in Firefox (2026-09-26).
+
+## Console lines go through `debug()`
+
+`debug()` in `pr.js` is the page's one way to write to the browser console,
+for a path that fails with nothing on screen. It writes only when the
+`prcoder:debug` preference is `on` -- `localStorage['prcoder:debug'] = 'on'`
+in the console, then reload -- so a line can be as chatty as it needs to be
+without costing anything when it is off. An argument that takes work to build,
+like a list of every open PR's number, goes in as a function; it is called only
+when the line is written.

@@ -7,7 +7,9 @@ prcoder  gaurav/prcoder   initial-implementation → main   2 unpushed · 8 unco
 PR #1    A browser workspace around a live Claude Code session
          https://github.com/gaurav/prcoder/pull/1
 queue    4 local · 1 done
-serving  http://localhost:17455   1 tab   q quit · r refresh · v verbose · o open
+serving  http://localhost:17455   1 tab
+keys     q quit · r refresh · v verbose
+open     o prcoder · g github · t terminal · f folder
 ```
 
 The block is redrawn in place and the log scrolls above it, so what happened stays in the
@@ -29,7 +31,19 @@ says `checked 7m ago` next to that count, rather than presenting them as current
   and `gh` subprocess with its timing, the per-poll count of them, route timings, and a line when
   the PR has moved upstream. `-v` or `-vv` (or `PRCODER_VERBOSE=1` or `=2`) starts at a level, which
   is the only way to see startup itself.
-- `o` reopens the browser.
+- `o` reopens prcoder in the browser.
+- `g` opens the pull request on GitHub, in the same browser (`PRCODER_BROWSER` applies). With no
+  pull request it opens the compare page that Create would, but only for a branch that has been
+  pushed, since for any other the page shows nothing; it never pushes. On the default branch or a
+  detached HEAD there is nothing to compare, so it opens the repo.
+- `t` opens a new terminal window in the repo, for whatever is awkward to run through a coding
+  agent: several commands in a row, moving between directories, commands piped together, or trying
+  out the CLI you are working on. The built-in terminal is Terminal.app on macOS, and elsewhere `t`
+  says it has none. `PRCODER_TERMINAL` names your own on any platform, run with the repo's path
+  appended: `open -a iTerm`, `kitty --directory`, `wt -d`.
+- `f` opens the repo in the file manager, for moving, opening or renaming files, or browsing its
+  directories. `PRCODER_FILE_MANAGER` replaces the platform's opener the same way:
+  `open -a ForkLift`, `nautilus`.
 - `q` or Ctrl-C quits, asking first when that would cost something.
 
 ## Quitting
@@ -43,7 +57,8 @@ exited, is the same quit and asks the same question in the browser.
 The queue is not asked about, because quitting leaves it in `.prcoder/queue.json` (or the file
 `--queue` named). Instead, every item still on Local is printed first, under the name of that file, with its issue's link where it has one, so the list is in
 the scrollback after prcoder has gone: to copy something into an issue, or to see what to start it
-again for.
+again for. Declining and asking again doesn't print the same list twice; it prints again only once the
+queue has changed.
 
 ## A busy port
 

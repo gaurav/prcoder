@@ -13,7 +13,7 @@ terminal-launched Firefox from starting at all, and the launch hangs until the
 timeout with nothing in the output to say why. `existsSync(executablePath())`
 is true throughout, so "installed" does not mean "starts". This is a temporary
 workaround: #80 says when it comes out, and `firefox-runner/` has the whole
-story. `PRCODER_BROWSER=chromium` is the way past it for work that is not about
+story. `PRCODER_PLAYWRIGHT=chromium` is the way past it for work that is not about
 Firefox.
 
 Chromium's build is in two halves. Playwright runs a headless launch from
@@ -44,6 +44,18 @@ that looks like a hung server, not a stale selector. So a change to what the
 panes show first -- the default tab, the order of the file groups -- needs a
 driver run in the same commit, not the next one.
 
+## Driving another branch's PR without a checkout here
+
+The owner's own prcoder is often this working tree: the global `prcoder` is an
+npm link to it, so it serves `public/` from here and runs its checkouts here.
+A driver that needs a branch with a PR (or a merged one) must not `git
+checkout` it in this tree. Use `git worktree add data/wt-<name> <branch>`, and
+spawn `server.js` *from this tree* with `cwd` set to the worktree: the server
+takes its repo from `cwd` and its page from its own directory, so you drive
+this tree's code against that branch's PR. A switch the driver makes then
+happens in the worktree. Remove the worktree when done, and any local branch
+`gh pr checkout` made there.
+
 ## A stub that only echoes is not a session
 
 A real Claude session asks the terminal for the cursor position every ~200ms,
@@ -68,6 +80,13 @@ timing has to be driven against that stub, not cat. cat is fine for
   in-process server and spawns a real `claude --continue` in this repo
   (2026-09-23). `test/browser/suite.js` also sets `PRCODER_AGENT_BIN=/usr/bin/false`
   so a socket that slips past spawns nothing.
+- **Tick a box that its own save redraws with `click()`, not `check()` or
+  `uncheck()`.** Those two read the box again after clicking, and a detached
+  box makes them retry on whatever the locator now finds -- so a refused queue
+  tick was ticked twice, and an untick that moves the row off its tab waits
+  30s for a box that is gone. It failed only on CI, where the stubbed save
+  answers before Playwright's re-read (2026-10-02). This goes for
+  `test/browser/suite.js` too.
 - **Install `MutationObserver`s after `goto`, not in `addInitScript`.** At
   init time there is no `document.head` to observe, and the throw takes the
   rest of the init script with it.

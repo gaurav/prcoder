@@ -22,7 +22,6 @@ directory moves aside to another port rather than taking the recorded one.
 Otherwise:
 
 ```bash
-mkdir -p data
 PRCODER_NO_OPEN=1 PRCODER_PORT=17433 node server.js > data/prcoder.log 2>&1 &
 sleep 2
 curl -s localhost:17433/api/status | head -c 200   # pr, files, queue
@@ -70,7 +69,7 @@ form:
 node tools/browser.mjs highlighting               # the UI, PNGs to data/shots/highlighting/;
                                                   # the label says what you were looking at. Firefox, falling
                                                   # back to Chromium if it will not start
-PRCODER_BROWSER=chromium node tools/browser.mjs   # compare engines
+PRCODER_PLAYWRIGHT=chromium node tools/browser.mjs   # compare engines
 node tools/cli.mjs                                # the terminal half, in a real PTY
 node tools/no-pr.mjs                              # the pane with no pull request, in a clone
 node tools/diff-views.mjs                         # the diff pane's DIFF, DELETED, renames, outline and .tsx, on fixture PR #87
@@ -87,6 +86,10 @@ Read the PNGs back: a screenshot is the only thing that answers "does this look
 right", and three changes shipped on CSS-reading alone before the driver
 existed. The drivers assert nothing, they print `want …` lines for a human, so
 edit them for whatever you are looking at and keep the edits worth having.
+
+A run is also the cheap moment to re-measure one of `docs/Verifying.md`'s
+*Figures worth re-measuring*: update its commit and date there, and tick its
+box on #129.
 
 Two rules for them, and for any script after them:
 

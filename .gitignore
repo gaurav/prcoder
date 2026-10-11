@@ -1,2 +1,3 @@
 node_modules
+# Scratch space. data/.gitkeep is tracked anyway (git add -f); CLAUDE.md says why.
 data/

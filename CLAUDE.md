@@ -27,6 +27,9 @@ ordinary checklist now, and editing it by hand is safe.
 
 `data/` is gitignored and is where anything temporary belongs -- driver
 screenshots, snapshots of a PR body taken before a write, intermediate output.
+Its one tracked file, `data/.gitkeep` (added with `git add -f`), is there so
+every clone has the directory: a driver writes into it without creating it
+first, and a detached child that cannot write there fails without a word.
 Not `/tmp`: reads outside this working directory are blocked, so a screenshot
 written to `/tmp` is one nobody in this session can look at. A one-off
 Playwright script has to live here too -- `import 'playwright'` resolves from

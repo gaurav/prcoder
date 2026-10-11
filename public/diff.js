@@ -3,6 +3,7 @@
 // the fancy view.
 
 import { h, btn, ext, api, writeThrough, pref, setPref } from './pr.js';
+import { fold } from './folds.js';
 
 // Lives outside the render because the 60s poll rebuilds #pr-body from
 // scratch; #diff itself is never repainted by the poll (queue.js does the
@@ -10,6 +11,47 @@ import { h, btn, ext, api, writeThrough, pref, setPref } from './pr.js';
 let openPath = null;
 
 export const selectedPath = () => openPath;
+
+// Whether the open file is one the @ button may name: false while none is open,
+// and for a deleted file, which leaves nothing in the working tree to attach.
+let mentionable = false;
+
+/**
+ * Pure: `path`, which is from the repo root, as seen from `dir`, the repo-root
+ * path of the directory the agent runs in (`git rev-parse --show-prefix`, so
+ * '' at the root and 'public/' below it). prcoder can be started anywhere in
+ * the repo, and the agent's PTY starts where prcoder did.
+ */
+export function fromDir(dir, path) {
+  const up = dir.split('/').filter(Boolean);
+  const down = path.split('/');
+  while (up.length && down.length > 1 && up[0] === down[0]) { up.shift(); down.shift(); }
+  return '../'.repeat(up.length) + down.join('/');
+}
+
+/**
+ * Pure: what the @ button types for `path`, as the agent in `dir` names it
+ * (fromDir), or null for a path it cannot be typed as.
+ *
+ * Spaced on both sides. The agent reads `@` as a mention only at the start of
+ * a word, so the leading space keeps a click straight after one from making
+ * `word@path`; the trailing one closes the @-autocomplete menu that typing `@`
+ * opens, so Enter then sends the prompt instead of picking a suggestion. A
+ * path with a space in it is quoted, `@"a b"`, which is the form Claude Code's
+ * prompt parser takes for one (read from its bundle, 2.1.293; still so in
+ * 2.1.295). That form has no escape for a `"`, and a control character -- a
+ * newline or a tab, both legal in a git path -- would be typed as a keystroke,
+ * so a path with either gets no mention at all, until the parser can quote one
+ * (#124).
+ */
+export function mention(path, dir = '') {
+  const rel = fromDir(dir, path);
+  if (/["\x00-\x1f\x7f]/.test(rel)) return null;
+  return ` @${rel.includes(' ') ? `"${rel}"` : rel} `;
+}
+
+/** What the @ button types for the open file, from the agent's `dir`, or null when there is none to name. */
+export const openMention = (dir) => (mentionable ? mention(openPath, dir) : null);
 
 /**
  * Pure: whether the patch is a whole file rather than a change to one. GitHub's
@@ -165,18 +207,61 @@ async function grammar(lang) {
 const el = (id) => document.getElementById(id);
 
 // Hiding the outline is a preference about the pane, not about one file, so it
-// is browser-wide and outlives a reload.
+// is browser-wide and outlives a reload. Like Wrap's below, the choice lives
+// here and storage only seeds it, so a refused write still holds from one file
+// to the next.
 const OUTLINE_KEY = 'prcoder:outline';
-const outlineOff = () => pref(OUTLINE_KEY) === 'off';
+let outlineHidden;
+const outlineOff = () => (outlineHidden ??= pref(OUTLINE_KEY) === 'off');
 function showOutline(on) {
+  outlineHidden = !on;
   el('diff').classList.toggle('outline-off', !on);
   setPref(OUTLINE_KEY, on ? 'on' : 'off');
   // The clicked control has just vanished; keep focus on the one that undoes it.
   el(on ? 'diff-outline-hide' : 'diff-outline-show').focus();
 }
 
+// Wrapping long lines is the same kind of preference: about the pane, not one
+// file, remembered browser-wide. It is a class on the pane and a CSS rule on
+// the rows (style.css), not anything written into the rows, so a line-number
+// gutter (#8) or a rendered view can be added beside it without touching how a
+// line folds. Off for every file until pressed, Markdown and plain text
+// included: a setting that turned itself on by extension would read as the
+// pane changing its mind, and the owner's repos wrap their Markdown anyway.
+//
+// The choice lives here, and storage only seeds it: setPref's refused write
+// holds for the session only if nothing reads storage back, and a toggle that
+// re-read it would be stuck on in Safari's private mode.
+const WRAP_KEY = 'prcoder:wrap';
+let wrap;
+const wrapOn = () => (wrap ??= pref(WRAP_KEY) === 'on');
+/**
+ * Paint the stored choice: the class the rows fold under, and the button's
+ * pressed state. Only the state: the title stays index.html's "wrap long
+ * lines", since one that flipped to "unwrap" while pressed read out as
+ * "pressed, unwrap long lines", the state twice and in opposite words.
+ */
+function paintWrap(on) {
+  el('diff').classList.toggle('wrap', on);
+  el('diff-wrap').setAttribute('aria-pressed', String(on));
+}
+function setWrap(on) {
+  wrap = on;
+  paintWrap(on);
+  setPref(WRAP_KEY, on ? 'on' : 'off');
+}
+/** The keyboard's way to the Wrap button: nothing to press while it is not shown -- no file open, or the pane folded. */
+export function toggleWrap() {
+  if (el('diff-wrap').checkVisibility()) setWrap(!wrapOn());
+}
+
 /** Ticking this here ticks the same checkbox on github.com; the file rows use it too. */
 export const setViewed = (path, viewed) => api('/api/pr/viewed', { path, viewed });
+
+function setMentionable(on) {
+  mentionable = on;
+  el('diff-mention').hidden = !on;
+}
 
 /** Highlight the open file's row, or none. */
 const markSelected = (path) => {
@@ -203,6 +288,10 @@ export async function openDiff(f, onViewed = setViewed) {
   // move a leading dot to the other end.
   el('diff-path').replaceChildren(h('bdi', {}, f.path));
   el('diff-path').title = f.path;
+  // Hidden until /api/diff says whether the file was deleted (below), so a
+  // click or Alt+M during the load cannot name a file that is gone.
+  setMentionable(false);
+  el('diff-mention').title = `type @${f.path} into the coding agent's prompt (Alt+M)`;
   // Four ways to read the same file on GitHub, and the pane is a fifth: the
   // patch is what changed, and the other three are what a patch cannot say --
   // what the file became (a Markdown one rendered rather than as source), who
@@ -226,10 +315,11 @@ export async function openDiff(f, onViewed = setViewed) {
   box.checked = f.viewed;
   writeThrough(box, (v) => onViewed(f.path, v));
 
-  el('diff-close').onclick = closeDiff;
   el('diff').classList.toggle('outline-off', outlineOff());
   el('diff-outline-hide').onclick = () => showOutline(false);
   el('diff-outline-show').onclick = () => showOutline(true);
+  paintWrap(wrapOn());
+  el('diff-wrap').onclick = () => setWrap(!wrapOn());
 
   const body = el('diff-body');
   body.replaceChildren(h('div', { className: 'empty' }, 'Loading…'));
@@ -237,15 +327,20 @@ export async function openDiff(f, onViewed = setViewed) {
   // outline is rebuilt, and kept the last file's hunks to jump to.
   el('diff-outline').replaceChildren();
   setTitle(null);
-  let patch, from;
+  let patch, from, deleted;
   try {
-    ({ patch, from } = await api('/api/diff', { path: f.path }));
+    ({ patch, from, deleted } = await api('/api/diff', { path: f.path }));
   } catch (e) {
     patch = undefined;
     console.error('diff', e);
   }
   // Two quick clicks can resolve out of order; only the current file may paint.
   if (openPath !== f.path) return;
+  // Before the no-patch return: a deleted binary has no patch to say so, only
+  // GitHub's `deleted`. A file past its 300-file cap has neither, and the
+  // patch's own kind is the check left.
+  const kind = patch == null ? null : diffKind(patch);
+  setMentionable(!deleted && kind !== 'del' && mention(f.path) != null);
 
   if (patch == null && !from) {
     body.replaceChildren(h('p', { className: 'empty' },
@@ -253,7 +348,6 @@ export async function openDiff(f, onViewed = setViewed) {
       ext(f.url, 'view it on GitHub')));
     return;
   }
-  const kind = patch == null ? null : diffKind(patch);
   setTitle(kind);
   // Only a whole added file is highlighted: it is the one body a tokenizer sees
   // from its first line. A modified file's hunks start mid-file and would
@@ -287,7 +381,13 @@ export async function openDiff(f, onViewed = setViewed) {
 
 export function closeDiff() {
   openPath = null;
+  mentionable = false;
   el('diff').hidden = true;
   document.querySelector('main').classList.remove('diff-open');
+  // A closed pane forgets its fold, so the next file opens unfolded. The fold
+  // is not stored either, unlike the terminal's, the outline and Wrap: nothing
+  // is open after a reload, and a click on a file unfolds it anyway, so a
+  // stored value would never be read.
+  fold('diff', false);
   markSelected(null);
 }

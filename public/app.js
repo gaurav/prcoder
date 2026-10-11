@@ -1,9 +1,11 @@
 import { Terminal } from '/vendor/xterm.mjs';
 import { FitAddon } from '/vendor/addon-fit.mjs';
 import { WebLinksAddon } from '/vendor/addon-web-links.mjs';
-import { renderPr, renderNoPr, renderHeader, pageTitle, api, toast, pref, setPref } from './pr.js';
-import { openDiff, closeDiff, selectedPath, setViewed } from './diff.js';
+import { renderPr, renderNoPr, renderHeader, pageTitle, api, toast, pref, setPref, debug } from './pr.js';
+import { openDiff, closeDiff, selectedPath, setViewed, toggleWrap, openMention } from './diff.js';
 import { initQueue, addItem, setItems } from './queue.js';
+import { bindKeys } from './keys.js';
+import { fold, folded, canFold } from './folds.js';
 import './panes.js';   // draggable pane gutters; nothing here calls into it
 
 const term = new Terminal({
@@ -16,9 +18,23 @@ const fit = new FitAddon();
 term.loadAddon(fit);
 term.loadAddon(new WebLinksAddon((_e, uri) => window.open(uri, '_blank', 'noopener')));
 term.open(document.getElementById('term-host'));
+// Every shortcut the page has, in one table; keys.js says what a binding may
+// and may not do. W for wrap: no browser binds Alt+W, and the owner chose it
+// over VS Code's Alt+Z. M for mention, the diff header's @: not Alt+2, the key
+// @ is on, because Chrome and Firefox on Linux and Windows switch tabs with
+// Alt+digit, and M is none of Firefox's menu letters. Alt+M also fires from
+// the terminal, since that is where you are when you want it: halfway through
+// typing a request about the open file. While there is a file to name, the
+// agent does not get Alt+M (µ on a Mac, ESC m elsewhere); with none, it does.
+bindKeys({
+  'Alt+KeyW': toggleWrap,
+  'Alt+KeyM': { fn: mentionOpenFile, terminal: () => openMention('') != null },
+}, term);
 
 const PTY_SEEN = 'prcoder:pty';
-// Replaced, not reopened, by the exit panel's "Start coding agent again": one
+// The server serves only public/, so the docs are linked where they live.
+const PORTS_DOC = 'https://github.com/gaurav/prcoder/blob/main/docs/Ports.md#finding-it-again';
+// Replaced, not reopened, by the exit panel's "Start coding agent": one
 // socket is one PTY.
 let ws;
 // `WebSocket.OPEN` is read off the global constructor, so a Playwright init
@@ -45,15 +61,18 @@ const sync = () => {
   if (dims !== sent && send({ type: 'resize', cols: term.cols, rows: term.rows })) sent = dims;
 };
 
-// The tab icon, blue while a turn is running, so a session left in a
+// The tab icon, a red octagon while a turn is running, so a session left in a
 // background tab says whether it is still going without switching to it. The
-// folded pane's header says the same with `● working`, from the same state, so
+// folded pane's header says the same with `⯃ working`, from the same state, so
 // a session you folded away says when it is done without unfolding it.
 // The PTY carries no "thinking" signal and nothing here reads the frames, so a
 // turn is bracketed rather than detected: sending a line starts one, and the
 // output holds it open. Claude repaints its spinner every few hundred ms
 // mid-turn -- measured 2026-09-11 against a turn with a 12s tool call in it, no
-// gap ran over 750ms until the turn ended -- so 2s of quiet is the end of one.
+// gap ran over 750ms until the turn ended -- so QUIET without output is the end
+// of one. It was 2s, which that measurement allowed, but in use the icon still
+// went green on turns that were not over, so it is 5s since 2026-10-11, and
+// 10s is the next step if that happens again. The cost is only a later green.
 //
 // Output cannot *start* a turn, because a PTY echoes what is typed at it:
 // Claude repainting its prompt as you type is output too, and keying off that
@@ -67,7 +86,7 @@ const sync = () => {
 // rather than output, and it arrives *during* a turn where the bracketing above
 // cannot help: Claude asks the terminal where the cursor is (DSR,
 // `ESC [ ? 6 n`) every ~200ms for as long as the session is up, and xterm
-// answers every one, so the stream is never quiet for two seconds and a turn
+// answers every one, so the stream is never quiet long enough and a turn
 // once started never ended. It only happens against a terminal that answers:
 // measured 2026-09-12 against a bare PTY with nothing replying, Claude asks
 // once and never again, which is why a driver on a `cat` stub saw nothing
@@ -77,10 +96,15 @@ const sync = () => {
 const PROBE = /^(?:\x1b\[\?6n)+$/;
 const link = document.querySelector('link[rel=icon]');
 const busyLabel = document.getElementById('term-busy');
-// Derived, not written out a second time -- so the icon in index.html stays the
-// one definition of it. Change its colour there and change this to match.
-const IDLE = link.href;
-const BUSY = IDLE.replace('%23238636', '%231f6feb');
+// Both from index.html, where the busy one sits on the link as `data-busy`,
+// and both as written there: `link.href` would be the idle one as the browser
+// re-resolved it, a different string from an attribute read as it stands.
+// A red octagon rather than the green square recoloured: plenty of sites have
+// a blue square icon, and a busy prcoder was lost among them in a row of tabs.
+// #da3633 and not a lighter red: the white *PR* on it is 4.6:1, as on the
+// green, where on #f85149 it was 3.3:1 and the first thing to blur at 16px.
+const IDLE = link.getAttribute('href');
+const BUSY = link.dataset.busy;
 // Re-inserted rather than mutated in place: browsers disagree about whether an
 // href changed on a live <link rel=icon> is noticed at all.
 // Tracked here rather than read back off the element: `link.href` returns the
@@ -96,6 +120,7 @@ const icon = (href) => {
   // alone, and this is the one place the two can never disagree.
   busyLabel.hidden = href !== BUSY;
 };
+const QUIET = 5000;
 let quiet;
 const turn = (on) => {
   clearTimeout(quiet);
@@ -104,7 +129,7 @@ const turn = (on) => {
   // busy can outlast the turn's real end by as long as you keep typing. Closing
   // that needs what the frames say rather than when they arrive -- see #51,
   // which is the same wall from the other side.
-  if (on) quiet = setTimeout(() => icon(IDLE), 2000);
+  if (on) quiet = setTimeout(() => icon(IDLE), QUIET);
 };
 // `query` is the exit panel's settings, which the server turns into claude's
 // flags (sessionArgs in server.js). The first socket sends none.
@@ -133,8 +158,31 @@ function connect(query = '') {
       if (sessionStorage.getItem(PTY_SEEN)) {
         // Not the error style: the session did end, but on a deliberate reload
         // that is the answer to what you just did, not something that went wrong.
-        toast('Claude was restarted — this tab\'s previous session ended when it disconnected. '
-          + '/resume picks it back up, or start prcoder with -- --continue.');
+        // A tab the browser unloaded is different: nobody asked, and the fix is
+        // in the browser, not here (Ports.md, "Tab unloaders"). Sticky, since a
+        // link needs longer than 4s to click.
+        //
+        // Only document.wasDiscarded, Chrome's, says so for certain. Elsewhere a
+        // restored tab is just a load that was not a reload, and so are Back to
+        // a tab you navigated away from and a duplicated tab, which copies
+        // sessionStorage (and whose original is still running). Firefox's
+        // restore can't be driven to see which type it reports, so none of them
+        // is ruled out: they share a toast that names the other causes rather
+        // than claiming the browser did it.
+        const nav = performance.getEntriesByType('navigation')[0]?.type;
+        const unloaders = { href: PORTS_DOC, text: 'Keep tab unloaders off prcoder' };
+        if (document.wasDiscarded) {
+          toast('The browser unloaded this tab, and the coding agent\'s session went with it. '
+            + '/resume picks it back up, or start prcoder with -- --continue.', false, true, unloaders);
+        } else if (nav && nav !== 'reload') {
+          toast('This page was loaded again, so the coding agent started a new session here. If you '
+            + 'didn\'t come back to it or duplicate it yourself, the browser unloaded the tab. '
+            + '/resume picks the old session back up, or start prcoder with -- --continue.',
+          false, true, unloaders);
+        } else {
+          toast('Claude was restarted — this tab\'s previous session ended when it disconnected. '
+            + '/resume picks it back up, or start prcoder with -- --continue.');
+        }
       }
       sessionStorage.setItem(PTY_SEEN, '1');
     } catch { /* private mode: no memory, so no claim about a previous session */ }
@@ -146,18 +194,36 @@ function connect(query = '') {
     turn(false);
     const why = e.code === 1008 ? `refused: ${e.reason}` : 'coding agent exited';
     term.write(`\r\n\x1b[31m[${why}]\x1b[0m\r\n`);
+    // The bar's note repeats the terminal's line, not the reason: that is
+    // already there in red, a line up.
+    exitForm.querySelector('span').textContent = e.code === 1008 ? 'Start refused.' : 'Coding agent has exited.';
     exitForm.hidden = false;
     // Refit now rather than waiting on the ResizeObserver: in a page that isn't
     // in front it never delivered the shrink, and the terminal went on
     // covering the bar -- Playwright could not click Quit (2026-09-23).
     sync();
-    exitForm.querySelector('button').focus();
+    // Start, not the first button: Quit is first in the bar, and Enter after
+    // an exit should start again rather than ask about quitting.
+    document.getElementById('term-start').focus();
   };
 }
 
 // What to do once Claude is gone: start it again, perhaps differently, or stop
 // prcoder from here rather than from the terminal it was started in.
 const exitForm = document.getElementById('term-exit');
+// Filled once, with what prcoder's command line started the agent with. Never
+// reset after, so the next exit offers whatever the last start chose instead.
+// Only into a field still blank: one already set was set by you, or by a start
+// from the bar, and a reply landing late must not take it back. An effort the
+// select has no option for (`--effort extreme`) gets one: setting a select to
+// a value it lacks blanks it, which shows "as started" rather than the value.
+api('/api/whoami', undefined, 'GET').then(({ started }) => {
+  const { model, effort } = exitForm.elements;
+  if (!model.value) model.value = started.model;
+  if (effort.value || !started.effort) return;
+  if (![...effort.options].some((o) => o.value === started.effort)) effort.add(new Option(started.effort));
+  effort.value = started.effort;
+}).catch(() => { /* blank fields still mean "as started" */ });
 exitForm.onsubmit = (e) => {
   e.preventDefault();
   exitForm.hidden = true;
@@ -182,28 +248,65 @@ connect();
 term.onData((d) => send({ type: 'input', data: d }));
 new ResizeObserver(sync).observe(document.getElementById('term-host'));
 
-// Folding the terminal to its header, stored like the outline's ✕ in diff.js.
-// The PTY keeps its size while folded: a display:none host has no height, so
-// fit() gets NaN rows and returns without resizing, and the ResizeObserver
-// above re-fits it on the way back out.
-const TERM_KEY = 'prcoder:term';
-const fold = document.getElementById('term-fold');
-function foldTerm(off, save = true) {
-  document.querySelector('main').classList.toggle('term-off', off);
-  fold.setAttribute('aria-expanded', String(!off));
-  fold.textContent = off ? '▶\uFE0E' : '▼';   // FE0E: text, never macOS's emoji ▶
-  fold.title = `${off ? 'expand' : 'collapse'} the coding agent pane`;
-  fold.setAttribute('aria-label', fold.title);   // a glyph is no name, as in queue.js
-  if (save) setPref(TERM_KEY, off ? 'off' : 'on');
-  if (!off) term.focus();   // expanding it is to talk to it
+// Folding a pane to its header line (folds.js paints; this is the rules).
+// The PTY keeps its size while the terminal is folded: a display:none host has
+// no height, so fit() gets NaN rows and returns without resizing, and the
+// ResizeObserver above re-fits it on the way back out. The panes that are
+// always there remember their fold, like the outline's ✕ in diff.js; the
+// diff's is not stored (closeDiff says why).
+const FOLD_KEY = { term: 'prcoder:term', queue: 'prcoder:queue' };
+function foldAndStore(pane, off) {
+  fold(pane, off);
+  if (FOLD_KEY[pane]) setPref(FOLD_KEY[pane], off ? 'off' : 'on');
 }
-if (pref(TERM_KEY) === 'off') foldTerm(true, false);
-const folded = () => document.querySelector('main').classList.contains('term-off');
-// The whole header is the toggle, and the ▼ is only the part of it that says
-// so -- and the part a keyboard can reach, since a button's Enter is a click
-// and bubbles here. One listener for both, so a click on the ▼ toggles once.
+function setFold(pane, off) {
+  foldAndStore(pane, off);
+  settleFolds(off ? pane : null);
+  if (pane === 'term' && !off) term.focus();   // expanding it is to talk to it
+}
+// Two rules, checked after everything that changes what is folded or open --
+// a click on a bar, the folds a reload restores, a closed diff -- rather than
+// beside each one, which is how a way round them got in. Never the diff and
+// the terminal both: each fold hands its room to the other, and both folded
+// would hand it to the queue, which nobody asked for. And never every pane:
+// with no diff open, a folded terminal and a folded queue leave the column
+// empty. Whichever pane was just folded keeps its fold and the other comes
+// back; with none (a reload, a closed diff) the terminal does.
+function settleFolds(just) {
+  const other = folded('diff') && folded('term') ? 'diff'
+    : !selectedPath() && folded('term') && folded('queue') ? 'queue' : null;
+  if (!other) return;
+  const back = just === 'term' ? other : 'term';
+  foldAndStore(back, false);
+  if (back === 'term' && just) term.focus();   // a fold made to talk to it
+}
+for (const pane in FOLD_KEY) if (canFold(pane) && pref(FOLD_KEY[pane]) === 'off') fold(pane, true);
+settleFolds(null);
+// The whole bar is the toggle, and the ▼ is only the part of it that says so
+// -- and the part a keyboard can reach, since a button's Enter is a click and
+// bubbles here. One listener for both, so a click on the ▼ toggles once. A
+// control on the bar -- the diff's viewed box, its links, Wrap -- keeps its own
+// click, so the fold is the rest of the bar: the title, the path, the gaps.
 // No double-click: two clicks would already have folded and unfolded it.
-document.querySelector('#term > header').addEventListener('click', () => foldTerm(!folded()));
+for (const pane of ['diff', 'term', 'queue']) {
+  document.querySelector(`#${pane} > header`).addEventListener('click', (e) => {
+    const control = e.target.closest('a, button, label, input, textarea, select');
+    if (!canFold(pane) || (control && control.id !== `${pane}-fold`)) return;
+    setFold(pane, !folded(pane));
+  });
+}
+
+// Types `data` into the agent's prompt exactly as given, as keystrokes, and
+// puts the focus there so typing carries on where it landed. Whether it went is
+// the return value: `send` refuses on a socket that is not open -- a dead PTY,
+// a reload in flight -- and then the focus stays where it was, rather than
+// moving to a terminal nothing is reading, where every shortcut but Alt+M is
+// off.
+function typeIntoAgent(data) {
+  const sent = send({ type: 'input', data });
+  if (sent) term.focus();
+  return sent;
+}
 
 // Type an item into Claude's prompt. If Claude is mid-turn it queues the
 // message itself, which is exactly the behaviour we want.
@@ -213,19 +316,49 @@ document.querySelector('#term > header').addEventListener('click', () => foldTer
 // whitespace is cut either way -- a newline in the text *is* the Enter that
 // would have sent it half-written.
 //
-// Whether it went is the return value, because the queue ticks an item off on
-// the strength of it: `send` refuses on a socket that is not open -- a dead PTY,
-// a reload in flight -- and an item checked off after a refused send is one
-// nobody has done and nobody is going to be reminded of.
+// The queue ticks an item off on the strength of the return value, and an item
+// checked off after a refused send is one nobody has done and nobody is going
+// to be reminded of.
 function sendToClaude(text, submit = true) {
-  const sent = send({ type: 'input', data: text.replace(/\s+$/, '') + (submit ? '\r' : '') });
-  term.focus();
-  return sent;
+  return typeIntoAgent(text.replace(/\s+$/, '') + (submit ? '\r' : ''));
 }
 
+// The diff header's @: the open file's mention, typed and not sent, so the
+// sentence about it can go on around it. Nothing while no file is open or the
+// open one was deleted (openMention says which). The path is from where the
+// agent runs, which the status carries as `prefix`.
+function mentionOpenFile() {
+  const text = openMention(last?.prefix ?? '');
+  if (text != null && !typeIntoAgent(text)) toast('The coding agent is not connected — nothing was typed.', true);
+}
+document.getElementById('diff-mention').onclick = mentionOpenFile;
+
+// The diff header's ⧉: the open file's path from the repository root, the way
+// the bar and GitHub name it, onto the clipboard, with a ✓ for a moment to say
+// it went. It is a button because the path itself cannot be selected off the
+// bar: the bar is user-select: none so a quick second click does not select its
+// title, and giving the path alone user-select: text let Chromium select it with
+// a drag but not Firefox, where a drag selected nothing although the computed
+// style said text and a Range set from script selected it fine. The drag also
+// ends in a click, which would have folded the pane.
+const copyButton = document.getElementById('diff-copy');
+let copied;
+copyButton.onclick = async () => {
+  const path = selectedPath();
+  if (path == null) return;
+  try {
+    await navigator.clipboard.writeText(path);
+  } catch {
+    return toast('The browser refused the clipboard — the path was not copied.', true);
+  }
+  copyButton.textContent = '✓';
+  clearTimeout(copied);
+  copied = setTimeout(() => { copyButton.textContent = '⧉'; }, 1200);
+};
+
 // The switcher only changes when PRs are opened or closed, so it is not worth a
-// call every minute — page load, opening the dropdown, opening the Stack tab,
-// and a checkout are enough. The branch-only pane's list of what merges into
+// call every minute — page load, reaching for the dropdown, opening the Stack
+// tab, a checkout and the PR on screen changing are enough. The branch-only pane's list of what merges into
 // this branch comes out of the same array, and is as fresh as that. The Stack
 // tab is too, but it states outright that nothing is stacked on a branch, so it
 // asks for the list itself rather than trust one from minutes ago.
@@ -237,13 +370,73 @@ function sendToClaude(text, submit = true) {
 // the pull requests it showed a moment ago had gone, because gh had a blip.
 let prs = null;
 let last = null;
-const loadPrs = () => api('/api/prs', undefined, 'GET')
+// `why` is only for the console: which of the triggers above asked.
+//
+// Numbered, and a list that lands after a later fetch was asked for is
+// dropped: `gh pr list` can take seconds, and a slow one from before a merge,
+// landing after the one the merge asked for, put the merged PR back with
+// nothing left to fetch it again.
+//
+// A trigger that only means someone is looking -- the switcher, the Stack tab
+// -- joins a fetch already in flight rather than queueing a second whole
+// `gh pr list` behind it on the server's lock, which the next poll then waits
+// behind too. `fresh` is for one that knows the list has changed since a fetch
+// in flight left: a checkout, the PR on screen merging.
+let asks = 0;
+let asking = null;
+let listedAt = 0;
+const loadPrs = (why, { fresh = false } = {}) => {
+  if (asking && !fresh) {
+    debug('joining the PR list fetch in flight:', why);
+    return asking;
+  }
+  const n = ++asks;
+  debug('fetching the PR list:', why);
   // Repaint, or a PR opened since page load stays invisible until the next
   // poll — the switcher only rebuilds its options when the set changes. The
   // whole status, because the branch-only pane reads this list too; `last` is
   // already the branch this fetch was for, so nothing asks for it again.
-  .then((l) => { prs = l; if (last) paint(last); }, () => {});
-document.getElementById('pr-switch').addEventListener('mousedown', loadPrs);
+  asking = api('/api/prs', undefined, 'GET').then((l) => {
+    if (n !== asks) return debug('PR list dropped: a later fetch was asked for', why);
+    debug('PR list landed:', () => l.map((p) => p.number).join(',') || '(empty)',
+      document.activeElement?.id === 'pr-switch' ? '(switcher focused)' : '');
+    prs = l;
+    listedAt = Date.now();
+    // The list is what says which branches have a pull request, so what git
+    // said under the others is asked again against it, in place.
+    asked.clear();
+    [...below.keys()].forEach(loadBelow);
+    if (last) paint(last);
+  }, (e) => debug('PR list failed:', why, e.message))
+    .finally(() => { if (n === asks) asking = null; });
+  return asking;
+};
+
+// What git says each branch with no pull request is built on (#93), for the
+// branch-only pane and a Stack tab that reaches one: branch -> `{ branch,
+// names, toDefault }`. Asked for by the pane that needs it, once per list. A
+// map rather than the last answer, or a stack with two such branches in it
+// asks for one, loses the other, and asks for that again. A failed ask keeps
+// what we had, as loadPrs does.
+const below = new Map();
+const asked = new Set();
+const loadBelow = (branch) => {
+  if (asked.has(branch)) return;
+  asked.add(branch);
+  const pairs = (prs ?? []).filter((p) => !p.isCrossRepository)
+    .map(({ headRefName, baseRefName }) => ({ headRefName, baseRefName }));
+  api('/api/below', { branch, prs: pairs })
+    .then((b) => { below.set(branch, b); if (last) paint(last); }, () => {});
+};
+// Asked for as the pointer or the keyboard reaches the switcher, not on
+// mousedown: by the time a fetch from there landed the dropdown was open, too
+// late for the pick, and renderHeader holds the options while it has focus.
+// Not again within ten seconds of a list landing, or hovering and then
+// clicking would be two fetches.
+const reachSwitcher = (how) => { if (Date.now() - listedAt > 10_000) loadPrs(how); };
+const switcher = document.getElementById('pr-switch');
+switcher.addEventListener('pointerenter', () => reachSwitcher('pointer reached the switcher'));
+switcher.addEventListener('focus', () => reachSwitcher('switcher focused'));
 
 const NOTES = {
   'other-branch': 'Not checked out — this pull request is on another branch.',
@@ -285,7 +478,17 @@ async function markViewed(path, viewed) {
   if (selectedPath() === path) document.getElementById('diff-viewed').checked = viewed;
 }
 
-const openFile = (f) => openDiff(f, markViewed);
+// A click on a row unfolds the pane: you asked for the file. The refresh in
+// paint() below does not -- a push from the agent must not undo a fold made to
+// talk to it.
+const openFile = (f) => { fold('diff', false); return openDiff(f, markViewed); };
+// Closing unfolds the diff (closeDiff says why), and can leave the terminal and
+// the queue folded with nothing between them; settleFolds brings one back.
+function closeFile() {
+  closeDiff();
+  settleFolds(null);
+}
+document.getElementById('diff-close').onclick = closeFile;
 const fileHandlers = {
   onViewed: markViewed,
   onOpen: openFile,
@@ -305,6 +508,17 @@ function paint(status) {
   // `last &&`, or the first paint counts as a change and fetches the list a
   // second time behind the one the page load already asked for.
   const switched = last && last.branch !== status.branch;
+  // The PR on screen merging or closing takes it out of the open list, and
+  // GitHub retargets the ones stacked on it. Fetched now, from the poll that
+  // noticed -- the one that runs as you come back to the tab -- rather than
+  // left to reaching for the switcher: a fetch that starts then can still land
+  // with the dropdown open, and renderHeader holds the options until it closes,
+  // so the pick would be from the old list.
+  // Any change to which PR is on the branch, not only its state: one closed and
+  // another opened in its place from the terminal is the same branch with a
+  // new number, and a PR opened on a bare branch is a new entry in the list.
+  const replaced = last && (last.pr?.number !== status.pr?.number
+    || last.pr?.state !== status.pr?.state);
   last = status;
   // Named for the tab strip, not the page: which PR, in which repo. A poll
   // that fails leaves the last good name up rather than reverting to
@@ -322,7 +536,7 @@ function paint(status) {
     const blocked = status.dirtyFiles.length > 0;
     // Everything the pane is drawn from, the Stack tab's inputs included: a
     // fresh PR list, or a tree going dirty, is a redraw even when the PR is not.
-    const key = JSON.stringify([status.pr, status.scope, stack, blocked]);
+    const key = JSON.stringify([status.pr, status.scope, stack, blocked, [...below.values()]]);
     if (key !== drawn) {
       drawn = key;
       renderPr({ ...status.pr, note: NOTES[status.scope] }, {
@@ -330,16 +544,27 @@ function paint(status) {
         selected: selectedPath(),
         prs: stack,
         otherRepo,
-        onStackOpen: loadPrs,
+        onStackOpen: () => loadPrs('Stack tab opened'),
+        below: [...below.values()],
+        onBelow: loadBelow,
+        defaultBranch: status.defaultBranch,
         onSwitch: switchPr,
         blocked,
       });
     }
   } else {
     drawn = null;
-    renderNoPr(status, prs, { onCreate: createPr, onSwitch: switchPr, creating });
+    renderNoPr(status, prs, { onCreate: createPr, onSwitch: switchPr, onBelow: loadBelow, below: [...below.values()], creating });
   }
-  if (switched) loadPrs();
+  // What was under the old branch is not what is under this one.
+  if (switched) {
+    below.clear();
+    asked.clear();
+    loadPrs('branch changed', { fresh: true });
+  } else if (replaced) {
+    loadPrs(status.pr ? `#${status.pr.number} is now ${status.pr.state}` : 'no PR on this branch now',
+      { fresh: true });
+  }
   // Reading its checklist into the PR tab needs only a PR on screen.
   if (status.queue) setItems(status.queue, status.pr);
 
@@ -349,8 +574,8 @@ function paint(status) {
   const open = selectedPath();
   if (!open) return;
   const f = status.pr?.files.find((x) => x.path === open);
-  if (!f) closeDiff();
-  else if (moved) openFile(f);
+  if (!f) closeFile();
+  else if (moved) openDiff(f, markViewed);   // not openFile: keeps the fold
 }
 
 /**
@@ -369,8 +594,10 @@ async function loadStatus() {
 }
 
 async function switchPr(number) {
+  debug('switching to', number);
   try {
     const status = await api('/api/pr/switch', { number });
+    debug('switched: now on', status.branch, `#${status.pr?.number}`);
     paint(status);
     // Claude's cwd survives a checkout, but its idea of the files does not, and
     // nothing tells it: prcoder has no channel into the session that isn't a
@@ -380,6 +607,7 @@ async function switchPr(number) {
       + " branch's files in mind — tell it to re-read anything it had open.",
     false, true);
   } catch (e) {
+    debug('switch failed:', e.message);
     toast(e.message, true);
     await loadStatus();   // re-derive: the checkout may have half-succeeded
   }
@@ -424,11 +652,20 @@ document.getElementById('pr-refresh').onclick = loadStatus;
 
 // Polling is the client's job: no server timer, and a hidden tab costs nothing.
 setInterval(() => { if (document.visibilityState === 'visible') loadStatus(); }, 60_000);
-// Coming back to the tab polls too, but not one that just ran: a poll is a gh
-// call plus half a dozen git spawns behind the server's serial lock, and
-// alt-tabbing to Claude and back is a thing you do every few seconds.
+// Coming back to the tab polls too, but no sooner than ten seconds after the
+// last poll: a poll is a gh call plus half a dozen git spawns behind the
+// server's serial lock, and alt-tabbing to Claude and back is a thing you do
+// every few seconds. Put off rather than skipped -- skipping it lost a merge
+// made in another tab within ten seconds of the last poll until the minute's
+// poll came round -- and dropped if another poll runs first.
+let returning;
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible' && Date.now() - polledAt > 10_000) loadStatus();
+  if (document.visibilityState !== 'visible') return;
+  clearTimeout(returning);
+  const since = polledAt;
+  returning = setTimeout(() => {
+    if (document.visibilityState === 'visible' && polledAt === since) loadStatus();
+  }, Math.max(0, since + 10_000 - Date.now()));
 });
 
 const input = document.getElementById('queue-input');
@@ -464,7 +701,7 @@ input.addEventListener('input', grow);
 // Not awaited: the switcher's list is a whole `gh pr list` and nothing below
 // needs it — renderHeader synthesises an option for the current PR until it
 // lands, and loadPrs repaints the header itself when it does.
-loadPrs();
+loadPrs('page load');
 // `home` for ▶, which reads a bare #N in an item's text as this repo's.
 await initQueue({ sendToClaude, onTask: toggleTask, home: () => last?.nameWithOwner });
 loadStatus();

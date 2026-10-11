@@ -1,7 +1,7 @@
 // Where the local repo actually is. Nothing here is cached: every fact is one
 // cheap `git` call away, and a cache is just a thing that can disagree with the
-// working tree. The one exception is repoInfo(), which asks GitHub for facts
-// that cannot change while the process runs.
+// working tree. The one exception is repoInfo(), which asks for facts that
+// cannot change while the process runs.
 
 import { run, parsePrUrl } from './github.js';
 import { urlPath } from './public/tasks.js';
@@ -78,6 +78,21 @@ export const compareUrl = (nameWithOwner, base, branch, owner) =>
   `https://github.com/${nameWithOwner}/compare/${urlPath(base)}...${owner ? `${owner}:` : ''}${urlPath(branch)}?expand=1`;
 
 /**
+ * Where `g` sends you on GitHub: the PR, or with none the compare page the
+ * Create button would open. On the default branch or a detached HEAD there is
+ * nothing to compare, so the repo itself. An unpushed branch is refused rather
+ * than pushed -- Create pushes, this only looks -- because its compare page
+ * says only "nothing to compare". `pushed` is trackingHead's answer, so a push
+ * from another machine needs a fetch before it counts.
+ */
+export function githubUrl({ prUrl, nameWithOwner, defaultBranch, branch, pushed, owner }) {
+  if (prUrl) return prUrl;
+  if (!branch || branch === defaultBranch) return `https://github.com/${nameWithOwner}`;
+  if (!pushed) throw new Error(`no pull request, and ${branch} is not on GitHub yet: push it, or use Create in the pane`);
+  return compareUrl(nameWithOwner, defaultBranch, branch, owner);
+}
+
+/**
  * Who owns origin, read off its URL -- `git@github.com:o/r.git`,
  * `https://github.com/o/r`, `ssh://git@github.com/o/r.git` alike. Null for a
  * URL with no `owner/repo` tail. get-url applies `insteadOf`, so this is the
@@ -100,11 +115,15 @@ export function prScope(pr, { branch, nameWithOwner }) {
   return pr.headRefName === branch ? 'current' : 'other-branch';
 }
 
-/** Constant for the life of the process, so worth asking once. */
+/**
+ * Constant for the life of the process, so worth asking once. `prefix` is
+ * where in the repo prcoder -- and so the agent's PTY -- was started: '' at
+ * the root, 'public/' below it. The diff header's @ names a file from there.
+ */
 export async function repoInfo(cwd) {
   const { defaultBranchRef, nameWithOwner } =
     JSON.parse(await run('gh', ['repo', 'view', '--json', 'defaultBranchRef,nameWithOwner'], { cwd }));
-  return { defaultBranch: defaultBranchRef.name, nameWithOwner };
+  return { defaultBranch: defaultBranchRef.name, nameWithOwner, prefix: await text(['rev-parse', '--show-prefix'], cwd) };
 }
 
 /**
@@ -170,6 +189,117 @@ export async function remoteBranchHead(cwd, branch) {
   // for it said "not pushed" -- which the create route acts on by pushing.
   const out = await git(['ls-remote', '--heads', 'origin', `refs/heads/${branch}`], cwd);
   return out.trim().split(/\s/)[0] || null;
+}
+
+/**
+ * The branches under `branch` on origin, nearest first, as far down as git can
+ * tell: `{ names, toDefault }`, where `toDefault` says the last one (or `branch`
+ * itself) was cut from the default branch rather than from something git could
+ * not name. The default branch is not in `names`. `current` walks from HEAD,
+ * which may be ahead of origin's copy or not pushed at all.
+ *
+ * For a branch with no pull request, which has no base to ask GitHub for, so
+ * the Stack tab and the branch-only pane ask this on demand (#93) rather than
+ * the poll. `prs` is the open pull requests as `{ headRefName, baseRefName }`:
+ * what GitHub says about a branch beats what git can guess, so the walk stops
+ * at the first one that is a pull request's head -- its base is the page's to
+ * follow -- and never takes a branch stacked on one it has walked for its
+ * parent. Git alone cannot tell those apart: a child cut before its parent's
+ * newest commit contains the parent's older ones, and names them as its own.
+ */
+export async function branchesBelow(cwd, branch, defaultBranch, { current = false, prs = [] } = {}) {
+  const heads = new Set(prs.map((p) => p.headRefName));
+  const names = [];
+  const seen = new Set([branch]);
+  let ref = current ? 'HEAD' : `refs/remotes/origin/${branch}`;
+  for (let i = 0; i < 10; i++) {
+    const parent = await parentBranch(cwd, ref, defaultBranch, [...seen, ...stackedOn(prs, seen)], prs);
+    if (parent === defaultBranch) return { names, toDefault: true };
+    if (!parent) break;
+    seen.add(parent);
+    names.push(parent);
+    if (heads.has(parent)) break;
+    ref = `refs/remotes/origin/${parent}`;
+  }
+  return { names, toDefault: false };
+}
+
+/** Every head whose base, or its base's base, is in `branches`. */
+function stackedOn(prs, branches) {
+  const out = new Set();
+  for (let grew = true; grew;) {
+    grew = false;
+    for (const p of prs) {
+      if ((branches.has(p.baseRefName) || out.has(p.baseRefName)) && !out.has(p.headRefName)) {
+        out.add(p.headRefName);
+        grew = true;
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * The origin branch `ref` was cut from: the nearest commit on its first-parent
+ * line that another origin branch also has. Not "which branch tips are
+ * ancestors", which is one call cheaper and wrong as soon as the parent takes a
+ * commit after the child was cut -- a review fix on the PR below, the normal
+ * case in a stack.
+ *
+ * The branches that contain `ref` strictly are the ones stacked on it, and
+ * would name its own commits, so they are left out; one at the same commit is
+ * kept, since a branch just cut from another sits exactly there. So is every
+ * branch in `skip`: the walk so far, and what is stacked on it.
+ *
+ * Two branches can name the same commit at the same distance -- a sibling cut
+ * before the parent's newest commit has the parent's older ones too -- and
+ * name-rev breaks that tie by the older tip, so by commit dates. When `prs`
+ * says the branch it picked is stacked on another that also has the commit,
+ * that one is lower, and the pick is dropped and name-rev asked again.
+ *
+ * ponytail: a child cut from `ref` before its newest commit has `ref`'s older
+ * commits, and the history is the same shape as if `ref` had been cut from it,
+ * so git alone can take the child for the parent. A child with a pull request
+ * is never taken -- branchesBelow skips what is stacked on the walk, and the
+ * tie above drops one stacked on a rival -- so this is only a bare child. Local
+ * reflogs ("Created from") would say, where they exist; test/git.test.js pins
+ * it.
+ */
+async function parentBranch(cwd, ref, defaultBranch, skip, prs = []) {
+  const tip = await text(['rev-parse', '--verify', `${ref}^{commit}`], cwd);
+  const above = (await text(['for-each-ref', '--contains', tip, '--format=%(objectname) %(refname)', 'refs/remotes/origin'], cwd))
+    .split('\n').filter(Boolean).map((l) => l.split(' '))
+    .filter(([oid]) => oid !== tip).map(([, name]) => name);
+  const own = (await text(['log', '--first-parent', '--format=%H', '-n', '200', tip,
+    `^refs/remotes/origin/${defaultBranch}`, '--'], cwd)).split('\n').filter(Boolean);
+  // Nothing of its own above the default branch: cut from it, or merged into it.
+  if (!own.length) return defaultBranch;
+  const refs = [...above, ...skip.map((b) => `refs/remotes/origin/${b}`), 'refs/remotes/origin/HEAD'];
+  for (;;) {
+    const named = (await text(['name-rev', '--name-only', '--refs=refs/remotes/origin/*',
+      ...refs.map((r) => `--exclude=${r}`), ...own], cwd)).split('\n');
+    const at = named.findIndex((n) => n !== 'undefined');
+    // Every commit is this branch's alone, so it forks off the default branch.
+    if (at < 0) return defaultBranch;
+    const hit = named[at].replace(/^remotes\/origin\//, '').replace(/[~^].*$/, '');
+    const under = basesOf(prs, hit, defaultBranch);
+    if (!under.length) return hit;
+    const holders = new Set((await text(['for-each-ref', '--contains', own[at], '--format=%(refname:lstrip=3)',
+      'refs/remotes/origin'], cwd)).split('\n'));
+    if (!under.some((b) => holders.has(b))) return hit;
+    refs.push(`refs/remotes/origin/${hit}`);
+  }
+}
+
+/** The bases under `head` by its pull request, its base's, and so on, short of the default branch. */
+function basesOf(prs, head, defaultBranch) {
+  const out = [];
+  for (let at = head; ;) {
+    const base = prs.find((p) => p.headRefName === at)?.baseRefName;
+    if (!base || base === defaultBranch || base === head || out.includes(base)) return out;
+    out.push(base);
+    at = base;
+  }
 }
 
 // ponytail: a fixed cap. GitHub's own per-file patches run to ~50 KB on a big

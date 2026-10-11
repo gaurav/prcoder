@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  pageTitle, withoutHtml, inline, headLinks, noPrLinks, prsInto, prTree, stackOn, stackLabel, stackOrder, stackEmpty, intoEmpty, switcherRows,
-  HEADING, blocks, sectionize, tabLabel, taskCount, viewedCount, checkCount, checksName, tabDone, worst, byPath, bySize, byDir, nums,
+  pageTitle, withoutHtml, inline, headLinks, noPrLinks, prsInto, prTree, stackOn, stackLabel, stackUnder, stackTree, stackTitle, stackBase, stackOrder, stackEmpty, intoEmpty, switcherRows,
+  HEADING, blocks, sectionize, tabLabel, taskCount, viewedCount, viewedLines, filesProgress, filesName, checkCount, checksName, tabDone, worst, byPath, bySize, byDir, nums,
 } from '../public/pr.js';
 import { fences, TASK, taskLines } from '../public/tasks.js';
 
@@ -312,9 +312,9 @@ test('each pull request carries the ones stacked on its branch', () => {
 });
 
 test('the Stack tab counts the whole tree, and a fork has no stack here', () => {
-  assert.equal(stackLabel(stackOn({ headRefName: 'initial-implementation' }, OPEN)), 'Stack (2)');
+  assert.equal(stackLabel(stackOn({ headRefName: 'initial-implementation' }, OPEN)), 'Stack (↑2)');
   const deeper = [...OPEN, { number: 61, headRefName: 'tabs-2', baseRefName: 'checks-tab' }];
-  assert.equal(stackLabel(stackOn({ headRefName: 'initial-implementation' }, deeper)), 'Stack (3)');
+  assert.equal(stackLabel(stackOn({ headRefName: 'initial-implementation' }, deeper)), 'Stack (↑3)');
   assert.equal(stackLabel(stackOn({ headRefName: 'queue-tabs' }, OPEN)), 'Stack');
   // A fork's head is often `main`, which every PR here is into -- none of them
   // is built on the fork's branch.
@@ -341,6 +341,99 @@ test('an empty Stack tab says why it is empty', () => {
 test('the branch-only pane does not say nothing merges in when it has no list', () => {
   assert.equal(said(intoEmpty('main', [])), 'No pull requests into branch `main`.');
   assert.equal(said(intoEmpty('main', null)), 'No list of open pull requests yet.');
+});
+
+// #93: going down. `under` is bottom first; a node is its #N or its bare branch.
+const down = ({ nodes, into, ask }) => ({ nodes: nodes.map((n) => (n.pr ? n.pr.number : n.branch)), into, ask });
+
+test('a stacked pull request lists the ones under it, down to the default branch', () => {
+  const deeper = [...OPEN, { number: 61, headRefName: 'tabs-2', baseRefName: 'checks-tab' }];
+  assert.deepEqual(down(stackUnder({ pr: deeper[3] }, deeper, [], 'main')), { nodes: [1, 60], into: 'main', ask: null });
+  assert.deepEqual(down(stackUnder({ pr: OPEN[0] }, OPEN, [], 'main')), { nodes: [], into: 'main', ask: null });
+  // No list, or a list prcoder was not given (another repository): nothing, not "into main".
+  assert.deepEqual(down(stackUnder({ pr: deeper[3] }, null, [], 'main')), { nodes: [], into: null, ask: null });
+});
+
+// gh pr list is open PRs only, so a base whose PR merged is a bare branch, and
+// only git can say what is under it.
+test('a base with no open pull request is asked of git, and followed once it answers', () => {
+  const onMerged = [...OPEN, { number: 70, headRefName: 'on-merged', baseRefName: 'merged-topic' }];
+  assert.deepEqual(down(stackUnder({ pr: onMerged[3] }, onMerged, [], 'main')),
+    { nodes: ['merged-topic'], into: null, ask: 'merged-topic' });
+  // git says it was cut from queue-tabs, which has #27, which the list follows.
+  const git = [{ branch: 'merged-topic', names: ['queue-tabs'], toDefault: false }];
+  assert.deepEqual(down(stackUnder({ pr: onMerged[3] }, onMerged, git, 'main')),
+    { nodes: [1, 27, 'merged-topic'], into: 'main', ask: null });
+  // git found nothing it could name under it.
+  const lost = [{ branch: 'merged-topic', names: [], toDefault: false }];
+  const under = stackUnder({ pr: onMerged[3] }, onMerged, lost, 'main');
+  assert.deepEqual(down(under), { nodes: ['merged-topic'], into: null, ask: null });
+  assert.equal(said(stackTitle(stackBase(onMerged[3]), under)),
+    'The stack PR #70 (branch `on-merged`) is in. Nothing was found below `merged-topic`.');
+});
+
+test('the branch-only pane asks git what the branch is on, and not on the default branch', () => {
+  assert.deepEqual(down(stackUnder({ branch: 'mine' }, OPEN, [], 'main')), { nodes: [], into: null, ask: 'mine' });
+  const git = [{ branch: 'mine', names: ['queue-tabs'], toDefault: false }];
+  assert.deepEqual(down(stackUnder({ branch: 'mine' }, OPEN, git, 'main')), { nodes: [1, 27], into: 'main', ask: null });
+  assert.deepEqual(down(stackUnder({ branch: 'mine' }, OPEN, [{ branch: 'mine', names: [], toDefault: true }], 'main')),
+    { nodes: [], into: 'main', ask: null });
+  assert.deepEqual(down(stackUnder({ branch: 'main' }, OPEN, [], 'main')), { nodes: [], into: null, ask: null });
+  assert.deepEqual(down(stackUnder({ branch: '' }, OPEN, [], 'main')), { nodes: [], into: null, ask: null });
+});
+
+test('going down stops at a cycle of bases, and never at a fork', () => {
+  const loop = [
+    { number: 2, headRefName: 'a', baseRefName: 'b' },
+    { number: 3, headRefName: 'b', baseRefName: 'a' },
+  ];
+  assert.deepEqual(down(stackUnder({ pr: loop[0] }, loop, [], 'main')), { nodes: [3], into: null, ask: null });
+  // A fork's `topic` is not this repository's `topic`.
+  const fork = [{ number: 80, headRefName: 'topic', baseRefName: 'main', isCrossRepository: true },
+    { number: 81, headRefName: 'on-topic', baseRefName: 'topic' }];
+  assert.deepEqual(down(stackUnder({ pr: fork[1] }, fork, [], 'main')), { nodes: ['topic'], into: null, ask: 'topic' });
+});
+
+// Nested: the bottom of the chain, each step with the other PRs built on it,
+// and `here` marked, with what is built on it under it as before.
+const tree = (nodes) => nodes.flatMap((n) => {
+  const id = n.pr ? n.pr.number : n.branch;
+  const me = n.here ? `${id}*` : id;
+  return n.kids.length ? [me, tree(n.kids)] : [me];
+});
+
+test('the Stack tab of a stacked pull request is the whole stack, with this one marked', () => {
+  const deeper = [...OPEN, { number: 61, headRefName: 'tabs-2', baseRefName: 'checks-tab' }];
+  const here = { pr: OPEN[2] };
+  const under = stackUnder(here, deeper, [], 'main');
+  assert.deepEqual(tree(stackTree(here, deeper, under)), [1, ['60*', [61], 27]]);
+  assert.equal(said(stackTitle(stackBase(OPEN[2]), under)), 'The stack PR #60 (branch `checks-tab`) is in, from `main`.');
+  // With nothing under it the pane is as it was.
+  assert.equal(stackTree({ pr: OPEN[0] }, OPEN, stackUnder({ pr: OPEN[0] }, OPEN, [], 'main')), null);
+  // The branch-only pane: the branch marked, the PRs into it under it.
+  const mine = [...OPEN, { number: 90, headRefName: 'on-mine', baseRefName: 'mine' }];
+  const git = [{ branch: 'mine', names: ['queue-tabs'], toDefault: false }];
+  const at = { branch: 'mine' };
+  assert.deepEqual(tree(stackTree(at, mine, stackUnder(at, mine, git, 'main'))), [1, [27, ['mine*', [90]], 60]]);
+  // Cut straight from main, it is still a stack of its own, saying so.
+  const onMain = stackUnder(at, mine, [{ branch: 'mine', names: [], toDefault: true }], 'main');
+  assert.deepEqual(tree(stackTree(at, mine, onMain)), ['mine*', [90]]);
+  assert.equal(said(stackTitle(['branch ', { branch: 'mine' }], onMain)), 'The stack branch `mine` is in, from `main`.');
+  // Until git has said, and on the default branch itself, the pane is as it was.
+  assert.equal(stackTree(at, mine, stackUnder(at, mine, [], 'main')), null);
+  assert.equal(stackTree({ branch: 'main' }, mine, stackUnder({ branch: 'main' }, mine, [], 'main')), null);
+});
+
+test('the Stack tab counts down and up apart, and leaves out a part that is nothing', () => {
+  const deeper = [...OPEN, { number: 61, headRefName: 'tabs-2', baseRefName: 'checks-tab' }];
+  const label = (pr, git = []) => stackLabel(stackOn(pr, deeper), stackUnder({ pr }, deeper, git, 'main').nodes);
+  assert.equal(label(OPEN[2]), 'Stack (↓1 ↑1)');
+  assert.equal(label(deeper[3]), 'Stack (↓2)');
+  assert.equal(label(OPEN[0]), 'Stack (↑3)');
+  assert.equal(label(OPEN[1]), 'Stack (↓1)');
+  // A bare branch under it is drawn, and is nothing to switch to, so not counted.
+  const onMerged = { number: 70, headRefName: 'on-merged', baseRefName: 'merged-topic' };
+  assert.equal(label(onMerged), 'Stack');
 });
 
 const order = (prs) => stackOrder(prs).map(({ pr, depth }) => `${'-'.repeat(depth)}${pr.number}`);
@@ -402,7 +495,7 @@ test('a cycle of bases does not stack a pull request on itself', () => {
     { number: 3, headRefName: 'b', baseRefName: 'a' },
   ];
   assert.deepEqual(shape(stackOn(loop[0], loop)), [3]);
-  assert.equal(stackLabel(stackOn(loop[0], loop)), 'Stack (1)');
+  assert.equal(stackLabel(stackOn(loop[0], loop)), 'Stack (↑1)');
 });
 
 test('without a repository to resolve against, neither becomes a link', () => {
@@ -653,6 +746,18 @@ test('the Checks tab is named in words, so a failed 1/3 and a pending one differ
   assert.equal(checksName({ passed: 3, failed: 0, pending: 0 }), 'Checks (3/3)');
 });
 
+// The Files tab's mark is hidden like every tab's, so what its pie says that
+// the count does not -- how much of the reviewing is by lines -- goes in the
+// name, after the label as shown. Nothing to add once every file is viewed, or
+// when nothing has lines to weigh.
+test('the Files tab is named with the changed lines its pie fills by', () => {
+  const f = (additions, deletions, viewed) => ({ additions, deletions, viewed });
+  assert.equal(filesName(filesProgress([f(30, 10, true), f(70, 10, false)])), 'Files (1/2): 40 of 120 changed lines viewed');
+  assert.equal(filesName(filesProgress([f(30, 10, true), f(70, 10, true)])), 'Files (2/2)');
+  assert.equal(filesName(filesProgress([f(0, 0, true), f(0, 0, false)])), 'Files (1/2)', 'a rename has no lines to weigh');
+  assert.equal(filesName(filesProgress([])), 'Files');
+});
+
 // And the mark: one failure is the thing to know, whatever is still running.
 test('a failure marks the tab even when something else is still running', () => {
   assert.equal(worst({ failed: 1, pending: 2 }), 'fail');
@@ -675,6 +780,36 @@ test('the file count is files viewed on GitHub, over files changed', () => {
   // than throw at it -- renderPrHead runs on the first paint either way.
   assert.deepEqual(viewedCount(), { done: 0, total: 0 });
   assert.deepEqual(viewedCount([]), { done: 0, total: 0 });
+});
+
+// The Files pie says how much reviewing is left, not how many files: a big file
+// left unviewed keeps it mostly empty however many small ones are ticked.
+test('the files pie fills by changed lines viewed', () => {
+  const big = { additions: 100, deletions: 100, viewed: false };
+  const small = { additions: 30, deletions: 5, viewed: true };
+  assert.deepEqual(viewedLines([big, small]), { done: 35, total: 235 });
+  assert.deepEqual(filesProgress([big, small]),
+    { p: 35 / 235, full: false, label: '1 of 2 files, 35 of 235 changed lines viewed',
+      count: { done: 1, total: 2 }, lines: '35 of 235 changed lines viewed' });
+  // GitHub's count can be missing, as bySize allows for.
+  assert.deepEqual(viewedLines([{ viewed: true }]), { done: 0, total: 0 });
+  assert.deepEqual(viewedLines(), { done: 0, total: 0 });
+});
+
+test('a files pie with no lines to weigh fills by files', () => {
+  const rename = (viewed) => ({ additions: 0, deletions: 0, viewed });
+  assert.deepEqual(filesProgress([rename(true), rename(false)]),
+    { p: 0.5, full: false, label: '1 of 2 files viewed', count: { done: 1, total: 2 }, lines: null });
+  assert.deepEqual(filesProgress([]), { p: 0, full: false, label: '0 of 0 files viewed', count: { done: 0, total: 0 }, lines: null });
+});
+
+// Every line viewed is not every file: an unviewed rename weighs nothing, and
+// must not let the pie say it is finished.
+test('a files pie is full only when every file is viewed', () => {
+  const files = [{ additions: 9, deletions: 0, viewed: true }, { additions: 0, deletions: 0, viewed: false }];
+  assert.deepEqual(filesProgress(files), { p: 1, full: false, label: '1 of 2 files, 9 of 9 changed lines viewed',
+    count: { done: 1, total: 2 }, lines: '9 of 9 changed lines viewed' });
+  assert.equal(filesProgress(files.map((f) => ({ ...f, viewed: true }))).full, true);
 });
 
 test('paths order like a tree, a directory ahead of what is inside it', () => {

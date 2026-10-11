@@ -2,6 +2,15 @@
   --bg: #14161a; --panel: #1c1f26; --line: #2c313c;
   --fg: #d5d9e0; --dim: #8c93a1; --accent: #7aa2f7;
   --add: #7fd88f; --del: #f08b8b;   /* the file rows' +/- counts and the diff pane's NEW / DELETED */
+  /* What a state is coloured, wherever it is drawn: a failed check, a closed
+     pull request and an error toast are one red; anything still waiting is one
+     yellow. Passed is --add -- green-for-done is the same green everywhere. */
+  --fail: #f5a3a3; --warn: #f0dc9a;
+  /* Claude is working: the busy tab icon's fill (`data-busy` in index.html),
+     which test/browser/suite.js holds these two to. A state, not a verdict, so
+     deliberately not --fail; where it is drawn it is an octagon, like the icon,
+     never a bare dot that could pass for a failed check. */
+  --busy: #da3633;
   color-scheme: dark;
   /* The description and the pull request's title -- the two things in this
      window that are read rather than operated. Every face here ships with an OS
@@ -42,16 +51,22 @@ body {
 main {
   height: 100%; display: grid; background: var(--line);
   grid-template-columns: clamp(180px, var(--w-pr, 375px), 60%) 1px 1fr;
-  grid-template-rows: 1fr 1px clamp(120px, var(--h-queue, 227px), 40%);
+  /* One length per row of the right-hand column, and the folds below only
+     rewrite these: a template per combination of folds was four already and
+     grew with every pane that learned to fold. */
+  --r-diff: clamp(140px, var(--h-diff, 40%), 50%);
+  --r-term: 1fr;
+  --r-queue: clamp(120px, var(--h-queue, 227px), 40%);
+  grid-template-rows: var(--r-term) 1px var(--r-queue) var(--r-rest, 0);
   grid-template-areas:
     "pr gpr term"
     "pr gpr gqueue"
-    "pr gpr queue";
+    "pr gpr queue"
+    "pr gpr .";
 }
 #pr { grid-area: pr; } #term { grid-area: term; } #queue { grid-area: queue; }
 main.diff-open {
-  grid-template-rows:
-    clamp(140px, var(--h-diff, 40%), 50%) 1px 1fr 1px clamp(120px, var(--h-queue, 227px), 40%);
+  grid-template-rows: var(--r-diff) 1px var(--r-term) 1px var(--r-queue);
   grid-template-areas:
     "pr gpr diff"
     "pr gpr gdiff"
@@ -61,38 +76,71 @@ main.diff-open {
 }
 #diff { grid-area: diff; }
 #diff[hidden] { display: none; }
-/* The terminal folded to its header row, for reading a diff by eye: whatever
-   sits above or below it takes the room. Its gutter to that pane goes too --
-   the pane is 1fr now, so there is nothing for a drag to set -- and the empty
-   1px track still draws the line. */
-main.term-off { grid-template-rows: auto 1px 1fr; }
-main.diff-open.term-off {
-  grid-template-rows: 1fr 1px auto 1px clamp(120px, var(--h-queue, 227px), 40%);
-}
+/* A pane folded to its header row (folds.js): its body goes, `auto` is then
+   exactly the header, and whatever sits beside it takes the room. The terminal
+   folds for reading a diff by eye, so the diff takes its room, or the queue
+   with no diff open; the diff folds for talking to the agent with the file
+   still named on its bar, so the terminal takes its room. The empty 1px track
+   between still draws the line. The two are never folded together (app.js);
+   if they were, the queue would get the room. */
+main.term-off { --r-term: auto; --r-diff: 1fr; }
+main.term-off:not(.diff-open, .queue-off), main.term-off.diff-off:not(.queue-off) { --r-queue: 1fr; }
+main.diff-off { --r-diff: auto; }   /* after term-off's 1fr, so both folded is two bars */
+/* The queue, when its fold is on (index.html), folds beside either; app.js
+   keeps it from being the last pane open. The :not(.queue-off) above is what
+   lets this win, not source order: those selectors carry two classes to this
+   one's one, so without it a folded queue under a folded terminal would keep
+   its 1fr and stretch into an empty block below its bar. Even then, a grid
+   whose rows are all `auto` stretches them all to fill the column, so the
+   empty row at the bottom of the template takes what is left. */
+main.queue-off { --r-queue: auto; }
+main.term-off.queue-off:not(.diff-open) { --r-rest: 1fr; }
+main.diff-off #diff-main,
 main.term-off #term-host,
+main.queue-off #queue-body,
 main.term-off:not(.diff-open) #gut-queue,
-main.term-off #gut-diff { display: none; }
-/* A click anywhere on it folds or unfolds, so it looks pressable across its
-   whole width: the pointer, and a hover that darkens the bar and brings the ▼
-   and the title up to full colour. user-select, or a quick second click
+main.queue-off #gut-queue { display: none; }
+/* A click anywhere on a folding pane's bar folds or unfolds it -- anywhere
+   that is not a control, on a bar that has them -- so it looks pressable across
+   its whole width: the pointer, and a hover that darkens the bar and brings the
+   ▼ and the title up to full colour. user-select, or a quick second click
    selects the title. Background only -- a border or padding here would make
-   the folded header a different height from the open one. */
-#term > header { user-select: none; cursor: pointer; }
-/* `● working` while a turn runs, and only folded: open, the terminal says so
+   the folded header a different height from the open one. Keyed on the
+   data-folds switch in index.html, so a pane whose fold is off keeps a plain
+   bar and no ▼. */
+main[data-folds~="term"] #term > header,
+main[data-folds~="diff"] #diff > header,
+main[data-folds~="queue"] #queue > header { user-select: none; cursor: pointer; }
+main[data-folds~="term"] #term > header:hover,
+main[data-folds~="diff"] #diff > header:hover,
+main[data-folds~="queue"] #queue > header:hover { background: var(--bg); }
+/* The diff's NEW / DELETED title keeps its colour: an id here outranks
+   `.pane h1.add` below. */
+main[data-folds~="term"] #term > header:hover :is(h1, #term-fold),
+main[data-folds~="diff"] #diff > header:hover :is(h1:not(.add, .del), #diff-fold),
+main[data-folds~="queue"] #queue > header:hover :is(h1, #queue-fold) { color: var(--fg); }
+main:not([data-folds~="term"]) #term-fold,
+main:not([data-folds~="diff"]) #diff-fold,
+main:not([data-folds~="queue"]) #queue-fold { display: none; }
+/* The bar's user-select: none must not reach the one thing typed into there. */
+#queue-input { user-select: text; }
+/* `⯃ working` while a turn runs, and only folded: open, the terminal says so
    itself. `hidden` stays the busy switch; this is the folded one. */
 main:not(.term-off) #term-busy { display: none; }
-#term > header:hover { background: var(--bg); }
-#term > header:hover h1, #term > header:hover #term-fold { color: var(--fg); }
 /* Before the title, like a disclosure triangle, at the title's own size and
    line-height so the two centre together. ▼/▶ rather than the small ▾/▸, which
-   sit low and needed a bigger font that then sat lower still. */
-#term-fold { margin-left: 0; padding: 0; font-size: 12px; line-height: 18px; }
+   sit low and needed a bigger font that then sat lower still. margin-left,
+   because every header button is pushed to the far end below. */
+#term-fold, #diff-fold, #queue-fold { margin-left: 0; padding: 0; font-size: 12px; line-height: 18px; }
 
 #gut-pr { grid-area: gpr; } #gut-queue { grid-area: gqueue; } #gut-diff { grid-area: gdiff; }
 /* Only the diff-open template has a slot for it; left displayed it would
    auto-place itself into a row of its own and shove the layout sideways. */
 #gut-diff { display: none; }
-main.diff-open #gut-diff { display: block; }
+/* Under a folded terminal the diff is 1fr, and folded itself it is a bar, so
+   there is nothing for a drag to set. One rule rather than a later hide: the
+   two tie on specificity, and the hide written first once lost to this. */
+main.diff-open:not(.term-off, .diff-off) #gut-diff { display: block; }
 /* 1px of line, ±3px of grab, above the panes so the cursor changes over it. */
 .gut { position: relative; z-index: 3; touch-action: none; }
 .gut::after { content: ''; position: absolute; }
@@ -118,8 +166,16 @@ main.diff-open #gut-diff { display: block; }
   padding: 8px 10px; border-top: 1px solid var(--line); font-size: 13px;
 }
 #term-exit[hidden] { display: none; }
-#term-exit > span { color: var(--del); }
-#term-exit button { cursor: pointer; }
+/* Two buttons stand out, Quit (`.danger`) and Start (`.primary`); the labels
+   and the note are dimmed so they read as the buttons' options and a caption,
+   not as a third thing. The note was `--del` when it was the bar's one red
+   thing; Quit is that now, and the terminal's own red line is a line up. The
+   checkbox takes the slack, which puts it and the note at the right edge, or,
+   where the bar wraps, at the right of its own line. The buttons get 2px more
+   than the head's `.primary` on each side: this bar is 13px to the head's 12. */
+#term-exit label, #term-exit > span { color: var(--dim); }
+#term-exit label:has([name=continue]) { margin-left: auto; }
+#term-exit .primary, #term-exit .danger { padding: 3px 10px; }
 a { color: var(--accent); }
 
 /* --- Tabs and the small buttons beside them ---
@@ -132,50 +188,51 @@ a { color: var(--accent); }
   font: inherit; font-size: 12px; padding: 2px 8px; border-radius: 4px; cursor: pointer;
 }
 .tab.on { color: var(--fg); border-color: var(--line); background: var(--bg); }
-/* A tab whose count has run out -- every box ticked, every file viewed, every
-   check passed -- ends in a green circle with a ✓ in it, after the count
-   (tabLabel in pr.js says why the count stays). It is the fold pie's full
-   state (`.pie.full`) with a tick in it, so green-and-round means "none left"
-   everywhere in the pane. Drawn rather than an emoji: ✅ is a square on macOS
-   and whatever the font has elsewhere. The ✓ has empty alt text, since
-   `(11/11)` already says it to a screen reader. 12px, inside the tab's line
-   box, so the tab row keeps its height. */
-.tab.done::after {
-  content: '✓'; content: '✓' / '';
-  display: inline-block; box-sizing: border-box; width: 12px; height: 12px;
-  margin-left: 5px; border-radius: 50%; vertical-align: -1px;
-  background: var(--add); color: var(--bg);
-  font-size: 9px; font-weight: 700; line-height: 12px; text-align: center;
+/* The pane's one status mark (mark() in pr.js): in front of each counted tab's
+   name, at the start of each check row, and at the end of each fold's summary.
+   One shape everywhere, so a shape means one thing:
+
+     pie       a dim ring filling green as the work is done -- the ring is
+               what an empty one is, or nothing done would be nothing drawn
+     ✓ disc    none left: every box ticked, every file viewed, every check
+               passed
+     yellow    the pie's ring when a check is still running
+     ✕ disc    a check failed, in red, whatever else is true
+
+   Shape as well as colour. When the checks were a dot, a ring and a bare ✕,
+   colour alone was what told a failed check from a pending one in places --
+   red against yellow, pastel ones at that, which is exactly the pair
+   red-green colour blindness loses. The words carry it for a screen reader --
+   checksName and filesName in pr.js for a tab, `.check-state` for a row, and
+   a passed row's mark is itself named `passed` (CHECK_WORD says why) -- so
+   the glyphs are given empty alt text (`/ ''`) rather than being read out as
+   "multiplication x" ahead of them. The first `content` is the fallback for an
+   engine without the alt syntax, which then just reads the glyph. Drawn rather
+   than an emoji: ✅ is a square on macOS and whatever the font has elsewhere.
+
+   12px in a tab and 10px in a row, each inside its line box, so neither the
+   tab row nor a summary grows for it. `.light` has a dot of its own and is a
+   whole labelled control about the branch, not a count; it is not this. */
+.mark {
+  display: inline-block; flex: none; box-sizing: border-box;
+  width: 10px; height: 10px; border-radius: 50%;
+  background: conic-gradient(var(--add) calc(var(--p) * 1turn), transparent 0);
+  box-shadow: inset 0 0 0 1px var(--dim);
+  color: var(--bg); font-size: 8px; font-weight: 700; line-height: 10px; text-align: center;
 }
+.mark.pend { box-shadow: inset 0 0 0 1.5px var(--warn); }
+.mark.full { background: var(--add); box-shadow: none; }
+.mark.fail { background: var(--fail); box-shadow: none; }
+.mark.full::after { content: '✓'; content: '✓' / ''; }
+.mark.fail::after { content: '✕'; content: '✕' / ''; }
+.tab .mark {
+  width: 12px; height: 12px; margin-right: 5px; vertical-align: -1px;
+  font-size: 9px; line-height: 12px;
+}
+.check .mark { margin-right: 6px; }
 /* The checks, as a mark rather than the row of badges they used to be above the
    title: three counts in colour, at the top of the pane, read as the loudest
-   thing about a pull request when they are mostly a thing to glance at. The
-   same mark leads each row inside the tab, so it means one thing in both
-   places -- except that a tab where every check passed has no dot in front,
-   only the done circle after it that any finished tab has (`.tab.done`). `.light` has a dot of its own and is a whole labelled control; this is
-   just the mark.
-
-   Shape as well as colour: a filled dot passed, a ring is still pending, a ✕
-   failed. Colour alone left a failed and a pending check telling apart only
-   by red against yellow, pastel ones at that, which is exactly the pair
-   red-green colour blindness loses. The words carry it for a screen reader --
-   checksName in pr.js for the tab, `.check-state` for a row -- so the ✕ is
-   given empty alt text (`/ ''`) rather than being read out as "multiplication
-   x" ahead of them. The first `content` is the fallback for an engine without
-   the alt syntax, which then just reads the glyph. */
-.dot::before {
-  content: ''; display: inline-block; flex: none; box-sizing: border-box;
-  width: 7px; height: 7px; border-radius: 50%;
-  margin-right: 5px; vertical-align: baseline;
-  background: var(--line);
-}
-.dot.pass::before { background: #7fd88f; }
-.dot.pend::before { background: none; border: 1.5px solid #f0dc9a; }
-.dot.fail::before {
-  content: '✕'; content: '✕' / '';
-  background: none; border-radius: 0; color: #f5a3a3;
-  font-size: 9px; font-weight: 700; line-height: 7px; text-align: center;
-}
+   thing about a pull request when they are mostly a thing to glance at. */
 .check { display: flex; align-items: center; font-size: 13px; padding: 3px 0; }
 .check-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .check-state { flex: none; margin-left: auto; padding-left: 8px; color: var(--dim); font-size: 12px; }
@@ -231,7 +288,14 @@ a { color: var(--accent); }
    offset of its own to be restored to (see renderPrTab). */
 #pr-head { flex: none; padding: 10px 10px 8px; border-bottom: 1px solid var(--line); }
 #pr-head:empty { display: none; }
-#pr-head .tabs { margin-bottom: 0; }
+/* Four tabs, three of them led by a mark, in a 355px row at the pane's 375px
+   default: `◔ Detail (2/5)  ◔ Files (1/3)  ✕ Checks (1/3)  Stack` wanted
+   356px at 8px a side (2026-10-06), and a row one pixel short squeezes every
+   tab's label onto two lines. 6px a side gives 16px back. A label never breaks
+   inside its tab; when a long count still does not fit, the row wraps whole
+   tabs, so Stack goes to a line of its own rather than every word to two. */
+#pr-head .tabs { margin-bottom: 0; flex-wrap: wrap; }
+#pr-head .tab { padding: 2px 6px; white-space: nowrap; }
 #pr-head > :last-child { margin-bottom: 0; }
 
 .empty { color: var(--dim); }
@@ -358,14 +422,27 @@ a { color: var(--accent); }
    and rtl leaves `…tewards` where the spans leave `heal-dat…`. */
 /* On a branch with no pull request the same slot holds Create PR, a <button>
    rather than a link because it pushes before it opens anything -- hence the
-   reset, and a disabled state for while it does. */
-.pr-links .primary {
+   reset, and a disabled state for while it does.
+
+   `.primary` and `.danger` are the window's two treatments for a button that
+   is the point of its region, not scoped to the head: the coding agent's exit
+   bar wears both (#term-exit). Filled `--accent` is the one thing a region is
+   for -- the pull request here, starting the agent there. Outlined `--del` is
+   the one that ends something -- quitting prcoder -- and it is an outline
+   rather than a second fill so the two never compete for the eye in a bar
+   that holds both; red text in a red ring is still the first thing seen on a
+   grey panel, which the browser-default grey button it replaced was not
+   (2026-10-07). The ring is an inset shadow, not a border, so the two boxes
+   stay the same size and the head's row is no taller than it was. */
+.primary, .danger {
   padding: 1px 8px; border-radius: 9px; text-decoration: none; font-weight: 600;
-  background: var(--accent); color: var(--bg);
   border: 0; font-family: inherit; font-size: inherit; line-height: inherit; cursor: pointer;
 }
-.pr-links .primary:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 80%, white); }
-.pr-links .primary:disabled { opacity: .5; cursor: progress; }
+.primary { background: var(--accent); color: var(--bg); }
+.primary:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 80%, white); }
+.primary:disabled { opacity: .5; cursor: progress; }
+.danger { background: transparent; color: var(--del); box-shadow: inset 0 0 0 1px var(--del); }
+.danger:hover:not(:disabled) { background: color-mix(in srgb, var(--del) 22%, transparent); }
 .pr-repo {
   display: inline-flex; min-width: 0;
   text-decoration: none; padding: 1px 7px;
@@ -410,9 +487,9 @@ a { color: var(--accent); }
 .badge { padding: 1px 6px; border-radius: 9px; background: var(--line); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; }
 .badge.open { background: #1f4d2e; color: #9ae6b4; }
 .badge.merged { background: #3d2a56; color: #d0b0f5; }
-.badge.closed, .badge.fail { background: #4d1f24; color: #f5a3a3; }
+.badge.closed, .badge.fail { background: #4d1f24; color: var(--fail); }
 .badge.pass { background: #1f4d2e; color: #9ae6b4; }
-.badge.pend { background: #4d411f; color: #f0dc9a; }
+.badge.pend { background: #4d411f; color: var(--warn); }
 
 /* A pull request description is prose, and with the title above it the only
    part of this window that is read rather than operated. It gets a reading
@@ -482,17 +559,13 @@ a { color: var(--accent); }
 .fold > summary:hover, .fold > summary:hover::before { color: var(--accent); }
 .fold > summary:focus-visible { outline: 1px solid var(--accent); border-radius: 3px; }
 .fold > summary h3 { display: inline; margin: 0; font: inherit; flex: 1; min-width: 0; }
-/* What is still outstanding inside, so a fold never hides work silently: a pie
-   that fills green as its items are done (pie() in pr.js says why not `3/5`).
-   The ring is what an empty one is -- without it, nothing done is nothing
-   drawn. 10px, under every summary's line box, so the row keeps its height. */
-.fold > summary .pie {
-  flex: none; width: 10px; height: 10px; border-radius: 50%;
+/* What is still outstanding inside, so a fold never hides work silently: the
+   mark, filling green as its items are done (mark() in pr.js says why not
+   `3/5`). At the end of the summary rather than in front like a tab's: the
+   front is the triangle's, and at the end they line up down the list. */
+.fold > summary .mark {
   align-self: center;   /* the row is baseline-aligned, and a box with no text sits on it by its bottom */
-  background: conic-gradient(var(--add) calc(var(--p) * 1turn), transparent 0);
-  box-shadow: inset 0 0 0 1px var(--dim);
 }
-.fold > summary .pie.full { box-shadow: none; }
 /* Indented under the title, not under the triangle. */
 .fold > .sec-body { padding: 2px 0 12px 18px; }
 
@@ -596,10 +669,19 @@ a { color: var(--accent); }
 .file .nums { font-size: 11px; white-space: nowrap; }
 
 /* --- Diff pane --- */
+/* The name, its copy button and its @ grow together, as the path alone did
+   before them, which is what leaves the header's other buttons no room for
+   their auto margins. Inside, the path is as wide as its text and no wider,
+   shrinking (and cutting at the head) only when the header runs out of room,
+   so the two buttons sit against the filename -- by the ids' own margins,
+   which outrank the auto one every header button gets. */
+#diff-name { flex: 1; min-width: 0; display: flex; align-items: center; }
 #diff-path {
-  flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+  flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis;
   white-space: nowrap; direction: rtl; text-align: left; font-size: 12px; color: var(--dim);
 }
+#diff-copy, #diff-mention { margin-left: 2px; flex: none; font-size: 12px; }
+#diff-copy { font-size: 14px; }   /* ⧉ draws smaller than @ at the same size */
 #diff-viewed-label { font-size: 12px; color: var(--dim); white-space: nowrap; }
 /* The ways out of the pane, as one menu rather than four buttons, and none
    marked ↗ -- see headLinks. `nowrap` on the group keeps a separator from
@@ -644,7 +726,29 @@ a { color: var(--accent); }
 #diff-main:has(#diff-outline:empty) :is(#diff-side, #gut-outline),
 #diff.outline-off :is(#diff-side, #gut-outline) { display: none; }
 #diff > header #diff-outline-show { display: none; font-size: 12px; }
-#diff.outline-off:has(#diff-outline:not(:empty)) > header #diff-outline-show { display: inline; }
+main:not(.diff-off) #diff.outline-off:has(#diff-outline:not(:empty)) > header #diff-outline-show { display: inline; }
+/* Folded, the bar keeps what is about the file -- path, viewed, the links out
+   -- and loses the two that act on a body that is not shown. Outline's show
+   rule above carries the same condition, since its :has() outranks a hide. */
+main.diff-off #diff-wrap { display: none; }
+/* Wrap is a view preference, so it is a class on the pane like outline-off, and
+   a rule here rather than anything in the rows: a line-number gutter (#8) would
+   be a cell beside the text, and a rendered view would hide the button under a
+   class of its own. `width: auto` undoes the max-content above, which would
+   otherwise keep a row as wide as its longest unbreakable run; `anywhere` lets
+   a URL or a minified line fold too. */
+#diff.wrap .dl { white-space: pre-wrap; overflow-wrap: anywhere; width: auto; }
+/* A hanging indent: the padding moves the whole row in by 2ch and the negative
+   text-indent brings its first line back out, so only a continuation sits 2ch
+   past where every real line starts and the left column still reads as line
+   starts (a `+`/`-` there is a line's, never a fold's). pre-wrap keeps a line's
+   own leading spaces, and they sit on the first line as before. */
+#diff.wrap .dl { padding-left: calc(10px + 2ch); text-indent: -2ch; }
+/* Pressed, Wrap fills in rather than changing colour: the links beside it are
+   already --accent, so accent text alone read as one more link. No border and no
+   vertical padding, which would make the header taller (the suite checks). */
+#diff > header #diff-wrap { font-size: 12px; padding: 0 6px; border-radius: 3px; }
+#diff > header #diff-wrap[aria-pressed="true"] { color: var(--bg); background: var(--accent); }
 #diff-outline button {
   display: block; width: 100%; max-width: 100%; text-align: left; background: none; border: 0; cursor: pointer;
   font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--dim); padding: 2px 10px;
@@ -652,7 +756,7 @@ a { color: var(--accent); }
 }
 #diff-outline button:hover { color: var(--fg); }
 .dl.add { color: #9ae6b4; background: #1f4d2e33; }
-.dl.del { color: #f5a3a3; background: #4d1f2433; }
+.dl.del { color: var(--fail); background: #4d1f2433; }
 .dl.hunk { color: var(--accent); margin-top: 4px; }
 /* Token colours for a highlighted NEW file (highlightLines in diff.js). The
    classes are prcoder's own `tok-` names, not Prism's, so nothing else on the
@@ -739,11 +843,15 @@ a { color: var(--accent); }
   content: ''; width: 7px; height: 7px; border-radius: 50%;
   background: var(--line); flex: none;
 }
-.light.warn { color: #f0dc9a; }
-/* The favicon's busy blue (BUSY in app.js, from the icon in index.html), on
-   the dot only: the words stay dim, so a folded turn is noticeable, not loud. */
-.light.busy::before { background: #1f6feb; }
-.light.warn::before { background: #f0dc9a; }
+.light.warn { color: var(--warn); }
+/* The favicon in small: its red and its octagon, on the dot only. The words
+   stay dim, so a folded turn is noticeable, not loud. 10px, the size of a
+   .mark: at the other dots' 7px or 8px an octagon is a dot again. */
+.light.busy::before {
+  width: 10px; height: 10px; border-radius: 0; background: var(--busy);
+  clip-path: polygon(29% 0, 71% 0, 100% 29%, 100% 71%, 71% 100%, 29% 100%, 0 71%, 0 29%);
+}
+.light.warn::before { background: var(--warn); }
 .light.unknown::before { background: transparent; box-shadow: inset 0 0 0 1px var(--dim); }
 
 /* Sits over the panes so it never reflows them. Above the terminal pane rather
@@ -756,7 +864,7 @@ a { color: var(--accent); }
   box-shadow: 0 3px 14px #0008; z-index: 10; cursor: pointer;
 }
 #toast[hidden] { display: none; }
-#toast.bad { background: #4d1f24; color: #f5a3a3; border-color: #f5a3a3; }
+#toast.bad { background: #4d1f24; color: var(--fail); border-color: var(--fail); }
 /* Every toast closes on a click, so every one says so -- a sticky one most of
    all, since it waits for that click, which is what its border marks. The
    glyph is a pseudo-element because toast() sets textContent. In the top right
@@ -769,7 +877,7 @@ a { color: var(--accent); }
 #toast:hover::after { color: var(--fg); }
 #toast.bad::after { color: inherit; opacity: .7; }
 #toast.bad:hover::after { opacity: 1; }
-#toast.sticky { border-color: #f0dc9a; }
+#toast.sticky { border-color: var(--warn); }
 
 /* A row per pull request that merges into this branch: the #N is a link out,
    Switch is the checkout, and the title sits between them and gives way first. */
@@ -783,6 +891,10 @@ code.branch { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-
 .pr-into ul ul { margin-left: 4px; padding-left: 10px; border-left: 1px solid var(--line); }
 .pr-row { display: flex; align-items: baseline; gap: 6px; padding: 1px 0; }
 .pr-row-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Where you are in the stack, in place of the Switch that would go nowhere. */
+.pr-row.here { font-weight: 600; }
+/* A branch in the stack with no pull request: said, not offered. */
+.pr-bare .pr-row-title { color: var(--dim); }
 .pr-go {
   font: inherit; font-size: 11px; padding: 0 6px; cursor: pointer;
   color: var(--accent); background: none; border: 1px solid var(--line); border-radius: 3px;
