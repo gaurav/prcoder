@@ -36,8 +36,10 @@ export const keyName = (e) => [
 /**
  * Install the page's shortcuts: `{ 'Alt+KeyW': () => ... }`. A bound key that
  * is not being typed runs its handler and goes no further, so the browser does
- * not also act on it. A binding written `{ fn, terminal: true }` fires from
- * `term`, the agent's xterm, as well.
+ * not also act on it. A binding written `{ fn, terminal }` fires from `term`,
+ * the agent's xterm, as well, whenever `terminal()` says it has something to
+ * do. When it says no, the key goes to the agent as if it were not bound, so
+ * the agent loses the key only while the shortcut would actually do something.
  */
 export function bindKeys(map, term) {
   const fnOf = (binding) => (typeof binding === 'function' ? binding : binding?.fn);
@@ -55,7 +57,7 @@ export function bindKeys(map, term) {
   // press from firing twice, so isTyping must keep counting the terminal.
   term.attachCustomKeyEventHandler((e) => {
     const binding = map[keyName(e)];
-    if (!binding?.terminal) return true;
+    if (!binding?.terminal?.()) return true;
     if (e.type === 'keydown') {
       e.preventDefault();
       binding.fn(e);

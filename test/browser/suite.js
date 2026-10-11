@@ -1290,12 +1290,18 @@ test('@ and Alt+M type the mention from a folded diff and leave it folded', { sk
   await fresh.close();
 });
 
+// What xterm sends for Alt+M depends on the platform it reads: on a Mac it
+// leaves the key to the browser, which under Playwright types nothing, so a
+// test there could not tell a key the agent got from one it lost. On Linux it
+// sends ESC m on the keydown, so the Alt+M tests pretend to be on Linux.
+const onLinux = () => Object.defineProperty(Navigator.prototype, 'platform', { get: () => 'Linux x86_64' });
+
 // The keyboard's way to the same button -- and, unlike every other shortcut,
 // from inside the terminal too, which is where a request about the file is
 // being typed.
 test('Alt+M types the mention from the diff and from the terminal', { skip }, async () => {
   const frames = [];
-  const fresh = await newPage({ pty: (ws) => ws.onMessage((m) => frames.push(JSON.parse(m))) });
+  const fresh = await newPage({ init: onLinux, pty: (ws) => ws.onMessage((m) => frames.push(JSON.parse(m))) });
   const typed = () => frames.filter((f) => f.type === 'input');
   await fresh.locator('#pr-head .tab', { hasText: 'Files' }).click();
   await fresh.locator('.file[data-path="app.tsx"] .path').click();
@@ -1311,6 +1317,20 @@ test('Alt+M types the mention from the diff and from the terminal', { skip }, as
   for (let i = 0; typed().length < 2 && i < 100; i++) await fresh.waitForTimeout(50);
   await fresh.waitForTimeout(200);
   assert.deepEqual(typed(), [{ type: 'input', data: ' @app.tsx ' }, { type: 'input', data: ' @app.tsx ' }]);
+  await fresh.close();
+});
+
+// With no file open there is nothing to name, so the terminal leaves Alt+M
+// to the agent, as it did before Alt+M fired there at all.
+test('Alt+M in the terminal with no file open goes to the agent', { skip }, async () => {
+  const frames = [];
+  const fresh = await newPage({ init: onLinux, pty: (ws) => ws.onMessage((m) => frames.push(JSON.parse(m))) });
+  const typed = () => frames.filter((f) => f.type === 'input');
+  await fresh.locator('#term-host').click();
+  await fresh.keyboard.press('Alt+KeyM');
+  for (let i = 0; !typed().length && i < 100; i++) await fresh.waitForTimeout(50);
+  await fresh.waitForTimeout(200);
+  assert.deepEqual(typed(), [{ type: 'input', data: '\x1bm' }]);
   await fresh.close();
 });
 

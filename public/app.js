@@ -24,11 +24,11 @@ term.open(document.getElementById('term-host'));
 // @ is on, because Chrome and Firefox on Linux and Windows switch tabs with
 // Alt+digit, and M is none of Firefox's menu letters. Alt+M also fires from
 // the terminal, since that is where you are when you want it: halfway through
-// typing a request about the open file. The agent no longer gets Alt+M: µ on
-// a Mac, ESC m elsewhere.
+// typing a request about the open file. While there is a file to name, the
+// agent does not get Alt+M (µ on a Mac, ESC m elsewhere); with none, it does.
 bindKeys({
   'Alt+KeyW': toggleWrap,
-  'Alt+KeyM': { fn: mentionOpenFile, terminal: true },
+  'Alt+KeyM': { fn: mentionOpenFile, terminal: () => openMention('') != null },
 }, term);
 
 const PTY_SEEN = 'prcoder:pty';
