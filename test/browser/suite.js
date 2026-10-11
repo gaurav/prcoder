@@ -1398,7 +1398,7 @@ test('a separator moves only on the arrows along its own axis', { skip }, async 
 });
 
 // A folded pane still says when Claude is working, from the same bracketed turn
-// as the tab icon -- so it appears on Enter and goes after 2s of quiet, and the
+// as the tab icon -- so it appears on Enter and goes after 5s of quiet, and the
 // mocked /pty here sends nothing to hold the turn open. Only folded: open, the
 // terminal shows the turn itself.
 test('a folded terminal says it is working while a turn runs, and not after', { skip }, async () => {
@@ -1413,7 +1413,7 @@ test('a folded terminal says it is working while a turn runs, and not after', { 
   // Folding must not make the header a different height from the open one.
   assert.equal(await fresh.$eval('#term', (el) => el.getBoundingClientRect().height),
     await fresh.$eval('#term > header', (el) => el.getBoundingClientRect().height));
-  await fresh.waitForFunction(() => document.getElementById('term-busy').hidden, null, { timeout: 5000 });
+  await fresh.waitForFunction(() => document.getElementById('term-busy').hidden, null, { timeout: 10000 });
   assert.equal(await busy(), false, 'gone when the turn ends');
   await fresh.close();
 });
@@ -1439,7 +1439,7 @@ test('a turn swaps the tab icon for the busy one, in the folded header\'s red', 
     getComputedStyle(document.documentElement).getPropertyValue('--busy').trim());
   assert.equal(fill?.toLowerCase(), token.toLowerCase(), 'data-busy and --busy are one red');
   await fresh.waitForFunction((busy) => document.querySelector('link[rel=icon]').getAttribute('href') !== busy,
-    idle.busy, { timeout: 5000 });
+    idle.busy, { timeout: 10000 });
   assert.equal((await icon()).href, idle.href, 'idle again once the turn ends');
   await fresh.close();
 });

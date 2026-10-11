@@ -77,7 +77,10 @@ const sync = () => {
 // turn is bracketed rather than detected: sending a line starts one, and the
 // output holds it open. Claude repaints its spinner every few hundred ms
 // mid-turn -- measured 2026-09-11 against a turn with a 12s tool call in it, no
-// gap ran over 750ms until the turn ended -- so 2s of quiet is the end of one.
+// gap ran over 750ms until the turn ended -- so QUIET without output is the end
+// of one. It was 2s, which that measurement allowed, but in use the icon still
+// went green on turns that were not over, so it is 5s since 2026-10-11, and
+// 10s is the next step if that happens again. The cost is only a later green.
 //
 // Output cannot *start* a turn, because a PTY echoes what is typed at it:
 // Claude repainting its prompt as you type is output too, and keying off that
@@ -91,7 +94,7 @@ const sync = () => {
 // rather than output, and it arrives *during* a turn where the bracketing above
 // cannot help: Claude asks the terminal where the cursor is (DSR,
 // `ESC [ ? 6 n`) every ~200ms for as long as the session is up, and xterm
-// answers every one, so the stream is never quiet for two seconds and a turn
+// answers every one, so the stream is never quiet long enough and a turn
 // once started never ended. It only happens against a terminal that answers:
 // measured 2026-09-12 against a bare PTY with nothing replying, Claude asks
 // once and never again, which is why a driver on a `cat` stub saw nothing
@@ -125,6 +128,7 @@ const icon = (href) => {
   // alone, and this is the one place the two can never disagree.
   busyLabel.hidden = href !== BUSY;
 };
+const QUIET = 5000;
 let quiet;
 const turn = (on) => {
   clearTimeout(quiet);
@@ -133,7 +137,7 @@ const turn = (on) => {
   // busy can outlast the turn's real end by as long as you keep typing. Closing
   // that needs what the frames say rather than when they arrive -- see #51,
   // which is the same wall from the other side.
-  if (on) quiet = setTimeout(() => icon(IDLE), 2000);
+  if (on) quiet = setTimeout(() => icon(IDLE), QUIET);
 };
 // `query` is the exit panel's settings, which the server turns into claude's
 // flags (sessionArgs in server.js). The first socket sends none.
