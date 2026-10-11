@@ -845,9 +845,10 @@ main.diff-off #diff-wrap { display: none; }
 }
 .light.warn { color: var(--warn); }
 /* The favicon in small: its red and its octagon, on the dot only. The words
-   stay dim, so a folded turn is noticeable, not loud. */
+   stay dim, so a folded turn is noticeable, not loud. 10px, the size of a
+   .mark: at the other dots' 7px or 8px an octagon is a dot again. */
 .light.busy::before {
-  width: 8px; height: 8px; border-radius: 0; background: var(--busy);
+  width: 10px; height: 10px; border-radius: 0; background: var(--busy);
   clip-path: polygon(29% 0, 71% 0, 100% 29%, 100% 71%, 71% 100%, 29% 100%, 0 71%, 0 29%);
 }
 .light.warn::before { background: var(--warn); }
