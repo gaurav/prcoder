@@ -389,15 +389,15 @@ const routes = {
    * `CLI/CLI#1` or a renamed repo is stored the way GitHub will link it.
    */
   'POST /api/queue/ref': async ({ text }) => {
-    const [first] = refs(String(text ?? ''));
-    if (!first) return { ref: null };
     const home = (await repoFacts()).nameWithOwner;
+    const [first] = refs(String(text ?? ''), home);
+    if (!first) return { ref: null };
     const { repo: other, number } = resolveRef(first, home);
     const [owner, name] = (other ?? home).split('/');
     const found = await lookupRef(repo, owner, name, number);
     const canonical = found.url?.match(/github\.com\/([\w.-]+\/[\w.-]+)\//)?.[1] ?? other ?? home;
     return { ref: {
-      whole: !!wholeRef(String(text)),
+      whole: !!wholeRef(String(text), home),
       issue: number,
       repo: canonical.toLowerCase() === home.toLowerCase() ? null : canonical,
       kind: found.kind,

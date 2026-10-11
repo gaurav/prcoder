@@ -300,7 +300,20 @@ test('a reference resolves against the repo prcoder is in', () => {
   assert.deepEqual(resolveRef(refs('#91')[0], home), { repo: null, number: 91 });
   assert.deepEqual(resolveRef(refs('prcoder#91')[0], home), { repo: null, number: 91 });
   assert.deepEqual(resolveRef(refs('Gaurav/PRCoder#91')[0], home), { repo: null, number: 91 });
-  // The short form is this owner's other repo, as GitHub would not have it.
-  assert.deepEqual(resolveRef(refs('other#2')[0], home), { repo: 'gaurav/other', number: 2 });
   assert.deepEqual(resolveRef(refs('cli/cli#123')[0], home), { repo: 'cli/cli', number: 123 });
+});
+
+// Any word before a #N has the short form's shape, and each of these was once
+// looked up as a repo of that name and refused, so it could not be added.
+test('the short form is only this repo, once the repo is known', () => {
+  const home = 'gaurav/prcoder';
+  assert.deepEqual(refs('Learn C#7 features', home), []);
+  assert.deepEqual(refs('retry bug#12, then other#2', home), []);
+  assert.deepEqual(shape('PRCoder#91'), [[null, 'PRCoder', 91]]);
+  assert.equal(refs('PRCoder#91', home)[0].number, 91);
+  // Every other shape names its repo outright, or is this one.
+  assert.equal(refs('#4 and cli/cli#5 and https://github.com/o/r/issues/6', home).length, 3);
+  assert.equal(wholeRef('C#7', home), null);
+  // Unknown, nothing is dropped: the server, which knows, decides.
+  assert.deepEqual(shape('C#7'), [[null, 'C', 7]]);
 });

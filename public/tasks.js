@@ -18,7 +18,7 @@ export const mention = () => /(^|[\s(])#(\d+)\b/g;
  * type one: `#91`, `owner/name#91`, `name#91`, and a github.com `/issues/` or
  * `/pull/` URL, whatever follows its number. Wider than mention(), which stays
  * as it is: that is what GitHub links in a description, and this is what the
- * queue input accepts, where `name#91` means this repo's owner.
+ * queue input accepts, where `name#91` means this repo (see refs()).
  *
  * Group 1 is the boundary, as in mention(); 2-4 are a URL's owner, name and
  * number, and 5-7 the same for the other three shapes.
@@ -31,21 +31,29 @@ const REF = () => new RegExp('(^|[\\s(])(?:'
 /**
  * Every reference in `text`, in order: `owner` and `name` as written, null
  * where the shape leaves them out, and `index` and `text` for where it was.
+ *
+ * `home` is the repo prcoder is in, as `owner/name`. Given it, `name#91` counts
+ * only when `name` is this repo's: any word before a `#N` has that shape, and
+ * `Learn C#7` or `bug#12` read as another repo's issue were looked up and
+ * refused, so the item could not be added at all. Another repo is reached by
+ * `owner/name#91` or its link. Without `home` every `name#91` is kept, for a
+ * caller that cannot tell yet and leaves the server to.
  */
-export function refs(text = '') {
+export function refs(text = '', home = null) {
+  const homeName = home?.split('/')[1]?.toLowerCase();
   return [...text.matchAll(REF())].map((m) => ({
     owner: m[2] ?? m[5] ?? null,
     name: m[3] ?? m[6] ?? null,
     number: Number(m[4] ?? m[7]),
     index: m.index + m[1].length,
     text: m[0].slice(m[1].length),
-  }));
+  })).filter((r) => !homeName || r.owner || !r.name || r.name.toLowerCase() === homeName);
 }
 
 /** The one reference `text` is, if it is nothing else, trimmed; otherwise null. */
-export function wholeRef(text = '') {
+export function wholeRef(text = '', home = null) {
   const t = text.trim();
-  const [r, more] = refs(t);
+  const [r, more] = refs(t, home);
   return r && !more && r.index === 0 && r.text.length === t.length ? r : null;
 }
 

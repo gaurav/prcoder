@@ -469,7 +469,7 @@ function row(item, above, below) {
 export async function addItem(text) {
   if (!text.trim()) return false;
   const item = { text: text.trim(), done: false, issue: null, repo: null, kind: null, deleted: false };
-  if (refs(text).length) {
+  if (refs(text, deps.home?.()).length) {
     let ref;
     try {
       ({ ref } = await api('/api/queue/ref', { text }));

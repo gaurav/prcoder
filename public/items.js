@@ -43,7 +43,7 @@ export const refLabel = (i) => (i.repo ? `${i.repo}#${i.issue}` : `#${i.issue}`)
 export function forClaude(i, home) {
   if (!i.issue || !i.issueUrl) return i.text;
   const target = (i.repo ?? home ?? '').toLowerCase();
-  const named = refs(i.text).some((r) => {
+  const named = refs(i.text, home).some((r) => {
     if (r.number !== i.issue) return false;
     if (!home) return !!(r.owner && r.name) && `${r.owner}/${r.name}`.toLowerCase() === target;
     return (resolveRef(r, home).repo ?? home).toLowerCase() === target;
