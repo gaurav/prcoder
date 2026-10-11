@@ -4,16 +4,9 @@ import { WebLinksAddon } from '/vendor/addon-web-links.mjs';
 import { renderPr, renderNoPr, renderHeader, pageTitle, api, toast, pref, setPref, debug } from './pr.js';
 import { openDiff, closeDiff, selectedPath, setViewed, toggleWrap, openMention } from './diff.js';
 import { initQueue, addItem, setItems } from './queue.js';
-import { bindKeys, keyName } from './keys.js';
+import { bindKeys } from './keys.js';
 import { fold, folded, canFold } from './folds.js';
 import './panes.js';   // draggable pane gutters; nothing here calls into it
-
-// Every shortcut the page has, in one table; keys.js says what a binding may
-// and may not do. W for wrap: no browser binds Alt+W, and the owner chose it
-// over VS Code's Alt+Z. M for mention, the diff header's @: not Alt+2, the key
-// @ is on, because Chrome and Firefox on Linux and Windows switch tabs with
-// Alt+digit, and M is none of Firefox's menu letters.
-bindKeys({ 'Alt+KeyW': toggleWrap, 'Alt+KeyM': mentionOpenFile });
 
 const term = new Terminal({
   fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
@@ -25,19 +18,18 @@ const fit = new FitAddon();
 term.loadAddon(fit);
 term.loadAddon(new WebLinksAddon((_e, uri) => window.open(uri, '_blank', 'noopener')));
 term.open(document.getElementById('term-host'));
-// Alt+M is the one shortcut that also fires from the terminal, since that is
-// where you are when you want it: halfway through typing a request about the
-// open file. xterm handles its keydowns itself and stops them there, so the
-// document listener bindKeys installs never sees this one -- the hook has to
-// be xterm's. The agent no longer gets Alt+M: µ on a Mac, ESC m elsewhere.
-term.attachCustomKeyEventHandler((e) => {
-  if (keyName(e) !== 'Alt+KeyM') return true;
-  if (e.type === 'keydown') {
-    e.preventDefault();
-    mentionOpenFile();
-  }
-  return false;
-});
+// Every shortcut the page has, in one table; keys.js says what a binding may
+// and may not do. W for wrap: no browser binds Alt+W, and the owner chose it
+// over VS Code's Alt+Z. M for mention, the diff header's @: not Alt+2, the key
+// @ is on, because Chrome and Firefox on Linux and Windows switch tabs with
+// Alt+digit, and M is none of Firefox's menu letters. Alt+M also fires from
+// the terminal, since that is where you are when you want it: halfway through
+// typing a request about the open file. The agent no longer gets Alt+M: µ on
+// a Mac, ESC m elsewhere.
+bindKeys({
+  'Alt+KeyW': toggleWrap,
+  'Alt+KeyM': { fn: mentionOpenFile, terminal: true },
+}, term);
 
 const PTY_SEEN = 'prcoder:pty';
 // The server serves only public/, so the docs are linked where they live.
