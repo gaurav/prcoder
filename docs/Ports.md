@@ -29,8 +29,8 @@ To choose a port yourself, edit `port.json` to change it for good (avoiding that
 One prcoder per repo, each a browser tab, is soon lost among the pull requests and diffs you
 opened while working. Cheapest first:
 
-**In the tabs.** The favicon is a green *PR* square -- blue while that tab's Claude is working, so
-a turn you walked away from says whether it is still going -- and every title ends in
+**In the tabs.** The favicon is a green *PR* square -- a red *PR* octagon while that tab's Claude
+is working, so a turn you walked away from says whether it is still going -- and every title ends in
 `· prcoder`, so in Firefox typing `% prcoder` in the address bar lists every instance and nothing
 from github.com. Amber is kept free on purpose, for a third state prcoder cannot see yet: Claude
 stopped to ask you something (#51).

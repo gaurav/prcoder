@@ -61,15 +61,18 @@ const sync = () => {
   if (dims !== sent && send({ type: 'resize', cols: term.cols, rows: term.rows })) sent = dims;
 };
 
-// The tab icon, blue while a turn is running, so a session left in a
+// The tab icon, a red octagon while a turn is running, so a session left in a
 // background tab says whether it is still going without switching to it. The
-// folded pane's header says the same with `● working`, from the same state, so
+// folded pane's header says the same with `⯃ working`, from the same state, so
 // a session you folded away says when it is done without unfolding it.
 // The PTY carries no "thinking" signal and nothing here reads the frames, so a
 // turn is bracketed rather than detected: sending a line starts one, and the
 // output holds it open. Claude repaints its spinner every few hundred ms
 // mid-turn -- measured 2026-09-11 against a turn with a 12s tool call in it, no
-// gap ran over 750ms until the turn ended -- so 2s of quiet is the end of one.
+// gap ran over 750ms until the turn ended -- so QUIET without output is the end
+// of one. It was 2s, which that measurement allowed, but in use the icon still
+// went green on turns that were not over, so it is 5s since 2026-10-11, and
+// 10s is the next step if that happens again. The cost is only a later green.
 //
 // Output cannot *start* a turn, because a PTY echoes what is typed at it:
 // Claude repainting its prompt as you type is output too, and keying off that
@@ -83,7 +86,7 @@ const sync = () => {
 // rather than output, and it arrives *during* a turn where the bracketing above
 // cannot help: Claude asks the terminal where the cursor is (DSR,
 // `ESC [ ? 6 n`) every ~200ms for as long as the session is up, and xterm
-// answers every one, so the stream is never quiet for two seconds and a turn
+// answers every one, so the stream is never quiet long enough and a turn
 // once started never ended. It only happens against a terminal that answers:
 // measured 2026-09-12 against a bare PTY with nothing replying, Claude asks
 // once and never again, which is why a driver on a `cat` stub saw nothing
@@ -93,10 +96,15 @@ const sync = () => {
 const PROBE = /^(?:\x1b\[\?6n)+$/;
 const link = document.querySelector('link[rel=icon]');
 const busyLabel = document.getElementById('term-busy');
-// Derived, not written out a second time -- so the icon in index.html stays the
-// one definition of it. Change its colour there and change this to match.
-const IDLE = link.href;
-const BUSY = IDLE.replace('%23238636', '%231f6feb');
+// Both from index.html, where the busy one sits on the link as `data-busy`,
+// and both as written there: `link.href` would be the idle one as the browser
+// re-resolved it, a different string from an attribute read as it stands.
+// A red octagon rather than the green square recoloured: plenty of sites have
+// a blue square icon, and a busy prcoder was lost among them in a row of tabs.
+// #da3633 and not a lighter red: the white *PR* on it is 4.6:1, as on the
+// green, where on #f85149 it was 3.3:1 and the first thing to blur at 16px.
+const IDLE = link.getAttribute('href');
+const BUSY = link.dataset.busy;
 // Re-inserted rather than mutated in place: browsers disagree about whether an
 // href changed on a live <link rel=icon> is noticed at all.
 // Tracked here rather than read back off the element: `link.href` returns the
@@ -112,6 +120,7 @@ const icon = (href) => {
   // alone, and this is the one place the two can never disagree.
   busyLabel.hidden = href !== BUSY;
 };
+const QUIET = 5000;
 let quiet;
 const turn = (on) => {
   clearTimeout(quiet);
@@ -120,7 +129,7 @@ const turn = (on) => {
   // busy can outlast the turn's real end by as long as you keep typing. Closing
   // that needs what the frames say rather than when they arrive -- see #51,
   // which is the same wall from the other side.
-  if (on) quiet = setTimeout(() => icon(IDLE), 2000);
+  if (on) quiet = setTimeout(() => icon(IDLE), QUIET);
 };
 // `query` is the exit panel's settings, which the server turns into claude's
 // flags (sessionArgs in server.js). The first socket sends none.

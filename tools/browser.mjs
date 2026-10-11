@@ -828,16 +828,17 @@ try {
 console.log('queue:  ', (await getQueue()).length, 'items  (want', queue.length + ')');
 
 
-// The tab icon, which goes blue while a turn is running and back to green two
-// seconds after its output stops -- prcoder's only reading of "Claude is
-// working". A PTY echoes what is typed at it, which is what the first half
-// turns on: the echo of a keystroke is output, and the icon has to stay green
-// through it or it reports busy while Claude is waiting on the operator. Enter
-// starts the turn; the stub's echo of the line is then what holds it open.
+// The tab icon, which is a red octagon while a turn is running and a green
+// square again five seconds after its output stops -- prcoder's only reading of
+// "Claude is working". A PTY echoes what is typed at it, which is what the
+// first half turns on: the echo of a keystroke is output, and the icon has to
+// stay green through it or it reports busy while Claude is waiting on the
+// operator. Enter starts the turn; the stub's echo of the line is then what
+// holds it open.
 //
 // The last reading is the other bug: the stub keeps sending the cursor-position
 // probe throughout, five times a second, exactly as a real session does. Green
-// after 2.5s means those are being skipped rather than holding the turn open.
+// after 6s means those are being skipped rather than holding the turn open.
 // Before they were, the icon stayed busy from the first paint until the tab
 // closed, and every check on a /bin/cat stub passed, because cat never asks.
 const iconFill = () => page.evaluate(() =>
@@ -849,9 +850,13 @@ const typing = await iconFill();
 await page.keyboard.press('Enter');
 await page.waitForTimeout(200);
 const busy = await iconFill();
-await page.waitForTimeout(2500);
-console.log('icon:   ', `${typing} while typing, ${busy} after Enter, ${await iconFill()} after 2.5s of probes only`,
-  '  (want 238636, 1f6feb, 238636)');
+await page.waitForTimeout(6000);
+// The red is read off the page's --busy, which test/browser/suite.js holds to
+// the icon's, rather than written out here a third time.
+const red = await page.evaluate(() =>
+  getComputedStyle(document.documentElement).getPropertyValue('--busy').trim().slice(1));
+console.log('icon:   ', `${typing} while typing, ${busy} after Enter, ${await iconFill()} after 6s of probes only`,
+  `  (want 238636, ${red}, 238636)`);
 
 console.log('title: ', await page.title());
 console.log('panes: ', await page.evaluate(() => getComputedStyle(document.querySelector('main')).gridTemplateColumns));

@@ -19,8 +19,9 @@ is on the old port again.
 The terminal folds to its header line with a click anywhere on that line; the ▼ before its title
 says so, and is the keyboard's way in. The diff (or the queue, with no diff open) takes the room,
 and another click unfolds it. Folding never touches the session, which keeps running folded. While
-a turn runs, the folded header says `● working` beside its title, from the same signal as the
-tab's blue icon.
+a turn runs, the folded header says `working` beside its title after a small red octagon, the
+tab's busy icon in miniature and from the same signal. An octagon and not a dot, so that it cannot
+be mistaken for the red of a failed check.
 
 The diff folds the same way, to the terminal's gain, for getting a file out of the way without
 closing it: closing says you are done with the file, and folding does not. Its bar keeps the path
@@ -256,8 +257,8 @@ showing what you were looking at after the next push.
 
 The real `claude` binary in a PTY, so Escape still interrupts, slash commands still work,
 permission prompts still appear, and typing while Claude is mid-turn queues the message the way it
-always has. Links Claude prints are clickable. The tab's favicon is blue while Claude is working
-and green when it is idle, read from the timing of the PTY's output (Design.md says why only the
+always has. Links Claude prints are clickable. The tab's favicon is a red octagon while Claude is
+working and a green square when it is idle, read from the timing of the PTY's output (Design.md says why only the
 timing). A tab the browser unloaded comes back with a new session, since the old one died with the
 socket; the tab says so in a toast that links to Ports.md, where keeping tab unloaders off prcoder
 is covered. Only Chrome says for certain that it unloaded a tab. Elsewhere, going Back to the tab or

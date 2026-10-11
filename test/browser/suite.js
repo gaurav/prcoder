@@ -1458,7 +1458,7 @@ test('a separator moves only on the arrows along its own axis', { skip }, async 
 });
 
 // A folded pane still says when Claude is working, from the same bracketed turn
-// as the tab icon -- so it appears on Enter and goes after 2s of quiet, and the
+// as the tab icon -- so it appears on Enter and goes after 5s of quiet, and the
 // mocked /pty here sends nothing to hold the turn open. Only folded: open, the
 // terminal shows the turn itself.
 test('a folded terminal says it is working while a turn runs, and not after', { skip }, async () => {
@@ -1473,8 +1473,34 @@ test('a folded terminal says it is working while a turn runs, and not after', { 
   // Folding must not make the header a different height from the open one.
   assert.equal(await fresh.$eval('#term', (el) => el.getBoundingClientRect().height),
     await fresh.$eval('#term > header', (el) => el.getBoundingClientRect().height));
-  await fresh.waitForFunction(() => document.getElementById('term-busy').hidden, null, { timeout: 5000 });
+  await fresh.waitForFunction(() => document.getElementById('term-busy').hidden, null, { timeout: 10000 });
   assert.equal(await busy(), false, 'gone when the turn ends');
+  await fresh.close();
+});
+
+// The busy icon is written out in index.html (`data-busy`) and its red again in
+// style.css (`--busy`), for the folded header's octagon. Nothing else would
+// notice the attribute going missing -- the icon would turn into a fetch of
+// /undefined while #term-busy above stayed right -- or the two reds parting.
+test('a turn swaps the tab icon for the busy one, in the folded header\'s red', { skip }, async () => {
+  const fresh = await newPage();
+  const icon = () => fresh.evaluate(() => {
+    const link = document.querySelector('link[rel=icon]');
+    return { href: link.getAttribute('href'), busy: link.dataset.busy };
+  });
+  const idle = await icon();
+  assert.match(idle.busy ?? '', /^data:image\/svg\+xml,/, 'data-busy is on the icon link');
+  assert.notEqual(idle.href, idle.busy);
+  await fresh.click('#term-host');
+  await fresh.keyboard.press('Enter');
+  assert.equal((await icon()).href, idle.busy, 'busy while the turn runs');
+  const fill = decodeURIComponent(idle.busy).match(/fill='(#\w{6})'/)?.[1];
+  const token = await fresh.evaluate(() =>
+    getComputedStyle(document.documentElement).getPropertyValue('--busy').trim());
+  assert.equal(fill?.toLowerCase(), token.toLowerCase(), 'data-busy and --busy are one red');
+  await fresh.waitForFunction((busy) => document.querySelector('link[rel=icon]').getAttribute('href') !== busy,
+    idle.busy, { timeout: 10000 });
+  assert.equal((await icon()).href, idle.href, 'idle again once the turn ends');
   await fresh.close();
 });
 
