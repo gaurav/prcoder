@@ -61,10 +61,12 @@ export function bindKeys(map, term) {
   //
   // A key pressed in the middle of an IME composition is left to xterm, whose
   // composition helper runs after this hook: taken here, the mention would
-  // reach the agent ahead of the text still being composed.
+  // reach the agent ahead of the text still being composed. So is every
+  // keyup, which only resets xterm's own state (its cursor style, and whether
+  // a keypress was handled), and which xterm skips entirely on a false.
   term.attachCustomKeyEventHandler((e) => {
     const binding = map[keyName(e)];
-    if (e.isComposing || !binding?.terminal?.()) return true;
+    if (e.type === 'keyup' || e.isComposing || !binding?.terminal?.()) return true;
     if (e.type === 'keydown') {
       e.preventDefault();
       if (!e.repeat) binding.fn(e);
