@@ -291,7 +291,8 @@ for (const pane of ['diff', 'term', 'queue']) {
 // puts the focus there so typing carries on where it landed. Whether it went is
 // the return value: `send` refuses on a socket that is not open -- a dead PTY,
 // a reload in flight -- and then the focus stays where it was, rather than
-// moving to a terminal nothing is reading, where the page's shortcuts are off.
+// moving to a terminal nothing is reading, where every shortcut but Alt+M is
+// off.
 function typeIntoAgent(data) {
   const sent = send({ type: 'input', data });
   if (sent) term.focus();

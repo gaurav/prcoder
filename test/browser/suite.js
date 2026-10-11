@@ -1437,7 +1437,7 @@ test('@ with the agent disconnected types nothing and says so', { skip }, async 
   await fresh.waitForSelector('#diff-body .dl');
   await fresh.locator('#diff-mention').click();
   await fresh.waitForFunction(() => document.getElementById('toast').textContent.includes('not connected'));
-  // Not moved to a terminal nothing reads, where Alt+M and Alt+W are off.
+  // Not moved to a terminal nothing reads, where Alt+W is off.
   assert.equal(await fresh.evaluate(() => document.activeElement.closest('#term-host') == null), true);
   await fresh.close();
 });
