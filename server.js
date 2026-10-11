@@ -408,7 +408,7 @@ const routes = {
       if (e.notFound) throw e;
       return { ref: null, unchecked: e.message };
     }
-    const canonical = found.url?.match(/github\.com\/([\w.-]+\/[\w.-]+)\//)?.[1] ?? other ?? home;
+    const canonical = found.repo ?? other ?? home;
     return { ref: {
       whole: !!wholeRef(String(text), home),
       issue: number,

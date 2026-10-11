@@ -389,9 +389,13 @@ export async function issueLinks(cwd, prUrl, numbers) {
   }
 }
 
-/** The one query issueLinks and lookupRef share. Numbers only are interpolated. */
+/**
+ * The one query issueLinks and lookupRef share. Numbers only are interpolated.
+ * `nameWithOwner` is GitHub's spelling of the repo, for lookupRef; linksFrom
+ * passes over it, having no title.
+ */
 function linksArgs(owner, repo, numbers) {
-  const query = `query($owner:String!,$repo:String!){ repository(owner:$owner,name:$repo){ ` +
+  const query = `query($owner:String!,$repo:String!){ repository(owner:$owner,name:$repo){ nameWithOwner ` +
     numbers.map((n) => `i${n}: issueOrPullRequest(number:${Number(n)})` +
       `{ __typename ... on Issue { title url state updatedAt } ... on PullRequest { title url state updatedAt } }`).join(' ') + ` } }`;
   return ['api', 'graphql', '-f', `query=${query}`, '-f', `owner=${owner}`, '-f', `repo=${repo}`];
@@ -399,7 +403,10 @@ function linksArgs(owner, repo, numbers) {
 
 /**
  * One issue or pull request in any repo gh can read, for a reference typed
- * into the queue: `{ title, url, state, kind, updatedAt }` as linksFrom has it.
+ * into the queue: `{ title, url, state, kind, updatedAt }` as linksFrom has it,
+ * and `repo`, GitHub's own spelling of `owner/repo` -- so `CLI/CLI#1`, or a
+ * repo since renamed, is stored the way GitHub will link it. (Asked for as
+ * jashkenas/coffee-script on 2026-10-11, it said jashkenas/coffeescript.)
  *
  * Unlike issueLinks, which is decoration and swallows its failures, this is
  * the answer to "is that a real issue?", so it throws with the reason. GitHub
@@ -428,7 +435,9 @@ export async function lookupRef(cwd, owner, repo, number) {
   }
   const found = linksFrom(out).get(number);
   if (!found) throw new Error(`${where}: GitHub answered, but not with an issue or pull request`);
-  return found;
+  let canonical = null;
+  try { canonical = JSON.parse(out).data.repository.nameWithOwner ?? null; } catch { /* linksFrom read it */ }
+  return { ...found, repo: canonical };
 }
 
 /** The `iN: { title, url, state, kind, updatedAt }` aliases of a response,

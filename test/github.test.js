@@ -260,21 +260,25 @@ test('a detached HEAD is no pull request, not an error', { skip: unix }, async (
   });
 });
 
-// What gh printed for each, verbatim on 2026-09-27: a found PR exits 0, and a
-// missing number or repo exits 1 with GitHub's reason in the JSON on stdout --
-// and a repo you cannot see says the same as one that does not exist.
+// What gh printed for each: a found PR exits 0, and a missing number or repo
+// exits 1 with GitHub's reason in the JSON on stdout -- and a repo you cannot
+// see says the same as one that does not exist. `found` and `number` verbatim
+// on 2026-10-11, `found` asked for as GAURAV/PRCoder: GitHub answers with its
+// own spelling, which is what lookupRef returns as `repo`. `repo` verbatim on
+// 2026-09-27, before the query asked for nameWithOwner; it has no repository.
 const answers = {
-  found: `{"data":{"repository":{"i60":{"__typename":"PullRequest","title":"Move checks into a Checks tab","url":"https://github.com/gaurav/prcoder/pull/60","state":"MERGED"}}}}`,
-  number: `{"data":{"repository":{"i99999":null}},"errors":[{"type":"NOT_FOUND","path":["repository","i99999"],"message":"Could not resolve to an issue or pull request with the number of 99999."}]}`,
+  found: `{"data":{"repository":{"nameWithOwner":"gaurav/prcoder","i60":{"__typename":"PullRequest","title":"Move checks into a Checks tab and the repository into the links row, and mark finished tabs with a green ✓ circle","url":"https://github.com/gaurav/prcoder/pull/60","state":"MERGED","updatedAt":"2026-09-27T23:23:09Z"}}}}`,
+  number: `{"data":{"repository":{"nameWithOwner":"gaurav/prcoder","i99999":null}},"errors":[{"type":"NOT_FOUND","path":["repository","i99999"],"locations":[{"line":1,"column":89}],"message":"Could not resolve to an issue or pull request with the number of 99999."}]}`,
   repo: `{"data":{"repository":null},"errors":[{"type":"NOT_FOUND","path":["repository"],"message":"Could not resolve to a Repository with the name 'gaurav/nope'."}]}`,
 };
 const answering = (json, code) => () => `cat <<'JSON'\n${json}\nJSON\necho 'gh: not what the pane should show' >&2\nexit ${code}`;
 
 test('a typed reference is looked up, and says why when GitHub has no such thing', { skip: unix }, async () => {
   await withGh(answering(answers.found, 0), async () => {
-    assert.deepEqual(await lookupRef(os.tmpdir(), 'gaurav', 'prcoder', 60), {
-      title: 'Move checks into a Checks tab', url: 'https://github.com/gaurav/prcoder/pull/60',
-      state: 'MERGED', kind: 'pull', updatedAt: null,
+    assert.deepEqual(await lookupRef(os.tmpdir(), 'GAURAV', 'PRCoder', 60), {
+      title: 'Move checks into a Checks tab and the repository into the links row, and mark finished tabs with a green ✓ circle',
+      url: 'https://github.com/gaurav/prcoder/pull/60',
+      state: 'MERGED', kind: 'pull', updatedAt: '2026-09-27T23:23:09Z', repo: 'gaurav/prcoder',
     });
   });
   await withGh(answering(answers.number, 1), () => assert.rejects(lookupRef(os.tmpdir(), 'gaurav', 'prcoder', 99999),
@@ -293,6 +297,7 @@ test('a typed reference reaches GitHub as variables, not inside the query', { sk
   assert.equal(args[args.indexOf('owner=12345') - 1], '-f');
   assert.equal(args[args.indexOf('repo=x"){ viewer') - 1], '-f');
   assert.ok(args.find((a) => a.startsWith('query=')).includes('issueOrPullRequest(number:7)'));
+  assert.ok(args.find((a) => a.startsWith('query=')).includes('nameWithOwner'));
 });
 
 // A title becomes a queue item that ▶ types into the PTY, where a \r would
