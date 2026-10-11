@@ -1320,6 +1320,24 @@ test('Alt+M types the mention from the diff and from the terminal', { skip }, as
   await fresh.close();
 });
 
+// Held a moment too long, Alt+M still types the mention once: its repeats
+// are dropped, rather than each typing it again or sending ESC m.
+test('Alt+M held down in the terminal types the mention once', { skip }, async () => {
+  const frames = [];
+  const fresh = await newPage({ init: onLinux, pty: (ws) => ws.onMessage((m) => frames.push(JSON.parse(m))) });
+  const typed = () => frames.filter((f) => f.type === 'input');
+  await openFile(fresh, 'app.tsx');
+  await fresh.locator('#term-host').click();
+  await fresh.keyboard.down('Alt');
+  for (let i = 0; i < 3; i++) await fresh.keyboard.down('KeyM');   // the second and third are repeats
+  await fresh.keyboard.up('KeyM');
+  await fresh.keyboard.up('Alt');
+  for (let i = 0; !typed().length && i < 100; i++) await fresh.waitForTimeout(50);
+  await fresh.waitForTimeout(200);
+  assert.deepEqual(typed(), [{ type: 'input', data: ' @app.tsx ' }]);
+  await fresh.close();
+});
+
 // With no file open there is nothing to name, so the terminal leaves Alt+M
 // to the agent, as it did before Alt+M fired there at all.
 test('Alt+M in the terminal with no file open goes to the agent', { skip }, async () => {

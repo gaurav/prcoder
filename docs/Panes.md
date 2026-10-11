@@ -66,6 +66,8 @@ open, the agent does not receive Alt+M itself: Option+M's µ on a Mac, or the ES
 sends on Linux and Windows. With no file open, or a deleted one, the key goes to the agent as it
 always did.
 
+A shortcut held down fires once; its key's repeats do nothing.
+
 Each tab names itself `owner/repo#N · pull request title` (the branch and `(no PR)` when there
 isn't one), and renames itself as the branch moves, so a row of prcoder tabs stays readable at
 tab width.

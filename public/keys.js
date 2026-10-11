@@ -15,6 +15,9 @@
 // - A binding names a physical key (`e.code`, Alt+KeyW), not what it types:
 //   on macOS Option+W types ∑, and on other layouts Alt+letter types other
 //   things again, while the key itself stays where it is.
+// - A held key fires once. Its repeats are taken and dropped, so holding
+//   Alt+M a moment too long does not type the mention over and over into the
+//   agent's prompt, and holding Alt+W does not flicker the wrap.
 // - Modifiers are spelled in a fixed order, Ctrl+Alt+Shift+Meta, so a binding
 //   is a plain string with one spelling.
 //
@@ -47,7 +50,7 @@ export function bindKeys(map, term) {
     const fn = fnOf(map[keyName(e)]);
     if (!fn || isTyping(e.target)) return;
     e.preventDefault();
-    fn(e);
+    if (!e.repeat) fn(e);
   });
   // xterm reads a key before the page does, so a terminal binding is hooked
   // into xterm. Returning false there makes xterm leave the key alone: it
@@ -60,7 +63,7 @@ export function bindKeys(map, term) {
     if (!binding?.terminal?.()) return true;
     if (e.type === 'keydown') {
       e.preventDefault();
-      binding.fn(e);
+      if (!e.repeat) binding.fn(e);
     }
     return false;
   });
