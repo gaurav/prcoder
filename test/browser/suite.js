@@ -1418,6 +1418,32 @@ test('a folded terminal says it is working while a turn runs, and not after', { 
   await fresh.close();
 });
 
+// The busy icon is written out in index.html (`data-busy`) and its red again in
+// style.css (`--busy`), for the folded header's octagon. Nothing else would
+// notice the attribute going missing -- the icon would turn into a fetch of
+// /undefined while #term-busy above stayed right -- or the two reds parting.
+test('a turn swaps the tab icon for the busy one, in the folded header\'s red', { skip }, async () => {
+  const fresh = await newPage();
+  const icon = () => fresh.evaluate(() => {
+    const link = document.querySelector('link[rel=icon]');
+    return { href: link.getAttribute('href'), busy: link.dataset.busy };
+  });
+  const idle = await icon();
+  assert.match(idle.busy ?? '', /^data:image\/svg\+xml,/, 'data-busy is on the icon link');
+  assert.notEqual(idle.href, idle.busy);
+  await fresh.click('#term-host');
+  await fresh.keyboard.press('Enter');
+  assert.equal((await icon()).href, idle.busy, 'busy while the turn runs');
+  const fill = decodeURIComponent(idle.busy).match(/fill='(#\w{6})'/)?.[1];
+  const token = await fresh.evaluate(() =>
+    getComputedStyle(document.documentElement).getPropertyValue('--busy').trim());
+  assert.equal(fill?.toLowerCase(), token.toLowerCase(), 'data-busy and --busy are one red');
+  await fresh.waitForFunction((busy) => document.querySelector('link[rel=icon]').getAttribute('href') !== busy,
+    idle.busy, { timeout: 5000 });
+  assert.equal((await icon()).href, idle.href, 'idle again once the turn ends');
+  await fresh.close();
+});
+
 // A viewed tick changes every place that shows it: the row, its group's pie,
 // the Files tab's count, and the diff pane's own box when that file is open --
 // not the one box that was clicked, with the rest a poll behind.
