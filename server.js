@@ -408,7 +408,7 @@ const routes = {
     return { ref: {
       whole: !!wholeRef(String(text), home),
       issue: number,
-      repo: canonical.toLowerCase() === home.toLowerCase() ? null : canonical,
+      repo: canonical.toLowerCase() === home?.toLowerCase() ? null : canonical,
       kind: found.kind,
       title: found.title,
     } };

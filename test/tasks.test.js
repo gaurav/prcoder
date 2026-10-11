@@ -303,6 +303,14 @@ test('a reference resolves against the repo prcoder is in', () => {
   assert.deepEqual(resolveRef(refs('cli/cli#123')[0], home), { repo: 'cli/cli', number: 123 });
 });
 
+// A repo with no GitHub name prcoder could read: the server passes its
+// message on as the reason the text was added untagged.
+test('with no home repo, only a reference that names its owner resolves', () => {
+  assert.deepEqual(resolveRef(refs('cli/cli#123')[0], null), { repo: 'cli/cli', number: 123 });
+  assert.throws(() => resolveRef(refs('#91')[0], null), /#91: this repo's GitHub name is not known/);
+  assert.throws(() => resolveRef(refs('prcoder#91')[0], undefined), /prcoder#91: /);
+});
+
 // Any word before a #N has the short form's shape, and each of these was once
 // looked up as a repo of that name and refused, so it could not be added.
 test('the short form is only this repo, once the repo is known', () => {

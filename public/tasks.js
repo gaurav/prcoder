@@ -62,11 +62,15 @@ export function wholeRef(text = '', home = null) {
  * prcoder is in, as `owner/name` -- where it leaves them out. `repo` is null
  * when that is home itself, which GitHub compares case-insensitively and so
  * does this: that is how a stored item says "this repo".
+ *
+ * Without `home` -- prcoder could not read this repo's GitHub name -- only a
+ * reference that names its owner resolves, and any other throws saying so.
  */
 export function resolveRef(ref, home) {
-  const [owner, name] = home.split('/');
+  if (!home && !ref.owner) throw new Error(`${ref.text ?? `#${ref.number}`}: this repo's GitHub name is not known, so there is nothing to read it against`);
+  const [owner, name] = home?.split('/') ?? [];
   const full = `${ref.owner ?? owner}/${ref.name ?? name}`;
-  return { repo: full.toLowerCase() === home.toLowerCase() ? null : full, number: ref.number };
+  return { repo: full.toLowerCase() === home?.toLowerCase() ? null : full, number: ref.number };
 }
 
 /** The repository a pull request's URL is under, on any host. */
