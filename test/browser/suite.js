@@ -1188,9 +1188,8 @@ test('adding from another tab stays on it and flashes Local', { skip }, async ()
 // A reference typed into the queue is looked up before it is added. This is
 // the pane's half: what it does with the route's answer, which is mocked here
 // with the shape POST /api/queue/ref gives (github.test.js has the lookup).
-async function refPage(answer) {
+async function refPage(answer, queue = []) {
   const fresh = await newPage();
-  let queue = [];
   const typed = [];
   await fresh.routeWebSocket('**/pty', (ws) => ws.onMessage((m) => {
     const msg = JSON.parse(m);
@@ -1290,6 +1289,18 @@ test('↓ on the Issues tab keeps the repo the mention is in', { skip }, async (
   assert.equal(await tag.textContent(), 'heal-data-stewards/heal-vlmd-AI-pipeline#7');
   assert.equal(await tag.getAttribute('href'), `${REPO}/issues/7`);
   assert.equal(await rows().locator('button[title="move into a new issue"]').count(), 1);
+  await fresh.close();
+});
+
+// An item's text need not have come through the input: a hand-edited queue
+// file can hold anything, and a \r in it would submit the turn unclicked.
+test('▶ types an item\'s control characters as spaces', { skip }, async () => {
+  const { fresh, typed, rows } = await refPage(() => ({ json: { ref: null } }),
+    [{ text: 'do this\rand\u001b[2Jthat', done: false, issue: null, deleted: false }]);
+  await fresh.waitForSelector('#queue-body .item');
+  await rows().locator('button[title^="type into Claude"]').click();
+  await fresh.waitForFunction(() => document.querySelector('#queue-body .tab.on')?.textContent.startsWith('Local (0)'));
+  assert.deepEqual(typed, ['do this and [2Jthat']);
   await fresh.close();
 });
 

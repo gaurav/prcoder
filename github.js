@@ -2,7 +2,7 @@
 
 import { execFile } from 'node:child_process';
 import { debug } from './term.js';
-import { mentions, repoUrl } from './public/tasks.js';
+import { mentions, repoUrl, printable } from './public/tasks.js';
 
 // Every gh call and every git call comes through run(), so this is the whole
 // count. What it is for: two browser tabs each poll on their own timer against
@@ -448,9 +448,9 @@ export function linksFrom(out) {
     .filter(([, v]) => v?.title)
     .map(([alias, v]) => [Number(alias.slice(1)), {
       // Anyone's text, which becomes a queue item's text through the Issues
-      // tab's ↓ or a typed reference -- and ▶ types that into the PTY, where a
-      // `\r` submits the turn and an escape starts a sequence (docs/Security.md).
-      title: v.title.replace(/[\u0000-\u001f\u007f-\u009f]+/g, ' ').trim(),
+      // tab's ↓ or a typed reference. sendToClaude cleans what ▶ types too;
+      // this keeps it out of the stored item and the pane (docs/Security.md).
+      title: printable(v.title).trim(),
       url: v.url ?? null,
       state: v.state ?? null,
       kind: { Issue: 'issue', PullRequest: 'pull' }[v.__typename] ?? null,

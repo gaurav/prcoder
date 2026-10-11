@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { toggleTask, taskLines, refs, wholeRef, resolveRef } from '../public/tasks.js';
+import { toggleTask, taskLines, refs, wholeRef, resolveRef, printable } from '../public/tasks.js';
 import { blocks, sectionize } from '../public/pr.js';
 
 // --- checkboxes in the description ---
@@ -324,4 +324,9 @@ test('the short form is only this repo, once the repo is known', () => {
   assert.equal(wholeRef('C#7', home), null);
   // Unknown, nothing is dropped: the server, which knows, decides.
   assert.deepEqual(shape('C#7'), [[null, 'C', 7]]);
+});
+
+test('printable makes every run of control characters one space', () => {
+  assert.equal(printable('a\r\nb\u001b[2Jc\u009bd\u007fe'), 'a b [2Jc d e');
+  assert.equal(printable('plain — text'), 'plain — text');
 });

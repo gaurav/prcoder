@@ -5,6 +5,7 @@ import { renderPr, renderNoPr, renderHeader, pageTitle, api, toast, pref, setPre
 import { openDiff, closeDiff, selectedPath, setViewed, toggleWrap, openMention } from './diff.js';
 import { initQueue, addItem, setItems } from './queue.js';
 import { bindKeys } from './keys.js';
+import { printable } from './tasks.js';
 import { fold, folded, canFold } from './folds.js';
 import './panes.js';   // draggable pane gutters; nothing here calls into it
 
@@ -314,13 +315,15 @@ function typeIntoAgent(data) {
 // `submit` false types the text and stops there: the prompt is left ready to
 // edit and send by hand, which is what the queue's ▶ wants. Trailing
 // whitespace is cut either way -- a newline in the text *is* the Enter that
-// would have sent it half-written.
+// would have sent it half-written -- and any control character inside it is
+// a space: an item's text can come from a hand-edited queue file or anyone's
+// issue title, and a `\r` there would submit the turn without the click.
 //
 // The queue ticks an item off on the strength of the return value, and an item
 // checked off after a refused send is one nobody has done and nobody is going
 // to be reminded of.
 function sendToClaude(text, submit = true) {
-  return typeIntoAgent(text.replace(/\s+$/, '') + (submit ? '\r' : ''));
+  return typeIntoAgent(printable(text).replace(/\s+$/, '') + (submit ? '\r' : ''));
 }
 
 // The diff header's @: the open file's mention, typed and not sent, so the

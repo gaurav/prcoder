@@ -84,6 +84,13 @@ export const repoUrl = (prUrl) => prUrl.replace(/\/pull\/\d+$/, '');
  */
 export const urlPath = (p) => p.split('/').map(encodeURIComponent).join('/');
 
+/**
+ * `s` with every run of control characters -- C0, DEL and C1 -- as one space.
+ * For text that is typed into the agent's PTY, where a `\r` submits the turn
+ * and an escape starts a sequence: whoever wrote it, none of that gets through.
+ */
+export const printable = (s) => s.replace(/[\u0000-\u001f\u007f-\u009f]+/g, ' ');
+
 /** The same checklist line GitHub renders as a checkbox. */
 export const TASK = /^\s*[-*]\s*\[( |x|X)\]\s*(.*)$/;
 
