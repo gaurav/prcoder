@@ -1,6 +1,6 @@
 import { h, btn, ext, api, toast, pref, setPref, tabBtn, blocks, writeThrough } from './pr.js';
 import { TABS, refLabel, forClaude } from './items.js';
-import { refs } from './tasks.js';
+import { refs, resolveRef } from './tasks.js';
 
 // The client owns the list; every change persists the whole array. Single user,
 // single repo — no ids, no diffing.
@@ -283,12 +283,12 @@ async function loadIssues() {
  * is the PR's record and an issue is the project's, so pulling an item is taking
  * it on, not taking it away. Something already on Local is not added twice.
  */
-async function pull(text, issue = null, kind = null) {
+async function pull(text, issue = null, kind = null, repo = null) {
   if (items.some((i) => TABS.local(i) && i.text === text)) {
     toast('already in your queue');
     return;
   }
-  const item = { text, done: false, issue, repo: null, kind, deleted: false };
+  const item = { text, done: false, issue, repo, kind, deleted: false };
   if (addTo === 'top') items.unshift(item); else items.push(item);
   // A refusal has already taken it back out.
   if (!await save()) return;
@@ -344,8 +344,21 @@ function issueList() {
       ext(i.url, `#${i.number}`, { className: 'tag issue' }),
       h('span', { className: 'text', textContent: text }),
       h('span', { className: 'actions' },
-        btn('↓', () => pull(title ?? `#${i.number}`, i.number, found?.kind ?? null), { title: 'copy into your queue' })));
+        btn('↓', () => pull(title ?? `#${i.number}`, i.number, found?.kind ?? null, mentionRepo(i)), { title: 'copy into your queue' })));
   }));
+}
+
+/**
+ * The repo a mention is in, as an item's `repo`: null for this one. A bare #N
+ * in a description is the PR's repo, which is not always the one prcoder is in
+ * -- so it is read off the mention's link rather than assumed, or the item
+ * would link to this repo's issue of the same number and hide ◎.
+ */
+function mentionRepo(i) {
+  const [r] = refs(i.url ?? '');
+  const home = deps.home?.();
+  if (!r?.owner || !home) return null;
+  return resolveRef(r, home).repo;
 }
 
 /**

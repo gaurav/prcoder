@@ -1275,6 +1275,24 @@ test('a reference GitHub could not be asked about is added as plain text', { ski
   await fresh.close();
 });
 
+// refPage's PR is in heal-data-stewards/... while prcoder is in gaurav/prcoder,
+// so the fixture's #7 is another repo's: stored as this one's, its tag would
+// link to gaurav/prcoder#7 and ◎ would be hidden.
+test('↓ on the Issues tab keeps the repo the mention is in', { skip }, async () => {
+  const { fresh, rows } = await refPage(() => ({ json: { ref: null } }));
+  await fresh.route('**/api/issues', (r) => r.fulfill({ json: [
+    { number: 7, url: `${REPO}/issues/7`, closes: false, title: 'Per-route locking', kind: 'issue', state: 'OPEN' }] }));
+  await fresh.locator('#queue-body .tab[data-tab="issues"]').click();
+  await fresh.locator('#queue-body button[title="copy into your queue"]').click();
+  await fresh.locator('#queue-body .tab[data-tab="local"]').click();
+  await fresh.waitForSelector('#queue-body .item .tag.issue');
+  const tag = rows().locator('.tag.issue');
+  assert.equal(await tag.textContent(), 'heal-data-stewards/heal-vlmd-AI-pipeline#7');
+  assert.equal(await tag.getAttribute('href'), `${REPO}/issues/7`);
+  assert.equal(await rows().locator('button[title="move into a new issue"]').count(), 1);
+  await fresh.close();
+});
+
 // Text with nothing that looks like a reference never asks GitHub at all.
 test('text with no reference is added without a lookup', { skip }, async () => {
   let asked = 0;
