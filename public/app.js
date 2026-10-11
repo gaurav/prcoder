@@ -71,7 +71,7 @@ const sync = () => {
 
 // The tab icon, a red octagon while a turn is running, so a session left in a
 // background tab says whether it is still going without switching to it. The
-// folded pane's header says the same with `● working`, from the same state, so
+// folded pane's header says the same with `⯃ working`, from the same state, so
 // a session you folded away says when it is done without unfolding it.
 // The PTY carries no "thinking" signal and nothing here reads the frames, so a
 // turn is bracketed rather than detected: sending a line starts one, and the

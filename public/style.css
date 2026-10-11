@@ -6,6 +6,11 @@
      pull request and an error toast are one red; anything still waiting is one
      yellow. Passed is --add -- green-for-done is the same green everywhere. */
   --fail: #f5a3a3; --warn: #f0dc9a;
+  /* Claude is working: the busy tab icon's fill (`data-busy` in index.html),
+     which test/browser/suite.js holds these two to. A state, not a verdict, so
+     deliberately not --fail; where it is drawn it is an octagon, like the icon,
+     never a bare dot that could pass for a failed check. */
+  --busy: #da3633;
   color-scheme: dark;
   /* The description and the pull request's title -- the two things in this
      window that are read rather than operated. Every face here ships with an OS
@@ -119,7 +124,7 @@ main:not([data-folds~="diff"]) #diff-fold,
 main:not([data-folds~="queue"]) #queue-fold { display: none; }
 /* The bar's user-select: none must not reach the one thing typed into there. */
 #queue-input { user-select: text; }
-/* `● working` while a turn runs, and only folded: open, the terminal says so
+/* `⯃ working` while a turn runs, and only folded: open, the terminal says so
    itself. `hidden` stays the busy switch; this is the folded one. */
 main:not(.term-off) #term-busy { display: none; }
 /* Before the title, like a disclosure triangle, at the title's own size and
@@ -839,9 +844,12 @@ main.diff-off #diff-wrap { display: none; }
   background: var(--line); flex: none;
 }
 .light.warn { color: var(--warn); }
-/* The favicon's busy red (`data-busy` on the icon in index.html), on the dot
-   only: the words stay dim, so a folded turn is noticeable, not loud. */
-.light.busy::before { background: #da3633; }
+/* The favicon in small: its red and its octagon, on the dot only. The words
+   stay dim, so a folded turn is noticeable, not loud. */
+.light.busy::before {
+  width: 8px; height: 8px; border-radius: 0; background: var(--busy);
+  clip-path: polygon(29% 0, 71% 0, 100% 29%, 100% 71%, 71% 100%, 29% 100%, 0 71%, 0 29%);
+}
 .light.warn::before { background: var(--warn); }
 .light.unknown::before { background: transparent; box-shadow: inset 0 0 0 1px var(--dim); }
 

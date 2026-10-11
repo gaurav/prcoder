@@ -19,8 +19,9 @@ is on the old port again.
 The terminal folds to its header line with a click anywhere on that line; the ▼ before its title
 says so, and is the keyboard's way in. The diff (or the queue, with no diff open) takes the room,
 and another click unfolds it. Folding never touches the session, which keeps running folded. While
-a turn runs, the folded header says `● working` beside its title, from the same signal as the
-tab's red icon.
+a turn runs, the folded header says `working` beside its title after a small red octagon, the
+tab's busy icon in miniature and from the same signal. An octagon and not a dot, so that it cannot
+be mistaken for the red of a failed check.
 
 The diff folds the same way, to the terminal's gain, for getting a file out of the way without
 closing it: closing says you are done with the file, and folding does not. Its bar keeps the path
