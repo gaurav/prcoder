@@ -58,9 +58,13 @@ export function bindKeys(map, term) {
   // listener above. That listener ignores it only because its target is
   // xterm's textarea, which isTyping counts as typing. That is what keeps one
   // press from firing twice, so isTyping must keep counting the terminal.
+  //
+  // A key pressed in the middle of an IME composition is left to xterm, whose
+  // composition helper runs after this hook: taken here, the mention would
+  // reach the agent ahead of the text still being composed.
   term.attachCustomKeyEventHandler((e) => {
     const binding = map[keyName(e)];
-    if (!binding?.terminal?.()) return true;
+    if (e.isComposing || !binding?.terminal?.()) return true;
     if (e.type === 'keydown') {
       e.preventDefault();
       if (!e.repeat) binding.fn(e);

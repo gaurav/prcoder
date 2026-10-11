@@ -1338,6 +1338,26 @@ test('Alt+M held down in the terminal types the mention once', { skip }, async (
   await fresh.close();
 });
 
+// In the middle of an IME composition the key is xterm's, so the mention does
+// not go out ahead of the text still being composed. Playwright has no IME,
+// so the keydown is dispatched with isComposing set.
+test('Alt+M during a composition in the terminal is left to xterm', { skip }, async () => {
+  const frames = [];
+  const fresh = await newPage({ init: onLinux, pty: (ws) => ws.onMessage((m) => frames.push(JSON.parse(m))) });
+  const typed = () => frames.filter((f) => f.type === 'input');
+  await openFile(fresh, 'app.tsx');
+  await fresh.locator('#term-host').click();
+  const press = (isComposing) => fresh.evaluate((isComposing) => document.activeElement.dispatchEvent(new KeyboardEvent('keydown',
+    { code: 'KeyM', key: 'm', keyCode: 77, altKey: true, isComposing, bubbles: true, cancelable: true })), isComposing);
+  await press(true);
+  await fresh.waitForTimeout(300);
+  assert.equal(typed().filter((f) => f.data.includes('@')).length, 0, 'no mention mid-composition');
+  await press(false);   // the same event out of a composition is the shortcut's, so the one above was a fair test
+  for (let i = 0; !typed().some((f) => f.data.includes('@')) && i < 100; i++) await fresh.waitForTimeout(50);
+  assert.deepEqual(typed().filter((f) => f.data.includes('@')), [{ type: 'input', data: ' @app.tsx ' }]);
+  await fresh.close();
+});
+
 // With no file open there is nothing to name, so the terminal leaves Alt+M
 // to the agent, as it did before Alt+M fired there at all.
 test('Alt+M in the terminal with no file open goes to the agent', { skip }, async () => {
