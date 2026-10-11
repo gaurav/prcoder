@@ -450,7 +450,8 @@ export function linksFrom(out) {
       // Anyone's text, which becomes a queue item's text through the Issues
       // tab's ↓ or a typed reference. sendToClaude cleans what ▶ types too;
       // this keeps it out of the stored item and the pane (docs/Security.md).
-      title: printable(v.title).trim(),
+      // One that was nothing else would be a blank row: it is the number then.
+      title: printable(v.title).trim() || alias.replace('i', '#'),
       url: v.url ?? null,
       state: v.state ?? null,
       kind: { Issue: 'issue', PullRequest: 'pull' }[v.__typename] ?? null,

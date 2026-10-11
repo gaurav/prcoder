@@ -301,6 +301,9 @@ test('a title from GitHub arrives without control characters', () => {
   const out = JSON.stringify({ data: { repository: { i5: { __typename: 'Issue', title: 'looks fine\r\u001b[2Jrm -rf', url: 'u', state: 'OPEN' } } } });
   // The ESC goes, which leaves the rest of the sequence as harmless text.
   assert.equal(linksFrom(out).get(5).title, 'looks fine [2Jrm -rf');
+  // Nothing left once cleaned, it is the number, not an empty queue item.
+  const bare = JSON.stringify({ data: { repository: { i6: { __typename: 'Issue', title: '\r\u001b ', url: 'u', state: 'OPEN' } } } });
+  assert.equal(linksFrom(bare).get(6).title, '#6');
 });
 
 // ◎ on an item about another repo's issue files here, with that link as the
