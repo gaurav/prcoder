@@ -9,9 +9,15 @@
 //   An input that takes no text is not typing, though: a checkbox keeps focus
 //   after it is clicked, so counting it would leave Alt+W dead after a tick
 //   of *viewed*, which is the usual thing to do just before reading on.
+//   The one exception is a binding marked `terminal`, which fires from the
+//   terminal too (bindKeys says how): Alt+M, because naming the open file
+//   mid-sentence is what it is for.
 // - A binding names a physical key (`e.code`, Alt+KeyW), not what it types:
 //   on macOS Option+W types ∑, and on other layouts Alt+letter types other
 //   things again, while the key itself stays where it is.
+// - A held key fires once. Its repeats are taken and dropped, so holding
+//   Alt+M a moment too long does not type the mention over and over into the
+//   agent's prompt, and holding Alt+W does not flicker the wrap.
 // - Modifiers are spelled in a fixed order, Ctrl+Alt+Shift+Meta, so a binding
 //   is a plain string with one spelling.
 //
@@ -33,13 +39,38 @@ export const keyName = (e) => [
 /**
  * Install the page's shortcuts: `{ 'Alt+KeyW': () => ... }`. A bound key that
  * is not being typed runs its handler and goes no further, so the browser does
- * not also act on it.
+ * not also act on it. A binding written `{ fn, terminal }` fires from `term`,
+ * the agent's xterm, as well, whenever `terminal()` says it has something to
+ * do. When it says no, the key goes to the agent as if it were not bound, so
+ * the agent loses the key only while the shortcut would actually do something.
  */
-export function bindKeys(map) {
+export function bindKeys(map, term) {
+  const fnOf = (binding) => (typeof binding === 'function' ? binding : binding?.fn);
   document.addEventListener('keydown', (e) => {
-    const fn = map[keyName(e)];
+    const fn = fnOf(map[keyName(e)]);
     if (!fn || isTyping(e.target)) return;
     e.preventDefault();
-    fn(e);
+    if (!e.repeat) fn(e);
+  });
+  // xterm reads a key before the page does, so a terminal binding is hooked
+  // into xterm. Returning false there makes xterm leave the key alone: it
+  // neither types it nor stops it, so the keydown still bubbles up to the
+  // listener above. That listener ignores it only because its target is
+  // xterm's textarea, which isTyping counts as typing. That is what keeps one
+  // press from firing twice, so isTyping must keep counting the terminal.
+  //
+  // A key pressed in the middle of an IME composition is left to xterm, whose
+  // composition helper runs after this hook: taken here, the mention would
+  // reach the agent ahead of the text still being composed. So is every
+  // keyup, which only resets xterm's own state (its cursor style, and whether
+  // a keypress was handled), and which xterm skips entirely on a false.
+  term.attachCustomKeyEventHandler((e) => {
+    const binding = map[keyName(e)];
+    if (e.type === 'keyup' || e.isComposing || !binding?.terminal?.()) return true;
+    if (e.type === 'keydown') {
+      e.preventDefault();
+      if (!e.repeat) binding.fn(e);
+    }
+    return false;
   });
 }

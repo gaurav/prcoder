@@ -60,6 +60,14 @@ a checkbox you have just ticked, such as *viewed*, does not count -- and each is
 | Alt+W | presses *Wrap* in the diff pane, while a file is open and the pane is not folded |
 | Alt+M | presses **@** in the diff pane, while a file that has one is open                |
 
+Alt+M is the exception to the typing rule in one place: it fires from the terminal too, so a
+request can name the open file halfway through being typed. While a file that has a mention is
+open, the agent does not receive Alt+M itself: Option+M's µ on a Mac, or the ESC m (Meta-m) it
+sends on Linux and Windows. With no file open, or a deleted one, the key goes to the agent as it
+always did.
+
+A shortcut held down fires once; its key's repeats do nothing.
+
 Each tab names itself `owner/repo#N · pull request title` (the branch and `(no PR)` when there
 isn't one), and renames itself as the branch moves, so a row of prcoder tabs stays readable at
 tab width.

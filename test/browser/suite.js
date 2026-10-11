@@ -1292,11 +1292,18 @@ test('@ and Alt+M type the mention from a folded diff and leave it folded', { sk
   await fresh.close();
 });
 
-// The keyboard's way to the same button -- and, as for every shortcut, not
-// while typing in the terminal, where Alt+M belongs to the agent.
-test('Alt+M types the mention outside the terminal and nothing inside it', { skip }, async () => {
+// What xterm sends for Alt+M depends on the platform it reads: on a Mac it
+// leaves the key to the browser, which under Playwright types nothing, so a
+// test there could not tell a key the agent got from one it lost. On Linux it
+// sends ESC m on the keydown, so the Alt+M tests pretend to be on Linux.
+const onLinux = () => Object.defineProperty(Navigator.prototype, 'platform', { get: () => 'Linux x86_64' });
+
+// The keyboard's way to the same button -- and, unlike every other shortcut,
+// from inside the terminal too, which is where a request about the file is
+// being typed.
+test('Alt+M types the mention from the diff and from the terminal', { skip }, async () => {
   const frames = [];
-  const fresh = await newPage({ pty: (ws) => ws.onMessage((m) => frames.push(JSON.parse(m))) });
+  const fresh = await newPage({ init: onLinux, pty: (ws) => ws.onMessage((m) => frames.push(JSON.parse(m))) });
   const typed = () => frames.filter((f) => f.type === 'input');
   await fresh.locator('#pr-head .tab', { hasText: 'Files' }).click();
   await fresh.locator('.file[data-path="app.tsx"] .path').click();
@@ -1305,10 +1312,65 @@ test('Alt+M types the mention outside the terminal and nothing inside it', { ski
   await fresh.keyboard.press('Alt+KeyM');
   for (let i = 0; !typed().length && i < 100; i++) await fresh.waitForTimeout(50);
   assert.deepEqual(typed(), [{ type: 'input', data: ' @app.tsx ' }]);
-  // The press above left the focus in the terminal, so this one is the agent's.
+  // The press above left the focus in the terminal, and this one types it
+  // again -- and nothing else: not the µ or ESC m the key would send.
+  assert.ok(await fresh.evaluate(() => !!document.activeElement?.closest('#term-host')), 'focus in the terminal');
   await fresh.keyboard.press('Alt+KeyM');
+  for (let i = 0; typed().length < 2 && i < 100; i++) await fresh.waitForTimeout(50);
   await fresh.waitForTimeout(200);
-  assert.equal(typed().filter((f) => f.data === ' @app.tsx ').length, 1);
+  assert.deepEqual(typed(), [{ type: 'input', data: ' @app.tsx ' }, { type: 'input', data: ' @app.tsx ' }]);
+  await fresh.close();
+});
+
+// Held a moment too long, Alt+M still types the mention once: its repeats
+// are dropped, rather than each typing it again or sending ESC m.
+test('Alt+M held down in the terminal types the mention once', { skip }, async () => {
+  const frames = [];
+  const fresh = await newPage({ init: onLinux, pty: (ws) => ws.onMessage((m) => frames.push(JSON.parse(m))) });
+  const typed = () => frames.filter((f) => f.type === 'input');
+  await openFile(fresh, 'app.tsx');
+  await fresh.locator('#term-host').click();
+  await fresh.keyboard.down('Alt');
+  for (let i = 0; i < 3; i++) await fresh.keyboard.down('KeyM');   // the second and third are repeats
+  await fresh.keyboard.up('KeyM');
+  await fresh.keyboard.up('Alt');
+  for (let i = 0; !typed().length && i < 100; i++) await fresh.waitForTimeout(50);
+  await fresh.waitForTimeout(200);
+  assert.deepEqual(typed(), [{ type: 'input', data: ' @app.tsx ' }]);
+  await fresh.close();
+});
+
+// In the middle of an IME composition the key is xterm's, so the mention does
+// not go out ahead of the text still being composed. Playwright has no IME,
+// so the keydown is dispatched with isComposing set.
+test('Alt+M during a composition in the terminal is left to xterm', { skip }, async () => {
+  const frames = [];
+  const fresh = await newPage({ init: onLinux, pty: (ws) => ws.onMessage((m) => frames.push(JSON.parse(m))) });
+  const typed = () => frames.filter((f) => f.type === 'input');
+  await openFile(fresh, 'app.tsx');
+  await fresh.locator('#term-host').click();
+  const press = (isComposing) => fresh.evaluate((isComposing) => document.activeElement.dispatchEvent(new KeyboardEvent('keydown',
+    { code: 'KeyM', key: 'm', keyCode: 77, altKey: true, isComposing, bubbles: true, cancelable: true })), isComposing);
+  await press(true);
+  await fresh.waitForTimeout(300);
+  assert.equal(typed().filter((f) => f.data.includes('@')).length, 0, 'no mention mid-composition');
+  await press(false);   // the same event out of a composition is the shortcut's, so the one above was a fair test
+  for (let i = 0; !typed().some((f) => f.data.includes('@')) && i < 100; i++) await fresh.waitForTimeout(50);
+  assert.deepEqual(typed().filter((f) => f.data.includes('@')), [{ type: 'input', data: ' @app.tsx ' }]);
+  await fresh.close();
+});
+
+// With no file open there is nothing to name, so the terminal leaves Alt+M
+// to the agent, as it did before Alt+M fired there at all.
+test('Alt+M in the terminal with no file open goes to the agent', { skip }, async () => {
+  const frames = [];
+  const fresh = await newPage({ init: onLinux, pty: (ws) => ws.onMessage((m) => frames.push(JSON.parse(m))) });
+  const typed = () => frames.filter((f) => f.type === 'input');
+  await fresh.locator('#term-host').click();
+  await fresh.keyboard.press('Alt+KeyM');
+  for (let i = 0; !typed().length && i < 100; i++) await fresh.waitForTimeout(50);
+  await fresh.waitForTimeout(200);
+  assert.deepEqual(typed(), [{ type: 'input', data: '\x1bm' }]);
   await fresh.close();
 });
 
@@ -1377,7 +1439,7 @@ test('@ with the agent disconnected types nothing and says so', { skip }, async 
   await fresh.waitForSelector('#diff-body .dl');
   await fresh.locator('#diff-mention').click();
   await fresh.waitForFunction(() => document.getElementById('toast').textContent.includes('not connected'));
-  // Not moved to a terminal nothing reads, where Alt+M and Alt+W are off.
+  // Not moved to a terminal nothing reads, where Alt+W is off.
   assert.equal(await fresh.evaluate(() => document.activeElement.closest('#term-host') == null), true);
   await fresh.close();
 });

@@ -8,13 +8,6 @@ import { bindKeys } from './keys.js';
 import { fold, folded, canFold } from './folds.js';
 import './panes.js';   // draggable pane gutters; nothing here calls into it
 
-// Every shortcut the page has, in one table; keys.js says what a binding may
-// and may not do. W for wrap: no browser binds Alt+W, and the owner chose it
-// over VS Code's Alt+Z. M for mention, the diff header's @: not Alt+2, the key
-// @ is on, because Chrome and Firefox on Linux and Windows switch tabs with
-// Alt+digit, and M is none of Firefox's menu letters.
-bindKeys({ 'Alt+KeyW': toggleWrap, 'Alt+KeyM': mentionOpenFile });
-
 const term = new Terminal({
   fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
   fontSize: 14,   // one step up from the default, matching the panes' 14px body
@@ -25,6 +18,18 @@ const fit = new FitAddon();
 term.loadAddon(fit);
 term.loadAddon(new WebLinksAddon((_e, uri) => window.open(uri, '_blank', 'noopener')));
 term.open(document.getElementById('term-host'));
+// Every shortcut the page has, in one table; keys.js says what a binding may
+// and may not do. W for wrap: no browser binds Alt+W, and the owner chose it
+// over VS Code's Alt+Z. M for mention, the diff header's @: not Alt+2, the key
+// @ is on, because Chrome and Firefox on Linux and Windows switch tabs with
+// Alt+digit, and M is none of Firefox's menu letters. Alt+M also fires from
+// the terminal, since that is where you are when you want it: halfway through
+// typing a request about the open file. While there is a file to name, the
+// agent does not get Alt+M (µ on a Mac, ESC m elsewhere); with none, it does.
+bindKeys({
+  'Alt+KeyW': toggleWrap,
+  'Alt+KeyM': { fn: mentionOpenFile, terminal: () => openMention('') != null },
+}, term);
 
 const PTY_SEEN = 'prcoder:pty';
 // The server serves only public/, so the docs are linked where they live.
@@ -286,7 +291,8 @@ for (const pane of ['diff', 'term', 'queue']) {
 // puts the focus there so typing carries on where it landed. Whether it went is
 // the return value: `send` refuses on a socket that is not open -- a dead PTY,
 // a reload in flight -- and then the focus stays where it was, rather than
-// moving to a terminal nothing is reading, where the page's shortcuts are off.
+// moving to a terminal nothing is reading, where every shortcut but Alt+M is
+// off.
 function typeIntoAgent(data) {
   const sent = send({ type: 'input', data });
   if (sent) term.focus();
