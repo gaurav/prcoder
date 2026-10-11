@@ -104,6 +104,8 @@ const busyLabel = document.getElementById('term-busy');
 // Both from index.html, where the busy one sits on the link as `data-busy`.
 // A red octagon rather than the green square recoloured: plenty of sites have
 // a blue square icon, and a busy prcoder was lost among them in a row of tabs.
+// #da3633 and not a lighter red: the white *PR* on it is 4.6:1, as on the
+// green, where on #f85149 it was 3.3:1 and the first thing to blur at 16px.
 const IDLE = link.href;
 const BUSY = link.dataset.busy;
 // Re-inserted rather than mutated in place: browsers disagree about whether an
