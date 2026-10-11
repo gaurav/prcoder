@@ -101,12 +101,14 @@ const sync = () => {
 const PROBE = /^(?:\x1b\[\?6n)+$/;
 const link = document.querySelector('link[rel=icon]');
 const busyLabel = document.getElementById('term-busy');
-// Both from index.html, where the busy one sits on the link as `data-busy`.
+// Both from index.html, where the busy one sits on the link as `data-busy`,
+// and both as written there: `link.href` would be the idle one as the browser
+// re-resolved it, a different string from an attribute read as it stands.
 // A red octagon rather than the green square recoloured: plenty of sites have
 // a blue square icon, and a busy prcoder was lost among them in a row of tabs.
 // #da3633 and not a lighter red: the white *PR* on it is 4.6:1, as on the
 // green, where on #f85149 it was 3.3:1 and the first thing to blur at 16px.
-const IDLE = link.href;
+const IDLE = link.getAttribute('href');
 const BUSY = link.dataset.busy;
 // Re-inserted rather than mutated in place: browsers disagree about whether an
 // href changed on a live <link rel=icon> is noticed at all.
