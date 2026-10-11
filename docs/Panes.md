@@ -301,7 +301,8 @@ that issue's title; the same thing inside longer text, `Fix #93`, keeps your tex
 form is only ever this repo's name, so `Learn C#7` stays plain text; another repo needs its owner. Either way the row gets a tag -- `#91` here, `cli/cli#123` elsewhere -- that links to it,
 and ▶ adds the link to what it types unless the text already names that issue. A reference GitHub
 does not know is refused with GitHub's reason and left in the input to fix, and one already on
-Local is not added twice. ◎ always files in this repo, so an item about one of this repo's issues
+Local is not added twice. When GitHub cannot be asked at all -- offline, `gh` logged out -- the text
+is added as it is, untagged, and a toast says why. ◎ always files in this repo, so an item about one of this repo's issues
 has none, and one about another repo's files a new issue here with the link to it as the body.
 
 **Local** is the working list, and it drains as you move and finish things, so a session you

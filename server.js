@@ -383,18 +383,27 @@ const routes = {
    * reference, and the number, repo and kind for the item's tag. `{ref: null}`
    * for text with no reference, which the pane adds as it is; a reference
    * GitHub does not know throws with GitHub's reason, which the pane shows
-   * while keeping the text in the input to be fixed.
+   * while keeping the text in the input to be fixed. A lookup that got no
+   * answer at all is `{ref: null, unchecked: reason}`: the queue worked
+   * without GitHub before it read references, and still adds the text as it
+   * is rather than holding it hostage to the network.
    *
    * The repo is GitHub's spelling from the answer, not the typed one, so a
    * `CLI/CLI#1` or a renamed repo is stored the way GitHub will link it.
    */
   'POST /api/queue/ref': async ({ text }) => {
-    const home = (await repoFacts()).nameWithOwner;
-    const [first] = refs(String(text ?? ''), home);
-    if (!first) return { ref: null };
-    const { repo: other, number } = resolveRef(first, home);
-    const [owner, name] = (other ?? home).split('/');
-    const found = await lookupRef(repo, owner, name, number);
+    let home, first, other, number, found;
+    try {
+      home = (await repoFacts()).nameWithOwner;
+      [first] = refs(String(text ?? ''), home);
+      if (!first) return { ref: null };
+      ({ repo: other, number } = resolveRef(first, home));
+      const [owner, name] = (other ?? home).split('/');
+      found = await lookupRef(repo, owner, name, number);
+    } catch (e) {
+      if (e.notFound) throw e;
+      return { ref: null, unchecked: e.message };
+    }
     const canonical = found.url?.match(/github\.com\/([\w.-]+\/[\w.-]+)\//)?.[1] ?? other ?? home;
     return { ref: {
       whole: !!wholeRef(String(text), home),

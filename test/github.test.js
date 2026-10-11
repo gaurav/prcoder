@@ -278,12 +278,13 @@ test('a typed reference is looked up, and says why when GitHub has no such thing
     });
   });
   await withGh(answering(answers.number, 1), () => assert.rejects(lookupRef(os.tmpdir(), 'gaurav', 'prcoder', 99999),
-    { message: 'gaurav/prcoder#99999: Could not resolve to an issue or pull request with the number of 99999.' }));
+    { message: 'gaurav/prcoder#99999: Could not resolve to an issue or pull request with the number of 99999.', notFound: true }));
   await withGh(answering(answers.repo, 1), () => assert.rejects(lookupRef(os.tmpdir(), 'gaurav', 'nope', 1),
-    { message: "gaurav/nope#1: Could not resolve to a Repository with the name 'gaurav/nope'." }));
-  // Not GitHub's JSON at all -- gh itself failing -- keeps gh's own words.
+    { message: "gaurav/nope#1: Could not resolve to a Repository with the name 'gaurav/nope'.", notFound: true }));
+  // Not GitHub's JSON at all -- gh itself failing -- keeps gh's own words,
+  // and is not a no: the pane adds the text untagged rather than refusing it.
   await withGh(() => `echo 'error connecting to api.github.com' >&2\nexit 1`, () =>
-    assert.rejects(lookupRef(os.tmpdir(), 'o', 'r', 1), { message: 'o/r#1: error connecting to api.github.com' }));
+    assert.rejects(lookupRef(os.tmpdir(), 'o', 'r', 1), { message: 'o/r#1: error connecting to api.github.com', notFound: false }));
 });
 
 // The owner and name come from text someone typed, so they go as variables.

@@ -464,19 +464,21 @@ function row(item, above, below) {
  * reference, which is the row's tag, and an input that is nothing but the
  * reference takes the issue's title as its text: `#91` is no reminder of what
  * #91 was. One GitHub does not know is refused with GitHub's reason, and the
- * input keeps the text to be fixed; so is one already on Local.
+ * input keeps the text to be fixed; so is one already on Local. When GitHub
+ * could not be asked at all, the text is added as it is, untagged.
  */
 export async function addItem(text) {
   if (!text.trim()) return false;
   const item = { text: text.trim(), done: false, issue: null, repo: null, kind: null, deleted: false };
   if (refs(text, deps.home?.()).length) {
-    let ref;
+    let ref, unchecked;
     try {
-      ({ ref } = await api('/api/queue/ref', { text }));
+      ({ ref, unchecked } = await api('/api/queue/ref', { text }));
     } catch (e) {
       toast(e.message, true);
       return false;
     }
+    if (unchecked) toast(`Added as plain text — GitHub could not be asked about it: ${unchecked}`, true);
     if (ref) {
       Object.assign(item, { issue: ref.issue, repo: ref.repo, kind: ref.kind });
       if (ref.whole) {

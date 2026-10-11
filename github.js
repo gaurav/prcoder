@@ -408,6 +408,8 @@ function linksArgs(owner, repo, numbers) {
  * pull request with the number of 99999" -- as a NOT_FOUND in the JSON gh
  * prints on stdout before exiting 1 (checked 2026-09-27). Read from there, so
  * it arrives without gh's `gh: ` in front; anything else keeps run()'s message.
+ * `notFound` on the error says which: GitHub's no, or gh not getting an answer
+ * at all -- offline, logged out, rate-limited -- which is no reason to refuse.
  */
 export async function lookupRef(cwd, owner, repo, number) {
   const where = `${owner}/${repo}#${number}`;
@@ -416,8 +418,13 @@ export async function lookupRef(cwd, owner, repo, number) {
     out = await gh(linksArgs(owner, repo, [number]), { cwd });
   } catch (e) {
     let reason = e.message;
-    try { reason = JSON.parse(e.stdout).errors[0].message ?? reason; } catch { /* not GitHub's JSON */ }
-    throw new Error(`${where}: ${reason}`);
+    let missing = false;
+    try {
+      const [error] = JSON.parse(e.stdout).errors;
+      reason = error.message ?? reason;
+      missing = error.type === 'NOT_FOUND';
+    } catch { /* not GitHub's JSON */ }
+    throw Object.assign(new Error(`${where}: ${reason}`), { notFound: missing });
   }
   const found = linksFrom(out).get(number);
   if (!found) throw new Error(`${where}: GitHub answered, but not with an issue or pull request`);

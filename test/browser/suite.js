@@ -1262,6 +1262,19 @@ test('a reference GitHub does not know says why and stays in the input', { skip 
   await fresh.close();
 });
 
+// Before the queue read references it worked without GitHub, and it still
+// does: a lookup that got no answer adds the text as it is, untagged.
+test('a reference GitHub could not be asked about is added as plain text', { skip }, async () => {
+  const { fresh, add, rows } = await refPage(() => ({ json: { ref: null, unchecked: 'gaurav/prcoder#93: error connecting to api.github.com' } }));
+  await add('Fix #93 later');
+  await fresh.waitForSelector('#queue-body .item');
+  assert.deepEqual(await rows().locator('.text').allTextContents(), ['Fix #93 later']);
+  assert.equal(await rows().locator('.tag').count(), 0);
+  assert.equal(await fresh.locator('#queue-input').inputValue(), '');
+  assert.match(await fresh.locator('#toast').textContent(), /plain text.*error connecting/);
+  await fresh.close();
+});
+
 // Text with nothing that looks like a reference never asks GitHub at all.
 test('text with no reference is added without a lookup', { skip }, async () => {
   let asked = 0;
