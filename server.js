@@ -233,8 +233,12 @@ const repaint = () => term.status(last
  * instantly -- the whole point: it is what a *second* prcoder calls to find out
  * who took its port, and a probe queued behind a slow `gh` would time out and
  * report the wrong thing.
+ *
+ * The queue's reference lookup is a GitHub round trip that reads and writes
+ * nothing of prcoder's -- the item is saved by a later PUT, which does take
+ * the lock -- so it does not hold up the poll, saves and ticks behind it.
  */
-const UNLOCKED = new Set(['GET /api/whoami', 'GET /api/status']);
+const UNLOCKED = new Set(['GET /api/whoami', 'GET /api/status', 'POST /api/queue/ref']);
 
 /**
  * Status polls that arrive while one is still waiting for the lock share it:
