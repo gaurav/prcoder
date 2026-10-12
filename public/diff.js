@@ -306,8 +306,8 @@ function setTitle(kind) {
 /** `onViewed` is what the viewed box calls: app.js's, which repaints the file rows too. */
 export async function openDiff(f, onViewed = setViewed) {
   openPath = f.path;
-  // A <bdi>, for the reason spelled out at fileRow in pr.js: this element is
-  // `direction: rtl` so a long path is cut at the head, and that alone would
+  // A <bdi>, for the reason spelled out at fileRow in filelist.js: this element
+  // is `direction: rtl` so a long path is cut at the head, and that alone would
   // move a leading dot to the other end.
   el('diff-path').replaceChildren(h('bdi', {}, f.path));
   el('diff-path').title = f.path;

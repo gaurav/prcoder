@@ -656,7 +656,7 @@ a { color: var(--accent); }
 /* `direction: rtl` puts the ellipsis at the *head*, so a path too long for the
    column loses its directories rather than its filename. The <bdi> the markup
    puts inside is what stops that reordering the path itself -- see fileRow in
-   pr.js. Both are load-bearing; neither works alone. */
+   filelist.js. Both are load-bearing; neither works alone. */
 .file .path {
   flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis;
   white-space: nowrap; direction: rtl; text-align: left; text-decoration: none;

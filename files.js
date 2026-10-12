@@ -10,7 +10,7 @@ const DOC_PATH = /(^|\/)(docs?|\.github)\/|(^|\/)(LICENSE|CHANGELOG|NOTICE)$|(^|
 
 /**
  * Which of the Files tab's groups a path goes in: 'tests', 'code' or 'docs'.
- * The order the pane shows them in is GROUPS in public/pr.js.
+ * The order the pane shows them in is GROUPS in public/filelist.js.
  */
 export function bucket(p) {
   if (TEST.test(p)) return 'tests';
