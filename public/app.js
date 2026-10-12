@@ -5,6 +5,7 @@ import { renderPr, renderNoPr, renderHeader, pageTitle, api, toast, pref, setPre
 import { openDiff, closeDiff, selectedPath, setViewed, toggleWrap, openMention } from './diff.js';
 import { initQueue, addItem, setItems } from './queue.js';
 import { bindKeys } from './keys.js';
+import { printable } from './tasks.js';
 import { fold, folded, canFold } from './folds.js';
 import './panes.js';   // draggable pane gutters; nothing here calls into it
 
@@ -314,13 +315,15 @@ function typeIntoAgent(data) {
 // `submit` false types the text and stops there: the prompt is left ready to
 // edit and send by hand, which is what the queue's ▶ wants. Trailing
 // whitespace is cut either way -- a newline in the text *is* the Enter that
-// would have sent it half-written.
+// would have sent it half-written -- and any control character inside it is
+// a space: an item's text can come from a hand-edited queue file or anyone's
+// issue title, and a `\r` there would submit the turn without the click.
 //
 // The queue ticks an item off on the strength of the return value, and an item
 // checked off after a refused send is one nobody has done and nobody is going
 // to be reminded of.
 function sendToClaude(text, submit = true) {
-  return typeIntoAgent(text.replace(/\s+$/, '') + (submit ? '\r' : ''));
+  return typeIntoAgent(printable(text).replace(/\s+$/, '') + (submit ? '\r' : ''));
 }
 
 // The diff header's @: the open file's mention, typed and not sent, so the
@@ -674,12 +677,21 @@ input.addEventListener('keydown', async (e) => {
   // reason this is a textarea with a key handler rather than a form.
   if (e.key !== 'Enter' || e.shiftKey) return;
   e.preventDefault();
+  // A reference is looked up on GitHub before it is added, which takes a
+  // second; an Enter meanwhile would add it twice. Read-only rather than
+  // disabled, which would take the focus away from the input.
+  if (input.readOnly) return;
+  input.readOnly = true;
   // Cleared only once the server has the item. addItem is async and save()
   // reports a refusal with a toast rather than a throw, so clearing on the way
   // past threw the text away on any API failure.
-  if (await addItem(input.value)) {
-    input.value = '';
-    grow();
+  try {
+    if (await addItem(input.value)) {
+      input.value = '';
+      grow();
+    }
+  } finally {
+    input.readOnly = false;
   }
 });
 /** One line until it needs more, then up to a third of the pane. */
@@ -693,5 +705,6 @@ input.addEventListener('input', grow);
 // needs it — renderHeader synthesises an option for the current PR until it
 // lands, and loadPrs repaints the header itself when it does.
 loadPrs('page load');
-await initQueue({ sendToClaude, onTask: toggleTask });
+// `home` for ▶, which reads a bare #N in an item's text as this repo's.
+await initQueue({ sendToClaude, onTask: toggleTask, home: () => last?.nameWithOwner });
 loadStatus();

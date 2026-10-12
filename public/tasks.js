@@ -13,6 +13,66 @@
  */
 export const mention = () => /(^|[\s(])#(\d+)\b/g;
 
+/**
+ * A reference to an issue or pull request in any repo, the four ways people
+ * type one: `#91`, `owner/name#91`, `name#91`, and a github.com `/issues/` or
+ * `/pull/` URL, whatever follows its number. Wider than mention(), which stays
+ * as it is: that is what GitHub links in a description, and this is what the
+ * queue input accepts, where `name#91` means this repo (see refs()).
+ *
+ * Group 1 is the boundary, as in mention(); 2-4 are a URL's owner, name and
+ * number, and 5-7 the same for the other three shapes.
+ */
+const REF = () => new RegExp('(^|[\\s(])(?:'
+  + 'https?://github\\.com/([\\w.-]+)/([\\w.-]+)/(?:issues|pull)/(\\d+)(?:[/?#][^\\s)]*)?'
+  + '|(?:(?:([\\w.-]+)/)?([\\w.-]+))?#(\\d+)'
+  + ')(?=$|[\\s),.;:!?])', 'g');
+
+/**
+ * Every reference in `text`, in order: `owner` and `name` as written, null
+ * where the shape leaves them out, and `index` and `text` for where it was.
+ *
+ * `home` is the repo prcoder is in, as `owner/name`. Given it, `name#91` counts
+ * only when `name` is this repo's: any word before a `#N` has that shape, and
+ * `Learn C#7` or `bug#12` read as another repo's issue were looked up and
+ * refused, so the item could not be added at all. Another repo is reached by
+ * `owner/name#91` or its link. Without `home` every `name#91` is kept, for a
+ * caller that cannot tell yet and leaves the server to.
+ */
+export function refs(text = '', home = null) {
+  const homeName = home?.split('/')[1]?.toLowerCase();
+  return [...text.matchAll(REF())].map((m) => ({
+    owner: m[2] ?? m[5] ?? null,
+    name: m[3] ?? m[6] ?? null,
+    number: Number(m[4] ?? m[7]),
+    index: m.index + m[1].length,
+    text: m[0].slice(m[1].length),
+  })).filter((r) => !homeName || r.owner || !r.name || r.name.toLowerCase() === homeName);
+}
+
+/** The one reference `text` is, if it is nothing else, trimmed; otherwise null. */
+export function wholeRef(text = '', home = null) {
+  const t = text.trim();
+  const [r, more] = refs(t, home);
+  return r && !more && r.index === 0 && r.text.length === t.length ? r : null;
+}
+
+/**
+ * A reference as `owner/name` and number, filled in from `home` -- the repo
+ * prcoder is in, as `owner/name` -- where it leaves them out. `repo` is null
+ * when that is home itself, which GitHub compares case-insensitively and so
+ * does this: that is how a stored item says "this repo".
+ *
+ * Without `home` -- prcoder could not read this repo's GitHub name -- only a
+ * reference that names its owner resolves, and any other throws saying so.
+ */
+export function resolveRef(ref, home) {
+  if (!home && !ref.owner) throw new Error(`${ref.text ?? `#${ref.number}`}: this repo's GitHub name is not known, so there is nothing to read it against`);
+  const [owner, name] = home?.split('/') ?? [];
+  const full = `${ref.owner ?? owner}/${ref.name ?? name}`;
+  return { repo: full.toLowerCase() === home?.toLowerCase() ? null : full, number: ref.number };
+}
+
 /** The repository a pull request's URL is under, on any host. */
 export const repoUrl = (prUrl) => prUrl.replace(/\/pull\/\d+$/, '');
 
@@ -23,6 +83,13 @@ export const repoUrl = (prUrl) => prUrl.replace(/\/pull\/\d+$/, '');
  * the path, a `?` starts a query, and a `"` inside an href="..." closes it.
  */
 export const urlPath = (p) => p.split('/').map(encodeURIComponent).join('/');
+
+/**
+ * `s` with every run of control characters -- C0, DEL and C1 -- as one space.
+ * For text that is typed into the agent's PTY, where a `\r` submits the turn
+ * and an escape starts a sequence: whoever wrote it, none of that gets through.
+ */
+export const printable = (s) => s.replace(/[\u0000-\u001f\u007f-\u009f]+/g, ' ');
 
 /** The same checklist line GitHub renders as a checkbox. */
 export const TASK = /^\s*[-*]\s*\[( |x|X)\]\s*(.*)$/;
