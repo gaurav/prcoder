@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   pageTitle, withoutHtml, inline, headLinks, noPrLinks, prsInto, prTree, stackOn, stackLabel, stackUnder, stackTree, stackTitle, stackBase, stackOrder, stackEmpty, intoEmpty, switcherRows,
-  HEADING, blocks, sectionize, tabLabel, taskCount, viewedCount, viewedLines, filesProgress, filesName, checkCount, checksName, tabDone, worst, byPath, bySize, byDir, nums,
+  HEADING, blocks, sectionize, tabLabel, taskCount, viewedCount, viewedLines, filesProgress, filesName, checkCount, checksName, tabDone, worst, byPath, bySize, byDir, fileOrder, fileFrom, nextUnviewed, nums,
 } from '../public/pr.js';
 import { fences, TASK, taskLines } from '../public/tasks.js';
 
@@ -862,6 +862,59 @@ test('a root file is never a directory of its own', () => {
   // file fell. They are rows now, and nothing below is left to fold.
   assert.deepEqual(root.map((x) => x.path), ['.gitignore', 'README.md']);
   assert.deepEqual(dirs, []);
+});
+
+// The keyboard's list (Alt+J, Alt+K, Alt+X in app.js) is the Files tab's
+// drawn order, and nothing else: groups in GROUPS' order, root files ahead of
+// the directories, the biggest change first inside each. These files are
+// deliberately out of order, and their sizes are set so that size alone would
+// give a different answer from the tab's.
+const walk = [
+  { path: 'lib/x.js', group: 'code', additions: 1, deletions: 0 },
+  { path: 'README.md', group: 'docs', additions: 1, deletions: 0 },
+  { path: 'a.js', group: 'code', additions: 2, deletions: 0 },
+  { path: 'test/a.test.js', group: 'tests', additions: 9, deletions: 0 },
+  { path: 'b.js', group: 'code', additions: 5, deletions: 0 },
+  { path: 'lib/sub/y.js', group: 'code', additions: 7, deletions: 0 },
+];
+const paths = (list) => list.map((f) => f.path);
+
+test('the keyboard walks the files in the order the Files tab draws them', () => {
+  assert.deepEqual(paths(fileOrder(walk)),
+    ['README.md', 'test/a.test.js', 'b.js', 'a.js', 'lib/x.js', 'lib/sub/y.js']);
+  assert.deepEqual(fileOrder([]), []);
+  assert.deepEqual(fileOrder(), []);
+});
+
+test('a step forward or back is the neighbouring row, and the ends stop', () => {
+  assert.equal(fileFrom(walk, 'b.js', 1)?.path, 'a.js');
+  assert.equal(fileFrom(walk, 'b.js', -1)?.path, 'test/a.test.js');
+  // Across a group and across a fold: the list is flat.
+  assert.equal(fileFrom(walk, 'test/a.test.js', 1)?.path, 'b.js');
+  assert.equal(fileFrom(walk, 'lib/x.js', 1)?.path, 'lib/sub/y.js');
+  assert.equal(fileFrom(walk, 'lib/sub/y.js', 1), null, 'no wrap past the last');
+  assert.equal(fileFrom(walk, 'README.md', -1), null, 'nor before the first');
+  // Nothing open: forward opens the first, back the last.
+  assert.equal(fileFrom(walk, null, 1)?.path, 'README.md');
+  assert.equal(fileFrom(walk, null, -1)?.path, 'lib/sub/y.js');
+  // A file the list no longer has -- the PR moved under an open diff -- is as
+  // good as nothing open.
+  assert.equal(fileFrom(walk, 'gone.js', 1)?.path, 'README.md');
+  assert.equal(fileFrom([], null, 1), null);
+});
+
+test('the next unviewed file skips viewed ones, goes round to the top, and is never the file itself', () => {
+  const viewed = (...done) => walk.map((f) => ({ ...f, viewed: done.includes(f.path) }));
+  assert.equal(nextUnviewed(viewed('test/a.test.js', 'b.js'), 'README.md')?.path, 'a.js');
+  // Past the end, round to the top.
+  assert.equal(nextUnviewed(viewed('README.md', 'lib/sub/y.js'), 'lib/x.js')?.path, 'test/a.test.js');
+  // The open file is the only one left: it is never its own next, even unviewed.
+  assert.equal(nextUnviewed(viewed('README.md', 'test/a.test.js', 'b.js', 'a.js', 'lib/x.js'), 'lib/sub/y.js'), null);
+  // Every file viewed, including the open one: none.
+  assert.equal(nextUnviewed(viewed(...paths(walk)), 'a.js'), null);
+  // Nothing open: the first unviewed, in the tab's order.
+  assert.equal(nextUnviewed(viewed('README.md'), null)?.path, 'test/a.test.js');
+  assert.equal(nextUnviewed([], null), null);
 });
 
 test('a file row leaves out the side that did not change', () => {

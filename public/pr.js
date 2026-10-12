@@ -1160,6 +1160,51 @@ export const byDir = (files) => {
 };
 
 /**
+ * Every changed file in the order the Files tab draws them: group by group
+ * (GROUPS), and inside a group the root files and then each directory's list,
+ * as byDir orders them. The keyboard walks this list -- Alt+J, Alt+K and Alt+X
+ * in app.js -- so "the next file" is the row under the one on screen. Worked
+ * out here rather than read off the page, because the Files tab is not always
+ * the one showing: the keys work from Detail, Checks and the terminal too.
+ */
+export const fileOrder = (files = []) => GROUPS.flatMap(([key]) => {
+  const { root, dirs } = byDir(files.filter((f) => f.group === key));
+  return [...root, ...dirs.flatMap(([, list]) => list)];
+});
+
+/**
+ * The file `step` rows on from `path` in that order -- +1 the next, -1 the
+ * one before -- or null at either end: the keys stop there rather than wrap,
+ * so the last file is where the list runs out and not where it starts again.
+ * With no file open there is nothing to step from, so a step forward is the
+ * first file and a step back the last.
+ */
+export function fileFrom(files, path, step) {
+  const order = fileOrder(files);
+  if (!order.length) return null;
+  const at = order.findIndex((f) => f.path === path);
+  if (at === -1) return step > 0 ? order[0] : order[order.length - 1];
+  return order[at + step] ?? null;
+}
+
+/**
+ * The next file still unviewed after `path`, going round to the top past the
+ * end, or null once every file is viewed. `path` itself is never the answer:
+ * Alt+X has just marked it, and a tick that failed to land would otherwise
+ * open the same file again as its own "next". With no file open, the first
+ * unviewed file.
+ */
+export function nextUnviewed(files, path) {
+  const order = fileOrder(files);
+  const at = order.findIndex((f) => f.path === path);
+  for (let i = 1; i <= order.length; i++) {
+    const f = order[(at + i) % order.length];
+    if (!f.viewed && f.path !== path) return f;
+  }
+  return null;
+}
+
+/**
  * One directory inside a group, folded like the group itself.
  *
  * The fold state is keyed by group *and* directory: `public/` under Code and
