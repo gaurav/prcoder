@@ -775,8 +775,20 @@ test('the corner is prcoder\'s menu, at the header\'s height, and closes like on
   await page.click('#menu-keys');
   assert.equal(await open(), false, 'and a pick');
   assert.equal(await page.$eval('#keys', (d) => d.open), true, 'which opened the sheet');
+  // The pick it was opened from is hidden in the closed menu, so the focus
+  // goes back to the menu itself rather than falling out of the page.
+  // Waited for: the close event is a task of its own, which Chromium runs
+  // after a click has returned.
+  const onMenu = () => page.waitForFunction(() => document.activeElement === document.querySelector('#menu > summary'),
+    null, { timeout: 2000 }).then(() => true, () => false);
+  await page.keyboard.press('Escape');
+  assert.equal(await page.$eval('#keys', (d) => d.open), false);
+  assert.equal(await onMenu(), true, 'Escape hands the focus to the menu');
+  await page.click('#menu > summary');
+  await page.click('#menu-keys');
   await page.click('#keys-close');
   assert.equal(await page.$eval('#keys', (d) => d.open), false);
+  assert.equal(await onMenu(), true, 'so does the ✕');
 });
 
 // The sheet is built from the bindKeys table, so its keys are the table's, and

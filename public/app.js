@@ -311,7 +311,14 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && menu.open && !isTyping(e.target)) menu.open = false;
 });
 document.getElementById('menu-quit').onclick = () => quitPrcoder(true);
-document.getElementById('menu-keys').onclick = () => toggleKeys();
+// The dialog gives the focus back to the pick it was opened from, which the
+// pick has just hidden in the closed menu, so the focus would fall out of the
+// page. The menu itself is where it was before the pick; the close event comes
+// after the dialog's own hand-back, so this one wins.
+document.getElementById('menu-keys').onclick = () => {
+  toggleKeys();
+  keysDialog.addEventListener('close', () => menu.querySelector('summary').focus(), { once: true });
+};
 
 // The shortcut sheet, built once from KEYS: a row per binding, the key as the
 // reader's keyboard has it. A modal <dialog> closes on Escape by itself, and
