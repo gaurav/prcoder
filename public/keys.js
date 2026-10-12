@@ -33,6 +33,22 @@ const NOT_TEXT = ['checkbox', 'radio', 'button', 'submit', 'reset', 'image', 'fi
 export const isTyping = (target) => target instanceof Element
   && (target.closest(`input:not(${NOT_TEXT}), textarea, select, [contenteditable]`) != null);
 
+/**
+ * A binding's name as the shortcut sheet shows it: `Alt+KeyV` is `Alt+V`, or
+ * `⌥V` on a Mac, where the key is Option and is drawn as its symbol. Only
+ * the codes a binding here has ever used are spelled; any other is shown as
+ * it is, which is wrong-looking enough to be fixed at once.
+ */
+const CODE = { Slash: '/', Comma: ',', Period: '.', Enter: '↩', Space: '␣', ArrowUp: '↑', ArrowDown: '↓', ArrowLeft: '←', ArrowRight: '→' };
+const MOD = { Ctrl: ['Ctrl', '⌃'], Alt: ['Alt', '⌥'], Shift: ['Shift', '⇧'], Meta: ['Win', '⌘'] };
+export function keyLabel(name, mac = false) {
+  const parts = name.split('+');
+  const code = parts.pop();
+  const key = CODE[code] ?? code.replace(/^(Key|Digit)/, '');
+  const mods = parts.map((m) => MOD[m]?.[mac ? 1 : 0] ?? m);
+  return mac ? [...mods, key].join('') : [...mods, key].join('+');
+}
+
 /** The name a keydown event binds under: its modifiers, then its physical key. */
 export const keyName = (e) => [
   e.ctrlKey && 'Ctrl', e.altKey && 'Alt', e.shiftKey && 'Shift', e.metaKey && 'Meta', e.code,
