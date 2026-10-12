@@ -256,7 +256,7 @@ const routes = {
   // `started` is what the exit bar fills its fields with: the model and effort
   // given after -- on prcoder's command line, so starting the agent again offers
   // what it was started with rather than a blank nobody remembers the meaning of.
-  'GET /api/whoami': () => ({ prcoder: true, repo, branch: last?.branch ?? null,
+  'GET /api/whoami': () => ({ prcoder: true, version: VERSION, repo, branch: last?.branch ?? null,
     nameWithOwner: info?.nameWithOwner ?? null, started: startedWith(agentArgs) }),
 
   'GET /api/prs': () => listPrs(repo),
