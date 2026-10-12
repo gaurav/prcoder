@@ -758,8 +758,10 @@ test('the corner is prcoder\'s menu, at the header\'s height, and closes like on
   assert.equal(await open(), false);
   await page.click('#menu > summary');
   assert.equal(await open(), true);
-  // The hint is spelled for the keyboard the page is on, as the sheet's are.
-  const slash = await page.evaluate(() => (/Mac/.test(navigator.platform) ? '⌥/' : 'Alt+/'));
+  // The hint is spelled for the keyboard the page is on, as the sheet's are:
+  // the same text as the sheet's last row, Alt+/ itself.
+  const slash = await page.$eval('#keys-list tr:last-child kbd', (el) => el.textContent);
+  assert.match(slash, /\/$/);
   assert.deepEqual(await page.$$eval('#menu-list > :is(a, button, span)', (els) => els.map((el) => el.textContent.trim())),
     [`Keyboard shortcuts ${slash}`, 'Documentation', 'Report an issue', 'Repository', 'Quit prcoder…', 'prcoder 0.0.0-test']);
   for (const id of ['menu-docs', 'menu-issue', 'menu-repo']) {

@@ -326,6 +326,10 @@ document.getElementById('menu-keys').onclick = () => {
 // there -- so the sheet is a glance, not a detour. A click on the backdrop is
 // a click whose target is the dialog itself, since the backdrop is its box.
 const keysDialog = document.getElementById('keys');
+// navigator.platform, deprecated as it is, because it is what xterm reads to
+// decide whether the key is Option (its Platform.ts), so the sheet calls the
+// key what the terminal treats it as. Where a browser reports a false one, a
+// Mac is shown Alt, which is printed on its Option key anyway.
 const mac = /Mac|iPhone|iPad/.test(navigator.platform);
 document.getElementById('keys-list').replaceChildren(...Object.entries(KEYS).map(([name, { label }]) =>
   h('tr', {}, h('td', {}, h('kbd', {}, keyLabel(name, mac))), h('td', {}, label))));
