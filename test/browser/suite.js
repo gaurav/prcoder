@@ -1185,6 +1185,137 @@ test('adding from another tab stays on it and flashes Local', { skip }, async ()
   await fresh.close();
 });
 
+// A reference typed into the queue is looked up before it is added. This is
+// the pane's half: what it does with the route's answer, which is mocked here
+// with the shape POST /api/queue/ref gives (github.test.js has the lookup).
+async function refPage(answer, queue = []) {
+  const fresh = await newPage();
+  const typed = [];
+  await fresh.routeWebSocket('**/pty', (ws) => ws.onMessage((m) => {
+    const msg = JSON.parse(m);
+    if (msg.type === 'input') typed.push(msg.data);
+  }));
+  await fresh.route('**/api/status', (r) => r.fulfill({ json: { ...status, nameWithOwner: 'gaurav/prcoder', queue } }));
+  // The server's decorate(), as far as these tests need it.
+  const url = (i) => (i.issue ? `https://github.com/${i.repo ?? 'gaurav/prcoder'}/${i.kind === 'pull' ? 'pull' : 'issues'}/${i.issue}` : null);
+  await fresh.route('**/api/queue', (r) => {
+    if (r.request().method() === 'PUT') queue = r.request().postDataJSON().items.map((i) => ({ ...i, issueUrl: url(i) }));
+    return r.fulfill({ json: queue });
+  });
+  await fresh.route('**/api/queue/ref', (r) => r.fulfill(answer(r.request().postDataJSON().text)));
+  await fresh.reload();
+  await fresh.waitForSelector('#queue-body .tab[data-tab="local"]');
+  const add = async (text) => {
+    await fresh.locator('#queue-input').fill(text);
+    await fresh.locator('#queue-input').press('Enter');
+  };
+  return { fresh, add, typed, rows: () => fresh.locator('#queue-body .item') };
+}
+
+test('a reference on its own is added as the issue\'s title, tagged, and ▶ carries the link', { skip }, async () => {
+  const { fresh, add, typed, rows } = await refPage(() => ({ json: { ref: {
+    whole: true, issue: 91, repo: null, kind: 'pull', title: 'Make the queue read references' } } }));
+  await add('https://github.com/gaurav/prcoder/pull/91');
+  await fresh.waitForSelector('#queue-body .item .tag.issue');
+  assert.deepEqual(await rows().locator('.text').allTextContents(), ['Make the queue read references']);
+  const tag = rows().locator('.tag.issue');
+  assert.equal(await tag.textContent(), '#91');
+  assert.equal(await tag.getAttribute('href'), 'https://github.com/gaurav/prcoder/pull/91');
+  // Already an issue here, so there is nothing for ◎ to file.
+  assert.equal(await rows().locator('button[title="move into a new issue"]').count(), 0);
+  assert.equal(await fresh.locator('#queue-input').inputValue(), '');
+  // The same reference again is refused, and stays in the input.
+  await add('#91');
+  await fresh.waitForFunction(() => document.getElementById('toast').textContent.includes('#91 is already in your queue'));
+  assert.equal(await rows().count(), 1);
+  assert.equal(await fresh.locator('#queue-input').inputValue(), '#91');
+  await rows().locator('button[title^="type into Claude"]').click();
+  await fresh.waitForFunction(() => document.querySelector('#queue-body .tab.on')?.textContent.startsWith('Local (0)'));
+  assert.deepEqual(typed, ['Make the queue read references (https://github.com/gaurav/prcoder/pull/91)']);
+  await fresh.close();
+});
+
+test('a reference inside other text keeps the text, and the tag is another repo\'s', { skip }, async () => {
+  const { fresh, add, typed, rows } = await refPage(() => ({ json: { ref: {
+    whole: false, issue: 123, repo: 'cli/cli', kind: 'issue', title: 'not used' } } }));
+  await add('Work around cli/cli#123');
+  await fresh.waitForSelector('#queue-body .item .tag.issue');
+  assert.deepEqual(await rows().locator('.text').allTextContents(), ['Work around cli/cli#123']);
+  assert.equal(await rows().locator('.tag.issue').textContent(), 'cli/cli#123');
+  // Another repo's issue can still be filed here, as a new one.
+  assert.equal(await rows().locator('button[title="move into a new issue"]').count(), 1);
+  // The text already says which issue, so ▶ adds nothing to it.
+  await rows().locator('button[title^="type into Claude"]').click();
+  await fresh.waitForFunction(() => document.querySelector('#queue-body .tab.on')?.textContent.startsWith('Local (0)'));
+  assert.deepEqual(typed, ['Work around cli/cli#123']);
+  await fresh.close();
+});
+
+test('a reference GitHub does not know says why and stays in the input', { skip }, async () => {
+  const reason = 'gaurav/prcoder#99999: Could not resolve to an issue or pull request with the number of 99999.';
+  const { fresh, add, rows } = await refPage(() => ({ status: 500, json: { error: reason } }));
+  await add('#99999');
+  await fresh.waitForFunction((r) => document.getElementById('toast').textContent === r, reason);
+  assert.equal(await rows().count(), 0);
+  assert.equal(await fresh.locator('#queue-input').inputValue(), '#99999');
+  await fresh.close();
+});
+
+// Before the queue read references it worked without GitHub, and it still
+// does: a lookup that got no answer adds the text as it is, untagged.
+test('a reference GitHub could not be asked about is added as plain text', { skip }, async () => {
+  const { fresh, add, rows } = await refPage(() => ({ json: { ref: null, unchecked: 'gaurav/prcoder#93: error connecting to api.github.com' } }));
+  await add('Fix #93 later');
+  await fresh.waitForSelector('#queue-body .item');
+  assert.deepEqual(await rows().locator('.text').allTextContents(), ['Fix #93 later']);
+  assert.equal(await rows().locator('.tag').count(), 0);
+  assert.equal(await fresh.locator('#queue-input').inputValue(), '');
+  assert.match(await fresh.locator('#toast').textContent(), /plain text.*error connecting/);
+  await fresh.close();
+});
+
+// refPage's PR is in heal-data-stewards/... while prcoder is in gaurav/prcoder,
+// so the fixture's #7 is another repo's: stored as this one's, its tag would
+// link to gaurav/prcoder#7 and ◎ would be hidden.
+test('↓ on the Issues tab keeps the repo the mention is in', { skip }, async () => {
+  const { fresh, rows } = await refPage(() => ({ json: { ref: null } }));
+  await fresh.route('**/api/issues', (r) => r.fulfill({ json: [
+    { number: 7, url: `${REPO}/issues/7`, closes: false, title: 'Per-route locking', kind: 'issue', state: 'OPEN' }] }));
+  await fresh.locator('#queue-body .tab[data-tab="issues"]').click();
+  await fresh.locator('#queue-body button[title="copy into your queue"]').click();
+  await fresh.locator('#queue-body .tab[data-tab="local"]').click();
+  await fresh.waitForSelector('#queue-body .item .tag.issue');
+  const tag = rows().locator('.tag.issue');
+  assert.equal(await tag.textContent(), 'heal-data-stewards/heal-vlmd-AI-pipeline#7');
+  assert.equal(await tag.getAttribute('href'), `${REPO}/issues/7`);
+  assert.equal(await rows().locator('button[title="move into a new issue"]').count(), 1);
+  await fresh.close();
+});
+
+// An item's text need not have come through the input: a hand-edited queue
+// file can hold anything, and a \r in it would submit the turn unclicked.
+test('▶ types an item\'s control characters as spaces', { skip }, async () => {
+  const { fresh, typed, rows } = await refPage(() => ({ json: { ref: null } }),
+    [{ text: 'do this\rand\u001b[2Jthat', done: false, issue: null, deleted: false }]);
+  await fresh.waitForSelector('#queue-body .item');
+  await rows().locator('button[title^="type into Claude"]').click();
+  await fresh.waitForFunction(() => document.querySelector('#queue-body .tab.on')?.textContent.startsWith('Local (0)'));
+  assert.deepEqual(typed, ['do this and [2Jthat']);
+  await fresh.close();
+});
+
+// Text with nothing that looks like a reference never asks GitHub at all.
+test('text with no reference is added without a lookup', { skip }, async () => {
+  let asked = 0;
+  const { fresh, add, rows } = await refPage(() => { asked++; return { json: { ref: null } }; });
+  await add('just a reminder');
+  await fresh.waitForSelector('#queue-body .item');
+  assert.deepEqual(await rows().locator('.text').allTextContents(), ['just a reminder']);
+  assert.equal(await rows().locator('.tag').count(), 0);
+  assert.equal(asked, 0);
+  await fresh.close();
+});
+
 // With the socket closed nothing is typed, so ▶ must not mark it done: done
 // moves it out of Active, and the item would be gone from view unsent.
 test('▶ with Claude disconnected types nothing and leaves the item active', { skip }, async () => {

@@ -3,11 +3,11 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { normalise, pick, readStore, writeStore, readPort, writePort, replaceItems, useQueueFile } from '../store.js';
+import { normalise, pick, toDisk, readStore, writeStore, readPort, writePort, replaceItems, useQueueFile } from '../store.js';
 
 const repo = () => fs.mkdtemp(path.join(os.tmpdir(), 'prcoder-store-'));
 const item = (over = {}) =>
-  ({ text: 'a task', done: false, doneAt: null, issue: null, deleted: false, deletedAt: null, ...over });
+  ({ text: 'a task', done: false, doneAt: null, issue: null, repo: null, kind: null, deleted: false, deletedAt: null, ...over });
 
 // The client PUTs back the array it was handed, which decorate() has added an
 // issueUrl to. The markdown writer dropped unknown fields for free; JSON would
@@ -15,7 +15,7 @@ const item = (over = {}) =>
 test('only the fields we own are stored', () => {
   const stored = pick({ ...item(), issueUrl: 'https://github.com/o/r/issues/1', junk: 1 });
   assert.deepEqual(Object.keys(stored).sort(),
-    ['deleted', 'deletedAt', 'done', 'doneAt', 'issue', 'text']);
+    ['deleted', 'deletedAt', 'done', 'doneAt', 'issue', 'kind', 'repo', 'text']);
 });
 
 // The queue was scoped per branch for a while, so a file written then has a
@@ -23,7 +23,7 @@ test('only the fields we own are stored', () => {
 // come back into view on the next read, which is the point of #48.
 test('a branch left on an item by an older prcoder is dropped', () => {
   assert.deepEqual(Object.keys(pick(item({ branch: 'merged-and-gone' }))).sort(),
-    ['deleted', 'deletedAt', 'done', 'doneAt', 'issue', 'text']);
+    ['deleted', 'deletedAt', 'done', 'doneAt', 'issue', 'kind', 'repo', 'text']);
   const { store } = normalise(JSON.stringify(
     { version: 1, items: [item({ branch: 'work' }), item({ text: 'b', branch: 'other' })] }));
   assert.deepEqual(store.items.map((i) => i.text), ['a task', 'b']);
@@ -32,7 +32,36 @@ test('a branch left on an item by an older prcoder is dropped', () => {
 test('fields are coerced, so a hand-edited file cannot make a half-item', () => {
   const out = pick({ text: 42, done: 'yes', issue: '7' });
   assert.deepEqual(out,
-    { text: '42', done: true, doneAt: null, issue: null, deleted: false, deletedAt: null });
+    { text: '42', done: true, doneAt: null, issue: null, repo: null, kind: null, deleted: false, deletedAt: null });
+});
+
+// The repo ends up in an href, so anything but GitHub's own characters is
+// dropped rather than trusted; and neither field means anything without the
+// number it describes.
+test('where an item\'s issue lives is kept only when it is a repo name', () => {
+  assert.deepEqual(pick(item({ issue: 3, repo: 'cli/cli', kind: 'pull' })),
+    item({ issue: 3, repo: 'cli/cli', kind: 'pull' }));
+  assert.equal(pick(item({ issue: 3, repo: 'javascript:alert(1)//x' })).repo, null);
+  assert.equal(pick(item({ issue: 3, repo: 'a/b"c' })).repo, null);
+  assert.equal(pick(item({ issue: 3, kind: 'discussion' })).kind, null);
+  assert.deepEqual(pick(item({ repo: 'cli/cli', kind: 'issue' })), item({ repo: null, kind: null }));
+});
+
+// On disk an item's issue is its link (toDisk), and pick() is what reads it
+// back. Anything that is not a link to an issue or pull request on github.com
+// -- a hand-edit, another host, a repo name with a quote in it -- is no issue.
+test('an issue\'s link is written in place of its number, and read back', () => {
+  const pull = item({ issue: 3, repo: 'cli/cli', kind: 'pull' });
+  const { repo: _r, kind: _k, ...rest } = item({ issue: 'https://github.com/cli/cli/pull/3' });
+  assert.deepEqual(toDisk(pull, 'o/r'), rest);
+  assert.deepEqual(pick(toDisk(pull, 'o/r')), pull);
+  assert.deepEqual(pick(toDisk(item({ issue: 4 }), 'o/r')), item({ issue: 4, repo: 'o/r' }));
+  assert.equal(toDisk(item({ issue: 4 }), undefined).issue, 4, 'no link without this repo\'s name');
+  assert.equal(toDisk(item(), 'o/r').issue, null);
+  for (const bad of ['https://example.com/o/r/issues/1', 'https://github.com/o/r/issues/0',
+    'https://github.com/o/r"x/issues/1', 'https://github.com/o/r/discussions/1', 'github.com/o/r/issues/1']) {
+    assert.deepEqual(pick(item({ issue: bad })), item(), bad);
+  }
 });
 
 // The Completed tab sorts on it, so it has to mean "when this was ticked": set
@@ -82,8 +111,8 @@ test('an item from the description mirror stays in the queue, without the mirror
     { text: 'was filed', done: true, inPr: true, pr: null, issue: 9, deleted: false },
   ] }));
   assert.deepEqual(store.items, [
-    { text: 'was mirrored', done: false, doneAt: null, issue: null, deleted: false, deletedAt: null },
-    { text: 'was filed', done: true, doneAt: null, issue: 9, deleted: false, deletedAt: null },
+    item({ text: 'was mirrored' }),
+    item({ text: 'was filed', done: true, issue: 9 }),
   ]);
 });
 
@@ -125,7 +154,7 @@ test('a store from a newer version is not guessed at', () => {
 test('a missing field takes its default instead of failing the read', () => {
   const { store, stale } = normalise(JSON.stringify({ version: 1, items: [{ text: 'bare' }] }));
   assert.equal(stale, false);
-  assert.deepEqual(store.items, [{ text: 'bare', done: false, doneAt: null, issue: null, deleted: false, deletedAt: null }]);
+  assert.deepEqual(store.items, [item({ text: 'bare' })]);
 });
 
 // One list, whatever is checked out. The branch scoping this replaces is what

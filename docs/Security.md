@@ -139,7 +139,13 @@ A modified file's diff is not highlighted at all, and
   `target()`.
 - **Terminal output** goes through `term.js`, `console.log` included. A write straight to
   `process.stdout` skips `visible()`.
-- **Nothing sends to Claude without a click** on text the user can see.
+- **Nothing sends to Claude without a click** on text the user can see. A queue item's text can be
+  an issue title from any repo or a line of a hand-edited queue file, and ▶ types it into the PTY,
+  where a `\r` would submit the turn and an escape would start a sequence; so `sendToClaude` in
+  `app.js` turns control characters into spaces (`printable` in `tasks.js`) whatever the text's
+  source, and the link ▶ adds is built from the repo name and number the row's tag shows. New text
+  from GitHub or a file goes to the agent through `sendToClaude`, not straight to `typeIntoAgent`.
+  `linksFrom` in `github.js` cleans titles too, so they are stored and shown without them.
 - **A new kind of asset** — a font, an image, a worker, anything loaded rather than inlined — has to
   be allowed by the CSP beside `serveFile`, which is otherwise silent about what it blocks. The
   Prism grammars under `/vendor/prism/` are same-origin script, which `script-src 'self'` already
