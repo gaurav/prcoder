@@ -492,8 +492,21 @@ async function toggleTask(task) {
   }
 }
 
+// The ticks GitHub has not answered yet, by path, so Alt+X can wait for one
+// made with a click before reading `viewed` -- which changes only once GitHub
+// answers, and read early would skip an untick's re-tick or send a second PUT.
+const marking = new Map();
 /** A file marked viewed or not, on GitHub and then in every place that shows it. */
 async function markViewed(path, viewed) {
+  const run = writeViewed(path, viewed);
+  marking.set(path, run);
+  try {
+    await run;
+  } finally {
+    if (marking.get(path) === run) marking.delete(path);
+  }
+}
+async function writeViewed(path, viewed) {
   await setViewed(path, viewed);
   const f = last?.pr?.files.find((x) => x.path === path);
   if (!f) return;
@@ -545,13 +558,16 @@ function stepFile(step) {
 // untick it. Held while the tick is in flight, so a second press does not
 // write twice or step past a file the first is still marking. A tick that
 // failed says so and stays: moving on from a file GitHub still has unviewed
-// would lose it from the count.
+// would lose it from the count. A tick of the same file still in flight, from
+// the box or its row, is waited for first; one that failed left `viewed` as it
+// was, so Alt+X decides from that.
 let ticking = false;
 async function tickAndNext() {
   if (ticking) return;
   ticking = true;
   try {
     const open = selectedPath();
+    await marking.get(open)?.catch(() => {});
     const f = open && last?.pr?.files.find((x) => x.path === open);
     if (f && !f.viewed) await markViewed(open, true);
     const next = nextUnviewed(last?.pr?.files, open);

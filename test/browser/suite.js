@@ -1629,6 +1629,42 @@ test('Alt+X ticks the open file and opens the next unviewed, round the top, unti
   await fresh.close();
 });
 
+// A click on the box that GitHub has not answered yet leaves `viewed` as it
+// was. Alt+X waits for it: an untick in flight is ticked again once it lands,
+// rather than skipped as already viewed, and a tick in flight is not sent a
+// second time.
+test('Alt+X waits for a tick or untick still in flight on the open file', { skip }, async () => {
+  const { fresh } = await agentPage({ st: withLong(status) });
+  const puts = [];
+  let answer = () => {};
+  await fresh.route('**/api/pr/viewed', async (r) => {
+    puts.push(r.request().postDataJSON());
+    if (puts.length === 2 || puts.length === 4) await new Promise((res) => { answer = res; });
+    await r.fulfill({ json: { ok: true } });
+  });
+  await openFile(fresh, 'long.txt');
+  await fresh.locator('#diff-viewed').check();
+  await fresh.waitForFunction(() => document.querySelectorAll('.file.viewed').length === 1);
+  await fresh.locator('#diff-viewed').uncheck();   // the second PUT: held
+  await fresh.locator('#term-host').click();
+  await fresh.keyboard.press('Alt+KeyX');
+  await settle(fresh);
+  assert.equal(await openPath(fresh), 'long.txt', 'nothing moves while the untick is unanswered');
+  answer();
+  await fresh.waitForFunction(() => document.getElementById('diff-path').textContent === 'evil.js');
+  assert.deepEqual(puts.map((p) => p.viewed), [true, false, true], 'the untick lands, then Alt+X ticks again');
+  assert.equal(await filesTab(fresh), 'Files (1/3)');
+  // And a tick in flight is waited for, not sent again.
+  await fresh.locator('#diff-viewed').check();   // the fourth PUT: held
+  await fresh.keyboard.press('Alt+KeyX');
+  await settle(fresh);
+  assert.equal(await openPath(fresh), 'evil.js', 'nothing moves while the tick is unanswered');
+  answer();
+  await fresh.waitForFunction(() => document.getElementById('diff-path').textContent === 'app.tsx');
+  assert.deepEqual(puts.map((p) => p.viewed), [true, false, true, true]);
+  await fresh.close();
+});
+
 // Alt+C is the coding agent pane's ▼: from inside the terminal it folds the
 // pane and the focus lands on the ▼, from where the same key unfolds it and
 // puts the focus back. The agent never sees it.
