@@ -257,6 +257,27 @@ export function toggleWrap() {
   if (canWrap()) setWrap(!wrapOn());
 }
 
+/**
+ * Whether there is a *viewed* box to press: a file is open. Folded or not --
+ * the box is on the bar, which the fold keeps -- and whether or not a tick is
+ * still in flight: while one is, toggleViewed presses nothing, but the key is
+ * still the box's, so a second Alt+V from the terminal is swallowed rather than
+ * typed into the agent's prompt.
+ */
+export const canTickViewed = () => el('diff-viewed').checkVisibility();
+/**
+ * The keyboard's way to the box: the same click, so the same disabled state
+ * while a tick is in flight and the same writeThrough that repaints the rows.
+ */
+export function toggleViewed() {
+  const box = el('diff-viewed');
+  if (canTickViewed() && !box.disabled) box.click();
+}
+/** The box follows a tick made elsewhere -- a file row, Alt+X -- when that file is the one open. */
+export function showViewed(path, viewed) {
+  if (openPath === path) el('diff-viewed').checked = viewed;
+}
+
 /** Ticking this here ticks the same checkbox on github.com; the file rows use it too. */
 export const setViewed = (path, viewed) => api('/api/pr/viewed', { path, viewed });
 

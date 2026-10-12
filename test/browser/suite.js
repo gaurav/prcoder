@@ -1540,6 +1540,20 @@ test('Alt+V ticks and unticks the open file, from the page and from the terminal
   assert.equal(await fresh.locator('#diff-viewed').isChecked(), false, 'and unticks from the terminal');
   await settle(fresh);
   assert.equal(typed().length, 1, 'which the agent did not see');
+  // A second press while GitHub has not answered the first: the box is
+  // disabled, so it presses nothing -- and the file is still open, so the
+  // agent does not get the key either.
+  let answer;
+  const held = new Promise((res) => { answer = res; });
+  await fresh.route('**/api/pr/viewed', async (r) => { await held; await r.fulfill({ json: { ok: true } }); });
+  await fresh.keyboard.press('Alt+KeyV');
+  await fresh.waitForFunction(() => document.getElementById('diff-viewed').disabled);
+  await fresh.keyboard.press('Alt+KeyV');
+  await settle(fresh);
+  assert.equal(typed().length, 1, 'a press during the tick is not typed into the agent');
+  answer();
+  await fresh.waitForFunction(() => !document.getElementById('diff-viewed').disabled);
+  assert.equal(await fresh.locator('#diff-viewed').isChecked(), true, 'and the first tick stands');
   await fresh.close();
 });
 

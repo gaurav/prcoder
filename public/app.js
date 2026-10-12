@@ -2,7 +2,7 @@ import { Terminal } from '/vendor/xterm.mjs';
 import { FitAddon } from '/vendor/addon-fit.mjs';
 import { WebLinksAddon } from '/vendor/addon-web-links.mjs';
 import { renderPr, renderNoPr, renderHeader, pageTitle, api, toast, pref, setPref, debug, fileFrom, nextUnviewed } from './pr.js';
-import { openDiff, closeDiff, selectedPath, setViewed, toggleWrap, canWrap, openMention } from './diff.js';
+import { openDiff, closeDiff, selectedPath, setViewed, showViewed, canTickViewed, toggleViewed, toggleWrap, canWrap, openMention } from './diff.js';
 import { initQueue, addItem, setItems } from './queue.js';
 import { bindKeys } from './keys.js';
 import { printable } from './tasks.js';
@@ -48,7 +48,7 @@ term.open(document.getElementById('term-host'));
 bindKeys({
   'Alt+KeyW': { fn: toggleWrap, terminal: canWrap },
   'Alt+KeyM': { fn: mentionOpenFile, terminal: () => openMention('') != null },
-  'Alt+KeyV': { fn: toggleViewed, terminal: viewedBox },
+  'Alt+KeyV': { fn: toggleViewed, terminal: canTickViewed },
   'Alt+KeyX': { fn: tickAndNext, terminal: () => selectedPath() != null || nextUnviewed(last?.pr?.files, null) != null },
   'Alt+KeyJ': { fn: () => stepFile(1), terminal: anyFiles },
   'Alt+KeyK': { fn: () => stepFile(-1), terminal: anyFiles },
@@ -500,7 +500,7 @@ async function markViewed(path, viewed) {
   f.viewed = viewed;
   paint(last);
   // The diff pane's box is static markup, outside anything paint() draws.
-  if (selectedPath() === path) document.getElementById('diff-viewed').checked = viewed;
+  showViewed(path, viewed);
 }
 
 // A click on a row unfolds the pane: you asked for the file. The refresh in
@@ -538,17 +538,6 @@ function anyFiles() { return (last?.pr?.files?.length ?? 0) > 0; }
 function stepFile(step) {
   const f = fileFrom(last?.pr?.files, selectedPath(), step);
   if (f) openByKey(f);
-}
-// Alt+V is the diff pane's own box, pressed: the same click, so the same
-// disabled state while a tick is in flight, and the same writeThrough that
-// repaints the rows. The box is on the bar, which the fold keeps, so it works
-// from a folded diff as the @ does; with no file open there is no box.
-function viewedBox() {
-  const box = document.getElementById('diff-viewed');
-  return box.checkVisibility() && !box.disabled;
-}
-function toggleViewed() {
-  if (viewedBox()) document.getElementById('diff-viewed').click();
 }
 // Alt+X: tick the open file and open the next unviewed one, round to the top
 // past the end; with none open, the first unviewed. The tick goes through
