@@ -5,7 +5,7 @@
 // test/queue-local.test.js checks the routes that call it the same way, from
 // outside.
 
-import { readStore, writeStore, replaceItems } from './store.js';
+import { readStore, writeStore, replaceItems, issueUrl } from './store.js';
 import * as term from './term.js';
 
 /** Item text, cut to something a status line can hold. */
@@ -68,27 +68,24 @@ export async function writeQueue(repo, items, nameWithOwner) {
   // stamped a second time -- all with that write's time, so the Deleted tab's
   // most-recent-first order collapses into a tie.
   const next = replaceItems(store, items);
-  await writeStore(repo, next, { stale });
+  await writeStore(repo, next, { stale, home: nameWithOwner });
   return decorate(next.items, nameWithOwner);
 }
 
 /**
- * The store keeps only the issue number; the link is derived. From
- * nameWithOwner rather than the PR's URL, because that is the repo createIssue
- * actually files into — with a pinned foreign PR the two differ — and because
- * a queue that now works with no PR loaded would otherwise render dead links.
+ * The link to each item's issue, derived. From nameWithOwner rather than the
+ * PR's URL, because that is the repo createIssue actually files into — with a
+ * pinned foreign PR the two differ — and because a queue that now works with no
+ * PR loaded would otherwise render dead links.
+ *
+ * The file holds links (toDisk in store.js), so an item read from it names its
+ * repo even when that is this one. The page keeps `repo` for another repo's,
+ * so this one's is folded back to null here, where nameWithOwner is known.
  */
 function decorate(items, nameWithOwner) {
-  return items.map((i) => ({ ...i, issueUrl: issueUrl(i, nameWithOwner) }));
-}
-
-/**
- * The link to a stored item's issue or PR, or null. An item about another
- * repo's carries that repo, and needs no answer from `gh repo view` to link to
- * it. Give it an item that has been through pick(), which is what holds `repo`
- * to characters that are safe in an href.
- */
-export function issueUrl(i, nameWithOwner) {
-  const where = i.repo ?? nameWithOwner;
-  return i.issue && where ? `https://github.com/${where}/${i.kind === 'pull' ? 'pull' : 'issues'}/${i.issue}` : null;
+  const home = nameWithOwner?.toLowerCase();
+  return items.map((i) => {
+    const here = i.repo?.toLowerCase() === home ? { ...i, repo: null } : i;
+    return { ...here, issueUrl: issueUrl(here, nameWithOwner) };
+  });
 }

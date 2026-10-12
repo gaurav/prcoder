@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { normalise, pick, readStore, writeStore, readPort, writePort, replaceItems, useQueueFile } from '../store.js';
+import { normalise, pick, toDisk, readStore, writeStore, readPort, writePort, replaceItems, useQueueFile } from '../store.js';
 
 const repo = () => fs.mkdtemp(path.join(os.tmpdir(), 'prcoder-store-'));
 const item = (over = {}) =>
@@ -45,6 +45,23 @@ test('where an item\'s issue lives is kept only when it is a repo name', () => {
   assert.equal(pick(item({ issue: 3, repo: 'a/b"c' })).repo, null);
   assert.equal(pick(item({ issue: 3, kind: 'discussion' })).kind, null);
   assert.deepEqual(pick(item({ repo: 'cli/cli', kind: 'issue' })), item({ repo: null, kind: null }));
+});
+
+// On disk an item's issue is its link (toDisk), and pick() is what reads it
+// back. Anything that is not a link to an issue or pull request on github.com
+// -- a hand-edit, another host, a repo name with a quote in it -- is no issue.
+test('an issue\'s link is written in place of its number, and read back', () => {
+  const pull = item({ issue: 3, repo: 'cli/cli', kind: 'pull' });
+  const { repo: _r, kind: _k, ...rest } = item({ issue: 'https://github.com/cli/cli/pull/3' });
+  assert.deepEqual(toDisk(pull, 'o/r'), rest);
+  assert.deepEqual(pick(toDisk(pull, 'o/r')), pull);
+  assert.deepEqual(pick(toDisk(item({ issue: 4 }), 'o/r')), item({ issue: 4, repo: 'o/r' }));
+  assert.equal(toDisk(item({ issue: 4 }), undefined).issue, 4, 'no link without this repo\'s name');
+  assert.equal(toDisk(item(), 'o/r').issue, null);
+  for (const bad of ['https://example.com/o/r/issues/1', 'https://github.com/o/r/issues/0',
+    'https://github.com/o/r"x/issues/1', 'https://github.com/o/r/discussions/1', 'github.com/o/r/issues/1']) {
+    assert.deepEqual(pick(item({ issue: bad })), item(), bad);
+  }
 });
 
 // The Completed tab sorts on it, so it has to mean "when this was ticked": set

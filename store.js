@@ -46,6 +46,44 @@ const portFile = (repo) => path.join(dir(repo), PORT_FILE);
 
 const EMPTY = { version: VERSION, items: [] };
 
+// GitHub's own characters for `owner/name`, since a repo ends up in an href.
+const REPO = /^[\w.-]+\/[\w.-]+$/;
+const LINK = /^https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/(issues|pull)\/([1-9]\d{0,9})$/;
+
+/** What an item's link on disk says: the number, the repo and, for a pull
+ *  request, the kind. Null for anything else, a hand-edit included. */
+function link(u) {
+  const m = typeof u === 'string' ? LINK.exec(u) : null;
+  return m ? { issue: Number(m[3]), repo: m[1], kind: m[2] === 'pull' ? 'pull' : null } : null;
+}
+
+/**
+ * The link to an item's issue or PR, or null. An item about another repo's
+ * carries that repo, and needs no answer from `gh repo view` to link to it;
+ * one about this repo's needs `home`, its `owner/name`. Give it an item that
+ * has been through pick(), which is what holds `repo` to characters that are
+ * safe in an href.
+ */
+export function issueUrl(i, home) {
+  const where = i.repo ?? home;
+  return i.issue && where ? `https://github.com/${where}/${i.kind === 'pull' ? 'pull' : 'issues'}/${i.issue}` : null;
+}
+
+/**
+ * An item as it is written. `issue` is the link, which says which repo and
+ * whether it is a pull request, so `repo` and `kind` are not written beside
+ * it. A bare number is what files from before the link hold, and pick() reads
+ * it as an issue in this repo; it is also what is written for one when `home`
+ * is not known yet, the one time there is no link to write.
+ *
+ * The link is also why VERSION stayed at 1 when `issue` stopped meaning only
+ * this repo's. An older prcoder reads a link as no issue at all: it keeps the
+ * item and loses its tag, where a number beside a `repo` it does not know would
+ * have linked to this repo's issue of that number.
+ */
+export const toDisk = ({ repo, kind, ...i }, home) =>
+  ({ ...i, issue: issueUrl({ ...i, repo, kind }, home) ?? i.issue });
+
 /**
  * Every field, coerced. The client PUTs back the array it was handed, which
  * decorate() in queue.js has added a derived `issueUrl` to — so this
@@ -63,16 +101,19 @@ export const pick = (i) => ({
   done: !!i?.done,
   // The number of the issue or pull request this item is about, if any: one
   // pulled in from the Issues tab, or typed in as a reference (refs() in
-  // public/tasks.js).
-  issue: Number.isInteger(i?.issue) ? i.issue : null,
+  // public/tasks.js). On disk it is the link instead (toDisk), read back here.
+  issue: Number.isInteger(i?.issue) ? i.issue : link(i?.issue)?.issue ?? null,
   // Where that is, as `owner/name`, when it is not the repo prcoder is in --
   // null means this one, which is every item from before the field existed.
-  // Held to GitHub's own characters, since it ends up in a link's href.
-  repo: Number.isInteger(i?.issue) && /^[\w.-]+\/[\w.-]+$/.test(i?.repo ?? '') ? i.repo : null,
+  // Held to GitHub's own characters, since it ends up in a link's href. A link
+  // read from disk always names a repo, this one included; decorate() in
+  // queue.js knows which repo that is, and folds it back to null.
+  repo: Number.isInteger(i?.issue) && REPO.test(i?.repo ?? '') ? i.repo : link(i?.issue)?.repo ?? null,
   // `issue` or `pull`, so the link goes straight to a pull request's page.
   // Null when nobody asked GitHub, and /issues/N is the link: GitHub
-  // redirects it to the pull request when that is what N is.
-  kind: Number.isInteger(i?.issue) && ['issue', 'pull'].includes(i?.kind) ? i.kind : null,
+  // redirects it to the pull request when that is what N is. Read back from
+  // that link, `issue` is null too, since the two link the same way.
+  kind: Number.isInteger(i?.issue) && ['issue', 'pull'].includes(i?.kind) ? i.kind : link(i?.issue)?.kind ?? null,
   // A tombstone, so nothing typed disappears without the Deleted tab to get it
   // back from.
   deleted: !!i?.deleted,
@@ -126,10 +167,12 @@ export async function readStore(repo) {
  * The pid in the temp name matters. With a fixed one, two prcoder processes on
  * the same clone can interleave and rename each other's bytes into place, which
  * is worse than not doing this at all.
+ *
+ * `home` is this repo's `owner/name`, for the links toDisk writes.
  */
-export async function writeStore(repo, store, { stale = false } = {}) {
+export async function writeStore(repo, store, { stale = false, home } = {}) {
   if (stale) await fs.rename(file(repo), `${file(repo)}.bak`).catch(() => {});
-  await writeJson(repo, file(repo), { ...store, version: VERSION });
+  await writeJson(repo, file(repo), { ...store, items: store.items.map((i) => toDisk(i, home)), version: VERSION });
 }
 
 /** The temp-then-rename write above, for every file in the directory -- and
