@@ -16,8 +16,8 @@ own. A repo whose port changes (`port.json` deleted, its port busy at startup, o
 with `--port` or `PRCODER_PORT`) opens with the default layout, and gets the old one back once it
 is on the old port again.
 
-The terminal folds to its header line with a click anywhere on that line; the ▼ before its title
-says so, and is the keyboard's way in. The diff (or the queue, with no diff open) takes the room,
+The terminal folds to its header line with a click anywhere on that line, or with Alt+C, from
+inside it too; the ▼ before its title says so, and is the keyboard's other way in. The diff (or the queue, with no diff open) takes the room,
 and another click unfolds it. Folding never touches the session, which keeps running folded. While
 a turn runs, the folded header says `working` beside its title after a small red octagon, the
 tab's busy icon in miniature and from the same signal. An octagon and not a dot, so that it cannot
@@ -27,8 +27,8 @@ The diff folds the same way, to the terminal's gain, for getting a file out of t
 closing it: closing says you are done with the file, and folding does not. Its bar keeps the path
 with its ⧉ and **@**, the *viewed* box and the links out. Each control there keeps its own click, and a
 click on the rest of the bar -- the title, the path, the gaps, the ▼ -- folds or unfolds. *Wrap*
-and *Outline* go with the body they act on, and Alt+W presses nothing until it is back; the **@**
-and Alt+M still work folded. Clicking a file in the list, the open one included, unfolds it; a
+and *Outline* go with the body they act on, and Alt+W presses nothing until it is back; the **@**,
+the *viewed* box and their keys (Alt+M, Alt+V, Alt+X) still work folded. Clicking a file in the list, the open one included, unfolds it; a
 push that refreshes the open file does not, since a fold made to talk to the agent must survive
 the agent's own push; closing the pane forgets the fold. The two never fold
 together: folding one unfolds the other, since each hands its room to the other, and both folded
@@ -52,20 +52,34 @@ and which way the queue adds are remembered the same way as the sizes, and so is
 when it is on. The diff's fold is not:
 nothing is open after a reload, and the next click on a file would unfold it anyway.
 
-A few things have a key as well as a control. A shortcut never fires while you are typing -- in the
-terminal, which belongs to the coding agent, in the queue's input, or in an item being edited, though
-a checkbox you have just ticked, such as *viewed*, does not count -- and each is named by the key's position, so on a Mac Alt is Option:
+A few things have a key as well as a control. A shortcut never fires while you are typing -- in
+the queue's input, or in an item being edited, though a checkbox you have just ticked, such as
+*viewed*, does not count -- and each is named by the key's position, so on a Mac Alt is Option:
 
-| Key   | Does                                                                             |
-|-------|----------------------------------------------------------------------------------|
-| Alt+W | presses *Wrap* in the diff pane, while a file is open and the pane is not folded |
-| Alt+M | presses **@** in the diff pane, while a file that has one is open                |
+| Key   | Does                                                                             | While                                            |
+|-------|----------------------------------------------------------------------------------|--------------------------------------------------|
+| Alt+V | ticks or unticks *viewed* in the diff pane                                       | a file is open                                   |
+| Alt+X | ticks the open file viewed and opens the next unviewed file, going round to the top past the end; with no file open, opens the first unviewed | a file is open or any file is unviewed |
+| Alt+J | opens the next file in the Files tab's order, or the first with none open        | the pull request has files                       |
+| Alt+K | opens the previous file, or the last with none open                              | the pull request has files                       |
+| Alt+W | presses *Wrap* in the diff pane                                                  | a file is open and the pane is not folded        |
+| Alt+M | presses **@** in the diff pane                                                   | a file that has one is open                      |
+| Alt+C | presses the coding agent pane's ▼: folds it, or unfolds it and puts the focus back in the terminal | always                         |
 
-Alt+M is the exception to the typing rule in one place: it fires from the terminal too, so a
-request can name the open file halfway through being typed. While a file that has a mention is
-open, the agent does not receive Alt+M itself: Option+M's µ on a Mac, or the ESC m (Meta-m) it
-sends on Linux and Windows. With no file open, or a deleted one, the key goes to the agent as it
-always did.
+The terminal belongs to the coding agent, and every key pressed in it is the agent's -- except
+these, while the *While* column holds. The loop these keys are for ends in the terminal, asking
+about the file just read, and the next step is the next file; so each fires from there as well,
+and the agent does not receive it (Option+letter's character on a Mac, or the ESC letter it sends
+on Linux and Windows). When the column does not hold -- Alt+V with no file open, Alt+M on a
+deleted one, Alt+J with no pull request -- the key goes to the agent as if it were not bound,
+so the agent loses a key only while it would do something here.
+
+Alt+J, Alt+K and Alt+X open a file the way a click does: the diff unfolds, and the row scrolls
+into view if the Files tab is showing. They do not switch to it -- the diff pane's bar names the
+file -- and Alt+J and Alt+K stop at the ends of the list rather than going round. Alt+X ticks
+first and moves only once the tick has landed: one GitHub refused is said in a toast and not
+moved on from, and once every file is viewed it says so and stays. The *While* column is each
+key's `terminal` guard in the `bindKeys` table in `app.js`, where the letters are argued.
 
 A shortcut held down fires once; its key's repeats do nothing.
 

@@ -24,11 +24,18 @@ catches it, and `test/api.test.js` imports all three by importing the server.
 
 `bindKeys` in `app.js` is the one table of shortcuts, and `keys.js` holds the
 rules every binding gets for free: nothing fires while a key is being typed
-into the terminal (except a binding marked `terminal`, which is only Alt+M), the queue's
-input or an editable item, and a binding names
-a physical key (`Alt+KeyW`), not the character it produces. A keydown listener
-beside the thing it drives would have to repeat both. `docs/Panes.md` lists the
-bindings; add a row there with the binding.
+into the queue's input or an editable item, a binding names a physical key
+(`Alt+KeyW`), not the character it produces, and a held key fires once. The
+terminal is typing too, except that a binding's `terminal()` says when the
+key would do something there -- a file open, files to step through -- and
+then it fires from the terminal and the agent does not get the key; when it
+says no, the agent does. Every binding in the table has one, and a new one
+should: the loop the keys serve ends in the terminal. A keydown listener
+beside the thing it drives would have to repeat all of this. `docs/Panes.md`
+lists the bindings with their *While* column; add a row there with the
+binding, and argue the letter in the comment above the table (what each one
+steers round: browser tab switching, Firefox's menu letters, a Mac's dead
+keys, Claude Code's own Alt bindings).
 
 ## The Claude pane is not prcoder's to draw on
 
