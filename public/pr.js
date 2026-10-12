@@ -1024,7 +1024,7 @@ function renderPrTab(pr, parsed, handlers) {
       c.url ? ext(c.url, c.name, { className: 'check-name' }) : h('span', { className: 'check-name' }, c.name),
       CHECK_WORD[c.state] ? h('span', { className: 'check-state' }, CHECK_WORD[c.state]) : null)),
   ] : tab === 'files' ? [
-    ...GROUPS.map(([key, label]) => fileGroup(label, pr.files.filter((f) => f.group === key), handlers)),
+    ...fileTree(pr.files).map((g) => fileGroup(g, handlers)),
     h('div', { className: 'meta' },
       ext(`${pr.url}#issuecomment`, `${pr.counts.comments} comments · ${pr.counts.reviews} reviews`)),
   ] : [
@@ -1086,16 +1086,12 @@ function issueRow(list, closes, label) {
  * finished with can be got out of the way -- thirty-five files across three
  * groups is a smaller version of the problem the tabs were for.
  */
-function fileGroup(label, files, handlers) {
-  if (!files?.length) return null;
-  const { root, dirs } = byDir(files);
+function fileGroup({ label, files, rows }, handlers) {
+  if (!files.length) return null;
   return fold({
     className: 'group', dataset: { group: label }, title: label, progress: filesProgress(files),
     ...kept(closedGroups, label, 'closed'),
-  }, [
-    ...root.map((f) => fileRow(f, handlers)),
-    ...dirs.map(([dir, list]) => dirGroup(label, dir, list, handlers)),
-  ]);
+  }, rows.map((r) => (r.path ? fileRow(r, handlers) : dirGroup(label, r.dir, r.files, handlers))));
 }
 
 /**
@@ -1160,17 +1156,29 @@ export const byDir = (files) => {
 };
 
 /**
- * Every changed file in the order the Files tab draws them: group by group
- * (GROUPS), and inside a group the root files and then each directory's list,
- * as byDir orders them. The keyboard walks this list -- Alt+J, Alt+K and Alt+X
- * in app.js -- so "the next file" is the row under the one on screen. Worked
- * out here rather than read off the page, because the Files tab is not always
- * the one showing: the keys work from Detail, Checks and the terminal too.
+ * The Files tab's layout, and the one place its order is decided: a group per
+ * GROUPS entry, in that order, holding its `files` and the `rows` it draws --
+ * the root files, each a row, then one `{ dir, files }` fold per directory, as
+ * byDir orders them; a row with a `path` is a file. An empty group is kept, and draws nothing.
+ *
+ * fileGroup draws it and fileOrder walks it, so the keyboard's "next file" is
+ * the row under the one on screen by construction rather than by two functions
+ * agreeing: a change to how the tab lays out its rows is made here, for both.
  */
-export const fileOrder = (files = []) => GROUPS.flatMap(([key]) => {
-  const { root, dirs } = byDir(files.filter((f) => f.group === key));
-  return [...root, ...dirs.flatMap(([, list]) => list)];
+export const fileTree = (files = []) => GROUPS.map(([key, label]) => {
+  const mine = files.filter((f) => f.group === key);
+  const { root, dirs } = byDir(mine);
+  return { key, label, files: mine, rows: [...root, ...dirs.map(([dir, list]) => ({ dir, files: list }))] };
 });
+
+/**
+ * Every changed file in the order the Files tab draws them (fileTree). The
+ * keyboard walks this list -- Alt+J, Alt+K and Alt+X in app.js. Worked out
+ * here rather than read off the page, because the Files tab is not always the
+ * one showing: the keys work from Detail, Checks and the terminal too.
+ */
+export const fileOrder = (files = []) => fileTree(files)
+  .flatMap((g) => g.rows.flatMap((r) => (r.path ? [r] : r.files)));
 
 /**
  * The file `step` rows on from `path` in that order -- +1 the next, -1 the

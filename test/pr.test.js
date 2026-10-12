@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   pageTitle, withoutHtml, inline, headLinks, noPrLinks, prsInto, prTree, stackOn, stackLabel, stackUnder, stackTree, stackTitle, stackBase, stackOrder, stackEmpty, intoEmpty, switcherRows,
-  HEADING, blocks, sectionize, tabLabel, taskCount, viewedCount, viewedLines, filesProgress, filesName, checkCount, checksName, tabDone, worst, byPath, bySize, byDir, fileOrder, fileFrom, nextUnviewed, nums,
+  HEADING, blocks, sectionize, tabLabel, taskCount, viewedCount, viewedLines, filesProgress, filesName, checkCount, checksName, tabDone, worst, byPath, bySize, byDir, fileTree, fileOrder, fileFrom, nextUnviewed, nums,
 } from '../public/pr.js';
 import { fences, TASK, taskLines } from '../public/tasks.js';
 
@@ -884,6 +884,18 @@ test('the keyboard walks the files in the order the Files tab draws them', () =>
     ['README.md', 'test/a.test.js', 'b.js', 'a.js', 'lib/x.js', 'lib/sub/y.js']);
   assert.deepEqual(fileOrder([]), []);
   assert.deepEqual(fileOrder(), []);
+});
+
+// What the tab draws, from which fileOrder is read: every group, empty ones
+// included, each with its root files as rows and then a fold per directory.
+test('the Files tab is laid out once, as groups of rows and directory folds', () => {
+  const tree = fileTree(walk);
+  assert.deepEqual(tree.map((g) => [g.key, g.label, paths(g.files).length]),
+    [['docs', 'Config & docs', 1], ['tests', 'Tests', 1], ['code', 'Code', 4]]);
+  const code = tree[2].rows.map((r) => (r.path ? r.path : [r.dir, paths(r.files)]));
+  assert.deepEqual(code, ['b.js', 'a.js', ['lib/', ['lib/x.js']], ['lib/sub/', ['lib/sub/y.js']]]);
+  assert.deepEqual(tree[1].rows.map((r) => r.dir), ['test/']);
+  assert.deepEqual(fileTree().map((g) => g.rows), [[], [], []]);
 });
 
 test('a step forward or back is the neighbouring row, and the ends stop', () => {
