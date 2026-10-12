@@ -11,6 +11,9 @@
 // read on every call rather than once.
 
 const NAME = { diff: 'diff', term: 'coding agent', queue: 'queue' };
+// The key that presses a pane's ▼, for its title (the bindKeys table in
+// app.js is where the key is bound; this only says so on the button).
+const KEY = { term: ' (Alt+C)' };
 
 const main = () => document.querySelector('main');
 
@@ -25,7 +28,7 @@ export function fold(pane, off) {
   const b = document.getElementById(`${pane}-fold`);
   b.setAttribute('aria-expanded', String(!off));
   b.textContent = off ? '▶︎' : '▼';   // FE0E: text, never macOS's emoji ▶
-  b.title = `${off ? 'expand' : 'collapse'} the ${NAME[pane]} pane`;
+  b.title = `${off ? 'expand' : 'collapse'} the ${NAME[pane]} pane${KEY[pane] ?? ''}`;
   b.setAttribute('aria-label', b.title);   // a glyph is no name, as in queue.js
   // A fold that hides the focus -- Wrap, an outline entry, the terminal --
   // would drop it on <body> and lose a keyboard user their place. The ▼ is on

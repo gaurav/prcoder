@@ -1,8 +1,8 @@
 import { Terminal } from '/vendor/xterm.mjs';
 import { FitAddon } from '/vendor/addon-fit.mjs';
 import { WebLinksAddon } from '/vendor/addon-web-links.mjs';
-import { renderPr, renderNoPr, renderHeader, pageTitle, api, toast, pref, setPref, debug } from './pr.js';
-import { openDiff, closeDiff, selectedPath, setViewed, toggleWrap, openMention } from './diff.js';
+import { renderPr, renderNoPr, renderHeader, pageTitle, api, toast, pref, setPref, debug, fileFrom, nextUnviewed } from './pr.js';
+import { openDiff, closeDiff, selectedPath, setViewed, toggleWrap, canWrap, openMention } from './diff.js';
 import { initQueue, addItem, setItems } from './queue.js';
 import { bindKeys } from './keys.js';
 import { fold, folded, canFold } from './folds.js';
@@ -19,16 +19,39 @@ term.loadAddon(fit);
 term.loadAddon(new WebLinksAddon((_e, uri) => window.open(uri, '_blank', 'noopener')));
 term.open(document.getElementById('term-host'));
 // Every shortcut the page has, in one table; keys.js says what a binding may
-// and may not do. W for wrap: no browser binds Alt+W, and the owner chose it
-// over VS Code's Alt+Z. M for mention, the diff header's @: not Alt+2, the key
-// @ is on, because Chrome and Firefox on Linux and Windows switch tabs with
-// Alt+digit, and M is none of Firefox's menu letters. Alt+M also fires from
-// the terminal, since that is where you are when you want it: halfway through
-// typing a request about the open file. While there is a file to name, the
-// agent does not get Alt+M (µ on a Mac, ESC m elsewhere); with none, it does.
+// and may not do, and docs/Panes.md lists them for the reader.
+//
+// Each one fires from the terminal as well, while its `terminal` says it has
+// something to do: the review loop -- open a file, read it, tick it, ask the
+// agent about it -- ends in the terminal, and the next step is the next file.
+// While a key would do something the agent does not get it (Option+letter on
+// a Mac, ESC letter elsewhere); when it would do nothing, the agent does, as
+// if the key were not bound.
+//
+// The letters, and what each one steers round. Alt+digit is out everywhere:
+// Chrome and Firefox on Linux and Windows switch tabs with it. Firefox's menu
+// letters there (F E V S B T H) are avoided where there is a choice, and so
+// are the Option+letter dead keys of a US Mac keyboard (E I N U `), which
+// would leave a composition pending, and the keys Claude Code binds in its
+// prompt (Alt+B D F O P T Y, Alt+Enter, and Alt+Up/Down in its /diff panel).
+// W for wrap: the owner chose it over VS Code's Alt+Z. M for mention, the
+// diff header's @: not Alt+2, the key @ is on. V for the viewed box, the one
+// Firefox letter taken, since nothing else says it: a keydown's preventDefault
+// is expected to keep the View menu shut on Linux and Windows, which #128 and
+// #127 are where to confirm, and Claude Code's Alt+V (image paste, Windows
+// only) is lost only while a file is open. X ticks and moves on: free in every
+// browser and in Claude Code, no dead key, and "cross it off". J and K step
+// through the files as vim does, rather than Alt+Up and Alt+Down, which
+// Claude Code's /diff panel scrolls with and which open a focused <select> in
+// Firefox. C folds the coding agent pane, which is what the UI calls it.
 bindKeys({
-  'Alt+KeyW': toggleWrap,
+  'Alt+KeyW': { fn: toggleWrap, terminal: canWrap },
   'Alt+KeyM': { fn: mentionOpenFile, terminal: () => openMention('') != null },
+  'Alt+KeyV': { fn: toggleViewed, terminal: viewedBox },
+  'Alt+KeyX': { fn: tickAndNext, terminal: () => selectedPath() != null || nextUnviewed(last?.pr?.files, null) != null },
+  'Alt+KeyJ': { fn: () => stepFile(1), terminal: anyFiles },
+  'Alt+KeyK': { fn: () => stepFile(-1), terminal: anyFiles },
+  'Alt+KeyC': { fn: toggleTerm, terminal: () => canFold('term') },
 }, term);
 
 const PTY_SEEN = 'prcoder:pty';
@@ -300,8 +323,7 @@ for (const pane of ['diff', 'term', 'queue']) {
 // puts the focus there so typing carries on where it landed. Whether it went is
 // the return value: `send` refuses on a socket that is not open -- a dead PTY,
 // a reload in flight -- and then the focus stays where it was, rather than
-// moving to a terminal nothing is reading, where every shortcut but Alt+M is
-// off.
+// moving to a terminal nothing is reading.
 function typeIntoAgent(data) {
   const sent = send({ type: 'input', data });
   if (sent) term.focus();
@@ -494,6 +516,65 @@ const fileHandlers = {
   onOpen: openFile,
   onTask: toggleTask,
 };
+
+// The keys that walk the files (the table at the top). Each opens through
+// openFile, so a key unfolds the diff as a click does, and then brings the row
+// into view: a click is already on screen, but Alt+J can walk the selection
+// off the bottom of the list. Only the row -- `nearest` leaves the pane alone
+// when the row is already visible -- and only when the Files tab is drawn;
+// from Detail the diff pane's bar names the file and the tab is left where it
+// was, since the key is about the file and not about which tab is open.
+function openByKey(f) {
+  openFile(f);
+  document.querySelector(`.file[data-path="${CSS.escape(f.path)}"]`)?.scrollIntoView({ block: 'nearest' });
+}
+// Function declarations, not consts: the table at the top names these before
+// this line has run.
+function anyFiles() { return (last?.pr?.files?.length ?? 0) > 0; }
+/** Alt+J and Alt+K: the row under or above the open file, stopping at the ends; the first or last with none open. */
+function stepFile(step) {
+  const f = fileFrom(last?.pr?.files, selectedPath(), step);
+  if (f) openByKey(f);
+}
+// Alt+V is the diff pane's own box, pressed: the same click, so the same
+// disabled state while a tick is in flight, and the same writeThrough that
+// repaints the rows. The box is on the bar, which the fold keeps, so it works
+// from a folded diff as the @ does; with no file open there is no box.
+function viewedBox() {
+  const box = document.getElementById('diff-viewed');
+  return box.checkVisibility() && !box.disabled;
+}
+function toggleViewed() {
+  if (viewedBox()) document.getElementById('diff-viewed').click();
+}
+// Alt+X: tick the open file and open the next unviewed one, round to the top
+// past the end; with none open, the first unviewed. The tick goes through
+// markViewed, not the box: the box may already be ticked, and a click would
+// untick it. Held while the tick is in flight, so a second press does not
+// write twice or step past a file the first is still marking. A tick that
+// failed says so and stays: moving on from a file GitHub still has unviewed
+// would lose it from the count.
+let ticking = false;
+async function tickAndNext() {
+  if (ticking) return;
+  ticking = true;
+  try {
+    const open = selectedPath();
+    const f = open && last?.pr?.files.find((x) => x.path === open);
+    if (f && !f.viewed) await markViewed(open, true);
+    const next = nextUnviewed(last?.pr?.files, open);
+    if (next) openByKey(next);
+    else toast('Every file is viewed.');
+  } catch (e) {
+    toast(`Not marked viewed: ${e.message}`, true);
+  } finally {
+    ticking = false;
+  }
+}
+/** Alt+C: the coding agent pane's ▼. Unfolding puts the focus in the terminal, as a click does (setFold). */
+function toggleTerm() {
+  if (canFold('term')) setFold('term', !folded('term'));
+}
 
 // What the pull request pane was last drawn from. A poll that finds nothing new
 // -- most of them -- skips rebuilding it: every row, fold and listener, and the

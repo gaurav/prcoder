@@ -250,9 +250,11 @@ function setWrap(on) {
   paintWrap(on);
   setPref(WRAP_KEY, on ? 'on' : 'off');
 }
-/** The keyboard's way to the Wrap button: nothing to press while it is not shown -- no file open, or the pane folded. */
+/** Whether there is a Wrap button to press: not with no file open, nor while the pane is folded. */
+export const canWrap = () => el('diff-wrap').checkVisibility();
+/** The keyboard's way to the Wrap button, which presses nothing while canWrap says there is none. */
 export function toggleWrap() {
-  if (el('diff-wrap').checkVisibility()) setWrap(!wrapOn());
+  if (canWrap()) setWrap(!wrapOn());
 }
 
 /** Ticking this here ticks the same checkbox on github.com; the file rows use it too. */
