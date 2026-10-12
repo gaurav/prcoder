@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { toggleTask, taskLines } from '../public/tasks.js';
+import { toggleTask, taskLines, refs, wholeRef, resolveRef, printable } from '../public/tasks.js';
 import { blocks, sectionize } from '../public/pr.js';
 
 // --- checkboxes in the description ---
@@ -262,4 +262,71 @@ test('a comment ending on a task line leaves that task a task on both sides', ()
   assert.deepEqual(paneTasks(body).map((t) => t.trim()), ['after the comment', 'last']);
   assert.deepEqual(taskLines(body), [2, 3]);
   assert.doesNotThrow(() => toggleTask(body, 1, true, 'last'));
+});
+
+// --- references typed into the queue ---
+
+const shape = (text) => refs(text).map(({ owner, name, number }) => [owner, name, number]);
+
+test('the four ways of typing a reference each read as one', () => {
+  assert.deepEqual(shape('#91'), [[null, null, 91]]);
+  assert.deepEqual(shape('prcoder#91'), [[null, 'prcoder', 91]]);
+  assert.deepEqual(shape('gaurav/prcoder#91'), [['gaurav', 'prcoder', 91]]);
+  assert.deepEqual(shape('https://github.com/gaurav/prcoder/issues/91'), [['gaurav', 'prcoder', 91]]);
+  // A PR's URL, with whatever GitHub puts after the number when you copy it.
+  assert.deepEqual(shape('https://github.com/cli/cli.go/pull/7/files'), [['cli', 'cli.go', 7]]);
+  assert.deepEqual(shape('https://github.com/o/r/issues/5#issuecomment-12'), [['o', 'r', 5]]);
+});
+
+test('a reference is only whole when there is nothing else in the text', () => {
+  assert.equal(wholeRef('  #91 ')?.number, 91);
+  assert.equal(wholeRef('https://github.com/o/r/pull/3?w=1')?.number, 3);
+  assert.equal(wholeRef('Fix #93'), null);
+  assert.equal(wholeRef('#93 and #94'), null);
+  assert.deepEqual(shape('Fix #93 and #94.'), [[null, null, 93], [null, null, 94]]);
+});
+
+// What is not one: GitHub links a `#N` only at the start of a word, and so
+// does this; and a GitHub URL that is not an issue or a PR is just a link.
+test('text that only contains a # or a GitHub link is not a reference', () => {
+  assert.deepEqual(refs('see issue#91x and a#b'), []);
+  assert.deepEqual(refs('https://github.com/o/r/blob/main/README.md'), []);
+  assert.deepEqual(refs('https://github.com/o/r/issues/'), []);
+  assert.deepEqual(refs('path/#5'), []);
+});
+
+test('a reference resolves against the repo prcoder is in', () => {
+  const home = 'gaurav/prcoder';
+  assert.deepEqual(resolveRef(refs('#91')[0], home), { repo: null, number: 91 });
+  assert.deepEqual(resolveRef(refs('prcoder#91')[0], home), { repo: null, number: 91 });
+  assert.deepEqual(resolveRef(refs('Gaurav/PRCoder#91')[0], home), { repo: null, number: 91 });
+  assert.deepEqual(resolveRef(refs('cli/cli#123')[0], home), { repo: 'cli/cli', number: 123 });
+});
+
+// A repo with no GitHub name prcoder could read: the server passes its
+// message on as the reason the text was added untagged.
+test('with no home repo, only a reference that names its owner resolves', () => {
+  assert.deepEqual(resolveRef(refs('cli/cli#123')[0], null), { repo: 'cli/cli', number: 123 });
+  assert.throws(() => resolveRef(refs('#91')[0], null), /#91: this repo's GitHub name is not known/);
+  assert.throws(() => resolveRef(refs('prcoder#91')[0], undefined), /prcoder#91: /);
+});
+
+// Any word before a #N has the short form's shape, and each of these was once
+// looked up as a repo of that name and refused, so it could not be added.
+test('the short form is only this repo, once the repo is known', () => {
+  const home = 'gaurav/prcoder';
+  assert.deepEqual(refs('Learn C#7 features', home), []);
+  assert.deepEqual(refs('retry bug#12, then other#2', home), []);
+  assert.deepEqual(shape('PRCoder#91'), [[null, 'PRCoder', 91]]);
+  assert.equal(refs('PRCoder#91', home)[0].number, 91);
+  // Every other shape names its repo outright, or is this one.
+  assert.equal(refs('#4 and cli/cli#5 and https://github.com/o/r/issues/6', home).length, 3);
+  assert.equal(wholeRef('C#7', home), null);
+  // Unknown, nothing is dropped: the server, which knows, decides.
+  assert.deepEqual(shape('C#7'), [[null, 'C', 7]]);
+});
+
+test('printable makes every run of control characters one space', () => {
+  assert.equal(printable('a\r\nb\u001b[2Jc\u009bd\u007fe'), 'a b [2Jc d e');
+  assert.equal(printable('plain — text'), 'plain — text');
 });

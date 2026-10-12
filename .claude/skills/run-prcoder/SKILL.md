@@ -38,8 +38,9 @@ it takes the recorded port, writing one on the first run, and prints the URL on
 stdout. For a look with the user's own eyes, leave it running and hand them that.
 
 API shape: the `routes` table in `server.js`, keyed `"METHOD /path"`, JSON
-in/out, errors as 500 `{error}`. Every handler but `/api/whoami` is serialised,
-so one slow call delays the rest.
+in/out, errors as 500 `{error}`. Every handler but the few in `UNLOCKED` --
+whoami, status, the queue's reference lookup -- is serialised, so one slow
+call delays the rest.
 
 ## Verifying a change
 

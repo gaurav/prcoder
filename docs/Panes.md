@@ -16,7 +16,7 @@ own. A repo whose port changes (`port.json` deleted, its port busy at startup, o
 with `--port` or `PRCODER_PORT`) opens with the default layout, and gets the old one back once it
 is on the old port again.
 
-The terminal folds to its header line with a click anywhere on that line, or with Alt+C, from
+The terminal folds to its header line with a click anywhere on that line, or with Alt+G, from
 inside it too; the ▼ before its title says so, and is the keyboard's other way in. The diff (or the queue, with no diff open) takes the room,
 and another click unfolds it. Folding never touches the session, which keeps running folded. While
 a turn runs, the folded header says `working` beside its title after a small red octagon, the
@@ -64,7 +64,7 @@ the queue's input, or in an item being edited, though a checkbox you have just t
 | Alt+K | opens the previous file, or the last with none open                              | the pull request has files                       |
 | Alt+W | presses *Wrap* in the diff pane                                                  | a file is open and the pane is not folded        |
 | Alt+M | presses **@** in the diff pane                                                   | a file that has one is open                      |
-| Alt+C | presses the coding agent pane's ▼: folds it, or unfolds it and puts the focus back in the terminal | always                         |
+| Alt+G | presses the coding agent pane's ▼: folds it, or unfolds it and puts the focus back in the terminal | always                         |
 | Alt+/ | shows these shortcuts, or hides them                                             | always                                           |
 
 The terminal belongs to the coding agent, and every key pressed in it is the agent's -- except
@@ -72,12 +72,15 @@ these, while the *While* column holds. The loop these keys are for ends in the t
 about the file just read, and the next step is the next file; so each fires from there as well,
 and the agent does not receive it (Option+letter's character on a Mac, or the ESC letter it sends
 on Linux and Windows). When the column does not hold -- Alt+V with no file open, Alt+M on a
-deleted one, Alt+J with no pull request -- the key goes to the agent as if it were not bound,
-so the agent loses a key only while it would do something here.
+deleted one, Alt+J with no pull request -- the key goes to the agent as if it were not bound.
+The column is the whole test, not whether this press would change anything: Alt+J on the last
+file and Alt+K on the first do nothing, and the agent does not get them either, since a step that
+runs off the end of the list is still a step, and typing ∆ or ESC j into the prompt is worse.
 
 Alt+J, Alt+K and Alt+X open a file the way a click does: the diff unfolds, and the row scrolls
-into view if the Files tab is showing. They do not switch to it -- the diff pane's bar names the
-file -- and Alt+J and Alt+K stop at the ends of the list rather than going round. Alt+X ticks
+into view if the Files tab is showing. They also open the group and directory the row is in, if
+you had closed them, so the Files tab shows the open file wherever it is. They do not switch to
+it -- the diff pane's bar names the file -- and Alt+J and Alt+K stop at the ends of the list rather than going round. Alt+X ticks
 first and moves only once the tick has landed: one GitHub refused is said in a toast and not
 moved on from, and once every file is viewed it says so and stays. The *While* column is each
 key's `terminal` guard in the `bindKeys` table in `app.js`, where the letters are argued.
@@ -316,9 +319,20 @@ and ticks it off in the same click; ◎ files it as a new GitHub issue and takes
 the issue is where it lives from then on.
 
 New items go to the bottom, so typing them in builds a list in the order you mean to work through
-it. They always go on Local, whichever tab is showing -- the input's placeholder says so -- and
-adding one from another tab leaves you there and flashes the Local tab instead. The arrow next to the input flips that to the top, for the other way of using a queue -- the
-thing you must not forget to do next -- and stays flipped.
+it. The arrow next to the input flips that to the top, for the other way of using a queue -- the
+thing you must not forget to do next -- and stays flipped. They always go on Local, whichever tab
+is showing -- the input's placeholder says so -- and adding one from another tab leaves you there
+and flashes the Local tab instead.
+
+An item can be about an issue or a pull request, in this repo or any other `gh` can read. Type
+`#91`, `prcoder#91`, `owner/repo#91` or a github.com link on its own and the item is added under
+that issue's title; the same thing inside longer text, `Fix #93`, keeps your text. The `name#91`
+form is only ever this repo's name, so `Learn C#7` stays plain text; another repo needs its owner. Either way the row gets a tag -- `#91` here, `cli/cli#123` elsewhere -- that links to it,
+and ▶ adds the link to what it types unless the text already names that issue. A reference GitHub
+does not know is refused with GitHub's reason and left in the input to fix, and one already on
+Local is not added twice. When GitHub cannot be asked at all -- offline, `gh` logged out -- the text
+is added as it is, untagged, and a toast says why. ◎ always files in this repo, so an item about one of this repo's issues
+has none, and one about another repo's files a new issue here with the link to it as the body.
 
 **Local** is the working list, and it drains as you move and finish things, so a session you
 finished tidily ends with it empty. Only Local is yours to reorder. **Completed** is what you ticked

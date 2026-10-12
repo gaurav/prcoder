@@ -1,10 +1,11 @@
 import { Terminal } from '/vendor/xterm.mjs';
 import { FitAddon } from '/vendor/addon-fit.mjs';
 import { WebLinksAddon } from '/vendor/addon-web-links.mjs';
-import { renderPr, renderNoPr, renderHeader, pageTitle, api, toast, pref, setPref, debug, fileFrom, nextUnviewed, h } from './pr.js';
-import { openDiff, closeDiff, selectedPath, setViewed, toggleWrap, canWrap, openMention } from './diff.js';
+import { renderPr, renderNoPr, renderHeader, pageTitle, api, toast, pref, setPref, debug, fileFrom, nextUnviewed, revealFile, h } from './pr.js';
+import { openDiff, closeDiff, selectedPath, setViewed, showViewed, canTickViewed, toggleViewed, toggleWrap, canWrap, openMention } from './diff.js';
 import { initQueue, addItem, setItems } from './queue.js';
 import { bindKeys, keyLabel, isTyping } from './keys.js';
+import { printable } from './tasks.js';
 import { fold, folded, canFold } from './folds.js';
 import './panes.js';   // draggable pane gutters; nothing here calls into it
 
@@ -24,9 +25,11 @@ term.open(document.getElementById('term-host'));
 // Each one fires from the terminal as well, while its `terminal` says it has
 // something to do: the review loop -- open a file, read it, tick it, ask the
 // agent about it -- ends in the terminal, and the next step is the next file.
-// While a key would do something the agent does not get it (Option+letter on
-// a Mac, ESC letter elsewhere); when it would do nothing, the agent does, as
-// if the key were not bound.
+// While it does, the agent does not get the key (Option+letter on a Mac, ESC
+// letter elsewhere); when it does not, the agent does, as if the key were not
+// bound. Each `terminal` asks whether the key has anything to work on, not
+// whether this press would change something: Alt+J on the last file is still
+// the agent's loss, since a step off the end typing into the prompt is worse.
 //
 // The letters, and what each one steers round. Alt+digit is out everywhere:
 // Chrome and Firefox on Linux and Windows switch tabs with it. Firefox's menu
@@ -43,19 +46,25 @@ term.open(document.getElementById('term-host'));
 // browser and in Claude Code, no dead key, and "cross it off". J and K step
 // through the files as vim does, rather than Alt+Up and Alt+Down, which
 // Claude Code's /diff panel scrolls with and which open a focused <select> in
-// Firefox. C folds the coding agent pane, which is what the UI calls it.
+// Firefox. G folds the coding agent pane. It fires from the terminal while
+// the pane can fold at all, which is always, so the agent never gets it, and
+// the letter is chosen for what Option+letter types on a Mac: G and R give ©
+// and ®, which nobody types into a prompt, where every other free letter
+// types one somebody does -- C ç, A å and Polish ą, Q œ, L ¬ and German @, Z
+// Ω and Polish ż. G over R for no better reason than "go to the agent", which
+// unfolding does.
 //
 // Each binding's `label` is its row on the shortcut sheet (Alt+/ below), which
 // is built from this table and so can only list keys the page has. The
 // order here is the sheet's order: the review loop first, then the rest.
 const KEYS = {
-  'Alt+KeyV': { fn: toggleViewed, terminal: viewedBox, label: 'mark the open file viewed, or unviewed' },
+  'Alt+KeyV': { fn: toggleViewed, terminal: canTickViewed, label: 'mark the open file viewed, or unviewed' },
   'Alt+KeyX': { fn: tickAndNext, terminal: () => selectedPath() != null || nextUnviewed(last?.pr?.files, null) != null, label: 'mark the open file viewed and open the next unviewed one' },
   'Alt+KeyJ': { fn: () => stepFile(1), terminal: anyFiles, label: 'open the next file' },
   'Alt+KeyK': { fn: () => stepFile(-1), terminal: anyFiles, label: 'open the previous file' },
   'Alt+KeyM': { fn: mentionOpenFile, terminal: () => openMention('') != null, label: 'mention the open file to the coding agent' },
   'Alt+KeyW': { fn: toggleWrap, terminal: canWrap, label: 'wrap long lines in the diff' },
-  'Alt+KeyC': { fn: toggleTerm, terminal: () => canFold('term'), label: 'fold or unfold the coding agent pane' },
+  'Alt+KeyG': { fn: toggleTerm, terminal: () => canFold('term'), label: 'fold or unfold the coding agent pane' },
   'Alt+Slash': { fn: toggleKeys, terminal: () => true, label: 'show these shortcuts' },
 };
 bindKeys(KEYS, term);
@@ -390,13 +399,15 @@ function typeIntoAgent(data) {
 // `submit` false types the text and stops there: the prompt is left ready to
 // edit and send by hand, which is what the queue's ▶ wants. Trailing
 // whitespace is cut either way -- a newline in the text *is* the Enter that
-// would have sent it half-written.
+// would have sent it half-written -- and any control character inside it is
+// a space: an item's text can come from a hand-edited queue file or anyone's
+// issue title, and a `\r` there would submit the turn without the click.
 //
 // The queue ticks an item off on the strength of the return value, and an item
 // checked off after a refused send is one nobody has done and nobody is going
 // to be reminded of.
 function sendToClaude(text, submit = true) {
-  return typeIntoAgent(text.replace(/\s+$/, '') + (submit ? '\r' : ''));
+  return typeIntoAgent(printable(text).replace(/\s+$/, '') + (submit ? '\r' : ''));
 }
 
 // The diff header's @: the open file's mention, typed and not sent, so the
@@ -543,15 +554,28 @@ async function toggleTask(task) {
   }
 }
 
+// The ticks GitHub has not answered yet, by path, so Alt+X can wait for one
+// made with a click before reading `viewed` -- which changes only once GitHub
+// answers, and read early would skip an untick's re-tick or send a second PUT.
+const marking = new Map();
 /** A file marked viewed or not, on GitHub and then in every place that shows it. */
 async function markViewed(path, viewed) {
+  const run = writeViewed(path, viewed);
+  marking.set(path, run);
+  try {
+    await run;
+  } finally {
+    if (marking.get(path) === run) marking.delete(path);
+  }
+}
+async function writeViewed(path, viewed) {
   await setViewed(path, viewed);
   const f = last?.pr?.files.find((x) => x.path === path);
   if (!f) return;
   f.viewed = viewed;
   paint(last);
   // The diff pane's box is static markup, outside anything paint() draws.
-  if (selectedPath() === path) document.getElementById('diff-viewed').checked = viewed;
+  showViewed(path, viewed);
 }
 
 // A click on a row unfolds the pane: you asked for the file. The refresh in
@@ -572,15 +596,14 @@ const fileHandlers = {
 };
 
 // The keys that walk the files (the table at the top). Each opens through
-// openFile, so a key unfolds the diff as a click does, and then brings the row
-// into view: a click is already on screen, but Alt+J can walk the selection
-// off the bottom of the list. Only the row -- `nearest` leaves the pane alone
-// when the row is already visible -- and only when the Files tab is drawn;
-// from Detail the diff pane's bar names the file and the tab is left where it
-// was, since the key is about the file and not about which tab is open.
+// openFile, so a key unfolds the diff as a click does, and then reveals the
+// row: a click is already on screen, but Alt+J can walk the selection off the
+// bottom of the list or into a fold the user closed. The tab is left where it
+// was -- from Detail the diff pane's bar names the file -- since the key is
+// about the file and not about which tab is open.
 function openByKey(f) {
   openFile(f);
-  document.querySelector(`.file[data-path="${CSS.escape(f.path)}"]`)?.scrollIntoView({ block: 'nearest' });
+  revealFile(last?.pr?.files, f.path);
 }
 // Function declarations, not consts: the table at the top names these before
 // this line has run.
@@ -590,30 +613,22 @@ function stepFile(step) {
   const f = fileFrom(last?.pr?.files, selectedPath(), step);
   if (f) openByKey(f);
 }
-// Alt+V is the diff pane's own box, pressed: the same click, so the same
-// disabled state while a tick is in flight, and the same writeThrough that
-// repaints the rows. The box is on the bar, which the fold keeps, so it works
-// from a folded diff as the @ does; with no file open there is no box.
-function viewedBox() {
-  const box = document.getElementById('diff-viewed');
-  return box.checkVisibility() && !box.disabled;
-}
-function toggleViewed() {
-  if (viewedBox()) document.getElementById('diff-viewed').click();
-}
 // Alt+X: tick the open file and open the next unviewed one, round to the top
 // past the end; with none open, the first unviewed. The tick goes through
 // markViewed, not the box: the box may already be ticked, and a click would
 // untick it. Held while the tick is in flight, so a second press does not
 // write twice or step past a file the first is still marking. A tick that
 // failed says so and stays: moving on from a file GitHub still has unviewed
-// would lose it from the count.
+// would lose it from the count. A tick of the same file still in flight, from
+// the box or its row, is waited for first; one that failed left `viewed` as it
+// was, so Alt+X decides from that.
 let ticking = false;
 async function tickAndNext() {
   if (ticking) return;
   ticking = true;
   try {
     const open = selectedPath();
+    await marking.get(open)?.catch(() => {});
     const f = open && last?.pr?.files.find((x) => x.path === open);
     if (f && !f.viewed) await markViewed(open, true);
     const next = nextUnviewed(last?.pr?.files, open);
@@ -625,7 +640,7 @@ async function tickAndNext() {
     ticking = false;
   }
 }
-/** Alt+C: the coding agent pane's ▼. Unfolding puts the focus in the terminal, as a click does (setFold). */
+/** Alt+G: the coding agent pane's ▼. Unfolding puts the focus in the terminal, as a click does (setFold). */
 function toggleTerm() {
   if (canFold('term')) setFold('term', !folded('term'));
 }
@@ -676,7 +691,7 @@ function paint(status) {
       drawn = key;
       renderPr({ ...status.pr, note: NOTES[status.scope] }, {
         ...fileHandlers,
-        selected: selectedPath(),
+        selected: selectedPath,
         prs: stack,
         otherRepo,
         onStackOpen: () => loadPrs('Stack tab opened'),
@@ -809,12 +824,21 @@ input.addEventListener('keydown', async (e) => {
   // reason this is a textarea with a key handler rather than a form.
   if (e.key !== 'Enter' || e.shiftKey) return;
   e.preventDefault();
+  // A reference is looked up on GitHub before it is added, which takes a
+  // second; an Enter meanwhile would add it twice. Read-only rather than
+  // disabled, which would take the focus away from the input.
+  if (input.readOnly) return;
+  input.readOnly = true;
   // Cleared only once the server has the item. addItem is async and save()
   // reports a refusal with a toast rather than a throw, so clearing on the way
   // past threw the text away on any API failure.
-  if (await addItem(input.value)) {
-    input.value = '';
-    grow();
+  try {
+    if (await addItem(input.value)) {
+      input.value = '';
+      grow();
+    }
+  } finally {
+    input.readOnly = false;
   }
 });
 /** One line until it needs more, then up to a third of the pane. */
@@ -828,5 +852,6 @@ input.addEventListener('input', grow);
 // needs it — renderHeader synthesises an option for the current PR until it
 // lands, and loadPrs repaints the header itself when it does.
 loadPrs('page load');
-await initQueue({ sendToClaude, onTask: toggleTask });
+// `home` for ▶, which reads a bare #N in an item's text as this repo's.
+await initQueue({ sendToClaude, onTask: toggleTask, home: () => last?.nameWithOwner });
 loadStatus();

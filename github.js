@@ -2,7 +2,7 @@
 
 import { execFile } from 'node:child_process';
 import { debug } from './term.js';
-import { mentions, repoUrl } from './public/tasks.js';
+import { mentions, repoUrl, printable } from './public/tasks.js';
 
 // Every gh call and every git call comes through run(), so this is the whole
 // count. What it is for: two browser tabs each poll on their own timer against
@@ -268,9 +268,9 @@ export function issueNumber(out) {
   return { url, number: n };
 }
 
-export async function createIssue(cwd, nameWithOwner, title) {
+export async function createIssue(cwd, nameWithOwner, title, body = '') {
   return issueNumber(await gh(['issue', 'create', '--repo', nameWithOwner,
-    '--title', title, '--body', ''], { cwd }));
+    '--title', title, '--body', body], { cwd }));
 }
 
 /**
@@ -382,15 +382,62 @@ async function withLinks(cwd, prUrl, issues) {
  */
 export async function issueLinks(cwd, prUrl, numbers) {
   const { owner, repo } = parsePrUrl(prUrl);
-  const query = `query($owner:String!,$repo:String!){ repository(owner:$owner,name:$repo){ ` +
-    numbers.map((n) => `i${n}: issueOrPullRequest(number:${n})` +
-      `{ __typename ... on Issue { title url state updatedAt } ... on PullRequest { title url state updatedAt } }`).join(' ') + ` } }`;
-  const args = ['api', 'graphql', '-f', `query=${query}`, '-f', `owner=${owner}`, '-f', `repo=${repo}`];
   try {
-    return linksFrom(await gh(args, { cwd }));
+    return linksFrom(await gh(linksArgs(owner, repo, numbers), { cwd }));
   } catch (e) {
     return linksFrom(e.stdout);
   }
+}
+
+/**
+ * The one query issueLinks and lookupRef share. Numbers only are interpolated.
+ * `nameWithOwner` is GitHub's spelling of the repo, for lookupRef; linksFrom
+ * passes over it, having no title.
+ */
+function linksArgs(owner, repo, numbers) {
+  const query = `query($owner:String!,$repo:String!){ repository(owner:$owner,name:$repo){ nameWithOwner ` +
+    numbers.map((n) => `i${n}: issueOrPullRequest(number:${Number(n)})` +
+      `{ __typename ... on Issue { title url state updatedAt } ... on PullRequest { title url state updatedAt } }`).join(' ') + ` } }`;
+  return ['api', 'graphql', '-f', `query=${query}`, '-f', `owner=${owner}`, '-f', `repo=${repo}`];
+}
+
+/**
+ * One issue or pull request in any repo gh can read, for a reference typed
+ * into the queue: `{ title, url, state, kind, updatedAt }` as linksFrom has it,
+ * and `repo`, GitHub's own spelling of `owner/repo` -- so `CLI/CLI#1`, or a
+ * repo since renamed, is stored the way GitHub will link it. (Asked for as
+ * jashkenas/coffee-script on 2026-10-11, it said jashkenas/coffeescript.)
+ *
+ * Unlike issueLinks, which is decoration and swallows its failures, this is
+ * the answer to "is that a real issue?", so it throws with the reason. GitHub
+ * gives a good one -- "Could not resolve to a Repository with the name 'o/r'",
+ * which is also what a private repo you cannot see says, and "...an issue or
+ * pull request with the number of 99999" -- as a NOT_FOUND in the JSON gh
+ * prints on stdout before exiting 1 (checked 2026-09-27). Read from there, so
+ * it arrives without gh's `gh: ` in front; anything else keeps run()'s message.
+ * `notFound` on the error says which: GitHub's no, or gh not getting an answer
+ * at all -- offline, logged out, rate-limited -- which is no reason to refuse.
+ */
+export async function lookupRef(cwd, owner, repo, number) {
+  const where = `${owner}/${repo}#${number}`;
+  let out;
+  try {
+    out = await gh(linksArgs(owner, repo, [number]), { cwd });
+  } catch (e) {
+    let reason = e.message;
+    let missing = false;
+    try {
+      const [error] = JSON.parse(e.stdout).errors;
+      reason = error.message ?? reason;
+      missing = error.type === 'NOT_FOUND';
+    } catch { /* not GitHub's JSON */ }
+    throw Object.assign(new Error(`${where}: ${reason}`), { notFound: missing });
+  }
+  const found = linksFrom(out).get(number);
+  if (!found) throw new Error(`${where}: GitHub answered, but not with an issue or pull request`);
+  let canonical = null;
+  try { canonical = JSON.parse(out).data.repository.nameWithOwner ?? null; } catch { /* linksFrom read it */ }
+  return { ...found, repo: canonical };
 }
 
 /** The `iN: { title, url, state, kind, updatedAt }` aliases of a response,
@@ -409,7 +456,11 @@ export function linksFrom(out) {
   return new Map(Object.entries(repo ?? {})
     .filter(([, v]) => v?.title)
     .map(([alias, v]) => [Number(alias.slice(1)), {
-      title: v.title,
+      // Anyone's text, which becomes a queue item's text through the Issues
+      // tab's ↓ or a typed reference. sendToClaude cleans what ▶ types too;
+      // this keeps it out of the stored item and the pane (docs/Security.md).
+      // One that was nothing else would be a blank row: it is the number then.
+      title: printable(v.title).trim() || alias.replace('i', '#'),
       url: v.url ?? null,
       state: v.state ?? null,
       kind: { Issue: 'issue', PullRequest: 'pull' }[v.__typename] ?? null,
