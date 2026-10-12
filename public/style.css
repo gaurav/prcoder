@@ -807,6 +807,62 @@ main.diff-off #diff-wrap { display: none; }
 .actions button:disabled, .bulk:disabled { opacity: .35; cursor: not-allowed; }
 .bulk:disabled:hover { color: var(--dim); }
 
+/* --- The corner: prcoder's tile and name, as a menu (index.html) --- */
+/* The summary is the tile, the name and a caret in a row, at the height the
+   header already has: the name is set at 13px so its line box (19.5px) stays
+   under the switcher's, which is what sets the header's height. No marker --
+   the caret is the affordance, and the tile is the same picture as the tab. */
+#menu { position: relative; }
+#menu > summary {
+  list-style: none; display: flex; align-items: center; gap: 6px;
+  cursor: pointer; user-select: none; color: var(--dim);
+}
+#menu > summary::-webkit-details-marker { display: none; }
+#menu > summary:hover, #menu[open] > summary { color: var(--fg); }
+#menu h1 { font-size: 13px; letter-spacing: 0; text-transform: none; color: inherit; }
+#logo { display: block; border-radius: 3px; }
+#menu .caret { font-size: 10px; }
+/* Dropped under the summary, over the pane. One column of links and buttons
+   with the same box; a button in a header is otherwise pushed to the far end
+   by the rule below, so it says so. The version is a line, not a control. */
+#menu-list {
+  position: absolute; top: 100%; left: 0; z-index: 10; min-width: 220px; margin-top: 6px;
+  display: flex; flex-direction: column; padding: 4px 0;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
+  box-shadow: 0 3px 14px #0008;
+}
+#menu-list a, #menu-list button {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 16px;
+  margin: 0; padding: 5px 12px; font: inherit; font-size: 13px; line-height: 1.4;
+  color: var(--fg); text-decoration: none; text-align: left; background: none; border: 0; cursor: pointer;
+}
+#menu-list a:hover, #menu-list button:hover { background: var(--bg); color: var(--fg); }
+#menu-list kbd { font: inherit; font-size: 11px; color: var(--dim); }
+#menu-list hr { margin: 4px 0; border: 0; border-top: 1px solid var(--line); }
+#menu-version { padding: 3px 12px 2px; font-size: 11px; color: var(--dim); }
+
+/* The shortcut sheet (Alt+/): a modal over the panes, in the panes' own
+   colours, one row per key. The key is drawn as a keycap, so it reads as a
+   key and not as a word. */
+#keys {
+  min-width: 360px; max-width: 90vw; padding: 12px 18px 14px;
+  background: var(--panel); color: var(--fg); border: 1px solid var(--line); border-radius: 8px;
+  box-shadow: 0 6px 30px #000a;
+}
+#keys::backdrop { background: #0008; }
+#keys > header { display: flex; align-items: center; margin-bottom: 8px; }
+#keys h2 { margin: 0; font-size: 14px; font-weight: 600; }
+#keys-close { margin-left: auto; background: none; border: 0; color: var(--dim); font: inherit; cursor: pointer; }
+#keys-close:hover { color: var(--fg); }
+#keys table { border-collapse: collapse; }
+#keys td { padding: 3px 0; font-size: 13px; vertical-align: baseline; }
+#keys td:first-child { padding-right: 14px; white-space: nowrap; }
+#keys kbd {
+  font: inherit; font-size: 12px; padding: 1px 7px;
+  background: var(--bg); border: 1px solid var(--line); border-radius: 4px;
+}
+#keys-note { margin: 10px 0 0; font-size: 12px; color: var(--dim); max-width: 44ch; }
+
 /* --- PR pane header: switcher, sync light --- */
 .pane > header select {
   /* Takes the header's spare width; min-width:0 lets a long PR title ellipsize

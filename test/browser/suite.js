@@ -175,7 +175,7 @@ async function newPage({ prs = [], st = status, ready = '#pr-head .pr-title', be
   }
   await p.routeWebSocket(/\/pty(\?|$)/, pty);
   await p.route('**/api/whoami', (r) => (typeof whoami === 'function'
-    ? whoami(r) : r.fulfill({ json: { started: whoami } })));
+    ? whoami(r) : r.fulfill({ json: { started: whoami, version: '0.0.0-test' } })));
   await p.route('**/api/status', (r) => r.fulfill({ json: st }));
   await p.route('**/api/prs', (r) => (prs ? r.fulfill({ json: prs }) : r.abort()));
   await p.route('**/api/below', (r) => {
@@ -735,6 +735,94 @@ test('the ⟳ is drawn large without making the pull request header taller', { s
   const plain = await height();
   await page.$eval('#pr-refresh', (el) => { el.style.fontSize = ''; el.style.lineHeight = ''; });
   assert.equal(large, plain, 'the ⟳ should not make the header taller than it is at the header\'s size');
+});
+
+// The corner of the page is prcoder's, not the pull request pane's: the tab's
+// tile and the name, as a menu. It sits in the header at the header's own
+// height -- a taller summary would move every pane's top edge -- and closes
+// the ways a menu does, which a <details> does not do on its own: a click
+// elsewhere, Escape, a pick.
+test('the corner is prcoder\'s menu, at the header\'s height, and closes like one', { skip }, async () => {
+  const height = () => page.$eval('#pr > header', (el) => el.getBoundingClientRect().height);
+  const whole = await height();
+  await page.$eval('#menu', (el) => { el.style.display = 'none'; });
+  const without = await height();
+  await page.$eval('#menu', (el) => { el.style.display = ''; });
+  assert.equal(whole, without, 'the menu should not make the header taller');
+  assert.equal(await page.textContent('#pr > header h1'), 'prcoder');
+  assert.equal(await page.getAttribute('#logo', 'src'),
+    await page.getAttribute('link[rel=icon]', 'href'), 'the tile is the tab\'s icon');
+  const open = () => page.$eval('#menu', (el) => el.open);
+  assert.equal(await open(), false);
+  await page.click('#menu > summary');
+  assert.equal(await open(), true);
+  // The hint is spelled for the keyboard the page is on, as the sheet's are.
+  const slash = await page.evaluate(() => (/Mac/.test(navigator.platform) ? '⌥/' : 'Alt+/'));
+  assert.deepEqual(await page.$$eval('#menu-list > :is(a, button, span)', (els) => els.map((el) => el.textContent.trim())),
+    [`Keyboard shortcuts ${slash}`, 'Documentation', 'Report an issue', 'Repository', 'Quit prcoder…', 'prcoder 0.0.0-test']);
+  for (const id of ['menu-docs', 'menu-issue', 'menu-repo']) {
+    assert.match(await page.getAttribute(`#${id}`, 'href'), /^https:\/\/github\.com\/gaurav\/prcoder/);
+    assert.equal(await page.getAttribute(`#${id}`, 'target'), '_blank');
+  }
+  await page.click('#pr-body');
+  assert.equal(await open(), false, 'a click elsewhere closes it');
+  await page.click('#menu > summary');
+  await page.keyboard.press('Escape');
+  assert.equal(await open(), false, 'so does Escape');
+  await page.click('#menu > summary');
+  await page.click('#menu-keys');
+  assert.equal(await open(), false, 'and a pick');
+  assert.equal(await page.$eval('#keys', (d) => d.open), true, 'which opened the sheet');
+  await page.click('#keys-close');
+  assert.equal(await page.$eval('#keys', (d) => d.open), false);
+});
+
+// The sheet is built from the bindKeys table, so this list is the table, and
+// the one in docs/Panes.md: a key added to one and not the other fails here.
+// Alt+/ opens it from the terminal, a glance, and Escape hands the focus
+// back there; the agent sees none of it.
+test('Alt+/ shows every shortcut, from the terminal too, and Escape puts the focus back', { skip }, async () => {
+  const { fresh, typed } = await agentPage();
+  const shown = () => fresh.$eval('#keys', (d) => d.open);
+  await fresh.locator('#term-host').click();
+  await fresh.keyboard.press('Alt+Slash');
+  await fresh.waitForFunction(() => document.getElementById('keys').open);
+  assert.deepEqual(await fresh.$$eval('#keys-list kbd', (els) => els.map((el) => el.textContent)),
+    ['Alt+V', 'Alt+X', 'Alt+J', 'Alt+K', 'Alt+M', 'Alt+W', 'Alt+C', 'Alt+/']);
+  assert.match(await fresh.textContent('#keys-note'), /from the coding agent's terminal too/);
+  await fresh.keyboard.press('Escape');
+  await fresh.waitForFunction(() => !document.getElementById('keys').open);
+  assert.equal(await fresh.evaluate(() => !!document.activeElement?.closest('#term-host')), true, 'focus back in the terminal');
+  await settle(fresh);
+  assert.equal(typed().length, 0, 'the agent saw neither key');
+  // From the page, the same key both ways.
+  await fresh.locator('#diff-fold').focus();
+  await fresh.keyboard.press('Alt+Slash');
+  assert.equal(await shown(), true);
+  await fresh.keyboard.press('Alt+Slash');
+  assert.equal(await shown(), false, 'pressed again, it closes');
+  await fresh.close();
+});
+
+// Quit from the menu is the exit bar's quit: the same question, and the same
+// line in the bar afterwards -- plus a toast, since the bar may be off screen.
+test('Quit in the menu asks what the exit bar asks, and says when it has quit', { skip }, async () => {
+  const fresh = await newPage();
+  const asked = [];
+  await fresh.route('**/api/quit', (r) => {
+    const body = r.request().postDataJSON();
+    asked.push(body);
+    return r.fulfill({ json: body.force ? { quit: true } : { risk: ['2 uncommitted files'] } });
+  });
+  fresh.once('dialog', (d) => { asked.push(d.message()); d.accept(); });
+  await fresh.click('#menu > summary');
+  await fresh.click('#menu-quit');
+  await fresh.waitForSelector('#toast:not([hidden])');
+  assert.match(await fresh.textContent('#toast'), /prcoder has quit/);
+  assert.equal(await fresh.$eval('#toast', (el) => el.classList.contains('sticky')), true);
+  await fresh.locator('#term-exit').getByText('prcoder has quit').waitFor();
+  assert.deepEqual(asked, [{}, 'Quit prcoder? 2 uncommitted files.', { force: true }]);
+  await fresh.close();
 });
 
 // A button drawn as a glyph -- ✕, ⟳, ▼ -- is read out by a screen reader as
@@ -1643,6 +1731,8 @@ test('a turn swaps the tab icon for the busy one, in the folded header\'s red', 
   await fresh.click('#term-host');
   await fresh.keyboard.press('Enter');
   assert.equal((await icon()).href, idle.busy, 'busy while the turn runs');
+  const logo = () => fresh.getAttribute('#logo', 'src');
+  assert.equal(await logo(), idle.busy, 'and so is the tile in the corner');
   const fill = decodeURIComponent(idle.busy).match(/fill='(#\w{6})'/)?.[1];
   const token = await fresh.evaluate(() =>
     getComputedStyle(document.documentElement).getPropertyValue('--busy').trim());
@@ -1650,6 +1740,7 @@ test('a turn swaps the tab icon for the busy one, in the folded header\'s red', 
   await fresh.waitForFunction((busy) => document.querySelector('link[rel=icon]').getAttribute('href') !== busy,
     idle.busy, { timeout: 10000 });
   assert.equal((await icon()).href, idle.href, 'idle again once the turn ends');
+  assert.equal(await logo(), idle.href, 'the tile too');
   await fresh.close();
 });
 

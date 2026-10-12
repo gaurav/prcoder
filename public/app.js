@@ -1,10 +1,10 @@
 import { Terminal } from '/vendor/xterm.mjs';
 import { FitAddon } from '/vendor/addon-fit.mjs';
 import { WebLinksAddon } from '/vendor/addon-web-links.mjs';
-import { renderPr, renderNoPr, renderHeader, pageTitle, api, toast, pref, setPref, debug, fileFrom, nextUnviewed } from './pr.js';
+import { renderPr, renderNoPr, renderHeader, pageTitle, api, toast, pref, setPref, debug, fileFrom, nextUnviewed, h } from './pr.js';
 import { openDiff, closeDiff, selectedPath, setViewed, toggleWrap, canWrap, openMention } from './diff.js';
 import { initQueue, addItem, setItems } from './queue.js';
-import { bindKeys } from './keys.js';
+import { bindKeys, keyLabel, isTyping } from './keys.js';
 import { fold, folded, canFold } from './folds.js';
 import './panes.js';   // draggable pane gutters; nothing here calls into it
 
@@ -44,15 +44,21 @@ term.open(document.getElementById('term-host'));
 // through the files as vim does, rather than Alt+Up and Alt+Down, which
 // Claude Code's /diff panel scrolls with and which open a focused <select> in
 // Firefox. C folds the coding agent pane, which is what the UI calls it.
-bindKeys({
-  'Alt+KeyW': { fn: toggleWrap, terminal: canWrap },
-  'Alt+KeyM': { fn: mentionOpenFile, terminal: () => openMention('') != null },
-  'Alt+KeyV': { fn: toggleViewed, terminal: viewedBox },
-  'Alt+KeyX': { fn: tickAndNext, terminal: () => selectedPath() != null || nextUnviewed(last?.pr?.files, null) != null },
-  'Alt+KeyJ': { fn: () => stepFile(1), terminal: anyFiles },
-  'Alt+KeyK': { fn: () => stepFile(-1), terminal: anyFiles },
-  'Alt+KeyC': { fn: toggleTerm, terminal: () => canFold('term') },
-}, term);
+//
+// Each binding's `label` is its row on the shortcut sheet (Alt+/ below), which
+// is built from this table and so can only list keys the page has. The
+// order here is the sheet's order: the review loop first, then the rest.
+const KEYS = {
+  'Alt+KeyV': { fn: toggleViewed, terminal: viewedBox, label: 'mark the open file viewed, or unviewed' },
+  'Alt+KeyX': { fn: tickAndNext, terminal: () => selectedPath() != null || nextUnviewed(last?.pr?.files, null) != null, label: 'mark the open file viewed and open the next unviewed one' },
+  'Alt+KeyJ': { fn: () => stepFile(1), terminal: anyFiles, label: 'open the next file' },
+  'Alt+KeyK': { fn: () => stepFile(-1), terminal: anyFiles, label: 'open the previous file' },
+  'Alt+KeyM': { fn: mentionOpenFile, terminal: () => openMention('') != null, label: 'mention the open file to the coding agent' },
+  'Alt+KeyW': { fn: toggleWrap, terminal: canWrap, label: 'wrap long lines in the diff' },
+  'Alt+KeyC': { fn: toggleTerm, terminal: () => canFold('term'), label: 'fold or unfold the coding agent pane' },
+  'Alt+Slash': { fn: toggleKeys, terminal: () => true, label: 'show these shortcuts' },
+};
+bindKeys(KEYS, term);
 
 const PTY_SEEN = 'prcoder:pty';
 // The server serves only public/, so the docs are linked where they live.
@@ -134,9 +140,14 @@ const BUSY = link.dataset.busy;
 // URL re-resolved, and a compare against that is a compare against something
 // the browser wrote, not something this did.
 let shown = IDLE;
+// The tile in the corner (the menu's summary) is the same picture: one signal,
+// drawn twice, and nothing to keep in step but this assignment.
+const logo = document.getElementById('logo');
+logo.src = IDLE;
 const icon = (href) => {
   if (shown === href) return;
   shown = link.href = href;
+  logo.src = href;
   link.remove();
   document.head.append(link);
   // Here rather than in turn(): the quiet timer ends a turn through icon()
@@ -240,7 +251,8 @@ const exitForm = document.getElementById('term-exit');
 // from the bar, and a reply landing late must not take it back. An effort the
 // select has no option for (`--effort extreme`) gets one: setting a select to
 // a value it lacks blanks it, which shows "as started" rather than the value.
-api('/api/whoami', undefined, 'GET').then(({ started }) => {
+api('/api/whoami', undefined, 'GET').then(({ started, version }) => {
+  document.getElementById('menu-version').textContent = version ? `prcoder ${version}` : '';
   const { model, effort } = exitForm.elements;
   if (!model.value) model.value = started.model;
   if (effort.value || !started.effort) return;
@@ -253,7 +265,11 @@ exitForm.onsubmit = (e) => {
   term.reset();
   connect(new URLSearchParams(new FormData(exitForm)).toString());
 };
-document.getElementById('term-quit').onclick = async () => {
+// Quit, from the exit bar or the menu. The server's quit kills the PTY, so the
+// exit bar is on its way up anyway (ws.onclose); it is filled with the fact
+// rather than with a Start that would reach nothing, and from the menu, where
+// the bar may be out of sight, a sticky toast says the same.
+async function quitPrcoder(fromMenu = false) {
   try {
     let r = await api('/api/quit', {});
     // The same question the terminal's q asks, put where you are.
@@ -261,11 +277,49 @@ document.getElementById('term-quit').onclick = async () => {
       if (!confirm(`Quit prcoder? ${r.risk.join('; ')}.`)) return;
       r = await api('/api/quit', { force: true });
     }
-    exitForm.replaceChildren('prcoder has quit — this tab can be closed.');
+    const gone = 'prcoder has quit — this tab can be closed.';
+    exitForm.replaceChildren(gone);
+    exitForm.hidden = false;
+    if (fromMenu) toast(gone, false, true);
   } catch (e) {
     toast(e.message, true);
   }
-};
+}
+document.getElementById('term-quit').onclick = () => quitPrcoder();
+
+// The corner menu (index.html says what it is). A <details> opens and closes
+// itself; this closes it the ways a menu is expected to close -- a pick, a
+// click anywhere else, Escape -- none of which a <details> does on its own.
+// Escape only outside a text field: in the terminal it is the agent's.
+const menu = document.getElementById('menu');
+document.addEventListener('click', (e) => {
+  if (!menu.open) return;
+  if (!menu.contains(e.target) || e.target.closest('#menu-list a, #menu-list button')) menu.open = false;
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && menu.open && !isTyping(e.target)) menu.open = false;
+});
+document.getElementById('menu-quit').onclick = () => quitPrcoder(true);
+document.getElementById('menu-keys').onclick = () => toggleKeys();
+
+// The shortcut sheet, built once from KEYS: a row per binding, the key as the
+// reader's keyboard has it. A modal <dialog> closes on Escape by itself, and
+// gives the focus back to where it was -- the terminal, when Alt+/ was pressed
+// there -- so the sheet is a glance, not a detour. A click on the backdrop is
+// a click whose target is the dialog itself, since the backdrop is its box.
+const keysDialog = document.getElementById('keys');
+const mac = /Mac|iPhone|iPad/.test(navigator.platform);
+document.getElementById('keys-list').replaceChildren(...Object.entries(KEYS).map(([name, { label }]) =>
+  h('tr', {}, h('td', {}, h('kbd', {}, keyLabel(name, mac))), h('td', {}, label))));
+document.getElementById('keys-note').textContent = (mac ? 'Alt is Option. ' : '')
+  + 'Each key works from the coding agent\'s terminal too, while it has something to do; otherwise the agent gets it.';
+document.querySelector('#menu-keys kbd').textContent = keyLabel('Alt+Slash', mac);   // the menu's hint, in the same spelling
+document.getElementById('keys-close').onclick = () => keysDialog.close();
+keysDialog.addEventListener('click', (e) => { if (e.target === keysDialog) keysDialog.close(); });
+function toggleKeys() {
+  if (keysDialog.open) keysDialog.close();
+  else keysDialog.showModal();
+}
 connect();
 
 term.onData((d) => send({ type: 'input', data: d }));

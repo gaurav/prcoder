@@ -20,7 +20,31 @@
   <main data-folds="diff term">
     <section id="pr" class="pane">
       <header>
-        <h1>Pull request</h1>
+        <!-- The corner is prcoder's, not the pane's: the tile the tab shows
+             (app.js keeps it the same picture, busy or idle) and the name, as a
+             menu. The pane needs no label -- its head says which pull request
+             it is -- and this is the one place on the page that is not a pane.
+             A <details>, so it opens, closes and takes the keyboard on its own;
+             app.js only closes it on a click elsewhere, Escape, or a pick. -->
+        <details id="menu">
+          <summary title="prcoder's menu: shortcuts, docs, quit">
+            <img id="logo" alt="" width="16" height="16">
+            <h1>prcoder</h1>
+            <span class="caret" aria-hidden="true">▾</span>
+          </summary>
+          <div id="menu-list">
+            <button type="button" id="menu-keys">Keyboard shortcuts <kbd>Alt+/</kbd></button>
+            <!-- The server serves only public/, so the docs are read where they
+                 live (app.js says the same of PORTS_DOC). -->
+            <a id="menu-docs" href="https://github.com/gaurav/prcoder#readme" target="_blank" rel="noopener">Documentation</a>
+            <a id="menu-issue" href="https://github.com/gaurav/prcoder/issues/new" target="_blank" rel="noopener">Report an issue</a>
+            <a id="menu-repo" href="https://github.com/gaurav/prcoder" target="_blank" rel="noopener">Repository</a>
+            <hr>
+            <!-- The exit bar's Quit, from anywhere: it asks the same question. -->
+            <button type="button" id="menu-quit">Quit prcoder…</button>
+            <span id="menu-version"></span>
+          </div>
+        </details>
         <select id="pr-switch" title="switch to another open pull request"></select>
         <button id="pr-commit" class="commit" hidden title="uncommitted changes block a branch switch">Commit…</button>
         <span id="pr-sync" class="light"></span>
@@ -142,6 +166,16 @@
     </section>
   </main>
   <div id="toast" hidden></div>
+  <!-- The shortcut sheet: Alt+/ or the menu. Its rows are built by app.js from
+       the bindKeys table, so it can only ever list keys the page has. -->
+  <dialog id="keys" aria-labelledby="keys-title">
+    <header>
+      <h2 id="keys-title">Keyboard shortcuts</h2>
+      <button type="button" id="keys-close" title="close" aria-label="close">✕</button>
+    </header>
+    <table><tbody id="keys-list"></tbody></table>
+    <p id="keys-note"></p>
+  </dialog>
   <script type="module" src="/app.js"></script>
 </body>
 </html>
