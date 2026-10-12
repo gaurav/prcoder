@@ -238,8 +238,10 @@ function connect(query = '') {
     const why = e.code === 1008 ? `refused: ${e.reason}` : 'coding agent exited';
     term.write(`\r\n\x1b[31m[${why}]\x1b[0m\r\n`);
     // The bar's note repeats the terminal's line, not the reason: that is
-    // already there in red, a line up.
-    exitForm.querySelector('span').textContent = e.code === 1008 ? 'Start refused.' : 'Coding agent has exited.';
+    // already there in red, a line up. A quit has already filled the bar with
+    // its own line and no Start, and the PTY it killed closes the socket after.
+    const note = exitForm.querySelector('span');
+    if (note) note.textContent = e.code === 1008 ? 'Start refused.' : 'Coding agent has exited.';
     exitForm.hidden = false;
     // Refit now rather than waiting on the ResizeObserver: in a page that isn't
     // in front it never delivered the shrink, and the terminal went on
@@ -247,7 +249,7 @@ function connect(query = '') {
     sync();
     // Start, not the first button: Quit is first in the bar, and Enter after
     // an exit should start again rather than ask about quitting.
-    document.getElementById('term-start').focus();
+    document.getElementById('term-start')?.focus();
   };
 }
 

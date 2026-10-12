@@ -808,8 +808,13 @@ test('Alt+/ shows every shortcut, from the terminal too, and Escape puts the foc
 
 // Quit from the menu is the exit bar's quit: the same question, and the same
 // line in the bar afterwards -- plus a toast, since the bar may be off screen.
+// The PTY dies with prcoder, so its socket closes after the bar is filled:
+// that close must leave the bar saying so, and not throw on the way.
 test('Quit in the menu asks what the exit bar asks, and says when it has quit', { skip }, async () => {
-  const fresh = await newPage();
+  let sock;
+  const fresh = await newPage({ pty: (ws) => { sock = ws; } });
+  const errors = [];
+  fresh.on('pageerror', (e) => errors.push(e.message));
   const asked = [];
   await fresh.route('**/api/quit', (r) => {
     const body = r.request().postDataJSON();
@@ -824,6 +829,10 @@ test('Quit in the menu asks what the exit bar asks, and says when it has quit', 
   assert.equal(await fresh.$eval('#toast', (el) => el.classList.contains('sticky')), true);
   await fresh.locator('#term-exit').getByText('prcoder has quit').waitFor();
   assert.deepEqual(asked, [{}, 'Quit prcoder? 2 uncommitted files.', { force: true }]);
+  await sock.close();
+  await settle(fresh);
+  assert.deepEqual(errors, []);
+  assert.match(await fresh.textContent('#term-exit'), /prcoder has quit/);
   await fresh.close();
 });
 
