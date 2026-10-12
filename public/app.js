@@ -44,7 +44,13 @@ term.open(document.getElementById('term-host'));
 // browser and in Claude Code, no dead key, and "cross it off". J and K step
 // through the files as vim does, rather than Alt+Up and Alt+Down, which
 // Claude Code's /diff panel scrolls with and which open a focused <select> in
-// Firefox. C folds the coding agent pane, which is what the UI calls it.
+// Firefox. G folds the coding agent pane. It fires from the terminal while
+// the pane can fold at all, which is always, so the agent never gets it, and
+// the letter is chosen for what Option+letter types on a Mac: G and R give ©
+// and ®, which nobody types into a prompt, where every other free letter
+// types one somebody does -- C ç, A å and Polish ą, Q œ, L ¬ and German @, Z
+// Ω and Polish ż. G over R for no better reason than "go to the agent", which
+// unfolding does.
 bindKeys({
   'Alt+KeyW': { fn: toggleWrap, terminal: canWrap },
   'Alt+KeyM': { fn: mentionOpenFile, terminal: () => openMention('') != null },
@@ -52,7 +58,7 @@ bindKeys({
   'Alt+KeyX': { fn: tickAndNext, terminal: () => selectedPath() != null || nextUnviewed(last?.pr?.files, null) != null },
   'Alt+KeyJ': { fn: () => stepFile(1), terminal: anyFiles },
   'Alt+KeyK': { fn: () => stepFile(-1), terminal: anyFiles },
-  'Alt+KeyC': { fn: toggleTerm, terminal: () => canFold('term') },
+  'Alt+KeyG': { fn: toggleTerm, terminal: () => canFold('term') },
 }, term);
 
 const PTY_SEEN = 'prcoder:pty';
@@ -578,7 +584,7 @@ async function tickAndNext() {
     ticking = false;
   }
 }
-/** Alt+C: the coding agent pane's ▼. Unfolding puts the focus in the terminal, as a click does (setFold). */
+/** Alt+G: the coding agent pane's ▼. Unfolding puts the focus in the terminal, as a click does (setFold). */
 function toggleTerm() {
   if (canFold('term')) setFold('term', !folded('term'));
 }

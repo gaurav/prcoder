@@ -13,7 +13,7 @@
 const NAME = { diff: 'diff', term: 'coding agent', queue: 'queue' };
 // The key that presses a pane's ▼, for its title (the bindKeys table in
 // app.js is where the key is bound; this only says so on the button).
-const KEY = { term: ' (Alt+C)' };
+const KEY = { term: ' (Alt+G)' };
 
 const main = () => document.querySelector('main');
 

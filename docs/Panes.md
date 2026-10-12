@@ -16,7 +16,7 @@ own. A repo whose port changes (`port.json` deleted, its port busy at startup, o
 with `--port` or `PRCODER_PORT`) opens with the default layout, and gets the old one back once it
 is on the old port again.
 
-The terminal folds to its header line with a click anywhere on that line, or with Alt+C, from
+The terminal folds to its header line with a click anywhere on that line, or with Alt+G, from
 inside it too; the ▼ before its title says so, and is the keyboard's other way in. The diff (or the queue, with no diff open) takes the room,
 and another click unfolds it. Folding never touches the session, which keeps running folded. While
 a turn runs, the folded header says `working` beside its title after a small red octagon, the
@@ -64,7 +64,7 @@ the queue's input, or in an item being edited, though a checkbox you have just t
 | Alt+K | opens the previous file, or the last with none open                              | the pull request has files                       |
 | Alt+W | presses *Wrap* in the diff pane                                                  | a file is open and the pane is not folded        |
 | Alt+M | presses **@** in the diff pane                                                   | a file that has one is open                      |
-| Alt+C | presses the coding agent pane's ▼: folds it, or unfolds it and puts the focus back in the terminal | always                         |
+| Alt+G | presses the coding agent pane's ▼: folds it, or unfolds it and puts the focus back in the terminal | always                         |
 
 The terminal belongs to the coding agent, and every key pressed in it is the agent's -- except
 these, while the *While* column holds. The loop these keys are for ends in the terminal, asking

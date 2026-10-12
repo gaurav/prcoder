@@ -1704,19 +1704,19 @@ test('Alt+X waits for a tick or untick still in flight on the open file', { skip
   await fresh.close();
 });
 
-// Alt+C is the coding agent pane's ▼: from inside the terminal it folds the
+// Alt+G is the coding agent pane's ▼: from inside the terminal it folds the
 // pane and the focus lands on the ▼, from where the same key unfolds it and
 // puts the focus back. The agent never sees it.
-test('Alt+C folds the coding agent pane from the terminal and unfolds it from its ▼', { skip }, async () => {
+test('Alt+G folds the coding agent pane from the terminal and unfolds it from its ▼', { skip }, async () => {
   const { fresh, typed } = await agentPage();
   const focused = () => fresh.evaluate(() => document.activeElement.id);
-  assert.equal(await fresh.getAttribute('#term-fold', 'title'), 'collapse the coding agent pane (Alt+C)');
+  assert.equal(await fresh.getAttribute('#term-fold', 'title'), 'collapse the coding agent pane (Alt+G)');
   await fresh.locator('#term-host').click();
-  await fresh.keyboard.press('Alt+KeyC');
+  await fresh.keyboard.press('Alt+KeyG');
   await fresh.waitForFunction(() => document.querySelector('main').classList.contains('term-off'));
   assert.equal(await focused(), 'term-fold');
-  assert.equal(await fresh.getAttribute('#term-fold', 'title'), 'expand the coding agent pane (Alt+C)');
-  await fresh.keyboard.press('Alt+KeyC');
+  assert.equal(await fresh.getAttribute('#term-fold', 'title'), 'expand the coding agent pane (Alt+G)');
+  await fresh.keyboard.press('Alt+KeyG');
   await fresh.waitForFunction(() => !document.querySelector('main').classList.contains('term-off'));
   assert.equal(await fresh.evaluate(() => document.getElementById('term-host').contains(document.activeElement)), true);
   await settle(fresh);
