@@ -812,6 +812,8 @@ test('Alt+/ shows every shortcut, from the terminal too, and Escape puts the foc
   await fresh.locator('#term-host').click();
   await fresh.keyboard.press('Alt+Slash');
   await fresh.waitForFunction(() => document.getElementById('keys').open);
+  // agentPage is on Linux (onLinux, below), so the sheet spells Alt+V as the
+  // table does, on a Mac too; keyLabel's ⌥V is the unit test's.
   const documented = readFileSync(new URL('../../docs/Panes.md', import.meta.url), 'utf8')
     .split('\n').map((l) => l.match(/^\| (Alt\+\S+) /)?.[1]).filter(Boolean);
   assert.ok(documented.includes('Alt+/'), 'the table in Panes.md is where this reads it');
