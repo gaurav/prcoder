@@ -75,8 +75,9 @@ deleted one, Alt+J with no pull request -- the key goes to the agent as if it we
 so the agent loses a key only while it would do something here.
 
 Alt+J, Alt+K and Alt+X open a file the way a click does: the diff unfolds, and the row scrolls
-into view if the Files tab is showing. They do not switch to it -- the diff pane's bar names the
-file -- and Alt+J and Alt+K stop at the ends of the list rather than going round. Alt+X ticks
+into view if the Files tab is showing. They also open the group and directory the row is in, if
+you had closed them, so the Files tab shows the open file wherever it is. They do not switch to
+it -- the diff pane's bar names the file -- and Alt+J and Alt+K stop at the ends of the list rather than going round. Alt+X ticks
 first and moves only once the tick has landed: one GitHub refused is said in a toast and not
 moved on from, and once every file is viewed it says so and stays. The *While* column is each
 key's `terminal` guard in the `bindKeys` table in `app.js`, where the letters are argued.

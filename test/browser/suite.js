@@ -1607,6 +1607,34 @@ test('the open file\'s row is still selected after a trip to another tab', { ski
   await fresh.close();
 });
 
+// A group closed to get it out of the way still holds files the keys walk
+// into, and a selected row inside a closed fold is one nobody can see: the
+// key opens the fold. From Detail too, so the Files tab draws it open later.
+test('a key that opens a file inside a closed group opens the group', { skip }, async () => {
+  const { fresh } = await agentPage({ st: withLong(status) });
+  const docs = '.group[data-group="Config & docs"]';
+  const isOpen = () => fresh.evaluate((sel) => document.querySelector(sel).open, docs);
+  await openFile(fresh, 'evil.js');
+  await fresh.locator(`${docs} > summary`).click();
+  assert.equal(await isOpen(), false);
+  await fresh.locator('#diff-body').click();
+  await fresh.keyboard.press('Alt+KeyK');
+  await fresh.waitForFunction(() => document.querySelector('.file.sel')?.dataset.path === 'long.txt');
+  assert.equal(await isOpen(), true, 'the group opens');
+  assert.equal(await fresh.locator('.file.sel').isVisible(), true, 'and the row shows');
+  // Closed again, then walked into from Detail, where no rows are drawn.
+  await fresh.locator(`${docs} > summary`).click();
+  await fresh.locator('#pr-head .tab', { hasText: 'Detail' }).click();
+  await fresh.locator('#diff-body').click();
+  await fresh.keyboard.press('Alt+KeyJ');
+  await fresh.keyboard.press('Alt+KeyK');
+  await fresh.waitForFunction(() => document.getElementById('diff-path').textContent === 'long.txt');
+  await fresh.locator('#pr-head .tab', { hasText: 'Files' }).click();
+  assert.equal(await isOpen(), true, 'the Files tab draws it open');
+  assert.equal(await fresh.locator('.file.sel').isVisible(), true);
+  await fresh.close();
+});
+
 // Alt+X is the loop: tick, and on to the next unviewed file, round to the top
 // past the end, until none is left -- which it says, staying put. With no
 // file open it opens the first unviewed file and ticks nothing.

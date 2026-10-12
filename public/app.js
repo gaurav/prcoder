@@ -1,7 +1,7 @@
 import { Terminal } from '/vendor/xterm.mjs';
 import { FitAddon } from '/vendor/addon-fit.mjs';
 import { WebLinksAddon } from '/vendor/addon-web-links.mjs';
-import { renderPr, renderNoPr, renderHeader, pageTitle, api, toast, pref, setPref, debug, fileFrom, nextUnviewed } from './pr.js';
+import { renderPr, renderNoPr, renderHeader, pageTitle, api, toast, pref, setPref, debug, fileFrom, nextUnviewed, revealFile } from './pr.js';
 import { openDiff, closeDiff, selectedPath, setViewed, showViewed, canTickViewed, toggleViewed, toggleWrap, canWrap, openMention } from './diff.js';
 import { initQueue, addItem, setItems } from './queue.js';
 import { bindKeys } from './keys.js';
@@ -534,15 +534,14 @@ const fileHandlers = {
 };
 
 // The keys that walk the files (the table at the top). Each opens through
-// openFile, so a key unfolds the diff as a click does, and then brings the row
-// into view: a click is already on screen, but Alt+J can walk the selection
-// off the bottom of the list. Only the row -- `nearest` leaves the pane alone
-// when the row is already visible -- and only when the Files tab is drawn;
-// from Detail the diff pane's bar names the file and the tab is left where it
-// was, since the key is about the file and not about which tab is open.
+// openFile, so a key unfolds the diff as a click does, and then reveals the
+// row: a click is already on screen, but Alt+J can walk the selection off the
+// bottom of the list or into a fold the user closed. The tab is left where it
+// was -- from Detail the diff pane's bar names the file -- since the key is
+// about the file and not about which tab is open.
 function openByKey(f) {
   openFile(f);
-  document.querySelector(`.file[data-path="${CSS.escape(f.path)}"]`)?.scrollIntoView({ block: 'nearest' });
+  revealFile(last?.pr?.files, f.path);
 }
 // Function declarations, not consts: the table at the top names these before
 // this line has run.

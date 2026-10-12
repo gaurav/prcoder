@@ -1181,6 +1181,28 @@ export const fileOrder = (files = []) => fileTree(files)
   .flatMap((g) => g.rows.flatMap((r) => (r.path ? [r] : r.files)));
 
 /**
+ * Opens the folds `path`'s row sits in -- its group, and its directory if it
+ * has one -- and brings the row into view, for a file the keyboard opened.
+ * A click is on a row already showing, but Alt+J walks into folds the user
+ * closed to get them out of the way, and a selection inside one is a selection
+ * nobody can see. Into `closedGroups` as well as onto the page, so the Files
+ * tab shows the row open when it is drawn next, if it is not the tab showing
+ * now. Only the row scrolls: `nearest` leaves the pane alone when the row is
+ * already visible.
+ */
+export function revealFile(files, path) {
+  for (const g of fileTree(files)) {
+    const r = g.rows.find((x) => x.path === path || x.files?.some((f) => f.path === path));
+    if (!r) continue;
+    closedGroups.delete(g.label);
+    if (!r.path) closedGroups.delete(dirKey(g.label, r.dir));
+  }
+  const row = document.querySelector(`.file[data-path="${CSS.escape(path)}"]`);
+  for (let d = row?.closest('details'); d; d = d.parentElement?.closest('details')) d.open = true;
+  row?.scrollIntoView({ block: 'nearest' });
+}
+
+/**
  * The file `step` rows on from `path` in that order -- +1 the next, -1 the
  * one before -- or null at either end: the keys stop there rather than wrap,
  * so the last file is where the list runs out and not where it starts again.
@@ -1221,8 +1243,9 @@ export function nextUnviewed(files, path) {
  * ends in `/` and a directory's key always does, so the two kinds cannot
  * collide.
  */
+const dirKey = (group, dir) => `${group}/${dir}`;
 function dirGroup(group, dir, files, handlers) {
-  const key = `${group}/${dir}`;
+  const key = dirKey(group, dir);
   return fold({
     className: 'dir', dataset: { dir }, title: dir, progress: filesProgress(files),
     ...kept(closedGroups, key, 'closed'),
