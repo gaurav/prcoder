@@ -1505,6 +1505,244 @@ test('Alt+M in the terminal with no file open goes to the agent', { skip }, asyn
   await fresh.close();
 });
 
+// The review loop's keys. Each fires from the terminal while it has something
+// to do, and otherwise the agent gets the key; onLinux above says why the
+// terminal tests pretend to be on Linux. `typed` is what reached the agent.
+const agentPage = async (opts = {}) => {
+  const frames = [];
+  const fresh = await newPage({ init: onLinux, pty: (ws) => ws.onMessage((m) => frames.push(JSON.parse(m))), ...opts });
+  return { fresh, typed: () => frames.filter((f) => f.type === 'input') };
+};
+const openPath = (p) => p.evaluate(() => document.getElementById('diff-path').textContent);
+const filesTab = (p) => p.locator('#pr-head .tab', { hasText: 'Files' }).textContent();
+const settle = (p) => p.waitForTimeout(200);
+
+// Alt+V is the diff pane's box pressed, so everything the box moves follows:
+// the row, the tab's count, and the box itself -- both ways. From the
+// terminal too, where the agent does not get it while a file is open and does
+// with none, as the key was before it was bound.
+test('Alt+V ticks and unticks the open file, from the page and from the terminal', { skip }, async () => {
+  const { fresh, typed } = await agentPage();
+  assert.match(await fresh.getAttribute('#diff-viewed', 'title'), /\(Alt\+V\)$/, 'the box says its key');
+  await fresh.locator('#term-host').click();
+  await fresh.keyboard.press('Alt+KeyV');
+  for (let i = 0; !typed().length && i < 100; i++) await fresh.waitForTimeout(50);
+  assert.deepEqual(typed(), [{ type: 'input', data: '\x1bv' }], 'no file open: the agent gets the key');
+  await openFile(fresh);
+  await fresh.locator('#diff-body').click();
+  await fresh.keyboard.press('Alt+KeyV');
+  await fresh.waitForFunction(() => document.querySelectorAll('.file.viewed').length === 1);
+  assert.equal(await fresh.locator('#diff-viewed').isChecked(), true);
+  assert.equal(await filesTab(fresh), 'Files (1/2)');
+  await fresh.locator('#term-host').click();
+  await fresh.keyboard.press('Alt+KeyV');
+  await fresh.waitForFunction(() => document.querySelectorAll('.file.viewed').length === 0);
+  assert.equal(await fresh.locator('#diff-viewed').isChecked(), false, 'and unticks from the terminal');
+  await settle(fresh);
+  assert.equal(typed().length, 1, 'which the agent did not see');
+  // A second press while GitHub has not answered the first: the box is
+  // disabled, so it presses nothing -- and the file is still open, so the
+  // agent does not get the key either.
+  let answer;
+  const held = new Promise((res) => { answer = res; });
+  await fresh.route('**/api/pr/viewed', async (r) => { await held; await r.fulfill({ json: { ok: true } }); });
+  await fresh.keyboard.press('Alt+KeyV');
+  await fresh.waitForFunction(() => document.getElementById('diff-viewed').disabled);
+  await fresh.keyboard.press('Alt+KeyV');
+  await settle(fresh);
+  assert.equal(typed().length, 1, 'a press during the tick is not typed into the agent');
+  answer();
+  await fresh.waitForFunction(() => !document.getElementById('diff-viewed').disabled);
+  assert.equal(await fresh.locator('#diff-viewed').isChecked(), true, 'and the first tick stands');
+  await fresh.close();
+});
+
+// Alt+J and Alt+K walk the Files tab's order -- Config & docs ahead of Code,
+// the biggest change first -- from whichever tab is open and from the
+// terminal, stop at the ends, and leave the tab alone: the diff pane's bar
+// names the file. Nothing happens from the queue's input, as for every key.
+test('Alt+J and Alt+K step through the files in the list\'s order, and stop at its ends', { skip }, async () => {
+  const { fresh, typed } = await agentPage({ st: withLong(status) });
+  const on = () => fresh.locator('#pr-head .tab.on').textContent();
+  assert.match(await on(), /^Detail/);
+  // From the page with no file open: forward is the first file.
+  await fresh.keyboard.press('Alt+KeyJ');
+  await fresh.waitForFunction(() => document.getElementById('diff-path').textContent === 'long.txt');
+  assert.match(await on(), /^Detail/, 'the tab is left where it was');
+  // From the terminal, across the group boundary, and off the end.
+  await fresh.locator('#term-host').click();
+  for (const next of ['evil.js', 'app.tsx', 'app.tsx']) {
+    await fresh.keyboard.press('Alt+KeyJ');
+    await settle(fresh);
+    assert.equal(await openPath(fresh), next);
+  }
+  await fresh.keyboard.press('Alt+KeyK');
+  await fresh.waitForFunction(() => document.getElementById('diff-path').textContent === 'evil.js');
+  assert.equal(typed().length, 0, 'the agent saw none of it');
+  // Typing: the queue's input stands in for every text field.
+  await fresh.locator('#queue-input').focus();
+  await fresh.keyboard.press('Alt+KeyK');
+  await settle(fresh);
+  assert.equal(await openPath(fresh), 'evil.js', 'not while typing');
+  // The Files tab shows the walk: the open row is selected and on screen.
+  await fresh.locator('#pr-head .tab', { hasText: 'Files' }).click();
+  await fresh.locator('#diff-body').click();
+  await fresh.keyboard.press('Alt+KeyK');
+  await fresh.waitForFunction(() => document.querySelector('.file.sel')?.dataset.path === 'long.txt');
+  assert.equal(await fresh.locator('.file.sel').isVisible(), true);
+  await fresh.keyboard.press('Alt+KeyK');
+  await settle(fresh);
+  assert.equal(await openPath(fresh), 'long.txt', 'nothing before the first');
+  await fresh.close();
+});
+
+// A tab switch redraws the rows without a poll, and the open file's row has to
+// come back marked: opened with a click, then away to Detail and back.
+test('the open file\'s row is still selected after a trip to another tab', { skip }, async () => {
+  const fresh = await newPage();
+  await openFile(fresh, 'app.tsx');
+  await fresh.locator('#pr-head .tab', { hasText: 'Detail' }).click();
+  await fresh.locator('#pr-head .tab', { hasText: 'Files' }).click();
+  assert.equal(await fresh.evaluate(() => document.querySelector('.file.sel')?.dataset.path), 'app.tsx');
+  await fresh.close();
+});
+
+// A group closed to get it out of the way still holds files the keys walk
+// into, and a selected row inside a closed fold is one nobody can see: the
+// key opens the fold. From Detail too, so the Files tab draws it open later.
+test('a key that opens a file inside a closed group opens the group', { skip }, async () => {
+  const { fresh } = await agentPage({ st: withLong(status) });
+  const docs = '.group[data-group="Config & docs"]';
+  const isOpen = () => fresh.evaluate((sel) => document.querySelector(sel).open, docs);
+  await openFile(fresh, 'evil.js');
+  await fresh.locator(`${docs} > summary`).click();
+  assert.equal(await isOpen(), false);
+  await fresh.locator('#diff-body').click();
+  await fresh.keyboard.press('Alt+KeyK');
+  await fresh.waitForFunction(() => document.querySelector('.file.sel')?.dataset.path === 'long.txt');
+  assert.equal(await isOpen(), true, 'the group opens');
+  assert.equal(await fresh.locator('.file.sel').isVisible(), true, 'and the row shows');
+  // Closed again, then walked into from Detail, where no rows are drawn.
+  await fresh.locator(`${docs} > summary`).click();
+  await fresh.locator('#pr-head .tab', { hasText: 'Detail' }).click();
+  await fresh.locator('#diff-body').click();
+  await fresh.keyboard.press('Alt+KeyJ');
+  await fresh.keyboard.press('Alt+KeyK');
+  await fresh.waitForFunction(() => document.getElementById('diff-path').textContent === 'long.txt');
+  await fresh.locator('#pr-head .tab', { hasText: 'Files' }).click();
+  assert.equal(await isOpen(), true, 'the Files tab draws it open');
+  assert.equal(await fresh.locator('.file.sel').isVisible(), true);
+  await fresh.close();
+});
+
+// Alt+X is the loop: tick, and on to the next unviewed file, round to the top
+// past the end, until none is left -- which it says, staying put. With no
+// file open it opens the first unviewed file and ticks nothing.
+test('Alt+X ticks the open file and opens the next unviewed, round the top, until none is left', { skip }, async () => {
+  const { fresh, typed } = await agentPage({ st: withLong(status) });
+  await fresh.keyboard.press('Alt+KeyX');
+  await fresh.waitForFunction(() => document.getElementById('diff-path').textContent === 'long.txt');
+  assert.equal(await filesTab(fresh), 'Files (0/3)', 'opening the first ticks nothing');
+  await openFile(fresh, 'evil.js');
+  await fresh.locator('#term-host').click();
+  for (const [next, count] of [['app.tsx', 1], ['long.txt', 2]]) {
+    await fresh.keyboard.press('Alt+KeyX');
+    await fresh.waitForFunction((next) => document.getElementById('diff-path').textContent === next, next);
+    assert.equal(await filesTab(fresh), `Files (${count}/3)`);
+  }
+  await fresh.keyboard.press('Alt+KeyX');
+  await fresh.waitForSelector('#toast:not([hidden])');
+  assert.match(await fresh.textContent('#toast'), /Every file is viewed/);
+  assert.equal(await filesTab(fresh), 'Files (3/3)');
+  assert.equal(await openPath(fresh), 'long.txt', 'and stays on the last one');
+  assert.equal(typed().length, 0);
+  // A tick GitHub refused: said, and not moved on from.
+  await fresh.locator('#diff-viewed').uncheck();
+  await fresh.waitForFunction(() => document.querySelectorAll('.file.viewed').length === 2);
+  await fresh.route('**/api/pr/viewed', (r) => r.fulfill({ status: 500, json: { error: 'gh: no' } }));
+  await fresh.locator('#term-host').click();
+  await fresh.keyboard.press('Alt+KeyX');
+  await fresh.waitForFunction(() => /Not marked viewed: gh: no/.test(document.getElementById('toast').textContent));
+  assert.equal(await openPath(fresh), 'long.txt');
+  assert.equal(await filesTab(fresh), 'Files (2/3)');
+  await fresh.close();
+});
+
+// A click on the box that GitHub has not answered yet leaves `viewed` as it
+// was. Alt+X waits for it: an untick in flight is ticked again once it lands,
+// rather than skipped as already viewed, and a tick in flight is not sent a
+// second time.
+test('Alt+X waits for a tick or untick still in flight on the open file', { skip }, async () => {
+  const { fresh } = await agentPage({ st: withLong(status) });
+  const puts = [];
+  let answer = () => {};
+  await fresh.route('**/api/pr/viewed', async (r) => {
+    puts.push(r.request().postDataJSON());
+    if (puts.length === 2 || puts.length === 4) await new Promise((res) => { answer = res; });
+    await r.fulfill({ json: { ok: true } });
+  });
+  await openFile(fresh, 'long.txt');
+  await fresh.locator('#diff-viewed').check();
+  await fresh.waitForFunction(() => document.querySelectorAll('.file.viewed').length === 1);
+  await fresh.locator('#diff-viewed').uncheck();   // the second PUT: held
+  await fresh.locator('#term-host').click();
+  await fresh.keyboard.press('Alt+KeyX');
+  await settle(fresh);
+  assert.equal(await openPath(fresh), 'long.txt', 'nothing moves while the untick is unanswered');
+  answer();
+  await fresh.waitForFunction(() => document.getElementById('diff-path').textContent === 'evil.js');
+  assert.deepEqual(puts.map((p) => p.viewed), [true, false, true], 'the untick lands, then Alt+X ticks again');
+  assert.equal(await filesTab(fresh), 'Files (1/3)');
+  // And a tick in flight is waited for, not sent again.
+  await fresh.locator('#diff-viewed').check();   // the fourth PUT: held
+  await fresh.keyboard.press('Alt+KeyX');
+  await settle(fresh);
+  assert.equal(await openPath(fresh), 'evil.js', 'nothing moves while the tick is unanswered');
+  answer();
+  await fresh.waitForFunction(() => document.getElementById('diff-path').textContent === 'app.tsx');
+  assert.deepEqual(puts.map((p) => p.viewed), [true, false, true, true]);
+  await fresh.close();
+});
+
+// Alt+G is the coding agent pane's ▼: from inside the terminal it folds the
+// pane and the focus lands on the ▼, from where the same key unfolds it and
+// puts the focus back. The agent never sees it.
+test('Alt+G folds the coding agent pane from the terminal and unfolds it from its ▼', { skip }, async () => {
+  const { fresh, typed } = await agentPage();
+  const focused = () => fresh.evaluate(() => document.activeElement.id);
+  assert.equal(await fresh.getAttribute('#term-fold', 'title'), 'collapse the coding agent pane (Alt+G)');
+  await fresh.locator('#term-host').click();
+  await fresh.keyboard.press('Alt+KeyG');
+  await fresh.waitForFunction(() => document.querySelector('main').classList.contains('term-off'));
+  assert.equal(await focused(), 'term-fold');
+  assert.equal(await fresh.getAttribute('#term-fold', 'title'), 'expand the coding agent pane (Alt+G)');
+  await fresh.keyboard.press('Alt+KeyG');
+  await fresh.waitForFunction(() => !document.querySelector('main').classList.contains('term-off'));
+  assert.equal(await fresh.evaluate(() => document.getElementById('term-host').contains(document.activeElement)), true);
+  await settle(fresh);
+  assert.equal(typed().length, 0);
+  await fresh.close();
+});
+
+// Alt+W from the terminal, by the same rule: Wrap is pressed while there is a
+// Wrap to press, and with no file open the agent gets the key.
+test('Alt+W presses Wrap from the terminal while a file is open', { skip }, async () => {
+  const { fresh, typed } = await agentPage();
+  await fresh.locator('#term-host').click();
+  await fresh.keyboard.press('Alt+KeyW');
+  for (let i = 0; !typed().length && i < 100; i++) await fresh.waitForTimeout(50);
+  assert.deepEqual(typed(), [{ type: 'input', data: '\x1bw' }]);
+  await openFile(fresh);
+  await fresh.locator('#term-host').click();
+  await fresh.keyboard.press('Alt+KeyW');
+  await fresh.waitForFunction(() => document.getElementById('diff-wrap').getAttribute('aria-pressed') === 'true');
+  await settle(fresh);
+  assert.equal(typed().length, 1);
+  await fresh.keyboard.press('Alt+KeyW');   // and back, so the stored choice does not leak into later pages
+  await fresh.waitForFunction(() => document.getElementById('diff-wrap').getAttribute('aria-pressed') === 'false');
+  await fresh.close();
+});
+
 // Right after the name, not across the header beside *viewed*: the path is as
 // wide as its text, and the auto margin is on what comes after the @. Only
 // there -- a second one on Wrap left *viewed* to History mid-header. The copy

@@ -1024,7 +1024,7 @@ function renderPrTab(pr, parsed, handlers) {
       c.url ? ext(c.url, c.name, { className: 'check-name' }) : h('span', { className: 'check-name' }, c.name),
       CHECK_WORD[c.state] ? h('span', { className: 'check-state' }, CHECK_WORD[c.state]) : null)),
   ] : tab === 'files' ? [
-    ...GROUPS.map(([key, label]) => fileGroup(label, pr.files.filter((f) => f.group === key), handlers)),
+    ...fileTree(pr.files).map((g) => fileGroup(g, handlers)),
     h('div', { className: 'meta' },
       ext(`${pr.url}#issuecomment`, `${pr.counts.comments} comments · ${pr.counts.reviews} reviews`)),
   ] : [
@@ -1086,16 +1086,12 @@ function issueRow(list, closes, label) {
  * finished with can be got out of the way -- thirty-five files across three
  * groups is a smaller version of the problem the tabs were for.
  */
-function fileGroup(label, files, handlers) {
-  if (!files?.length) return null;
-  const { root, dirs } = byDir(files);
+function fileGroup({ label, files, rows }, handlers) {
+  if (!files.length) return null;
   return fold({
     className: 'group', dataset: { group: label }, title: label, progress: filesProgress(files),
     ...kept(closedGroups, label, 'closed'),
-  }, [
-    ...root.map((f) => fileRow(f, handlers)),
-    ...dirs.map(([dir, list]) => dirGroup(label, dir, list, handlers)),
-  ]);
+  }, rows.map((r) => (r.path ? fileRow(r, handlers) : dirGroup(label, r.dir, r.files, handlers))));
 }
 
 /**
@@ -1160,6 +1156,85 @@ export const byDir = (files) => {
 };
 
 /**
+ * The Files tab's layout, and the one place its order is decided: a group per
+ * GROUPS entry, in that order, holding its `files` and the `rows` it draws --
+ * the root files, each a row, then one `{ dir, files }` fold per directory, as
+ * byDir orders them; a row with a `path` is a file. An empty group is kept, and draws nothing.
+ *
+ * fileGroup draws it and fileOrder walks it, so the keyboard's "next file" is
+ * the row under the one on screen by construction rather than by two functions
+ * agreeing: a change to how the tab lays out its rows is made here, for both.
+ */
+export const fileTree = (files = []) => GROUPS.map(([key, label]) => {
+  const mine = files.filter((f) => f.group === key);
+  const { root, dirs } = byDir(mine);
+  return { key, label, files: mine, rows: [...root, ...dirs.map(([dir, list]) => ({ dir, files: list }))] };
+});
+
+/**
+ * Every changed file in the order the Files tab draws them (fileTree). The
+ * keyboard walks this list -- Alt+J, Alt+K and Alt+X in app.js. Worked out
+ * here rather than read off the page, because the Files tab is not always the
+ * one showing: the keys work from Detail, Checks and the terminal too.
+ */
+export const fileOrder = (files = []) => fileTree(files)
+  .flatMap((g) => g.rows.flatMap((r) => (r.path ? [r] : r.files)));
+
+/**
+ * Opens the folds `path`'s row sits in -- its group, and its directory if it
+ * has one -- and brings the row into view, for a file the keyboard opened.
+ * A click is on a row already showing, but Alt+J walks into folds the user
+ * closed to get them out of the way, and a selection inside one is a selection
+ * nobody can see. Into `closedGroups` as well as onto the page, so the Files
+ * tab shows the row open when it is drawn next, if it is not the tab showing
+ * now. Only the row scrolls: `nearest` leaves the pane alone when the row is
+ * already visible.
+ */
+export function revealFile(files, path) {
+  for (const g of fileTree(files)) {
+    const r = g.rows.find((x) => x.path === path || x.files?.some((f) => f.path === path));
+    if (!r) continue;
+    closedGroups.delete(g.label);
+    if (!r.path) closedGroups.delete(dirKey(g.label, r.dir));
+  }
+  const row = document.querySelector(`.file[data-path="${CSS.escape(path)}"]`);
+  for (let d = row?.closest('details'); d; d = d.parentElement?.closest('details')) d.open = true;
+  row?.scrollIntoView({ block: 'nearest' });
+}
+
+/**
+ * The file `step` rows on from `path` in that order -- +1 the next, -1 the
+ * one before -- or null at either end: the keys stop there rather than wrap,
+ * so the last file is where the list runs out and not where it starts again.
+ * With no file open there is nothing to step from, so a step forward is the
+ * first file and a step back the last.
+ */
+export function fileFrom(files, path, step) {
+  const order = fileOrder(files);
+  if (!order.length) return null;
+  const at = order.findIndex((f) => f.path === path);
+  if (at === -1) return step > 0 ? order[0] : order[order.length - 1];
+  return order[at + step] ?? null;
+}
+
+/**
+ * The next file still unviewed after `path`, going round to the top past the
+ * end, or null once every file is viewed. `path` itself is never the answer:
+ * Alt+X has just marked it, and a tick that failed to land would otherwise
+ * open the same file again as its own "next". With no file open, the first
+ * unviewed file.
+ */
+export function nextUnviewed(files, path) {
+  const order = fileOrder(files);
+  const at = order.findIndex((f) => f.path === path);
+  for (let i = 1; i <= order.length; i++) {
+    const f = order[(at + i) % order.length];
+    if (!f.viewed && f.path !== path) return f;
+  }
+  return null;
+}
+
+/**
  * One directory inside a group, folded like the group itself.
  *
  * The fold state is keyed by group *and* directory: `public/` under Code and
@@ -1168,8 +1243,9 @@ export const byDir = (files) => {
  * ends in `/` and a directory's key always does, so the two kinds cannot
  * collide.
  */
+const dirKey = (group, dir) => `${group}/${dir}`;
 function dirGroup(group, dir, files, handlers) {
-  const key = `${group}/${dir}`;
+  const key = dirKey(group, dir);
   return fold({
     className: 'dir', dataset: { dir }, title: dir, progress: filesProgress(files),
     ...kept(closedGroups, key, 'closed'),
@@ -1251,6 +1327,9 @@ function fold({ className, dataset, title, progress, open, onToggle }, children)
   return d;
 }
 
+// `selected` is a function, asked as the row is drawn: a tab switch redraws
+// the rows with the handlers of the last paint, which can predate the file
+// opened since -- by a click, or by Alt+J from another tab.
 function fileRow(f, { onViewed, onOpen, selected }, dir = '') {
   const box = h('input', { type: 'checkbox', checked: f.viewed, title: 'mark viewed on GitHub' });
   writeThrough(box, (v) => onViewed(f.path, v));
@@ -1278,7 +1357,7 @@ function fileRow(f, { onViewed, onOpen, selected }, dir = '') {
     onOpen(f);
   });
   const row = h('div', {
-    className: `file${f.viewed ? ' viewed' : ''}${f.path === selected ? ' sel' : ''}`,
+    className: `file${f.viewed ? ' viewed' : ''}${f.path === selected?.() ? ' sel' : ''}`,
     dataset: { path: f.path },
   },
     box,

@@ -9,9 +9,11 @@
 //   An input that takes no text is not typing, though: a checkbox keeps focus
 //   after it is clicked, so counting it would leave Alt+W dead after a tick
 //   of *viewed*, which is the usual thing to do just before reading on.
-//   The one exception is a binding marked `terminal`, which fires from the
-//   terminal too (bindKeys says how): Alt+M, because naming the open file
-//   mid-sentence is what it is for.
+//   The exception is the terminal: a binding written `{ fn, terminal }` fires
+//   from there too while its `terminal()` says it has something to do
+//   (bindKeys says how), since the loop the keys serve -- read a file, ask the
+//   agent about it, next file -- ends in the terminal. Every binding in
+//   app.js's table has one.
 // - A binding names a physical key (`e.code`, Alt+KeyW), not what it types:
 //   on macOS Option+W types ∑, and on other layouts Alt+letter types other
 //   things again, while the key itself stays where it is.
