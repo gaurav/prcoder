@@ -105,6 +105,8 @@ from the same table the keys are bound from, so it can only list keys the page h
 documentation, an issue to report and the repository on GitHub, **Quit prcoder…**, which asks what
 the exit bar's Quit asks ([Claude Code](#claude-code)), and the version on its last line. It closes
 on a pick, a click anywhere else, or Escape -- outside the terminal, where Escape is the agent's.
+Escape from one of its items, and closing the sheet its first item opened, leave the focus on the
+menu, since the item it was on is hidden.
 
 ### The head
 
