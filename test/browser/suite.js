@@ -43,7 +43,7 @@
 // enforced.
 import { test as nodeTest, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { server } from '../../server.js';
 import { bucket } from '../../files.js';
 import { rollup } from '../../github.js';
@@ -779,8 +779,9 @@ test('the corner is prcoder\'s menu, at the header\'s height, and closes like on
   assert.equal(await page.$eval('#keys', (d) => d.open), false);
 });
 
-// The sheet is built from the bindKeys table, so this list is the table, and
-// the one in docs/Panes.md: a key added to one and not the other fails here.
+// The sheet is built from the bindKeys table, so its keys are the table's, and
+// they have to be the ones docs/Panes.md lists, in the same order: a key added
+// to one and not the other fails here.
 // Alt+/ opens it from the terminal, a glance, and Escape hands the focus
 // back there; the agent sees none of it.
 test('Alt+/ shows every shortcut, from the terminal too, and Escape puts the focus back', { skip }, async () => {
@@ -789,8 +790,10 @@ test('Alt+/ shows every shortcut, from the terminal too, and Escape puts the foc
   await fresh.locator('#term-host').click();
   await fresh.keyboard.press('Alt+Slash');
   await fresh.waitForFunction(() => document.getElementById('keys').open);
-  assert.deepEqual(await fresh.$$eval('#keys-list kbd', (els) => els.map((el) => el.textContent)),
-    ['Alt+V', 'Alt+X', 'Alt+J', 'Alt+K', 'Alt+M', 'Alt+W', 'Alt+G', 'Alt+/']);
+  const documented = readFileSync(new URL('../../docs/Panes.md', import.meta.url), 'utf8')
+    .split('\n').map((l) => l.match(/^\| (Alt\+\S+) /)?.[1]).filter(Boolean);
+  assert.ok(documented.includes('Alt+/'), 'the table in Panes.md is where this reads it');
+  assert.deepEqual(await fresh.$$eval('#keys-list kbd', (els) => els.map((el) => el.textContent)), documented);
   assert.match(await fresh.textContent('#keys-note'), /from the coding agent's terminal too/);
   await fresh.keyboard.press('Escape');
   await fresh.waitForFunction(() => !document.getElementById('keys').open);

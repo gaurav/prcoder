@@ -34,9 +34,9 @@ should: the loop the keys serve ends in the terminal. A keydown listener
 beside the thing it drives would have to repeat all of this. Each binding
 carries a `label`, which is its row on the shortcut sheet (Alt+/): the sheet
 is built from the table, so a key is never listed that the page lacks, and
-the browser suite pins the sheet's rows to the table in `docs/Panes.md`. Add
-a row there with the binding, and argue the letter in the comment above the
-table (what each one steers round: browser tab switching, Firefox's menu
+the browser suite reads the table in `docs/Panes.md` and fails unless the
+sheet lists the same keys in the same order. Add a row there with the
+binding, and argue the letter in the comment above the table (what each one steers round: browser tab switching, Firefox's menu
 letters, a Mac's dead keys, Claude Code's own Alt bindings).
 
 ## The Claude pane is not prcoder's to draw on

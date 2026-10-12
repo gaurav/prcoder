@@ -62,8 +62,8 @@ the queue's input, or in an item being edited, though a checkbox you have just t
 | Alt+X | ticks the open file viewed and opens the next unviewed file, going round to the top past the end; with no file open, opens the first unviewed | a file is open or any file is unviewed |
 | Alt+J | opens the next file in the Files tab's order, or the first with none open        | the pull request has files                       |
 | Alt+K | opens the previous file, or the last with none open                              | the pull request has files                       |
-| Alt+W | presses *Wrap* in the diff pane                                                  | a file is open and the pane is not folded        |
 | Alt+M | presses **@** in the diff pane                                                   | a file that has one is open                      |
+| Alt+W | presses *Wrap* in the diff pane                                                  | a file is open and the pane is not folded        |
 | Alt+G | presses the coding agent pane's ▼: folds it, or unfolds it and puts the focus back in the terminal | always                         |
 | Alt+/ | shows these shortcuts, or hides them                                             | always                                           |
 
