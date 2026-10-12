@@ -724,8 +724,10 @@ test('Wrap and the outline hold across files when storage refuses writes', { ski
 // font makes it a speck -- and a glyph at a bigger size is how a header grows.
 // So the header has to be the height it is with the ⟳ at the header's own
 // size. Not the height without the button: in Firefox the button at any size
-// is what sets the header's 36px (34 without it), where in Chromium the
-// dropdown does.
+// is what sets the header's height, where in Chromium the dropdown does
+// (37px and 36px on 2026-10-11, from tools/browser.mjs's `corner:` line,
+// which prints it per engine). The corner menu's test below measures the
+// same way.
 test('the ⟳ is drawn large without making the pull request header taller', { skip }, async () => {
   const height = () => page.$eval('#pr > header', (el) => el.getBoundingClientRect().height);
   const px = (sel, prop) => page.$eval(sel, (el, p) => parseFloat(getComputedStyle(el)[p]), prop);

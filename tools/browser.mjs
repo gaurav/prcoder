@@ -401,6 +401,39 @@ console.log('dots:   ', await page.evaluate(() =>
     return document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2)?.tagName;
   }).join(' ')), ' (want SPAN each, never A)');
 
+// The corner: prcoder's tile and name as a menu (index.html), at the
+// header's own height -- a taller summary would move every pane's top edge,
+// so the header is measured with the menu and without -- and the shortcut
+// sheet it opens, built from the bindKeys table. Alt+/ is pressed from the
+// terminal, where the key is the agent's unless the page takes it, and
+// Escape has to hand the focus back there.
+const headerTall = () => page.locator('#pr > header').evaluate((el) => el.getBoundingClientRect().height);
+const withMenu = await headerTall();
+await page.evaluate(() => { document.getElementById('menu').style.display = 'none'; });
+const sansMenu = await headerTall();
+await page.evaluate(() => { document.getElementById('menu').style.display = ''; });
+console.log('corner: ', `header ${withMenu}px with the menu, ${sansMenu}px without; tile is the tab icon:`,
+  await page.evaluate(() => document.getElementById('logo').src === document.querySelector('link[rel=icon]').href),
+  ' (want the two heights the same, and true)');
+await page.locator('#menu > summary').click();
+await page.waitForSelector('#menu[open]');
+console.log('menu:   ', (await page.locator('#menu-list > :is(a, button, span)').allInnerTexts())
+  .map((t) => t.replace(/\s+/g, ' ')).join(' | '), ' (want shortcuts, docs, issue, repo, quit, then the version)');
+await page.screenshot({ path: path.join(out, 'menu.png'), clip: { x: 0, y: 0, width: 420, height: 300 } });
+await page.locator('#pr-body').click();   // anywhere else closes it
+await page.waitForSelector('#menu:not([open])');
+await page.locator('#term-host').click();
+await page.keyboard.press('Alt+Slash');
+await page.waitForFunction(() => document.getElementById('keys').open);
+console.log('sheet:  ', (await page.locator('#keys-list kbd').allInnerTexts()).join(' '),
+  ' (want a keycap per row of the table in docs/Panes.md, in its spelling for this keyboard)');
+await page.screenshot({ path: path.join(out, 'shortcuts.png') });
+await page.keyboard.press('Escape');
+await page.waitForFunction(() => !document.getElementById('keys').open);
+console.log('  after Escape: focus',
+  await page.evaluate(() => (document.activeElement?.closest('#term-host') ? 'back in the terminal' : 'elsewhere')),
+  ' (want back in the terminal)');
+
 // The two link kinds that only mean something against a repository: a relative
 // path, which GitHub leaves for the page to resolve and prcoder resolves to a
 // blob URL on the head branch, and a bare #N. Both showed as their own source
