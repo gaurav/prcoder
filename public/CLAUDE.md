@@ -12,13 +12,20 @@ flips one box in a body. `server.js`, `github.js`, `git.js` and `files.js` at
 the root all import it, so the server and the pane read a description by the
 same rules and cannot drift apart.
 
-All three therefore have to load in Node, so they must not touch the DOM at
-module scope. A `document.querySelector` beside the imports is ordinary in a
+All three therefore have to load in Node, and so does everything they import
+-- `ui.js` among them -- so none of them may touch the DOM at module scope. A `document.querySelector` beside the imports is ordinary in a
 browser file, but here it stops the *server* from starting, with a stack trace
 naming a file under `public/` and nothing about why the server was reading it.
 Put DOM work inside a function, the way `el()` in `diff.js` does. A syntax
 error in any of them breaks the server the same way; `node --check public/*.js`
 catches it, and `test/api.test.js` imports all three by importing the server.
+
+## The building blocks are in `ui.js`
+
+`h`, `btn`, `ext`, `api`, `toast`, `debug`, `pref`, the mark and the fold:
+every pane builds from these, so they live in `ui.js` and a pane imports them
+from there. `pr.js` used to hold them, and the other panes imported the PR
+pane to get a button.
 
 ## Keyboard shortcuts go through `keys.js`
 
@@ -85,7 +92,7 @@ failed in Firefox (2026-09-26).
 
 ## Console lines go through `debug()`
 
-`debug()` in `pr.js` is the page's one way to write to the browser console,
+`debug()` in `ui.js` is the page's one way to write to the browser console,
 for a path that fails with nothing on screen. It writes only when the
 `prcoder:debug` preference is `on` -- `localStorage['prcoder:debug'] = 'on'`
 in the console, then reload -- so a line can be as chatty as it needs to be

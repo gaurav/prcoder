@@ -1,4 +1,5 @@
-import { h, btn, ext, api, toast, pref, setPref, tabBtn, blocks, writeThrough } from './pr.js';
+import { h, btn, ext, api, toast, pref, setPref, tabBtn, writeThrough } from './ui.js';
+import { blocks } from './pr.js';
 import { TABS, refLabel, forClaude } from './items.js';
 import { refs, resolveRef } from './tasks.js';
 

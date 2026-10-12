@@ -2,8 +2,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   pageTitle, withoutHtml, inline, headLinks, noPrLinks, prsInto, prTree, stackOn, stackLabel, stackUnder, stackTree, stackTitle, stackBase, stackOrder, stackEmpty, intoEmpty, switcherRows,
-  HEADING, blocks, sectionize, tabLabel, taskCount, viewedCount, viewedLines, filesProgress, filesName, checkCount, checksName, tabDone, worst, byPath, bySize, byDir, fileTree, fileOrder, fileFrom, nextUnviewed, nums,
+  HEADING, blocks, sectionize, tabLabel, taskCount, viewedCount, viewedLines, filesProgress, filesName, checkCount, checksName, worst, byPath, bySize, byDir, fileTree, fileOrder, fileFrom, nextUnviewed, nums,
 } from '../public/pr.js';
+import { tabDone } from '../public/ui.js';
 import { fences, TASK, taskLines } from '../public/tasks.js';
 
 const status = (over = {}) => ({

@@ -1,7 +1,8 @@
 import { Terminal } from '/vendor/xterm.mjs';
 import { FitAddon } from '/vendor/addon-fit.mjs';
 import { WebLinksAddon } from '/vendor/addon-web-links.mjs';
-import { renderPr, renderNoPr, renderHeader, pageTitle, api, toast, pref, setPref, debug, fileFrom, nextUnviewed, revealFile } from './pr.js';
+import { renderPr, renderNoPr, renderHeader, pageTitle, fileFrom, nextUnviewed, revealFile } from './pr.js';
+import { api, toast, pref, setPref, debug } from './ui.js';
 import { openDiff, closeDiff, selectedPath, setViewed, showViewed, canTickViewed, toggleViewed, toggleWrap, canWrap, openMention } from './diff.js';
 import { initQueue, addItem, setItems } from './queue.js';
 import { bindKeys } from './keys.js';

@@ -2,7 +2,7 @@
 // iframed, so the pane draws the raw patch itself and keeps a link out for
 // the fancy view.
 
-import { h, btn, ext, api, writeThrough, pref, setPref } from './pr.js';
+import { h, btn, ext, api, writeThrough, pref, setPref } from './ui.js';
 import { fold } from './folds.js';
 
 // Lives outside the render because the 60s poll rebuilds #pr-body from
