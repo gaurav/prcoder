@@ -43,8 +43,9 @@ it again every 60 seconds, so a `git checkout` in another terminal -- or by Clau
 pane -- is picked up on its own. Nothing is remembered between polls; every fact comes back from
 `git` and `gh`.
 
-[docs/Panes.md](docs/Panes.md) has each pane in detail: layout, ordering, grouping, and what
-every control does.
+The tile in the top-left corner is the menu: the keyboard shortcuts (Alt+/), the docs, an issue to
+report, and quitting. [docs/Panes.md](docs/Panes.md) has each pane in detail: layout, ordering,
+grouping, and what every control does.
 
 ## Arguments and settings
 

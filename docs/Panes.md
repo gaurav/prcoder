@@ -65,6 +65,7 @@ the queue's input, or in an item being edited, though a checkbox you have just t
 | Alt+W | presses *Wrap* in the diff pane                                                  | a file is open and the pane is not folded        |
 | Alt+M | presses **@** in the diff pane                                                   | a file that has one is open                      |
 | Alt+C | presses the coding agent pane's ▼: folds it, or unfolds it and puts the focus back in the terminal | always                         |
+| Alt+/ | shows these shortcuts, or hides them                                             | always                                           |
 
 The terminal belongs to the coding agent, and every key pressed in it is the agent's -- except
 these, while the *While* column holds. The loop these keys are for ends in the terminal, asking
@@ -81,13 +82,24 @@ first and moves only once the tick has landed: one GitHub refused is said in a t
 moved on from, and once every file is viewed it says so and stays. The *While* column is each
 key's `terminal` guard in the `bindKeys` table in `app.js`, where the letters are argued.
 
-A shortcut held down fires once; its key's repeats do nothing.
+A shortcut held down fires once; its key's repeats do nothing. Alt+/ shows this table on the page,
+from the terminal too, and Escape puts the focus back where it was.
 
 Each tab names itself `owner/repo#N · pull request title` (the branch and `(no PR)` when there
 isn't one), and renames itself as the branch moves, so a row of prcoder tabs stays readable at
 tab width.
 
 ## Pull request
+
+### The corner
+
+The top-left corner of the window is prcoder's rather than the pane's: the tile the tab shows,
+busy or idle as the tab is, and the name, as a menu. The pane needs no label there, since its head
+says which pull request it is. The menu holds the keyboard shortcuts (the sheet Alt+/ opens, built
+from the same table the keys are bound from, so it can only list keys the page has), the
+documentation, an issue to report and the repository on GitHub, **Quit prcoder…**, which asks what
+the exit bar's Quit asks ([Claude Code](#claude-code)), and the version on its last line. It closes
+on a pick, a click anywhere else, or Escape -- outside the terminal, where Escape is the agent's.
 
 ### The head
 
