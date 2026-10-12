@@ -54,7 +54,8 @@ nothing is open after a reload, and the next click on a file would unfold it any
 
 A few things have a key as well as a control. A shortcut never fires while you are typing -- in
 the queue's input, or in an item being edited, though a checkbox you have just ticked, such as
-*viewed*, does not count -- and each is named by the key's position, so on a Mac Alt is Option:
+*viewed*, does not count -- and each is named by the key's position on a US keyboard, so on a
+Mac Alt is Option, and on another layout Alt+/ is whatever key sits where a US keyboard has /:
 
 | Key   | Does                                                                             | While                                            |
 |-------|----------------------------------------------------------------------------------|--------------------------------------------------|

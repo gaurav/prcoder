@@ -329,7 +329,12 @@ const keysDialog = document.getElementById('keys');
 const mac = /Mac|iPhone|iPad/.test(navigator.platform);
 document.getElementById('keys-list').replaceChildren(...Object.entries(KEYS).map(([name, { label }]) =>
   h('tr', {}, h('td', {}, h('kbd', {}, keyLabel(name, mac))), h('td', {}, label))));
+// keyLabel spells a key as a US keyboard prints it, and a binding is the key's
+// position, so on another layout the key is where a US keyboard has it: on a
+// German one, Alt+/ is the key that types -. The note says so, since the
+// label alone names a key that layout does not have there.
 document.getElementById('keys-note').textContent = (mac ? 'Alt is Option. ' : '')
+  + 'Keys are named as on a US keyboard; on another layout, press the key in the same place. '
   + 'Each key works from the coding agent\'s terminal too, while it has something to do; otherwise the agent gets it.';
 document.querySelector('#menu-keys kbd').textContent = keyLabel('Alt+Slash', mac);   // the menu's hint, in the same spelling
 document.getElementById('keys-close').onclick = () => keysDialog.close();

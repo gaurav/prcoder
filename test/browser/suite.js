@@ -807,6 +807,7 @@ test('Alt+/ shows every shortcut, from the terminal too, and Escape puts the foc
   assert.ok(documented.includes('Alt+/'), 'the table in Panes.md is where this reads it');
   assert.deepEqual(await fresh.$$eval('#keys-list kbd', (els) => els.map((el) => el.textContent)), documented);
   assert.match(await fresh.textContent('#keys-note'), /from the coding agent's terminal too/);
+  assert.match(await fresh.textContent('#keys-note'), /as on a US keyboard/, 'a binding is a place, not a character');
   await fresh.keyboard.press('Escape');
   await fresh.waitForFunction(() => !document.getElementById('keys').open);
   assert.equal(await fresh.evaluate(() => !!document.activeElement?.closest('#term-host')), true, 'focus back in the terminal');
