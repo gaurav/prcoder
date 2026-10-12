@@ -307,8 +307,12 @@ document.addEventListener('click', (e) => {
   if (!menu.open) return;
   if (!menu.contains(e.target) || e.target.closest('#menu-list a, #menu-list button')) menu.open = false;
 });
+// Escape from an item hands the focus to the summary, as a menu does, since
+// the item it was on has just been hidden.
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && menu.open && !isTyping(e.target)) menu.open = false;
+  if (e.key !== 'Escape' || !menu.open || isTyping(e.target)) return;
+  menu.open = false;
+  if (menu.contains(document.activeElement)) menu.querySelector('summary').focus();
 });
 document.getElementById('menu-quit').onclick = () => quitPrcoder(true);
 // The dialog gives the focus back to the pick it was opened from, which the

@@ -773,6 +773,14 @@ test('the corner is prcoder\'s menu, at the header\'s height, and closes like on
   await page.click('#menu > summary');
   await page.keyboard.press('Escape');
   assert.equal(await open(), false, 'so does Escape');
+  // From an item, too, and the focus goes back to the menu rather than
+  // staying on an item the close has just hidden.
+  await page.click('#menu > summary');
+  await page.focus('#menu-docs');
+  await page.keyboard.press('Escape');
+  assert.equal(await open(), false, 'Escape from an item closes it');
+  assert.equal(await page.evaluate(() => document.activeElement === document.querySelector('#menu > summary')), true,
+    'and the focus is on the menu');
   await page.click('#menu > summary');
   await page.click('#menu-keys');
   assert.equal(await open(), false, 'and a pick');
