@@ -86,7 +86,8 @@ moved on from, and once every file is viewed it says so and stays. The *While* c
 key's `terminal` guard in the `bindKeys` table in `app.js`, where the letters are argued.
 
 A shortcut held down fires once; its key's repeats do nothing. Alt+/ shows this table on the page,
-from the terminal too, and Escape puts the focus back where it was.
+from the terminal too, and Escape puts the focus back where it was. While it is up, the other keys
+do nothing: the page behind it cannot be reached until it closes.
 
 Each tab names itself `owner/repo#N · pull request title` (the branch and `(no PR)` when there
 isn't one), and renames itself as the branch moves, so a row of prcoder tabs stays readable at

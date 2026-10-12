@@ -25,7 +25,8 @@ catches it, and `test/api.test.js` imports all three by importing the server.
 `bindKeys` in `app.js` is the one table of shortcuts, and `keys.js` holds the
 rules every binding gets for free: nothing fires while a key is being typed
 into the queue's input or an editable item, a binding names a physical key
-(`Alt+KeyW`), not the character it produces, and a held key fires once. The
+(`Alt+KeyW`), not the character it produces, a held key fires once, and
+nothing fires behind a modal dialog such as the shortcut sheet. The
 terminal is typing too, except that a binding's `terminal()` says when the
 key would do something there -- a file open, files to step through -- and
 then it fires from the terminal and the agent does not get the key; when it

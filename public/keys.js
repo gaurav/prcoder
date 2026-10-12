@@ -20,6 +20,11 @@
 // - A held key fires once. Its repeats are taken and dropped, so holding
 //   Alt+M a moment too long does not type the mention over and over into the
 //   agent's prompt, and holding Alt+W does not flicker the wrap.
+// - Nothing fires behind a modal <dialog>. The page under one is inert, so a
+//   key that acted on it would change panes nobody can see or reach -- and
+//   Alt+G would unfold the terminal and focus it, which the inert page
+//   refuses, so the focus is lost. A binding written `{ fn, modal: true }`
+//   fires anyway, so the key that opens the shortcut sheet can close it.
 // - Modifiers are spelled in a fixed order, Ctrl+Alt+Shift+Meta, so a binding
 //   is a plain string with one spelling.
 //
@@ -65,8 +70,9 @@ export const keyName = (e) => [
 export function bindKeys(map, term) {
   const fnOf = (binding) => (typeof binding === 'function' ? binding : binding?.fn);
   document.addEventListener('keydown', (e) => {
-    const fn = fnOf(map[keyName(e)]);
-    if (!fn || isTyping(e.target)) return;
+    const binding = map[keyName(e)];
+    const fn = fnOf(binding);
+    if (!fn || isTyping(e.target) || (!binding.modal && document.querySelector('dialog:modal'))) return;
     e.preventDefault();
     if (!e.repeat) fn(e);
   });

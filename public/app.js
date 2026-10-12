@@ -65,7 +65,7 @@ const KEYS = {
   'Alt+KeyM': { fn: mentionOpenFile, terminal: () => openMention('') != null, label: 'mention the open file to the coding agent' },
   'Alt+KeyW': { fn: toggleWrap, terminal: canWrap, label: 'wrap long lines in the diff' },
   'Alt+KeyG': { fn: toggleTerm, terminal: () => canFold('term'), label: 'fold or unfold the coding agent pane' },
-  'Alt+Slash': { fn: toggleKeys, terminal: () => true, label: 'show these shortcuts' },
+  'Alt+Slash': { fn: toggleKeys, terminal: () => true, modal: true, label: 'show these shortcuts' },
 };
 bindKeys(KEYS, term);
 

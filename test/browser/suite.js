@@ -804,6 +804,13 @@ test('Alt+/ shows every shortcut, from the terminal too, and Escape puts the foc
   await fresh.locator('#diff-fold').focus();
   await fresh.keyboard.press('Alt+Slash');
   assert.equal(await shown(), true);
+  // The page behind a modal is inert, and so are its keys: a key tried out
+  // while reading the sheet does nothing to the panes behind it.
+  const before = await openPath(fresh);
+  for (const key of ['Alt+KeyJ', 'Alt+KeyX', 'Alt+KeyG']) await fresh.keyboard.press(key);
+  await settle(fresh);
+  assert.equal(await openPath(fresh), before, 'no file opened behind the sheet');
+  assert.equal(await fresh.$eval('main', (el) => el.classList.contains('term-off')), false, 'nor the agent pane folded');
   await fresh.keyboard.press('Alt+Slash');
   assert.equal(await shown(), false, 'pressed again, it closes');
   await fresh.close();
