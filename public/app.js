@@ -25,9 +25,11 @@ term.open(document.getElementById('term-host'));
 // Each one fires from the terminal as well, while its `terminal` says it has
 // something to do: the review loop -- open a file, read it, tick it, ask the
 // agent about it -- ends in the terminal, and the next step is the next file.
-// While a key would do something the agent does not get it (Option+letter on
-// a Mac, ESC letter elsewhere); when it would do nothing, the agent does, as
-// if the key were not bound.
+// While it does, the agent does not get the key (Option+letter on a Mac, ESC
+// letter elsewhere); when it does not, the agent does, as if the key were not
+// bound. Each `terminal` asks whether the key has anything to work on, not
+// whether this press would change something: Alt+J on the last file is still
+// the agent's loss, since a step off the end typing into the prompt is worse.
 //
 // The letters, and what each one steers round. Alt+digit is out everywhere:
 // Chrome and Firefox on Linux and Windows switch tabs with it. Firefox's menu

@@ -71,8 +71,10 @@ these, while the *While* column holds. The loop these keys are for ends in the t
 about the file just read, and the next step is the next file; so each fires from there as well,
 and the agent does not receive it (Option+letter's character on a Mac, or the ESC letter it sends
 on Linux and Windows). When the column does not hold -- Alt+V with no file open, Alt+M on a
-deleted one, Alt+J with no pull request -- the key goes to the agent as if it were not bound,
-so the agent loses a key only while it would do something here.
+deleted one, Alt+J with no pull request -- the key goes to the agent as if it were not bound.
+The column is the whole test, not whether this press would change anything: Alt+J on the last
+file and Alt+K on the first do nothing, and the agent does not get them either, since a step that
+runs off the end of the list is still a step, and typing ∆ or ESC j into the prompt is worse.
 
 Alt+J, Alt+K and Alt+X open a file the way a click does: the diff unfolds, and the row scrolls
 into view if the Files tab is showing. They also open the group and directory the row is in, if
