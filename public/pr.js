@@ -1304,6 +1304,9 @@ function fold({ className, dataset, title, progress, open, onToggle }, children)
   return d;
 }
 
+// `selected` is a function, asked as the row is drawn: a tab switch redraws
+// the rows with the handlers of the last paint, which can predate the file
+// opened since -- by a click, or by Alt+J from another tab.
 function fileRow(f, { onViewed, onOpen, selected }, dir = '') {
   const box = h('input', { type: 'checkbox', checked: f.viewed, title: 'mark viewed on GitHub' });
   writeThrough(box, (v) => onViewed(f.path, v));
@@ -1331,7 +1334,7 @@ function fileRow(f, { onViewed, onOpen, selected }, dir = '') {
     onOpen(f);
   });
   const row = h('div', {
-    className: `file${f.viewed ? ' viewed' : ''}${f.path === selected ? ' sel' : ''}`,
+    className: `file${f.viewed ? ' viewed' : ''}${f.path === selected?.() ? ' sel' : ''}`,
     dataset: { path: f.path },
   },
     box,

@@ -1596,6 +1596,17 @@ test('Alt+J and Alt+K step through the files in the list\'s order, and stop at i
   await fresh.close();
 });
 
+// A tab switch redraws the rows without a poll, and the open file's row has to
+// come back marked: opened with a click, then away to Detail and back.
+test('the open file\'s row is still selected after a trip to another tab', { skip }, async () => {
+  const fresh = await newPage();
+  await openFile(fresh, 'app.tsx');
+  await fresh.locator('#pr-head .tab', { hasText: 'Detail' }).click();
+  await fresh.locator('#pr-head .tab', { hasText: 'Files' }).click();
+  assert.equal(await fresh.evaluate(() => document.querySelector('.file.sel')?.dataset.path), 'app.tsx');
+  await fresh.close();
+});
+
 // Alt+X is the loop: tick, and on to the next unviewed file, round to the top
 // past the end, until none is left -- which it says, staying put. With no
 // file open it opens the first unviewed file and ticks nothing.

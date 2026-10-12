@@ -630,7 +630,7 @@ function paint(status) {
       drawn = key;
       renderPr({ ...status.pr, note: NOTES[status.scope] }, {
         ...fileHandlers,
-        selected: selectedPath(),
+        selected: selectedPath,
         prs: stack,
         otherRepo,
         onStackOpen: () => loadPrs('Stack tab opened'),
