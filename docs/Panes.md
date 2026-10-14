@@ -103,7 +103,8 @@ busy or idle as the tab is, and the name, as a menu. The pane needs no label the
 says which pull request it is. The menu holds the keyboard shortcuts (the sheet Alt+/ opens, built
 from the same table the keys are bound from, so it can only list keys the page has), the
 documentation, an issue to report and the repository on GitHub, **Quit prcoder…**, which asks what
-the exit bar's Quit asks ([Claude Code](#claude-code)), and the version on its last line. It closes
+the exit bar's Quit asks ([Claude Code](#claude-code)) and is greyed out once prcoder has quit, and
+the version on its last line. It closes
 on a pick, a click anywhere else, or Escape -- outside the terminal, where Escape is the agent's.
 Escape from one of its items, and closing the sheet its first item opened, leave the focus on the
 menu, since the item it was on is hidden.

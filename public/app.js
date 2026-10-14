@@ -279,7 +279,9 @@ exitForm.onsubmit = (e) => {
 // Quit, from the exit bar or the menu. The server's quit kills the PTY, so the
 // exit bar is on its way up anyway (ws.onclose); it is filled with the fact
 // rather than with a Start that would reach nothing, and from the menu, where
-// the bar may be out of sight, a sticky toast says the same.
+// the bar may be out of sight, a sticky toast says the same. The menu's Quit
+// goes grey with it: picked again, it would reach no server and put a network
+// error in the toast's one slot, over the line saying the quit worked.
 async function quitPrcoder(fromMenu = false) {
   try {
     let r = await api('/api/quit', {});
@@ -291,6 +293,7 @@ async function quitPrcoder(fromMenu = false) {
     const gone = 'prcoder has quit — this tab can be closed.';
     exitForm.replaceChildren(gone);
     exitForm.hidden = false;
+    document.getElementById('menu-quit').disabled = true;
     if (fromMenu) toast(gone, false, true);
   } catch (e) {
     toast(e.message, true);

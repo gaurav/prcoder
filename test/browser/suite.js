@@ -889,6 +889,9 @@ test('Quit in the menu asks what the exit bar asks, and says when it has quit', 
   await settle(fresh);
   assert.deepEqual(errors, []);
   assert.match(await fresh.textContent('#term-exit'), /prcoder has quit/);
+  // Nothing is left to quit, so the menu's Quit can't be picked again and
+  // put a network error over the toast that says the quit worked.
+  assert.equal(await fresh.$eval('#menu-quit', (b) => b.disabled), true, 'the menu\'s Quit is off');
   await fresh.close();
 });
 

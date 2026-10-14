@@ -836,7 +836,8 @@ main.diff-off #diff-wrap { display: none; }
   margin: 0; padding: 5px 12px; font: inherit; font-size: 13px; line-height: 1.4;
   color: var(--fg); text-decoration: none; text-align: left; background: none; border: 0; cursor: pointer;
 }
-#menu-list a:hover, #menu-list button:hover { background: var(--bg); color: var(--fg); }
+#menu-list a:hover, #menu-list button:enabled:hover { background: var(--bg); color: var(--fg); }
+#menu-list button:disabled { opacity: .5; cursor: default; }
 #menu-list kbd { font: inherit; font-size: 11px; color: var(--dim); }
 #menu-list hr { margin: 4px 0; border: 0; border-top: 1px solid var(--line); }
 #menu-version { padding: 3px 12px 2px; font-size: 11px; color: var(--dim); }
