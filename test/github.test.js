@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { rollup, linkedIssues, linksFrom, parsePrUrl, run, issueNumber, lf, setViewed, listPrs, loadPr, prHeads, branchPrs, pickPr, lookupRef, createIssue } from '../github.js';
 import { taskLines } from '../public/tasks.js';
+import { withGh, ghArgs, ghCalls, unix } from './stub-gh.js';
 
 test('check states collapse into passed, failed and pending', () => {
   const { list, ...counts } = rollup([
@@ -200,28 +201,12 @@ test('a CRLF description reads as the same checklist as an LF one', () => {
   assert.equal(lf(null), '');
 });
 
-// What reaches gh, from a stub on PATH that writes each argument on its own line
-// and answers `[]`. gh's -F converts a value by its shape -- an all-digit owner
-// went to GitHub as an Int and was refused, and a path starting with @ is read
-// as a file -- so every string has to go as -f. And `gh pr list` stops at 30
-// unless given a limit, which silently dropped the rest from the switcher.
-const withGh = async (script, fn) => {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'prcoder-gh-stub-'));
-  await fs.writeFile(path.join(dir, 'gh'), `#!/bin/sh\n${script(dir)}\n`, { mode: 0o755 });
-  const saved = process.env.PATH;
-  process.env.PATH = `${dir}${path.delimiter}${saved}`;
-  try {
-    return await fn(dir);
-  } finally {
-    process.env.PATH = saved;
-    await fs.rm(dir, { recursive: true, force: true });
-  }
-};
-const ghArgs = (fn) => withGh((dir) => `printf '%s\\n' "$@" > "${dir}/args"\necho '[]'`, async (dir) => {
-  await fn();
-  return (await fs.readFile(path.join(dir, 'args'), 'utf8')).trimEnd().split('\n');
-});
-const unix = process.platform === 'win32' ? 'the gh stub is a sh script' : false;
+// What reaches gh, from a stub on PATH (test/stub-gh.js) that writes each
+// argument on its own line and answers `[]`. gh's -F converts a value by its
+// shape -- an all-digit owner went to GitHub as an Int and was refused, and a
+// path starting with @ is read as a file -- so every string has to go as -f.
+// And `gh pr list` stops at 30 unless given a limit, which silently dropped
+// the rest from the switcher.
 
 test('a file path goes to gh as a string, whatever it looks like', { skip: unix }, async () => {
   for (const p of ['404', '@types/x.d.ts']) {
@@ -340,17 +325,6 @@ test('the cheap per-poll call carries the checks, summarised', { skip: unix }, a
   });
 });
 
-// Every call, each as its own argv, where ghArgs keeps only the last: the
-// branch lookup is one `gh pr list` per repository, run together, so each
-// call writes a file of its own and the calls come back in no fixed order.
-const ghCalls = (script, fn) => withGh((dir) => `printf '%s\\n' "$@" > "$(mktemp "${dir}/call.XXXXXX")"\n${script}`,
-  async (dir) => {
-    const out = await fn();
-    const files = (await fs.readdir(dir)).filter((f) => f.startsWith('call.'));
-    const calls = await Promise.all(files.map(async (f) =>
-      (await fs.readFile(path.join(dir, f), 'utf8')).trimEnd().split('\n')));
-    return { out, calls };
-  });
 const flag = (args, name) => args[args.indexOf(name) + 1];
 
 // What the lookup sends: one list per repository, by the branch's bare name,

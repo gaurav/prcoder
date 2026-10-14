@@ -6,9 +6,10 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { notAWorkTree, syncState, compareUrl, githubUrl, originOwner, remoteRepo, remoteRepos, prScope, userDirt, remoteBranchHead, trackingHead, snapshot, localPatch, branchesBelow } from '../git.js';
+import { notAWorkTree, syncState, compareUrl, githubUrl, originOwner, remoteRepo, remoteRepos, repoInfo, prScope, userDirt, remoteBranchHead, trackingHead, snapshot, localPatch, branchesBelow } from '../git.js';
 
 const git = promisify(execFile);
+import { withGh, unix } from './stub-gh.js';
 // For the throwaway repos below. The identity goes on the command, not into a
 // config: a CI runner has none set, and `git commit` there is a hard failure
 // rather than a warning. Signing is turned off the same way: a machine that
@@ -363,6 +364,34 @@ test('a local patch is GitHub-shaped, from the merge base, and null when git can
     await run('commit', '-q', '-m', 'rename');
     const renamed = { ...pr, ...oneLine, head: await oid('HEAD'), path: 'b.js', from: 'a.js' };
     assert.equal(await localPatch(dir, renamed), '@@ -1,2 +1,2 @@\n one\n-two\n+2');
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
+
+// Where the branch's pull request is looked for, in the order pickPr prefers:
+// gh's base repository, its parent when it is a fork, then each remote's,
+// once each -- here `upstream` names the base again and is not listed twice.
+// A clone of a fork with only `origin` still gets the parent, which is where
+// its pull requests are.
+test('repoInfo lists gh\'s base repository, its parent, then the remotes, once each', { skip: unix }, async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'prcoder-repoinfo-'));
+  const view = () => `cat <<'JSON'\n{"defaultBranchRef":{"name":"main"},"nameWithOwner":"up/repo","parent":{"nameWithOwner":"grand/repo"}}\nJSON`;
+  try {
+    await git('git', ['init', '-q', dir]);
+    await git('git', ['remote', 'add', 'origin', 'git@github.com:me/repo.git'], { cwd: dir });
+    await git('git', ['remote', 'add', 'upstream', 'https://github.com/up/repo'], { cwd: dir });
+    await git('git', ['remote', 'add', 'mirror', 'git@gitlab.com:me/repo.git'], { cwd: dir });
+    const info = await withGh(view, () => repoInfo(dir));
+    assert.deepEqual(info.repos, ['up/repo', 'grand/repo', 'me/repo']);
+    assert.deepEqual(info.remotes, { 'me/repo': 'origin', 'up/repo': 'upstream' });
+    assert.equal(info.nameWithOwner, 'up/repo');
+    assert.equal(info.defaultBranch, 'main');
+    assert.equal(info.prefix, '');
+    // Not a fork: no parent to add, and gh's base is origin itself.
+    const plain = () => `cat <<'JSON'\n{"defaultBranchRef":{"name":"main"},"nameWithOwner":"me/repo","parent":null}\nJSON`;
+    await git('git', ['remote', 'remove', 'upstream'], { cwd: dir });
+    assert.deepEqual((await withGh(plain, () => repoInfo(dir))).repos, ['me/repo']);
   } finally {
     await fs.rm(dir, { recursive: true, force: true });
   }
