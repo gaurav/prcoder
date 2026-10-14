@@ -17,7 +17,9 @@ prcoder --help             # prcoder's own flags
 ```
 
 It prints the URL to open, and opens it for you unless `--no-open` (or `PRCODER_NO_OPEN`) is set.
-Each repo keeps the same port, and so the same URL, across runs.
+Each repo keeps the same port, and so the same URL, across runs. It runs anywhere in a git
+checkout's working tree; anywhere else -- outside a repo, in a bare one, inside `.git` -- it says
+why and exits with status 2.
 
 It needs Node 22.18 or later in the 22 line, or 24.2 or later -- on older versions it exits at once
 without a word, because it starts only under `import.meta.main` -- and the

@@ -37,6 +37,23 @@ const asks = async (args, cwd, ok) => (await answer(args, cwd, ok)) !== null;
 /** Whether this clone has `rev` as a commit. 1 is "no"; 128 would be a bad name. */
 const hasCommit = (rev, cwd) => asks(['rev-parse', '--verify', '--quiet', `${rev}^{commit}`], cwd);
 
+/**
+ * Why prcoder cannot run in `cwd`, or null when it is inside a work tree.
+ *
+ * Outside any repo `rev-parse` exits 128 with git's own reason on stderr --
+ * not a repository, or one owned by someone else that safe.directory refuses
+ * -- and that reason is the answer. Inside a `.git` directory or a bare repo it
+ * exits 0 and prints `false`: a repo, but no checkout for the agent to work in.
+ */
+export async function notAWorkTree(cwd) {
+  try {
+    if (await text(['rev-parse', '--is-inside-work-tree'], cwd) === 'true') return null;
+    return 'this is a .git directory or a bare repository, not a checkout';
+  } catch (e) {
+    return e.code === 'ENOENT' ? 'git is not installed, or not on PATH' : e.message;
+  }
+}
+
 /** Empty on a detached HEAD, which happens mid-rebase and mid-bisect. */
 export const currentBranch = (cwd) =>
   text(['symbolic-ref', '--quiet', '--short', 'HEAD'], cwd).catch(() => '');

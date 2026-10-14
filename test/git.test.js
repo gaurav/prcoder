@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { syncState, compareUrl, githubUrl, originOwner, prScope, userDirt, remoteBranchHead, trackingHead, snapshot, localPatch, branchesBelow } from '../git.js';
+import { notAWorkTree, syncState, compareUrl, githubUrl, originOwner, prScope, userDirt, remoteBranchHead, trackingHead, snapshot, localPatch, branchesBelow } from '../git.js';
 
 const git = promisify(execFile);
 // For the throwaway repos below. The identity goes on the command, not into a
@@ -79,6 +79,25 @@ test('the g key opens the PR, the compare page, or the repo', () => {
   assert.equal(githubUrl({ ...at, branch: 'main' }), 'https://github.com/o/r');
   assert.equal(githubUrl({ ...at, branch: null }), 'https://github.com/o/r');
   assert.throws(() => githubUrl({ ...at, pushed: false }), /feat is not on GitHub yet/);
+});
+
+// What server.js refuses to start in. The tmpdir is outside any repo; a
+// GIT_CEILING_DIRECTORIES would be needed if it ever were not, since git
+// searches upward and would find that repo instead.
+test('only a checkout, or a directory inside one, is a work tree', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'prcoder-worktree-'));
+  try {
+    assert.match(await notAWorkTree(dir), /not a git repository/);
+    await git('git', ['init', '-q', dir]);
+    assert.equal(await notAWorkTree(dir), null);
+    await fs.mkdir(path.join(dir, 'sub'));
+    assert.equal(await notAWorkTree(path.join(dir, 'sub')), null, 'a subdirectory');
+    assert.match(await notAWorkTree(path.join(dir, '.git')), /bare repository, not a checkout/);
+    await git('git', ['init', '-q', '--bare', path.join(dir, 'bare.git')]);
+    assert.match(await notAWorkTree(path.join(dir, 'bare.git')), /bare repository, not a checkout/);
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
 });
 
 test("origin's owner comes off every shape of GitHub remote URL", async () => {
