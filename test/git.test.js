@@ -16,6 +16,9 @@ import { notAWorkTree, syncState, compareUrl, githubUrl, originOwner, prScope, u
 // variables reach this file's children, which are both the helpers here and
 // git.js's run() -- it spreads process.env.
 for (const k of Object.keys(process.env)) if (k.startsWith('GIT_')) delete process.env[k];
+// And in English: tests here match git's own words (`not a git repository`),
+// which a translated git prints in the reader's language.
+process.env.LC_ALL = 'C';
 
 const git = promisify(execFile);
 // For the throwaway repos below. The identity goes on the command, not into a
