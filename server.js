@@ -12,7 +12,7 @@ import { text as readBody } from 'node:stream/consumers';
 import { spawn as ptySpawn } from 'node-pty';
 import { WebSocketServer } from 'ws';
 import { loadPr, prHeads, prUrl, prBody, listPrs, issueLinks, lookupRef, setViewed, setBody, createIssue, fetchPatches, runCount } from './github.js';
-import { snapshot, currentBranch, repoInfo, prScope, compareUrl, githubUrl, originOwner, checkoutPr, pushBranch, remoteBranchHead, trackingHead, localPatch, branchesBelow } from './git.js';
+import { notAWorkTree, snapshot, currentBranch, repoInfo, prScope, compareUrl, githubUrl, originOwner, checkoutPr, pushBranch, remoteBranchHead, trackingHead, localPatch, branchesBelow } from './git.js';
 import { bucket, fileUrl, fileViews } from './files.js';
 import { readPort, writePort, pick, useQueueFile, movedQueue, issueUrl } from './store.js';
 import { readQueue, writeQueue, quote } from './queue.js';
@@ -260,7 +260,7 @@ const routes = {
   // `started` is what the exit bar fills its fields with: the model and effort
   // given after -- on prcoder's command line, so starting the agent again offers
   // what it was started with rather than a blank nobody remembers the meaning of.
-  'GET /api/whoami': () => ({ prcoder: true, repo, branch: last?.branch ?? null,
+  'GET /api/whoami': () => ({ prcoder: true, version: VERSION, repo, branch: last?.branch ?? null,
     nameWithOwner: info?.nameWithOwner ?? null, started: startedWith(agentArgs) }),
 
   'GET /api/prs': () => listPrs(repo),
@@ -937,6 +937,15 @@ if (import.meta.main) {
   // `claude` in its place, one session per tab, left running.
   if (process.env.CLAUDE_BIN && !process.env.PRCODER_AGENT_BIN) {
     console.error('prcoder: CLAUDE_BIN is now PRCODER_AGENT_BIN; rename it, or unset it to run `claude`');
+    process.exit(2);
+  }
+  // Every fact prcoder shows comes from git, and outside a checkout it used to
+  // start anyway: one `status: failed to run git` line, a pane with no pull
+  // request, and an agent in a directory with nothing to commit to. Refused
+  // here, before the port, the terminal or the agent.
+  const why = await notAWorkTree(repo);
+  if (why) {
+    console.error(`prcoder: ${repo} is not inside a git checkout\n  ${why}\nrun prcoder from inside a repository's working tree`);
     process.exit(2);
   }
   ({ target, agentArgs } = cli);

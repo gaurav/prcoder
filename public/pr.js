@@ -1515,8 +1515,8 @@ const blockNode = (b, onTask) => ({
   // is not markdown.
   code: () => h('pre', {}, h('code', { textContent: b.code })),
   p: () => h('p', { innerHTML: inline(b.text) }),
-  // Offset by two: the pane's own <h1> names it and the PR title is the <h2>,
-  // so a description's top-level heading sits under both.
+  // Offset by two: the page's <h1> is prcoder's, in the corner, and the PR
+  // title is the <h2>, so a description's top-level heading sits under both.
   heading: () => h(`h${Math.min(b.level + 2, 6)}`, { innerHTML: inline(b.text) }),
   quote: () => h('blockquote', { innerHTML: inline(b.text) }),
   task: () => taskRow(b, onTask),

@@ -1,10 +1,10 @@
 import { Terminal } from '/vendor/xterm.mjs';
 import { FitAddon } from '/vendor/addon-fit.mjs';
 import { WebLinksAddon } from '/vendor/addon-web-links.mjs';
-import { renderPr, renderNoPr, renderHeader, pageTitle, api, toast, pref, setPref, debug, fileFrom, nextUnviewed, revealFile } from './pr.js';
+import { renderPr, renderNoPr, renderHeader, pageTitle, api, toast, pref, setPref, debug, fileFrom, nextUnviewed, revealFile, h } from './pr.js';
 import { openDiff, closeDiff, selectedPath, setViewed, showViewed, canTickViewed, toggleViewed, toggleWrap, canWrap, openMention } from './diff.js';
 import { initQueue, addItem, setItems } from './queue.js';
-import { bindKeys } from './keys.js';
+import { bindKeys, keyLabel, isTyping } from './keys.js';
 import { printable } from './tasks.js';
 import { fold, folded, canFold } from './folds.js';
 import './panes.js';   // draggable pane gutters; nothing here calls into it
@@ -53,15 +53,21 @@ term.open(document.getElementById('term-host'));
 // types one somebody does -- C ç, A å and Polish ą, Q œ, L ¬ and German @, Z
 // Ω and Polish ż. G over R for no better reason than "go to the agent", which
 // unfolding does.
-bindKeys({
-  'Alt+KeyW': { fn: toggleWrap, terminal: canWrap },
-  'Alt+KeyM': { fn: mentionOpenFile, terminal: () => openMention('') != null },
-  'Alt+KeyV': { fn: toggleViewed, terminal: canTickViewed },
-  'Alt+KeyX': { fn: tickAndNext, terminal: () => selectedPath() != null || nextUnviewed(last?.pr?.files, null) != null },
-  'Alt+KeyJ': { fn: () => stepFile(1), terminal: anyFiles },
-  'Alt+KeyK': { fn: () => stepFile(-1), terminal: anyFiles },
-  'Alt+KeyG': { fn: toggleTerm, terminal: () => canFold('term') },
-}, term);
+//
+// Each binding's `label` is its row on the shortcut sheet (Alt+/ below), which
+// is built from this table and so can only list keys the page has. The
+// order here is the sheet's order: the review loop first, then the rest.
+const KEYS = {
+  'Alt+KeyV': { fn: toggleViewed, terminal: canTickViewed, label: 'mark the open file viewed, or unviewed' },
+  'Alt+KeyX': { fn: tickAndNext, terminal: () => selectedPath() != null || nextUnviewed(last?.pr?.files, null) != null, label: 'mark the open file viewed and open the next unviewed one' },
+  'Alt+KeyJ': { fn: () => stepFile(1), terminal: anyFiles, label: 'open the next file' },
+  'Alt+KeyK': { fn: () => stepFile(-1), terminal: anyFiles, label: 'open the previous file' },
+  'Alt+KeyM': { fn: mentionOpenFile, terminal: () => openMention('') != null, label: 'mention the open file to the coding agent' },
+  'Alt+KeyW': { fn: toggleWrap, terminal: canWrap, label: 'wrap long lines in the diff' },
+  'Alt+KeyG': { fn: toggleTerm, terminal: () => canFold('term'), label: 'fold or unfold the coding agent pane' },
+  'Alt+Slash': { fn: toggleKeys, terminal: () => true, modal: true, label: 'show these shortcuts' },
+};
+bindKeys(KEYS, term);
 
 const PTY_SEEN = 'prcoder:pty';
 // The server serves only public/, so the docs are linked where they live.
@@ -143,9 +149,14 @@ const BUSY = link.dataset.busy;
 // URL re-resolved, and a compare against that is a compare against something
 // the browser wrote, not something this did.
 let shown = IDLE;
+// The tile in the corner (the menu's summary) is the same picture: one signal,
+// drawn twice, and nothing to keep in step but this assignment.
+const logo = document.getElementById('logo');
+logo.src = IDLE;
 const icon = (href) => {
   if (shown === href) return;
   shown = link.href = href;
+  logo.src = href;
   link.remove();
   document.head.append(link);
   // Here rather than in turn(): the quiet timer ends a turn through icon()
@@ -226,6 +237,9 @@ function connect(query = '') {
     turn(false);
     const why = e.code === 1008 ? `refused: ${e.reason}` : 'coding agent exited';
     term.write(`\r\n\x1b[31m[${why}]\x1b[0m\r\n`);
+    // The PTY a quit killed closes the socket after quitPrcoder has put up the
+    // bar with its own line and no Start, so there is nothing left to do here.
+    if (quit) return;
     // The bar's note repeats the terminal's line, not the reason: that is
     // already there in red, a line up.
     exitForm.querySelector('span').textContent = e.code === 1008 ? 'Start refused.' : 'Coding agent has exited.';
@@ -249,7 +263,8 @@ const exitForm = document.getElementById('term-exit');
 // from the bar, and a reply landing late must not take it back. An effort the
 // select has no option for (`--effort extreme`) gets one: setting a select to
 // a value it lacks blanks it, which shows "as started" rather than the value.
-api('/api/whoami', undefined, 'GET').then(({ started }) => {
+api('/api/whoami', undefined, 'GET').then(({ started, version }) => {
+  document.getElementById('menu-version').textContent = version ? `prcoder ${version}` : '';
   const { model, effort } = exitForm.elements;
   if (!model.value) model.value = started.model;
   if (effort.value || !started.effort) return;
@@ -262,7 +277,15 @@ exitForm.onsubmit = (e) => {
   term.reset();
   connect(new URLSearchParams(new FormData(exitForm)).toString());
 };
-document.getElementById('term-quit').onclick = async () => {
+// Quit, from the exit bar or the menu. The exit bar goes up here, filled with
+// the fact rather than with a Start that would reach nothing; `quit` tells
+// ws.onclose, when the killed PTY's socket closes, to leave it so. From the
+// menu, where the bar may be out of sight, a sticky toast says the same. The
+// menu's Quit goes grey with it: picked again, it would reach no server and
+// put a network error in the toast's one slot, over the line saying the quit
+// worked.
+let quit = false;
+async function quitPrcoder(fromMenu = false) {
   try {
     let r = await api('/api/quit', {});
     // The same question the terminal's q asks, put where you are.
@@ -270,11 +293,82 @@ document.getElementById('term-quit').onclick = async () => {
       if (!confirm(`Quit prcoder? ${r.risk.join('; ')}.`)) return;
       r = await api('/api/quit', { force: true });
     }
-    exitForm.replaceChildren('prcoder has quit — this tab can be closed.');
+    const gone = 'prcoder has quit — this tab can be closed.';
+    quit = true;
+    exitForm.replaceChildren(gone);
+    exitForm.hidden = false;
+    sync();   // as ws.onclose does, and for the same reason
+    document.getElementById('menu-quit').disabled = true;
+    if (fromMenu) toast(gone, false, true);
   } catch (e) {
     toast(e.message, true);
   }
+}
+document.getElementById('term-quit').onclick = () => quitPrcoder();
+
+// The corner menu (index.html says what it is). A <details> opens and closes
+// itself; this closes it the ways a menu is expected to close -- a pick, a
+// click anywhere else, Escape -- none of which a <details> does on its own.
+// Escape only outside a text field: in the terminal it is the agent's.
+// Neither a click nor an Escape in a dialog counts: Alt+/ from an item opens
+// the sheet over the open menu, and the sheet hands the focus back to that
+// item when it closes, so the menu has to be open still to show it.
+const menu = document.getElementById('menu');
+document.addEventListener('click', (e) => {
+  if (!menu.open || e.target.closest('dialog')) return;
+  if (!menu.contains(e.target) || e.target.closest('#menu-list a, #menu-list button')) menu.open = false;
+});
+// Escape from an item hands the focus to the summary, as a menu does, since
+// the item it was on has just been hidden. Not while a modal is up: that
+// Escape is the sheet's, and a menu closed under it would have hidden the item
+// the sheet gives the focus back to, dropping it onto <body>.
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape' || !menu.open || isTyping(e.target) || document.querySelector('dialog:modal')) return;
+  menu.open = false;
+  if (menu.contains(document.activeElement)) menu.querySelector('summary').focus();
+});
+document.getElementById('menu-quit').onclick = () => quitPrcoder(true);
+// The dialog gives the focus back to the pick it was opened from, which the
+// pick has just hidden in the closed menu, so the focus would fall out of the
+// page. The menu itself is where it was before the pick; the close event comes
+// after the dialog's own hand-back, so this one wins.
+document.getElementById('menu-keys').onclick = () => {
+  toggleKeys();
+  keysDialog.addEventListener('close', () => menu.querySelector('summary').focus(), { once: true });
 };
+
+// The shortcut sheet, built once from KEYS: a row per binding, the key as the
+// reader's keyboard has it. A modal <dialog> closes on Escape by itself, and
+// gives the focus back to where it was -- the terminal, when Alt+/ was pressed
+// there -- so the sheet is a glance, not a detour. A click on the backdrop has
+// the dialog itself as its target, but so does one on the dialog's padding,
+// so it is the click's position, outside the dialog's box, that says backdrop.
+const keysDialog = document.getElementById('keys');
+// navigator.platform, deprecated as it is, because it is what xterm reads to
+// decide whether the key is Option (its Platform.ts), so the sheet calls the
+// key what the terminal treats it as. Where a browser reports a false one, a
+// Mac is shown Alt, which is printed on its Option key anyway.
+const mac = /Mac|iPhone|iPad/.test(navigator.platform);
+document.getElementById('keys-list').replaceChildren(...Object.entries(KEYS).map(([name, { label }]) =>
+  h('tr', {}, h('td', {}, h('kbd', {}, keyLabel(name, mac))), h('td', {}, label))));
+// keyLabel spells a key as a US keyboard prints it, and a binding is the key's
+// position, so on another layout the key is where a US keyboard has it: on a
+// German one, Alt+/ is the key that types -. The note says so, since the
+// label alone names a key that layout does not have there.
+document.getElementById('keys-note').textContent = (mac ? 'Alt is Option. ' : '')
+  + 'Keys are named as on a US keyboard; on another layout, press the key in the same place. '
+  + 'Each key works from the coding agent\'s terminal too, while it has something to do; otherwise the agent gets it.';
+document.querySelector('#menu-keys kbd').textContent = keyLabel('Alt+Slash', mac);   // the menu's hint, in the same spelling
+document.getElementById('keys-close').onclick = () => keysDialog.close();
+keysDialog.addEventListener('click', (e) => {
+  if (e.target !== keysDialog) return;
+  const r = keysDialog.getBoundingClientRect();
+  if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) keysDialog.close();
+});
+function toggleKeys() {
+  if (keysDialog.open) keysDialog.close();
+  else keysDialog.showModal();
+}
 connect();
 
 term.onData((d) => send({ type: 'input', data: d }));

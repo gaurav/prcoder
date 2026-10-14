@@ -14,6 +14,7 @@ import http from 'node:http';
 import { WebSocket } from 'ws';
 import { server, sessionArgs, startedWith, missingVendor, keepPr } from '../server.js';
 import { grammars } from '../public/diff.js';
+import { VERSION } from '../cli.js';
 
 let base;
 before(() => new Promise((res) => server.listen(0, '127.0.0.1', () => {
@@ -31,7 +32,7 @@ test('/api/whoami answers from cache, before any poll has run', async () => {
   assert.equal(res.status, 200);
   assert.equal(res.headers.get('content-type'), 'application/json');
   assert.deepEqual(await res.json(), {
-    prcoder: true, repo: process.cwd(), branch: null, nameWithOwner: null,
+    prcoder: true, version: VERSION, repo: process.cwd(), branch: null, nameWithOwner: null,
     started: { model: '', effort: '' },
   });
 });

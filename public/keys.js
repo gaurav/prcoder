@@ -20,6 +20,11 @@
 // - A held key fires once. Its repeats are taken and dropped, so holding
 //   Alt+M a moment too long does not type the mention over and over into the
 //   agent's prompt, and holding Alt+W does not flicker the wrap.
+// - Nothing fires behind a modal <dialog>. The page under one is inert, so a
+//   key that acted on it would change panes nobody can see or reach -- and
+//   Alt+G would unfold the terminal and focus it, which the inert page
+//   refuses, so the focus is lost. A binding written `{ fn, modal: true }`
+//   fires anyway, so the key that opens the shortcut sheet can close it.
 // - Modifiers are spelled in a fixed order, Ctrl+Alt+Shift+Meta, so a binding
 //   is a plain string with one spelling.
 //
@@ -32,6 +37,22 @@ const NOT_TEXT = ['checkbox', 'radio', 'button', 'submit', 'reset', 'image', 'fi
 /** Whether a key pressed on `target` is text being typed, and so not ours. */
 export const isTyping = (target) => target instanceof Element
   && (target.closest(`input:not(${NOT_TEXT}), textarea, select, [contenteditable]`) != null);
+
+/**
+ * A binding's name as the shortcut sheet shows it: `Alt+KeyV` is `Alt+V`, or
+ * `⌥V` on a Mac, where the key is Option and is drawn as its symbol. Only
+ * the codes a binding here has ever used are spelled; any other is shown as
+ * it is, which is wrong-looking enough to be fixed at once.
+ */
+const CODE = { Slash: '/', Comma: ',', Period: '.', Enter: '↩', Space: '␣', ArrowUp: '↑', ArrowDown: '↓', ArrowLeft: '←', ArrowRight: '→' };
+const MOD = { Ctrl: ['Ctrl', '⌃'], Alt: ['Alt', '⌥'], Shift: ['Shift', '⇧'], Meta: ['Win', '⌘'] };
+export function keyLabel(name, mac = false) {
+  const parts = name.split('+');
+  const code = parts.pop();
+  const key = CODE[code] ?? code.replace(/^(Key|Digit)/, '');
+  const mods = parts.map((m) => MOD[m]?.[mac ? 1 : 0] ?? m);
+  return mac ? [...mods, key].join('') : [...mods, key].join('+');
+}
 
 /** The name a keydown event binds under: its modifiers, then its physical key. */
 export const keyName = (e) => [
@@ -49,8 +70,9 @@ export const keyName = (e) => [
 export function bindKeys(map, term) {
   const fnOf = (binding) => (typeof binding === 'function' ? binding : binding?.fn);
   document.addEventListener('keydown', (e) => {
-    const fn = fnOf(map[keyName(e)]);
-    if (!fn || isTyping(e.target)) return;
+    const binding = map[keyName(e)];
+    const fn = fnOf(binding);
+    if (!fn || isTyping(e.target) || (!binding.modal && document.querySelector('dialog:modal'))) return;
     e.preventDefault();
     if (!e.repeat) fn(e);
   });

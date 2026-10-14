@@ -54,7 +54,8 @@ nothing is open after a reload, and the next click on a file would unfold it any
 
 A few things have a key as well as a control. A shortcut never fires while you are typing -- in
 the queue's input, or in an item being edited, though a checkbox you have just ticked, such as
-*viewed*, does not count -- and each is named by the key's position, so on a Mac Alt is Option:
+*viewed*, does not count -- and each is named by the key's position on a US keyboard, so on a
+Mac Alt is Option, and on another layout Alt+/ is whatever key sits where a US keyboard has /:
 
 | Key   | Does                                                                             | While                                            |
 |-------|----------------------------------------------------------------------------------|--------------------------------------------------|
@@ -62,9 +63,10 @@ the queue's input, or in an item being edited, though a checkbox you have just t
 | Alt+X | ticks the open file viewed and opens the next unviewed file, going round to the top past the end; with no file open, opens the first unviewed | a file is open or any file is unviewed |
 | Alt+J | opens the next file in the Files tab's order, or the first with none open        | the pull request has files                       |
 | Alt+K | opens the previous file, or the last with none open                              | the pull request has files                       |
-| Alt+W | presses *Wrap* in the diff pane                                                  | a file is open and the pane is not folded        |
 | Alt+M | presses **@** in the diff pane                                                   | a file that has one is open                      |
+| Alt+W | presses *Wrap* in the diff pane                                                  | a file is open and the pane is not folded        |
 | Alt+G | presses the coding agent pane's ▼: folds it, or unfolds it and puts the focus back in the terminal | always                         |
+| Alt+/ | shows these shortcuts, or hides them                                             | always                                           |
 
 The terminal belongs to the coding agent, and every key pressed in it is the agent's -- except
 these, while the *While* column holds. The loop these keys are for ends in the terminal, asking
@@ -84,13 +86,30 @@ first and moves only once the tick has landed: one GitHub refused is said in a t
 moved on from, and once every file is viewed it says so and stays. The *While* column is each
 key's `terminal` guard in the `bindKeys` table in `app.js`, where the letters are argued.
 
-A shortcut held down fires once; its key's repeats do nothing.
+A shortcut held down fires once; its key's repeats do nothing. Alt+/ shows this table on the page,
+from the terminal too, and Escape puts the focus back where it was. While it is up, the other keys
+do nothing: the page behind it cannot be reached until it closes.
 
 Each tab names itself `owner/repo#N · pull request title` (the branch and `(no PR)` when there
 isn't one), and renames itself as the branch moves, so a row of prcoder tabs stays readable at
 tab width.
 
 ## Pull request
+
+### The corner
+
+The top-left corner of the window is prcoder's rather than the pane's: the tile the tab shows,
+busy or idle as the tab is, and the name, as a menu. The pane needs no label there, since its head
+says which pull request it is. The menu holds the keyboard shortcuts (the sheet Alt+/ opens, built
+from the same table the keys are bound from, so it can only list keys the page has), the
+documentation, an issue to report and the repository on GitHub, **Quit prcoder…**, which asks what
+the exit bar's Quit asks ([Claude Code](#claude-code)) and is greyed out once prcoder has quit, and
+the version on its last line. It closes on a pick, a click anywhere else, or Escape -- outside a
+text field, so not in the terminal, where Escape is the agent's, nor in the queue's input or the
+pull request switcher. Nothing done in the shortcut sheet closes it, so with the sheet opened over
+the menu, closing the sheet gives the focus back to the item it was opened from. Escape from one of
+its items, and closing the sheet its first item opened, leave the focus on the menu, since the item
+it was on is hidden.
 
 ### The head
 

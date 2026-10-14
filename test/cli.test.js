@@ -261,6 +261,34 @@ test('prcoder --help, --version and a bad flag exit before anything starts', asy
   assert.match(stale.stderr, /^prcoder: CLAUDE_BIN is now PRCODER_AGENT_BIN/);
 });
 
+// It used to start anyway: a server on a port, a pane with no pull request,
+// and an agent in a directory with nothing to commit to.
+test('prcoder refuses to start outside a git checkout', async () => {
+  const { execFile } = await import('node:child_process');
+  const { promisify } = await import('node:util');
+  const fs = await import('node:fs/promises');
+  const os = await import('node:os');
+  const path = await import('node:path');
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'prcoder-nogit-'));
+  try {
+    // /usr/bin/false and a timeout, as above: a run that got past the check
+    // would be a listening server. Without git's own variables, which a hook
+    // exports: a GIT_DIR would answer for the tmpdir (test/git.test.js says more).
+    // LC_ALL=C because the line after prcoder's own is git's, in git's language.
+    const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith('GIT_')));
+    // A path, not the URL's pathname, which keeps a space in the checkout's
+    // path as %20 and so names a file that is not there.
+    const { fileURLToPath } = await import('node:url');
+    const out = await promisify(execFile)('node', [fileURLToPath(new URL('../server.js', import.meta.url)), '--no-open'],
+      { cwd: dir, env: { ...env, LC_ALL: 'C', PRCODER_AGENT_BIN: '/usr/bin/false' }, timeout: 15_000 })
+      .then((r) => ({ code: 0, ...r }), (e) => ({ code: e.code, stdout: e.stdout, stderr: e.stderr }));
+    assert.equal(out.code, 2);
+    assert.match(out.stderr, /^prcoder: .* is not inside a git checkout\n {2}fatal: not a git repository/);
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
+
 // Quitting prints Local rather than asking about it: the queue is on disk, so
 // nothing is lost, and the list is what you would want to copy from.
 test('quitting lists what is on Local, with links, and nothing when it is empty', () => {

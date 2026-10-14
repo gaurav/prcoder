@@ -5,7 +5,8 @@ description: Launch the prcoder server and verify it (or a change to it) against
 
 # Running prcoder
 
-prcoder serves the repo it is started in: it reads the current branch's PR via
+prcoder serves the repo it is started in, and will not start outside a git
+working tree (a scratch directory needs `git init` first): it reads the current branch's PR via
 `gh` and spawns a real `claude` PTY per websocket connection. Run it from a
 branch with an open PR -- most routes answer `no pull request for this branch`
 otherwise. Test against this repo's own PRs; another repo only when its owner
