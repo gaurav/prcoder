@@ -11,8 +11,8 @@ import { fileURLToPath } from 'node:url';
 import { text as readBody } from 'node:stream/consumers';
 import { spawn as ptySpawn } from 'node-pty';
 import { WebSocketServer } from 'ws';
-import { loadPr, prHeads, prUrl, prBody, listPrs, issueLinks, lookupRef, setViewed, setBody, createIssue, fetchPatches, runCount } from './github.js';
-import { notAWorkTree, snapshot, currentBranch, repoInfo, prScope, compareUrl, githubUrl, originOwner, checkoutPr, pushBranch, remoteBranchHead, trackingHead, localPatch, branchesBelow } from './git.js';
+import { loadPr, prHeads, prUrl, prBody, listPrs, branchPrs, pickPr, issueLinks, lookupRef, setViewed, setBody, createIssue, fetchPatches, runCount } from './github.js';
+import { notAWorkTree, snapshot, currentBranch, headCommit, hasCommit, repoInfo, prScope, compareUrl, githubUrl, originOwner, checkoutPr, pushBranch, remoteBranchHead, trackingHead, localPatch, branchesBelow } from './git.js';
 import { bucket, fileUrl, fileViews } from './files.js';
 import { readPort, writePort, pick, useQueueFile, movedQueue, issueUrl } from './store.js';
 import { readQueue, writeQueue, quote } from './queue.js';
@@ -29,6 +29,11 @@ const repo = process.cwd();
 // be an array either way.
 let target;
 let agentArgs = [];
+// Which of the branch's pull requests to show, `{ branch, url }`, picked in the
+// switcher's "On this branch" group. Its own variable and not `target`: a
+// target outlives a checkout on purpose, and this must not -- it is a choice
+// about one branch, dropped as soon as the poll finds another checked out.
+let chosen = null;
 // The PR is fetched once and reused, with its files already grouped and linked
 // (decorateFiles); the PR routes need its body, node id and head.
 let pr = null;
@@ -86,8 +91,13 @@ const requirePr = () => {
   return pr;
 };
 
-async function refreshPr() {
-  pr = await loadPr(repo, target);
+/**
+ * `what` is the URL the branch lookup picked, or the command line's target;
+ * nothing means no pull request, and is not handed to gh, whose own lookup by
+ * branch is what branchPrs replaces.
+ */
+async function refreshPr(what) {
+  pr = what ? await loadPr(repo, what) : null;
   // Once per load rather than per poll: nothing it reads changes until the PR
   // is reloaded.
   if (pr) decorateFiles(pr);
@@ -160,12 +170,20 @@ async function editBody(edit) {
  * poll; but not for the checks, since one finishing leaves updatedAt alone
  * (prHeads). No PR before and none now stands too, or a branch without one
  * would pay for a loadPr on every poll.
+ *
+ * The URL is the identity, not the number: a fork's pull request and one in
+ * its parent can share a number. A cheap answer that carries no checks -- a
+ * merged pull request's, which branchPrs reads without them -- leaves the
+ * ones loadPr read.
  */
 export function keepPr(pr, heads) {
-  if (heads?.updatedAt !== pr?.updatedAt || heads?.number !== pr?.number) return false;
-  if (pr) pr.checks = heads.checks;
+  if (heads?.updatedAt !== pr?.updatedAt || heads?.url !== pr?.url) return false;
+  if (pr && heads.checks) pr.checks = heads.checks;
   return true;
 }
+
+/** The branch's pull requests as the page gets them: no checks, which every poll would carry to every tab. */
+const forPage = ({ checks, ...p }) => p;
 
 /**
  * Where the repo is, plus the PR and queue that go with it. The client polls
@@ -177,16 +195,27 @@ async function status({ full = false } = {}) {
 
   // Taken once and threaded through: the remote head is not known yet, and
   // asking git the same four questions three times a minute is just noise.
-  const branch = await currentBranch(repo);
+  const [branch, head] = await Promise.all([currentBranch(repo), headCommit(repo)]);
+  // Before the pull request, which is looked for in the repositories this
+  // names; a lookup that fails fails the poll, as it should -- gh that cannot
+  // say which repository this is cannot list its pull requests either.
+  const facts = await repoFacts();
+  if (chosen && chosen.branch !== branch) chosen = null;
+
+  // The branch's pull requests, wherever they are: the poll's cheap check,
+  // whose checks keepPr takes. With a target from the command line the
+  // pinned pull request is checked the old way, and the list is still read,
+  // since the switcher offers it.
+  const found = await branchPrs(repo, facts.repos, branch, { has: (oid) => hasCommit(oid, repo) });
   // A full refresh reloads regardless, so it has no use for the cheap check.
-  const heads = full ? null : await prHeads(repo, target);
+  const heads = target
+    ? (full ? null : await prHeads(repo, target))
+    : pickPr(found, { head, chosen: chosen?.url, shown: pr?.url, repos: facts.repos });
 
   if (full || !keepPr(pr, heads)) {
     if (!full && pr) term.debug(`PR #${pr.number} changed upstream — reloading into the UI`);
-    await refreshPr();
+    await refreshPr(target ?? heads?.url);
   }
-  // After the PR, so a startup whose repo lookup fails still has the PR to report.
-  const facts = await repoFacts();
 
   // With no PR there is no headRefOid to compare against, so read git's own
   // record of origin's head -- not origin: that was a `git ls-remote` a minute
@@ -194,14 +223,15 @@ async function status({ full = false } = {}) {
   // you push (#19). The create route is the one place that still asks origin,
   // because it pushes on the answer.
   const oid = pr?.headRefOid ?? heads?.headRefOid ?? await trackingHead(repo, branch);
-  const snap = await snapshot(repo, oid, branch);
-  const scope = prScope(pr, { branch: snap.branch, nameWithOwner: facts.nameWithOwner });
+  const snap = await snapshot(repo, oid, branch, head);
+  const scope = prScope(pr, { repos: facts.repos, found: found.map((p) => p.url) });
   const tracked = scope === 'current' || scope === 'none';
 
   last = {
     ...snap,
     ...facts,
     scope,
+    branchPrs: found.map(forPage),
     // A PR we have not checked out can never be in sync with this working
     // tree, so its verdict is meaningless. With no PR at all the branch still
     // has one, and "not pushed yet" is what the create button needs to know.
@@ -293,12 +323,28 @@ const routes = {
     return numbers.map((number) => ({ number, ...links.get(number) }));
   },
 
-  'POST /api/pr/switch': async ({ number }) => {
-    await checkoutPr(repo, number);
-    term.verbose(`checked out PR #${number}`);
+  'POST /api/pr/switch': async ({ url } = {}) => {
+    await checkoutPr(repo, url);
+    term.verbose(`checked out ${url}`);
     // Clear rather than pin: the checkout put us on the branch, so following it
     // gives the same answer and self-heals when Claude switches branches later.
+    // The choice made on the old branch goes with it.
     target = undefined;
+    chosen = null;
+    return status({ full: true });
+  },
+
+  /**
+   * One of the branch's own pull requests, picked in the switcher: shown from
+   * now on, for as long as the branch is checked out. Nothing is checked out,
+   * since the branch is already this one. Only a URL the last poll listed for
+   * the branch is taken, which is the only kind the page can offer.
+   */
+  'POST /api/pr/choose': async ({ url } = {}) => {
+    const found = last?.branchPrs?.find((p) => p.url === url);
+    if (!found) throw new Error(`${url ?? '(nothing)'} is not a pull request for this branch`);
+    chosen = { branch: last.branch, url };
+    term.verbose(`showing ${url} for ${last.branch}`);
     return status({ full: true });
   },
 
@@ -773,12 +819,16 @@ function watch(child, shell, failed) {
  * again rather than trusting `pr`, which is only as fresh as the last poll --
  * and polls stop while no tab is visible, which is exactly when someone is at
  * this terminal pressing keys, and the agent may have switched branches since.
+ * The same lookup as the poll's, less the checks, which a URL has no use for.
  */
 async function openGithub() {
-  const branch = await currentBranch(repo);
-  const { nameWithOwner, defaultBranch } = await repoFacts();
+  const [branch, head] = await Promise.all([currentBranch(repo), headCommit(repo)]);
+  const { nameWithOwner, defaultBranch, repos } = await repoFacts();
+  const url = target ? await prUrl(repo, target) : pickPr(
+    await branchPrs(repo, repos, branch, { has: (oid) => hasCommit(oid, repo), checks: false }),
+    { head, chosen: chosen?.branch === branch ? chosen.url : null, shown: pr?.url, repos })?.url;
   openBrowser(githubUrl({
-    prUrl: await prUrl(repo, target), nameWithOwner, defaultBranch, branch,
+    prUrl: url, nameWithOwner, defaultBranch, branch,
     pushed: Boolean(await trackingHead(repo, branch)), owner: await originOwner(repo),
   }));
 }

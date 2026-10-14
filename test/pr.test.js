@@ -279,10 +279,13 @@ test('no repository means no links rather than links to nowhere', () => {
 
 // The list the switcher fetches, which carries every open pull request in the
 // repository -- the pane wants the ones that land on the branch you are on.
+const at = (n) => `https://github.com/gaurav/prcoder/pull/${n}`;
+// Each with its URL, which is what the switcher values its options by and
+// switcherRows pins the one on screen by.
 const OPEN = [
-  { number: 1, headRefName: 'initial-implementation', baseRefName: 'main', title: 'The one into main' },
-  { number: 27, headRefName: 'queue-tabs', baseRefName: 'initial-implementation', title: 'One of three' },
-  { number: 60, headRefName: 'checks-tab', baseRefName: 'initial-implementation', title: 'Another' },
+  { number: 1, headRefName: 'initial-implementation', baseRefName: 'main', title: 'The one into main', url: at(1) },
+  { number: 27, headRefName: 'queue-tabs', baseRefName: 'initial-implementation', title: 'One of three', url: at(27) },
+  { number: 60, headRefName: 'checks-tab', baseRefName: 'initial-implementation', title: 'Another', url: at(60) },
 ];
 
 test('the pane lists the pull requests that merge into this branch, and no others', () => {
@@ -447,7 +450,7 @@ test('the switcher lists each pull request with its stack under it', () => {
 // gh pr list has only open PRs, so a merged one on screen is added -- into the
 // tree, so what is still open on its branch nests under it, as in its Stack tab.
 test('a merged pull request on screen parents the ones still open on its branch', () => {
-  const merged = { number: 5, title: 'Merged', headRefName: 'merged-topic', baseRefName: 'initial-implementation' };
+  const merged = { number: 5, title: 'Merged', headRefName: 'merged-topic', baseRefName: 'initial-implementation', url: at(5) };
   const built = [...OPEN, { number: 70, headRefName: 'built-on-merged', baseRefName: 'merged-topic' }];
   const rows = (prs, pr) => switcherRows(prs, pr).map(({ pr: p, depth }) => `${'-'.repeat(depth)}${p.number}`);
   assert.deepEqual(rows(built, merged), ['1', '-5', '--70', '-27', '-60']);

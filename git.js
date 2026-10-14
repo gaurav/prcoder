@@ -35,7 +35,10 @@ async function answer(args, cwd, ok = 1) {
 const asks = async (args, cwd, ok) => (await answer(args, cwd, ok)) !== null;
 
 /** Whether this clone has `rev` as a commit. 1 is "no"; 128 would be a bad name. */
-const hasCommit = (rev, cwd) => asks(['rev-parse', '--verify', '--quiet', `${rev}^{commit}`], cwd);
+export const hasCommit = (rev, cwd) => asks(['rev-parse', '--verify', '--quiet', `${rev}^{commit}`], cwd);
+
+/** The commit HEAD is at, which the poll reads once and hands on. */
+export const headCommit = (cwd) => text(['rev-parse', 'HEAD'], cwd);
 
 /**
  * Why prcoder cannot run in `cwd`, or null when it is inside a work tree.
@@ -121,37 +124,84 @@ export async function originOwner(cwd) {
 }
 
 /**
+ * `owner/repo` off a GitHub remote URL, the shapes originOwner reads. Null for
+ * a remote that is not on github.com: a mirror elsewhere is no repository to
+ * ask gh about, and `gh pr list --repo` of its owner/name would be a stranger's
+ * repository of the same name, or a 404 that fails the poll. (One more place
+ * the host is assumed; #53.)
+ */
+export const remoteRepo = (url) =>
+  url.trim().match(/github\.com[:/]([^/:]+)\/([^/:]+?)(?:\.git)?\/?$/)?.slice(1, 3).join('/') ?? null;
+
+/**
+ * Every GitHub repository this clone's remotes point at, `[{ name, repo }]`,
+ * origin first and the rest as `git remote` lists them. get-url applies
+ * `insteadOf`, so each is the URL a fetch actually goes to.
+ */
+export async function remoteRepos(cwd) {
+  const names = (await text(['remote'], cwd)).split('\n').filter(Boolean)
+    .sort((a, b) => (a === 'origin' ? -1 : b === 'origin' ? 1 : 0));
+  const out = [];
+  for (const name of names) {
+    const repo = remoteRepo(await text(['remote', 'get-url', name], cwd));
+    if (repo) out.push({ name, repo });
+  }
+  return out;
+}
+
+/**
  * How the PR on screen relates to the checkout. A boolean would collapse these:
  * a PR in another repo can never be in sync, so its light has to be hidden
  * rather than shown red forever.
+ *
+ * `found` is what the branch lookup turned up (branchPrs in github.js), so
+ * `current` is "this is the branch's pull request" whichever of the
+ * repositories in `repos` it is in -- a fork's pull request into its parent
+ * is current on the branch it was opened from. A pull request in one of those
+ * repositories that is not the branch's is a checkout away; one in any other
+ * repository (`prcoder <url>`) is not.
  */
-export function prScope(pr, { branch, nameWithOwner }) {
+export function prScope(pr, { repos, found }) {
   if (!pr) return 'none';
+  if (found.includes(pr.url)) return 'current';
   const { owner, repo } = parsePrUrl(pr.url);
-  if (`${owner}/${repo}` !== nameWithOwner) return 'other-repo';
-  return pr.headRefName === branch ? 'current' : 'other-branch';
+  return repos.includes(`${owner}/${repo}`) ? 'other-branch' : 'other-repo';
 }
 
 /**
  * Constant for the life of the process, so worth asking once. `prefix` is
  * where in the repo prcoder -- and so the agent's PTY -- was started: '' at
  * the root, 'public/' below it. The diff header's @ names a file from there.
+ *
+ * `repos` is where the branch's pull request can be, in the order to prefer
+ * them: gh's base repository (the first remote, `upstream` ahead of `origin`
+ * when both exist), its parent when it is a fork, then every other GitHub
+ * remote. A clone of a fork with only `origin` has its pull requests in a
+ * repository no remote names, which is why the parent is asked for; a branch
+ * pushed to a fork no remote names is found by its commit instead (branchPrs).
+ * `remotes` is each repository's remote name, for the head's labels. A remote
+ * added while prcoder runs shows after a restart, like everything else here.
  */
 export async function repoInfo(cwd) {
-  const { defaultBranchRef, nameWithOwner } =
-    JSON.parse(await run('gh', ['repo', 'view', '--json', 'defaultBranchRef,nameWithOwner'], { cwd }));
-  return { defaultBranch: defaultBranchRef.name, nameWithOwner, prefix: await text(['rev-parse', '--show-prefix'], cwd) };
+  const { defaultBranchRef, nameWithOwner, parent } =
+    JSON.parse(await run('gh', ['repo', 'view', '--json', 'defaultBranchRef,nameWithOwner,parent'], { cwd }));
+  const remotes = await remoteRepos(cwd);
+  const repos = [...new Set([nameWithOwner, parent?.nameWithOwner, ...remotes.map((r) => r.repo)].filter(Boolean))];
+  return {
+    defaultBranch: defaultBranchRef.name, nameWithOwner, repos,
+    remotes: Object.fromEntries(remotes.map((r) => [r.repo, r.name])),
+    prefix: await text(['rev-parse', '--show-prefix'], cwd),
+  };
 }
 
 /**
  * `remoteHead` comes from the caller because only the PR knows it — and for a
  * fork it is not on origin at all, so `git ls-remote origin` would miss it.
- * `branch` likewise, because the caller has just asked for it.
+ * `branch` and `head` likewise, because the caller has just asked for them.
  */
-export async function snapshot(cwd, remoteHead, branch) {
+export async function snapshot(cwd, remoteHead, branch, head) {
   // Independent reads, so they run together rather than one spawn at a time.
-  const [head, status, known] = await Promise.all([
-    text(['rev-parse', 'HEAD'], cwd),
+  const [status, known] = await Promise.all([
     git(['status', '--porcelain', '--untracked-files=no'], cwd),
     remoteHead && hasCommit(remoteHead, cwd),
   ]);
@@ -365,7 +415,15 @@ export async function localPatch(cwd, { baseOid, baseRef, head, path, from, addi
   return count('+') === additions && count('-') === deletions ? patch : null;
 }
 
-export const checkoutPr = (cwd, number) =>
-  run('gh', ['pr', 'checkout', String(number)], { cwd, timeout: 120_000 });
+/**
+ * By URL, never by number: gh resolves a bare number in its base repository,
+ * and the switcher can hold a pull request from the parent of a fork, whose
+ * number names a stranger there. parsePrUrl is the check that `url` is one
+ * before it reaches gh's argv.
+ */
+export const checkoutPr = (cwd, url) => {
+  parsePrUrl(String(url ?? ''));
+  return run('gh', ['pr', 'checkout', url], { cwd, timeout: 120_000 });
+};
 
 export const pushBranch = (cwd) => git(['push', '-u', 'origin', 'HEAD'], cwd);

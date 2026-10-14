@@ -76,7 +76,18 @@ const PR_FIELDS = [
   'headRefOid', 'updatedAt', 'isCrossRepository',
   // What /api/diff diffs from when GitHub sends a file no patch.
   'baseRefOid',
+  // Where the head branch lives, for the head's `owner:branch` label on a
+  // cross-repository pull request. Both, because headRepository is null once
+  // the fork is deleted and the owner's login is all that is left.
+  'headRepository', 'headRepositoryOwner',
 ].join(',');
+
+/** The head repository as the page reads it: its slug, or null, and its owner. */
+const headSide = ({ headRepository, headRepositoryOwner, ...rest }) => ({
+  ...rest,
+  headRepo: headRepository?.nameWithOwner ?? null,
+  headOwner: headRepositoryOwner?.login ?? null,
+});
 
 /**
  * `gh pr view`, or null when there is no PR to view. A detached HEAD -- mid-
@@ -110,8 +121,97 @@ export const prUrl = async (cwd, target) => (await viewPr(cwd, target, 'url'))?.
  * check on the head commit, on every poll. docs/Verifying.md has the figure.
  */
 export async function prHeads(cwd, target) {
-  const heads = await viewPr(cwd, target, 'number,headRefOid,updatedAt,statusCheckRollup');
+  const heads = await viewPr(cwd, target, 'number,url,headRefOid,updatedAt,statusCheckRollup');
   return heads && withChecks(heads);
+}
+
+// What the cheap call reads for a branch's pull requests: prHeads's fields,
+// and what the switcher's group and the head's labels need on top.
+const BRANCH_FIELDS = ['number', 'title', 'url', 'state', 'isDraft', 'headRefName', 'baseRefName',
+  'headRefOid', 'updatedAt', 'headRepository', 'headRepositoryOwner', 'isCrossRepository'];
+
+/**
+ * The branch's pull requests, in every repository it could have one in, open
+ * ones first: the poll's cheap call on a branch, in place of `gh pr view`.
+ *
+ * `gh pr view` with no target finds a pull request by its head label, which
+ * gh builds from the branch's push config: `owner:branch` with a remote,
+ * the bare branch with none. A cross-repository pull request's label is
+ * `fork:branch`, so a branch pushed to a fork by URL, with no tracking config,
+ * has a pull request gh says it cannot find (nodenorm-es's
+ * run-tests-in-github-actions, gh 2.102.0, 2026-10-14). `gh pr list --head
+ * <branch>` filters by the branch's name alone, whichever repository the head
+ * is in, and carries every field `pr view` does -- so one call per candidate
+ * repository finds the lot, and the first candidate costs what `pr view` did.
+ *
+ * Open ones, with their checks, which is what the poll keeps the Checks tab
+ * fresh from (prHeads says why). Only when every repository has none does a
+ * second pass ask for merged and closed ones, which is what `gh pr view` falls
+ * back to today, so a merged branch keeps showing its pull request; the
+ * rollup is left out of that pass, being the heavy part of the call
+ * (docs/Verifying.md), and a merged pull request's checks come with loadPr.
+ *
+ * Strangers are dropped. `--head main` in the parent repository matches every
+ * fork's `main`, and any common branch name does the same; a row is this
+ * branch's when its head is in one of `repos`, or when `has` says this clone
+ * has its head commit -- the fork no remote names is exactly the case where
+ * only the commit says so. The repositories' order is kept, as the rank
+ * pickPr reads it in. The first repository is gh's own base, and a failure
+ * there is the poll's; one of the others may be a parent since made private,
+ * or a remote to nowhere, and is skipped with a line in the log.
+ */
+export async function branchPrs(cwd, repos, branch, { has = async () => false, checks = true } = {}) {
+  if (!branch || !repos.length) return [];
+  const list = async (state, limit, fields) => (await Promise.all(repos.map(async (repo, i) => {
+    const args = ['pr', 'list', '--repo', repo, '--head', branch, '--state', state,
+      '--limit', String(limit), '--json', fields.join(',')];
+    try {
+      return JSON.parse(await gh(args, { cwd })).map((p) => ({ ...p, repo }));
+    } catch (e) {
+      if (!i) throw e;
+      debug(`pull requests in ${repo} not read: ${e.message}`);
+      return [];
+    }
+  }))).flat();
+  const open = await list('open', 20, checks ? [...BRANCH_FIELDS, 'statusCheckRollup'] : BRANCH_FIELDS);
+  const rows = open.length ? open : await list('all', 5, BRANCH_FIELDS);
+  const known = new Map();
+  const ours = [];
+  for (const row of rows) {
+    const p = headSide(row);
+    if (!repos.includes(p.headRepo)) {
+      if (!known.has(p.headRefOid)) known.set(p.headRefOid, await has(p.headRefOid));
+      if (!known.get(p.headRefOid)) continue;
+    }
+    ours.push('statusCheckRollup' in p ? withChecks(p) : p);
+  }
+  return ours;
+}
+
+/**
+ * Which of a branch's pull requests to show. `chosen` is the one picked in
+ * the switcher, for as long as it is in the list; otherwise an open one over
+ * a merged or closed one, then the one at this clone's HEAD, then the one
+ * shown by the last poll -- two pull requests from the same head, into a
+ * fork's main and into its parent, tie on everything above, and a comment on
+ * the other must not swap the pane -- then the repositories' order, which is
+ * gh's base repository first, then the newest.
+ */
+export function pickPr(list, { head, chosen, shown, repos = [] } = {}) {
+  const picked = chosen && list.find((p) => p.url === chosen);
+  if (picked) return picked;
+  const rank = (p) => [
+    p.state === 'OPEN' ? 0 : 1,
+    p.headRefOid === head ? 0 : 1,
+    p.url === shown ? 0 : 1,
+    repos.indexOf(p.repo),
+  ];
+  const first = (a, b) => {
+    const [ra, rb] = [rank(a), rank(b)];
+    for (let i = 0; i < ra.length; i++) if (ra[i] !== rb[i]) return ra[i] - rb[i];
+    return (b.updatedAt ?? '').localeCompare(a.updatedAt ?? '');
+  };
+  return [...list].sort(first)[0] ?? null;
 }
 
 /**
@@ -154,9 +254,10 @@ export async function listPrs(cwd) {
 }
 
 /**
- * The PR for the current branch, or null if there isn't one. Per-file viewed
- * state needs GraphQL — `gh pr view` doesn't expose it — so it comes from a
- * second call and is merged in by path.
+ * The PR `target` names -- a URL from branchPrs, or the command line's number,
+ * URL or branch -- or null if there isn't one. Per-file viewed state needs
+ * GraphQL — `gh pr view` doesn't expose it — so it comes from a second call
+ * and is merged in by path.
  */
 export async function loadPr(cwd, target) {
   const pr = await viewPr(cwd, target, PR_FIELDS);
@@ -170,7 +271,7 @@ export async function loadPr(cwd, target) {
   ]);
   // The raw lists are summarised here and not sent on: every poll carries this
   // object to every tab, and nothing reads them past this point.
-  const { closingIssuesReferences, comments, reviews, ...rest } = withChecks(pr);
+  const { closingIssuesReferences, comments, reviews, ...rest } = withChecks(headSide(pr));
 
   return {
     ...rest,

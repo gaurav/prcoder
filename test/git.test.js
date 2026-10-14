@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { notAWorkTree, syncState, compareUrl, githubUrl, originOwner, prScope, userDirt, remoteBranchHead, trackingHead, snapshot, localPatch, branchesBelow } from '../git.js';
+import { notAWorkTree, syncState, compareUrl, githubUrl, originOwner, remoteRepo, remoteRepos, prScope, userDirt, remoteBranchHead, trackingHead, snapshot, localPatch, branchesBelow } from '../git.js';
 
 const git = promisify(execFile);
 // For the throwaway repos below. The identity goes on the command, not into a
@@ -116,19 +116,30 @@ test("origin's owner comes off every shape of GitHub remote URL", async () => {
   }
 });
 
-const here = { branch: 'feature', nameWithOwner: 'gaurav/prcoder' };
+// A clone of a fork: gh's base repository is the parent, and the branch's own
+// pull request (`found`, from branchPrs) is in it, opened from the fork.
+const here = {
+  repos: ['upstream/prcoder', 'gaurav/prcoder'],
+  found: ['https://github.com/upstream/prcoder/pull/1'],
+};
 const pr = (url, headRefName) => ({ url, headRefName });
 
 test('no PR at all is its own scope, not a mismatch', () => {
   assert.equal(prScope(null, here), 'none');
 });
 
-test('the PR for the checked-out branch is current', () => {
-  assert.equal(prScope(pr('https://github.com/gaurav/prcoder/pull/1', 'feature'), here), 'current');
+test('the branch\'s pull request is current, in whichever of the repositories it is', () => {
+  assert.equal(prScope(pr('https://github.com/upstream/prcoder/pull/1', 'feature'), here), 'current');
+  // In the fork itself, from the same branch.
+  const inFork = { ...here, found: ['https://github.com/gaurav/prcoder/pull/4'] };
+  assert.equal(prScope(pr('https://github.com/gaurav/prcoder/pull/4', 'feature'), inFork), 'current');
 });
 
-test('same repo, another branch — checking it out would fix it', () => {
+test('same repositories, another branch — checking it out would fix it', () => {
+  assert.equal(prScope(pr('https://github.com/upstream/prcoder/pull/2', 'other'), here), 'other-branch');
   assert.equal(prScope(pr('https://github.com/gaurav/prcoder/pull/2', 'other'), here), 'other-branch');
+  // Found nowhere for this branch, so not current, whatever the branch name says.
+  assert.equal(prScope(pr('https://github.com/gaurav/prcoder/pull/3', 'feature'), here), 'other-branch');
 });
 
 // `prcoder <url>` can open a PR that has nothing to do with this checkout, and
@@ -136,6 +147,34 @@ test('same repo, another branch — checking it out would fix it', () => {
 // be suppressed rather than left reporting a permanent "behind".
 test('a PR in a different repo is other-repo even when the branch name matches', () => {
   assert.equal(prScope(pr('https://github.com/someone/else/pull/9', 'feature'), here), 'other-repo');
+});
+
+test('a remote URL on GitHub names its repository, and one elsewhere names nothing', () => {
+  for (const url of ['git@github.com:gaurav/heal-platform-sdk.git', 'https://github.com/gaurav/heal-platform-sdk',
+    'https://github.com/gaurav/heal-platform-sdk.git/', 'ssh://git@github.com/gaurav/heal-platform-sdk.git\n']) {
+    assert.equal(remoteRepo(url), 'gaurav/heal-platform-sdk', url);
+  }
+  // A mirror elsewhere is no repository to ask gh about (#53).
+  assert.equal(remoteRepo('git@gitlab.com:gaurav/heal-platform-sdk.git'), null);
+  assert.equal(remoteRepo('/srv/git/heal-platform-sdk.git'), null);
+});
+
+// origin first whatever `git remote` sorts it as, and a remote off GitHub left
+// out, so the lookup never asks gh about a repository that is not there.
+test('the remotes are listed origin first, GitHub ones only', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'prcoder-remotes-'));
+  try {
+    await git('git', ['init', '-q', dir]);
+    await git('git', ['remote', 'add', 'upstream', 'https://github.com/biothings/NodeNormalizationAPI'], { cwd: dir });
+    await git('git', ['remote', 'add', 'mirror', 'git@gitlab.com:TranslatorSRI/NodeNormalizationAPI.git'], { cwd: dir });
+    await git('git', ['remote', 'add', 'origin', 'git@github.com:TranslatorSRI/NodeNormalizationAPI.git'], { cwd: dir });
+    assert.deepEqual(await remoteRepos(dir), [
+      { name: 'origin', repo: 'TranslatorSRI/NodeNormalizationAPI' },
+      { name: 'upstream', repo: 'biothings/NodeNormalizationAPI' },
+    ]);
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
 });
 
 // Real `git status --porcelain` output: two leading status columns then the

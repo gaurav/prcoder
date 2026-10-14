@@ -127,6 +127,7 @@ const pr = {
   state: 'OPEN', isDraft: false, headRefName: 'topic', baseRefName: 'main',
   additions: 1, deletions: 0, changedFiles: 1, files,
   headRefOid: 'a'.repeat(40), updatedAt: '2026-09-19T00:00:00Z', isCrossRepository: false,
+  headRepo: 'heal-data-stewards/heal-vlmd-AI-pipeline', headOwner: 'heal-data-stewards',
   reviewDecision: '', nodeId: 'PR_fixture',
   checks: rollup([]), counts: { comments: 0, reviews: 0 },
   issues: [{ number: 7, url: `${REPO}/issues/7`, closes: false, title: 'Per-route locking' }],
@@ -135,6 +136,11 @@ const status = {
   branch: 'topic', head: 'b'.repeat(40), detached: false, dirtyFiles: [], sync: 'synced', ahead: 0,
   defaultBranch: 'main', nameWithOwner: 'heal-data-stewards/heal-vlmd-AI-pipeline',
   scope: 'current', mirrorFailed: false,
+  // Where the branch's pull request was looked for, and what was found: the
+  // one repository, with the fixture PR in it (branchPrs in github.js).
+  repos: ['heal-data-stewards/heal-vlmd-AI-pipeline'], remotes: { 'heal-data-stewards/heal-vlmd-AI-pipeline': 'origin' },
+  branchPrs: [{ number: 12, title: pr.title, url: pr.url, state: 'OPEN', isDraft: false, headRefName: 'topic', baseRefName: 'main',
+    repo: 'heal-data-stewards/heal-vlmd-AI-pipeline', headRepo: 'heal-data-stewards/heal-vlmd-AI-pipeline', headOwner: 'heal-data-stewards', isCrossRepository: false }],
   pr, queue: [],
 };
 /** The status with `long.txt` as a third added file, for a page about long lines. */
@@ -2115,10 +2121,10 @@ test('stacked PRs nest in the switcher and the Stack tab, each linked and switch
   const fresh = await newPage({ prs: STACK });
   const switched = [];
   await fresh.route('**/api/pr/switch', (r) => {
-    switched.push(r.request().postDataJSON().number);
+    switched.push(r.request().postDataJSON().url);
     return r.fulfill({ json: status });
   });
-  await fresh.waitForSelector('#pr-switch option[value="14"]', { state: 'attached' });
+  await fresh.waitForSelector(`#pr-switch option[value="${REPO}/pull/14"]`, { state: 'attached' });
   assert.deepEqual(await fresh.$$eval('#pr-switch option', (os) => os.map((o) => o.textContent.replaceAll('\u00a0', ' '))), [
     'no pull request',
     '#12 A fixture pull request',
@@ -2142,7 +2148,7 @@ test('stacked PRs nest in the switcher and the Stack tab, each linked and switch
   const sent = fresh.waitForResponse('**/api/pr/switch');
   await fresh.locator('#pr-body .pr-row', { hasText: '#14' }).locator('.pr-go').click();
   await sent;
-  assert.deepEqual(switched, [14]);
+  assert.deepEqual(switched, [`${REPO}/pull/14`]);
   await fresh.close();
 });
 
@@ -2174,7 +2180,7 @@ const switcherLabels = (p) => p.$$eval('#pr-switch option', (os) => os.map((o) =
 // that it may be open, so the options wait for the switcher to lose it.
 test('the switcher keeps its options while it has focus, and takes the new list as it loses it', { skip }, async () => {
   const fresh = await newPage({ prs: STACK });
-  await fresh.waitForSelector('#pr-switch option[value="14"]', { state: 'attached' });
+  await fresh.waitForSelector(`#pr-switch option[value="${REPO}/pull/14"]`, { state: 'attached' });
   const before = await switcherLabels(fresh);
   await fresh.focus('#pr-switch');
   await fresh.route('**/api/prs', (r) => r.fulfill({ json: MERGED }));
@@ -2185,7 +2191,7 @@ test('the switcher keeps its options while it has focus, and takes the new list 
   await landed;
   await fresh.waitForTimeout(200);
   assert.deepEqual(await switcherLabels(fresh), before, 'held while focused');
-  assert.equal(await fresh.inputValue('#pr-switch'), '12');
+  assert.equal(await fresh.inputValue('#pr-switch'), pr.url);
   await fresh.evaluate(() => document.activeElement.blur());
   assert.deepEqual(await switcherLabels(fresh), [
     'no pull request',
@@ -2201,7 +2207,7 @@ test('the switcher keeps its options while it has focus, and takes the new list 
 // within ten seconds of a list landing, asks for nothing more.
 test('reaching for the switcher fetches the PR list, and a click right after does not', { skip }, async () => {
   const fresh = await newPage({ prs: STACK, clock: true });
-  await fresh.waitForSelector('#pr-switch option[value="14"]', { state: 'attached' });
+  await fresh.waitForSelector(`#pr-switch option[value="${REPO}/pull/14"]`, { state: 'attached' });
   let lists = 0;
   fresh.on('request', (q) => { if (q.url().endsWith('/api/prs')) lists++; });
   await fresh.hover('#pr-switch');
@@ -2240,7 +2246,7 @@ const pollCounting = async (p) => {
 
 test('a poll that finds the PR on screen merged fetches the PR list, and no other poll does', { skip }, async () => {
   const fresh = await newPage({ prs: STACK });
-  await fresh.waitForSelector('#pr-switch option[value="14"]', { state: 'attached' });
+  await fresh.waitForSelector(`#pr-switch option[value="${REPO}/pull/14"]`, { state: 'attached' });
   const poll = await pollCounting(fresh);
   assert.equal(await poll(), 0, 'nothing changed, so no fetch');
   await fresh.route('**/api/prs', (r) => r.fulfill({ json: MERGED }));
@@ -2258,12 +2264,12 @@ test('a poll that finds the PR on screen merged fetches the PR list, and no othe
 
 test('a poll that finds the PR on screen closed, or another PR in its place, fetches the PR list', { skip }, async () => {
   const fresh = await newPage({ prs: STACK });
-  await fresh.waitForSelector('#pr-switch option[value="14"]', { state: 'attached' });
+  await fresh.waitForSelector(`#pr-switch option[value="${REPO}/pull/14"]`, { state: 'attached' });
   const poll = await pollCounting(fresh);
   assert.equal(await poll({ ...status, pr: { ...pr, state: 'CLOSED' } }), 1, 'closed');
   assert.equal(await poll({ ...status, pr: { ...pr, state: 'OPEN' } }), 2, 'reopened');
   // Closed and replaced from the terminal: same branch, a new number.
-  assert.equal(await poll({ ...status, pr: { ...pr, number: 15 } }), 3, 'a new PR on the branch');
+  assert.equal(await poll({ ...status, pr: { ...pr, number: 15, url: `${REPO}/pull/15` } }), 3, 'a new PR on the branch');
   await fresh.close();
 
   // A PR opened on a branch that had none.
@@ -2279,7 +2285,7 @@ test('a poll that finds the PR on screen closed, or another PR in its place, fet
 // would fetch the list again.
 test('a PR list that lands after a later fetch was asked for is dropped', { skip }, async () => {
   const fresh = await newPage({ prs: STACK });
-  await fresh.waitForSelector('#pr-switch option[value="14"]', { state: 'attached' });
+  await fresh.waitForSelector(`#pr-switch option[value="${REPO}/pull/14"]`, { state: 'attached' });
   let held;
   await fresh.route('**/api/prs', (r) => { held = r; });
   const asked = fresh.waitForRequest('**/api/prs');
@@ -2288,7 +2294,7 @@ test('a PR list that lands after a later fetch was asked for is dropped', { skip
   await fresh.route('**/api/prs', (r) => r.fulfill({ json: MERGED }));
   await fresh.route('**/api/status', (r) => r.fulfill({ json: merged }));
   await fresh.click('#pr-refresh');
-  await fresh.waitForFunction(() => !document.querySelector('#pr-switch option[value="13"]')?.textContent.includes('└'));
+  await fresh.waitForFunction((u) => !document.querySelector(`#pr-switch option[value="${u}"]`)?.textContent.includes('└'), `${REPO}/pull/13`);
   const late = fresh.waitForResponse('**/api/prs');
   await held.fulfill({ json: STACK });
   await late;
@@ -2340,7 +2346,7 @@ test('the console lines are off unless prcoder:debug is on', { skip }, async () 
     const p = await newPage({ prs: STACK, init });
     const seen = [];
     p.on('console', (m) => { if (m.text().startsWith('[prcoder]')) seen.push(m.text()); });
-    await p.waitForSelector('#pr-switch option[value="14"]', { state: 'attached' });
+    await p.waitForSelector(`#pr-switch option[value="${REPO}/pull/14"]`, { state: 'attached' });
     const fetched = p.waitForResponse('**/api/prs');
     await p.locator('#pr-head .tab', { hasText: 'Stack' }).click();
     await fetched;
@@ -2358,7 +2364,7 @@ test('the console lines are off unless prcoder:debug is on', { skip }, async () 
 // the fetch in flight; only a trigger that knows the list changed starts one.
 test('opening the Stack tab while a PR list fetch is out joins it', { skip }, async () => {
   const fresh = await newPage({ prs: STACK });
-  await fresh.waitForSelector('#pr-switch option[value="14"]', { state: 'attached' });
+  await fresh.waitForSelector(`#pr-switch option[value="${REPO}/pull/14"]`, { state: 'attached' });
   let lists = 0;
   fresh.on('request', (q) => { if (q.url().endsWith('/api/prs')) lists++; });
   let held;
@@ -2371,7 +2377,7 @@ test('opening the Stack tab while a PR list fetch is out joins it', { skip }, as
   await fresh.waitForTimeout(300);
   assert.equal(lists, 1, 'the tab joined the fetch the merge asked for');
   await held.fulfill({ json: MERGED });
-  await fresh.waitForFunction(() => !document.querySelector('#pr-switch option[value="13"]')?.textContent.includes('└'));
+  await fresh.waitForFunction((u) => !document.querySelector(`#pr-switch option[value="${u}"]`)?.textContent.includes('└'), `${REPO}/pull/13`);
   assert.deepEqual(await fresh.locator('#pr-body .pr-into .pr-num').allTextContents(), [], 'nothing is built on #12 now');
   await fresh.close();
 });
@@ -2382,7 +2388,7 @@ test('opening the Stack tab while a PR list fetch is out joins it', { skip }, as
 test('a failed fetch on opening the Stack tab keeps the rows it had', { skip }, async () => {
   const fresh = await newPage({ prs: STACK });
   const tab = fresh.locator('#pr-head .tab', { hasText: 'Stack' });
-  await fresh.waitForSelector('#pr-switch option[value="14"]', { state: 'attached' });
+  await fresh.waitForSelector(`#pr-switch option[value="${REPO}/pull/14"]`, { state: 'attached' });
   await fresh.route('**/api/prs', (r) => r.abort());
   const failed = fresh.waitForEvent('requestfailed', (q) => q.url().endsWith('/api/prs'));
   await tab.click();
@@ -2399,7 +2405,7 @@ test('a failed fetch on opening the Stack tab keeps the rows it had', { skip }, 
 test('a stacked PR shows the stack under it in its Stack tab and its head', { skip }, async () => {
   const on13 = { ...status, branch: 'topic-2', pr: { ...pr, number: 13, title: STACK[1].title, headRefName: 'topic-2', baseRefName: 'topic', url: STACK[1].url } };
   const fresh = await newPage({ prs: STACK, st: on13 });
-  await fresh.waitForSelector('#pr-switch option[value="14"]', { state: 'attached' });
+  await fresh.waitForSelector(`#pr-switch option[value="${REPO}/pull/14"]`, { state: 'attached' });
   const tab = fresh.locator('#pr-head .tab', { hasText: 'Stack' });
   assert.equal(await tab.textContent(), 'Stack (↓1 ↑1)');
   assert.equal(await fresh.locator('#pr-head .pr-state a').textContent(), '#12');
@@ -2468,13 +2474,13 @@ test('with no PR, the PRs into this branch nest their stacks, and a dirty tree b
   assert.equal(await clean.locator('#pr-body .pr-num', { hasText: '#12' }).getAttribute('href'), pr.url);
   const switched = [];
   await clean.route('**/api/pr/switch', (r) => {
-    switched.push(r.request().postDataJSON().number);
+    switched.push(r.request().postDataJSON().url);
     return r.fulfill({ json: status });
   });
   const sent = clean.waitForResponse('**/api/pr/switch');
   await clean.locator('#pr-body .pr-row', { hasText: '#13' }).locator('.pr-go').click();
   await sent;
-  assert.deepEqual(switched, [13]);
+  assert.deepEqual(switched, [`${REPO}/pull/13`]);
   await clean.close();
 
   const dirty = await newPage({ prs: STACK, st: { ...onMain, dirtyFiles: ['README.md'] }, ready: '#pr-body .pr-into .pr-go' });

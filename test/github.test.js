@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { rollup, linkedIssues, linksFrom, parsePrUrl, run, issueNumber, lf, setViewed, listPrs, loadPr, prHeads, lookupRef, createIssue } from '../github.js';
+import { rollup, linkedIssues, linksFrom, parsePrUrl, run, issueNumber, lf, setViewed, listPrs, loadPr, prHeads, branchPrs, pickPr, lookupRef, createIssue } from '../github.js';
 import { taskLines } from '../public/tasks.js';
 
 test('check states collapse into passed, failed and pending', () => {
@@ -338,4 +338,104 @@ test('the cheap per-poll call carries the checks, summarised', { skip: unix }, a
     assert.equal(heads.statusCheckRollup, undefined);
     assert.deepEqual([heads.checks.passed, heads.checks.pending], [1, 1]);
   });
+});
+
+// Every call, each as its own argv, where ghArgs keeps only the last: the
+// branch lookup is one `gh pr list` per repository, run together, so each
+// call writes a file of its own and the calls come back in no fixed order.
+const ghCalls = (script, fn) => withGh((dir) => `printf '%s\\n' "$@" > "$(mktemp "${dir}/call.XXXXXX")"\n${script}`,
+  async (dir) => {
+    const out = await fn();
+    const files = (await fs.readdir(dir)).filter((f) => f.startsWith('call.'));
+    const calls = await Promise.all(files.map(async (f) =>
+      (await fs.readFile(path.join(dir, f), 'utf8')).trimEnd().split('\n')));
+    return { out, calls };
+  });
+const flag = (args, name) => args[args.indexOf(name) + 1];
+
+// What the lookup sends: one list per repository, by the branch's bare name,
+// so a head in a fork no remote names still matches (gh 2.102.0, 2026-10-14);
+// open ones with their checks first, and only with none anywhere a second
+// pass for a merged or closed one, without the checks.
+test('the branch lookup asks every repository, open first and then all without the checks', { skip: unix }, async () => {
+  const { out, calls } = await ghCalls(`echo '[]'`, () => branchPrs(os.tmpdir(), ['up/repo', 'me/repo'], 'topic'));
+  assert.deepEqual(out, []);
+  assert.deepEqual(calls.map((c) => `${flag(c, '--state')} ${flag(c, '--repo')}`).sort(),
+    ['all me/repo', 'all up/repo', 'open me/repo', 'open up/repo']);
+  for (const c of calls) {
+    assert.deepEqual(c.slice(0, 2), ['pr', 'list']);
+    assert.equal(flag(c, '--head'), 'topic');
+    assert.ok(Number(flag(c, '--limit')) > 1, c.join(' '));
+    assert.equal(flag(c, '--json').includes('statusCheckRollup'), flag(c, '--state') === 'open', c.join(' '));
+  }
+  // Nothing to look for: no branch, or nowhere to look.
+  assert.deepEqual(await branchPrs(os.tmpdir(), ['up/repo'], ''), []);
+  assert.deepEqual(await branchPrs(os.tmpdir(), [], 'topic'), []);
+});
+
+// Three pull requests whose head is `topic`, from `gh pr list --head topic` on
+// the parent: one from a fork a remote names, one from a fork none does, one
+// from a stranger's fork. Only the commit tells the last two apart.
+const HEADS = [
+  { number: 1, url: 'https://github.com/up/repo/pull/1', state: 'OPEN', headRefOid: 'aaa', updatedAt: '2026-10-01T00:00:00Z',
+    headRepository: { nameWithOwner: 'me/repo' }, headRepositoryOwner: { login: 'me' }, isCrossRepository: true, statusCheckRollup: [] },
+  { number: 2, url: 'https://github.com/up/repo/pull/2', state: 'OPEN', headRefOid: 'bbb', updatedAt: '2026-10-02T00:00:00Z',
+    headRepository: { nameWithOwner: 'fork/repo' }, headRepositoryOwner: { login: 'fork' }, isCrossRepository: true, statusCheckRollup: [] },
+  { number: 3, url: 'https://github.com/up/repo/pull/3', state: 'OPEN', headRefOid: 'ccc', updatedAt: '2026-10-03T00:00:00Z',
+    headRepository: null, headRepositoryOwner: { login: 'stranger' }, isCrossRepository: true, statusCheckRollup: [] },
+];
+
+test('a pull request is the branch\'s by its head repository or its head commit, and a stranger\'s is dropped', { skip: unix }, async () => {
+  const answer = `case "$*" in *"--repo up/repo --head topic --state open"*) cat <<'JSON'\n${JSON.stringify(HEADS)}\nJSON\n;; *) echo '[]';; esac`;
+  const asked = [];
+  const { out, calls } = await ghCalls(answer, () => branchPrs(os.tmpdir(), ['up/repo', 'me/repo'], 'topic',
+    { has: async (oid) => { asked.push(oid); return oid === 'bbb'; } }));
+  assert.equal(calls.length, 2, 'open ones found: no second pass');
+  assert.deepEqual(out.map((p) => p.number), [1, 2]);
+  // The head a remote names is not asked about; the others are, once each.
+  assert.deepEqual(asked, ['bbb', 'ccc']);
+  // As the page and the poll read them: the repository looked in, the head
+  // as a slug and an owner, and the checks summarised.
+  assert.equal(out[0].repo, 'up/repo');
+  assert.equal(out[0].headRepo, 'me/repo');
+  assert.equal(out[0].headOwner, 'me');
+  assert.equal('headRepository' in out[0], false);
+  assert.equal('statusCheckRollup' in out[0], false);
+  assert.deepEqual(out[0].checks, rollup([]));
+});
+
+// A repository past the first that cannot be read -- a parent since made
+// private, a remote to nowhere -- is skipped; the first is gh's own base
+// repository, and its failure is the poll's.
+test('only the base repository\'s failure fails the lookup', { skip: unix }, async () => {
+  const answer = `case "$*" in *"--repo gone/repo"*) echo 'gh: GraphQL: Could not resolve to a Repository' >&2; exit 1;; *) echo '[]';; esac`;
+  const { out } = await ghCalls(answer, () => branchPrs(os.tmpdir(), ['up/repo', 'gone/repo'], 'topic'));
+  assert.deepEqual(out, []);
+  await withGh(() => answer, () =>
+    assert.rejects(branchPrs(os.tmpdir(), ['gone/repo', 'up/repo'], 'topic'), /Could not resolve/));
+});
+
+const open = (n, extra = {}) => ({ number: n, url: `https://github.com/up/repo/pull/${n}`, state: 'OPEN', repo: 'up/repo',
+  headRefOid: 'aaa', updatedAt: `2026-10-0${n}T00:00:00Z`, ...extra });
+
+test('which of the branch\'s pull requests is shown: chosen, open, at HEAD, as before, by repository, newest', () => {
+  const repos = ['up/repo', 'me/repo'];
+  assert.equal(pickPr([], { repos }), null);
+  // Open over merged, however new the merged one is.
+  const merged = open(9, { state: 'MERGED', updatedAt: '2026-12-01T00:00:00Z' });
+  assert.equal(pickPr([merged, open(1)], { repos }).number, 1);
+  assert.equal(pickPr([merged], { repos }).number, 9);
+  // At this clone's HEAD over one that is not.
+  assert.equal(pickPr([open(1, { headRefOid: 'old' }), open(2)], { head: 'aaa', repos }).number, 2);
+  // Tied there: the one the last poll showed, so a comment on the other
+  // does not swap the pane.
+  assert.equal(pickPr([open(1), open(2)], { head: 'aaa', shown: open(1).url, repos }).number, 1);
+  assert.equal(pickPr([open(1), open(2)], { head: 'aaa', shown: open(2).url, repos }).number, 2);
+  // Then gh's base repository before the fork's own.
+  assert.equal(pickPr([open(1, { repo: 'me/repo' }), open(2)], { head: 'aaa', repos }).number, 2);
+  // Then the newest.
+  assert.equal(pickPr([open(1), open(2)], { head: 'aaa', repos }).number, 2);
+  // The one picked in the switcher wins over all of it -- while it is listed.
+  assert.equal(pickPr([open(1), open(2)], { head: 'aaa', chosen: open(1).url, repos }).number, 1);
+  assert.equal(pickPr([open(1), open(2)], { head: 'aaa', chosen: 'https://github.com/up/repo/pull/7', repos }).number, 2);
 });

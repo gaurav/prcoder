@@ -106,12 +106,19 @@ already up with `PRCODER_VERBOSE=2`, or a `browser.mjs` run is already printing 
   branch without one that origin has, and five on one never pushed; one more for a branch ahead
   of its remote, and the same clean tree or dirty (re-measured on `43e3700`, 2026-10-09). A poll
   that reloads the pull request adds `loadPr`'s GraphQL calls on top. `PRCODER_VERBOSE=2` prints
-  the count on every poll, so a change that adds a call shows up.
-- **The checks are most of what the poll's cheap `gh pr view` fetches.** prHeads asks for them
-  on every poll (#120), and on cli/cli#14634's 30 checks they took its answer from 108 bytes to
+  the count on every poll, so a change that adds a call shows up. The pull request is looked for
+  with one `gh pr list` per repository it could be in (`repos` from `repoInfo`), so a clone with
+  a parent or a second GitHub remote pays one more per poll, and a branch whose pull request is
+  merged pays a second pass per repository; a head in a repository no remote names costs one
+  local `rev-parse` (`branchPrs` in `github.js`): seven on nodenorm-es's fork-headed branch,
+  2026-10-14.
+- **The checks are most of what the poll's cheap call fetches.** It asks for them on every poll
+  (#120), and on cli/cli#14634's 30 checks they took `gh pr view`'s answer from 108 bytes to
   9KB and the call from about 0.42s to 0.54s (2026-10-09); prcoder's one check is 293 bytes. The
   call count above cannot show this growing, so time
-  `gh pr view --json number,headRefOid,updatedAt,statusCheckRollup` on a PR with many checks.
+  `gh pr list --head <branch> --state open --json number,headRefOid,updatedAt,statusCheckRollup`
+  on a PR with many checks -- and on a branch name many forks share, since the list carries every
+  open pull request from a head of that name before prcoder drops the strangers.
 - **The description's prose is 568px wide in Firefox and 567px in Chromium**, in an 864px pane
   (on `23b192f`). `browser.mjs` prints it every run; a line-length cap is not something the
   stylesheet can be read for.

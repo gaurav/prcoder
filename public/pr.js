@@ -196,7 +196,10 @@ export function renderHeader(status, prs, handlers) {
   // rebuilds the options when a list lands, even an empty one.
   const shown = switcherRows(prs ?? [], status.pr);
 
-  const keys = (prs ? '' : '?') + shown.map(({ pr, depth }) => `${pr.number}:${depth}`).join(',');
+  // By URL, as the options are valued: the pull request on screen can be in
+  // another repository with a number the list has, and by number the options
+  // would never be rebuilt for it.
+  const keys = (prs ? '' : '?') + shown.map(({ pr, depth }) => `${pr.url}:${depth}`).join(',');
   // Nor while it has focus, the one sign a page gets that its dropdown may be
   // open: a list landing then replaced the options under the open dropdown,
   // which closed it or moved the pick. It is rebuilt as it loses focus, from
@@ -210,16 +213,16 @@ export function renderHeader(status, prs, handlers) {
     sel.dataset.keys = keys;
     sel.replaceChildren(
       h('option', { value: '' }, shown.length ? 'no pull request' : prs ? 'no open pull requests' : 'no list of pull requests yet'),
-      ...shown.map(({ pr: p, depth }) => h('option', { value: String(p.number) },
+      ...shown.map(({ pr: p, depth }) => h('option', { value: p.url },
         `${depth ? `${'\u00a0\u00a0'.repeat(depth)}└\u00a0` : ''}#${p.number} ${p.isDraft ? '(draft) ' : ''}${p.title}`)),
     );
     sel.onchange = () => {
       debug('switcher picked', sel.value || '(none)');
-      if (sel.value) onSwitch(Number(sel.value));
+      if (sel.value) onSwitch(sel.value);
     };
   }
   // Always re-assert: a failed switch has to snap back to the real branch.
-  sel.value = status.pr ? String(status.pr.number) : '';
+  sel.value = status.pr?.url ?? '';
 
   // Uncommitted work would make `gh pr checkout` fail, so offer the fix instead
   // of the switch. Claude is right there in the next pane.
@@ -307,10 +310,10 @@ export function stackOrder(prs) {
  * leads its group.
  */
 export function switcherRows(prs, current) {
-  const missing = current && !prs.some((p) => p.number === current.number);
+  const missing = current && !prs.some((p) => p.url === current.url);
   if (!missing) return stackOrder(prs);
-  const { number, title, headRefName, baseRefName, isCrossRepository } = current;
-  return stackOrder([{ number, title, isDraft: false, headRefName, baseRefName, isCrossRepository }, ...prs]);
+  const { number, title, url, headRefName, baseRefName, isCrossRepository } = current;
+  return stackOrder([{ number, title, url, isDraft: false, headRefName, baseRefName, isCrossRepository }, ...prs]);
 }
 
 /**
@@ -525,7 +528,7 @@ const prRow = ({ pr: p, here }, { blocked, onSwitch }, kids) => h('li', current(
     ext(p.url, `#${p.number}`, { className: 'pr-num' }),
     p.isDraft ? badge('draft', 'draft') : null,
     h('span', { className: 'pr-row-title', title: p.title }, p.title),
-    here ? null : btn('Switch', () => onSwitch(p.number), {
+    here ? null : btn('Switch', () => onSwitch(p.url), {
       className: 'pr-go', disabled: blocked,
       title: blocked ? 'Commit or stash your changes first' : `Check out #${p.number} here`,
     })),
@@ -590,6 +593,9 @@ const linkBase = (pr) => ({
 
 /** `owner/repo`, from a repository URL on any host. */
 const repoName = (repoUrl) => repoUrl.replace(/^https?:\/\/[^/]+\//, '');
+
+/** The repository a pull request is in, `owner/repo`, off its own URL. */
+export const prRepo = (pr) => repoName(repoUrl(pr.url));
 
 /**
  * The head's way out of the pane, in two parts: the links -- this pull request
@@ -729,8 +735,8 @@ export function renderPr(pr, handlers) {
   links = linkBase(pr);
   // A different pull request is a different set of sections and a different
   // amount of scroll; none of the old numbers mean anything against it.
-  if (shownFor !== pr.number) {
-    shownFor = pr.number;
+  if (shownFor !== pr.url) {
+    shownFor = pr.url;
     scrolled.detail = 0;
     scrolled.files = 0;
     scrolled.checks = 0;
