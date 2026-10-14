@@ -344,7 +344,7 @@ test('the cheap per-poll call carries the checks, summarised', { skip: unix }, a
 // the order they are made, so a test can have the PR move between two of them.
 const withPr = (view, pages, fn) => withGh((dir) => [
   'case "$1" in',
-  `  pr) cat "${dir}/view.json" ;;`,
+  `  pr) printf '%s\\n' "$@" > "${dir}/view-args"; cat "${dir}/view.json" ;;`,
   `  *) n=$(( $(cat "${dir}/n" 2>/dev/null || echo 0) + 1 )); echo $n > "${dir}/n"; cat "${dir}/page$n.json" ;;`,
   'esac',
 ].join('\n'), async (dir) => {
@@ -365,18 +365,24 @@ const page = (files, endCursor, at = head) => ({ data: { repository: { pullReque
 // NCATSTranslator/translator-diagram#32 (112 files, 100 shown); checked
 // 2026-10-14 on gaurav/taxondna#76, whose `gh pr view --json changedFiles,files`
 // says 110 and lists 100, while the paged GraphQL query answers 100 + 10. The
-// stub answers the same way: 100 from `pr view`, 112 across two pages.
+// stub has 112 across two pages, and `gh pr view` is not asked for any: a
+// `files` back in PR_FIELDS would be the first 100 again, under whichever list
+// the merge favoured.
 test('a PR with more than 100 files lists every one of them', { skip: unix }, async () => {
   const all = Array.from({ length: 112 }, (_, i) => file(i));
-  await withPr({ ...view, changedFiles: 112, files: all.slice(0, 100) },
-    [page(all.slice(0, 100), 'c1'), page(all.slice(100), null)], async () => {
-      const pr = await loadPr(os.tmpdir());
-      assert.equal(pr.files.length, 112);
-      assert.deepEqual(pr.files.map((f) => f.path), all.map((f) => f.path));
-      const f105 = pr.files.find((f) => f.path === 'src/f105.js');
-      assert.deepEqual(f105, { path: 'src/f105.js', additions: 105, deletions: 1, viewed: true });
-      assert.equal(pr.files.filter((f) => f.viewed).length, 1);
-    });
+  await withPr(view, [page(all.slice(0, 100), 'c1'), page(all.slice(100), null)], async (dir) => {
+    const pr = await loadPr(os.tmpdir());
+    assert.equal(pr.files.length, 112);
+    assert.deepEqual(pr.files.map((f) => f.path), all.map((f) => f.path));
+    const f105 = pr.files.find((f) => f.path === 'src/f105.js');
+    assert.deepEqual(f105, { path: 'src/f105.js', additions: 105, deletions: 1, viewed: true });
+    assert.equal(pr.files.filter((f) => f.viewed).length, 1);
+    const args = (await fs.readFile(path.join(dir, 'view-args'), 'utf8')).split('\n');
+    const fields = args[args.indexOf('--json') + 1].split(',');
+    for (const f of ['files', 'changedFiles', 'headRefOid', 'baseRefOid', 'additions', 'deletions']) {
+      assert.ok(!fields.includes(f), `gh pr view is not asked for ${f}: prFiles reads it`);
+    }
+  });
 });
 
 // `gh pr view` and the file list are two calls, and a push can land between
