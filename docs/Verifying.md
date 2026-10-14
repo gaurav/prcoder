@@ -132,6 +132,8 @@ Some things were checked against the real thing rather than a stub, and the evid
 the code:
 
 - GitHub's diff-anchor scheme: pinned, with the date, in `test/files.test.js`.
+- `gh pr view --json files` stops at 100 files, so the file list is paged by hand: `prFiles` in
+  `github.js`, and the test beside it in `test/github.test.js`.
 - `git ls-remote`'s branch argument is a pattern, not a ref name: `remoteBranchHead` in `git.js`.
 - git's exit codes, which differ per command: `answer` in `git.js`.
 - The exit bar's settings reaching the agent's argv: `sessionArgs` in `server.js`.
