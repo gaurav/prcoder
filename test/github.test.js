@@ -339,3 +339,40 @@ test('the cheap per-poll call carries the checks, summarised', { skip: unix }, a
     assert.deepEqual([heads.checks.passed, heads.checks.pending], [1, 1]);
   });
 });
+
+// gh's `files` is GraphQL's `files(first: 100)`, unpaged, so a PR past 100
+// files lost the rest from the Files tab without a word. Seen on
+// NCATSTranslator/translator-diagram#32 (112 files, 100 shown); checked
+// 2026-10-14 on gaurav/taxondna#76, whose `gh pr view --json changedFiles,files`
+// says 110 and lists 100, while the paged GraphQL query answers 100 + 10. The
+// stub answers the same way: 100 from `pr view`, 112 across two pages.
+test('a PR with more than 100 files lists every one of them', { skip: unix, todo: 'gh pr view stops at 100 files' }, async () => {
+  const file = (i) => ({ path: `src/f${i}.js`, additions: i, deletions: 1, changeType: 'MODIFIED' });
+  const all = Array.from({ length: 112 }, (_, i) => file(i));
+  const node = (f) => ({ path: f.path, additions: f.additions, deletions: f.deletions,
+    changeType: f.changeType, viewerViewedState: f.path === 'src/f105.js' ? 'VIEWED' : 'UNVIEWED' });
+  const page = (files, endCursor) => ({ data: { repository: { pullRequest: { id: 'PR_node', files: {
+    pageInfo: { hasNextPage: endCursor != null, endCursor }, nodes: files.map(node) } } } } });
+  const answers = {
+    'pr.json': { number: 1, url: 'https://github.com/o/r/pull/1', body: '', changedFiles: 112,
+      files: all.slice(0, 100), statusCheckRollup: [], comments: [], reviews: [], closingIssuesReferences: [] },
+    'page1.json': page(all.slice(0, 100), 'c1'),
+    'page2.json': page(all.slice(100), null),
+  };
+  const stub = (dir) => [
+    'case "$1 $*" in',
+    `  pr\\ *) cat "${dir}/pr.json" ;;`,
+    `  *after=c1*) cat "${dir}/page2.json" ;;`,
+    `  *) cat "${dir}/page1.json" ;;`,
+    'esac',
+  ].join('\n');
+  await withGh(stub, async (dir) => {
+    for (const [name, json] of Object.entries(answers)) await fs.writeFile(path.join(dir, name), JSON.stringify(json));
+    const pr = await loadPr(os.tmpdir());
+    assert.equal(pr.files.length, 112);
+    assert.deepEqual(pr.files.map((f) => f.path), all.map((f) => f.path));
+    const f105 = pr.files.find((f) => f.path === 'src/f105.js');
+    assert.deepEqual([f105.additions, f105.deletions, f105.viewed], [105, 1, true]);
+    assert.equal(pr.files.filter((f) => f.viewed).length, 1);
+  });
+});
