@@ -265,7 +265,7 @@ export async function setViewed(cwd, nodeId, path, viewed) {
 /**
  * Per-file `{patch, from}`, keyed by path. Shape confirmed against this repo's
  * PR #1 on 2026-08-26: --slurp wraps the pages in one array, the REST field is
- * `filename` where `gh pr view` says `path` (same string), and `patch` starts
+ * `filename` where GraphQL says `path` (same string), and `patch` starts
  * at the first @@ with no file header. It is absent for binary and oversized
  * files, and files past GitHub's 300-file cap are missing entirely — both read
  * back as null/undefined and the client falls through to the GitHub link.
@@ -275,6 +275,16 @@ export async function setViewed(cwd, nodeId, path, viewed) {
  * edited too). Without it a pure rename is a file with no patch, and the pane
  * would call it binary. `deleted` is `status: "removed"`, the one word for a
  * deleted file that has no patch to show it -- the diff header's @ reads it.
+ *
+ * This is the second read of the PR's file list, beside prFiles, and neither
+ * replaces the other: GraphQL has no patches, and REST no viewed state. It is
+ * the list the Files tab is *not* drawn from: prFiles' is complete and at a
+ * known head, while this one stops at GitHub's cap and is read lazily, once
+ * per head, when a diff is first opened (/api/diff keys it by headRefOid). So
+ * it is looked up by a path from prFiles' list, and a path it is missing falls
+ * through to localPatch like any file with no patch. A push between the two
+ * reads can leave its patches a head ahead of the list, until the poll that
+ * sees the push moves the key and it is read again.
  */
 export async function fetchPatches(cwd, prUrl) {
   const { owner, repo, number } = parsePrUrl(prUrl);
