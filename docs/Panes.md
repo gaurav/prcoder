@@ -116,6 +116,14 @@ repository's issues, pulls and milestones, and the repository they are all in at
 row; then the state and the branch it targets, with the pull request that branch belongs to
 beside it as `#N` when it is another open one's head, since that is the one you want next.
 
+Each side of `head → base` is labelled the way GitHub labels a branch in another repository: a
+branch in the repository `origin` points at is bare, so a pull request between origin's own
+branches reads as it always has; one in a repository another remote names carries that name,
+`upstream:main`; one in a repository no remote names carries its owner,
+`TranslatorSRI:run-tests-in-github-actions`, which is where a pull request opened from a fork you
+pushed to by URL has its head. The terminal's status block labels the base the same way, and
+names the pull request's repository on its line when it is not the one on the block's first.
+
 The repository comes last in its row because it is the only thing there whose length has no
 bound. A short one fits beside the four links; a long one drops whole onto the next line, so the
 four stay where they are either way. On a line of its own it truncates rather than wraps: a long

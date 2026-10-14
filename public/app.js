@@ -710,7 +710,7 @@ function paint(status) {
     const blocked = status.dirtyFiles.length > 0;
     // Everything the pane is drawn from, the Stack tab's inputs included: a
     // fresh PR list, or a tree going dirty, is a redraw even when the PR is not.
-    const key = JSON.stringify([status.pr, status.scope, stack, blocked, [...below.values()]]);
+    const key = JSON.stringify([status.pr, status.scope, stack, blocked, [...below.values()], status.remotes]);
     if (key !== drawn) {
       drawn = key;
       renderPr({ ...status.pr, note: NOTES[status.scope] }, {
@@ -718,6 +718,7 @@ function paint(status) {
         selected: selectedPath,
         prs: stack,
         otherRepo,
+        remotes: status.remotes,
         onStackOpen: () => loadPrs('Stack tab opened'),
         below: [...below.values()],
         onBelow: loadBelow,

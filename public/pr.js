@@ -598,6 +598,35 @@ const repoName = (repoUrl) => repoUrl.replace(/^https?:\/\/[^/]+\//, '');
 export const prRepo = (pr) => repoName(repoUrl(pr.url));
 
 /**
+ * One side of `head → base`, labelled the way GitHub labels a branch in
+ * another repository: the bare branch when its repository is origin's,
+ * `upstream:main` when a remote names the repository, `owner:branch` when
+ * none does -- a fork no remote names, or a pull request opened with
+ * `prcoder <url>`. So a pull request between origin's own branches reads as
+ * it always has, and only a side that is somewhere else says where.
+ *
+ * `remotes` is repository -> remote name, from the status. `slug` is null for
+ * a deleted fork, whose owner GitHub still knows.
+ */
+export function sideLabel(branch, { slug, owner }, remotes = {}) {
+  const origin = Object.keys(remotes).find((r) => remotes[r] === 'origin');
+  if (slug && slug === origin) return branch;
+  const remote = slug && remotes[slug];
+  if (remote) return `${remote}:${branch}`;
+  const who = owner ?? slug?.split('/')[0];
+  return who ? `${who}:${branch}` : branch;
+}
+
+/** Both sides of a pull request, for its head row and the terminal's block. */
+export const sides = (pr, remotes) => {
+  const base = prRepo(pr);
+  return {
+    head: sideLabel(pr.headRefName, { slug: pr.headRepo ?? (pr.isCrossRepository ? null : base), owner: pr.headOwner }, remotes),
+    base: sideLabel(pr.baseRefName, { slug: base }, remotes),
+  };
+};
+
+/**
  * The head's way out of the pane, in two parts: the links -- this pull request
  * on GitHub and the three lists people leave for -- and the repository they are
  * all in, which ends the same row.
@@ -770,6 +799,7 @@ function renderPrHead(pr, parsed, handlers) {
   // The base is often another pull request's branch, and which one is the
   // thing you want next to it. From the list, so it costs nothing.
   const under = handlers.prs?.find((p) => !p.isCrossRepository && p.headRefName === pr.baseRefName);
+  const arrow = sides(pr, handlers.remotes);
 
   const files = filesProgress(pr.files);
   const tasks = taskCount(parsed);
@@ -787,7 +817,7 @@ function renderPrHead(pr, parsed, handlers) {
     links: linkRow(ways.links, 'meta pr-ways pr-links', ways.repo),
     state: h('div', { className: 'meta pr-state' },
       badge(state, state),
-      h('span', {}, `${pr.headRefName} → ${pr.baseRefName}`, under ? ' (' : null,
+      h('span', {}, `${arrow.head} → ${arrow.base}`, under ? ' (' : null,
         under ? ext(under.url, `#${under.number}`) : null, under ? ')' : null),
       h('span', { className: 'add' }, `+${pr.additions}`),
       h('span', { className: 'del' }, `−${pr.deletions}`),

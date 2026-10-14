@@ -2400,6 +2400,25 @@ test('a failed fetch on opening the Stack tab keeps the rows it had', { skip }, 
   await fresh.close();
 });
 
+// A pull request whose head is in a fork no remote names says so in its state
+// row, the way GitHub writes it, and the base stays bare in origin's own
+// repository; one from a remote this clone names carries the remote's name.
+test('the state row labels a side that is in another repository', { skip }, async () => {
+  const forked = { ...status, pr: { ...pr, isCrossRepository: true, headRepo: 'someone/heal-vlmd-AI-pipeline', headOwner: 'someone' } };
+  const p = await newPage({ st: forked });
+  const arrow = (pg) => pg.locator('#pr-head .pr-state span:not(.badge)').first().textContent();
+  assert.equal(await arrow(p), 'someone:topic → main');
+  await p.close();
+  const named = { ...forked, remotes: { ...status.remotes, 'someone/heal-vlmd-AI-pipeline': 'theirs' } };
+  const q = await newPage({ st: named });
+  assert.equal(await arrow(q), 'theirs:topic → main');
+  await q.close();
+  // Within origin's repository, as it always read.
+  const r = await newPage();
+  assert.equal(await arrow(r), 'topic → main');
+  await r.close();
+});
+
 // #93: the Stack tab of a pull request that is itself stacked shows what it is
 // built on too, with this one marked and nothing to switch to where you are.
 test('a stacked PR shows the stack under it in its Stack tab and its head', { skip }, async () => {

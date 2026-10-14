@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  pageTitle, withoutHtml, inline, headLinks, noPrLinks, prsInto, prTree, stackOn, stackLabel, stackUnder, stackTree, stackTitle, stackBase, stackOrder, stackEmpty, intoEmpty, switcherRows,
+  pageTitle, withoutHtml, inline, headLinks, noPrLinks, prsInto, prTree, stackOn, stackLabel, stackUnder, stackTree, stackTitle, stackBase, stackOrder, stackEmpty, intoEmpty, switcherRows, sideLabel, sides,
   HEADING, blocks, sectionize, tabLabel, taskCount, viewedCount, viewedLines, filesProgress, filesName, checkCount, checksName, tabDone, worst, byPath, bySize, byDir, fileTree, fileOrder, fileFrom, nextUnviewed, nums,
 } from '../public/pr.js';
 import { fences, TASK, taskLines } from '../public/tasks.js';
@@ -939,4 +939,34 @@ test('a file row leaves out the side that did not change', () => {
     [['add', '+2'], ['del', '−3']]);
   // A rename or a mode change touches no lines and gets no counts.
   assert.deepEqual(nums({ additions: 0, deletions: 0 }), []);
+});
+
+// GitHub's own labelling of a branch in another repository, with the remote's
+// name where this clone has one: origin's branches stay bare, so a pull
+// request between them reads as it always has.
+const REMOTES = { 'biothings/NodeNormalizationAPI': 'origin', 'TranslatorSRI/NodeNormalizationAPI': 'mine' };
+
+test('a side of head → base is prefixed only when it is not in origin\'s repository', () => {
+  assert.equal(sideLabel('main', { slug: 'biothings/NodeNormalizationAPI' }, REMOTES), 'main');
+  assert.equal(sideLabel('topic', { slug: 'TranslatorSRI/NodeNormalizationAPI' }, REMOTES), 'mine:topic');
+  // A fork no remote names: its owner, as GitHub writes it.
+  assert.equal(sideLabel('topic', { slug: 'stranger/NodeNormalizationAPI' }, REMOTES), 'stranger:topic');
+  // A deleted fork has no repository left, only the owner GitHub remembers.
+  assert.equal(sideLabel('topic', { slug: null, owner: 'gone' }, REMOTES), 'gone:topic');
+  // No remotes known at all (the first poll's fixture, a clone off GitHub): the owner.
+  assert.equal(sideLabel('main', { slug: 'o/r' }), 'o:main');
+});
+
+test('both sides of a pull request, from where its head and base live', () => {
+  const inOrigin = { url: 'https://github.com/biothings/NodeNormalizationAPI/pull/52', headRefName: 'run-tests', baseRefName: 'main',
+    isCrossRepository: true, headRepo: 'TranslatorSRI/NodeNormalizationAPI', headOwner: 'TranslatorSRI' };
+  assert.deepEqual(sides(inOrigin, { 'biothings/NodeNormalizationAPI': 'origin' }), { head: 'TranslatorSRI:run-tests', base: 'main' });
+  assert.deepEqual(sides(inOrigin, REMOTES), { head: 'mine:run-tests', base: 'main' });
+  // From a clone of the fork: the base is upstream's, the head is here.
+  const fromFork = { 'TranslatorSRI/NodeNormalizationAPI': 'origin', 'biothings/NodeNormalizationAPI': 'upstream' };
+  assert.deepEqual(sides(inOrigin, fromFork), { head: 'run-tests', base: 'upstream:main' });
+  // Within one repository, with no head repository on the object (an older
+  // status): the pull request's own.
+  const plain = { url: 'https://github.com/biothings/NodeNormalizationAPI/pull/5', headRefName: 'fix', baseRefName: 'main', isCrossRepository: false };
+  assert.deepEqual(sides(plain, REMOTES), { head: 'fix', base: 'main' });
 });
