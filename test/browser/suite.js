@@ -1516,6 +1516,34 @@ test('a file with no diff does not keep the last file\'s outline', { skip }, asy
   await fresh.close();
 });
 
+// Until it is dragged, the outline is one width for every file: it used to be
+// as wide as its longest label, so the diff beside it changed width from one
+// file to the next.
+test('the outline opens at the same width whatever its labels', { skip }, async () => {
+  const fresh = await newPage();
+  const long = 'function aNameLongEnoughToHaveSetTheOutlineWidthOnItsOwn(withSomeArguments, andMore)';
+  await fresh.route('**/api/diff', (r) => {
+    const { path } = r.request().postDataJSON();
+    const [one, two] = path === 'evil.js' ? ['a', 'b'] : [long, long];
+    return r.fulfill({ json: { path, patch: `@@ -1,1 +1,1 @@ ${one}\n-a\n+b\n@@ -9,1 +9,1 @@ ${two}\n-c\n+d` } });
+  });
+  await fresh.locator('#pr-head .tab', { hasText: 'Files' }).click();
+  const width = async (path, label) => {
+    await fresh.locator('.file[data-path="' + path + '"] .path').click();
+    await fresh.waitForSelector(`#diff-outline button >> text=${label}`);
+    return fresh.evaluate(() => ({
+      side: document.getElementById('diff-side').getBoundingClientRect().width,
+      main: document.getElementById('diff-main').getBoundingClientRect().width,
+      em: parseFloat(getComputedStyle(document.getElementById('diff-side')).fontSize),
+    }));
+  };
+  const short = await width('evil.js', 'a');
+  const wide = await width('app.tsx', long.slice(0, 20));
+  assert.equal(short.side, wide.side, 'the same width for short labels and long ones');
+  assert.equal(short.side, Math.min(26.5 * short.em, 0.6 * short.main), 'the default in the stylesheet');
+  await fresh.close();
+});
+
 // The diff header's @ types the open file's mention into the agent's prompt
 // and stops there: no Enter, so the sentence about the file goes on around it,
 // and the focus is in the terminal to carry on typing it.

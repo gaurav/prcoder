@@ -709,10 +709,13 @@ a { color: var(--accent); }
    This one is a flex item inside a pane, so it has to be the line itself -- and
    say its width, or an empty flex item shrinks to nothing. */
 #gut-outline { flex: none; width: 1px; background: var(--line); }
-/* `auto` until the first drag, so the default is still whatever the longest
-   hunk label needs. The gutter writes a px width after that, and the max-width
-   is what keeps a drag from eating the diff. */
-#diff-side { flex: none; width: var(--w-outline, auto); max-width: 60%; overflow: auto; padding: 6px 0; }
+/* One width for every file until the first drag, and a long label ellipsizes.
+   It was `auto` -- as wide as the longest hunk label -- so the diff beside it
+   changed width from file to file, and a long label could take 60% of the
+   pane. 26.5em is the 371px the owner settled on by dragging, at the body's
+   14px, and scales with the font where px would not. The gutter writes a px
+   width after a drag, and the max-width is what keeps a drag from eating the diff. */
+#diff-side { flex: none; width: var(--w-outline, 26.5em); max-width: 60%; overflow: auto; padding: 6px 0; }
 /* Its own row, stuck to the top so it is still there once the hunks scroll. */
 #diff-outline-hide {
   display: block; margin-left: auto; position: sticky; top: 0; background: var(--panel);
