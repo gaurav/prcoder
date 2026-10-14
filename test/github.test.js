@@ -354,9 +354,8 @@ const withPr = (view, pages, fn) => withGh((dir) => [
 });
 const view = { number: 1, url: 'https://github.com/o/r/pull/1', body: '',
   statusCheckRollup: [], comments: [], reviews: [], closingIssuesReferences: [] };
-const file = (i) => ({ path: `src/f${i}.js`, additions: i, deletions: 1, changeType: 'MODIFIED' });
-const node = (f) => ({ path: f.path, additions: f.additions, deletions: f.deletions,
-  changeType: f.changeType, viewerViewedState: f.path === 'src/f105.js' ? 'VIEWED' : 'UNVIEWED' });
+const file = (i) => ({ path: `src/f${i}.js`, additions: i, deletions: 1 });
+const node = (f) => ({ ...f, viewerViewedState: f.path === 'src/f105.js' ? 'VIEWED' : 'UNVIEWED' });
 const head = { headRefOid: 'a'.repeat(40), baseRefOid: 'b'.repeat(40), additions: 10, deletions: 2 };
 const page = (files, endCursor, at = head) => ({ data: { repository: { pullRequest: { id: 'PR_node', ...at,
   files: { pageInfo: { hasNextPage: endCursor != null, endCursor }, nodes: files.map(node) } } } } });
@@ -375,7 +374,7 @@ test('a PR with more than 100 files lists every one of them', { skip: unix }, as
       assert.equal(pr.files.length, 112);
       assert.deepEqual(pr.files.map((f) => f.path), all.map((f) => f.path));
       const f105 = pr.files.find((f) => f.path === 'src/f105.js');
-      assert.deepEqual([f105.additions, f105.deletions, f105.viewed], [105, 1, true]);
+      assert.deepEqual(f105, { path: 'src/f105.js', additions: 105, deletions: 1, viewed: true });
       assert.equal(pr.files.filter((f) => f.viewed).length, 1);
     });
 });

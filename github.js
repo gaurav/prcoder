@@ -187,7 +187,7 @@ const FILES_QUERY = `query($owner:String!,$repo:String!,$number:Int!,$after:Stri
     id headRefOid baseRefOid additions deletions changedFiles
     files(first:100,after:$after){
       pageInfo{ hasNextPage endCursor }
-      nodes{ path additions deletions changeType viewerViewedState }
+      nodes{ path additions deletions viewerViewedState }
     } } } }`;
 
 /**
