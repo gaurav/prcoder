@@ -108,8 +108,8 @@ already up with `PRCODER_VERBOSE=2`, or a `browser.mjs` run is already printing 
   that reloads the pull request adds `loadPr`'s GraphQL calls on top. `PRCODER_VERBOSE=2` prints
   the count on every poll, so a change that adds a call shows up. The pull request is looked for
   with one `gh pr list` per repository it could be in (`repos` from `repoInfo`), so a clone with
-  a parent or a second GitHub remote pays one more per poll, and a branch whose pull request is
-  merged pays a second pass per repository; a head in a repository no remote names costs one
+  a parent or a second GitHub remote pays one more per poll, and a branch with no open pull
+  request -- a merged one, or none -- pays a second pass per repository (six, never pushed); a head in a repository no remote names costs one
   local `rev-parse` (`branchPrs` in `github.js`): seven on nodenorm-es's fork-headed branch,
   2026-10-14.
 - **The checks are most of what the poll's cheap call fetches.** It asks for them on every poll
