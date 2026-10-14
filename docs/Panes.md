@@ -106,8 +106,10 @@ documentation, an issue to report and the repository on GitHub, **Quit prcoderâ€
 the exit bar's Quit asks ([Claude Code](#claude-code)) and is greyed out once prcoder has quit, and
 the version on its last line. It closes on a pick, a click anywhere else, or Escape -- outside a
 text field, so not in the terminal, where Escape is the agent's, nor in the queue's input or the
-pull request switcher. Escape from one of its items, and closing the sheet its first item opened, leave the focus on the
-menu, since the item it was on is hidden.
+pull request switcher. Nothing done in the shortcut sheet closes it, so with the sheet opened over
+the menu, closing the sheet gives the focus back to the item it was opened from. Escape from one of
+its items, and closing the sheet its first item opened, leave the focus on the menu, since the item
+it was on is hidden.
 
 ### The head
 

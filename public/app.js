@@ -310,16 +310,18 @@ document.getElementById('term-quit').onclick = () => quitPrcoder();
 // itself; this closes it the ways a menu is expected to close -- a pick, a
 // click anywhere else, Escape -- none of which a <details> does on its own.
 // Escape only outside a text field: in the terminal it is the agent's.
+// Neither a click nor an Escape in a dialog counts: Alt+/ from an item opens
+// the sheet over the open menu, and the sheet hands the focus back to that
+// item when it closes, so the menu has to be open still to show it.
 const menu = document.getElementById('menu');
 document.addEventListener('click', (e) => {
-  if (!menu.open) return;
+  if (!menu.open || e.target.closest('dialog')) return;
   if (!menu.contains(e.target) || e.target.closest('#menu-list a, #menu-list button')) menu.open = false;
 });
 // Escape from an item hands the focus to the summary, as a menu does, since
-// the item it was on has just been hidden. Not while a modal is up -- Alt+/
-// from an item opens the sheet over the open menu: that Escape is the sheet's,
-// which hands the focus back to the item, and a menu closed under it would
-// have hidden that item and dropped the focus onto <body>.
+// the item it was on has just been hidden. Not while a modal is up: that
+// Escape is the sheet's, and a menu closed under it would have hidden the item
+// the sheet gives the focus back to, dropping it onto <body>.
 document.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape' || !menu.open || isTyping(e.target) || document.querySelector('dialog:modal')) return;
   menu.open = false;

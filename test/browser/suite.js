@@ -811,6 +811,19 @@ test('the corner is prcoder\'s menu, at the header\'s height, and closes like on
   assert.equal(await page.evaluate(() => document.activeElement?.id), 'menu-docs', 'with the focus on its item');
   await page.keyboard.press('Escape');
   assert.equal(await open(), false);
+  // Nor does a click in the sheet close the menu behind it: on its padding,
+  // or on the ✕, which closes the sheet and hands the focus to the item.
+  await page.click('#menu > summary');
+  await page.focus('#menu-docs');
+  await page.keyboard.press('Alt+Slash');
+  const edge = await page.$eval('#keys', (d) => { const r = d.getBoundingClientRect(); return { x: r.left + 4, y: r.top + r.height / 2 }; });
+  await page.mouse.click(edge.x, edge.y);
+  assert.equal(await open(), true, 'a click on the sheet leaves the menu open');
+  await page.click('#keys-close');
+  assert.equal(await open(), true, 'and so does its ✕');
+  assert.equal(await page.evaluate(() => document.activeElement?.id), 'menu-docs', 'with the focus on its item');
+  await page.keyboard.press('Escape');
+  assert.equal(await open(), false);
   // A click on the sheet's padding has the dialog as its target, as a click
   // on the backdrop does; only the backdrop closes it.
   await page.keyboard.press('Alt+Slash');
