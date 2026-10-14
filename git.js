@@ -197,13 +197,15 @@ export async function repoInfo(cwd) {
 /**
  * `remoteHead` comes from the caller because only the PR knows it — and for a
  * fork it is not on origin at all, so `git ls-remote origin` would miss it.
- * `branch` and `head` likewise, because the caller has just asked for them.
+ * `branch` and `head` likewise, because the caller has just asked for them,
+ * and `has` is the caller's hasCommit, which it may already have asked about
+ * this very commit (the lookup's stranger check, server.js).
  */
-export async function snapshot(cwd, remoteHead, branch, head) {
+export async function snapshot(cwd, remoteHead, branch, head, has = (rev) => hasCommit(rev, cwd)) {
   // Independent reads, so they run together rather than one spawn at a time.
   const [status, known] = await Promise.all([
     git(['status', '--porcelain', '--untracked-files=no'], cwd),
-    remoteHead && hasCommit(remoteHead, cwd),
+    remoteHead && has(remoteHead),
   ]);
   const dirty = userDirt(status);
 

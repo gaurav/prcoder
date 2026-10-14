@@ -206,7 +206,12 @@ async function status({ full = false } = {}) {
   // whose checks keepPr takes. With a target from the command line the
   // pinned pull request is checked the old way, and the list is still read,
   // since the switcher offers it.
-  const found = await branchPrs(repo, facts.repos, branch, { has: (oid) => hasCommit(oid, repo) });
+  // One answer per commit for the whole poll: the lookup asks whether this
+  // clone has a fork's head, and snapshot asks the same of the remote head,
+  // which on such a branch is the same commit.
+  const known = new Map();
+  const has = (oid) => known.get(oid) ?? known.set(oid, hasCommit(oid, repo)).get(oid);
+  const found = await branchPrs(repo, facts.repos, branch, { has });
   // A full refresh reloads regardless, so it has no use for the cheap check.
   const heads = target
     ? (full ? null : await prHeads(repo, target))
@@ -223,7 +228,7 @@ async function status({ full = false } = {}) {
   // you push (#19). The create route is the one place that still asks origin,
   // because it pushes on the answer.
   const oid = pr?.headRefOid ?? heads?.headRefOid ?? await trackingHead(repo, branch);
-  const snap = await snapshot(repo, oid, branch, head);
+  const snap = await snapshot(repo, oid, branch, head, has);
   const scope = prScope(pr, { repos: facts.repos, found: found.map((p) => p.url) });
   const tracked = scope === 'current' || scope === 'none';
 
