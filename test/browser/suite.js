@@ -799,6 +799,19 @@ test('the corner is prcoder\'s menu, at the header\'s height, and closes like on
   await page.click('#keys-close');
   assert.equal(await page.$eval('#keys', (d) => d.open), false);
   assert.equal(await onMenu(), true, 'so does the ✕');
+  // Alt+/ from an item opens the sheet over the open menu. Escape closes the
+  // sheet and only the sheet: the item it hands the focus back to is still
+  // showing, rather than hidden in a menu closed behind the sheet.
+  await page.click('#menu > summary');
+  await page.focus('#menu-docs');
+  await page.keyboard.press('Alt+Slash');
+  assert.equal(await page.$eval('#keys', (d) => d.open), true, 'Alt+/ from an item');
+  await page.keyboard.press('Escape');
+  assert.equal(await page.$eval('#keys', (d) => d.open), false);
+  assert.equal(await open(), true, 'the menu behind the sheet stays open');
+  assert.equal(await page.evaluate(() => document.activeElement?.id), 'menu-docs', 'with the focus on its item');
+  await page.keyboard.press('Escape');
+  assert.equal(await open(), false);
 });
 
 // The sheet is built from the bindKeys table, so its keys are the table's, and

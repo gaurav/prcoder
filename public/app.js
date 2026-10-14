@@ -308,9 +308,12 @@ document.addEventListener('click', (e) => {
   if (!menu.contains(e.target) || e.target.closest('#menu-list a, #menu-list button')) menu.open = false;
 });
 // Escape from an item hands the focus to the summary, as a menu does, since
-// the item it was on has just been hidden.
+// the item it was on has just been hidden. Not while a modal is up -- Alt+/
+// from an item opens the sheet over the open menu: that Escape is the sheet's,
+// which hands the focus back to the item, and a menu closed under it would
+// have hidden that item and dropped the focus onto <body>.
 document.addEventListener('keydown', (e) => {
-  if (e.key !== 'Escape' || !menu.open || isTyping(e.target)) return;
+  if (e.key !== 'Escape' || !menu.open || isTyping(e.target) || document.querySelector('dialog:modal')) return;
   menu.open = false;
   if (menu.contains(document.activeElement)) menu.querySelector('summary').focus();
 });
