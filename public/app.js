@@ -237,11 +237,12 @@ function connect(query = '') {
     turn(false);
     const why = e.code === 1008 ? `refused: ${e.reason}` : 'coding agent exited';
     term.write(`\r\n\x1b[31m[${why}]\x1b[0m\r\n`);
+    // The PTY a quit killed closes the socket after quitPrcoder has put up the
+    // bar with its own line and no Start, so there is nothing left to do here.
+    if (quit) return;
     // The bar's note repeats the terminal's line, not the reason: that is
-    // already there in red, a line up. A quit has already filled the bar with
-    // its own line and no Start, and the PTY it killed closes the socket after.
-    const note = exitForm.querySelector('span');
-    if (note) note.textContent = e.code === 1008 ? 'Start refused.' : 'Coding agent has exited.';
+    // already there in red, a line up.
+    exitForm.querySelector('span').textContent = e.code === 1008 ? 'Start refused.' : 'Coding agent has exited.';
     exitForm.hidden = false;
     // Refit now rather than waiting on the ResizeObserver: in a page that isn't
     // in front it never delivered the shrink, and the terminal went on
@@ -249,7 +250,7 @@ function connect(query = '') {
     sync();
     // Start, not the first button: Quit is first in the bar, and Enter after
     // an exit should start again rather than ask about quitting.
-    document.getElementById('term-start')?.focus();
+    document.getElementById('term-start').focus();
   };
 }
 
@@ -276,10 +277,14 @@ exitForm.onsubmit = (e) => {
   term.reset();
   connect(new URLSearchParams(new FormData(exitForm)).toString());
 };
-// Quit, from the exit bar or the menu. The server's quit kills the PTY, so the
-// exit bar is on its way up anyway (ws.onclose); it is filled with the fact
-// rather than with a Start that would reach nothing, and from the menu, where
-// the bar may be out of sight, a sticky toast says the same.
+// Quit, from the exit bar or the menu. The exit bar goes up here, filled with
+// the fact rather than with a Start that would reach nothing; `quit` tells
+// ws.onclose, when the killed PTY's socket closes, to leave it so. From the
+// menu, where the bar may be out of sight, a sticky toast says the same. The
+// menu's Quit goes grey with it: picked again, it would reach no server and
+// put a network error in the toast's one slot, over the line saying the quit
+// worked.
+let quit = false;
 async function quitPrcoder(fromMenu = false) {
   try {
     let r = await api('/api/quit', {});
@@ -289,8 +294,11 @@ async function quitPrcoder(fromMenu = false) {
       r = await api('/api/quit', { force: true });
     }
     const gone = 'prcoder has quit — this tab can be closed.';
+    quit = true;
     exitForm.replaceChildren(gone);
     exitForm.hidden = false;
+    sync();   // as ws.onclose does, and for the same reason
+    document.getElementById('menu-quit').disabled = true;
     if (fromMenu) toast(gone, false, true);
   } catch (e) {
     toast(e.message, true);
@@ -302,15 +310,20 @@ document.getElementById('term-quit').onclick = () => quitPrcoder();
 // itself; this closes it the ways a menu is expected to close -- a pick, a
 // click anywhere else, Escape -- none of which a <details> does on its own.
 // Escape only outside a text field: in the terminal it is the agent's.
+// Neither a click nor an Escape in a dialog counts: Alt+/ from an item opens
+// the sheet over the open menu, and the sheet hands the focus back to that
+// item when it closes, so the menu has to be open still to show it.
 const menu = document.getElementById('menu');
 document.addEventListener('click', (e) => {
-  if (!menu.open) return;
+  if (!menu.open || e.target.closest('dialog')) return;
   if (!menu.contains(e.target) || e.target.closest('#menu-list a, #menu-list button')) menu.open = false;
 });
 // Escape from an item hands the focus to the summary, as a menu does, since
-// the item it was on has just been hidden.
+// the item it was on has just been hidden. Not while a modal is up: that
+// Escape is the sheet's, and a menu closed under it would have hidden the item
+// the sheet gives the focus back to, dropping it onto <body>.
 document.addEventListener('keydown', (e) => {
-  if (e.key !== 'Escape' || !menu.open || isTyping(e.target)) return;
+  if (e.key !== 'Escape' || !menu.open || isTyping(e.target) || document.querySelector('dialog:modal')) return;
   menu.open = false;
   if (menu.contains(document.activeElement)) menu.querySelector('summary').focus();
 });
@@ -327,8 +340,9 @@ document.getElementById('menu-keys').onclick = () => {
 // The shortcut sheet, built once from KEYS: a row per binding, the key as the
 // reader's keyboard has it. A modal <dialog> closes on Escape by itself, and
 // gives the focus back to where it was -- the terminal, when Alt+/ was pressed
-// there -- so the sheet is a glance, not a detour. A click on the backdrop is
-// a click whose target is the dialog itself, since the backdrop is its box.
+// there -- so the sheet is a glance, not a detour. A click on the backdrop has
+// the dialog itself as its target, but so does one on the dialog's padding,
+// so it is the click's position, outside the dialog's box, that says backdrop.
 const keysDialog = document.getElementById('keys');
 // navigator.platform, deprecated as it is, because it is what xterm reads to
 // decide whether the key is Option (its Platform.ts), so the sheet calls the
@@ -346,7 +360,11 @@ document.getElementById('keys-note').textContent = (mac ? 'Alt is Option. ' : ''
   + 'Each key works from the coding agent\'s terminal too, while it has something to do; otherwise the agent gets it.';
 document.querySelector('#menu-keys kbd').textContent = keyLabel('Alt+Slash', mac);   // the menu's hint, in the same spelling
 document.getElementById('keys-close').onclick = () => keysDialog.close();
-keysDialog.addEventListener('click', (e) => { if (e.target === keysDialog) keysDialog.close(); });
+keysDialog.addEventListener('click', (e) => {
+  if (e.target !== keysDialog) return;
+  const r = keysDialog.getBoundingClientRect();
+  if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) keysDialog.close();
+});
 function toggleKeys() {
   if (keysDialog.open) keysDialog.close();
   else keysDialog.showModal();

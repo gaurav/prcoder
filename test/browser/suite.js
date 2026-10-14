@@ -731,9 +731,8 @@ test('Wrap and the outline hold across files when storage refuses writes', { ski
 // So the header has to be the height it is with the ⟳ at the header's own
 // size. Not the height without the button: in Firefox the button at any size
 // is what sets the header's height, where in Chromium the dropdown does
-// (37px and 36px on 2026-10-11, from tools/browser.mjs's `corner:` line,
-// which prints it per engine). The corner menu's test below measures the
-// same way.
+// (37px and 36px on 2026-10-11, measured in each engine). The corner menu's
+// test below measures the same way.
 test('the ⟳ is drawn large without making the pull request header taller', { skip }, async () => {
   const height = () => page.$eval('#pr > header', (el) => el.getBoundingClientRect().height);
   const px = (sel, prop) => page.$eval(sel, (el, p) => parseFloat(getComputedStyle(el)[p]), prop);
@@ -805,6 +804,40 @@ test('the corner is prcoder\'s menu, at the header\'s height, and closes like on
   await page.click('#keys-close');
   assert.equal(await page.$eval('#keys', (d) => d.open), false);
   assert.equal(await onMenu(), true, 'so does the ✕');
+  // Alt+/ from an item opens the sheet over the open menu. Escape closes the
+  // sheet and only the sheet: the item it hands the focus back to is still
+  // showing, rather than hidden in a menu closed behind the sheet.
+  await page.click('#menu > summary');
+  await page.focus('#menu-docs');
+  await page.keyboard.press('Alt+Slash');
+  assert.equal(await page.$eval('#keys', (d) => d.open), true, 'Alt+/ from an item');
+  await page.keyboard.press('Escape');
+  assert.equal(await page.$eval('#keys', (d) => d.open), false);
+  assert.equal(await open(), true, 'the menu behind the sheet stays open');
+  assert.equal(await page.evaluate(() => document.activeElement?.id), 'menu-docs', 'with the focus on its item');
+  await page.keyboard.press('Escape');
+  assert.equal(await open(), false);
+  // Nor does a click in the sheet close the menu behind it: on its padding,
+  // or on the ✕, which closes the sheet and hands the focus to the item.
+  await page.click('#menu > summary');
+  await page.focus('#menu-docs');
+  await page.keyboard.press('Alt+Slash');
+  const edge = await page.$eval('#keys', (d) => { const r = d.getBoundingClientRect(); return { x: r.left + 4, y: r.top + r.height / 2 }; });
+  await page.mouse.click(edge.x, edge.y);
+  assert.equal(await open(), true, 'a click on the sheet leaves the menu open');
+  await page.click('#keys-close');
+  assert.equal(await open(), true, 'and so does its ✕');
+  assert.equal(await page.evaluate(() => document.activeElement?.id), 'menu-docs', 'with the focus on its item');
+  await page.keyboard.press('Escape');
+  assert.equal(await open(), false);
+  // A click on the sheet's padding has the dialog as its target, as a click
+  // on the backdrop does; only the backdrop closes it.
+  await page.keyboard.press('Alt+Slash');
+  const box = await page.$eval('#keys', (d) => { const r = d.getBoundingClientRect(); return { x: r.left, y: r.top, h: r.height }; });
+  await page.mouse.click(box.x + 4, box.y + box.h / 2);
+  assert.equal(await page.$eval('#keys', (d) => d.open), true, 'a click on the sheet\'s edge leaves it open');
+  await page.mouse.click(4, 4);
+  assert.equal(await page.$eval('#keys', (d) => d.open), false, 'a click on the backdrop closes it');
 });
 
 // The sheet is built from the bindKeys table, so its keys are the table's, and
@@ -874,6 +907,9 @@ test('Quit in the menu asks what the exit bar asks, and says when it has quit', 
   await settle(fresh);
   assert.deepEqual(errors, []);
   assert.match(await fresh.textContent('#term-exit'), /prcoder has quit/);
+  // Nothing is left to quit, so the menu's Quit can't be picked again and
+  // put a network error over the toast that says the quit worked.
+  assert.equal(await fresh.$eval('#menu-quit', (b) => b.disabled), true, 'the menu\'s Quit is off');
   await fresh.close();
 });
 
