@@ -330,8 +330,9 @@ document.getElementById('menu-keys').onclick = () => {
 // The shortcut sheet, built once from KEYS: a row per binding, the key as the
 // reader's keyboard has it. A modal <dialog> closes on Escape by itself, and
 // gives the focus back to where it was -- the terminal, when Alt+/ was pressed
-// there -- so the sheet is a glance, not a detour. A click on the backdrop is
-// a click whose target is the dialog itself, since the backdrop is its box.
+// there -- so the sheet is a glance, not a detour. A click on the backdrop has
+// the dialog itself as its target, but so does one on the dialog's padding,
+// so it is the click's position, outside the dialog's box, that says backdrop.
 const keysDialog = document.getElementById('keys');
 // navigator.platform, deprecated as it is, because it is what xterm reads to
 // decide whether the key is Option (its Platform.ts), so the sheet calls the
@@ -349,7 +350,11 @@ document.getElementById('keys-note').textContent = (mac ? 'Alt is Option. ' : ''
   + 'Each key works from the coding agent\'s terminal too, while it has something to do; otherwise the agent gets it.';
 document.querySelector('#menu-keys kbd').textContent = keyLabel('Alt+Slash', mac);   // the menu's hint, in the same spelling
 document.getElementById('keys-close').onclick = () => keysDialog.close();
-keysDialog.addEventListener('click', (e) => { if (e.target === keysDialog) keysDialog.close(); });
+keysDialog.addEventListener('click', (e) => {
+  if (e.target !== keysDialog) return;
+  const r = keysDialog.getBoundingClientRect();
+  if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) keysDialog.close();
+});
 function toggleKeys() {
   if (keysDialog.open) keysDialog.close();
   else keysDialog.showModal();

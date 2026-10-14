@@ -812,6 +812,14 @@ test('the corner is prcoder\'s menu, at the header\'s height, and closes like on
   assert.equal(await page.evaluate(() => document.activeElement?.id), 'menu-docs', 'with the focus on its item');
   await page.keyboard.press('Escape');
   assert.equal(await open(), false);
+  // A click on the sheet's padding has the dialog as its target, as a click
+  // on the backdrop does; only the backdrop closes it.
+  await page.keyboard.press('Alt+Slash');
+  const box = await page.$eval('#keys', (d) => { const r = d.getBoundingClientRect(); return { x: r.left, y: r.top, h: r.height }; });
+  await page.mouse.click(box.x + 4, box.y + box.h / 2);
+  assert.equal(await page.$eval('#keys', (d) => d.open), true, 'a click on the sheet\'s edge leaves it open');
+  await page.mouse.click(4, 4);
+  assert.equal(await page.$eval('#keys', (d) => d.open), false, 'a click on the backdrop closes it');
 });
 
 // The sheet is built from the bindKeys table, so its keys are the table's, and
