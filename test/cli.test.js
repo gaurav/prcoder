@@ -276,7 +276,10 @@ test('prcoder refuses to start outside a git checkout', async () => {
     // exports: a GIT_DIR would answer for the tmpdir (test/git.test.js says more).
     // LC_ALL=C because the line after prcoder's own is git's, in git's language.
     const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith('GIT_')));
-    const out = await promisify(execFile)('node', [new URL('../server.js', import.meta.url).pathname, '--no-open'],
+    // A path, not the URL's pathname, which keeps a space in the checkout's
+    // path as %20 and so names a file that is not there.
+    const { fileURLToPath } = await import('node:url');
+    const out = await promisify(execFile)('node', [fileURLToPath(new URL('../server.js', import.meta.url)), '--no-open'],
       { cwd: dir, env: { ...env, LC_ALL: 'C', PRCODER_AGENT_BIN: '/usr/bin/false' }, timeout: 15_000 })
       .then((r) => ({ code: 0, ...r }), (e) => ({ code: e.code, stdout: e.stdout, stderr: e.stderr }));
     assert.equal(out.code, 2);
