@@ -346,7 +346,7 @@ test('the cheap per-poll call carries the checks, summarised', { skip: unix }, a
 // 2026-10-14 on gaurav/taxondna#76, whose `gh pr view --json changedFiles,files`
 // says 110 and lists 100, while the paged GraphQL query answers 100 + 10. The
 // stub answers the same way: 100 from `pr view`, 112 across two pages.
-test('a PR with more than 100 files lists every one of them', { skip: unix, todo: 'gh pr view stops at 100 files' }, async () => {
+test('a PR with more than 100 files lists every one of them', { skip: unix }, async () => {
   const file = (i) => ({ path: `src/f${i}.js`, additions: i, deletions: 1, changeType: 'MODIFIED' });
   const all = Array.from({ length: 112 }, (_, i) => file(i));
   const node = (f) => ({ path: f.path, additions: f.additions, deletions: f.deletions,
