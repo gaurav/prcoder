@@ -1024,6 +1024,7 @@ function renderPrTab(pr, parsed, handlers) {
       c.url ? ext(c.url, c.name, { className: 'check-name' }) : h('span', { className: 'check-name' }, c.name),
       CHECK_WORD[c.state] ? h('span', { className: 'check-state' }, CHECK_WORD[c.state]) : null)),
   ] : tab === 'files' ? [
+    unlisted(pr),
     ...fileTree(pr.files).map((g) => fileGroup(g, handlers)),
     h('div', { className: 'meta' },
       ext(`${pr.url}#issuecomment`, `${pr.counts.comments} comments · ${pr.counts.reviews} reviews`)),
@@ -1093,6 +1094,17 @@ function fileGroup({ label, files, rows }, handlers) {
     ...kept(closedGroups, label, 'closed'),
   }, rows.map((r) => (r.path ? fileRow(r, handlers) : dirGroup(label, r.dir, r.files, handlers))));
 }
+
+/**
+ * How many files GitHub counts in the pull request and would not list. The
+ * reads are paged to the end (prFiles), so this is GitHub's limit and not ours;
+ * without it the tab's count would be of the files listed, and the rest would
+ * not be there at all.
+ */
+const unlisted = (pr) => pr.changedFiles > pr.files.length
+  ? h('p', { className: 'pr-note' }, `GitHub listed ${pr.files.length} of the ${pr.changedFiles} changed files. `,
+    ext(`${pr.url}/files`, 'The rest are on GitHub.'))
+  : null;
 
 /**
  * Two paths, ordered the way a tree is: a directory ahead of what is inside it,

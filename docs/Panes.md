@@ -223,7 +223,9 @@ fold and remember what you closed. Each fold's pie fills green by changed lines 
 tab's does, so a directory with one big file left still looks mostly empty (hover it for both
 figures). The checkbox on each file is GitHub's own "viewed" checkbox: tick it here and
 it's ticked on github.com. Clicking a file opens its diff in the **Diff** pane; cmd/ctrl-clicking
-opens GitHub's diff viewer at that file instead.
+opens GitHub's diff viewer at that file instead. A pull request with more changed files than
+GitHub will list -- the list is read to its end, so that is GitHub's limit -- says above the
+groups how many it listed and links to the rest on github.com.
 
 *Checks* is CI, one row per check, led by the same mark and ending in `pending` or `failed` for a
 check that has not passed. Each links to its run -- or is plain text, when GitHub gave no

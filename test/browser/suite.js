@@ -125,7 +125,7 @@ const files = Object.keys(added).map(fileRow);
 const pr = {
   number: 12, title: 'A fixture pull request', body: BODY, url: `${REPO}/pull/12`,
   state: 'OPEN', isDraft: false, headRefName: 'topic', baseRefName: 'main',
-  additions: 1, deletions: 0, changedFiles: 1, files,
+  additions: 1, deletions: 0, changedFiles: files.length, files,
   headRefOid: 'a'.repeat(40), updatedAt: '2026-09-19T00:00:00Z', isCrossRepository: false,
   reviewDecision: '', nodeId: 'PR_fixture',
   checks: rollup([]), counts: { comments: 0, reviews: 0 },
@@ -1689,6 +1689,23 @@ test('Alt+V ticks and unticks the open file, from the page and from the terminal
   await fresh.waitForFunction(() => !document.getElementById('diff-viewed').disabled);
   assert.equal(await fresh.locator('#diff-viewed').isChecked(), true, 'and the first tick stands');
   await fresh.close();
+});
+
+// GitHub can count more files than it will list. prFiles reads to the end of
+// the list, so that is GitHub's limit, and the tab says so above the groups
+// rather than show a count of only what came back. A full list says nothing.
+test('a pull request GitHub would not list in full says how many it left out', { skip }, async () => {
+  const note = async (st) => {
+    const p = await newPage({ st });
+    await p.locator('#pr-head .tab', { hasText: 'Files' }).click();
+    const notes = await p.locator('#pr-body > .pr-note').evaluateAll((ns) =>
+      ns.map((n) => [n.textContent, n.querySelector('a')?.getAttribute('href')]));
+    await p.close();
+    return notes;
+  };
+  assert.deepEqual(await note({ ...status, pr: { ...pr, changedFiles: 3412 } }),
+    [['GitHub listed 2 of the 3412 changed files. The rest are on GitHub.', `${pr.url}/files`]]);
+  assert.deepEqual(await note(status), []);
 });
 
 // Alt+J and Alt+K walk the Files tab's order -- Config & docs ahead of Code,

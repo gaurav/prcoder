@@ -184,7 +184,7 @@ export async function loadPr(cwd, target) {
 
 const FILES_QUERY = `query($owner:String!,$repo:String!,$number:Int!,$after:String){
   repository(owner:$owner,name:$repo){ pullRequest(number:$number){
-    id headRefOid baseRefOid additions deletions
+    id headRefOid baseRefOid additions deletions changedFiles
     files(first:100,after:$after){
       pageInfo{ hasNextPage endCursor }
       nodes{ path additions deletions changeType viewerViewedState }
@@ -201,8 +201,27 @@ const FILES_QUERY = `query($owner:String!,$repo:String!,$number:Int!,$after:Stri
  * files(first: 100) unpaged, so a bigger PR lost the rest without a word:
  * gaurav/taxondna#76 has 110, and gh listed 100 (checked 2026-10-14). This
  * pages, in the order gh lists them.
+ *
+ * The pages are separate calls, so a push between two of them shifts the list
+ * under the cursor, and a file is listed twice or never. Each page says which
+ * head and base it was read at, and one at a different pair from the first
+ * starts the read over -- READS times, then it throws, and the poll after
+ * tries again. A list that is still short of `changedFiles` with nothing
+ * moving is one GitHub would not give, and goes out as it is: the Files tab
+ * says how many are missing.
  */
+const READS = 3;
+
 async function prFiles(cwd, url) {
+  for (let n = 1; ; n++) {
+    const read = await readFiles(cwd, url);
+    if (read) return read;
+    if (n === READS) throw new Error(`${url} moved on GitHub during each of ${READS} reads of its files`);
+  }
+}
+
+/** One pass of prFiles' paging, or null when the PR moved under it. */
+async function readFiles(cwd, url) {
   const { owner, repo, number } = parsePrUrl(url);
   const files = [];
   let snapshot = null;
@@ -218,8 +237,9 @@ async function prFiles(cwd, url) {
     if (after) args.push('-f', `after=${after}`);
     const { data } = JSON.parse(await gh(args, { cwd }));
     const pr = data.repository.pullRequest;
-    const { id: nodeId, headRefOid, baseRefOid, additions, deletions } = pr;
-    snapshot ??= { nodeId, headRefOid, baseRefOid, additions, deletions };
+    const { id: nodeId, headRefOid, baseRefOid, additions, deletions, changedFiles } = pr;
+    snapshot ??= { nodeId, headRefOid, baseRefOid, additions, deletions, changedFiles };
+    if (headRefOid !== snapshot.headRefOid || baseRefOid !== snapshot.baseRefOid) return null;
     for (const { viewerViewedState, ...f } of pr.files.nodes) {
       files.push({ ...f, viewed: viewerViewedState === 'VIEWED' });
     }

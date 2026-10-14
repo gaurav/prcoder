@@ -393,3 +393,28 @@ test('the head a PR is at comes from the same answer as its files', { skip: unix
     assert.equal(pr.nodeId, 'PR_node');
   });
 });
+
+// The pages are separate calls, so a push between two of them shifts the list
+// under the cursor: here page 2 is the moved PR's, which repeats a file and
+// would have lost another. A page at a different head starts the read over.
+test('a PR that moves between pages of its files is read again', { skip: unix }, async () => {
+  const moved = { ...head, headRefOid: 'e'.repeat(40) };
+  const all = Array.from({ length: 101 }, (_, i) => file(i));
+  await withPr(view, [
+    page(all.slice(0, 100), 'c1'), page(all.slice(99), null, moved),
+    page(all.slice(0, 100), 'c1', moved), page(all.slice(100), null, moved),
+  ], async (dir) => {
+    const pr = await loadPr(os.tmpdir());
+    assert.deepEqual(pr.files.map((f) => f.path), all.map((f) => f.path));
+    assert.equal(pr.headRefOid, moved.headRefOid);
+    assert.equal(await fs.readFile(path.join(dir, 'n'), 'utf8'), '4\n');
+  });
+});
+
+test('a PR that moves during every read of its files is an error, not a list', { skip: unix }, async () => {
+  const at = (c) => ({ ...head, headRefOid: c.repeat(40) });
+  const pages = ['1', '2', '3', '4', '5', '6'].map((c, i) => page([file(i)], i % 2 ? null : 'c1', at(c)));
+  await withPr(view, pages, async () => {
+    await assert.rejects(loadPr(os.tmpdir()), /moved on GitHub during each of 3 reads of its files/);
+  });
+});
