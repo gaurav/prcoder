@@ -68,15 +68,13 @@ const gh = (args, opts) => run('gh', args, opts);
 
 const PR_FIELDS = [
   'number', 'title', 'body', 'url', 'state', 'isDraft', 'headRefName', 'baseRefName',
-  // Not 'files': gh's stops at 100. loadPr pages them itself (prFiles).
-  'additions', 'deletions', 'changedFiles', 'statusCheckRollup',
-  'closingIssuesReferences', 'reviewDecision', 'comments', 'reviews',
-  // headRefOid is GitHub's view of the branch head, which is what lets the sync
-  // light work without a fetch. updatedAt gates the expensive full reload --
-  // all but the checks, which prHeads reads on every poll.
-  'headRefOid', 'updatedAt', 'isCrossRepository',
-  // What /api/diff diffs from when GitHub sends a file no patch.
-  'baseRefOid',
+  'statusCheckRollup', 'closingIssuesReferences', 'reviewDecision', 'comments', 'reviews',
+  // updatedAt gates the expensive full reload -- all but the checks, which
+  // prHeads reads on every poll.
+  'updatedAt', 'isCrossRepository',
+  // Not the files, and not what has to agree with them: the head and base
+  // commits and the line counts. prFiles reads those in the same answer as the
+  // list, since gh's `files` stops at 100 and two calls can straddle a push.
 ].join(',');
 
 /**
@@ -157,7 +155,10 @@ export async function listPrs(cwd) {
 /**
  * The PR for the current branch, or null if there isn't one. The files come
  * from a second call, prFiles, not from `gh pr view`: per-file viewed state
- * needs GraphQL, and gh's own list stops at 100 files.
+ * needs GraphQL, and gh's own list stops at 100 files. The commits the files
+ * are at come from that call too, not from `gh pr view`: a push landing
+ * between the two left the links to each file at the old head, where a new
+ * file 404s, and /api/diff diffing the old head against the new line counts.
  */
 export async function loadPr(cwd, target) {
   const pr = await viewPr(cwd, target, PR_FIELDS);
@@ -165,7 +166,7 @@ export async function loadPr(cwd, target) {
   pr.body = lf(pr.body);
 
   // Both need only the PR, so they run together: each is a GitHub round trip.
-  const [{ nodeId, files }, issues] = await Promise.all([
+  const [snapshot, issues] = await Promise.all([
     prFiles(cwd, pr.url),
     withLinks(cwd, pr.url, linkedIssues(pr)),
   ]);
@@ -175,8 +176,7 @@ export async function loadPr(cwd, target) {
 
   return {
     ...rest,
-    files,
-    nodeId,
+    ...snapshot,
     issues,
     counts: { comments: comments?.length ?? 0, reviews: reviews?.length ?? 0 },
   };
@@ -184,22 +184,28 @@ export async function loadPr(cwd, target) {
 
 const FILES_QUERY = `query($owner:String!,$repo:String!,$number:Int!,$after:String){
   repository(owner:$owner,name:$repo){ pullRequest(number:$number){
-    id files(first:100,after:$after){
+    id headRefOid baseRefOid additions deletions
+    files(first:100,after:$after){
       pageInfo{ hasNextPage endCursor }
       nodes{ path additions deletions changeType viewerViewedState }
     } } } }`;
 
 /**
- * Every changed file, with whether you have marked it viewed, and the PR's node
- * id for setViewed. `gh pr view --json files` gives the same fields but is
- * GraphQL's files(first: 100) unpaged, so a bigger PR lost the rest without a
- * word: gaurav/taxondna#76 has 110, and gh listed 100 (checked 2026-10-14).
- * This pages, in the order gh lists them.
+ * Every changed file, with whether you have marked it viewed; the PR's node id
+ * for setViewed; and, from the same answer, what has to agree with the list.
+ * headRefOid is GitHub's view of the branch head, which is what lets the sync
+ * light work without a fetch and what each file's link is at. baseRefOid is
+ * what /api/diff diffs from when GitHub sends a file no patch.
+ *
+ * `gh pr view --json files` gives the same fields but is GraphQL's
+ * files(first: 100) unpaged, so a bigger PR lost the rest without a word:
+ * gaurav/taxondna#76 has 110, and gh listed 100 (checked 2026-10-14). This
+ * pages, in the order gh lists them.
  */
 async function prFiles(cwd, url) {
   const { owner, repo, number } = parsePrUrl(url);
   const files = [];
-  let nodeId = null;
+  let snapshot = null;
   let after = null;
 
   do {
@@ -212,14 +218,15 @@ async function prFiles(cwd, url) {
     if (after) args.push('-f', `after=${after}`);
     const { data } = JSON.parse(await gh(args, { cwd }));
     const pr = data.repository.pullRequest;
-    nodeId = pr.id;
+    const { id: nodeId, headRefOid, baseRefOid, additions, deletions } = pr;
+    snapshot ??= { nodeId, headRefOid, baseRefOid, additions, deletions };
     for (const { viewerViewedState, ...f } of pr.files.nodes) {
       files.push({ ...f, viewed: viewerViewedState === 'VIEWED' });
     }
     after = pr.files.pageInfo.hasNextPage ? pr.files.pageInfo.endCursor : null;
   } while (after);
 
-  return { nodeId, files };
+  return { ...snapshot, files };
 }
 
 /** Ticking this here ticks the same checkbox on github.com. */
