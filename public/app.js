@@ -822,7 +822,24 @@ async function createPr(btn) {
 const askClaudeToCommit = (files) =>
   sendToClaude(`Commit the current changes: ${files.join(', ')}`);
 
-const handlers = { onSwitch: switchPr, onCommit: askClaudeToCommit };
+/**
+ * One of the branch's own pull requests picked in the switcher's group: shown
+ * from now on, with nothing checked out, so no toast about the agent's files.
+ */
+async function choosePr(url) {
+  debug('choosing', url);
+  try {
+    const status = await api('/api/pr/choose', { url });
+    paint(status);
+    toast(`Showing ${prRepo(status.pr)}#${status.pr.number} for ${status.branch}.`);
+  } catch (e) {
+    debug('choose failed:', e.message);
+    toast(e.message, true);
+    await loadStatus();   // snap the switcher back to what is really shown
+  }
+}
+
+const handlers = { onSwitch: switchPr, onChoose: choosePr, onCommit: askClaudeToCommit };
 
 document.getElementById('pr-refresh').onclick = loadStatus;
 

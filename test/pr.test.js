@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  pageTitle, withoutHtml, inline, headLinks, noPrLinks, prsInto, prTree, stackOn, stackLabel, stackUnder, stackTree, stackTitle, stackBase, stackOrder, stackEmpty, intoEmpty, switcherRows, sideLabel, sides,
+  pageTitle, withoutHtml, inline, headLinks, noPrLinks, prsInto, prTree, stackOn, stackLabel, stackUnder, stackTree, stackTitle, stackBase, stackOrder, stackEmpty, intoEmpty, switcherRows, sideLabel, sides, branchGroup, lookedIn,
   HEADING, blocks, sectionize, tabLabel, taskCount, viewedCount, viewedLines, filesProgress, filesName, checkCount, checksName, tabDone, worst, byPath, bySize, byDir, fileTree, fileOrder, fileFrom, nextUnviewed, nums,
 } from '../public/pr.js';
 import { fences, TASK, taskLines } from '../public/tasks.js';
@@ -969,4 +969,29 @@ test('both sides of a pull request, from where its head and base live', () => {
   // status): the pull request's own.
   const plain = { url: 'https://github.com/biothings/NodeNormalizationAPI/pull/5', headRefName: 'fix', baseRefName: 'main', isCrossRepository: false };
   assert.deepEqual(sides(plain, REMOTES), { head: 'fix', base: 'main' });
+});
+
+// The switcher's group for a branch with more than one pull request: the
+// branch's own, each a pick that shows rather than checks out, with the open
+// list's stack under the first. One alone is no choice, so no group.
+test('a branch with two pull requests gets a group of its own, stack and all', () => {
+  const mine = { number: 1, url: at(1), state: 'OPEN', headRefName: 'initial-implementation', baseRefName: 'main', repo: 'gaurav/prcoder' };
+  const theirs = { number: 9, url: 'https://github.com/upstream/prcoder/pull/9', state: 'OPEN', headRefName: 'initial-implementation',
+    baseRefName: 'main', repo: 'upstream/prcoder', isCrossRepository: true };
+  const rows = (g) => g.map(({ pr, depth, own }) => `${'-'.repeat(depth)}${pr.number}${own ? '!' : ''}`);
+  assert.deepEqual(rows(branchGroup([mine, theirs], OPEN, mine)), ['1!', '-27', '-60', '9!']);
+  // The stack hangs off whichever comes first; a fork's head carries none.
+  assert.deepEqual(rows(branchGroup([theirs, mine], OPEN, theirs)), ['9!', '1!', '-27', '-60']);
+  assert.deepEqual(branchGroup([mine], OPEN, mine), []);
+  assert.deepEqual(branchGroup([], OPEN, null), []);
+  // A merged one is in the group only while it is the one on screen.
+  const merged = { ...theirs, state: 'MERGED' };
+  assert.deepEqual(rows(branchGroup([mine, merged], OPEN, mine)), []);
+  assert.deepEqual(rows(branchGroup([mine, merged], OPEN, merged)), ['1!', '-27', '-60', '9!']);
+});
+
+test('the repositories looked in read as a list', () => {
+  assert.equal(lookedIn(['a/b']), 'a/b');
+  assert.equal(lookedIn(['a/b', 'c/d']), 'a/b or c/d');
+  assert.equal(lookedIn(['a/b', 'c/d', 'e/f']), 'a/b, c/d or e/f');
 });

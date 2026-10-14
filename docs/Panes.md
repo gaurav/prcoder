@@ -137,8 +137,23 @@ The switcher in the head lists open pull requests, each followed by the ones sta
 and indented under it, and runs `gh pr checkout` to move between them. Uncommitted work hides it
 behind a Commit button, because the checkout would fail anyway.
 
+The pull request shown for the branch is looked for in every repository it could be in -- the one
+`gh` takes as this checkout's, its parent when that is a fork, and the repository behind each
+remote -- by the branch's name, so one opened from a fork no remote names is found too, as long
+as this clone has its head commit ([README](../README.md)). A branch with more than one, into its
+fork's `main` and into the parent, say, shows one of them: an open one over a merged one, the one
+at this clone's HEAD, then the one `gh` calls this checkout's repository's. The switcher then
+leads with all of them under **On this branch**, the ones in another repository named
+`owner/repo#N` as the tab's title names them, each with what is stacked on it under it, and the
+rest of the list follows without them. Picking one there changes what the pane shows and checks
+nothing out, since the branch is already this one, and it stays shown until the branch changes;
+every other option is the checkout it always was. The list the rest comes from is the one
+repository's, `gh`'s own, so a pull request in another repository has no Stack and no `#N` beside
+its base, as before.
+
 On a branch with no pull request the pane keeps the pull request head's shape, with the branch as
-its title and a line under it saying why there is no pull request. The way out of the window is in
+its title and a line under it saying why there is no pull request -- naming the repositories it
+looked in, when there was more than one. The way out of the window is in
 the same row: the issues, pulls and milestones, and the repository at the end of it. The head
 does not scroll, so those are on screen however long the list below it runs. Where the pull
 request's button would be, **Create PR** opens GitHub's compare page, pushing the branch first if

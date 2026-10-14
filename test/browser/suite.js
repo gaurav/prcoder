@@ -2152,6 +2152,66 @@ test('stacked PRs nest in the switcher and the Stack tab, each linked and switch
   await fresh.close();
 });
 
+// A branch with a pull request into its fork's main and another into the
+// parent: the switcher leads with both in a group of their own, the parent's
+// named by its repository, with the stack under the one here; picking one of
+// them shows it and checks nothing out, where every other option is still the
+// checkout. With one pull request on the branch there is no group.
+test('a branch with two pull requests gets an "On this branch" group, and a pick there is a choose', { skip }, async () => {
+  const theirs = { number: 12, title: 'Into the parent', url: 'https://github.com/upstream/heal-vlmd-AI-pipeline/pull/12', state: 'OPEN',
+    isDraft: true, headRefName: 'topic', baseRefName: 'main', repo: 'upstream/heal-vlmd-AI-pipeline',
+    headRepo: 'heal-data-stewards/heal-vlmd-AI-pipeline', headOwner: 'heal-data-stewards', isCrossRepository: true };
+  const two = { ...status, repos: [...status.repos, 'upstream/heal-vlmd-AI-pipeline'], branchPrs: [...status.branchPrs, theirs] };
+  const fresh = await newPage({ prs: STACK, st: two });
+  await fresh.waitForSelector(`#pr-switch optgroup option[value="${theirs.url}"]`, { state: 'attached' });
+  assert.deepEqual(await fresh.$$eval('#pr-switch optgroup', (gs) => gs.map((g) => g.label)), ['On this branch']);
+  assert.deepEqual(await fresh.$$eval('#pr-switch optgroup option', (os) => os.map((o) => [o.textContent.replaceAll('\u00a0', ' '), !!o.dataset.choose])), [
+    ['#12 A fixture pull request', true],
+    ['  └ #13 (draft) Built on the fixture', false],
+    ['    └ #14 Built on that', false],
+    ['upstream/heal-vlmd-AI-pipeline#12 (draft) Into the parent', true],
+  ]);
+  // The rest of the list, without the ones the group took.
+  assert.deepEqual(await fresh.$$eval('#pr-switch > option', (os) => os.map((o) => o.textContent)), ['no pull request']);
+  assert.equal(await fresh.inputValue('#pr-switch'), pr.url);
+
+  const chosen = [];
+  const switched = [];
+  await fresh.route('**/api/pr/switch', (r) => { switched.push(r.request().postDataJSON().url); return r.fulfill({ json: two }); });
+  await fresh.route('**/api/pr/choose', (r) => {
+    chosen.push(r.request().postDataJSON().url);
+    return r.fulfill({ json: { ...two, pr: { ...pr, ...theirs, files: pr.files } } });
+  });
+  const sent = fresh.waitForResponse('**/api/pr/choose');
+  await fresh.selectOption('#pr-switch', theirs.url);
+  await sent;
+  assert.deepEqual(chosen, [theirs.url]);
+  assert.deepEqual(switched, []);
+  await fresh.waitForSelector('#toast:not([hidden])');
+  assert.match(await fresh.textContent('#toast'), /^Showing upstream\/heal-vlmd-AI-pipeline#12 for topic\./);
+  // The pane followed: the parent's pull request, its head labelled as from here.
+  assert.equal(await fresh.locator('#pr-head .pr-title').textContent(), 'Into the parent');
+  assert.equal(await fresh.locator('#pr-head .pr-state span:not(.badge)').first().textContent(), 'topic → upstream:main');
+  // A stacked one is still the checkout.
+  const go = fresh.waitForResponse('**/api/pr/switch');
+  await fresh.selectOption('#pr-switch', `${REPO}/pull/14`);
+  await go;
+  assert.deepEqual(switched, [`${REPO}/pull/14`]);
+  await fresh.close();
+
+  // One pull request on the branch: the list as it always was.
+  const one = await newPage({ prs: STACK });
+  await one.waitForSelector(`#pr-switch option[value="${REPO}/pull/14"]`, { state: 'attached' });
+  assert.equal(await one.locator('#pr-switch optgroup').count(), 0);
+  await one.close();
+
+  // And none, with more than one repository looked in: the note says where.
+  const none = await newPage({ prs: STACK, st: { ...two, pr: null, branchPrs: [] }, ready: '#pr-head .pr-branch-name' });
+  assert.equal(await none.locator('#pr-head .pr-note').textContent(),
+    'No pull request for topic in heal-data-stewards/heal-vlmd-AI-pipeline or upstream/heal-vlmd-AI-pipeline yet.');
+  await none.close();
+});
+
 // The list behind the tab is not polled, and a PR stacked from the terminal
 // after the page loaded would leave the tab saying nothing is stacked here.
 // Opening the tab fetches it again; a route added later answers first.
