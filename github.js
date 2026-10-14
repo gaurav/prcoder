@@ -243,7 +243,11 @@ async function readFiles(cwd, url) {
     for (const { viewerViewedState, ...f } of pr.files.nodes) {
       files.push({ ...f, viewed: viewerViewedState === 'VIEWED' });
     }
-    after = pr.files.pageInfo.hasNextPage ? pr.files.pageInfo.endCursor : null;
+    const { hasNextPage, endCursor } = pr.files.pageInfo;
+    // Read as "no more pages", a next page with no cursor to it would end the
+    // list short with nothing to say so -- the bug this paging is here to fix.
+    if (hasNextPage && !endCursor) throw new Error(`GitHub said ${url} has more files, but gave no cursor to them`);
+    after = hasNextPage ? endCursor : null;
   } while (after);
 
   return { ...snapshot, files };

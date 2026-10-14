@@ -418,3 +418,11 @@ test('a PR that moves during every read of its files is an error, not a list', {
     await assert.rejects(loadPr(os.tmpdir()), /moved on GitHub during each of 3 reads of its files/);
   });
 });
+
+test('a next page of files with no cursor to it is an error, not the end', { skip: unix }, async () => {
+  const lost = page([file(0)], null);
+  lost.data.repository.pullRequest.files.pageInfo.hasNextPage = true;
+  await withPr(view, [lost], async () => {
+    await assert.rejects(loadPr(os.tmpdir()), /has more files, but gave no cursor to them/);
+  });
+});
