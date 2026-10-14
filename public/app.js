@@ -237,11 +237,12 @@ function connect(query = '') {
     turn(false);
     const why = e.code === 1008 ? `refused: ${e.reason}` : 'coding agent exited';
     term.write(`\r\n\x1b[31m[${why}]\x1b[0m\r\n`);
+    // The PTY a quit killed closes the socket after quitPrcoder has put up the
+    // bar with its own line and no Start, so there is nothing left to do here.
+    if (quit) return;
     // The bar's note repeats the terminal's line, not the reason: that is
-    // already there in red, a line up. A quit has already filled the bar with
-    // its own line and no Start, and the PTY it killed closes the socket after.
-    const note = exitForm.querySelector('span');
-    if (note) note.textContent = e.code === 1008 ? 'Start refused.' : 'Coding agent has exited.';
+    // already there in red, a line up.
+    exitForm.querySelector('span').textContent = e.code === 1008 ? 'Start refused.' : 'Coding agent has exited.';
     exitForm.hidden = false;
     // Refit now rather than waiting on the ResizeObserver: in a page that isn't
     // in front it never delivered the shrink, and the terminal went on
@@ -249,7 +250,7 @@ function connect(query = '') {
     sync();
     // Start, not the first button: Quit is first in the bar, and Enter after
     // an exit should start again rather than ask about quitting.
-    document.getElementById('term-start')?.focus();
+    document.getElementById('term-start').focus();
   };
 }
 
@@ -276,12 +277,14 @@ exitForm.onsubmit = (e) => {
   term.reset();
   connect(new URLSearchParams(new FormData(exitForm)).toString());
 };
-// Quit, from the exit bar or the menu. The server's quit kills the PTY, so the
-// exit bar is on its way up anyway (ws.onclose); it is filled with the fact
-// rather than with a Start that would reach nothing, and from the menu, where
-// the bar may be out of sight, a sticky toast says the same. The menu's Quit
-// goes grey with it: picked again, it would reach no server and put a network
-// error in the toast's one slot, over the line saying the quit worked.
+// Quit, from the exit bar or the menu. The exit bar goes up here, filled with
+// the fact rather than with a Start that would reach nothing; `quit` tells
+// ws.onclose, when the killed PTY's socket closes, to leave it so. From the
+// menu, where the bar may be out of sight, a sticky toast says the same. The
+// menu's Quit goes grey with it: picked again, it would reach no server and
+// put a network error in the toast's one slot, over the line saying the quit
+// worked.
+let quit = false;
 async function quitPrcoder(fromMenu = false) {
   try {
     let r = await api('/api/quit', {});
@@ -291,8 +294,10 @@ async function quitPrcoder(fromMenu = false) {
       r = await api('/api/quit', { force: true });
     }
     const gone = 'prcoder has quit — this tab can be closed.';
+    quit = true;
     exitForm.replaceChildren(gone);
     exitForm.hidden = false;
+    sync();   // as ws.onclose does, and for the same reason
     document.getElementById('menu-quit').disabled = true;
     if (fromMenu) toast(gone, false, true);
   } catch (e) {
