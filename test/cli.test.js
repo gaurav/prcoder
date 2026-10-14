@@ -272,9 +272,11 @@ test('prcoder refuses to start outside a git checkout', async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'prcoder-nogit-'));
   try {
     // /usr/bin/false and a timeout, as above: a run that got past the check
-    // would be a listening server.
+    // would be a listening server. Without git's own variables, which a hook
+    // exports: a GIT_DIR would answer for the tmpdir (test/git.test.js says more).
+    const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith('GIT_')));
     const out = await promisify(execFile)('node', [new URL('../server.js', import.meta.url).pathname, '--no-open'],
-      { cwd: dir, env: { ...process.env, PRCODER_AGENT_BIN: '/usr/bin/false' }, timeout: 15_000 })
+      { cwd: dir, env: { ...env, PRCODER_AGENT_BIN: '/usr/bin/false' }, timeout: 15_000 })
       .then((r) => ({ code: 0, ...r }), (e) => ({ code: e.code, stdout: e.stdout, stderr: e.stderr }));
     assert.equal(out.code, 2);
     assert.match(out.stderr, /^prcoder: .* is not inside a git checkout\n {2}fatal: not a git repository/);

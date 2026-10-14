@@ -8,6 +8,15 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { notAWorkTree, syncState, compareUrl, githubUrl, originOwner, prScope, userDirt, remoteBranchHead, trackingHead, snapshot, localPatch, branchesBelow } from '../git.js';
 
+// git finds the repository through GIT_DIR and GIT_WORK_TREE before it looks
+// at cwd, and a git hook exports them. Under a hook, `npm test` ran every
+// throwaway repo's commands below against the clone it was run in: on
+// 2026-10-14 that rewrote origin's URL, deleted its remote-tracking branches,
+// renamed the checked-out branch and committed to it. So none of git's own
+// variables reach this file's children, which are both the helpers here and
+// git.js's run() -- it spreads process.env.
+for (const k of Object.keys(process.env)) if (k.startsWith('GIT_')) delete process.env[k];
+
 const git = promisify(execFile);
 // For the throwaway repos below. The identity goes on the command, not into a
 // config: a CI runner has none set, and `git commit` there is a hard failure

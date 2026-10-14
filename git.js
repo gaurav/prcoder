@@ -44,6 +44,8 @@ const hasCommit = (rev, cwd) => asks(['rev-parse', '--verify', '--quiet', `${rev
  * not a repository, or one owned by someone else that safe.directory refuses
  * -- and that reason is the answer. Inside a `.git` directory or a bare repo it
  * exits 0 and prints `false`: a repo, but no checkout for the agent to work in.
+ * A GIT_DIR or GIT_WORK_TREE in the environment answers before `cwd` does, and
+ * is left to: every other git call here, and the agent, obey it too.
  */
 export async function notAWorkTree(cwd) {
   try {
