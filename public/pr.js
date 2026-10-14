@@ -212,12 +212,18 @@ export function renderHeader(status, prs, handlers) {
   // By URL, as the options are valued: the pull request on screen can be in
   // another repository with a number the list has, and by number the options
   // would never be rebuilt for it.
-  const keys = (prs ? '' : '?') + [...group.map((r) => `${r.pr.url}:${r.depth}${r.own ? '!' : ''}`), '|',
+  const keys = (prs ? '' : '?') + (status.dirtyFiles.length ? '~' : '') + [...group.map((r) => `${r.pr.url}:${r.depth}${r.own ? '!' : ''}`), '|',
     ...shown.map(({ pr, depth }) => `${pr.url}:${depth}`)].join(',');
   // Nor while it has focus, the one sign a page gets that its dropdown may be
   // open: a list landing then replaced the options under the open dropdown,
   // which closed it or moved the pick. It is rebuilt as it loses focus, from
   // the status painted last -- each call here replaces the one before.
+  // Uncommitted work would make `gh pr checkout` fail, so offer the fix instead
+  // of the switch. Claude is right there in the next pane. The branch's own
+  // pull requests are the exception: picking one checks nothing out, so with
+  // a group to pick from the switcher stays, beside Commit, with every option
+  // but the group's own disabled.
+  const blocked = status.dirtyFiles.length > 0;
   const stale = sel.dataset.keys !== keys;
   const open = document.activeElement === sel;
   sel.onblur = stale && open ? () => renderHeader(status, prs, handlers) : null;
@@ -228,8 +234,8 @@ export function renderHeader(status, prs, handlers) {
     sel.replaceChildren(
       h('option', { value: '' }, shown.length || group.length ? 'no pull request' : prs ? 'no open pull requests' : 'no list of pull requests yet'),
       group.length ? h('optgroup', { label: 'On this branch' },
-        ...group.map(({ pr: p, depth, own }) => h('option', { value: p.url, ...(own ? { dataset: { choose: '1' } } : {}) }, label(p, depth)))) : null,
-      ...shown.map(({ pr: p, depth }) => h('option', { value: p.url }, label(p, depth))),
+        ...group.map(({ pr: p, depth, own }) => h('option', { value: p.url, disabled: blocked && !own, ...(own ? { dataset: { choose: '1' } } : {}) }, label(p, depth)))) : null,
+      ...shown.map(({ pr: p, depth }) => h('option', { value: p.url, disabled: blocked }, label(p, depth))),
     );
     sel.onchange = () => {
       const own = sel.selectedOptions[0]?.dataset.choose;
@@ -242,10 +248,9 @@ export function renderHeader(status, prs, handlers) {
   // Always re-assert: a failed switch has to snap back to the real branch.
   sel.value = status.pr?.url ?? '';
 
-  // Uncommitted work would make `gh pr checkout` fail, so offer the fix instead
-  // of the switch. Claude is right there in the next pane.
-  const blocked = status.dirtyFiles.length > 0;
-  sel.hidden = blocked || status.scope === 'other-repo';
+  sel.hidden = (blocked && !group.length) || status.scope === 'other-repo';
+  sel.title = blocked ? 'pick one of this branch\'s pull requests; commit or stash to check out another'
+    : 'switch to another open pull request';
   commit.hidden = !blocked;
   commit.onclick = () => onCommit(status.dirtyFiles);
   commit.textContent = `Commit ${status.dirtyFiles.length} file${status.dirtyFiles.length === 1 ? '' : 's'}…`;

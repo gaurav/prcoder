@@ -2212,6 +2212,40 @@ test('a branch with two pull requests gets an "On this branch" group, and a pick
   await none.close();
 });
 
+// A pick in the group needs no checkout, so a dirty tree leaves the switcher
+// up beside Commit, the group's own enabled and everything else disabled.
+// Without a group the Commit button replaces it, as it always did.
+test('a dirty tree keeps a switcher that has the group, with only its own picks enabled', { skip }, async () => {
+  const theirs = { number: 12, title: 'Into the parent', url: 'https://github.com/upstream/heal-vlmd-AI-pipeline/pull/12', state: 'OPEN',
+    isDraft: false, headRefName: 'topic', baseRefName: 'main', repo: 'upstream/heal-vlmd-AI-pipeline',
+    headRepo: 'heal-data-stewards/heal-vlmd-AI-pipeline', headOwner: 'heal-data-stewards', isCrossRepository: true };
+  const dirty = { ...status, dirtyFiles: ['README.md'], branchPrs: [...status.branchPrs, theirs] };
+  const fresh = await newPage({ prs: STACK, st: dirty });
+  await fresh.waitForSelector(`#pr-switch optgroup option[value="${theirs.url}"]`, { state: 'attached' });
+  assert.equal(await fresh.$eval('#pr-switch', (s) => s.hidden), false);
+  assert.equal(await fresh.$eval('#pr-commit', (b) => b.hidden), false);
+  assert.deepEqual(await fresh.$$eval('#pr-switch option', (os) => os.map((o) => [o.value.replace(/.*\//, ''), o.disabled])), [
+    ['', false], ['12', false], ['13', true], ['14', true], ['12', false],
+  ]);
+  const chosen = [];
+  await fresh.route('**/api/pr/choose', (r) => { chosen.push(r.request().postDataJSON().url); return r.fulfill({ json: dirty }); });
+  const sent = fresh.waitForResponse('**/api/pr/choose');
+  await fresh.selectOption('#pr-switch', theirs.url);
+  await sent;
+  assert.deepEqual(chosen, [theirs.url]);
+  // Clean again on the next poll: every option back.
+  await fresh.route('**/api/status', (r) => r.fulfill({ json: { ...dirty, dirtyFiles: [] } }));
+  await fresh.click('#pr-refresh');
+  await fresh.waitForFunction(() => document.getElementById('pr-commit').hidden);
+  assert.deepEqual(await fresh.$$eval('#pr-switch option', (os) => os.map((o) => o.disabled)), [false, false, false, false, false]);
+  await fresh.close();
+
+  const plain = await newPage({ prs: STACK, st: { ...status, dirtyFiles: ['README.md'] } });
+  await plain.waitForFunction(() => !document.getElementById('pr-commit').hidden);
+  assert.equal(await plain.$eval('#pr-switch', (s) => s.hidden), true);
+  await plain.close();
+});
+
 // The list behind the tab is not polled, and a PR stacked from the terminal
 // after the page loaded would leave the tab saying nothing is stacked here.
 // Opening the tab fetches it again; a route added later answers first.
