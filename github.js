@@ -278,8 +278,10 @@ async function viewKnown(cwd, { url, repo, state }, checks) {
  * branchPrs does, open ones stand alone if there are any.
  *
  * Answers `{ prs, remember }`. `remember` is the new `known` after a search --
- * with no pull requests in it when there are none -- and undefined when there
- * is nothing to write.
+ * with no pull requests in it when there are none, which removes the branch's
+ * entry -- and undefined when there is nothing to write: on a branch with none
+ * known and none found, which is every poll there, it would rewrite the file
+ * to say what it already says.
  */
 export async function lookupPrs(cwd, repos, known, search, { fresh = false, checks = true, now = Date.now() } = {}) {
   const read = (k) => viewKnown(cwd, k, checks).catch((e) => {
@@ -303,6 +305,7 @@ export async function lookupPrs(cwd, repos, known, search, { fresh = false, chec
   const all = [...found, ...kept.filter(Boolean)];
   const open = all.filter((p) => p.state === 'OPEN');
   const shown = open.length ? open : all;
+  if (!known && !shown.length) return { prs: shown, remember: undefined };
   return { prs: shown, remember: { searched: now, prs: shown.map(({ url, repo, state }) => ({ url, repo, state })) } };
 }
 

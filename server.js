@@ -209,6 +209,7 @@ async function findPrs(branch, { has, checks, fresh = false }) {
   const search = async () => branchPrs(repo, repos, branch, { has, checks, home: await pushRepo(repo, branch, repoOf) });
   const { prs, remember } = await lookupPrs(repo, repos, await readPrs(repo, branch), search, { fresh, checks });
   // A cache: a write that fails costs a search on the next poll, not this one.
+  // Nothing to write on a branch with none known and none found (lookupPrs).
   if (remember) await writePrs(repo, branch, remember).catch((e) => term.debug(`prs.json not written: ${e.message}`));
   return prs;
 }

@@ -670,9 +670,14 @@ test('a search runs when nothing is known, when asked, when one is due, and when
     assert.equal(search.runs, 1, why);
     assert.deepEqual(out.remember, { searched: NOW, prs: [{ url: HEADS[0].url, repo: 'up/repo', state: 'OPEN' }] }, why);
   }
-  // Nothing found is remembered as nothing, which the store keeps as no entry.
+  // Nothing known and nothing found, every poll on a branch with none: nothing to write.
   const { out } = await ghCalls(viewing([]), () => lookupPrs(os.tmpdir(), ['up/repo'], null, searching([]), { now: NOW }));
-  assert.deepEqual(out, { prs: [], remember: { searched: NOW, prs: [] } });
+  assert.deepEqual(out, { prs: [], remember: undefined });
+  // Something known and nothing found now is remembered as nothing, which the
+  // store keeps as no entry: here, one in a repository no longer looked in.
+  const gone = { ...known([HEADS[0]]), prs: [{ ...known([HEADS[0]]).prs[0], repo: 'gone/repo' }] };
+  const forgot = await ghCalls(viewing([]), () => lookupPrs(os.tmpdir(), ['up/repo'], gone, searching([]), { now: NOW }));
+  assert.deepEqual(forgot.out, { prs: [], remember: { searched: NOW, prs: [] } });
 });
 
 // Remembered closed, so read without the checks; open now, so they are asked
