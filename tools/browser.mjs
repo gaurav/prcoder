@@ -476,6 +476,23 @@ console.log('stack:   ', await page.$$eval('#pr-body .pr-row .pr-num', (as) => a
 await page.locator('#pr').screenshot({ path: path.join(out, 'pr-stack.png') });
 await page.locator('#pr-head .tab').nth(0).click();
 
+// The PRs tab: every open PR in its long form, this one marked. The screenshot
+// is the check that the facts line, the lead and the closes read at the pane's
+// 375px default, which no selector can say.
+await page.locator('#pr-head .tab', { hasText: 'PRs' }).click();
+await page.waitForSelector('#pr-body .pr-facts, #pr-body .empty');
+console.log('prs:     ', await page.locator('#pr-head .tab', { hasText: 'PRs' }).innerText(), '|',
+  await page.$eval('#pr-body', (b) => {
+    const here = b.querySelector('.pr-row.here');
+    const li = b.querySelector('.pr-into > ul > li');
+    return `here=${here?.querySelector('.pr-num').textContent ?? 'none'} rows=${b.querySelectorAll('.pr-facts').length}`
+      + ` first: ${li?.querySelector(':scope > .pr-facts')?.textContent.trim()} / ${JSON.stringify(li?.querySelector(':scope > .pr-lead')?.textContent.slice(0, 50) ?? null)}`
+      + ` closes ${li?.querySelectorAll(':scope > .pr-closes a').length ?? 0}`;
+  }),
+'  (want the count of open PRs on the tab, this PR marked with no Switch, and every row with size, pie, merge word, age, lead and closes)');
+await page.locator('#pr').screenshot({ path: path.join(out, 'pr-prs.png') });
+await page.locator('#pr-head .tab').nth(0).click();
+
 // The measure, which is inert at the pane's 375px default and is the whole
 // reason for the cap at the other end of its range.
 await drag('#gut-pr', 900, 450);
