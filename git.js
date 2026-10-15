@@ -422,13 +422,27 @@ export async function localPatch(cwd, { baseOid, baseRef, head, path, from, addi
 }
 
 /**
+ * `owner/repo` of `url` when the whole of it is a pull request's URL on
+ * github.com, and an error otherwise. Anchored at both ends, where parsePrUrl
+ * is not: it reads URLs gh gave, and this one comes from the page, on its way
+ * to gh's argv -- `--flag github.com/o/r/pull/1` and
+ * `https://elsewhere.example/github.com/o/r/pull/1` both contain one.
+ */
+export function wholePrRepo(url) {
+  const m = String(url ?? '').match(/^https:\/\/github\.com\/([\w-]+)\/([\w.-]+)\/pull\/\d+$/);
+  if (!m) throw new Error(`not a pull request URL: ${url}`);
+  return `${m[1]}/${m[2]}`;
+}
+
+/**
  * By URL, never by number: gh resolves a bare number in its base repository,
  * and the switcher can hold a pull request from the parent of a fork, whose
- * number names a stranger there. parsePrUrl is the check that `url` is one
- * before it reaches gh's argv.
+ * number names a stranger there. wholePrRepo is the check that `url` is one
+ * before it reaches gh's argv; which repositories it may be in is the
+ * route's to say (server.js).
  */
 export const checkoutPr = (cwd, url) => {
-  parsePrUrl(String(url ?? ''));
+  wholePrRepo(url);
   return run('gh', ['pr', 'checkout', url], { cwd, timeout: 120_000 });
 };
 

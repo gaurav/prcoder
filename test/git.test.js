@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { notAWorkTree, syncState, compareUrl, githubUrl, originOwner, remoteRepo, remoteRepos, repoInfo, prScope, userDirt, remoteBranchHead, trackingHead, snapshot, localPatch, branchesBelow } from '../git.js';
+import { notAWorkTree, syncState, compareUrl, githubUrl, originOwner, remoteRepo, remoteRepos, repoInfo, prScope, wholePrRepo, userDirt, remoteBranchHead, trackingHead, snapshot, localPatch, branchesBelow } from '../git.js';
 
 // git finds the repository through GIT_DIR and GIT_WORK_TREE before it looks
 // at cwd, and a git hook exports them. Under a hook, `npm test` ran every
@@ -34,6 +34,16 @@ const testGit = (cwd, ...args) => git('git', [...TEST_CONFIG, ...args], { cwd })
 // The four inputs come from `git rev-parse --verify` and `git merge-base
 // --is-ancestor`; the exit codes those return are checked in git.js, not here.
 const state = (o) => syncState({ head: 'aaa', remoteHead: 'bbb', remoteKnownLocally: true, remoteIsAncestor: true, ...o });
+
+// The page's switch request on its way to gh's argv: the whole string is the
+// URL, or it is refused.
+test('a switch takes the whole of a pull request URL, and nothing with one inside it', () => {
+  assert.equal(wholePrRepo('https://github.com/heal-data-stewards/heal-vlmd.AI_pipeline/pull/12'), 'heal-data-stewards/heal-vlmd.AI_pipeline');
+  for (const url of ['140', undefined, '--flag https://github.com/a/b/pull/1', 'https://github.com/a/b/pull/1 --flag',
+    'https://elsewhere.example/github.com/a/b/pull/1', 'https://github.com/a/b/issues/1', 'https://github.com/a/b/pull/1/files']) {
+    assert.throws(() => wholePrRepo(url), /not a pull request URL/, String(url));
+  }
+});
 
 test('a branch GitHub has never seen is unpushed, not behind', () => {
   assert.equal(state({ remoteHead: null }), 'unpushed');

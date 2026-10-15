@@ -280,6 +280,14 @@ test('a switch is refused before gh unless it names a pull request', async () =>
   });
   assert.equal(res.status, 500);
   assert.deepEqual(await res.json(), { error: 'not a pull request URL: 140' });
+  // A URL inside something else is not one: a flag in front of it, or
+  // another host with GitHub's path behind it.
+  for (const url of ['--repo=x/y https://github.com/a/b/pull/1', 'https://elsewhere.example/github.com/a/b/pull/1']) {
+    const r = await fetch(`${base}/api/pr/switch`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ url }),
+    });
+    assert.deepEqual(await r.json(), { error: `not a pull request URL: ${url}` });
+  }
 });
 
 test('a choice is refused unless the last poll listed it for the branch', async () => {

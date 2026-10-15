@@ -12,7 +12,7 @@ import { text as readBody } from 'node:stream/consumers';
 import { spawn as ptySpawn } from 'node-pty';
 import { WebSocketServer } from 'ws';
 import { loadPr, prHeads, prUrl, prBody, listPrs, branchPrs, pickPr, issueLinks, lookupRef, setViewed, setBody, createIssue, fetchPatches, runCount } from './github.js';
-import { notAWorkTree, snapshot, currentBranch, headCommit, hasCommit, repoInfo, prScope, compareUrl, githubUrl, originOwner, checkoutPr, pushBranch, remoteBranchHead, trackingHead, localPatch, branchesBelow } from './git.js';
+import { notAWorkTree, snapshot, currentBranch, headCommit, hasCommit, repoInfo, prScope, compareUrl, githubUrl, originOwner, wholePrRepo, checkoutPr, pushBranch, remoteBranchHead, trackingHead, localPatch, branchesBelow } from './git.js';
 import { bucket, fileUrl, fileViews } from './files.js';
 import { readPort, writePort, pick, useQueueFile, movedQueue, issueUrl } from './store.js';
 import { readQueue, writeQueue, quote } from './queue.js';
@@ -329,6 +329,11 @@ const routes = {
   },
 
   'POST /api/pr/switch': async ({ url } = {}) => {
+    // Only into a repository the branch's pull requests are looked for in,
+    // which is every one the page can list: the number-only route this
+    // replaced could not reach any other, and this one should not either.
+    const where = wholePrRepo(url);
+    if (!(await repoFacts()).repos.includes(where)) throw new Error(`${where} is not one of this clone's repositories`);
     await checkoutPr(repo, url);
     term.verbose(`checked out ${url}`);
     // Clear rather than pin: the checkout put us on the branch, so following it
