@@ -817,7 +817,17 @@ main.diff-off #diff-wrap { display: none; }
 .item .disclose { flex: none; width: 12px; background: none; border: 0; color: var(--dim); cursor: pointer; font-size: 11px; padding: 0; line-height: 1; }
 .item .disclose:hover { color: var(--accent); }
 li.issue-body.md { font-size: 12px; max-width: none; padding: 2px 6px 8px 22px; }
-li.issue-body .open-issue { display: inline-block; margin-top: 2px; text-decoration: none; }
+li.issue-body .open-issue { display: inline-block; text-decoration: none; }
+/* Moving an issue between milestones: a row is dragged by any part of it, a
+   summary lights while one is over it, and the opened row's select is the
+   keyboard's way to the same move. */
+.item.source[draggable="true"] { cursor: grab; }
+.fold.milestone > summary.over { outline: 1px dashed var(--accent); outline-offset: 1px; border-radius: 3px; }
+li.issue-body .issue-ways { display: flex; gap: 8px; align-items: center; margin-top: 2px; }
+li.issue-body select.milestone {
+  font: inherit; font-size: 12px; padding: 1px 4px; color: var(--fg); background: var(--bg);
+  border: 1px solid var(--line); border-radius: 4px;
+}
 
 /* The row's only reliable drag handle: the text gives up draggable while it is
    being clicked, so the caret can land where you aimed. Unlike .actions it does
