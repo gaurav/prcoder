@@ -535,16 +535,12 @@ test('a tab with nothing to count is named, not numbered', () => {
 });
 
 // A count that has run out keeps its numbers -- `(11/11)` is what says all
-// eleven were viewed -- and tabDone is what marks it finished.
-test('a tab whose count has run out keeps the count, and is done', () => {
+// eleven were viewed -- and tabDone, in test/ui.test.js, is what marks it finished.
+test('a tab whose count has run out keeps the count', () => {
   assert.equal(tabLabel('Detail', { done: 10, total: 10 }), 'Detail (10/10)');
   assert.equal(tabLabel('Files', { done: 1, total: 1 }), 'Files (1/1)');
-  assert.equal(tabDone({ done: 10, total: 10 }), true);
-  assert.equal(tabDone({ done: 9, total: 10 }), false);
-  // Distinct from the nothing-to-count case, which is the bare name and never
-  // done -- so a description with no checklist never claims to have finished one.
+  // Distinct from the nothing-to-count case, which is the bare name.
   assert.equal(tabLabel('Detail', { done: 0, total: 0 }), 'Detail');
-  assert.equal(tabDone({ done: 0, total: 0 }), false);
 });
 
 test('a tab with something to count carries done over total', () => {
