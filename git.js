@@ -37,7 +37,11 @@ const asks = async (args, cwd, ok) => (await answer(args, cwd, ok)) !== null;
 /** Whether this clone has `rev` as a commit. 1 is "no"; 128 would be a bad name. */
 export const hasCommit = (rev, cwd) => asks(['rev-parse', '--verify', '--quiet', `${rev}^{commit}`], cwd);
 
-/** The commit HEAD is at, which the poll reads once and hands on. */
+/**
+ * The commit HEAD is at. The poll reads it before the branch lookup, to rank
+ * the pull requests it finds (pickPr); snapshot reads its own after, beside
+ * `git status`, since the lookup takes seconds and a commit can land in them.
+ */
 export const headCommit = (cwd) => text(['rev-parse', 'HEAD'], cwd);
 
 /**
@@ -201,13 +205,17 @@ export async function repoInfo(cwd) {
 /**
  * `remoteHead` comes from the caller because only the PR knows it — and for a
  * fork it is not on origin at all, so `git ls-remote origin` would miss it.
- * `branch` and `head` likewise, because the caller has just asked for them,
- * and `has` is the caller's hasCommit, which it may already have asked about
- * this very commit (the lookup's stranger check, server.js).
+ * `branch` likewise, because the caller has just asked for it, and `has` is
+ * the caller's hasCommit, which it may already have asked about this very
+ * commit (the lookup's stranger check, server.js). HEAD is read here, with the
+ * status, and not taken from the caller: the caller's was read before the
+ * lookup's gh calls, and a commit made during them would pair the old head
+ * with the new tree -- "in sync" with a commit not yet pushed.
  */
-export async function snapshot(cwd, remoteHead, branch, head, has = (rev) => hasCommit(rev, cwd)) {
+export async function snapshot(cwd, remoteHead, branch, has = (rev) => hasCommit(rev, cwd)) {
   // Independent reads, so they run together rather than one spawn at a time.
-  const [status, known] = await Promise.all([
+  const [head, status, known] = await Promise.all([
+    headCommit(cwd),
     git(['status', '--porcelain', '--untracked-files=no'], cwd),
     remoteHead && has(remoteHead),
   ]);

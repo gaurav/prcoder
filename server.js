@@ -193,8 +193,10 @@ const forPage = ({ checks, ...p }) => p;
 async function status({ full = false } = {}) {
   const calls = runCount();
 
-  // Taken once and threaded through: the remote head is not known yet, and
-  // asking git the same four questions three times a minute is just noise.
+  // The branch is taken once and threaded through: the remote head is not
+  // known yet, and asking git the same four questions three times a minute is
+  // just noise. HEAD here only ranks the branch's pull requests; snapshot reads
+  // it again beside the tree's status, which is what the sync light compares.
   const [branch, head] = await Promise.all([currentBranch(repo), headCommit(repo)]);
   if (chosen && chosen.branch !== branch) chosen = null;
 
@@ -237,7 +239,7 @@ async function status({ full = false } = {}) {
   // you push (#19). The create route is the one place that still asks origin,
   // because it pushes on the answer.
   const oid = pr?.headRefOid ?? heads?.headRefOid ?? await trackingHead(repo, branch);
-  const snap = await snapshot(repo, oid, branch, head, has);
+  const snap = await snapshot(repo, oid, branch, has);
   const scope = prScope(pr, { repos: facts.repos, found: found.map((p) => p.url) });
   const tracked = scope === 'current' || scope === 'none';
 

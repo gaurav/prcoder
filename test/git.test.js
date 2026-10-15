@@ -263,6 +263,9 @@ test('a branch name that is the tail of another branch is not mistaken for it', 
     const snap = await snapshot(work, await trackingHead(work, 'feature/topic'), 'feature/topic');
     assert.equal(snap.sync, 'ahead');
     assert.equal(snap.ahead, 1);
+    // Its own read of HEAD, taken with the status: the poll's earlier one can
+    // be from before a commit made during the branch lookup.
+    assert.equal(snap.head, (await testGit(work, 'rev-parse', 'HEAD')).stdout.trim());
   } finally {
     await fs.rm(dir, { recursive: true, force: true });
   }
