@@ -351,6 +351,9 @@ const routes = {
   'POST /api/pr/choose': async ({ url } = {}) => {
     const found = last?.branchPrs?.find((p) => p.url === url);
     if (!found) throw new Error(`${url ?? '(nothing)'} is not a pull request for this branch`);
+    // A pull request named on the command line outranks any choice (status),
+    // so the pick would succeed and change nothing. Dropped, as a switch drops it.
+    target = undefined;
     chosen = { branch: last.branch, url };
     term.verbose(`showing ${url} for ${last.branch}`);
     return status({ full: true });
