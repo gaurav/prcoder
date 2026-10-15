@@ -715,7 +715,7 @@ test('a known pull request the search did not find is kept only while it is the 
 });
 
 // Remembered closed, so read without the checks; open now, so they are asked
-// for after all, since the search its new state sets off may miss it.
+// for after all if the search its new state sets off misses it, and only then.
 test('a remembered pull request reopened since is read with its checks', { skip: unix }, async () => {
   const closed = known([{ ...HEADS[0], state: 'CLOSED' }]);
   const search = searching([]);
@@ -727,6 +727,11 @@ test('a remembered pull request reopened since is read with its checks', { skip:
   // ghCalls hands the calls back in no fixed order.
   assert.deepEqual(calls.map((c) => flag(c, '--json').includes('statusCheckRollup')).sort(), [false, true]);
   assert.deepEqual(out.prs.map((p) => [p.number, p.state, p.checks]), [[1, 'OPEN', rollup([])]]);
+  // Found by the search, which brings its checks: no second read.
+  const found = await ghCalls(viewing([reopened]), () =>
+    lookupPrs(os.tmpdir(), ['up/repo'], closed, searching([{ ...HEADS[0], repo: 'up/repo', checks: rollup([]) }]), { now: NOW }));
+  assert.equal(found.calls.length, 1);
+  assert.deepEqual(found.out.prs.map((p) => p.checks), [rollup([])]);
 });
 
 // The URL is what gh is given, so it is held to the repository, not only the

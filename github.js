@@ -219,10 +219,7 @@ export async function branchPrs(cwd, repos, branch, { has = async () => new Set(
       if (rows.length < NARROW || ours.length) return ours;
       const wide = await mine(await ask(WIDE, BRANCH_FIELDS));
       if (!fields.includes('statusCheckRollup')) return wide;
-      return Promise.all(wide.map(async (p) => {
-        const heads = await prHeads(cwd, p.url);
-        return heads ? { ...p, checks: heads.checks } : p;
-      }));
+      return Promise.all(wide.map((p) => headChecks(cwd, p)));
     } catch (e) {
       if (!i) throw e;
       debug(`pull requests in ${repo} not read: ${e.message}`);
@@ -231,6 +228,12 @@ export async function branchPrs(cwd, repos, branch, { has = async () => new Set(
   }))).flat();
   const open = await list('open', checks ? [...BRANCH_FIELDS, 'statusCheckRollup'] : BRANCH_FIELDS);
   return open.length ? open : list('all', BRANCH_FIELDS);
+}
+
+/** The row with its checks from prHeads, for one read without them; as it was if that fails. */
+async function headChecks(cwd, p) {
+  const heads = await prHeads(cwd, p.url);
+  return heads ? { ...p, checks: heads.checks } : p;
 }
 
 // What gh says for a pull request that is not there, and for a repository it
@@ -247,17 +250,14 @@ export const SEARCH_EVERY = 10 * 60_000;
  * One remembered pull request read again by its URL, in branchPrs's shape:
  * `repo` is the repository the search found it in, and the checks come only
  * for one that was open, as branchPrs's pass for merged ones leaves them out.
- * One closed when remembered and open now -- reopened -- gets its checks from
- * prHeads, as one found only on branchPrs's wide pass does: keepPr takes them
- * for an open one, and the search its new state sets off may not find it.
+ * One reopened since comes back open without them; its new state sets off a
+ * search, which nearly always brings them, and lookupPrs asks prHeads only
+ * when that search does not find it.
  */
 async function viewKnown(cwd, { url, repo, state }, checks) {
   const fields = checks && state === 'OPEN' ? [...BRANCH_FIELDS, 'statusCheckRollup'] : BRANCH_FIELDS;
   const p = headSide({ ...JSON.parse(await gh(['pr', 'view', url, '--json', fields.join(',')], { cwd })), repo });
-  if ('statusCheckRollup' in p) return withChecks(p);
-  if (!checks || p.state !== 'OPEN') return p;
-  const heads = await prHeads(cwd, url);
-  return heads ? { ...p, checks: heads.checks } : p;
+  return 'statusCheckRollup' in p ? withChecks(p) : p;
 }
 
 /**
@@ -334,7 +334,11 @@ export async function lookupPrs(cwd, repos, known, search, { own = async (rows) 
     .map((k) => (seen.has(k.url) ? seen.get(k.url) : read(k))));
   const unread = kept.filter((p) => p?.unread);
   // In the repositories' order, as branchPrs answers, which pickPr ranks by.
-  const all = [...found, ...await own(kept.filter((p) => p && !p.unread))]
+  // One reopened since it was remembered was read without its checks, which
+  // keepPr takes for an open one; the search, had it found it, had them.
+  const mine = await Promise.all((await own(kept.filter((p) => p && !p.unread)))
+    .map((p) => (checks && p.state === 'OPEN' && !('checks' in p) ? headChecks(cwd, p) : p)));
+  const all = [...found, ...mine]
     .sort((a, b) => repos.indexOf(a.repo) - repos.indexOf(b.repo));
   const open = all.filter((p) => p.state === 'OPEN');
   const shown = open.length ? open : all;
