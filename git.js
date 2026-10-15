@@ -191,7 +191,9 @@ export async function repoInfo(cwd) {
   const repos = [...new Set([nameWithOwner, parent?.nameWithOwner, ...remotes.map((r) => r.repo)].filter(Boolean))];
   return {
     defaultBranch: defaultBranchRef.name, nameWithOwner, repos,
-    remotes: Object.fromEntries(remotes.map((r) => [r.repo, r.name])),
+    // The first remote for each repository, so origin keeps its own when
+    // another remote names the same one: fromEntries keeps the last.
+    remotes: Object.fromEntries(remotes.toReversed().map((r) => [r.repo, r.name])),
     prefix: await text(['rev-parse', '--show-prefix'], cwd),
   };
 }

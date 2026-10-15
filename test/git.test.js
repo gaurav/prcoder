@@ -394,6 +394,8 @@ test('repoInfo lists gh\'s base repository, its parent, then the remotes, once e
     await git('git', ['remote', 'add', 'origin', 'git@github.com:me/repo.git'], { cwd: dir });
     await git('git', ['remote', 'add', 'upstream', 'https://github.com/up/repo'], { cwd: dir });
     await git('git', ['remote', 'add', 'mirror', 'git@gitlab.com:me/repo.git'], { cwd: dir });
+    // A second name for origin's repository, listed after it: origin keeps it.
+    await git('git', ['remote', 'add', 'backup', 'git@github.com:me/repo.git'], { cwd: dir });
     const info = await withGh(view, () => repoInfo(dir));
     assert.deepEqual(info.repos, ['up/repo', 'grand/repo', 'me/repo']);
     assert.deepEqual(info.remotes, { 'me/repo': 'origin', 'up/repo': 'upstream' });
