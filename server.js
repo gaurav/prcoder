@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { text as readBody } from 'node:stream/consumers';
 import { spawn as ptySpawn } from 'node-pty';
 import { WebSocketServer } from 'ws';
-import { loadPr, prHeads, prUrl, prBody, parsePrUrl, listPrs, branchPrs, lookupPrs, ownPrs, pickPr, issueLinks, lookupRef, setViewed, setBody, createIssue, fetchPatches, runCount, repoIssues } from './github.js';
+import { loadPr, prHeads, prUrl, prBody, parsePrUrl, listPrs, branchPrs, lookupPrs, ownPrs, pickPr, issueLinks, lookupRef, setViewed, setBody, createIssue, fetchPatches, runCount, repoIssues, setMilestone } from './github.js';
 import { notAWorkTree, snapshot, currentBranch, headCommit, commitsKnown, commitMemo, repoInfo, pushRepo, prScope, compareUrl, githubUrl, originOwner, wholePrRepo, checkoutPr, pushBranch, remoteBranchHead, trackingHead, localPatch, branchesBelow } from './git.js';
 import { bucket, fileUrl, fileViews } from './files.js';
 import { readPort, writePort, readPrs, writePrs, pick, useQueueFile, movedQueue, issueUrl } from './store.js';
@@ -339,6 +339,22 @@ const poll = () => (queuedPoll ??= serial(() => {
 // What the Issues tab was last shown (GET /api/issues), for a route that acts on one of its rows.
 let listing = null;
 
+/**
+ * What /api/issue/milestone may do, from `listing`: `{ number, title }` for
+ * gh, where `number` is an open issue the tab was shown and `title` one of
+ * its milestones' titles, or null to take the milestone off. The page's
+ * strings choose; the listing's are what reach gh -- the same hold
+ * /api/pr/choose keeps on a pick. Pure, and exported for test/api.test.js.
+ */
+export function issueMove(listing, { number, milestone } = {}) {
+  const issue = listing?.issues.find((i) => i.number === number);
+  if (!issue) throw new Error(`#${number ?? '?'} is not an open issue the Issues tab listed`);
+  if (milestone == null) return { number: issue.number, title: null };
+  const found = listing.milestones.find((m) => m.title === milestone);
+  if (!found) throw new Error(`"${milestone}" is not an open milestone the Issues tab listed`);
+  return { number: issue.number, title: found.title };
+}
+
 const routes = {
   // Unlocked only because poll() takes the lock itself.
   'GET /api/status': poll,
@@ -390,6 +406,19 @@ const routes = {
     ]);
     listing = found;
     return { ...found, mentions: numbers.map((number) => ({ number, ...links.get(number) })) };
+  },
+
+  /**
+   * An issue dropped on a milestone group in the Issues tab, or one picked in
+   * its row: the milestone is set on GitHub (setMilestone), and the tab reads
+   * the listing again. `milestone` is a title from the listing, or null to
+   * take it off; issueMove holds both to what the tab was shown.
+   */
+  'POST /api/issue/milestone': async (body = {}) => {
+    const { number, title } = issueMove(listing, body);
+    await setMilestone(repo, (await repoFacts()).nameWithOwner, number, title);
+    term.verbose(`put #${number} on ${title ? `milestone ${quote(title)}` : 'no milestone'}`);
+    return { ok: true };
   },
 
   'POST /api/pr/switch': async ({ url } = {}) => {

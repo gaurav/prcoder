@@ -422,3 +422,12 @@ body under it, drawn by the same renderer as a description and under the same ru
 the title with the issue's link into the coding agent's prompt, unsent, and ticks nothing, since
 there is no item to tick; the row stays where it is. ↓ copies the title into Local, tagged with
 the issue, as the PR tab's ↓ copies a checklist line.
+
+A row can be dragged onto a milestone's line, or onto **No milestone**, and that sets the issue's
+milestone on GitHub -- the one thing the tab writes, and the only kind of change it makes to an
+issue. The line lights up while a row is over it. The opened row has the same move as a select,
+for the keyboard: every open milestone and none, with the current one chosen. Either way the tab
+reads the listing again once GitHub has it, so the row moves group then and not before, and a
+refusal is a toast. A mention that is not one of the repository's open issues cannot be dragged,
+since there is nothing of it here to move. Milestones themselves are not made, renamed or closed
+from prcoder.
