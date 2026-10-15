@@ -2246,6 +2246,8 @@ test('a branch with two pull requests gets an "On this branch" group, and a pick
   const one = await newPage({ prs: STACK });
   await one.waitForSelector(`#pr-switch option[value="${REPO}/pull/14"]`, { state: 'attached' });
   assert.equal(await one.locator('#pr-switch optgroup').count(), 0);
+  // Nothing but options in the select: no group was once a "null" text node.
+  assert.deepEqual(await one.$$eval('#pr-switch', ([s]) => [...s.childNodes].filter((n) => n.nodeType !== 1).map((n) => n.textContent)), []);
   await one.close();
 
   // And none, with more than one repository looked in: the note says where.

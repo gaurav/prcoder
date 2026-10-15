@@ -233,8 +233,10 @@ export function renderHeader(status, prs, handlers) {
     sel.dataset.keys = keys;
     sel.replaceChildren(
       h('option', { value: '' }, shown.length || group.length ? 'no pull request' : prs ? 'no open pull requests' : 'no list of pull requests yet'),
-      group.length ? h('optgroup', { label: 'On this branch' },
-        ...group.map(({ pr: p, depth, own }) => h('option', { value: p.url, disabled: blocked && !own, ...(own ? { dataset: { choose: '1' } } : {}) }, label(p, depth)))) : null,
+      // Spread, not a null: replaceChildren is the DOM's, which has no `kids()`
+      // and makes a "null" text node of one inside the select.
+      ...(group.length ? [h('optgroup', { label: 'On this branch' },
+        ...group.map(({ pr: p, depth, own }) => h('option', { value: p.url, disabled: blocked && !own, ...(own ? { dataset: { choose: '1' } } : {}) }, label(p, depth))))] : []),
       ...shown.map(({ pr: p, depth }) => h('option', { value: p.url, disabled: blocked }, label(p, depth))),
     );
     sel.onchange = () => {
