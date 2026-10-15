@@ -203,7 +203,7 @@ export function renderHeader(status, prs, handlers) {
   // is the checkout it always was.
   const group = branchGroup(status.branchPrs ?? [], prs ?? [], status.pr, status.nameWithOwner);
   const grouped = new Set(group.map(({ pr }) => pr.url));
-  const shown = switcherRows(prs ?? [], status.pr).filter(({ pr }) => !grouped.has(pr.url));
+  const shown = switcherRows(prs ?? [], status.pr, status.nameWithOwner).filter(({ pr }) => !grouped.has(pr.url));
   // The repository in front of the number when it is not this checkout's, as
   // the tab's title writes it: `owner/repo#N`.
   const label = (p, depth) => `${depth ? `${'  '.repeat(depth)}└ ` : ''}`
@@ -330,13 +330,17 @@ export function stackOrder(prs) {
  * tree is built from rather than in front of the finished order: pinned there,
  * the open PRs based on its branch were roots of their own in the switcher
  * while its Stack tab showed them under it. First in that list, so it still
- * leads its group.
+ * leads its group. One in another repository than the list's (`repo`) leads
+ * the whole list instead, unnested: its branches are not the list's, and the
+ * walk goes by number, which the two repositories can share.
  */
-export function switcherRows(prs, current) {
+export function switcherRows(prs, current, repo) {
   const missing = current && !prs.some((p) => p.url === current.url);
   if (!missing) return stackOrder(prs);
   const { number, title, url, headRefName, baseRefName, isCrossRepository } = current;
-  return stackOrder([{ number, title, url, isDraft: false, headRefName, baseRefName, isCrossRepository }, ...prs]);
+  const row = { number, title, url, isDraft: false, headRefName, baseRefName, isCrossRepository };
+  if (repo && prRepo(current) !== repo) return [{ pr: row, depth: 0 }, ...stackOrder(prs)];
+  return stackOrder([row, ...prs]);
 }
 
 /**

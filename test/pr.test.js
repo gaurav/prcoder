@@ -460,6 +460,19 @@ test('a merged pull request on screen parents the ones still open on its branch'
   assert.deepEqual(rows(OPEN, { ...merged, baseRefName: 'main' }), ['5', '1', '-27', '-60']);
 });
 
+// The parent's #27 on screen, beside the list's own #27: by number the walk
+// took them for one and the list's lost its option. In another repository it
+// leads, unnested -- its branches are not the list's either.
+test('a pull request on screen from another repository leads, and costs the list nothing', () => {
+  const parents = { number: 27, title: 'Theirs', headRefName: 'initial-implementation', baseRefName: 'main',
+    url: 'https://github.com/upstream/prcoder/pull/27' };
+  const rows = (pr, repo) => switcherRows(OPEN, pr, repo).map(({ pr: p, depth }) => `${'-'.repeat(depth)}${p.url}`);
+  assert.deepEqual(rows(parents, 'gaurav/prcoder'), [parents.url, at(1), `-${at(27)}`, `-${at(60)}`]);
+  // From the list's own repository, it still goes into the tree.
+  assert.deepEqual(switcherRows(OPEN, { ...OPEN[1], url: at(5), number: 5 }, 'gaurav/prcoder').map(({ pr }) => pr.number),
+    [1, 5, 27, 60]);
+});
+
 // A fork's head is a branch in the fork. Named `main`, it would otherwise make
 // every PR into main look stacked on it and leave the switcher with no roots.
 test('a fork does not parent the PRs into a branch of the same name', () => {
