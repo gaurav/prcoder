@@ -1098,15 +1098,18 @@ test('no way in folds every pane: the terminal\'s fold, a reload, a closed diff'
 // the repository root, open or folded, without folding, and a refusal says so.
 // The clipboard is a stub: Firefox gives a page no way to read it back, and
 // Chromium only with a permission. The real writeText on localhost was
-// checked by hand in both engines (2026-10-09).
+// checked by hand in both engines (2026-10-09). An init, so it runs in the
+// page: what it wrote is window.copiedText, and window.refuseClipboard makes
+// the next write throw the way a browser's refusal does.
+const stubClipboard = () => {
+  window.copiedText = [];
+  Object.defineProperty(navigator, 'clipboard', { value: { writeText: async (t) => {
+    if (window.refuseClipboard) throw new DOMException('refused', 'NotAllowedError');
+    window.copiedText.push(t);
+  } } });
+};
 test('⧉ copies the open file\'s path, folded or not, and says when it cannot', { skip }, async () => {
-  const fresh = await newPage({ init: () => {
-    window.copiedText = [];
-    Object.defineProperty(navigator, 'clipboard', { value: { writeText: async (t) => {
-      if (window.refuseClipboard) throw new DOMException('refused', 'NotAllowedError');
-      window.copiedText.push(t);
-    } } });
-  } });
+  const fresh = await newPage({ init: stubClipboard });
   const copied = () => fresh.evaluate(() => window.copiedText);
   await openFile(fresh);
   await fresh.click('#diff-copy');
@@ -1736,35 +1739,6 @@ test('Alt+M in the terminal with no file open goes to the agent', { skip }, asyn
   await fresh.close();
 });
 
-// Alt+R types the pull request's URL, unsent, for a command that wants a
-// target, and copies it; from the terminal too. With no pull request the
-// agent gets the key. The clipboard is the stub ⧉'s test uses, for its reason.
-test('Alt+R types and copies the pull request\'s URL, and goes to the agent with none', { skip }, async () => {
-  const frames = [];
-  const fresh = await newPage({ init: () => {
-    Object.defineProperty(Navigator.prototype, 'platform', { get: () => 'Linux x86_64' });   // onLinux, in the page
-    Object.defineProperty(navigator, 'clipboard', { value: { writeText: async (t) => { (window.copiedText ??= []).push(t); } } });
-  },
-    pty: (ws) => ws.onMessage((m) => frames.push(JSON.parse(m))) });
-  const typed = () => frames.filter((f) => f.type === 'input');
-  await fresh.locator('#term-host').click();
-  await fresh.keyboard.press('Alt+KeyR');
-  for (let i = 0; !typed().length && i < 100; i++) await fresh.waitForTimeout(50);
-  await fresh.waitForTimeout(200);
-  assert.deepEqual(typed(), [{ type: 'input', data: ` ${REPO}/pull/12 ` }], 'typed, unsent, and not ESC r');
-  assert.deepEqual(await fresh.evaluate(() => window.copiedText), [`${REPO}/pull/12`]);
-  await fresh.close();
-
-  frames.length = 0;
-  const bare = await newPage({ init: onLinux, st: { ...status, pr: null }, ready: '#pr-head .pr-branch-name',
-    pty: (ws) => ws.onMessage((m) => frames.push(JSON.parse(m))) });
-  await bare.locator('#term-host').click();
-  await bare.keyboard.press('Alt+KeyR');
-  for (let i = 0; !typed().length && i < 100; i++) await bare.waitForTimeout(50);
-  assert.deepEqual(typed(), [{ type: 'input', data: '\x1br' }]);
-  await bare.close();
-});
-
 // The review loop's keys. Each fires from the terminal while it has something
 // to do, and otherwise the agent gets the key; onLinux above says why the
 // terminal tests pretend to be on Linux. `typed` is what reached the agent.
@@ -1776,6 +1750,33 @@ const agentPage = async (opts = {}) => {
 const openPath = (p) => p.evaluate(() => document.getElementById('diff-path').textContent);
 const filesTab = (p) => p.locator('#pr-head .tab', { hasText: 'Files' }).textContent();
 const settle = (p) => p.waitForTimeout(200);
+
+// Alt+R types the pull request's URL, unsent, for a command that wants a
+// target, and copies it; from the terminal too. With no pull request the
+// agent gets the key and nothing is copied. Both inits run in the page, so
+// they go in as one script.
+const onLinuxWithClipboard = `(${onLinux})(); (${stubClipboard})();`;
+const copiedText = (p) => p.evaluate(() => window.copiedText);
+test('Alt+R types and copies the pull request\'s URL, and goes to the agent with none', { skip }, async () => {
+  const { fresh, typed } = await agentPage({ init: onLinuxWithClipboard });
+  await fresh.locator('#term-host').click();
+  await fresh.keyboard.press('Alt+KeyR');
+  for (let i = 0; !typed().length && i < 100; i++) await fresh.waitForTimeout(50);
+  await settle(fresh);
+  assert.deepEqual(typed(), [{ type: 'input', data: ` ${REPO}/pull/12 ` }], 'typed, unsent, and not ESC r');
+  assert.deepEqual(await copiedText(fresh), [`${REPO}/pull/12`]);
+  await fresh.close();
+
+  const { fresh: bare, typed: bareTyped } = await agentPage({ init: onLinuxWithClipboard,
+    st: { ...status, pr: null }, ready: '#pr-head .pr-branch-name' });
+  await bare.locator('#term-host').click();
+  await bare.keyboard.press('Alt+KeyR');
+  for (let i = 0; !bareTyped().length && i < 100; i++) await bare.waitForTimeout(50);
+  await settle(bare);
+  assert.deepEqual(bareTyped(), [{ type: 'input', data: '\x1br' }]);
+  assert.deepEqual(await copiedText(bare), [], 'and nothing copied');
+  await bare.close();
+});
 
 // Alt+V is the diff pane's box pressed, so everything the box moves follows:
 // the row, the tab's count, and the box itself -- both ways. From the

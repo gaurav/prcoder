@@ -65,7 +65,7 @@ Mac Alt is Option, and on another layout Alt+/ is whatever key sits where a US k
 | Alt+K | opens the previous file, or the last with none open                              | the pull request has files                       |
 | Alt+M | presses **@** in the diff pane                                                   | a file that has one is open                      |
 | Alt+W | presses *Wrap* in the diff pane                                                  | a file is open and the pane is not folded        |
-| Alt+R | types the pull request's URL into the coding agent's prompt, unsent, and copies it | the branch has a pull request                    |
+| Alt+R | types the pull request's URL into the coding agent's prompt, unsent; copies it   | the branch has a pull request                    |
 | Alt+G | presses the coding agent pane's ▼: folds it, or unfolds it and puts the focus back in the terminal | always                         |
 | Alt+/ | shows these shortcuts, or hides them                                             | always                                           |
 
