@@ -233,6 +233,11 @@ export async function branchPrs(cwd, repos, branch, { has = async () => new Set(
   return open.length ? open : list('all', BRANCH_FIELDS);
 }
 
+// What gh says for a pull request that is not there, and for a repository it
+// cannot see, deleted or private (gh 2.98.0, 2026-10-15): the two read
+// failures that mean a remembered pull request is gone, not just unread.
+const GONE = /Could not resolve to a (PullRequest|Repository)\b/;
+
 // How long a branch's remembered pull requests are read by URL before the
 // search by name runs again, for one opened on the branch since: ten polls of
 // a visible tab, so the search costs a tenth of what it did.
@@ -273,7 +278,10 @@ async function viewKnown(cwd, { url, repo, state }, checks) {
  *   otherwise put the search off until then;
  * - one of them is not in the state it was in: a pull request closed and
  *   another opened in its place is found as soon as the first is seen closed;
- * - one of them could not be read.
+ * - one of them could not be read. If gh says it is not there, nor its
+ *   repository -- gone, or no longer visible to you -- it is forgotten; any
+ *   other failure, a timeout or the network, is kept as it was remembered,
+ *   unshown until a read works, rather than forgotten over one bad call.
  *
  * Only one in `repos` is read, the rule the switch route holds a URL to, so a
  * hand-edit of the file cannot point gh anywhere else; a remote since removed
@@ -297,16 +305,17 @@ async function viewKnown(cwd, { url, repo, state }, checks) {
  * to say what it already says.
  */
 export async function lookupPrs(cwd, repos, known, search, { own = async (rows) => rows, fresh = false, checks = true, now = Date.now() } = {}) {
+  // The row, null for one that is gone, or the entry marked unread.
   const read = (k) => viewKnown(cwd, k, checks).catch((e) => {
     debug(`${k.url} not read: ${e.message}`);
-    return null;
+    return GONE.test(e.message) ? null : { ...k, unread: true };
   });
   const prs = (known?.prs ?? []).filter((k) => repos.includes(k.repo) && k.url.startsWith(`https://github.com/${k.repo}/pull/`));
   const seen = new Map();
   const age = now - known?.searched;
   if (prs.length && !fresh && age >= 0 && age < SEARCH_EVERY) {
     const rows = await Promise.all(prs.map(read));
-    if (rows.every((p, i) => p?.state === prs[i].state)) {
+    if (rows.every((p, i) => p && !p.unread && p.state === prs[i].state)) {
       return { prs: rows, remember: prs.length === known.prs.length ? undefined : { ...known, prs } };
     }
     prs.forEach((k, i) => seen.set(k.url, rows[i]));
@@ -315,11 +324,13 @@ export async function lookupPrs(cwd, repos, known, search, { own = async (rows) 
   const urls = new Set(found.map((p) => p.url));
   const kept = await Promise.all(prs.filter((k) => !urls.has(k.url))
     .map((k) => (seen.has(k.url) ? seen.get(k.url) : read(k))));
-  const all = [...found, ...await own(kept.filter(Boolean))];
+  const unread = kept.filter((p) => p?.unread);
+  const all = [...found, ...await own(kept.filter((p) => p && !p.unread))];
   const open = all.filter((p) => p.state === 'OPEN');
   const shown = open.length ? open : all;
   if (!known && !shown.length) return { prs: shown, remember: undefined };
-  return { prs: shown, remember: { searched: now, prs: shown.map(({ url, repo, state }) => ({ url, repo, state })) } };
+  const entries = [...shown, ...unread].map(({ url, repo, state }) => ({ url, repo, state }));
+  return { prs: shown, remember: { searched: now, prs: entries } };
 }
 
 /**

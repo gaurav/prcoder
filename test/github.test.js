@@ -680,6 +680,24 @@ test('a search runs when nothing is known, when asked, when one is due, and when
   assert.deepEqual(forgot.out, { prs: [], remember: { searched: NOW, prs: [] } });
 });
 
+// A read that fails for a passing reason must not forget the branch's pull
+// request: the search may not find it, which is why it is remembered. One gh
+// says is not there is forgotten (the 'cannot be read' case above).
+test('a remembered pull request that cannot be read just now is kept, unshown', { skip: unix }, async () => {
+  const offline = `echo 'error connecting to api.github.com' >&2; exit 1`;
+  const { out } = await ghCalls(offline, () => lookupPrs(os.tmpdir(), ['up/repo'], known([HEADS[0]]), searching([]), { now: NOW }));
+  assert.deepEqual(out, { prs: [], remember: { searched: NOW, prs: known([HEADS[0]]).prs } });
+  // Beside one the search found, both are remembered and the found one shown.
+  const beside = await ghCalls(offline, () => lookupPrs(os.tmpdir(), ['up/repo'], known([HEADS[0]]),
+    searching([{ ...HEADS[1], repo: 'up/repo' }]), { fresh: true, now: NOW }));
+  assert.deepEqual(beside.out.prs.map((p) => p.number), [2]);
+  assert.deepEqual(beside.out.remember.prs.map((p) => p.url), [HEADS[1].url, HEADS[0].url]);
+  // Gone: a repository gh cannot see.
+  const gone = `echo "GraphQL: Could not resolve to a Repository with the name 'up/repo'. (repository)" >&2; exit 1`;
+  assert.deepEqual((await ghCalls(gone, () => lookupPrs(os.tmpdir(), ['up/repo'], known([HEADS[0]]), searching([]), { now: NOW }))).out,
+    { prs: [], remember: { searched: NOW, prs: [] } });
+});
+
 // A search's rules can tighten under what an earlier one let in: a fork's
 // clone given a push target after its `main` was handed the parent's. What
 // the search did not find is held to them too, or it would never go.
