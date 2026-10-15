@@ -401,6 +401,28 @@ test('a PR that moves between pages of its files is read again', { skip: unix },
   });
 });
 
+// A base branch moving on does not move the merge base the list is the diff
+// from, so it is no reason to read again: a busy `main` must not fail a read
+// whose list was never at risk. Retargeting is a different diff, and is.
+test('a PR whose base branch moves on is read once, and one retargeted is read again', { skip: unix }, async () => {
+  const all = Array.from({ length: 101 }, (_, i) => file(i));
+  const onward = { ...head, baseRefOid: 'f'.repeat(40) };
+  await withPr(view, [page(all.slice(0, 100), 'c1'), page(all.slice(100), null, onward)], async (dir) => {
+    const pr = await loadPr(os.tmpdir());
+    assert.deepEqual(pr.files.map((f) => f.path), all.map((f) => f.path));
+    assert.equal(pr.baseRefOid, head.baseRefOid, 'the first page\'s, which has the same merge base');
+    assert.equal(await fs.readFile(path.join(dir, 'n'), 'utf8'), '2\n');
+  });
+  const retargeted = { ...head, baseRefName: 'release' };
+  await withPr(view, [
+    page(all.slice(0, 100), 'c1'), page(all.slice(100), null, retargeted),
+    page(all.slice(0, 100), 'c1', retargeted), page(all.slice(100), null, retargeted),
+  ], async (dir) => {
+    await loadPr(os.tmpdir());
+    assert.equal(await fs.readFile(path.join(dir, 'n'), 'utf8'), '4\n');
+  });
+});
+
 test('a PR that moves during every read of its files is an error, not a list', { skip: unix }, async () => {
   const at = (c) => ({ ...head, headRefOid: c.repeat(40) });
   const pages = ['1', '2', '3', '4', '5', '6'].map((c, i) => page([file(i)], i % 2 ? null : 'c1', at(c)));

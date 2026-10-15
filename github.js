@@ -316,7 +316,7 @@ export async function loadPr(cwd, target) {
 
 const FILES_QUERY = `query($owner:String!,$repo:String!,$number:Int!,$after:String){
   repository(owner:$owner,name:$repo){ pullRequest(number:$number){
-    id headRefOid baseRefOid additions deletions changedFiles
+    id headRefOid baseRefOid baseRefName additions deletions changedFiles
     files(first:100,after:$after){
       pageInfo{ hasNextPage endCursor }
       nodes{ path additions deletions viewerViewedState }
@@ -340,9 +340,12 @@ const READS = 3;
  *
  * The pages are separate calls, so a push between two of them shifts the list
  * under the cursor, and a file is listed twice or never. Each page says which
- * head and base it was read at, and one at a different pair from the first
- * starts the read over -- READS times, then it throws, and the poll after
- * tries again. A list that is still short of `changedFiles` with nothing
+ * head it was read at, and which base branch, and one that differs from the
+ * first in either starts the read over -- READS times, then it throws, and the
+ * poll after tries again. The base's commit is not compared: the list is the
+ * diff from the merge base, which the base branch moving on does not move, so
+ * a busy `main` would only fail reads whose list was never at risk. A
+ * retargeted pull request is a different diff, and is read again. A list that is still short of `changedFiles` with nothing
  * moving is one GitHub would not give, and goes out as it is: the Files tab
  * says how many are missing.
  */
@@ -351,6 +354,7 @@ async function prFiles(cwd, url) {
   read: for (let n = 0; n < READS; n++) {
     const files = [];
     let snapshot = null;
+    let base = null;
     let after = null;
     do {
       // -f for every string, -F only for the Int. -F converts by what a value
@@ -362,9 +366,9 @@ async function prFiles(cwd, url) {
       if (after) args.push('-f', `after=${after}`);
       const { data } = JSON.parse(await gh(args, { cwd }));
       const pr = data.repository.pullRequest;
-      const { id: nodeId, headRefOid, baseRefOid, additions, deletions, changedFiles } = pr;
-      snapshot ??= { nodeId, headRefOid, baseRefOid, additions, deletions, changedFiles };
-      if (headRefOid !== snapshot.headRefOid || baseRefOid !== snapshot.baseRefOid) continue read;
+      const { id: nodeId, headRefOid, baseRefOid, baseRefName, additions, deletions, changedFiles } = pr;
+      if (!snapshot) [snapshot, base] = [{ nodeId, headRefOid, baseRefOid, additions, deletions, changedFiles }, baseRefName];
+      if (headRefOid !== snapshot.headRefOid || baseRefName !== base) continue read;
       for (const { viewerViewedState, ...f } of pr.files.nodes) {
         files.push({ ...f, viewed: viewerViewedState === 'VIEWED' });
       }
