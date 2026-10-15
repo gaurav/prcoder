@@ -738,6 +738,13 @@ test('a known pull request the search did not find is kept only while it is the 
   assert.deepEqual((await run(row, 'up/repo')).out, { prs: [], remember: { searched: NOW, prs: [] } });
   // Its head renamed on github.com: no longer this branch's.
   assert.deepEqual((await run({ ...row, headRefName: 'renamed' }, null)).out.prs, []);
+  // Between searches too: one that is no longer the branch's sets one off,
+  // rather than being shown until the next is due.
+  const search = searching([]);
+  const between = await ghCalls(viewing([row]), () => lookupPrs(os.tmpdir(), repos, known([HEADS[0]]), search,
+    { own: (rows) => ownPrs(rows, repos, { branch: 'topic', home: 'up/repo' }), now: NOW }));
+  assert.equal(search.runs, 1);
+  assert.deepEqual(between.out, { prs: [], remember: { searched: NOW, prs: [] } });
 });
 
 // Remembered closed, so read without the checks; open now, so they are asked

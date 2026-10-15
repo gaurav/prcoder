@@ -286,6 +286,8 @@ async function viewKnown(cwd, { url, repo, state }, checks) {
  *   otherwise put the search off until then;
  * - one of them is not in the state it was in: a pull request closed and
  *   another opened in its place is found as soon as the first is seen closed;
+ * - one of them is no longer the branch's by `own`, below: its head renamed
+ *   on github.com, or the branch given a push target elsewhere;
  * - one of them could not be read. If gh says it is not there, nor its
  *   repository -- gone, or no longer visible to you -- it is forgotten; any
  *   other failure, a timeout or the network, is kept as it was remembered,
@@ -332,9 +334,12 @@ export async function lookupPrs(cwd, repos, known, search, { own = async (rows) 
   const age = now - known?.searched;
   if (prs.some((k) => k.state === 'OPEN') && !fresh && age >= 0 && age < SEARCH_EVERY) {
     const rows = await Promise.all(prs.map(read));
-    // Each as it was: in the state it was remembered in, or still unread.
-    if (rows.every((p, i) => p && (prs[i].unread ? p.unread : !p.unread && p.state === prs[i].state))) {
-      return { prs: rows.filter((p) => !p.unread), remember: prs.length === known.prs.length ? undefined : { ...known, prs } };
+    // Each as it was: in the state it was remembered in, or still unread; and
+    // still the branch's, by the rules a search would hold it to.
+    const shown = rows.filter((p) => p && !p.unread);
+    if (rows.every((p, i) => p && (prs[i].unread ? p.unread : !p.unread && p.state === prs[i].state))
+      && (await own(shown)).length === shown.length) {
+      return { prs: shown, remember: prs.length === known.prs.length ? undefined : { ...known, prs } };
     }
     prs.forEach((k, i) => seen.set(k.url, rows[i]));
   }

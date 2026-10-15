@@ -201,8 +201,8 @@ const forPage = ({ checks, ...p }) => p;
  * remembers, or searched for by name when that may be out of date, and the
  * answer remembered (lookupPrs in github.js has the rules). `fresh` searches
  * whatever is remembered. Run under the serial lock, since it writes the file.
- * Where the branch pushes is asked only when it searches, and once, being for
- * branchPrs and for ownPrs's test of what the search did not find.
+ * Where the branch pushes is asked once, being for branchPrs and for ownPrs's
+ * test of what is remembered, which is held to it on every poll.
  */
 async function findPrs(branch, { has, checks, fresh = false }) {
   if (!branch) return [];
