@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { normalise, pick, toDisk, readStore, writeStore, readPort, writePort, replaceItems, useQueueFile } from '../store.js';
+import { normalise, pick, toDisk, readStore, writeStore, readPort, writePort, readPrs, writePrs, replaceItems, useQueueFile } from '../store.js';
 
 const repo = () => fs.mkdtemp(path.join(os.tmpdir(), 'prcoder-store-'));
 const item = (over = {}) =>
@@ -253,4 +253,88 @@ test('a queue file named with --queue is read and written instead of the repo\'s
     useQueueFile(null);
   }
   assert.deepEqual((await readStore(dir)).store.items.map((i) => i.text), ['yours']);
+});
+
+// .prcoder/prs.json: each branch's pull requests as the last search found
+// them. A cache, so anything it cannot read is no entry, and a branch with
+// none, or not searched in a month, is not kept.
+const PR = { url: 'https://github.com/o/r/pull/7', repo: 'o/r', state: 'OPEN' };
+
+test('a branch\'s pull requests come back as written, and an empty list removes the branch', async () => {
+  const dir = await repo();
+  assert.equal(await readPrs(dir, 'topic'), null, 'nothing remembered yet');
+  const now = Date.parse('2026-10-14T12:00:00Z');
+  await writePrs(dir, 'topic', { searched: now, prs: [PR] }, now);
+  await writePrs(dir, 'other', { searched: now, prs: [{ ...PR, url: 'https://github.com/o/r/pull/8' }] }, now);
+  assert.deepEqual(await readPrs(dir, 'topic'), { searched: now, prs: [PR] });
+  assert.equal(await readPrs(dir, null), null, 'a detached HEAD has none');
+  const raw = JSON.parse(await fs.readFile(path.join(dir, '.prcoder', 'prs.json'), 'utf8'));
+  assert.equal(raw.branches.topic.searched, '2026-10-14T12:00:00.000Z', 'a time a person can read');
+  await writePrs(dir, 'topic', { searched: now, prs: [] }, now);
+  assert.equal(await readPrs(dir, 'topic'), null);
+  assert.equal((await readPrs(dir, 'other')).prs.length, 1, 'the other branch is untouched');
+  // A pull request whose reads have failed since a time, which comes back too.
+  await writePrs(dir, 'unread', { searched: now, prs: [{ ...PR, unread: now - 60_000 }] }, now);
+  assert.deepEqual(await readPrs(dir, 'unread'), { searched: now, prs: [{ ...PR, unread: now - 60_000 }] });
+  await writePrs(dir, 'unread', { searched: now, prs: [] }, now);
+  assert.deepEqual((await fs.readdir(path.join(dir, '.prcoder'))).sort(), ['.gitignore', 'prs.json']);
+});
+
+// A branch's name is anything git allows, Object.prototype's members included.
+test('a branch named after an object\'s own members is remembered like any other', async () => {
+  const dir = await repo();
+  const now = Date.parse('2026-10-14T12:00:00Z');
+  for (const branch of ['constructor', '__proto__', 'toString']) {
+    assert.equal(await readPrs(dir, branch), null, `${branch}: nothing remembered yet`);
+    await writePrs(dir, branch, { searched: now, prs: [PR] }, now);
+    assert.deepEqual(await readPrs(dir, branch), { searched: now, prs: [PR] }, branch);
+  }
+});
+
+test('a branch not searched for a month is dropped on the next write', async () => {
+  const dir = await repo();
+  const now = Date.parse('2026-10-14T12:00:00Z');
+  const day = 24 * 60 * 60_000;
+  await writePrs(dir, 'old', { searched: now - 31 * day, prs: [PR] }, now - 31 * day);
+  await writePrs(dir, 'recent', { searched: now - 29 * day, prs: [PR] }, now - 29 * day);
+  await writePrs(dir, 'topic', { searched: now, prs: [PR] }, now);
+  assert.equal(await readPrs(dir, 'old'), null);
+  assert.ok(await readPrs(dir, 'recent'));
+  // A search in the future -- a clock set back -- is kept as now, so it ages out.
+  await writePrs(dir, 'ahead', { searched: now + 365 * day, prs: [PR] }, now);
+  assert.equal((await readPrs(dir, 'ahead')).searched, now);
+  await writePrs(dir, 'topic', { searched: now + 31 * day, prs: [PR] }, now + 31 * day);
+  assert.equal(await readPrs(dir, 'ahead'), null);
+});
+
+// The URL goes into gh's argv, so a hand-edit may not put a flag there, or
+// anything that is not a pull request's whole link.
+test('a remembered pull request that is not one is left out, and a file we cannot use is empty', async () => {
+  const dir = await repo();
+  const write = (v) => fs.mkdir(path.join(dir, '.prcoder'), { recursive: true })
+    .then(() => fs.writeFile(path.join(dir, '.prcoder', 'prs.json'), typeof v === 'string' ? v : JSON.stringify(v)));
+  const searched = '2026-10-14T12:00:00Z';
+  await write({ version: 1, branches: { topic: { searched, prs: [
+    PR,
+    { ...PR, url: '--repo=evil/x' },
+    { ...PR, url: 'https://github.com/o/r/pull/7 --web' },
+    { ...PR, url: 'https://github.com/o/r/issues/7' },
+    { ...PR, repo: '-o/r x' },
+    // A trusted repository beside a URL in another: gh would be sent there.
+    { ...PR, url: 'https://github.com/evil/x/pull/7' },
+    { ...PR, state: 'DRAFT' },
+  ] }, none: { searched, prs: [{ ...PR, url: 'x' }] }, undated: { prs: [PR] } } });
+  assert.deepEqual((await readPrs(dir, 'topic')).prs, [PR]);
+  assert.equal(await readPrs(dir, 'none'), null);
+  assert.equal(await readPrs(dir, 'undated'), null);
+  // A remote may spell the repository in other case than the link does.
+  await write({ version: 1, branches: { topic: { searched, prs: [{ ...PR, repo: 'O/R' }] } } });
+  assert.deepEqual((await readPrs(dir, 'topic')).prs, [{ ...PR, repo: 'O/R' }]);
+  for (const bad of ['{', '[]', JSON.stringify({ version: 2, branches: { topic: { searched, prs: [PR] } } })]) {
+    await write(bad);
+    assert.equal(await readPrs(dir, 'topic'), null, bad);
+  }
+  // Overwritten, not moved aside: it is a cache.
+  await writePrs(dir, 'topic', { searched: Date.now(), prs: [PR] });
+  assert.equal((await readPrs(dir, 'topic')).prs.length, 1);
 });

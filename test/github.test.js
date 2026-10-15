@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { rollup, linkedIssues, linksFrom, parsePrUrl, run, issueNumber, lf, setViewed, listPrs, loadPr, prHeads, branchPrs, pickPr, lookupRef, createIssue } from '../github.js';
+import { rollup, linkedIssues, linksFrom, parsePrUrl, run, issueNumber, lf, setViewed, listPrs, loadPr, prHeads, branchPrs, lookupPrs, ownPrs, SEARCH_EVERY, UNREAD_FOR, pickPr, lookupRef, createIssue } from '../github.js';
 import { taskLines } from '../public/tasks.js';
 import { withGh, ghArgs, ghCalls, unix } from './stub-gh.js';
 
@@ -617,6 +617,205 @@ test('only the base repository\'s failure fails the lookup', { skip: unix }, asy
   assert.deepEqual(out, []);
   await withGh(() => answer, () =>
     assert.rejects(branchPrs(os.tmpdir(), ['gone/repo', 'up/repo'], 'topic'), /Could not resolve/));
+});
+
+// lookupPrs: what an earlier search found, read again by URL, and the search
+// by name only when something might be there that the URLs cannot show.
+// `search` stands in for branchPrs, so what reaches gh here is the reads.
+const NOW = Date.parse('2026-10-14T12:00:00Z');
+const known = (prs, searched = NOW - 60_000) => ({ searched, prs: prs.map(({ url, state }) => ({ url, repo: 'up/repo', state })) });
+// gh answering `pr view <url>` with that row of `rows`, and failing for any other.
+const viewing = (rows) => `case "$*" in
+  ${rows.map((r) => `"pr view ${r.url} "*) cat <<'JSON'\n${JSON.stringify(r)}\nJSON\n;;`).join('\n  ')}
+  *) echo 'gh: Could not resolve to a PullRequest' >&2; exit 1;; esac`;
+const searching = (rows) => {
+  const s = async () => { s.runs++; return rows; };
+  s.runs = 0;
+  return s;
+};
+
+test('remembered pull requests are read by URL, with no search, until one is due', { skip: unix }, async () => {
+  const search = searching([]);
+  const { out, calls } = await ghCalls(viewing([HEADS[0]]),
+    () => lookupPrs(os.tmpdir(), ['up/repo'], known([HEADS[0]]), search, { now: NOW }));
+  assert.equal(search.runs, 0);
+  assert.deepEqual(calls.map((c) => c.slice(0, 3)), [['pr', 'view', HEADS[0].url]]);
+  assert.ok(flag(calls[0], '--json').includes('statusCheckRollup'), 'an open one\'s checks, which keepPr takes');
+  assert.equal(out.remember, undefined, 'nothing to write');
+  // In branchPrs's shape: the repository it was found in, the head split, the checks summarised.
+  assert.deepEqual(out.prs.map((p) => [p.number, p.repo, p.headRepo, p.headOwner]), [[1, 'up/repo', 'me/repo', 'me']]);
+  assert.deepEqual(out.prs[0].checks, rollup([]));
+  // Without the checks when the caller has them from elsewhere, and never for a merged one.
+  const merged = { ...HEADS[0], state: 'MERGED' };
+  for (const [row, checks] of [[HEADS[0], false], [merged, true]]) {
+    const quiet = await ghCalls(viewing([row]), () => lookupPrs(os.tmpdir(), ['up/repo'], known([row]), search, { checks, now: NOW }));
+    assert.ok(!flag(quiet.calls[0], '--json').includes('statusCheckRollup'), `${row.state} checks:${checks}`);
+  }
+});
+
+test('a search runs when nothing open is known, when asked, when one is due, and when one has moved', { skip: unix }, async () => {
+  const merged = { ...HEADS[0], state: 'MERGED' };
+  const cases = [
+    ['nothing known', null, {}, [HEADS[0]]],
+    ['nothing open known: one may be opened beside the merged one', known([merged]), {}, [merged]],
+    ['asked: a change of branch, r or g', known([HEADS[0]]), { fresh: true }, [HEADS[0]]],
+    ['the last search is old', known([HEADS[0]], NOW - SEARCH_EVERY), {}, [HEADS[0]]],
+    ['the last search is in the future: a clock set back', known([HEADS[0]], NOW + 60_000), {}, [HEADS[0]]],
+    ['one is merged since', known([HEADS[0]]), {}, [merged]],
+    ['one cannot be read', known([HEADS[1]]), {}, [HEADS[0]]],
+    ['one is in a repository no longer looked in', { ...known([HEADS[0]]), prs: [{ ...known([HEADS[0]]).prs[0], repo: 'gone/repo' }] }, {}, [HEADS[0]]],
+  ];
+  for (const [why, k, opts, gh] of cases) {
+    const search = searching([{ ...HEADS[0], repo: 'up/repo' }]);
+    const { out } = await ghCalls(viewing(gh), () => lookupPrs(os.tmpdir(), ['up/repo'], k, search, { ...opts, now: NOW }));
+    assert.equal(search.runs, 1, why);
+    assert.deepEqual(out.remember, { searched: NOW, prs: [{ url: HEADS[0].url, repo: 'up/repo', state: 'OPEN' }] }, why);
+  }
+  // Nothing known and nothing found, every poll on a branch with none: nothing to write.
+  const { out } = await ghCalls(viewing([]), () => lookupPrs(os.tmpdir(), ['up/repo'], null, searching([]), { now: NOW }));
+  assert.deepEqual(out, { prs: [], remember: undefined });
+  // Something known and nothing found now is remembered as nothing, which the
+  // store keeps as no entry: here, one in a repository no longer looked in.
+  const gone = { ...known([HEADS[0]]), prs: [{ ...known([HEADS[0]]).prs[0], repo: 'gone/repo' }] };
+  const forgot = await ghCalls(viewing([]), () => lookupPrs(os.tmpdir(), ['up/repo'], gone, searching([]), { now: NOW }));
+  assert.deepEqual(forgot.out, { prs: [], remember: { searched: NOW, prs: [] } });
+  // None open known and the same found, every poll on a merged branch: nothing to write.
+  const again = await ghCalls(viewing([]), () =>
+    lookupPrs(os.tmpdir(), ['up/repo'], known([merged]), searching([{ ...merged, repo: 'up/repo' }]), { now: NOW }));
+  assert.deepEqual(again.out.prs.map((p) => p.number), [1]);
+  assert.equal(again.out.remember, undefined);
+});
+
+// A read that fails for a passing reason must not forget the branch's pull
+// request: the search may not find it, which is why it is remembered. One gh
+// says is not there is forgotten (the 'cannot be read' case above).
+test('a remembered pull request that cannot be read just now is kept, unshown', { skip: unix }, async () => {
+  const offline = `echo 'error connecting to api.github.com' >&2; exit 1`;
+  const { out } = await ghCalls(offline, () => lookupPrs(os.tmpdir(), ['up/repo'], known([HEADS[0]]), searching([]), { now: NOW }));
+  const stamped = { searched: NOW, prs: [{ ...known([HEADS[0]]).prs[0], unread: NOW }] };
+  assert.deepEqual(out, { prs: [], remember: stamped }, 'remembered unread since now');
+  // Failing again is no news: no search, nothing written -- or a search, a
+  // file write and a failing read on every poll, for one that always fails.
+  const later = NOW + 60_000;
+  const search = searching([]);
+  const again = await ghCalls(offline, () => lookupPrs(os.tmpdir(), ['up/repo'], stamped, search, { now: later }));
+  assert.equal(search.runs, 0);
+  assert.deepEqual(again.out, { prs: [], remember: undefined });
+  // Through the next due search it keeps the time it first failed...
+  const due = await ghCalls(offline, () => lookupPrs(os.tmpdir(), ['up/repo'], stamped, searching([]), { fresh: true, now: later }));
+  assert.deepEqual(due.out.remember.prs, stamped.prs);
+  // ...and is forgotten UNREAD_FOR after it, unread.
+  const lapsed = await ghCalls(offline, () => lookupPrs(os.tmpdir(), ['up/repo'], stamped, searching([]), { now: NOW + UNREAD_FOR }));
+  assert.deepEqual(lapsed.calls, [], 'not read again');
+  assert.deepEqual(lapsed.out, { prs: [], remember: { searched: NOW + UNREAD_FOR, prs: [] } });
+  // Read again after failing: news, so a search, and the mark is gone.
+  const back = searching([{ ...HEADS[0], repo: 'up/repo' }]);
+  const read = await ghCalls(viewing([HEADS[0]]), () => lookupPrs(os.tmpdir(), ['up/repo'], stamped, back, { now: later }));
+  assert.equal(back.runs, 1);
+  assert.deepEqual(read.out.remember, { searched: later, prs: known([HEADS[0]]).prs });
+  // Beside one the search found, both are remembered and the found one shown.
+  const beside = await ghCalls(offline, () => lookupPrs(os.tmpdir(), ['up/repo'], known([HEADS[0]]),
+    searching([{ ...HEADS[1], repo: 'up/repo' }]), { fresh: true, now: NOW }));
+  assert.deepEqual(beside.out.prs.map((p) => p.number), [2]);
+  assert.deepEqual(beside.out.remember.prs.map((p) => p.url), [HEADS[1].url, HEADS[0].url]);
+  // Gone: a repository gh cannot see.
+  const gone = `echo "GraphQL: Could not resolve to a Repository with the name 'up/repo'. (repository)" >&2; exit 1`;
+  assert.deepEqual((await ghCalls(gone, () => lookupPrs(os.tmpdir(), ['up/repo'], known([HEADS[0]]), searching([]), { now: NOW }))).out,
+    { prs: [], remember: { searched: NOW, prs: [] } });
+});
+
+// A search's rules can tighten under what an earlier one let in: a fork's
+// clone given a push target after its `main` was handed the parent's. What
+// the search did not find is held to them too, or it would never go.
+test('a known pull request the search did not find is kept only while it is the branch\'s', { skip: unix }, async () => {
+  const repos = ['up/repo', 'me/repo'];
+  const row = { ...HEADS[0], headRefName: 'topic' };
+  const run = (gh, home) => ghCalls(viewing([gh]), () => lookupPrs(os.tmpdir(), repos, known([HEADS[0]]), searching([]),
+    { own: (rows) => ownPrs(rows, repos, { branch: 'topic', home }), fresh: true, now: NOW }));
+  // Its head is me/repo's: the branch's while the branch pushes nowhere or there.
+  for (const home of [null, 'me/repo']) assert.deepEqual((await run(row, home)).out.prs.map((p) => p.number), [1], `home ${home}`);
+  // Pushing to up/repo, me/repo's branch of that name is a stranger's.
+  assert.deepEqual((await run(row, 'up/repo')).out, { prs: [], remember: { searched: NOW, prs: [] } });
+  // Its head renamed on github.com: no longer this branch's.
+  assert.deepEqual((await run({ ...row, headRefName: 'renamed' }, null)).out.prs, []);
+  // Between searches too: one that is no longer the branch's sets one off,
+  // rather than being shown until the next is due.
+  const search = searching([]);
+  const between = await ghCalls(viewing([row]), () => lookupPrs(os.tmpdir(), repos, known([HEADS[0]]), search,
+    { own: (rows) => ownPrs(rows, repos, { branch: 'topic', home: 'up/repo' }), now: NOW }));
+  assert.equal(search.runs, 1);
+  assert.deepEqual(between.out, { prs: [], remember: { searched: NOW, prs: [] } });
+});
+
+// Remembered closed, so read without the checks; open now, so they are asked
+// for after all if the search its new state sets off misses it, and only then.
+test('a remembered pull request reopened since is read with its checks', { skip: unix }, async () => {
+  const closed = known([{ ...HEADS[0], state: 'CLOSED' }]);
+  const search = searching([]);
+  // The stub answers every field whatever --json asks, so the row carries no
+  // rollup, as gh's answer to the first read does not.
+  const { statusCheckRollup, ...reopened } = HEADS[0];
+  const { out, calls } = await ghCalls(viewing([reopened]), () => lookupPrs(os.tmpdir(), ['up/repo'], closed, search, { now: NOW }));
+  assert.equal(search.runs, 1, 'a change of state searches');
+  // ghCalls hands the calls back in no fixed order.
+  assert.deepEqual(calls.map((c) => flag(c, '--json').includes('statusCheckRollup')).sort(), [false, true]);
+  assert.deepEqual(out.prs.map((p) => [p.number, p.state, p.checks]), [[1, 'OPEN', rollup([])]]);
+  // Found by the search, which brings its checks: not read at all, since a
+  // branch with none open known searches first.
+  const found = await ghCalls(viewing([reopened]), () =>
+    lookupPrs(os.tmpdir(), ['up/repo'], closed, searching([{ ...HEADS[0], repo: 'up/repo', checks: rollup([]) }]), { now: NOW }));
+  assert.equal(found.calls.length, 0);
+  assert.deepEqual(found.out.prs.map((p) => p.checks), [rollup([])]);
+});
+
+// The URL is what gh is given, so it is held to the repository, not only the
+// `repo` beside it; readPrs refuses the pairing too.
+test('a remembered URL outside its repository is never read', { skip: unix }, async () => {
+  const evil = { ...known([HEADS[0]]), prs: [{ url: 'https://github.com/evil/x/pull/1', repo: 'up/repo', state: 'OPEN' }] };
+  const search = searching([]);
+  const { calls } = await ghCalls(viewing([]), () => lookupPrs(os.tmpdir(), ['up/repo'], evil, search, { now: NOW }));
+  assert.deepEqual(calls, []);
+  assert.equal(search.runs, 1, 'searched, as for nothing known');
+});
+
+// A remote's URL may spell the repository in other case than GitHub's link
+// does, or name it from before a rename. The first is the same repository;
+// the second cannot be held to its URL, so it is shown and searched for.
+test('a remembered URL is held to its repository case-blind, and one renamed away is not remembered', { skip: unix }, async () => {
+  const search = searching([]);
+  const spelt = { ...known([HEADS[0]]), prs: [{ ...known([HEADS[0]]).prs[0], repo: 'Up/Repo' }] };
+  const { out } = await ghCalls(viewing([HEADS[0]]), () => lookupPrs(os.tmpdir(), ['Up/Repo'], spelt, search, { now: NOW }));
+  assert.equal(search.runs, 0, 'read by URL');
+  assert.deepEqual(out.prs.map((p) => p.number), [1]);
+  const renamed = { ...HEADS[0], url: 'https://github.com/up/renamed/pull/1', repo: 'up/repo' };
+  const fresh = await ghCalls(viewing([]), () => lookupPrs(os.tmpdir(), ['up/repo'], null, searching([renamed]), { now: NOW }));
+  assert.deepEqual(fresh.out.prs.map((p) => p.number), [1], 'still shown');
+  assert.equal(fresh.out.remember, undefined, 'nothing written, poll after poll');
+});
+
+// gh lists the newest first, so strangers on a common name can push the
+// branch's pull request out of the search's window long after the search
+// that found it. It is kept; and an open one found stands alone, as in branchPrs.
+test('a search keeps a known pull request it did not find, and open ones stand alone', { skip: unix }, async () => {
+  const lost = await ghCalls(viewing([HEADS[0]]), () =>
+    lookupPrs(os.tmpdir(), ['up/repo'], known([HEADS[0]]), searching([]), { fresh: true, now: NOW }));
+  assert.deepEqual(lost.out.prs.map((p) => p.number), [1]);
+  assert.deepEqual(lost.out.remember.prs.map((p) => p.url), [HEADS[0].url]);
+  // Merged, and another opened in its place: the merged one is not shown.
+  const merged = { ...HEADS[0], state: 'MERGED' };
+  const replaced = await ghCalls(viewing([merged]), () =>
+    lookupPrs(os.tmpdir(), ['up/repo'], known([HEADS[0]]), searching([{ ...HEADS[1], repo: 'up/repo' }]), { now: NOW }));
+  assert.deepEqual(replaced.out.prs.map((p) => p.number), [2]);
+  assert.equal(replaced.calls.length, 1, 'the merged one is not read twice');
+  // Kept beside one found, in the repositories' order, which pickPr ranks by.
+  const later = { ...HEADS[1], url: 'https://github.com/me/repo/pull/2', repo: 'me/repo' };
+  const ranked = await ghCalls(viewing([HEADS[0]]), () =>
+    lookupPrs(os.tmpdir(), ['up/repo', 'me/repo'], known([HEADS[0]]), searching([later]), { fresh: true, now: NOW }));
+  assert.deepEqual(ranked.out.prs.map((p) => p.repo), ['up/repo', 'me/repo']);
+  // Found by the search too: read once, by the search.
+  const both = await ghCalls(viewing([]), () =>
+    lookupPrs(os.tmpdir(), ['up/repo'], known([HEADS[0]]), searching([{ ...HEADS[0], repo: 'up/repo' }]), { fresh: true, now: NOW }));
+  assert.equal(both.calls.length, 0);
 });
 
 const open = (n, extra = {}) => ({ number: n, url: `https://github.com/up/repo/pull/${n}`, state: 'OPEN', repo: 'up/repo',

@@ -143,7 +143,14 @@ behind a Commit button, because the checkout would fail anyway.
 The pull request shown for the branch is looked for in every repository it could be in -- the one
 `gh` takes as this checkout's, its parent when that is a fork, and the repository behind each
 remote -- by the branch's name, so one opened from a fork no remote names is found too, as long
-as this clone has its head commit ([README](../README.md)). A branch whose `git push` goes to a
+as this clone has its head commit ([README](../README.md)). Once found, a branch's pull requests
+are remembered in `.prcoder/prs.json` and each poll asks about them directly, so a search by name
+runs only now and then: on a branch with none open -- none at all, or only merged or closed ones
+-- every poll, since that is where one is about to be opened; otherwise on a change of branch, on
+⟳ in the pane or `r` or `g` in the terminal, when one of them is seen merged, closed or reopened,
+and every ten minutes. So a second pull request opened on a branch that already has an open one
+-- into the parent, say -- takes up to ten minutes to show on its own, and ⟳ shows it now. A
+branch whose `git push` goes to a
 branch of its own name counts only that repository's head as its own, so a fork's `main` is not
 handed the parent's `main`'s pull requests. A branch with more than one, into its
 fork's `main` and into the parent, say, shows one of them: an open one over a merged one, the one

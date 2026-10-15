@@ -11,10 +11,10 @@ import { fileURLToPath } from 'node:url';
 import { text as readBody } from 'node:stream/consumers';
 import { spawn as ptySpawn } from 'node-pty';
 import { WebSocketServer } from 'ws';
-import { loadPr, prHeads, prUrl, prBody, parsePrUrl, listPrs, branchPrs, pickPr, issueLinks, lookupRef, setViewed, setBody, createIssue, fetchPatches, runCount } from './github.js';
+import { loadPr, prHeads, prUrl, prBody, parsePrUrl, listPrs, branchPrs, lookupPrs, ownPrs, pickPr, issueLinks, lookupRef, setViewed, setBody, createIssue, fetchPatches, runCount } from './github.js';
 import { notAWorkTree, snapshot, currentBranch, headCommit, commitsKnown, commitMemo, repoInfo, pushRepo, prScope, compareUrl, githubUrl, originOwner, wholePrRepo, checkoutPr, pushBranch, remoteBranchHead, trackingHead, localPatch, branchesBelow } from './git.js';
 import { bucket, fileUrl, fileViews } from './files.js';
-import { readPort, writePort, pick, useQueueFile, movedQueue, issueUrl } from './store.js';
+import { readPort, writePort, readPrs, writePrs, pick, useQueueFile, movedQueue, issueUrl } from './store.js';
 import { readQueue, writeQueue, quote } from './queue.js';
 import { parseCli, usage, VERSION, portCandidates, statusLines, openRepoArgs, OPEN_REPO_VARS, REPO_ENV, queueSummary, quitRisks } from './cli.js';
 import * as term from './term.js';
@@ -197,11 +197,37 @@ export function keepPr(pr, heads) {
 const forPage = ({ checks, ...p }) => p;
 
 /**
+ * The branch's pull requests: read by URL from what `.prcoder/prs.json`
+ * remembers, or searched for by name when that may be out of date, and the
+ * answer remembered (lookupPrs in github.js has the rules). `fresh` searches
+ * whatever is remembered. `facts` is the caller's repoFacts(), so that what is
+ * searched and what the caller ranks and scopes by are the same repositories.
+ * Run under the serial lock, since it writes the file.
+ * Where the branch pushes is asked once, being for branchPrs and for ownPrs's
+ * test of what is remembered, which is held to it on every poll.
+ */
+async function findPrs(branch, { repos, repoOf }, { has, checks, fresh = false }) {
+  if (!branch) return [];
+  let pushes;
+  const home = () => (pushes ??= pushRepo(repo, branch, repoOf));
+  const search = async () => branchPrs(repo, repos, branch, { has, checks, home: await home() });
+  const own = async (rows) => ownPrs(rows, repos, { branch, has, home: await home() });
+  const { prs, remember } = await lookupPrs(repo, repos, await readPrs(repo, branch), search, { own, fresh, checks });
+  // A cache: a write that fails costs a search on the next poll, not this one.
+  // Nothing to write on a branch with none known and none found (lookupPrs).
+  if (remember) await writePrs(repo, branch, remember).catch((e) => term.debug(`prs.json not written: ${e.message}`));
+  return prs;
+}
+
+/**
  * Where the repo is, plus the PR and queue that go with it. The client polls
  * this; nothing is stored between calls, so an outside `git checkout` or an
- * edit on github.com is picked up without prcoder having to be told.
+ * edit on github.com is picked up without prcoder having to be told. The one
+ * exception is which pull requests the branch has, remembered in the file so
+ * that a poll asks about them by URL (findPrs); `search` looks for them by name
+ * again, which is `r` and the page's ⟳.
  */
-async function status({ full = false } = {}) {
+async function status({ full = false, search = false } = {}) {
   const calls = runCount();
 
   // The branch is taken once and threaded through: the remote head is not
@@ -233,10 +259,12 @@ async function status({ full = false } = {}) {
   // whose checks keepPr takes. With a target the list is still read, since
   // the switcher offers it, but without the checks: prHeads has the target's,
   // and the list's would be fetched for nothing on every poll.
-  // One answer per commit for the whole poll (commitMemo).
+  // One answer per commit for the whole poll (commitMemo). A change of branch
+  // since the last poll searches, as `r` does; a restart starts from what the
+  // file remembers.
   const commits = commitMemo(repo);
-  const home = await pushRepo(repo, branch, facts.repoOf);
-  const found = await branchPrs(repo, facts.repos, branch, { has: commits.many, checks: !target, home });
+  const fresh = search || (last != null && last.branch !== branch);
+  const found = await findPrs(branch, facts, { has: commits.many, checks: !target, fresh });
   if (!target) {
     heads = pickPr(found, { head, chosen: chosen?.url, shown: pr?.url, repos: facts.repos });
     await refresh(heads);
@@ -311,6 +339,10 @@ const poll = () => (queuedPoll ??= serial(() => {
 const routes = {
   // Unlocked only because poll() takes the lock itself.
   'GET /api/status': poll,
+  // The page's ⟳: a poll that also searches for the branch's pull requests
+  // afresh, as `r` does, for one opened on github.com or by the agent since;
+  // a poll on its own reads only the ones prs.json already knows (findPrs).
+  'POST /api/status': () => status({ search: true }),
 
   // `started` is what the exit bar fills its fields with: the model and effort
   // given after -- on prcoder's command line, so starting the agent again offers
@@ -857,13 +889,16 @@ function watch(child, shell, failed) {
  * again rather than trusting `pr`, which is only as fresh as the last poll --
  * and polls stop while no tab is visible, which is exactly when someone is at
  * this terminal pressing keys, and the agent may have switched branches since.
- * The same lookup as the poll's, less the checks, which a URL has no use for.
+ * The same lookup as the poll's, less the checks, which a URL has no use for,
+ * and a search whatever is remembered: `g` is often pressed just after opening
+ * a pull request on github.com. Under the lock, since the search is remembered.
  */
 async function openGithub() {
   const [branch, head] = await Promise.all([currentBranch(repo), headCommit(repo)]);
-  const { nameWithOwner, defaultBranch, repos, repoOf } = await repoFacts();
+  const facts = await repoFacts();
+  const { nameWithOwner, defaultBranch, repos } = facts;
   const url = target ? await prUrl(repo, target) : pickPr(
-    await branchPrs(repo, repos, branch, { has: (oids) => commitsKnown(oids, repo), checks: false, home: await pushRepo(repo, branch, repoOf) }),
+    await serial(() => findPrs(branch, facts, { has: (oids) => commitsKnown(oids, repo), checks: false, fresh: true })),
     { head, chosen: chosen?.branch === branch ? chosen.url : null, shown: pr?.url, repos })?.url;
   openBrowser(githubUrl({
     prUrl: url, nameWithOwner, defaultBranch, branch,
@@ -1059,7 +1094,7 @@ if (import.meta.main) {
       // is no reason to run them alongside a checkout.
       else if (ch === 'r') {
         term.verbose('refreshing…');
-        serial(() => status({ full: true })).catch((e) => console.error('refresh:', e.message));
+        serial(() => status({ full: true, search: true })).catch((e) => console.error('refresh:', e.message));
       }
     },
   });

@@ -46,8 +46,9 @@ it again every 60 seconds, so a `git checkout` in another terminal -- or by Clau
 pane -- is picked up on its own. It looks in every repository the branch could have one in: the
 one `gh` calls this checkout's, its parent if that is a fork, and the repository behind each
 remote; a pull request opened from a fork no remote names is found all the same, by the branch's
-name and its commit. Nothing is remembered between polls; every fact comes back from `git` and
-`gh`.
+name and its commit. Once found, a branch's pull requests are remembered in `.prcoder/prs.json`
+and asked about by URL, with the search by name run again every ten minutes, or on every poll
+while none of them is open; every other fact comes back from `git` and `gh` on each poll.
 
 The tile in the top-left corner is the menu: the keyboard shortcuts (Alt+/), the docs, an issue to
 report, and quitting. [docs/Panes.md](docs/Panes.md) has each pane in detail: layout, ordering,
@@ -79,8 +80,9 @@ are given.
 
 **prcoder does not write anything you own unless you click something that says it will.** Its
 own state lives in `.prcoder/`, a directory that ignores itself (it holds a one-line `.gitignore`
-of `*`), so nothing shows up in `git status`: `queue.json` is the queue, and `port.json` is this
-working copy's port.
+of `*`), so nothing shows up in `git status`: `queue.json` is the queue, `port.json` is this
+working copy's port, and `prs.json` remembers which pull requests each branch has, so a poll can
+ask GitHub about them directly instead of searching. It is a cache; deleting it costs a search.
 
 On GitHub, it writes only when you click: ticking a description checkbox flips that one line of
 the description, ticking a file marks it viewed, ◎ moves a queue item into a new issue, and creating

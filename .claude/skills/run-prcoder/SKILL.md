@@ -40,8 +40,10 @@ stdout. For a look with the user's own eyes, leave it running and hand them that
 
 API shape: the `routes` table in `server.js`, keyed `"METHOD /path"`, JSON
 in/out, errors as 500 `{error}`. Every handler but the few in `UNLOCKED` --
-whoami, status, the queue's reference lookup -- is serialised, so one slow
-call delays the rest.
+whoami, the `GET` status poll, the queue's reference lookup -- is serialised, so
+one slow call delays the rest. `POST /api/status` is the page's ⟳: a poll that
+also searches for the branch's pull requests, where `GET` reads the ones
+`.prcoder/prs.json` remembers by URL.
 
 ## Verifying a change
 
@@ -90,8 +92,7 @@ existed. The drivers assert nothing, they print `want …` lines for a human, so
 edit them for whatever you are looking at and keep the edits worth having.
 
 A run is also the cheap moment to re-measure one of `docs/Verifying.md`'s
-*Figures worth re-measuring*: update its commit and date there, and tick its
-box on #129.
+*Figures worth re-measuring*: write the new value, commit and date there.
 
 Two rules for them, and for any script after them:
 

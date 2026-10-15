@@ -35,7 +35,7 @@ const file = (repo) => queueFile ?? path.join(dir(repo), FILE);
  * tools/browser.mjs, which drives the queue pane against a file in `data/` and
  * so never writes the queue of the working copy it runs in (#65). Resolved
  * against the directory prcoder started in. Only the queue moves; port.json
- * stays in `.prcoder/`, and so does the `.gitignore` -- a file named here is
+ * and prs.json stay in `.prcoder/`, and so does the `.gitignore` -- a file named here is
  * wherever you put it, ignored or not.
  */
 let queueFile = null;
@@ -228,6 +228,91 @@ export async function readPort(repo) {
 
 /** Written like the queue: temp file, then a rename, which is atomic in one directory. */
 export const writePort = (repo, port) => writeJson(repo, portFile(repo), { version: VERSION, port });
+
+/**
+ * `.prcoder/prs.json`: each branch's pull requests as the last lookup by name
+ * found them, and when it ran, so a poll can read them by URL instead of
+ * searching again (lookupPrs in github.js has the rules). Per working copy, as
+ * the queue is, so two worktrees on different branches each keep their own;
+ * and a cache, so a file it cannot read -- damaged, hand-edited, a newer
+ * prcoder's -- is read as empty and overwritten, which costs one search.
+ *
+ * `{ version, branches: { <branch>: { searched, prs: [{ url, repo, state, unread? }] } } }`,
+ * `searched` an ISO time, and `unread` the time a read of that pull request
+ * first failed, for one that has failed since. Only a branch with some are kept: one with none is
+ * searched on every poll, as it was before this file, since that is the branch
+ * a new one is opened from.
+ */
+const PRS_FILE = 'prs.json';
+const prsFile = (repo) => path.join(dir(repo), PRS_FILE);
+
+// A branch not looked at for this long is dropped on the next write, so the
+// file does not keep every branch the working copy has ever had. Coming back
+// to one costs a search, which is what it cost before this file.
+const FORGET = 30 * 24 * 60 * 60_000;
+
+const STATES = ['OPEN', 'CLOSED', 'MERGED'];
+
+/**
+ * One branch's entry, or null for anything that is not one. Each URL is held
+ * to the whole of a pull request's link, in `repo`, because the URL becomes an
+ * argument to `gh pr view` and `repo` is what is compared with the
+ * repositories the caller trusts: a hand-edit may not put a flag in the URL,
+ * nor pair a trusted `repo` with a URL somewhere else (docs/Security.md). A
+ * search only ever records a pull request under the repository it is in. The
+ * two are compared case-blind, as GitHub names them: `repo` is spelled as a
+ * remote's URL spells it, and the link as GitHub does.
+ */
+function prsEntry(e) {
+  const searched = Date.parse(e?.searched);
+  if (!Number.isFinite(searched) || !Array.isArray(e?.prs)) return null;
+  const prs = e.prs.filter((p) => {
+    const l = link(p?.url);
+    return l?.kind === 'pull' && typeof p.repo === 'string' && l.repo.toLowerCase() === p.repo.toLowerCase()
+      && STATES.includes(p.state);
+  }).map(({ url, repo, state, unread }) => {
+    const since = Date.parse(unread);
+    return { url, repo, state, ...(Number.isFinite(since) && { unread: since }) };
+  });
+  return prs.length ? { searched, prs } : null;
+}
+
+/**
+ * Every branch's entry, by name, with whatever could not be read left out. A
+ * Map, since a branch's name is anything git allows: on a plain object a
+ * branch called `constructor` reads back a function, and one called
+ * `__proto__` is never stored at all.
+ */
+async function readAllPrs(repo) {
+  let parsed;
+  try { parsed = JSON.parse(await fs.readFile(prsFile(repo), 'utf8')); } catch { return new Map(); }
+  if (Number(parsed?.version) > VERSION || !parsed?.branches || typeof parsed.branches !== 'object') return new Map();
+  return new Map(Object.entries(parsed.branches)
+    .map(([b, e]) => [b, prsEntry(e)]).filter(([, e]) => e));
+}
+
+/** The branch's entry, `{ searched, prs }` with `searched` in ms, or null. */
+export const readPrs = async (repo, branch) => (branch && (await readAllPrs(repo)).get(branch)) || null;
+
+/**
+ * The branch's entry replaced, or removed with null, and every branch not
+ * searched within FORGET dropped. A read, a change and a write: callers hold
+ * server.js's lock, so two of these do not interleave. A search in the future
+ * -- a clock set back, a file from another machine -- is written as now, so
+ * it is forgotten a FORGET from now rather than from then; and so is a failed
+ * read in the future, for lookupPrs's UNREAD_FOR.
+ */
+export async function writePrs(repo, branch, entry, now = Date.now()) {
+  const all = await readAllPrs(repo);
+  if (entry?.prs.length) all.set(branch, entry);
+  else all.delete(branch);
+  const branches = Object.fromEntries([...all]
+    .map(([b, e]) => [b, { ...e, searched: Math.min(e.searched, now) }])
+    .filter(([, e]) => now - e.searched < FORGET)
+    .map(([b, e]) => [b, { searched: new Date(e.searched).toISOString(), prs: e.prs.map((p) => (p.unread
+      ? { ...p, unread: new Date(Math.min(p.unread, now)).toISOString() } : p)) }]));
+  await writeJson(repo, prsFile(repo), { version: VERSION, branches });
+}
 
 /**
  * The whole list replaced, coerced on the way in -- and where `doneAt` and
