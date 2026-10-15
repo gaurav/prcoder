@@ -12,7 +12,7 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import { WebSocket } from 'ws';
-import { server, sessionArgs, startedWith, missingVendor, keepPr } from '../server.js';
+import { server, sessionArgs, startedWith, missingVendor, keepPr, issueMove } from '../server.js';
 import { grammars } from '../public/diff.js';
 import { VERSION } from '../cli.js';
 
@@ -297,4 +297,25 @@ test('a choice is refused unless the last poll listed it for the branch', async 
   });
   assert.equal(res.status, 500);
   assert.deepEqual(await res.json(), { error: 'https://github.com/gaurav/prcoder/pull/140 is not a pull request for this branch' });
+});
+
+// The one write about an issue is held to what the Issues tab was last shown:
+// the number and the milestone's title both come out of that listing, so the
+// page's strings pick and never reach gh. With no listing yet, nothing does.
+test('/api/issue/milestone refuses an issue or a milestone the tab was not shown', async () => {
+  const res = await fetch(`${base}/api/issue/milestone`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ number: 58, milestone: 'Needed soon' }),
+  });
+  assert.equal(res.status, 500);
+  assert.deepEqual(await res.json(), { error: '#58 is not an open issue the Issues tab listed' });
+
+  const listing = { issues: [{ number: 58 }, { number: 66 }], milestones: [{ number: 4, title: 'Needed soon' }, { number: 1, title: 'v1.0' }] };
+  assert.deepEqual(issueMove(listing, { number: 58, milestone: 'Needed soon' }), { number: 58, title: 'Needed soon' });
+  assert.deepEqual(issueMove(listing, { number: 66, milestone: null }), { number: 66, title: null });
+  assert.throws(() => issueMove(listing, { number: 59, milestone: 'Needed soon' }), { message: '#59 is not an open issue the Issues tab listed' });
+  assert.throws(() => issueMove(listing, { number: '58', milestone: 'Needed soon' }), { message: '#58 is not an open issue the Issues tab listed' });
+  assert.throws(() => issueMove(listing, { number: 58, milestone: 'needed soon' }), { message: '"needed soon" is not an open milestone the Issues tab listed' });
+  assert.throws(() => issueMove(listing, { number: 58, milestone: '--remove-milestone' }), { message: '"--remove-milestone" is not an open milestone the Issues tab listed' });
+  assert.throws(() => issueMove(null, {}), { message: '#? is not an open issue the Issues tab listed' });
 });
