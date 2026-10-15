@@ -240,7 +240,7 @@ test('run() turns gh and git prompts off, whatever env it is given', { skip: uni
 test('a detached HEAD is no pull request, not an error', { skip: unix }, async () => {
   const detached = () => `echo 'could not determine current branch: failed to run git: not on any branch' >&2\nexit 1`;
   await withGh(detached, async () => {
-    assert.equal(await loadPr(os.tmpdir()), null);
+    assert.equal(await loadPr(os.tmpdir(), undefined, { pause: 0 }), null);
     assert.equal(await prHeads(os.tmpdir()), null);
   });
 });
@@ -356,7 +356,7 @@ const page = (files, endCursor, at = head) => ({ data: { repository: { pullReque
 test('a PR with more than 100 files lists every one of them', { skip: unix }, async () => {
   const all = Array.from({ length: 112 }, (_, i) => file(i));
   await withPr(view, [page(all.slice(0, 100), 'c1'), page(all.slice(100), null)], async (dir) => {
-    const pr = await loadPr(os.tmpdir());
+    const pr = await loadPr(os.tmpdir(), undefined, { pause: 0 });
     assert.equal(pr.files.length, 112);
     assert.deepEqual(pr.files.map((f) => f.path), all.map((f) => f.path));
     const f105 = pr.files.find((f) => f.path === 'src/f105.js');
@@ -377,7 +377,7 @@ test('a PR with more than 100 files lists every one of them', { skip: unix }, as
 test('the head a PR is at comes from the same answer as its files', { skip: unix }, async () => {
   const stale = { headRefOid: 'c'.repeat(40), baseRefOid: 'd'.repeat(40), additions: 1, deletions: 1 };
   await withPr({ ...view, ...stale }, [page([file(1)], null)], async () => {
-    const pr = await loadPr(os.tmpdir());
+    const pr = await loadPr(os.tmpdir(), undefined, { pause: 0 });
     assert.deepEqual([pr.headRefOid, pr.baseRefOid, pr.additions, pr.deletions],
       [head.headRefOid, head.baseRefOid, head.additions, head.deletions]);
     assert.equal(pr.nodeId, 'PR_node');
@@ -394,7 +394,7 @@ test('a PR that moves between pages of its files is read again', { skip: unix },
     page(all.slice(0, 100), 'c1'), page(all.slice(99), null, moved),
     page(all.slice(0, 100), 'c1', moved), page(all.slice(100), null, moved),
   ], async (dir) => {
-    const pr = await loadPr(os.tmpdir());
+    const pr = await loadPr(os.tmpdir(), undefined, { pause: 0 });
     assert.deepEqual(pr.files.map((f) => f.path), all.map((f) => f.path));
     assert.equal(pr.headRefOid, moved.headRefOid);
     assert.equal(await fs.readFile(path.join(dir, 'n'), 'utf8'), '4\n');
@@ -408,7 +408,7 @@ test('a PR whose base branch moves on is read once, and one retargeted is read a
   const all = Array.from({ length: 101 }, (_, i) => file(i));
   const onward = { ...head, baseRefOid: 'f'.repeat(40) };
   await withPr(view, [page(all.slice(0, 100), 'c1'), page(all.slice(100), null, onward)], async (dir) => {
-    const pr = await loadPr(os.tmpdir());
+    const pr = await loadPr(os.tmpdir(), undefined, { pause: 0 });
     assert.deepEqual(pr.files.map((f) => f.path), all.map((f) => f.path));
     assert.equal(pr.baseRefOid, head.baseRefOid, 'the first page\'s, which has the same merge base');
     assert.equal(await fs.readFile(path.join(dir, 'n'), 'utf8'), '2\n');
@@ -418,7 +418,7 @@ test('a PR whose base branch moves on is read once, and one retargeted is read a
     page(all.slice(0, 100), 'c1'), page(all.slice(100), null, retargeted),
     page(all.slice(0, 100), 'c1', retargeted), page(all.slice(100), null, retargeted),
   ], async (dir) => {
-    await loadPr(os.tmpdir());
+    await loadPr(os.tmpdir(), undefined, { pause: 0 });
     assert.equal(await fs.readFile(path.join(dir, 'n'), 'utf8'), '4\n');
   });
 });
@@ -427,7 +427,15 @@ test('a PR that moves during every read of its files is an error, not a list', {
   const at = (c) => ({ ...head, headRefOid: c.repeat(40) });
   const pages = ['1', '2', '3', '4', '5', '6'].map((c, i) => page([file(i)], i % 2 ? null : 'c1', at(c)));
   await withPr(view, pages, async () => {
-    await assert.rejects(loadPr(os.tmpdir()), /moved on GitHub during each of 3 reads of its files/);
+    await assert.rejects(loadPr(os.tmpdir(), undefined, { pause: 0 }), /moved on GitHub during each of 3 reads of its files/);
+  });
+  // It names the pull request, which the server keeps showing (refreshPr), and
+  // waits between reads -- pause, then twice it -- so a burst of pushes can settle.
+  await withPr(view, pages, async () => {
+    const started = Date.now();
+    const e = await loadPr(os.tmpdir(), undefined, { pause: 40 }).catch((x) => x);
+    assert.equal(e.moving, view.url);
+    assert.ok(Date.now() - started >= 120, `${Date.now() - started}ms`);
   });
 });
 
@@ -435,7 +443,7 @@ test('a next page of files with no cursor to it is an error, not the end', { ski
   const lost = page([file(0)], null);
   lost.data.repository.pullRequest.files.pageInfo.hasNextPage = true;
   await withPr(view, [lost], async () => {
-    await assert.rejects(loadPr(os.tmpdir()), /has more files, but gave no cursor to them/);
+    await assert.rejects(loadPr(os.tmpdir(), undefined, { pause: 0 }), /has more files, but gave no cursor to them/);
   });
 });
 

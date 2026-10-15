@@ -292,14 +292,14 @@ export async function listPrs(cwd) {
  * left the links to each file at the old head, where a new file 404s, and
  * /api/diff diffing the old head against the new line counts.
  */
-export async function loadPr(cwd, target) {
+export async function loadPr(cwd, target, { pause } = {}) {
   const pr = await viewPr(cwd, target, PR_FIELDS);
   if (!pr) return null;
   pr.body = lf(pr.body);
 
   // Both need only the PR, so they run together: each is a GitHub round trip.
   const [snapshot, issues] = await Promise.all([
-    prFiles(cwd, pr.url),
+    prFiles(cwd, pr.url, pause),
     withLinks(cwd, pr.url, linkedIssues(pr)),
   ]);
   // The raw lists are summarised here and not sent on: every poll carries this
@@ -323,8 +323,12 @@ const FILES_QUERY = `query($owner:String!,$repo:String!,$number:Int!,$after:Stri
     } } } }`;
 
 // How many times prFiles reads a pull request's files before giving up on one
-// that keeps moving under it.
+// that keeps moving under it, and how long it waits before each read after the
+// first, times the reads so far: a burst of pushes gets a second and a half to
+// settle, not three reads back to back that all straddle it. Every gh and git
+// call waits behind this one (serial in server.js), so it stays short.
 const READS = 3;
+const PAUSE = 500;
 
 /**
  * Every changed file, with whether you have marked it viewed; the PR's node id
@@ -342,16 +346,19 @@ const READS = 3;
  * under the cursor, and a file is listed twice or never. Each page says which
  * head it was read at, and which base branch, and one that differs from the
  * first in either starts the read over -- READS times, then it throws, and the
- * poll after tries again. The base's commit is not compared: the list is the
+ * poll after tries again -- the error names the pull request (`moving`), so
+ * the server keeps the one it is showing rather than failing the poll. The
+ * base's commit is not compared: the list is the
  * diff from the merge base, which the base branch moving on does not move, so
  * a busy `main` would only fail reads whose list was never at risk. A
  * retargeted pull request is a different diff, and is read again. A list that is still short of `changedFiles` with nothing
  * moving is one GitHub would not give, and goes out as it is: the Files tab
  * says how many are missing.
  */
-async function prFiles(cwd, url) {
+async function prFiles(cwd, url, pause = PAUSE) {
   const { owner, repo, number } = parsePrUrl(url);
   read: for (let n = 0; n < READS; n++) {
+    if (n) await new Promise((done) => setTimeout(done, pause * n));
     const files = [];
     let snapshot = null;
     let base = null;
@@ -380,7 +387,7 @@ async function prFiles(cwd, url) {
     } while (after);
     return { ...snapshot, files };
   }
-  throw new Error(`${url} moved on GitHub during each of ${READS} reads of its files`);
+  throw Object.assign(new Error(`${url} moved on GitHub during each of ${READS} reads of its files`), { moving: url });
 }
 
 /** Ticking this here ticks the same checkbox on github.com. */
