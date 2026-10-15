@@ -102,18 +102,21 @@ you add a figure, and tick it when you re-measure one, writing the new commit an
 figure. Nobody is waiting on them, so re-measure one when other work makes it cheap: the server is
 already up with `PRCODER_VERBOSE=2`, or a `browser.mjs` run is already printing the width.
 
-- **A poll that reloads nothing costs seven subprocess calls with a pull request**, open or
-  merged, ten on a branch without one that origin has, and eight on one never pushed; one more
-  for a branch ahead of its remote, and the same clean tree or dirty (re-measured on `4d5c842`,
-  2026-10-14, in a clone whose only repository is origin's; seven on nodenorm-es's fork-headed
-  branch too, where it was eight before #147). A poll that reloads the pull request adds
+- **A poll that reloads nothing costs eight subprocess calls with an open pull request**, nine
+  with only a merged one (on a branch whose remote was deleted with the merge), ten on a branch
+  without one that origin has, and eight on one never pushed; one more for a branch ahead of its
+  remote, and the same clean tree or dirty (re-measured on `66b414b`, 2026-10-15, in a clone
+  whose only repository is origin's; nodenorm-es's fork-headed branch was seven on `4d5c842`,
+  before the open pull request's poll began asking where the branch pushes, and eight before
+  #147). A poll that reloads the pull request adds
   `loadPr`'s GraphQL calls on top, and a poll that searches adds the search's. `PRCODER_VERBOSE=2`
   prints the count on every poll, so a change that adds a call shows up.
-  A branch's pull requests, once found, are read by URL, one `gh pr view` each, from
-  `.prcoder/prs.json` (`lookupPrs` in `github.js`), so the seven holds however many repositories
-  the clone has. The search by name (`branchPrs`) runs on a branch with none -- which is every
-  poll there, and what the ten and eight are -- and on a branch with some only after a change of
-  branch, ⟳, `r`, `g`, ten minutes, or a change of state. It is one `gh pr list` per repository the
+  A branch's open pull requests, once found, are read by URL, one `gh pr view` each, from
+  `.prcoder/prs.json` (`lookupPrs` in `github.js`), and held to the branch's push target (one
+  `for-each-ref`), so the eight holds however many repositories the clone has. The search by name
+  (`branchPrs`) runs on a branch with none open -- which is every poll there, and what the nine,
+  ten and eight are -- and on a branch with one only after a change of branch, ⟳, `r`, `g`, ten
+  minutes, a change of state, or a read of one that fails anew. It is one `gh pr list` per repository the
   branch could have one in (`repos` from `repoInfo`), so a clone with a parent or a second GitHub
   remote pays one more, and with no open pull request a second pass per repository. Heads in a
   repository no remote names cost one local `cat-file` per page of them, which `snapshot` then
@@ -122,14 +125,18 @@ already up with `PRCODER_VERBOSE=2`, or a `browser.mjs` run is already printing 
   A repository whose first five rows are all strangers -- a fork's clone on `main`, asking a big
   parent -- is asked once more, a page deep and without the checks, and any of the branch's found
   only there costs a `gh pr view` for its checks (`branchPrs`): on every poll while the branch
-  has none, and on each search once it has.
+  has none open, and on each search once it has.
 - **The checks are most of what the poll's cheap call fetches.** It asks for them on every poll
-  (#120), and on cli/cli#14571's 39 checks they took the lookup's `gh pr list` answer from 110
-  bytes to 11.6KB and the call from about 0.41s to 0.64s, medians of seven runs each (gh 2.102.0,
-  re-measured on `3b1995a`, 2026-10-14); prcoder's one check is 293 bytes. The
+  (#120): the `gh pr view <url>` that reads an open pull request prs.json remembers, and the
+  search's `gh pr list` when it runs. On cli/cli#14571's 39 checks they took the `gh pr list`
+  answer from 110 bytes to 11.6KB and the call from about 0.41s to 0.64s, medians of seven runs
+  each (gh 2.102.0, re-measured on `3b1995a`, 2026-10-14, before the poll read by URL; the
+  `gh pr view` has not been timed); prcoder's one check is 293 bytes. The
   call count above cannot show this growing, so time
+  `gh pr view <url> --json number,headRefOid,updatedAt,statusCheckRollup` on a PR with many
+  checks, and
   `gh pr list --head <branch> --state open --json number,headRefOid,updatedAt,statusCheckRollup`
-  on a PR with many checks -- and with `--limit 5` on a branch name many forks share, since that
+  with `--limit 5` on a branch name many forks share, since that
   first page carries up to five strangers' rollups before prcoder drops them.
 - **The description's prose is 568px wide in Firefox and 567px in Chromium**, in an 864px pane
   (re-measured on `a96dc21`, 2026-10-14). `browser.mjs` prints it every run; a line-length cap is not something the
