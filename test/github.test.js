@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { rollup, linkedIssues, linksFrom, parsePrUrl, run, issueNumber, lf, setViewed, listPrs, loadPr, prHeads, branchPrs, lookupPrs, ownPrs, SEARCH_EVERY, UNREAD_FOR, pickPr, lookupRef, createIssue, repoIssues } from '../github.js';
+import { rollup, linkedIssues, linksFrom, parsePrUrl, run, issueNumber, lf, setViewed, listPrs, loadPr, prHeads, branchPrs, lookupPrs, ownPrs, SEARCH_EVERY, UNREAD_FOR, pickPr, lookupRef, createIssue, repoIssues, setMilestone } from '../github.js';
 import { taskLines } from '../public/tasks.js';
 import { withGh, ghArgs, ghCalls, unix } from './stub-gh.js';
 
@@ -357,6 +357,15 @@ test('a second page of issues is read with its cursor, and the milestones come f
   // gh failing is a failure here, not an empty tab.
   await withGh(() => `echo 'error connecting to api.github.com' >&2\nexit 1`, () =>
     assert.rejects(repoIssues(os.tmpdir(), 'gaurav', 'prcoder'), { message: 'error connecting to api.github.com' }));
+});
+
+// The one write about an issue: its milestone, by title, with the `=` that
+// keeps a title beginning with `-` a value.
+test('a milestone is set by title with =, and removed with the flag for that', { skip: unix }, async () => {
+  const set = await ghArgs(() => setMilestone(os.tmpdir(), 'o/r', 58, '-weird title'));
+  assert.deepEqual(set, ['issue', 'edit', '58', '--repo', 'o/r', '--milestone=-weird title']);
+  const off = await ghArgs(() => setMilestone(os.tmpdir(), 'o/r', 58, null));
+  assert.deepEqual(off, ['issue', 'edit', '58', '--repo', 'o/r', '--remove-milestone']);
 });
 
 // A title becomes a queue item that ▶ types into the PTY, where a \r would
