@@ -1582,7 +1582,34 @@ test('the outline opens at the same width whatever its labels', { skip }, async 
   const short = await width('evil.js', 'a');
   const wide = await width('app.tsx', long.slice(0, 20));
   assert.equal(short.side, wide.side, 'the same width for short labels and long ones');
-  assert.equal(short.side, Math.min(26.5 * short.em, 0.6 * short.main), 'the default in the stylesheet');
+  // Which side of the min() is in force, first: past it, both files would
+  // measure half the pane and pass without the 26.5em in the stylesheet.
+  // 26.5 * 14 is a whole pixel, so the comparison after it can be exact.
+  assert.ok(26.5 * short.em < 0.5 * short.main, `a pane wide enough for 26.5em: ${short.main}px`);
+  assert.equal(short.side, 26.5 * short.em, 'the default in the stylesheet');
+  await fresh.close();
+});
+
+// In a pane too narrow for it, 26.5em would leave the diff 40% of the pane
+// even for one-letter labels, so the outline opens at half the pane instead.
+test('the outline opens at half a narrow pane', { skip }, async () => {
+  const fresh = await newPage();
+  await fresh.setViewportSize({ width: 900, height: 720 });
+  await fresh.route('**/api/diff', (r) => {
+    const { path } = r.request().postDataJSON();
+    return r.fulfill({ json: { path, patch: '@@ -1,1 +1,1 @@ a\n-a\n+b\n@@ -9,1 +9,1 @@ b\n-c\n+d' } });
+  });
+  await fresh.locator('#pr-head .tab', { hasText: 'Files' }).click();
+  await fresh.locator('.file[data-path="evil.js"] .path').click();
+  await fresh.waitForSelector('#diff-outline button >> text=a');
+  const { side, main, em } = await fresh.evaluate(() => ({
+    side: document.getElementById('diff-side').getBoundingClientRect().width,
+    main: document.getElementById('diff-main').getBoundingClientRect().width,
+    em: parseFloat(getComputedStyle(document.getElementById('diff-side')).fontSize),
+  }));
+  assert.ok(0.5 * main < 26.5 * em, `a pane too narrow for 26.5em: ${main}px`);
+  // Layout rounds widths to a fraction of a pixel, which half of one need not be.
+  assert.ok(Math.abs(side - 0.5 * main) < 0.1, `half of ${main}px, not ${side}px`);
   await fresh.close();
 });
 

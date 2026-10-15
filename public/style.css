@@ -714,10 +714,11 @@ a { color: var(--accent); }
    changed width from file to file, and a long label could take 60% of the
    pane. 26.5em is the 371px the owner settled on by dragging, at the body's
    14px -- in em so it follows that 14px if it changes; a browser's font
-   setting doesn't reach it, since the body's size is fixed. The gutter writes
-   a px width after a drag, and the max-width is what keeps a drag from eating
-   the diff. */
-#diff-side { flex: none; width: var(--w-outline, 26.5em); max-width: 60%; overflow: auto; padding: 6px 0; }
+   setting doesn't reach it, since the body's size is fixed. The 50% is for a
+   narrow pane, where 371px would leave the diff a sliver even for one-letter
+   labels. The gutter writes a px width after a drag, and the max-width is
+   what keeps a drag from eating the diff. */
+#diff-side { flex: none; width: var(--w-outline, min(26.5em, 50%)); max-width: 60%; overflow: auto; padding: 6px 0; }
 /* Its own row, stuck to the top so it is still there once the hunks scroll. */
 #diff-outline-hide {
   display: block; margin-left: auto; position: sticky; top: 0; background: var(--panel);
