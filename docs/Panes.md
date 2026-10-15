@@ -177,14 +177,22 @@ request's button would be, **Create PR** opens GitHub's compare page, pushing th
 GitHub has not seen it; on the default branch or a detached HEAD there is nothing to create, and
 the button is left out. The editing controls are disabled.
 
-It also lists the open pull requests that merge *into* the branch you are on, which on `main` is
-the question that branch is interesting for, with each one's stack nested under it. A row's `#N`
-opens that pull request on GitHub, so you can compare a few in other tabs; its **Switch** checks it
-out, the same way the switcher does. Uncommitted work disables Switch for the same reason it hides
-the switcher, and leaves the links alone.
+On the default branch the body is every open pull request, in the switcher's order with each
+stack nested under the one it builds on, since that branch is where the next pull request is
+picked. Each row is the long form: `#N` and the title on the first line, and under it the lines
+added and removed and the number of files, the Files tab's pie (it fills by changed lines viewed,
+so an empty one is probably still being written and a full one is reviewed and waiting on
+something else -- hover it for the figures), whether it can merge in a word (`ready`,
+`conflicts`, `behind base`, `blocked`, `checks failing`, `draft`, or `checking…` while GitHub
+works it out), the review decision when there is one, how long since it last moved, the first
+paragraph of its description as plain text, clipped to two lines, and the issues it closes, each
+with its milestone. A row's `#N` opens that pull request on GitHub, so you can compare a few in
+other tabs; its **Switch** checks it out, the same way the switcher does. Uncommitted work
+disables Switch for the same reason it hides the switcher, and leaves the links alone.
 
-On any other branch it also shows what the branch is built on, since that is where its pull
-request will go. A branch with no pull request has no base on GitHub, so prcoder asks git: the
+Any other branch with no pull request lists the open pull requests that merge *into* it, with
+each one's stack nested under it, in the short form: `#N`, the title and Switch. It also shows
+what the branch is built on, since that is where its pull request will go. A branch with no pull request has no base on GitHub, so prcoder asks git: the
 nearest commit on the branch's first-parent line that another branch on origin also has names the
 branch it was cut from, which still works after that one has taken more commits. It carries on down
 until it reaches the default branch or a branch with an open pull request, whose own base takes it
@@ -204,7 +212,7 @@ branch with no pull request it uses git's own record of origin's head from the l
 the one `git status` reads, so a push from another machine shows only after a fetch. Either way it
 is only as fresh as the last poll.
 
-### Detail, Files, Checks and Stack
+### Detail, Files, Checks, Stack and PRs
 
 Below the head are the tabs. Reading the argument, working the files and watching CI are three
 different things and each wants the whole pane; the last, *Stack*, is the pull requests built on
@@ -214,14 +222,17 @@ one, down to the one into the default branch, each with the others built on it, 
 where it sits, with no Switch because you are there. A base with no open pull request, because it
 merged or never had one, is a row of its own, and git is asked what is under it the way the
 branch-only pane asks, but only once the tab is open. The line above says where the stack starts,
-or that nothing more could be found. Each tab carries the count the others cannot show
+or that nothing more could be found. *PRs* is the table the default branch shows with no pull
+request ([above](#moving-between-pull-requests)): every open pull request in its long form, with
+this one marked where it sits and no Switch, since you are there. Opening it fetches the list
+again, as Stack does. Each tab carries the count the others cannot show
 you -- how many description boxes are still unticked, how many files are still unviewed, how many
-checks have gone green, and for Stack the pull requests under this one and built on it,
-`Stack (↓1 ↑2)`, leaving out a direction that has none -- so none hides from you
+checks have gone green, for Stack the pull requests under this one and built on it,
+`Stack (↓1 ↑2)`, leaving out a direction that has none, and for PRs how many are open -- so none hides from you
 while you are in another. A count that has run out keeps its numbers, `Files (11/11)`, so it
 still says how many.
 
-Each tab that counts work left -- Detail, Files and Checks, not Stack -- is led by one mark, the
+Each tab that counts work left -- Detail, Files and Checks, not Stack or PRs -- is led by one mark, the
 same one the check rows and the folds below use: a pie that fills green as the work is done, and a
 green circle with a ✓ in it once none is left. The
 Files tab's pie fills by changed lines viewed rather than files viewed, so it says how much
@@ -240,8 +251,8 @@ closed, reopened or replaced by another, not on every poll, so the Stack count c
 old. While the switcher has focus its options stay as they are, since replacing them under an open
 dropdown closes it or moves your pick; a list that lands then shows once it loses focus. So after a
 merge on github.com the switcher is right if the poll as you come back to the tab -- put off to ten
-seconds after the last one, if that was sooner -- and the `gh pr list` it starts finish before you
-open it, and otherwise you pick from the list as it was until you open it again. Opening the tab fetches the list again, so a pull request stacked from the terminal shows up there, and one that
+seconds after the last one, if that was sooner -- and the list it starts finish before you
+open it, and otherwise you pick from the list as it was until you open it again. Opening the Stack or PRs tab fetches the list again, so a pull request stacked from the terminal shows up there, and one that
 merged drops out. A fetch that fails keeps the list it had, and until the first one lands the tab,
 and the list of pull requests into a branch, say there is no list yet rather than that it is empty.
 

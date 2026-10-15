@@ -2,7 +2,8 @@
 
 import { execFile } from 'node:child_process';
 import { debug } from './term.js';
-import { mentions, repoUrl, printable } from './public/tasks.js';
+import { mentions, repoUrl, printable, blocks } from './public/tasks.js';
+import { filesProgress } from './public/filelist.js';
 
 // Every gh call and every git call comes through run(), so this is the whole
 // count. What it is for: two browser tabs each poll on their own timer against
@@ -424,21 +425,93 @@ export async function prBody(cwd, prUrl) {
   return lf(body);
 }
 
+const LIST_QUERY = `query($owner:String!,$repo:String!,$after:String){
+  repository(owner:$owner,name:$repo){ pullRequests(first:100,after:$after,states:OPEN){
+    pageInfo{ hasNextPage endCursor }
+    nodes{ number title url isDraft isCrossRepository headRefName baseRefName updatedAt
+      additions deletions changedFiles mergeStateStatus reviewDecision body
+      closingIssuesReferences(first:10){ nodes{ number title url milestone{ title } } }
+      files(first:100){ nodes{ additions deletions viewerViewedState } } } } } }`;
+
 /**
- * Open PRs, for the switcher -- and, filtered by `baseRefName`, for the list of
- * pull requests into the branch you are on that the pane with no pull request
- * shows. That field is not spare: it is free here, where a `gh pr list --base`
- * of its own would be one more call on every poll. `url` is for the
- * pane's links, read off GitHub rather than built from a host (#53).
- * `isCrossRepository` is what stops a fork's `main` looking like a base here.
+ * GitHub's mergeStateStatus as the one word the PRs table shows. `mergeable`
+ * is not asked for: DIRTY is what it would add. HAS_HOOKS is a CLEAN that
+ * waits on a pre-receive hook, which this repository never has.
  */
-export async function listPrs(cwd) {
-  // gh stops at 30 unless told otherwise, and the ones past it simply are not
-  // there -- in the switcher, and in the list of pull requests into a branch
-  // with none of its own. gh pages up to the limit itself.
-  const args = ['pr', 'list', '--state', 'open', '--limit', '1000', '--json',
-    'number,title,headRefName,baseRefName,isDraft,url,isCrossRepository'];
-  return JSON.parse(await gh(args, { cwd }));
+export const MERGE_WORD = {
+  CLEAN: 'ready', HAS_HOOKS: 'ready', DIRTY: 'conflicts', BEHIND: 'behind base', BLOCKED: 'blocked',
+  UNSTABLE: 'checks failing', DRAFT: 'draft', UNKNOWN: 'checking…',
+};
+
+// ponytail: a lead longer than this is cut; the table shows two lines of it.
+const LEAD_MAX = 300;
+
+/**
+ * One node of LIST_QUERY as the row the switcher, the stack views and the PRs
+ * table read. The first seven fields keep the names `gh pr list --json` gave
+ * them, since prTree and stackOrder read those. The rest is what a table
+ * needs to pick the next pull request by: its size, how much of it is viewed
+ * (filesProgress, the Files tab's own pie, over the first hundred files and
+ * counted against changedFiles as that tab counts), whether it can merge,
+ * whether it was reviewed, when it last moved, its first paragraph, and the
+ * issues it closes with each one's milestone. The body and the files stay
+ * here: every list goes to every tab, and nothing past this reads them.
+ */
+export function prListRow(node) {
+  const { body, files, closingIssuesReferences, mergeStateStatus, ...pr } = node;
+  const listed = (files?.nodes ?? []).map(({ viewerViewedState, ...f }) => ({ ...f, viewed: viewerViewedState === 'VIEWED' }));
+  // The whole body, not sectionize()'s lead: a description that opens with a
+  // heading still has a first paragraph, and the table wants it.
+  const lead = blocks(lf(body)).find((b) => b.kind === 'p')?.text ?? '';
+  return {
+    ...pr,
+    title: printable(pr.title ?? '').trim() || `#${pr.number}`,
+    viewed: filesProgress(listed, pr),
+    merge: MERGE_WORD[mergeStateStatus] ?? MERGE_WORD.UNKNOWN,
+    reviewDecision: pr.reviewDecision ?? null,
+    lead: printable(lead.replace(/\s+/g, ' ')).trim().slice(0, LEAD_MAX),
+    closes: (closingIssuesReferences?.nodes ?? []).map((i) => ({
+      number: i.number, url: i.url ?? null,
+      title: printable(i.title ?? '').trim() || `#${i.number}`,
+      milestone: i.milestone?.title ? printable(i.milestone.title).trim() : null,
+    })),
+  };
+}
+
+/**
+ * Every open pull request in `nameWithOwner`, as prListRow has them: for the
+ * switcher; filtered by `baseRefName`, for what is stacked on a branch; and,
+ * whole, for the PRs table. One GraphQL call rather than `gh pr list --json`,
+ * because the table's viewed pie is per-file state only GraphQL carries. The
+ * answer is bigger for it -- docs/Verifying.md has the figure -- and it is the
+ * one call the page leans on for every list, so it carries nothing that costs
+ * a connection per pull request: `reviewThreads` would, and "needs a review"
+ * is already reviewDecision plus an empty pie.
+ *
+ * Owner and repo go as variables (-f, the prFiles note). gh pages nothing
+ * here, so this does, by cursor, like prFiles. A page gh exited 1 on is still
+ * read for its list, as issueLinks reads its answer: one pull request GitHub
+ * cannot resolve a field of must not empty the switcher.
+ */
+export async function listPrs(cwd, nameWithOwner) {
+  const [owner, repo] = String(nameWithOwner ?? '').split('/');
+  const rows = [];
+  let after = null;
+  // ponytail: five pages, 500 open pull requests; past that the list is short.
+  for (let page = 0; page < 5; page++) {
+    const args = ['api', 'graphql', '-f', `query=${LIST_QUERY}`, '-f', `owner=${owner}`, '-f', `repo=${repo}`];
+    if (after) args.push('-f', `after=${after}`);
+    const out = await gh(args, { cwd }).catch((e) => { if (!e.stdout) throw e; return e.stdout; });
+    const { data, errors } = JSON.parse(out);
+    const list = data?.repository?.pullRequests;
+    if (!list) throw new Error(errors?.[0]?.message ?? `GitHub answered without a list of ${nameWithOwner}'s pull requests`);
+    rows.push(...list.nodes.map(prListRow));
+    const { hasNextPage, endCursor } = list.pageInfo;
+    if (hasNextPage && !endCursor) throw new Error(`GitHub said ${nameWithOwner} has more pull requests, but gave no cursor to them`);
+    after = hasNextPage ? endCursor : null;
+    if (!after) break;
+  }
+  return rows;
 }
 
 /**

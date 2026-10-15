@@ -67,7 +67,12 @@ const rows = () => page.$$eval('#pr-body .pr-into .pr-row', (rs) => rs.map((r) =
   `${r.querySelector('.pr-num').textContent} ${r.querySelector('.pr-row-title').textContent}`));
 console.log('says:   ', await page.$eval('#pr-head', (e) => [...e.children].map((c) => c.textContent.trim()).join(' | ')),
   ' (want the branch, why it has no PR, issues · pulls · milestones and the repository, all in the head)');
-console.log('into:   ', (await rows()).join(' | '), ' (want every open PR whose base is main, then its stack, titled)');
+console.log('into:   ', (await rows()).join(' | '), ' (want every open PR, each root followed by its stack, titled)');
+console.log('facts:  ', await page.$eval('#pr-body .pr-into > ul > li', (l) => [
+  l.querySelector(':scope > .pr-facts')?.textContent.trim(),
+  JSON.stringify(l.querySelector(':scope > .pr-lead')?.textContent.slice(0, 60) ?? null),
+  `closes ${l.querySelectorAll(':scope > .pr-closes a').length}`].join(' | ')),
+' (want the first row\'s size, pie, merge word, age, its first paragraph as text, and how many issues it closes)');
 console.log('stacked:', await page.$$eval('#pr-body .pr-into > ul > li', (ls) => ls.map((l) =>
   `${l.querySelector('.pr-num').textContent} +${l.querySelectorAll('li').length}`).join(' | ')),
 ' (want each root with the count of PRs stacked under it: a stacked PR is counted under the one it builds on, not listed as a root)');

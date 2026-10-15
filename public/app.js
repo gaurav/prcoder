@@ -524,7 +524,7 @@ let last = null;
 // landing after the one the merge asked for, put the merged PR back with
 // nothing left to fetch it again.
 //
-// A trigger that only means someone is looking -- the switcher, the Stack tab
+// A trigger that only means someone is looking -- the switcher, the Stack or PRs tab
 // -- joins a fetch already in flight rather than queueing a second whole
 // `gh pr list` behind it on the server's lock, which the next poll then waits
 // behind too. `fresh` is for one that knows the list has changed since a fetch
@@ -759,7 +759,7 @@ function paint(status) {
         prs: stack,
         otherRepo,
         remotes: status.remotes,
-        onStackOpen: () => loadPrs('Stack tab opened'),
+        onStackOpen: () => loadPrs('Stack or PRs tab opened'),
         below: [...below.values()],
         onBelow: loadBelow,
         defaultBranch: status.defaultBranch,

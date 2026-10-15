@@ -47,6 +47,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { server } from '../../server.js';
 import { bucket } from '../../files.js';
 import { rollup } from '../../github.js';
+import { filesProgress } from '../../public/filelist.js';
 import { firefoxEnv } from '../../tools/driver.mjs';
 
 // If a socket ever gets past the mock, the in-process server spawns this (read
@@ -2264,10 +2265,23 @@ test('a poll that brings nothing new leaves the panes as they were', { skip }, a
 // The fixture PR, one built on its branch, and one built on that. The switcher
 // and the Stack tab both have to show the chain as a chain, and a row's #N has
 // to be a link out while its Switch is the checkout -- one control each.
+//
+// Each carries the long form's fields as /api/prs gives them (prListRow in
+// github.js): #12 half viewed, ready and approved, closing an issue on a
+// milestone, with a lead whose markup must come out as text; #13 in conflict
+// with nothing to close; #14 with no lead at all.
+const viewedHalf = filesProgress([{ additions: 10, deletions: 0, viewed: true }, { additions: 0, deletions: 2, viewed: false }],
+  { additions: 10, deletions: 2, changedFiles: 2 });
 const STACK = [
-  { number: 12, title: pr.title, headRefName: 'topic', baseRefName: 'main', isDraft: false, url: pr.url },
-  { number: 13, title: 'Built on the fixture', headRefName: 'topic-2', baseRefName: 'topic', isDraft: true, url: `${REPO}/pull/13` },
-  { number: 14, title: 'Built on that', headRefName: 'topic-3', baseRefName: 'topic-2', isDraft: false, url: `${REPO}/pull/14` },
+  { number: 12, title: pr.title, headRefName: 'topic', baseRefName: 'main', isDraft: false, url: pr.url, isCrossRepository: false,
+    updatedAt: '2026-10-01T00:00:00Z', additions: 10, deletions: 2, changedFiles: 2, viewed: viewedHalf, merge: 'ready', reviewDecision: 'APPROVED',
+    lead: 'A lead with <b>markup</b> and #7.', closes: [{ number: 7, title: 'Per-route locking <script>', url: `${REPO}/issues/7`, milestone: 'v1' }] },
+  { number: 13, title: 'Built on the fixture', headRefName: 'topic-2', baseRefName: 'topic', isDraft: true, url: `${REPO}/pull/13`, isCrossRepository: false,
+    updatedAt: '2026-09-01T00:00:00Z', additions: 1, deletions: 1, changedFiles: 1, viewed: filesProgress([], { changedFiles: 1 }), merge: 'conflicts', reviewDecision: null,
+    lead: 'Second.', closes: [] },
+  { number: 14, title: 'Built on that', headRefName: 'topic-3', baseRefName: 'topic-2', isDraft: false, url: `${REPO}/pull/14`, isCrossRepository: false,
+    updatedAt: '2026-09-01T00:00:00Z', additions: 0, deletions: 0, changedFiles: 0, viewed: filesProgress([], {}), merge: 'checking…', reviewDecision: null,
+    lead: '', closes: [] },
 ];
 
 test('stacked PRs nest in the switcher and the Stack tab, each linked and switchable', { skip }, async () => {
@@ -2432,6 +2446,40 @@ test('opening the Stack tab picks up a PR stacked since the page loaded', { skip
   await fresh.waitForSelector('#pr-body .pr-into .pr-num');
   assert.deepEqual(await fresh.locator('#pr-body .pr-into > ul > li > .pr-row .pr-num').allTextContents(), ['#13']);
   assert.equal(await fresh.locator('#pr-head .tab', { hasText: 'Stack' }).textContent(), 'Stack (↑2)');
+  await fresh.close();
+});
+
+// The PRs tab is the default branch's table with the pull request on screen
+// marked where it sits, and like Stack it fetches the list as it opens.
+test('the PRs tab lists every open pull request with this one marked, and fetches the list as it opens', { skip }, async () => {
+  const fresh = await newPage({ prs: STACK.slice(0, 1) });
+  await fresh.route('**/api/prs', (r) => r.fulfill({ json: STACK }));
+  const tab = fresh.locator('#pr-head .tab', { hasText: 'PRs' });
+  assert.equal(await tab.textContent(), 'PRs (1)');
+  const fetched = fresh.waitForResponse('**/api/prs');
+  await tab.click();
+  await fetched;
+  await fresh.waitForSelector('#pr-body .pr-into ul ul .pr-num');
+  assert.equal(await fresh.locator('#pr-head .tab', { hasText: 'PRs' }).textContent(), 'PRs (3)');
+  assert.equal(await fresh.locator('#pr-body .pr-into-label').textContent(), 'Open pull requests');
+  assert.deepEqual(await fresh.locator('#pr-body .pr-into > ul > li > .pr-row .pr-num').allTextContents(), ['#12']);
+  assert.deepEqual(await fresh.locator('#pr-body .pr-into ul ul .pr-num').allTextContents(), ['#13', '#14']);
+  // The one on screen is marked and has no Switch; the others keep theirs.
+  const here = fresh.locator('#pr-body .pr-row.here');
+  assert.equal(await here.locator('.pr-num').textContent(), '#12');
+  assert.equal(await here.locator('.pr-go').count(), 0);
+  assert.equal(await here.locator('xpath=..').getAttribute('aria-current'), 'true');
+  assert.equal(await fresh.locator('#pr-body .pr-go').count(), 2);
+  assert.equal(await fresh.locator('#pr-body .pr-facts').count(), 3, 'every row in its long form');
+  const switched = [];
+  await fresh.route('**/api/pr/switch', (r) => {
+    switched.push(r.request().postDataJSON().url);
+    return r.fulfill({ json: status });
+  });
+  const sent = fresh.waitForResponse('**/api/pr/switch');
+  await fresh.locator('#pr-body .pr-row', { hasText: '#13' }).locator('.pr-go').click();
+  await sent;
+  assert.deepEqual(switched, [`${REPO}/pull/13`]);
   await fresh.close();
 });
 
@@ -2750,13 +2798,35 @@ test('with no list of pull requests, the panes say there is none yet', { skip },
 // that needs no clone, so it runs on every `npm test`.
 const onMain = { ...status, branch: 'main', pr: null };
 
-test('with no PR, the PRs into this branch nest their stacks, and a dirty tree blocks only Switch', { skip }, async () => {
+test('with no PR on main, every open PR is a row in its long form, nested, and a dirty tree blocks only Switch', { skip }, async () => {
   const clean = await newPage({ prs: STACK, st: onMain, ready: '#pr-body .pr-into .pr-go' });
-  assert.equal(await clean.locator('#pr-body .pr-into-label').textContent(), 'Pull requests into branch main');
-  assert.equal(await clean.locator('#pr-body .pr-into-label code.branch').textContent(), 'main');
+  assert.equal(await clean.locator('#pr-body .pr-into-label').textContent(), 'Open pull requests');
   assert.deepEqual(await clean.locator('#pr-body .pr-into > ul > li > .pr-row .pr-num').allTextContents(), ['#12']);
   assert.deepEqual(await clean.locator('#pr-body .pr-into ul ul .pr-num').allTextContents(), ['#13', '#14']);
   assert.equal(await clean.locator('#pr-body .pr-num', { hasText: '#12' }).getAttribute('href'), pr.url);
+  // The long form under each first line: size, the pie, the merge word, the
+  // review, the age, the lead as text, and what it closes with its milestone.
+  const li = clean.locator('#pr-body .pr-into > ul > li').first();
+  const facts = await li.locator('> .pr-facts > *').allTextContents();
+  // The age is against the real clock, so only its shape is pinned.
+  assert.match(facts.pop(), /^\d+ (days|months|years) ago$/, facts.join(' '));
+  assert.deepEqual(facts, ['+10', '−2', '2 files', '', 'ready', 'approved']);
+  assert.equal(await li.locator('> .pr-facts .mark').evaluate((m) => m.style.getPropertyValue('--p')), '0.8333333333333334');
+  assert.equal(await li.locator('> .pr-facts .mark').getAttribute('aria-label'), '1 of 2 files, 10 of 12 changed lines viewed');
+  assert.equal(await li.locator('> .pr-facts .pr-age').getAttribute('title'), '2026-10-01T00:00:00Z');
+  assert.equal(await li.locator('> .pr-lead').textContent(), 'A lead with <b>markup</b> and #7.');
+  assert.equal(await li.locator('> .pr-lead b').count(), 0, 'the lead is text, not markup');
+  assert.equal(await li.locator('> .pr-closes a').textContent(), '#7 Per-route locking <script>');
+  assert.equal(await li.locator('> .pr-closes a').getAttribute('href'), `${REPO}/issues/7`);
+  assert.equal(await li.locator('> .pr-closes .pr-ms').textContent(), 'v1');
+  // By the row's own first line: #12's li holds #13's and #14's, nested.
+  const rowOf = (n) => clean.locator('#pr-body .pr-into li', { has: clean.locator(`> .pr-row .pr-num:text-is("${n}")`) });
+  const second = rowOf('#13');
+  assert.equal(await second.locator('> .pr-facts .pr-merge').getAttribute('class'), 'pr-merge conflicts');
+  assert.equal(await second.locator('> .pr-closes').count(), 0);
+  const third = rowOf('#14');
+  assert.equal(await third.locator('> .pr-lead').count(), 0, 'no lead, no paragraph');
+  assert.equal(await third.locator('> .pr-facts .pr-merge').getAttribute('class'), 'pr-merge checking');
   const switched = [];
   await clean.route('**/api/pr/switch', (r) => {
     switched.push(r.request().postDataJSON().url);

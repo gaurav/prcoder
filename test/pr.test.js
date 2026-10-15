@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   pageTitle, withoutHtml, inline, headLinks, noPrLinks, prsInto, prTree, stackOn, stackLabel, stackUnder, stackTree, stackTitle, stackBase, stackOrder, stackEmpty, intoEmpty, switcherRows, sideLabel, sides, branchGroup, lookedIn,
-  tabLabel, taskCount, filesName, checkCount, checksName, worst,
+  tabLabel, taskCount, filesName, checkCount, checksName, worst, prForest, age, REVIEW, prsLabel,
 } from '../public/pr.js';
 import { filesProgress } from '../public/filelist.js';
 import { tabDone } from '../public/ui.js';
@@ -435,6 +435,39 @@ test('the switcher lists each pull request with its stack under it', () => {
   const deeper = [...OPEN, { number: 61, headRefName: 'tabs-2', baseRefName: 'checks-tab' },
     { number: 9, headRefName: 'elsewhere', baseRefName: 'release' }];
   assert.deepEqual(order(deeper), ['1', '-27', '-60', '--61', '9']);
+});
+
+test('the PRs tab counts the open pull requests, and is plain until a list has landed', () => {
+  assert.equal(prsLabel(null), 'PRs');
+  assert.equal(prsLabel([]), 'PRs (0)');
+  assert.equal(prsLabel(OPEN), `PRs (${OPEN.length})`);
+});
+
+// The table draws the forest the switcher flattens, so the two cannot disagree.
+test('the forest of open pull requests is what the switcher walks', () => {
+  const deeper = [...OPEN, { number: 61, headRefName: 'tabs-2', baseRefName: 'checks-tab' },
+    { number: 9, headRefName: 'elsewhere', baseRefName: 'release' }];
+  assert.deepEqual(shape(prForest(deeper)), [1, [27, 60, [61]], 9]);
+  const flat = (nodes, depth = 0) => nodes.flatMap(({ pr, kids }) => [{ pr, depth }, ...flat(kids, depth + 1)]);
+  assert.deepEqual(flat(prForest(deeper)), stackOrder(deeper));
+  assert.deepEqual(prForest([]), []);
+});
+
+// The table's age column, held still at a known `now`.
+test('how long since a pull request moved is a word or two, and nothing for no date', () => {
+  const now = Date.parse('2026-10-15T12:00:00Z');
+  assert.equal(age('2026-10-15T11:59:40Z', now), 'just now');
+  assert.equal(age('2026-10-15T11:57:00Z', now), '3 minutes ago');
+  assert.equal(age('2026-10-15T09:00:00Z', now), '3 hours ago');
+  assert.equal(age('2026-10-13T12:00:00Z', now), '2 days ago');
+  assert.equal(age('2026-09-10T12:00:00Z', now), '1 month ago');
+  assert.equal(age('2024-10-15T12:00:00Z', now), '2 years ago');
+  // A clock ahead of GitHub's is not "in 2 minutes".
+  assert.equal(age('2026-10-15T12:02:00Z', now), 'just now');
+  assert.equal(age(null), '');
+  assert.equal(age('not a date'), '');
+  assert.deepEqual(Object.keys(REVIEW), ['APPROVED', 'CHANGES_REQUESTED', 'REVIEW_REQUIRED']);
+  assert.equal(REVIEW[null], undefined);
 });
 
 // gh pr list has only open PRs, so a merged one on screen is added -- into the

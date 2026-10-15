@@ -140,6 +140,26 @@ export function renderHeader(status, prs, handlers) {
 // `ahead` is not in the table because it counts.
 const SYNC = { behind: 'pull needed', diverged: 'diverged', unpushed: 'not pushed' };
 
+/** GitHub's reviewDecision as the PRs table says it; null, the usual case here, says nothing. */
+export const REVIEW = { APPROVED: 'approved', CHANGES_REQUESTED: 'changes requested', REVIEW_REQUIRED: 'review needed' };
+
+// Largest first, so the first that fits is the unit.
+const UNITS = [['year', 365 * 86400], ['month', 30 * 86400], ['day', 86400], ['hour', 3600], ['minute', 60]];
+
+/**
+ * How long ago `iso` was, in a word or two: `3 days ago`. Under a minute is
+ * `just now`; nothing, or a date that is not one, is ''. `now` is a parameter
+ * so a test can hold it still.
+ */
+export function age(iso, now = Date.now()) {
+  const t = Date.parse(iso ?? '');
+  if (Number.isNaN(t)) return '';
+  const s = Math.max(0, Math.round((now - t) / 1000));
+  const found = UNITS.find(([, size]) => s >= size);
+  if (!found) return 'just now';
+  return new Intl.RelativeTimeFormat('en', { numeric: 'always' }).format(-Math.floor(s / found[1]), found[0]);
+}
+
 /** The sync light's words, shared with the terminal's status block in server.js. */
 export const syncPhrase = (s) => (s.sync === 'ahead' ? `${s.ahead} unpushed` : SYNC[s.sync] ?? null);
 
@@ -189,13 +209,22 @@ export function prTree(prs, branch, seen = new Set()) {
  * reach goes on the end, unnested. Otherwise it would drop out of the switcher.
  */
 export function stackOrder(prs) {
+  const walk = (nodes, depth) => nodes.flatMap(({ pr, kids }) => [{ pr, depth }, ...walk(kids, depth + 1)]);
+  return walk(prForest(prs), 0);
+}
+
+/**
+ * The same, nested: every open pull request as `[{ pr, kids }]`, each base's
+ * tree and then whatever the walk did not reach, with no kids. The PRs table
+ * draws this through stackList, so it nests as the switcher indents.
+ */
+export function prForest(prs) {
   const heads = new Set(prs.filter((p) => !p.isCrossRepository).map((p) => p.headRefName));
   const bases = new Set(prs.map((p) => p.baseRefName).filter((b) => !heads.has(b)));
   const seen = new Set();
-  const walk = (nodes, depth) => nodes.flatMap(({ pr, kids }) => [{ pr, depth }, ...walk(kids, depth + 1)]);
   return [
-    ...[...bases].flatMap((b) => walk(prTree(prs, b, seen), 0)),
-    ...prs.filter((p) => !seen.has(p.number)).map((pr) => ({ pr, depth: 0 })),
+    ...[...bases].flatMap((b) => prTree(prs, b, seen)),
+    ...prs.filter((p) => !seen.has(p.number)).map((pr) => ({ pr, kids: [] })),
   ];
 }
 
@@ -330,7 +359,9 @@ const headOf = (n) => (n.pr ? n.pr.headRefName : n.branch);
 /**
  * The pane with no PR to show. The head is the pull request head's shape with
  * the branch in place of the pull request -- which branch, why there is no PR,
- * and the same way out of the window -- and the body is what merges into here.
+ * and the same way out of the window -- and the body is every open pull
+ * request on the default branch (prTable), or what merges into here and what
+ * here is built on anywhere else.
  *
  * The way out used to be in the body, under that list, which put it below the
  * fold on `main` with a dozen PRs open: the one branch where issues and
@@ -374,11 +405,18 @@ export function renderNoPr(status, prs, { onCreate, onSwitch, onBelow, below = [
     links: create.length || out.links.length ? linkRow([...create, ...out.links], 'meta pr-ways pr-links', out.repo) : null,
   });
 
+  const opts = { blocked: status.dirtyFiles.length > 0, onSwitch };
+  // The default branch is where the next pull request is picked, so its body
+  // is every open one in its long form (prTable) -- the list into it, which it
+  // used to show, is the same rows with the ones built elsewhere added.
+  if (onDefault) {
+    host.replaceChildren(prTable(prs, opts));
+    return;
+  }
   // What the branch is built on only git can say, so it is asked for here --
   // app.js asks once per list, which is the schedule this pane already reads.
   const under = stackUnder({ branch: status.branch }, prs, below, status.defaultBranch);
   if (under.ask) onBelow?.(under.ask);
-  const opts = { blocked: status.dirtyFiles.length > 0, onSwitch };
   const tree = stackTree({ branch: status.branch }, prs, under);
   host.replaceChildren(...kids([
     tree
@@ -406,9 +444,9 @@ export const intoEmpty = (branch, prs) => (prs ? ['No pull requests into branch 
 /**
  * The pull requests into this branch, each a row you can read or check out.
  *
- * This is the branch-only pane's reason to exist: on `main` there is nothing to
- * create and nothing to read, and what you actually want to know is which pull
- * requests land here.
+ * The branch-only pane's first reason to exist, on a branch with no pull
+ * request that others are built on. On the default branch the body is the
+ * whole table instead (prTable), which has these rows among the rest.
  *
  * Reading and moving are two controls because they are two different things.
  * The row used to be one button that ran `gh pr checkout`, so a cmd-click to
@@ -462,16 +500,66 @@ const current = (here) => (here ? { ariaCurrent: 'true' } : {});
  * The one you are looking at is marked instead of offering to go there: the
  * switcher in the head is the way to check it out.
  */
-const prRow = ({ pr: p, here }, { blocked, onSwitch }, kids) => h('li', current(here),
-  h('div', { className: here ? 'pr-row here' : 'pr-row' },
-    ext(p.url, `#${p.number}`, { className: 'pr-num' }),
-    p.isDraft ? badge('draft', 'draft') : null,
-    h('span', { className: 'pr-row-title', title: p.title }, p.title),
-    here ? null : btn('Switch', () => onSwitch(p.url), {
-      className: 'pr-go', disabled: blocked,
-      title: blocked ? 'Commit or stash your changes first' : `Check out #${p.number} here`,
-    })),
-  kids);
+const prRow = (n, { blocked, onSwitch, full = false, current: cur = null }, kids) => {
+  const p = n.pr;
+  const here = n.here || (cur != null && p.url === cur);
+  return h('li', current(here),
+    h('div', { className: here ? 'pr-row here' : 'pr-row' },
+      ext(p.url, `#${p.number}`, { className: 'pr-num' }),
+      p.isDraft ? badge('draft', 'draft') : null,
+      h('span', { className: 'pr-row-title', title: p.title }, p.title),
+      here ? null : btn('Switch', () => onSwitch(p.url), {
+        className: 'pr-go', disabled: blocked,
+        title: blocked ? 'Commit or stash your changes first' : `Check out #${p.number} here`,
+      })),
+    full ? prFacts(p) : null,
+    kids);
+};
+
+/** A merge word as a class: `checks failing` -> `checks-failing`, `checking…` -> `checking`. */
+const wordClass = (w) => w.toLowerCase().replace(/[^a-z]+/g, '-').replace(/^-|-$/g, '');
+
+/**
+ * The long form of a row, for picking the next pull request to work on: its
+ * size, the Files tab's pie (filled by changed lines viewed, so an empty one is
+ * probably still being written and a full one is reviewed and waiting on
+ * something else), whether it can merge, whether it was reviewed, how long
+ * since it moved, its first paragraph, and the issues it closes with their
+ * milestones. Everything from GitHub is a text node; the lead shows its
+ * markdown as source rather than going through inline(), which is one less
+ * place untrusted text becomes markup.
+ */
+function prFacts(p) {
+  const review = REVIEW[p.reviewDecision];
+  const files = p.changedFiles ?? 0;
+  return [
+    h('div', { className: 'pr-facts' },
+      h('span', { className: 'add' }, `+${p.additions ?? 0}`),
+      h('span', { className: 'del' }, `−${p.deletions ?? 0}`),
+      h('span', {}, `${files} file${files === 1 ? '' : 's'}`),
+      p.viewed ? mark({ p: p.viewed.p, full: p.viewed.full, label: p.viewed.label }) : null,
+      p.merge ? h('span', { className: `pr-merge ${wordClass(p.merge)}` }, p.merge) : null,
+      review ? h('span', { className: 'pr-review' }, review) : null,
+      p.updatedAt ? h('span', { className: 'pr-age', title: p.updatedAt }, age(p.updatedAt)) : null),
+    p.lead ? h('p', { className: 'pr-lead' }, p.lead) : null,
+    p.closes?.length ? h('div', { className: 'pr-closes' }, ...p.closes.map((i) => h('span', { className: 'pr-close' },
+      ext(i.url ?? `${p.url.replace(/\/pull\/\d+$/, '')}/issues/${i.number}`, [
+        h('span', { className: 'num' }, `#${i.number}`), ' ', h('span', { className: 'ttl' }, i.title)]),
+      i.milestone ? h('span', { className: 'pr-ms' }, i.milestone) : null))) : null,
+  ];
+}
+
+/**
+ * Every open pull request, nested as the switcher indents, each in its long
+ * form: the body on the default branch with no pull request, and the PRs tab.
+ * `current` marks the one on screen. Nothing yet says there is no list yet,
+ * rather than that it is empty.
+ */
+const prTable = (prs, opts) => (!prs ? h('p', { className: 'empty' }, ...named(NO_LIST))
+  : !prs.length ? h('p', { className: 'empty' }, 'No open pull requests.')
+    : h('div', { className: 'pr-into' },
+      h('span', { className: 'pr-into-label' }, 'Open pull requests'),
+      stackList(prForest(prs), { ...opts, full: true })));
 
 /**
  * A branch in a stack with no open pull request: the one you are on in the
@@ -499,7 +587,7 @@ const bareRow = ({ branch, here }, _opts, kids) => h('li', current(here),
  */
 let tab = 'detail';
 let shownFor = null;
-const scrolled = { detail: 0, files: 0, checks: 0, stack: 0 };
+const scrolled = { detail: 0, files: 0, checks: 0, stack: 0, prs: 0 };
 const openSections = new Set();
 // Whether the single-section description below is still allowed to open itself.
 let autoOpen = true;
@@ -688,9 +776,10 @@ const repoChip = (crumb) => ext(crumb.href, [
  * The pull request pane, in two roots.
  *
  * #pr-head is the identity -- which pull request, on what branch, passing or
- * not -- and does not scroll. #pr-body is one of four views of it: the argument
- * (Detail), the work (Files), CI (Checks, drawn only when there are checks) and
- * the stack it is in (Stack). They are tabs rather than one column
+ * not -- and does not scroll. #pr-body is one of five views of it: the argument
+ * (Detail), the work (Files), CI (Checks, drawn only when there are checks),
+ * the stack it is in (Stack) and every open pull request with this one marked
+ * (PRs, the default branch's table). They are tabs rather than one column
  * because they are different things to be doing, they each want the whole
  * pane, and an agent-written description is long enough to bury a file list
  * entirely. docs/Panes.md has what each shows.
@@ -705,6 +794,7 @@ export function renderPr(pr, handlers) {
     scrolled.files = 0;
     scrolled.checks = 0;
     scrolled.stack = 0;
+    scrolled.prs = 0;
     openSections.clear();
     autoOpen = true;
   }
@@ -721,10 +811,10 @@ export function renderPr(pr, handlers) {
 function renderPrHead(pr, parsed, handlers) {
   const switchTo = (name) => {
     tab = name;
-    // The Stack tab says what is and is not built on this branch, and the list
-    // it says it from is fetched only now and then (see loadPrs in app.js).
-    // Opening it asks for a fresh one, which repaints the pane when it lands.
-    if (name === 'stack') handlers.onStackOpen?.();
+    // The Stack and PRs tabs are drawn from the list of open pull requests,
+    // which is fetched only now and then (see loadPrs in app.js). Opening
+    // either asks for a fresh one, which repaints the pane when it lands.
+    if (name === 'stack' || name === 'prs') handlers.onStackOpen?.();
     renderPrHead(pr, parsed, handlers);
     renderPrTab(pr, parsed, handlers);
   };
@@ -769,7 +859,8 @@ function renderPrHead(pr, parsed, handlers) {
         ? paneTab('checks', [mark({ ...fraction(checks), state: worst(pr.checks) }),
           tabLabel('Checks', checks)], '', said(checksName(pr.checks)))
         : null,
-      paneTab('stack', stackLabel(stackOn(pr, handlers.prs), stackUnder({ pr }, handlers.prs, handlers.below, handlers.defaultBranch).nodes))),
+      paneTab('stack', stackLabel(stackOn(pr, handlers.prs), stackUnder({ pr }, handlers.prs, handlers.below, handlers.defaultBranch).nodes)),
+      paneTab('prs', prsLabel(handlers.prs))),
   };
   paintHead(rows);
 }
@@ -847,6 +938,9 @@ export const stackEmpty = (pr, prs, otherRepo = false) => (otherRepo
     : ['Nothing is stacked on ', ...stackBase(pr), '.']);
 
 const stackSize = (nodes) => nodes.reduce((n, k) => n + 1 + stackSize(k.kids), 0);
+
+/** `PRs (7)`: how many are open, which the switcher never counts; plain until a list has landed. */
+export const prsLabel = (prs) => (prs ? `PRs (${prs.length})` : 'PRs');
 
 /**
  * `Stack (↓1 ↑2)`: the pull requests under this one, and every one built on it.
@@ -951,6 +1045,12 @@ function renderPrTab(pr, parsed, handlers) {
         h('span', { className: 'pr-into-label' }, ...named(['Pull requests built on ', ...stackBase(pr)])),
         stackList(stack, handlers))
       : h('p', { className: 'empty' }, ...named(stackEmpty(pr, handlers.prs, handlers.otherRepo))),
+  ] : tab === 'prs' ? [
+    // Every open pull request, this one marked where it sits (prTable); in
+    // another repository the list is not this one's, as the Stack tab says.
+    handlers.otherRepo
+      ? h('p', { className: 'empty' }, ...named(stackEmpty(pr, handlers.prs, true)))
+      : prTable(handlers.prs, { ...handlers, current: pr.url }),
   ] : tab === 'checks' ? [
     ...pr.checks.list.map((c) => h('div', { className: 'check' },
       mark({ full: c.state === 'pass', state: c.state, label: CHECK_WORD[c.state] ? undefined : 'passed' }),
