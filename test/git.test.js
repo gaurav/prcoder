@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { notAWorkTree, syncState, compareUrl, githubUrl, originOwner, remoteRepo, remoteRepos, repoInfo, prScope, wholePrRepo, userDirt, remoteBranchHead, trackingHead, snapshot, localPatch, branchesBelow } from '../git.js';
+import { notAWorkTree, syncState, compareUrl, githubUrl, originOwner, remoteRepo, remoteRepos, repoInfo, pushRepo, prScope, wholePrRepo, userDirt, remoteBranchHead, trackingHead, snapshot, localPatch, branchesBelow } from '../git.js';
 
 // git finds the repository through GIT_DIR and GIT_WORK_TREE before it looks
 // at cwd, and a git hook exports them. Under a hook, `npm test` ran every
@@ -195,6 +195,43 @@ test('the remotes are listed origin first, GitHub ones only', async () => {
       { name: 'origin', repo: 'TranslatorSRI/NodeNormalizationAPI' },
       { name: 'upstream', repo: 'biothings/NodeNormalizationAPI' },
     ]);
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
+
+// Where a plain push of the branch goes, when it goes to a branch of the same
+// name: what tells the fork's own `main` from the parent's in branchPrs.
+test('a branch pushes to the repository of the remote a push would go to, under its own name', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'prcoder-push-'));
+  const run = (...args) => testGit(dir, ...args);
+  const repoOf = { origin: 'me/repo', upstream: 'up/repo' };
+  try {
+    await git('git', ['init', '-q', '-b', 'main', dir]);
+    await run('commit', '-q', '--allow-empty', '-m', 'x');
+    for (const [name, url] of [['origin', 'git@github.com:me/repo.git'], ['upstream', 'https://github.com/up/repo']]) {
+      await run('remote', 'add', name, url);
+      await run('update-ref', `refs/remotes/${name}/main`, 'main');
+    }
+    // No upstream, under push.default simple: a push goes nowhere.
+    assert.equal(await pushRepo(dir, 'main', repoOf), null);
+    await run('branch', '-q', '--set-upstream-to=origin/main', 'main');
+    assert.equal(await pushRepo(dir, 'main', repoOf), 'me/repo');
+    // A push remote of its own wins over the upstream's, where git resolves
+    // one: under push.default current, not simple, which leaves %(push) empty
+    // for a pushRemote though a push would go there -- the lookup's old rule
+    // then, not a wrong answer.
+    await run('config', 'branch.main.pushRemote', 'upstream');
+    assert.equal(await pushRepo(dir, 'main', repoOf), null);
+    await run('config', 'push.default', 'current');
+    assert.equal(await pushRepo(dir, 'main', repoOf), 'up/repo');
+    await run('config', '--unset', 'push.default');
+    // Tracking another name: a plain push would not go to `topic` anywhere.
+    await run('checkout', '-q', '-b', 'topic', '--track', 'origin/main');
+    assert.equal(await pushRepo(dir, 'topic', repoOf), null);
+    // A remote off GitHub is not in `repoOf`, and nothing is not a branch.
+    assert.equal(await pushRepo(dir, 'main', { origin: 'me/repo' }), null);
+    assert.equal(await pushRepo(dir, '', repoOf), null);
   } finally {
     await fs.rm(dir, { recursive: true, force: true });
   }
@@ -419,6 +456,7 @@ test('repoInfo lists gh\'s base repository, its parent, then the remotes, once e
     const info = await withGh(view, () => repoInfo(dir));
     assert.deepEqual(info.repos, ['up/repo', 'grand/repo', 'me/repo']);
     assert.deepEqual(info.remotes, { 'me/repo': 'origin', 'up/repo': 'upstream' });
+    assert.deepEqual(info.repoOf, { origin: 'me/repo', upstream: 'up/repo', backup: 'me/repo' });
     assert.equal(info.nameWithOwner, 'up/repo');
     assert.equal(info.defaultBranch, 'main');
     assert.equal(info.prefix, '');

@@ -12,7 +12,7 @@ import { text as readBody } from 'node:stream/consumers';
 import { spawn as ptySpawn } from 'node-pty';
 import { WebSocketServer } from 'ws';
 import { loadPr, prHeads, prUrl, prBody, parsePrUrl, listPrs, branchPrs, pickPr, issueLinks, lookupRef, setViewed, setBody, createIssue, fetchPatches, runCount } from './github.js';
-import { notAWorkTree, snapshot, currentBranch, headCommit, hasCommit, repoInfo, prScope, compareUrl, githubUrl, originOwner, wholePrRepo, checkoutPr, pushBranch, remoteBranchHead, trackingHead, localPatch, branchesBelow } from './git.js';
+import { notAWorkTree, snapshot, currentBranch, headCommit, hasCommit, repoInfo, pushRepo, prScope, compareUrl, githubUrl, originOwner, wholePrRepo, checkoutPr, pushBranch, remoteBranchHead, trackingHead, localPatch, branchesBelow } from './git.js';
 import { bucket, fileUrl, fileViews } from './files.js';
 import { readPort, writePort, pick, useQueueFile, movedQueue, issueUrl } from './store.js';
 import { readQueue, writeQueue, quote } from './queue.js';
@@ -227,7 +227,8 @@ async function status({ full = false } = {}) {
   // which on such a branch is the same commit.
   const known = new Map();
   const has = (oid) => known.get(oid) ?? known.set(oid, hasCommit(oid, repo)).get(oid);
-  const found = await branchPrs(repo, facts.repos, branch, { has, checks: !target });
+  const home = await pushRepo(repo, branch, facts.repoOf);
+  const found = await branchPrs(repo, facts.repos, branch, { has, checks: !target, home });
   if (!target) {
     heads = pickPr(found, { head, chosen: chosen?.url, shown: pr?.url, repos: facts.repos });
     await refresh(heads);
@@ -852,9 +853,9 @@ function watch(child, shell, failed) {
  */
 async function openGithub() {
   const [branch, head] = await Promise.all([currentBranch(repo), headCommit(repo)]);
-  const { nameWithOwner, defaultBranch, repos } = await repoFacts();
+  const { nameWithOwner, defaultBranch, repos, repoOf } = await repoFacts();
   const url = target ? await prUrl(repo, target) : pickPr(
-    await branchPrs(repo, repos, branch, { has: (oid) => hasCommit(oid, repo), checks: false }),
+    await branchPrs(repo, repos, branch, { has: (oid) => hasCommit(oid, repo), checks: false, home: await pushRepo(repo, branch, repoOf) }),
     { head, chosen: chosen?.branch === branch ? chosen.url : null, shown: pr?.url, repos })?.url;
   openBrowser(githubUrl({
     prUrl: url, nameWithOwner, defaultBranch, branch,

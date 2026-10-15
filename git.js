@@ -156,6 +156,30 @@ export async function remoteRepos(cwd) {
 }
 
 /**
+ * The repository a plain `git push` sends `branch` to, when it goes to a
+ * branch of the same name there; null when it would go nowhere, to another
+ * name, or to a remote off GitHub. `byName` is repoInfo's `repoOf`.
+ *
+ * `%(push)` is `refs/remotes/<remote>/<branch>` exactly then, whatever put it
+ * there -- an upstream with push.default simple, push.default current, a
+ * pushRemote or remote.pushDefault -- and empty for a branch with no upstream
+ * under simple, or one tracking another name (git 2.54.0, 2026-10-14). It is
+ * empty too for a pushRemote under simple, where a real push would go to it:
+ * git resolves `simple` only against the upstream. Null then, and branchPrs
+ * goes by its older rule, as with no push at all. This is the branch's own
+ * repository as gh reads it: `gh pr view` builds its head label from the same
+ * push config.
+ */
+export async function pushRepo(cwd, branch, byName) {
+  if (!branch) return null;
+  // A pattern matches `refs/heads/<branch>/...` as well, but git will not have
+  // a branch and a directory of branches by one name, so there is one line.
+  const ref = (await text(['for-each-ref', '--format=%(push)', `refs/heads/${branch}`], cwd)).split('\n')[0];
+  const name = Object.keys(byName).find((r) => ref === `refs/remotes/${r}/${branch}`);
+  return name ? byName[name] : null;
+}
+
+/**
  * How the PR on screen relates to the checkout. A boolean would collapse these:
  * a PR in another repo can never be in sync, so its light has to be hidden
  * rather than shown red forever.
@@ -198,6 +222,8 @@ export async function repoInfo(cwd) {
     // The first remote for each repository, so origin keeps its own when
     // another remote names the same one: fromEntries keeps the last.
     remotes: Object.fromEntries(remotes.toReversed().map((r) => [r.repo, r.name])),
+    // And the other way round, every remote's, for where a push goes (pushRepo).
+    repoOf: Object.fromEntries(remotes.map((r) => [r.name, r.repo])),
     prefix: await text(['rev-parse', '--show-prefix'], cwd),
   };
 }

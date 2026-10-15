@@ -378,6 +378,22 @@ test('a pull request is the branch\'s by its head repository or its head commit,
   assert.deepEqual(out[0].checks, rollup([]));
 });
 
+// A fork's clone on `main`, pushing to the fork: the parent's own `main` into
+// its `release` has its head in one of the repositories, and is still not
+// this branch's. With nowhere a push goes, a head in one of them is.
+test('with a push target, a head in another of the repositories is a stranger', { skip: unix }, async () => {
+  const parents = { ...HEADS[0], number: 5, url: 'https://github.com/up/repo/pull/5', headRefOid: 'aaa',
+    headRepository: { nameWithOwner: 'up/repo' }, headRepositoryOwner: { login: 'up' }, isCrossRepository: false };
+  const answer = `case "$*" in *"--repo up/repo --head topic --state open"*) cat <<'JSON'\n${JSON.stringify([HEADS[0], parents])}\nJSON\n;; *) echo '[]';; esac`;
+  const asked = [];
+  const has = async (oid) => { asked.push(oid); return true; };
+  const pushed = await ghCalls(answer, () => branchPrs(os.tmpdir(), ['up/repo', 'me/repo'], 'topic', { has, home: 'me/repo' }));
+  assert.deepEqual(pushed.out.map((p) => p.number), [1]);
+  assert.deepEqual(asked, [], 'a head in one of the repositories is never asked about by commit');
+  const unpushed = await ghCalls(answer, () => branchPrs(os.tmpdir(), ['up/repo', 'me/repo'], 'topic', { has }));
+  assert.deepEqual(unpushed.out.map((p) => p.number), [1, 5]);
+});
+
 // Strangers are dropped before the second pass is decided on: a stranger's
 // open pull request from a `topic` of their own must not hide this branch's
 // merged one.

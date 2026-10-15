@@ -143,7 +143,9 @@ behind a Commit button, because the checkout would fail anyway.
 The pull request shown for the branch is looked for in every repository it could be in -- the one
 `gh` takes as this checkout's, its parent when that is a fork, and the repository behind each
 remote -- by the branch's name, so one opened from a fork no remote names is found too, as long
-as this clone has its head commit ([README](../README.md)). A branch with more than one, into its
+as this clone has its head commit ([README](../README.md)). A branch whose `git push` goes to a
+branch of its own name counts only that repository's head as its own, so a fork's `main` is not
+handed the parent's `main`'s pull requests. A branch with more than one, into its
 fork's `main` and into the parent, say, shows one of them: an open one over a merged one, the one
 at this clone's HEAD, then the one `gh` calls this checkout's repository's. The switcher then
 leads with all of them under **On this branch**, the ones in another repository named

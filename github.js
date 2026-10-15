@@ -161,7 +161,11 @@ const BRANCH_FIELDS = ['number', 'title', 'url', 'state', 'isDraft', 'headRefNam
  * fork's `main`, and any common branch name does the same; a row is this
  * branch's when its head is in one of `repos`, or when `has` says this clone
  * has its head commit -- the fork no remote names is exactly the case where
- * only the commit says so. gh lists the newest first, so strangers can fill
+ * only the commit says so. `home` is the repository a push of the branch goes
+ * to (pushRepo in git.js), when there is one: then a head in another of
+ * `repos` is that repository's own branch of the same name -- the parent's
+ * `main` in a fork's clone on `main` -- and a stranger too, commit or no
+ * commit, since the two `main`s often share theirs. gh lists the newest first, so strangers can fill
  * the window and push this branch's past it: microsoft/vscode had 63 open from
  * a `main` and 200 of 200 recent ones (2026-10-14). A full window with none
  * of the branch's in it is asked again, WIDE deep; one past that is missed. The repositories' order is kept, as the rank
@@ -169,7 +173,7 @@ const BRANCH_FIELDS = ['number', 'title', 'url', 'state', 'isDraft', 'headRefNam
  * there is the poll's; one of the others may be a parent since made private,
  * or a remote to nowhere, and is skipped with a line in the log.
  */
-export async function branchPrs(cwd, repos, branch, { has = async () => false, checks = true } = {}) {
+export async function branchPrs(cwd, repos, branch, { has = async () => false, checks = true, home = null } = {}) {
   if (!branch || !repos.length) return [];
   // One answer per commit, kept as the promise: the repositories are asked at once.
   const known = new Map();
@@ -177,7 +181,9 @@ export async function branchPrs(cwd, repos, branch, { has = async () => false, c
     const ours = [];
     for (const row of rows) {
       const p = headSide(row);
-      if (!repos.includes(p.headRepo)) {
+      if (repos.includes(p.headRepo)) {
+        if (home && p.headRepo !== home) continue;
+      } else {
         if (!known.has(p.headRefOid)) known.set(p.headRefOid, has(p.headRefOid));
         if (!await known.get(p.headRefOid)) continue;
       }
