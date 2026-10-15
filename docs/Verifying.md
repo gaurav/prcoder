@@ -119,8 +119,9 @@ already up with `PRCODER_VERBOSE=2`, or a `browser.mjs` run is already printing 
   parent -- is asked once more, a page deep and without the checks, on every poll, and any of the
   branch's found only there costs a `gh pr view` for its checks (`branchPrs` in `github.js`).
 - **The checks are most of what the poll's cheap call fetches.** It asks for them on every poll
-  (#120), and on cli/cli#14634's 30 checks they took `gh pr view`'s answer from 108 bytes to
-  9KB and the call from about 0.42s to 0.54s (2026-10-09); prcoder's one check is 293 bytes. The
+  (#120), and on cli/cli#14571's 39 checks they took the lookup's `gh pr list` answer from 110
+  bytes to 11.6KB and the call from about 0.41s to 0.64s, medians of seven runs each (gh 2.102.0,
+  re-measured on `3b1995a`, 2026-10-14); prcoder's one check is 293 bytes. The
   call count above cannot show this growing, so time
   `gh pr list --head <branch> --state open --json number,headRefOid,updatedAt,statusCheckRollup`
   on a PR with many checks -- and with `--limit 5` on a branch name many forks share, since that
