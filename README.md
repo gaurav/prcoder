@@ -17,7 +17,9 @@ prcoder --help             # prcoder's own flags
 ```
 
 It prints the URL to open, and opens it for you unless `--no-open` (or `PRCODER_NO_OPEN`) is set.
-Each repo keeps the same port, and so the same URL, across runs.
+Each repo keeps the same port, and so the same URL, across runs. It runs anywhere in a git
+checkout's working tree; anywhere else -- outside a repo, in a bare one, inside `.git` -- it says
+why and exits with status 2.
 
 It needs Node 22.18 or later in the 22 line, or 24.2 or later -- on older versions it exits at once
 without a word, because it starts only under `import.meta.main` -- and the
@@ -41,11 +43,15 @@ is no token to configure.
 
 prcoder follows the branch. It works out the pull request for whatever is checked out, and does
 it again every 60 seconds, so a `git checkout` in another terminal -- or by Claude in the middle
-pane -- is picked up on its own. Nothing is remembered between polls; every fact comes back from
-`git` and `gh`.
+pane -- is picked up on its own. It looks in every repository the branch could have one in: the
+one `gh` calls this checkout's, its parent if that is a fork, and the repository behind each
+remote; a pull request opened from a fork no remote names is found all the same, by the branch's
+name and its commit. Nothing is remembered between polls; every fact comes back from `git` and
+`gh`.
 
-[docs/Panes.md](docs/Panes.md) has each pane in detail: layout, ordering, grouping, and what
-every control does.
+The tile in the top-left corner is the menu: the keyboard shortcuts (Alt+/), the docs, an issue to
+report, and quitting. [docs/Panes.md](docs/Panes.md) has each pane in detail: layout, ordering,
+grouping, and what every control does.
 
 ## Arguments and settings
 

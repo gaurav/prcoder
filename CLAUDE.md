@@ -37,6 +37,21 @@ this repo's `node_modules`, and from a scratch directory it is `Cannot find
 package 'playwright'`. Read `tools/CLAUDE.md` before writing one: it applies
 there too, and `tools/driver.mjs` is what to build it on.
 
+## Experiment on a clone of this repo, in `data/`
+
+Anything that aims git somewhere other than its own `cwd` -- `GIT_DIR`,
+`GIT_WORK_TREE`, `--git-dir`, a test run under a hook's environment -- writes
+to whatever it is aimed at. On 2026-10-14 an agent ran `npm test` with
+`GIT_DIR` set to this repo's `.git`, to reproduce a review finding, and the
+throwaway-repo tests did their work here instead: `origin`'s URL rewritten,
+every remote-tracking branch and upstream setting deleted, the checked-out
+branch renamed with test commits on it, and `HEAD` left on `main`. Nothing on
+disk was lost, but putting it back took the reflog, a fetch and the owner's
+hands. So before an experiment that could touch git state, clone this repo into
+`data/` (`git clone . data/scratch-repo`; commit first, since a clone has only
+what is committed) and aim the experiment at the clone. `test/CLAUDE.md` has
+the rule for test files that run git.
+
 ## Two traps
 
 **Don't delete the `postinstall` script.** `tools/postinstall.mjs` looks like

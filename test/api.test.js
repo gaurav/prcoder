@@ -14,6 +14,7 @@ import http from 'node:http';
 import { WebSocket } from 'ws';
 import { server, sessionArgs, startedWith, missingVendor, keepPr } from '../server.js';
 import { grammars } from '../public/diff.js';
+import { VERSION } from '../cli.js';
 
 let base;
 before(() => new Promise((res) => server.listen(0, '127.0.0.1', () => {
@@ -31,7 +32,7 @@ test('/api/whoami answers from cache, before any poll has run', async () => {
   assert.equal(res.status, 200);
   assert.equal(res.headers.get('content-type'), 'application/json');
   assert.deepEqual(await res.json(), {
-    prcoder: true, repo: process.cwd(), branch: null, nameWithOwner: null,
+    prcoder: true, version: VERSION, repo: process.cwd(), branch: null, nameWithOwner: null,
     started: { model: '', effort: '' },
   });
 });
@@ -253,13 +254,47 @@ test('missingVendor names the vendor files that are not installed', () => {
 // The half of #120's fix that matters: a check finishing leaves updatedAt where
 // it was, so a poll that keeps the PR has to take the checks from the cheap call
 // or the Checks tab says pending until something else touches the PR.
-test('a poll that keeps the PR still takes its checks from prHeads', () => {
-  const pr = { number: 1, updatedAt: 'a', checks: { pending: 1 } };
-  assert.equal(keepPr(pr, { number: 1, updatedAt: 'a', checks: { passed: 1 } }), true);
+test('a poll that keeps the PR still takes its checks from the cheap call', () => {
+  const url = 'https://github.com/gaurav/prcoder/pull/1';
+  const pr = { number: 1, url, updatedAt: 'a', checks: { pending: 1 } };
+  assert.equal(keepPr(pr, { number: 1, url, updatedAt: 'a', checks: { passed: 1 } }), true);
   assert.deepEqual(pr.checks, { passed: 1 });
-  assert.equal(keepPr(pr, { number: 1, updatedAt: 'b' }), false);
-  assert.equal(keepPr(pr, { number: 2, updatedAt: 'a' }), false);
+  // A merged pull request's cheap answer carries no checks (branchPrs); the
+  // ones loadPr read stay rather than going blank.
+  assert.equal(keepPr(pr, { number: 1, url, updatedAt: 'a' }), true);
+  assert.deepEqual(pr.checks, { passed: 1 });
+  assert.equal(keepPr(pr, { number: 1, url, updatedAt: 'b' }), false);
+  // The URL is the identity: a fork's #1 and its parent's #1 are two pull requests.
+  assert.equal(keepPr(pr, { number: 1, url: 'https://github.com/upstream/prcoder/pull/1', updatedAt: 'a' }), false);
   assert.equal(keepPr(pr, null), false);
   // No PR then or now: nothing to reload.
   assert.equal(keepPr(null, null), true);
+});
+
+// Both take a URL the page got from the server, and neither reaches gh with
+// anything else: a switch by number was resolved in gh's base repository, and
+// a choice is only ever one of the branch's own.
+test('a switch is refused before gh unless it names a pull request', async () => {
+  const res = await fetch(`${base}/api/pr/switch`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ url: '140' }),
+  });
+  assert.equal(res.status, 500);
+  assert.deepEqual(await res.json(), { error: 'not a pull request URL: 140' });
+  // A URL inside something else is not one: a flag in front of it, or
+  // another host with GitHub's path behind it.
+  for (const url of ['--repo=x/y https://github.com/a/b/pull/1', 'https://elsewhere.example/github.com/a/b/pull/1']) {
+    const r = await fetch(`${base}/api/pr/switch`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ url }),
+    });
+    assert.deepEqual(await r.json(), { error: `not a pull request URL: ${url}` });
+  }
+});
+
+test('a choice is refused unless the last poll listed it for the branch', async () => {
+  const res = await fetch(`${base}/api/pr/choose`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ url: 'https://github.com/gaurav/prcoder/pull/140' }),
+  });
+  assert.equal(res.status, 500);
+  assert.deepEqual(await res.json(), { error: 'https://github.com/gaurav/prcoder/pull/140 is not a pull request for this branch' });
 });

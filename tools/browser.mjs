@@ -401,6 +401,22 @@ console.log('dots:   ', await page.evaluate(() =>
     return document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2)?.tagName;
   }).join(' ')), ' (want SPAN each, never A)');
 
+// The corner: prcoder's menu open, and the shortcut sheet Alt+/ opens from the
+// terminal. Pictures only: the menu's height, items, closing and focus are
+// asserted in test/browser/suite.js, and printing them again here only gave a
+// second copy to keep in step.
+await page.locator('#menu > summary').click();
+await page.waitForSelector('#menu[open]');
+await page.screenshot({ path: path.join(out, 'menu.png'), clip: { x: 0, y: 0, width: 420, height: 300 } });
+await page.locator('#pr-body').click();   // anywhere else closes it
+await page.waitForSelector('#menu:not([open])');
+await page.locator('#term-host').click();
+await page.keyboard.press('Alt+Slash');
+await page.waitForFunction(() => document.getElementById('keys').open);
+await page.screenshot({ path: path.join(out, 'shortcuts.png') });
+await page.keyboard.press('Escape');
+await page.waitForFunction(() => !document.getElementById('keys').open);
+
 // The two link kinds that only mean something against a repository: a relative
 // path, which GitHub leaves for the page to resolve and prcoder resolves to a
 // blob URL on the head branch, and a bare #N. Both showed as their own source

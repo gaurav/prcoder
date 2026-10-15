@@ -37,6 +37,19 @@ test('a files pie with no lines to weigh fills by files', () => {
   assert.deepEqual(filesProgress([]), { p: 0, full: false, label: '0 of 0 files viewed', count: { done: 0, total: 0 }, lines: null });
 });
 
+// GitHub can list fewer files than the pull request changes: the Files tab
+// counts against the whole, so ticking every listed file is not done.
+test('the Files tab counts the files GitHub did not list as unviewed', () => {
+  const listed = [{ additions: 10, deletions: 0, viewed: true }, { additions: 5, deletions: 5, viewed: true }];
+  const whole = { changedFiles: 3, additions: 30, deletions: 5 };
+  assert.deepEqual(filesProgress(listed, whole), { p: 20 / 35, full: false, label: '2 of 3 files, 20 of 35 changed lines viewed',
+    count: { done: 2, total: 3 }, lines: '20 of 35 changed lines viewed' });
+  // Listed in full, the totals agree and change nothing.
+  assert.equal(filesProgress(listed, { changedFiles: 2, additions: 15, deletions: 5 }).full, true);
+  // And without them -- a group, a directory -- it is the list alone.
+  assert.equal(filesProgress(listed).full, true);
+});
+
 // Every line viewed is not every file: an unviewed rename weighs nothing, and
 // must not let the pie say it is finished.
 test('a files pie is full only when every file is viewed', () => {

@@ -12,7 +12,7 @@
 import { parseArgs } from 'node:util';
 import { createRequire } from 'node:module';
 import { createHash } from 'node:crypto';
-import { syncPhrase } from './public/pr.js';
+import { syncPhrase, sides, prRepo } from './public/pr.js';
 import { counts, TABS } from './public/items.js';
 
 export const VERSION = createRequire(import.meta.url)('./package.json').version;
@@ -144,12 +144,17 @@ export function statusLines(s, u = {}) {
   // cannot report the queue differently.
   const q = counts(s.queue ?? []);
 
+  // The base as the pane's head labels it (sides): bare in origin's repository,
+  // `upstream:main` or `owner:main` elsewhere. The pull request's own line
+  // names its repository when it is not the one on the first row.
+  const base = s.pr ? sides(s.pr, s.remotes).base : s.defaultBranch;
+  const where = s.pr && prRepo(s.pr) !== s.nameWithOwner ? prRepo(s.pr) : '';
   return [
     row('prcoder', s.nameWithOwner,
-      s.branch ? `${s.branch} → ${s.pr?.baseRefName ?? s.defaultBranch}` : 'detached HEAD',
+      s.branch ? `${s.branch} → ${base}` : 'detached HEAD',
       [syncPhrase(s), s.dirtyFiles?.length && `${s.dirtyFiles.length} uncommitted`]
         .filter(Boolean).join(' · ')),
-    s.pr ? row(`PR #${s.pr.number}`, s.pr.title) : row('PR', 'none for this branch'),
+    s.pr ? row(`PR ${where}#${s.pr.number}`, s.pr.title) : row('PR', 'none for this branch'),
     s.pr && row('', s.pr.url),
     row('queue', `${q.local} local · ${q.done} done`),
     // The age belongs next to the tab count because the tab is the cause: the

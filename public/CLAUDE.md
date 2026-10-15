@@ -32,17 +32,20 @@ pane to get a button.
 `bindKeys` in `app.js` is the one table of shortcuts, and `keys.js` holds the
 rules every binding gets for free: nothing fires while a key is being typed
 into the queue's input or an editable item, a binding names a physical key
-(`Alt+KeyW`), not the character it produces, and a held key fires once. The
+(`Alt+KeyW`), not the character it produces, a held key fires once, and
+nothing fires behind a modal dialog such as the shortcut sheet. The
 terminal is typing too, except that a binding's `terminal()` says when the
 key would do something there -- a file open, files to step through -- and
 then it fires from the terminal and the agent does not get the key; when it
 says no, the agent does. Every binding in the table has one, and a new one
 should: the loop the keys serve ends in the terminal. A keydown listener
-beside the thing it drives would have to repeat all of this. `docs/Panes.md`
-lists the bindings with their *While* column; add a row there with the
-binding, and argue the letter in the comment above the table (what each one
-steers round: browser tab switching, Firefox's menu letters, a Mac's dead
-keys, Claude Code's own Alt bindings).
+beside the thing it drives would have to repeat all of this. Each binding
+carries a `label`, which is its row on the shortcut sheet (Alt+/): the sheet
+is built from the table, so a key is never listed that the page lacks, and
+the browser suite reads the table in `docs/Panes.md` and fails unless the
+sheet lists the same keys in the same order. Add a row there with the
+binding, and argue the letter in the comment above the table (what each one steers round: browser tab switching, Firefox's menu
+letters, a Mac's dead keys, Claude Code's own Alt bindings).
 
 ## The Claude pane is not prcoder's to draw on
 
