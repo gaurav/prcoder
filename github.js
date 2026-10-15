@@ -113,7 +113,8 @@ async function viewPr(cwd, target, fields) {
 export const prUrl = async (cwd, target) => (await viewPr(cwd, target, 'url'))?.url;
 
 /**
- * Just enough to know whether the PR moved, without the GraphQL viewed pass.
+ * Just enough to know whether the PR moved, without the file list loadPr pages
+ * through (prFiles), which also carries the head, base and line counts.
  *
  * Plus the checks, which move without the PR: a check run belongs to the
  * commit, so finishing one leaves `updatedAt` where it was. On #120 the PR's
