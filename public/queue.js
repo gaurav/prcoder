@@ -425,10 +425,17 @@ function issueGroups() {
   const home = deps.home?.();
   // `list` is the group's issues and `rows` what they draw, which is more
   // than one element per issue once a row is open: the count is the issues'.
-  const group = (key, title, list, rows, extra = []) => fold({
-    className: 'milestone', dataset: { group: key }, title: [title, ...extra.flatMap((e) => [' ', e]), ' ', h('span', { className: 'count' }, String(list.length))],
-    ...state(key, list),
-  }, list.length ? [h('ul', { className: 'items' }, ...rows)] : [h('p', { className: 'empty' }, 'no open issues')]);
+  // `target` is the milestone the group stands for -- a title, or null for
+  // none -- and makes its summary somewhere an issue row can be dropped; the
+  // mentions have none, since they are not a milestone.
+  const group = (key, title, list, rows, extra = [], target) => {
+    const d = fold({
+      className: 'milestone', dataset: { group: key }, title: [title, ...extra.flatMap((e) => [' ', e]), ' ', h('span', { className: 'count' }, String(list.length))],
+      ...state(key, list),
+    }, list.length ? [h('ul', { className: 'items' }, ...rows)] : [h('p', { className: 'empty' }, 'no open issues')]);
+    if (target !== undefined) dropTarget(d.querySelector('summary'), target);
+    return d;
+  };
 
   const out = [];
   // The mentions, searched by what is known of them: the looked-up title, and
@@ -447,14 +454,31 @@ function issueGroups() {
       ...(m.closed ? [h('span', { className: 'closed-milestone', title: 'closed on GitHub, with open issues still on it' }, 'closed')] : []),
     ];
     const list = byMilestone.get(m.number) ?? [];
-    out.push(group(`m:${m.number}`, title, list, list.map((i) => issueRow(i)).flat(), extra));
+    out.push(group(`m:${m.number}`, title, list, list.map((i) => issueRow(i)).flat(), extra, m.title));
   }
   const none = byMilestone.get(NONE) ?? [];
-  out.push(group(`m:${NONE}`, 'No milestone', none, none.map((i) => issueRow(i)).flat()));
+  out.push(group(`m:${NONE}`, 'No milestone', none, none.map((i) => issueRow(i)).flat(), [], null));
   if (listing.listed < listing.total) {
     out.push(h('p', { className: 'pr-note' }, `The ${listing.listed} most recently updated of ${listing.total} open issues.`));
   }
   return out;
+}
+
+/**
+ * A group's summary as somewhere to drop an issue row: lit while one is over
+ * it, and the drop is the move. Only a row's own drag counts (ISSUE); a link
+ * or a text selection dragged across the pane is not an issue.
+ */
+function dropTarget(summary, milestone) {
+  const carrying = (e) => e.dataTransfer.types.includes(ISSUE);
+  summary.addEventListener('dragover', (e) => { if (carrying(e)) { e.preventDefault(); summary.classList.add('over'); } });
+  summary.addEventListener('dragleave', () => summary.classList.remove('over'));
+  summary.addEventListener('drop', (e) => {
+    summary.classList.remove('over');
+    if (!carrying(e)) return;
+    e.preventDefault();
+    move(Number(e.dataTransfer.getData(ISSUE)), milestone);
+  });
 }
 
 /**
@@ -510,7 +534,10 @@ function issueRow(i, { repo = null, kind = 'issue', closed = false, text = i.tit
     if (open) expanded.delete(key); else expanded.add(key);
     paintGroups();
   }, { className: 'disclose', title: open ? 'hide the issue' : 'show the issue', ariaExpanded: String(open) }) : h('span', { className: 'disclose' });
-  const row = h('li', { className: `item source${closed ? ' closed' : ''}`, dataset: { issue: String(i.number) } },
+  // A listed issue can be dragged onto a milestone group; a mention that is
+  // not listed cannot, since the move is held to the listing. No pointerdown
+  // dance as Local's rows need (above): nothing here is contentEditable.
+  const row = h('li', { className: `item source${closed ? ' closed' : ''}`, dataset: { issue: String(i.number) }, draggable: can },
     disclose,
     ext(i.url, refLabel({ issue: i.number, kind }), { className: tagClass(kind) }),
     h('span', { className: 'text', textContent: i.title }),
@@ -521,12 +548,21 @@ function issueRow(i, { repo = null, kind = 'issue', closed = false, text = i.tit
         if (!deps.sendToClaude(forClaude(item, deps.home?.()), false)) toast('The coding agent is not connected — nothing was typed.', true);
       }, { title: 'type into the coding agent, with the link' }),
       btn('↓', () => pull(text, i.number, kind, repo), { title: 'copy into your queue' })));
+  if (can) {
+    row.addEventListener('dragstart', (e) => { e.dataTransfer.setData(ISSUE, String(i.number)); row.classList.add('dragging'); });
+    row.addEventListener('dragend', () => row.classList.remove('dragging'));
+  }
   if (!open) return [row];
   const home = deps.home?.();
   const where = home ? { repo: `https://github.com/${home}`, ref: 'HEAD' } : null;
+  // The keyboard's way to the drag's move: every open milestone, and none.
+  const pick = h('select', { className: 'milestone', ariaLabel: `milestone of #${i.number}` },
+    h('option', { value: '' }, 'No milestone'),
+    ...rankMilestones(listing.milestones).map((m) => h('option', { value: m.title, selected: m.number === i.milestone }, m.title)));
+  pick.onchange = () => move(i.number, pick.value || null);
   const body = h('li', { className: 'issue-body md' },
     ...(i.body ? blocks(i.body).map((b) => blockNode(b, null, where)) : [h('p', { className: 'empty' }, 'No description.')]),
-    ext(i.url, 'Open on GitHub', { className: 'primary open-issue' }));
+    h('div', { className: 'issue-ways' }, pick, ext(i.url, 'Open on GitHub', { className: 'primary open-issue' })));
   return [row, body];
 }
 
@@ -556,6 +592,25 @@ function mentionRepo(i) {
  * NaN -- which splice() reads as 0, so the first item moved and was saved.
  */
 const ROW = 'application/x-prcoder-row';
+// And what an issue row's drag carries, its number, for a milestone group to
+// take; the same reason for a type of its own.
+const ISSUE = 'application/x-prcoder-issue';
+
+/**
+ * An issue onto a milestone, or off one with null: the one write the Issues
+ * tab makes, on a drop or a pick in the row's select, which GitHub's own rules
+ * call triage. The tab reads the listing again after, so the row moves group
+ * once GitHub has it and not before.
+ */
+async function move(number, milestone) {
+  try {
+    await api('/api/issue/milestone', { number, milestone });
+  } catch (e) {
+    toast(e.message, true);
+    return;
+  }
+  await loadIssues();
+}
 
 const bulk = (label, fn) => btn(label, fn, { className: 'bulk' });
 

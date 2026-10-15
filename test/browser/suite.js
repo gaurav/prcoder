@@ -1691,6 +1691,38 @@ test('an issue row opens to its body through the description renderer, with Open
   await fresh.close();
 });
 
+// The one write the Issues tab makes: a row dragged onto a group, or its
+// milestone picked in the opened row, which is the half a test can drive --
+// Playwright cannot start a native drag. The route is mocked; the move is the
+// POST it gets and the listing being read again after.
+test('picking a milestone in an opened row posts the move and reads the listing again', { skip }, async () => {
+  const { fresh } = await issuesPage();
+  const moves = [];
+  await fresh.route('**/api/issue/milestone', (r) => { moves.push(r.request().postDataJSON()); return r.fulfill({ json: { ok: true } }); });
+  await fresh.locator('[data-group="m:1"] summary .count').click();
+  await fresh.locator('[data-group="m:1"] .item .disclose').click();
+  const pick = fresh.locator('[data-group="m:1"] .issue-body select.milestone');
+  assert.deepEqual(await pick.locator('option').allTextContents(), ['No milestone', 'v0.1', 'v1.0', 'Needed soon', 'Not urgent']);
+  assert.equal(await pick.inputValue(), 'v1.0');
+  let again = fresh.waitForResponse('**/api/issues');
+  await pick.selectOption('Needed soon');
+  await again;
+  assert.deepEqual(moves, [{ number: 58, milestone: 'Needed soon' }]);
+  // The rows are draggable; the groups' summaries, not the mentions', are where they go.
+  assert.equal(await fresh.locator('[data-group="m:1"] .item').getAttribute('draggable'), 'true');
+  assert.equal(await fresh.locator('[data-group="mentioned"] .item').getAttribute('draggable'), 'false');
+  // The row is still open after the listing came back; off a milestone altogether is null.
+  again = fresh.waitForResponse('**/api/issues');
+  await fresh.locator('[data-group="m:1"] .issue-body select.milestone').selectOption('');
+  await again;
+  assert.deepEqual(moves.at(-1), { number: 58, milestone: null });
+  // A refusal is a toast, and nothing is read again.
+  await fresh.route('**/api/issue/milestone', (r) => r.fulfill({ status: 500, json: { error: '"x" is not an open milestone the Issues tab listed' } }));
+  await fresh.locator('[data-group="m:1"] .issue-body select.milestone').selectOption('Not urgent');
+  await fresh.waitForFunction(() => document.getElementById('toast').textContent.includes('not an open milestone'));
+  await fresh.close();
+});
+
 // With a pull request on screen its mentions lead the tab, and one that is an
 // open issue here is the listing's own row, body and all.
 test('the Issues tab leads with what the PR mentions, and a mention that is listed opens like any row', { skip }, async () => {
