@@ -653,10 +653,11 @@ test('remembered pull requests are read by URL, with no search, until one is due
   }
 });
 
-test('a search runs when nothing is known, when asked, when one is due, and when one has moved', { skip: unix }, async () => {
+test('a search runs when nothing open is known, when asked, when one is due, and when one has moved', { skip: unix }, async () => {
   const merged = { ...HEADS[0], state: 'MERGED' };
   const cases = [
     ['nothing known', null, {}, [HEADS[0]]],
+    ['nothing open known: one may be opened beside the merged one', known([merged]), {}, [merged]],
     ['asked: a change of branch, r or g', known([HEADS[0]]), { fresh: true }, [HEADS[0]]],
     ['the last search is old', known([HEADS[0]], NOW - SEARCH_EVERY), {}, [HEADS[0]]],
     ['the last search is in the future: a clock set back', known([HEADS[0]], NOW + 60_000), {}, [HEADS[0]]],
@@ -678,6 +679,11 @@ test('a search runs when nothing is known, when asked, when one is due, and when
   const gone = { ...known([HEADS[0]]), prs: [{ ...known([HEADS[0]]).prs[0], repo: 'gone/repo' }] };
   const forgot = await ghCalls(viewing([]), () => lookupPrs(os.tmpdir(), ['up/repo'], gone, searching([]), { now: NOW }));
   assert.deepEqual(forgot.out, { prs: [], remember: { searched: NOW, prs: [] } });
+  // None open known and the same found, every poll on a merged branch: nothing to write.
+  const again = await ghCalls(viewing([]), () =>
+    lookupPrs(os.tmpdir(), ['up/repo'], known([merged]), searching([{ ...merged, repo: 'up/repo' }]), { now: NOW }));
+  assert.deepEqual(again.out.prs.map((p) => p.number), [1]);
+  assert.equal(again.out.remember, undefined);
 });
 
 // A read that fails for a passing reason must not forget the branch's pull
@@ -727,10 +733,11 @@ test('a remembered pull request reopened since is read with its checks', { skip:
   // ghCalls hands the calls back in no fixed order.
   assert.deepEqual(calls.map((c) => flag(c, '--json').includes('statusCheckRollup')).sort(), [false, true]);
   assert.deepEqual(out.prs.map((p) => [p.number, p.state, p.checks]), [[1, 'OPEN', rollup([])]]);
-  // Found by the search, which brings its checks: no second read.
+  // Found by the search, which brings its checks: not read at all, since a
+  // branch with none open known searches first.
   const found = await ghCalls(viewing([reopened]), () =>
     lookupPrs(os.tmpdir(), ['up/repo'], closed, searching([{ ...HEADS[0], repo: 'up/repo', checks: rollup([]) }]), { now: NOW }));
-  assert.equal(found.calls.length, 1);
+  assert.equal(found.calls.length, 0);
   assert.deepEqual(found.out.prs.map((p) => p.checks), [rollup([])]);
 });
 

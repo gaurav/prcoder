@@ -269,8 +269,10 @@ async function viewKnown(cwd, { url, repo, state }, checks) {
  *
  * `search` is the search by name, branchPrs with the caller's arguments. It
  * runs when there may be something the URLs cannot show:
- * - nothing is known: every branch with no pull request, which is the branch
- *   one is about to be opened from, is searched on every poll as before;
+ * - nothing open is known: every branch with no pull request, which is the
+ *   branch one is about to be opened from, is searched on every poll as
+ *   before, and so is one whose pull requests are all merged or closed, which
+ *   is as likely to have a new one opened from it, by the agent still on it;
  * - `fresh`, which the caller passes on a change of branch, `r` and `g`;
  * - the last search is SEARCH_EVERY old, for a second pull request opened on
  *   the branch since -- into the parent, say -- or is in the future, which a
@@ -303,8 +305,8 @@ async function viewKnown(cwd, { url, repo, state }, checks) {
  * Answers `{ prs, remember }`. `remember` is the new `known` after a search --
  * with no pull requests in it when there are none, which removes the branch's
  * entry -- and undefined when there is nothing to write: on a branch with none
- * known and none found, which is every poll there, it would rewrite the file
- * to say what it already says.
+ * known and none found, or none open and the same ones found, which is every
+ * poll there, it would rewrite the file to say what it already says.
  */
 export async function lookupPrs(cwd, repos, known, search, { own = async (rows) => rows, fresh = false, checks = true, now = Date.now() } = {}) {
   // The row, null for one that is gone, or the entry marked unread.
@@ -318,7 +320,7 @@ export async function lookupPrs(cwd, repos, known, search, { own = async (rows) 
   const prs = (known?.prs ?? []).filter(held);
   const seen = new Map();
   const age = now - known?.searched;
-  if (prs.length && !fresh && age >= 0 && age < SEARCH_EVERY) {
+  if (prs.some((k) => k.state === 'OPEN') && !fresh && age >= 0 && age < SEARCH_EVERY) {
     const rows = await Promise.all(prs.map(read));
     if (rows.every((p, i) => p && !p.unread && p.state === prs[i].state)) {
       return { prs: rows, remember: prs.length === known.prs.length ? undefined : { ...known, prs } };
@@ -350,6 +352,10 @@ export async function lookupPrs(cwd, repos, known, search, { own = async (rows) 
     return held(k);
   });
   if (!known && !entries.length) return { prs: shown, remember: undefined };
+  // With none open the next poll searches whatever is written, so the time of
+  // this search is worth nothing, and the same list is not written again.
+  const searches = !entries.some((k) => k.state === 'OPEN');
+  if (known && searches && JSON.stringify(entries) === JSON.stringify(known.prs)) return { prs: shown, remember: undefined };
   return { prs: shown, remember: { searched: now, prs: entries } };
 }
 
