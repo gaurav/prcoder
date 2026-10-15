@@ -269,22 +269,39 @@ if (await prRows.count()) {
   }
 } else console.log('  no checkboxes in this description to tick');
 
+// Issues is the repository's open issues by milestone, the mentions first;
+// the tab's count says `…` until the listing lands. The groups' summaries are
+// what the screenshot is for -- the folds, the chips and an opened body in a
+// 13px row are nothing a selector can judge.
 await page.locator('#queue-body .tab', { hasText: /^Issues/ }).click();
-await page.waitForFunction(() => ![...document.querySelectorAll('#queue-body .item.source .text')]
-  .some((t) => t.textContent === '…'), null, { timeout: 30_000 });
+await page.waitForFunction(() => !document.querySelector('#queue-body .tab[data-tab="issues"]')?.textContent.includes('…'),
+  null, { timeout: 30_000 });
+await page.waitForSelector('#queue-body .fold.milestone');
+console.log('issues: ', await page.locator('#queue-body .tab', { hasText: /^Issues/ }).innerText(), '|',
+  (await page.$$eval('#queue-body .fold.milestone', (gs) => gs.map((g) =>
+    `${g.querySelector('h3').textContent.replace(/\s+/g, ' ').trim()}${g.open ? ' (open)' : ''}`))).join(' | '),
+'  (want the open-issue count, then the mentions and every open milestone in rank order with its count, the first with issues open)');
+// The first row that can open: its body through the description renderer,
+// and Open on GitHub under it.
+const openable = page.locator('#queue-body .fold.milestone[open] .item button.disclose').first();
+if (await openable.count()) {
+  await openable.click();
+  await page.waitForSelector('#queue-body .issue-body');
+  console.log('  opened:', JSON.stringify((await page.locator('#queue-body .issue-body').innerText()).slice(0, 80)),
+    '(want the body as rendered text, ending in Open on GitHub)');
+}
 await page.locator('#queue').screenshot({ path: path.join(out, 'queue-issues.png') });
-console.log('issues: ', await page.locator('#queue-body .tab', { hasText: /^Issues/ }).innerText(),
-  JSON.stringify(await page.locator('#queue-body .item.source').allInnerTexts()));
-// Only a pull request that mentions an issue has one here to pull; without
-// that the click below waited out its 30s and the run ended before the PR
-// pane's half (2026-10-06, on #118), the same way the ticking above is skipped
-// for a description with no checkboxes.
-if (await page.locator('#queue-body .item.source').count()) {
-  const localBefore = await local();
-  await page.locator('#queue-body .item.source .actions button').first().click();
-  await page.locator('#queue-body .tab', { hasText: /^Local \(4\)/ }).waitFor({ timeout: 10_000 });
-  console.log('  pulled: ', localBefore, '->', await local(), '(want one more)');
-} else console.log('  no issues this pull request mentions to pull');
+// ↓ copies a row into Local without touching the issue -- into the driver's
+// own queue, where the next run's seed replaces it.
+const localBefore = await local();
+await page.locator('#queue-body .fold.milestone[open] .item button[title="copy into your queue"]').first().click();
+await page.locator('#queue-body .tab', { hasText: /^Local \(4\)/ }).waitFor({ timeout: 10_000 });
+console.log('  pulled: ', localBefore, '->', await local(), '(want one more)');
+// Search narrows the rows and the count; cleared, both come back.
+await page.locator('#queue-search').fill('zzz-nothing-matches-zzz');
+console.log('  search: ', await page.locator('#queue-body .tab', { hasText: /^Issues/ }).innerText(),
+  `${await page.locator('#queue-body .fold.milestone .item').count()} rows`, '(want Issues (0) and 0 rows)');
+await page.locator('#queue-search').fill('');
 await page.locator('#queue-body .tab', { hasText: /^Local/ }).click();
 await page.waitForTimeout(150);
 
