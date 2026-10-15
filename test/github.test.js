@@ -659,6 +659,7 @@ test('a search runs when nothing is known, when asked, when one is due, and when
     ['nothing known', null, {}, [HEADS[0]]],
     ['asked: a change of branch, r or g', known([HEADS[0]]), { fresh: true }, [HEADS[0]]],
     ['the last search is old', known([HEADS[0]], NOW - SEARCH_EVERY), {}, [HEADS[0]]],
+    ['the last search is in the future: a clock set back', known([HEADS[0]], NOW + 60_000), {}, [HEADS[0]]],
     ['one is merged since', known([HEADS[0]]), {}, [merged]],
     ['one cannot be read', known([HEADS[1]]), {}, [HEADS[0]]],
     ['one is in a repository no longer looked in', { ...known([HEADS[0]]), prs: [{ ...known([HEADS[0]]).prs[0], repo: 'gone/repo' }] }, {}, [HEADS[0]]],

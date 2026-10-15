@@ -285,6 +285,11 @@ test('a branch not searched for a month is dropped on the next write', async () 
   await writePrs(dir, 'topic', { searched: now, prs: [PR] }, now);
   assert.equal(await readPrs(dir, 'old'), null);
   assert.ok(await readPrs(dir, 'recent'));
+  // A search in the future -- a clock set back -- is kept as now, so it ages out.
+  await writePrs(dir, 'ahead', { searched: now + 365 * day, prs: [PR] }, now);
+  assert.equal((await readPrs(dir, 'ahead')).searched, now);
+  await writePrs(dir, 'topic', { searched: now + 31 * day, prs: [PR] }, now + 31 * day);
+  assert.equal(await readPrs(dir, 'ahead'), null);
 });
 
 // The URL goes into gh's argv, so a hand-edit may not put a flag there, or

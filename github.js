@@ -253,7 +253,9 @@ async function viewKnown(cwd, { url, repo, state }, checks) {
  *   one is about to be opened from, is searched on every poll as before;
  * - `fresh`, which the caller passes on a change of branch, `r` and `g`;
  * - the last search is SEARCH_EVERY old, for a second pull request opened on
- *   the branch since -- into the parent, say;
+ *   the branch since -- into the parent, say -- or is in the future, which a
+ *   clock set back or a file from another machine can make, and which would
+ *   otherwise put the search off until then;
  * - one of them is not in the state it was in: a pull request closed and
  *   another opened in its place is found as soon as the first is seen closed;
  * - one of them could not be read.
@@ -280,7 +282,8 @@ export async function lookupPrs(cwd, repos, known, search, { fresh = false, chec
   });
   const prs = (known?.prs ?? []).filter((k) => repos.includes(k.repo) && k.url.startsWith(`https://github.com/${k.repo}/pull/`));
   const seen = new Map();
-  if (prs.length && !fresh && now - known.searched < SEARCH_EVERY) {
+  const age = now - known?.searched;
+  if (prs.length && !fresh && age >= 0 && age < SEARCH_EVERY) {
     const rows = await Promise.all(prs.map(read));
     if (rows.every((p, i) => p?.state === prs[i].state)) {
       return { prs: rows, remember: prs.length === known.prs.length ? undefined : { ...known, prs } };

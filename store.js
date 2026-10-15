@@ -285,13 +285,16 @@ export const readPrs = async (repo, branch) => (branch && (await readAllPrs(repo
 /**
  * The branch's entry replaced, or removed with null, and every branch not
  * searched within FORGET dropped. A read, a change and a write: callers hold
- * server.js's lock, so two of these do not interleave.
+ * server.js's lock, so two of these do not interleave. A search in the future
+ * -- a clock set back, a file from another machine -- is written as now, so
+ * it is forgotten a FORGET from now rather than from then.
  */
 export async function writePrs(repo, branch, entry, now = Date.now()) {
   const all = await readAllPrs(repo);
   if (entry?.prs.length) all[branch] = entry;
   else delete all[branch];
   const branches = Object.fromEntries(Object.entries(all)
+    .map(([b, e]) => [b, { ...e, searched: Math.min(e.searched, now) }])
     .filter(([, e]) => now - e.searched < FORGET)
     .map(([b, e]) => [b, { searched: new Date(e.searched).toISOString(), prs: e.prs }]));
   await writeJson(repo, prsFile(repo), { version: VERSION, branches });
