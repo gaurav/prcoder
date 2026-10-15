@@ -710,7 +710,7 @@ await page.locator('#toast').screenshot({ path: path.join(out, 'toast.png') }).c
 await page.waitForTimeout(4500);
 console.log('faded:  ', JSON.stringify(await toastText()), '  (want null -- the 4s timeout)');
 
-await page.evaluate(async () => (await import('/pr.js')).toast('Switched to add-retries (#123). Claude still'
+await page.evaluate(async () => (await import('/ui.js')).toast('Switched to add-retries (#123). Claude still'
   + " has the old branch's files in mind — tell it to re-read anything it had open.", false, true));
 await page.waitForTimeout(100);
 await page.locator('#toast').screenshot({ path: path.join(out, 'toast-sticky.png') });

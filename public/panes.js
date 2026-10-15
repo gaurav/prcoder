@@ -7,7 +7,7 @@
 // on <main> and inherits down to it, so a gutter inside a pane needs nothing
 // here beyond its direction.
 
-import { pref, setPref } from './pr.js';
+import { pref, setPref } from './ui.js';
 
 const main = document.querySelector('main');
 const KEY = 'prcoder:panes';

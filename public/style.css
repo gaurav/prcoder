@@ -188,7 +188,7 @@ a { color: var(--accent); }
   font: inherit; font-size: 12px; padding: 2px 8px; border-radius: 4px; cursor: pointer;
 }
 .tab.on { color: var(--fg); border-color: var(--line); background: var(--bg); }
-/* The pane's one status mark (mark() in pr.js): in front of each counted tab's
+/* The pane's one status mark (mark() in ui.js): in front of each counted tab's
    name, at the start of each check row, and at the end of each fold's summary.
    One shape everywhere, so a shape means one thing:
 
@@ -560,7 +560,7 @@ a { color: var(--accent); }
 .fold > summary:focus-visible { outline: 1px solid var(--accent); border-radius: 3px; }
 .fold > summary h3 { display: inline; margin: 0; font: inherit; flex: 1; min-width: 0; }
 /* What is still outstanding inside, so a fold never hides work silently: the
-   mark, filling green as its items are done (mark() in pr.js says why not
+   mark, filling green as its items are done (mark() in ui.js says why not
    `3/5`). At the end of the summary rather than in front like a tab's: the
    front is the triangle's, and at the end they line up down the list. */
 .fold > summary .mark {
@@ -656,7 +656,7 @@ a { color: var(--accent); }
 /* `direction: rtl` puts the ellipsis at the *head*, so a path too long for the
    column loses its directories rather than its filename. The <bdi> the markup
    puts inside is what stops that reordering the path itself -- see fileRow in
-   pr.js. Both are load-bearing; neither works alone. */
+   filelist.js. Both are load-bearing; neither works alone. */
 .file .path {
   flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis;
   white-space: nowrap; direction: rtl; text-align: left; text-decoration: none;

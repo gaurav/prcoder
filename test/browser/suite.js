@@ -1155,7 +1155,7 @@ test('every toast has its ✕ in the top right corner, clear of the text', { ski
   const fresh = await newPage();
   for (const [bad, sticky] of [[false, false], [true, false], [false, true]]) {
     const x = await fresh.evaluate(async ([b, s]) => {
-      const { toast } = await import('/pr.js');
+      const { toast } = await import('/ui.js');
       toast('Switched to add-retries (#123). Claude still has the old branch\'s files in mind '
         + '— tell it to re-read anything it had open.', b, s);
       const el = document.getElementById('toast');

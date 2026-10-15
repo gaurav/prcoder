@@ -1,5 +1,6 @@
-// The markdown grammar of a PR description -- checklists, fences, mentions --
-// shared by the pane that renders one and the server that reads and writes it.
+// The markdown grammar of a PR description -- checklists, fences, mentions,
+// and the blocks the pane draws one from -- shared by the pane that renders one
+// and the server that reads and writes it.
 //
 // It lives in one file because a tick is sent as a *position* in the body's
 // list of checklist lines. If the two sides disagree about which lines count,
@@ -257,4 +258,185 @@ function fencedLines(visible) {
     for (let i = lineAt(m.index); i <= lineAt(re.lastIndex - 1); i++) fenced.add(i);
   }
   return fenced;
+}
+
+// A heading needs its space: `#hashtag` is prose, and rendering it as a heading
+// would swallow the line.
+export const HEADING = /^(#{1,6})\s+(.*)$/;
+
+/**
+ * A PR description as blocks, in body order: `code`, `p`, `heading`, `task`,
+ * `list` and `quote`. No DOM -- blockNode() in pr.js turns one of these into an element, and
+ * sectionize() regroups them into folds. Splitting it this way is what lets the
+ * whole renderer be tested without a browser.
+ *
+ * `index` counts every checklist line as it goes, because a tick is sent as a
+ * *position* in that list and taskLines() above recounts it the same way
+ * on the server -- the two walks have to agree line for line (this file's
+ * header says what happens when they do not, and test/tasks.test.js pins it).
+ *
+ * The numbering happens here, once, before anything downstream groups or hides
+ * anything. So sectionize() may regroup these blocks and the pane may fold them
+ * without renumbering a thing. Anything that wants to change *which lines
+ * count* belongs in TASK and fences(), which both sides read.
+ */
+export function blocks(text) {
+  const out = [];
+  let index = 0;
+
+  for (const chunk of fences(withoutHtml(text))) {
+    // A fence is not markdown, so nothing inside it is a heading, a task or a
+    // list -- which is why this repo's own description can show a `## Queue`
+    // sample without growing a fold, and a `- [ ]` sample without growing a
+    // checkbox the server would refuse.
+    if (chunk.code !== undefined) {
+      out.push({ kind: 'code', code: chunk.code });
+      continue;
+    }
+    for (const para of chunk.text.split(/\n{2,}/).filter(Boolean)) {
+      let prose = [];
+      let list = null;
+      let quote = null;
+      // Prose, a list and a quote are the three things that can be open, never
+      // two at once: every branch that opens one closes the others, which is
+      // what keeps the output in body order.
+      const flush = () => {
+        if (prose.length) out.push({ kind: 'p', text: prose.join('\n') });
+        if (list) out.push(list);
+        if (quote) out.push(quote);
+        prose = [];
+        list = null;
+        quote = null;
+      };
+      for (const line of para.split('\n')) {
+        const task = TASK.exec(line);
+        if (task) {
+          flush();
+          out.push({
+            kind: 'task', done: task[1].toLowerCase() === 'x', text: task[2], index: index++,
+          });
+          continue;
+        }
+        // A heading is one line, so it is handled here rather than per
+        // paragraph: one can open a paragraph that runs straight on into prose.
+        const head = HEADING.exec(line);
+        if (head) {
+          flush();
+          out.push({ kind: 'heading', level: head[1].length, text: head[2] });
+          continue;
+        }
+
+        const quoted = QUOTE.exec(line);
+        if (quoted) {
+          if (prose.length || list) flush();
+          quote ??= { kind: 'quote', text: null };
+          quote.text = quote.text === null ? quoted[1] : `${quote.text}\n${quoted[1]}`;
+          continue;
+        }
+
+        const num = ORDERED.exec(line);
+        const bul = num ? null : BULLET.exec(line);
+        if (num || bul) {
+          // A change of marker starts a new list, the way GitHub renders it.
+          if (list && list.ordered !== Boolean(num)) flush();
+          // Conditional, unlike the branches above, because flush() would close
+          // the very list this line is appending to. Anything else that can be
+          // open has to be named here or it comes out after the list instead of
+          // before it.
+          if (prose.length || quote) flush();
+          list ??= { kind: 'list', ordered: Boolean(num), start: num ? Number(num[1]) : 1, items: [] };
+          list.items.push(num ? num[2] : bul[1]);
+          continue;
+        }
+        // A plain line under a list item is that item wrapping, not new prose.
+        // Descriptions arrive from an editor with no hard wrap, and this repo's
+        // own bullets run to four hundred characters.
+        if (list) {
+          list.items[list.items.length - 1] += `\n${line.trim()}`;
+          continue;
+        }
+        // Lazy continuation: an unmarked line under a quote is still the quote,
+        // the way GitHub reads it and the way the list above reads its own. A
+        // marked line is not -- every branch over this one flushes first, so a
+        // heading or a list after a quote ends it rather than joining it.
+        if (quote !== null) {
+          quote.text += `\n${line.trim()}`;
+          continue;
+        }
+        prose.push(line);
+      }
+      flush();
+    }
+  }
+  return out;
+}
+
+/**
+ * A bullet needs its space, the way a heading does: `-flag` and `--body-file`
+ * are prose, and this repo's own description is full of both.
+ *
+ * Both are matched *after* TASK, which matches `- [ ] x` as well. A checklist
+ * line rendered as a bullet is a line that never gets an index, and every tick
+ * after it in the body would then address the line above -- so the order of
+ * those two tests in blocks() is load-bearing, and test/tasks.test.js pins it.
+ *
+ * One level only. Leading whitespace is allowed but not counted, so an indented
+ * sub-bullet becomes a sibling rather than being lost or mis-parsed: at 375px
+ * there is nothing to indent into, and a real indent stack would need a notion
+ * of a line that taskLines() does not have.
+ */
+const BULLET = /^[ \t]*[-*+][ \t]+(.*)$/;
+/** `1.` and `1)`, the two GitHub renders. The author's start number is kept. */
+const ORDERED = /^[ \t]*(\d{1,9})[.)][ \t]+(.*)$/;
+
+/**
+ * A quote needs no space after its `>`, unlike a bullet: `>text` is a quote on
+ * GitHub, and there is no `>flag` the way there is a `-flag` for it to eat.
+ * Exactly one space is eaten if there is one, so an indent inside a quote is
+ * the author's and survives.
+ *
+ * ponytail: a quote's content is one prose paragraph, whatever it contains --
+ * a bullet, a heading, a fence or a nested `> >` inside one shows as its own
+ * text. Give the quote its own blocks() pass when a description needs it. A
+ * checklist line is the one that cannot wait quietly: `> - [ ]` is a checkbox
+ * on GitHub and prose here, but TASK above does not match it either, so
+ * both sides skip it and the tick indices stay in step. Anything that starts
+ * counting quoted lines has to change both.
+ */
+const QUOTE = /^[ \t]*>[ \t]?(.*)$/;
+
+/**
+ * The description as an outline: everything before the first heading, then one
+ * section per heading at the *shallowest* level the body actually uses.
+ *
+ * Deriving that level from the body rather than fixing one here is what lets a
+ * description written with `#` and one written with `##` each fold at their own
+ * top level -- the mirrored block an earlier prcoder wrote starts `## TODO`, and
+ * a description someone typed may well start at `#`. Anything deeper stays a
+ * plain heading inside the section it belongs to.
+ *
+ * Regrouping only. Every block comes out exactly once, in the order it went in,
+ * carrying the `index` it went in with -- see blocks() for why that is the whole
+ * safety argument for folding at all.
+ */
+export function sectionize(list) {
+  const levels = list.filter((b) => b.kind === 'heading').map((b) => b.level);
+  const top = Math.min(...levels);   // Infinity for a body with no headings
+  if (!Number.isFinite(top)) return { lead: list, sections: [] };
+
+  const lead = [];
+  const sections = [];
+  const seen = new Map();
+  for (const b of list) {
+    if (b.kind === 'heading' && b.level === top) {
+      // Keyed by its own text, so the key survives the poll rebuilding this
+      // list and survives a section being added above it -- an index would not.
+      // A description with two `## Why` gets `Why` and `Why#2`: duplicates are
+      // rare, and an ordinal is cheaper than pretending they cannot happen.
+      const n = (seen.get(b.text) ?? 0) + 1;
+      seen.set(b.text, n);
+      sections.push({ title: b.text, key: n === 1 ? b.text : `${b.text}#${n}`, nodes: [] });
+    } else (sections.at(-1)?.nodes ?? lead).push(b);
+  }
+  return { lead, sections };
 }

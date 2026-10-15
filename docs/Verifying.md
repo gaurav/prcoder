@@ -154,6 +154,6 @@ the code:
 - The exit bar's settings reaching the agent's argv: `sessionArgs` in `server.js`.
 - A patch rebuilt from local git when GitHub sends none: `localPatch` in `git.js`, and the
   comparison against GitHub's own patches in commit 7d3df58.
-- Which CSS keeps a dotfile's leading dot in place: `fileRow` in `public/pr.js`.
+- Which CSS keeps a dotfile's leading dot in place: `fileRow` in `public/filelist.js`.
 - Which CSS keeps a repository's name when its owner will not fit: the `.pr-repo` chip in
   `public/style.css`, and its test in `test/browser/suite.js`.
