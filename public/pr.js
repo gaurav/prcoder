@@ -795,7 +795,7 @@ const paintHead = (rows) =>
  *
  *   Detail          nothing to count
  *   Detail (3/10)   seven outstanding, done over total as the file groups read
- *   Detail (10/10)  there were things, and they are all done -- and tabDone
+ *   Detail (10/10)  there were things, and they are all done (tabDone, in ui.js)
  *
  * The count stays on when it runs out. It used to become a bare `Detail ✓`, on
  * the grounds that `(10/10)` alone reads as a proportion you would want to be
