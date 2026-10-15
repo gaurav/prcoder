@@ -353,7 +353,7 @@ test('a local patch is GitHub-shaped, from the merge base, and null when git can
     await run('checkout', '-q', 'main');
     await write('a.js', 'zero\none\ntwo\n');
     await run('commit', '-q', '-am', 'later');
-    const pr = { baseOid: await oid('main'), baseRef: 'main', head };
+    const pr = { baseOid: await oid('main'), baseRef: 'main', baseRemote: 'origin', head };
 
     assert.equal(await localPatch(dir, { ...pr, ...oneLine, path: 'a.js' }), '@@ -1,2 +1,2 @@\n one\n-two\n+2');
     assert.equal(await localPatch(dir, { ...pr, additions: 1, deletions: 0, path: 'new.js' }),
@@ -367,6 +367,13 @@ test('a local patch is GitHub-shaped, from the merge base, and null when git can
     assert.equal(await localPatch(dir, unfetched), null);
     await run('update-ref', 'refs/remotes/origin/main', 'main');
     assert.equal(await localPatch(dir, unfetched), '@@ -1,2 +1,2 @@\n one\n-two\n+2');
+    // The record is the pull request's own repository's: a fork's pull request
+    // into its parent falls back to upstream's main, never origin's -- the
+    // fork's -- and with no remote for that repository, to nothing.
+    assert.equal(await localPatch(dir, { ...unfetched, baseRemote: 'upstream' }), null);
+    await run('update-ref', 'refs/remotes/upstream/main', 'main');
+    assert.equal(await localPatch(dir, { ...unfetched, baseRemote: 'upstream' }), '@@ -1,2 +1,2 @@\n one\n-two\n+2');
+    assert.equal(await localPatch(dir, { ...unfetched, baseRemote: null }), null);
 
     // And the case the counts are for. A branch built on a base commit this
     // clone's record of the base does not have yet: GitHub diffs from that

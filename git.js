@@ -396,7 +396,11 @@ const PATCH_LIMIT = 512 * 1024;
  * still counted the file's lines (checked 2026-09-23).
  *
  * The base is GitHub's `baseRefOid` when this clone has it, else its own
- * memory of the base branch, and `...` diffs from the merge base -- which is
+ * memory of the base branch on `baseRemote` -- the remote for the pull
+ * request's repository, which for a fork's pull request into its parent is
+ * not origin, whose `main` is the fork's; null when no remote names that
+ * repository, and then there is no memory to fall back to. `...` diffs from
+ * the merge base -- which is
  * what a pull request shows. Null when a commit is missing, the file is binary,
  * the patch is over PATCH_LIMIT, or a rename came apart into two files: this
  * stands in for GitHub's view, so it shows that or nothing.
@@ -408,10 +412,11 @@ const PATCH_LIMIT = 512 * 1024;
  * is under review. The counts come from GraphQL, which still has them when
  * REST has dropped the patch.
  */
-export async function localPatch(cwd, { baseOid, baseRef, head, path, from, additions, deletions }) {
+export async function localPatch(cwd, { baseOid, baseRef, baseRemote, head, path, from, additions, deletions }) {
   const known = (rev) => hasCommit(rev, cwd);
+  const remembered = baseRemote && `refs/remotes/${baseRemote}/${baseRef}`;
   const base = await known(baseOid) ? baseOid
-    : await known(`refs/remotes/origin/${baseRef}`) ? `refs/remotes/origin/${baseRef}` : null;
+    : remembered && await known(remembered) ? remembered : null;
   if (!base || !await known(head)) return null;
   // --literal-pathspecs because the path comes from the page: `:(glob)**` is
   // otherwise every file. The rest keep a user's diff config out of it: a

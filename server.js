@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { text as readBody } from 'node:stream/consumers';
 import { spawn as ptySpawn } from 'node-pty';
 import { WebSocketServer } from 'ws';
-import { loadPr, prHeads, prUrl, prBody, listPrs, branchPrs, pickPr, issueLinks, lookupRef, setViewed, setBody, createIssue, fetchPatches, runCount } from './github.js';
+import { loadPr, prHeads, prUrl, prBody, parsePrUrl, listPrs, branchPrs, pickPr, issueLinks, lookupRef, setViewed, setBody, createIssue, fetchPatches, runCount } from './github.js';
 import { notAWorkTree, snapshot, currentBranch, headCommit, hasCommit, repoInfo, prScope, compareUrl, githubUrl, originOwner, wholePrRepo, checkoutPr, pushBranch, remoteBranchHead, trackingHead, localPatch, branchesBelow } from './git.js';
 import { bucket, fileUrl, fileViews } from './files.js';
 import { readPort, writePort, pick, useQueueFile, movedQueue, issueUrl } from './store.js';
@@ -444,8 +444,10 @@ const routes = {
     // a file GitHub sent no patch for is one git can usually still make here.
     const file = cur.files.find((f) => f.path === p);
     if (got.patch != null || !file) return { path: p, ...got };
+    const { owner, repo: name } = parsePrUrl(cur.url);
     return { path: p, ...got, patch: await localPatch(repo, {
-      baseOid: cur.baseRefOid, baseRef: cur.baseRefName, head: cur.headRefOid, path: p, from: got.from,
+      baseOid: cur.baseRefOid, baseRef: cur.baseRefName, baseRemote: (await repoFacts()).remotes[`${owner}/${name}`] ?? null,
+      head: cur.headRefOid, path: p, from: got.from,
       additions: file.additions, deletions: file.deletions,
     }) };
   },
