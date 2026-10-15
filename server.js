@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { text as readBody } from 'node:stream/consumers';
 import { spawn as ptySpawn } from 'node-pty';
 import { WebSocketServer } from 'ws';
-import { loadPr, prHeads, prUrl, prBody, parsePrUrl, listPrs, branchPrs, lookupPrs, ownPrs, pickPr, issueLinks, lookupRef, setViewed, setBody, createIssue, fetchPatches, runCount } from './github.js';
+import { loadPr, prHeads, prUrl, prBody, parsePrUrl, listPrs, branchPrs, lookupPrs, ownPrs, pickPr, issueLinks, lookupRef, setViewed, setBody, createIssue, fetchPatches, runCount, repoIssues } from './github.js';
 import { notAWorkTree, snapshot, currentBranch, headCommit, commitsKnown, commitMemo, repoInfo, pushRepo, prScope, compareUrl, githubUrl, originOwner, wholePrRepo, checkoutPr, pushBranch, remoteBranchHead, trackingHead, localPatch, branchesBelow } from './git.js';
 import { bucket, fileUrl, fileViews } from './files.js';
 import { readPort, writePort, readPrs, writePrs, pick, useQueueFile, movedQueue, issueUrl } from './store.js';
@@ -336,6 +336,9 @@ const poll = () => (queuedPoll ??= serial(() => {
   return status();
 }));
 
+// What the Issues tab was last shown (GET /api/issues), for a route that acts on one of its rows.
+let listing = null;
+
 const routes = {
   // Unlocked only because poll() takes the lock itself.
   'GET /api/status': poll,
@@ -368,16 +371,25 @@ const routes = {
   },
 
   /**
-   * The issues the description mentions without closing, for the queue's Issues
-   * tab: title, state and kind, asked about by number. It was the repo's first
-   * 200 open issues, and in a repo with more than that an open issue past the
-   * cut read as "not an open issue". Capped at 50 numbers, as withLinks is.
+   * The repository's open issues and milestones for the queue's Issues tab
+   * (repoIssues), and, with a pull request on screen, the issues its
+   * description mentions without closing as `mentions`: title, state and kind,
+   * asked about by number, capped at 50 as withLinks is. Two calls rather than
+   * one query: issueLinks already reads an answer gh exited 1 on for the
+   * numbers it did resolve, and a listing should not have to. No pull request
+   * is needed -- a repository has issues whatever branch is checked out.
+   * The listing is kept (`listing`) so a write about an issue can be held to
+   * what the tab was last shown, as /api/pr/choose holds a pick to the poll.
    */
   'GET /api/issues': async () => {
-    const cur = requirePr();
-    const numbers = cur.issues.filter((i) => !i.closes).map((i) => i.number).slice(0, 50);
-    const links = numbers.length ? await issueLinks(repo, cur.url, numbers) : new Map();
-    return numbers.map((number) => ({ number, ...links.get(number) }));
+    const [owner, name] = (await repoFacts()).nameWithOwner.split('/');
+    const numbers = (pr?.issues ?? []).filter((i) => !i.closes).map((i) => i.number).slice(0, 50);
+    const [found, links] = await Promise.all([
+      repoIssues(repo, owner, name),
+      numbers.length ? issueLinks(repo, pr.url, numbers) : new Map(),
+    ]);
+    listing = found;
+    return { ...found, mentions: numbers.map((number) => ({ number, ...links.get(number) })) };
   },
 
   'POST /api/pr/switch': async ({ url } = {}) => {
