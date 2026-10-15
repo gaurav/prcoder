@@ -300,6 +300,8 @@ test('a remembered pull request that is not one is left out, and a file we canno
     { ...PR, url: 'https://github.com/o/r/pull/7 --web' },
     { ...PR, url: 'https://github.com/o/r/issues/7' },
     { ...PR, repo: '-o/r x' },
+    // A trusted repository beside a URL in another: gh would be sent there.
+    { ...PR, url: 'https://github.com/evil/x/pull/7' },
     { ...PR, state: 'DRAFT' },
   ] }, none: { searched, prs: [{ ...PR, url: 'x' }] }, undated: { prs: [PR] } } });
   assert.deepEqual((await readPrs(dir, 'topic')).prs, [PR]);

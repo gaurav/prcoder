@@ -674,6 +674,16 @@ test('a search runs when nothing is known, when asked, when one is due, and when
   assert.deepEqual(out, { prs: [], remember: { searched: NOW, prs: [] } });
 });
 
+// The URL is what gh is given, so it is held to the repository, not only the
+// `repo` beside it; readPrs refuses the pairing too.
+test('a remembered URL outside its repository is never read', { skip: unix }, async () => {
+  const evil = { ...known([HEADS[0]]), prs: [{ url: 'https://github.com/evil/x/pull/1', repo: 'up/repo', state: 'OPEN' }] };
+  const search = searching([]);
+  const { calls } = await ghCalls(viewing([]), () => lookupPrs(os.tmpdir(), ['up/repo'], evil, search, { now: NOW }));
+  assert.deepEqual(calls, []);
+  assert.equal(search.runs, 1, 'searched, as for nothing known');
+});
+
 // gh lists the newest first, so strangers on a common name can push the
 // branch's pull request out of the search's window long after the search
 // that found it. It is kept; and an open one found stands alone, as in branchPrs.

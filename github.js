@@ -260,7 +260,8 @@ async function viewKnown(cwd, { url, repo, state }, checks) {
  *
  * Only one in `repos` is read, the rule the switch route holds a URL to, so a
  * hand-edit of the file cannot point gh anywhere else; a remote since removed
- * takes its pull requests with it.
+ * takes its pull requests with it. The URL itself is held to that, not only
+ * the `repo` written beside it, since the URL is what gh is given.
  *
  * A search does not forget what it does not find. gh lists the newest first,
  * and a common name's strangers can push this branch's pull request out of
@@ -277,7 +278,7 @@ export async function lookupPrs(cwd, repos, known, search, { fresh = false, chec
     debug(`${k.url} not read: ${e.message}`);
     return null;
   });
-  const prs = (known?.prs ?? []).filter((k) => repos.includes(k.repo));
+  const prs = (known?.prs ?? []).filter((k) => repos.includes(k.repo) && k.url.startsWith(`https://github.com/${k.repo}/pull/`));
   const seen = new Map();
   if (prs.length && !fresh && now - known.searched < SEARCH_EVERY) {
     const rows = await Promise.all(prs.map(read));

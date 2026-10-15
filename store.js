@@ -254,16 +254,19 @@ const STATES = ['OPEN', 'CLOSED', 'MERGED'];
 
 /**
  * One branch's entry, or null for anything that is not one. Each URL is held
- * to the whole of a pull request's link and `repo` to GitHub's characters,
- * because the URL becomes an argument to `gh pr view` and `repo` is compared
- * with the repositories the caller trusts: a hand-edit may not put a flag in
- * either (docs/Security.md).
+ * to the whole of a pull request's link, in `repo`, because the URL becomes an
+ * argument to `gh pr view` and `repo` is what is compared with the
+ * repositories the caller trusts: a hand-edit may not put a flag in the URL,
+ * nor pair a trusted `repo` with a URL somewhere else (docs/Security.md). A
+ * search only ever records a pull request under the repository it is in.
  */
 function prsEntry(e) {
   const searched = Date.parse(e?.searched);
   if (!Number.isFinite(searched) || !Array.isArray(e?.prs)) return null;
-  const prs = e.prs.filter((p) => link(p?.url)?.kind === 'pull' && REPO.test(p?.repo ?? '') && STATES.includes(p?.state))
-    .map(({ url, repo, state }) => ({ url, repo, state }));
+  const prs = e.prs.filter((p) => {
+    const l = link(p?.url);
+    return l?.kind === 'pull' && l.repo === p.repo && STATES.includes(p.state);
+  }).map(({ url, repo, state }) => ({ url, repo, state }));
   return prs.length ? { searched, prs } : null;
 }
 

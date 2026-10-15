@@ -141,8 +141,10 @@ A modified file's diff is not highlighted at all, and
   sibling `/api/pr/choose` checks nothing out, and takes only a URL the last poll listed for the
   branch. `test/api.test.js` pins the refusals that need no `gh`. A URL prcoder reads back from
   its own files is held to the same rule, since anyone can edit them: each one `.prcoder/prs.json`
-  remembers goes to `gh pr view`, so `readPrs` in `store.js` keeps only a whole pull request link,
-  and `lookupPrs` in `github.js` reads only one in `repos` (`test/store.test.js`).
+  remembers goes to `gh pr view`, so `readPrs` in `store.js` keeps only a whole pull request link
+  in the repository written beside it, and `lookupPrs` in `github.js` reads only one whose URL is
+  in `repos` -- the URL, not only that `repo`, since the URL is what gh is given
+  (`test/store.test.js`, `test/github.test.js`).
 - **Text from GitHub** — descriptions, titles, issue bodies, file names — is built into the page with
   `h()` and text nodes. `innerHTML` only through `inline()`, and a new kind of link only through
   `target()`.
