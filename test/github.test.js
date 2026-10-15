@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { rollup, linkedIssues, linksFrom, parsePrUrl, run, issueNumber, lf, setViewed, listPrs, loadPr, prHeads, branchPrs, lookupPrs, SEARCH_EVERY, pickPr, lookupRef, createIssue } from '../github.js';
+import { rollup, linkedIssues, linksFrom, parsePrUrl, run, issueNumber, lf, setViewed, listPrs, loadPr, prHeads, branchPrs, lookupPrs, ownPrs, SEARCH_EVERY, pickPr, lookupRef, createIssue } from '../github.js';
 import { taskLines } from '../public/tasks.js';
 import { withGh, ghArgs, ghCalls, unix } from './stub-gh.js';
 
@@ -678,6 +678,22 @@ test('a search runs when nothing is known, when asked, when one is due, and when
   const gone = { ...known([HEADS[0]]), prs: [{ ...known([HEADS[0]]).prs[0], repo: 'gone/repo' }] };
   const forgot = await ghCalls(viewing([]), () => lookupPrs(os.tmpdir(), ['up/repo'], gone, searching([]), { now: NOW }));
   assert.deepEqual(forgot.out, { prs: [], remember: { searched: NOW, prs: [] } });
+});
+
+// A search's rules can tighten under what an earlier one let in: a fork's
+// clone given a push target after its `main` was handed the parent's. What
+// the search did not find is held to them too, or it would never go.
+test('a known pull request the search did not find is kept only while it is the branch\'s', { skip: unix }, async () => {
+  const repos = ['up/repo', 'me/repo'];
+  const row = { ...HEADS[0], headRefName: 'topic' };
+  const run = (gh, home) => ghCalls(viewing([gh]), () => lookupPrs(os.tmpdir(), repos, known([HEADS[0]]), searching([]),
+    { own: (rows) => ownPrs(rows, repos, { branch: 'topic', home }), fresh: true, now: NOW }));
+  // Its head is me/repo's: the branch's while the branch pushes nowhere or there.
+  for (const home of [null, 'me/repo']) assert.deepEqual((await run(row, home)).out.prs.map((p) => p.number), [1], `home ${home}`);
+  // Pushing to up/repo, me/repo's branch of that name is a stranger's.
+  assert.deepEqual((await run(row, 'up/repo')).out, { prs: [], remember: { searched: NOW, prs: [] } });
+  // Its head renamed on github.com: no longer this branch's.
+  assert.deepEqual((await run({ ...row, headRefName: 'renamed' }, null)).out.prs, []);
 });
 
 // Remembered closed, so read without the checks; open now, so they are asked

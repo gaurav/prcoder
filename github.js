@@ -141,6 +141,24 @@ const BRANCH_FIELDS = ['number', 'title', 'url', 'state', 'isDraft', 'headRefNam
   'headRefOid', 'updatedAt', 'headRepository', 'headRepositoryOwner', 'isCrossRepository'];
 
 /**
+ * Which of `rows`, each through headSide, are the branch's and not a
+ * stranger's of the same name, by branchPrs's rules (`has` and `home` are its
+ * options): a head in one of `repos` is the branch's, or -- with a push target
+ * -- a stranger unless it is that target; any other is the branch's if this
+ * clone has its head commit. `branch`, when given, also holds each row's head
+ * to that name, which `gh pr list --head` has already done for branchPrs's.
+ * lookupPrs holds a remembered pull request the search did not find to the
+ * same rules, so one a looser search let in does not outlive it.
+ */
+export async function ownPrs(rows, repos, { branch = null, has = async () => new Set(), home = null } = {}) {
+  const named = branch ? rows.filter((p) => p.headRefName === branch) : rows;
+  const vouched = (p) => repos.includes(p.headRepo);
+  const asked = [...new Set(named.filter((p) => !vouched(p)).map((p) => p.headRefOid))];
+  const held = asked.length ? await has(asked) : new Set();
+  return named.filter((p) => (vouched(p) ? !home || p.headRepo === home : held.has(p.headRefOid)));
+}
+
+/**
  * The branch's pull requests, in every repository it could have one in, open
  * ones first: the search by name that lookupPrs runs, when what it remembers
  * may be out of date, in place of `gh pr view`.
@@ -190,17 +208,8 @@ const BRANCH_FIELDS = ['number', 'title', 'url', 'state', 'isDraft', 'headRefNam
  */
 export async function branchPrs(cwd, repos, branch, { has = async () => new Set(), checks = true, home = null } = {}) {
   if (!branch || !repos.length) return [];
-  const mine = async (rows) => {
-    const sides = rows.map(headSide);
-    // A head in one of the repositories is the branch's, or -- with a push
-    // target -- a stranger; any other is the branch's if this clone has it.
-    const vouched = (p) => repos.includes(p.headRepo);
-    const asked = [...new Set(sides.filter((p) => !vouched(p)).map((p) => p.headRefOid))];
-    const held = asked.length ? await has(asked) : new Set();
-    return sides
-      .filter((p) => (vouched(p) ? !home || p.headRepo === home : held.has(p.headRefOid)))
-      .map((p) => ('statusCheckRollup' in p ? withChecks(p) : p));
-  };
+  const mine = async (rows) => (await ownPrs(rows.map(headSide), repos, { has, home }))
+    .map((p) => ('statusCheckRollup' in p ? withChecks(p) : p));
   const list = async (state, fields) => (await Promise.all(repos.map(async (repo, i) => {
     const ask = async (n, f) => JSON.parse(await gh(['pr', 'list', '--repo', repo, '--head', branch, '--state', state,
       '--limit', String(n), '--json', f.join(',')], { cwd })).map((p) => ({ ...p, repo }));
@@ -275,7 +284,11 @@ async function viewKnown(cwd, { url, repo, state }, checks) {
  * and a common name's strangers can push this branch's pull request out of
  * the window (branchPrs) long after the search that found it; it is still the
  * branch's. So one known but not found is read by URL and kept, and then, as
- * branchPrs does, open ones stand alone if there are any.
+ * branchPrs does, open ones stand alone if there are any. Kept, that is, when
+ * `own` -- ownPrs with the search's arguments -- still counts it the branch's:
+ * a search's rules can tighten under what an earlier one let in (a fork's
+ * clone given a push target after its `main` was handed the parent's), and
+ * nothing else would ever let go of it.
  *
  * Answers `{ prs, remember }`. `remember` is the new `known` after a search --
  * with no pull requests in it when there are none, which removes the branch's
@@ -283,7 +296,7 @@ async function viewKnown(cwd, { url, repo, state }, checks) {
  * known and none found, which is every poll there, it would rewrite the file
  * to say what it already says.
  */
-export async function lookupPrs(cwd, repos, known, search, { fresh = false, checks = true, now = Date.now() } = {}) {
+export async function lookupPrs(cwd, repos, known, search, { own = async (rows) => rows, fresh = false, checks = true, now = Date.now() } = {}) {
   const read = (k) => viewKnown(cwd, k, checks).catch((e) => {
     debug(`${k.url} not read: ${e.message}`);
     return null;
@@ -302,7 +315,7 @@ export async function lookupPrs(cwd, repos, known, search, { fresh = false, chec
   const urls = new Set(found.map((p) => p.url));
   const kept = await Promise.all(prs.filter((k) => !urls.has(k.url))
     .map((k) => (seen.has(k.url) ? seen.get(k.url) : read(k))));
-  const all = [...found, ...kept.filter(Boolean)];
+  const all = [...found, ...await own(kept.filter(Boolean))];
   const open = all.filter((p) => p.state === 'OPEN');
   const shown = open.length ? open : all;
   if (!known && !shown.length) return { prs: shown, remember: undefined };

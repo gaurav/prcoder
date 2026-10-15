@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { text as readBody } from 'node:stream/consumers';
 import { spawn as ptySpawn } from 'node-pty';
 import { WebSocketServer } from 'ws';
-import { loadPr, prHeads, prUrl, prBody, parsePrUrl, listPrs, branchPrs, lookupPrs, pickPr, issueLinks, lookupRef, setViewed, setBody, createIssue, fetchPatches, runCount } from './github.js';
+import { loadPr, prHeads, prUrl, prBody, parsePrUrl, listPrs, branchPrs, lookupPrs, ownPrs, pickPr, issueLinks, lookupRef, setViewed, setBody, createIssue, fetchPatches, runCount } from './github.js';
 import { notAWorkTree, snapshot, currentBranch, headCommit, commitsKnown, commitMemo, repoInfo, pushRepo, prScope, compareUrl, githubUrl, originOwner, wholePrRepo, checkoutPr, pushBranch, remoteBranchHead, trackingHead, localPatch, branchesBelow } from './git.js';
 import { bucket, fileUrl, fileViews } from './files.js';
 import { readPort, writePort, readPrs, writePrs, pick, useQueueFile, movedQueue, issueUrl } from './store.js';
@@ -201,13 +201,17 @@ const forPage = ({ checks, ...p }) => p;
  * remembers, or searched for by name when that may be out of date, and the
  * answer remembered (lookupPrs in github.js has the rules). `fresh` searches
  * whatever is remembered. Run under the serial lock, since it writes the file.
- * Where the branch pushes is asked only when it searches, being for branchPrs.
+ * Where the branch pushes is asked only when it searches, and once, being for
+ * branchPrs and for ownPrs's test of what the search did not find.
  */
 async function findPrs(branch, { has, checks, fresh = false }) {
   if (!branch) return [];
   const { repos, repoOf } = await repoFacts();
-  const search = async () => branchPrs(repo, repos, branch, { has, checks, home: await pushRepo(repo, branch, repoOf) });
-  const { prs, remember } = await lookupPrs(repo, repos, await readPrs(repo, branch), search, { fresh, checks });
+  let pushes;
+  const home = () => (pushes ??= pushRepo(repo, branch, repoOf));
+  const search = async () => branchPrs(repo, repos, branch, { has, checks, home: await home() });
+  const own = async (rows) => ownPrs(rows, repos, { branch, has, home: await home() });
+  const { prs, remember } = await lookupPrs(repo, repos, await readPrs(repo, branch), search, { own, fresh, checks });
   // A cache: a write that fails costs a search on the next poll, not this one.
   // Nothing to write on a branch with none known and none found (lookupPrs).
   if (remember) await writePrs(repo, branch, remember).catch((e) => term.debug(`prs.json not written: ${e.message}`));
