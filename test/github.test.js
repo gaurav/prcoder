@@ -675,6 +675,21 @@ test('a search runs when nothing is known, when asked, when one is due, and when
   assert.deepEqual(out, { prs: [], remember: { searched: NOW, prs: [] } });
 });
 
+// Remembered closed, so read without the checks; open now, so they are asked
+// for after all, since the search its new state sets off may miss it.
+test('a remembered pull request reopened since is read with its checks', { skip: unix }, async () => {
+  const closed = known([{ ...HEADS[0], state: 'CLOSED' }]);
+  const search = searching([]);
+  // The stub answers every field whatever --json asks, so the row carries no
+  // rollup, as gh's answer to the first read does not.
+  const { statusCheckRollup, ...reopened } = HEADS[0];
+  const { out, calls } = await ghCalls(viewing([reopened]), () => lookupPrs(os.tmpdir(), ['up/repo'], closed, search, { now: NOW }));
+  assert.equal(search.runs, 1, 'a change of state searches');
+  // ghCalls hands the calls back in no fixed order.
+  assert.deepEqual(calls.map((c) => flag(c, '--json').includes('statusCheckRollup')).sort(), [false, true]);
+  assert.deepEqual(out.prs.map((p) => [p.number, p.state, p.checks]), [[1, 'OPEN', rollup([])]]);
+});
+
 // The URL is what gh is given, so it is held to the repository, not only the
 // `repo` beside it; readPrs refuses the pairing too.
 test('a remembered URL outside its repository is never read', { skip: unix }, async () => {

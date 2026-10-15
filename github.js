@@ -233,11 +233,17 @@ export const SEARCH_EVERY = 10 * 60_000;
  * One remembered pull request read again by its URL, in branchPrs's shape:
  * `repo` is the repository the search found it in, and the checks come only
  * for one that was open, as branchPrs's pass for merged ones leaves them out.
+ * One closed when remembered and open now -- reopened -- gets its checks from
+ * prHeads, as one found only on branchPrs's wide pass does: keepPr takes them
+ * for an open one, and the search its new state sets off may not find it.
  */
 async function viewKnown(cwd, { url, repo, state }, checks) {
   const fields = checks && state === 'OPEN' ? [...BRANCH_FIELDS, 'statusCheckRollup'] : BRANCH_FIELDS;
   const p = headSide({ ...JSON.parse(await gh(['pr', 'view', url, '--json', fields.join(',')], { cwd })), repo });
-  return 'statusCheckRollup' in p ? withChecks(p) : p;
+  if ('statusCheckRollup' in p) return withChecks(p);
+  if (!checks || p.state !== 'OPEN') return p;
+  const heads = await prHeads(cwd, url);
+  return heads ? { ...p, checks: heads.checks } : p;
 }
 
 /**
