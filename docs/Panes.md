@@ -391,9 +391,34 @@ unticking one puts it back on Local, which is the way back if Claude did not do 
 a slip. **Deleted** holds tombstones, the latest on top, until you empty it, and hides when it holds
 nothing. Every item is on exactly one of those.
 
-With a pull request on screen, two more tabs read GitHub rather than your queue. **PR** is the
-description's own checklist, ticked through to GitHub like the boxes in the PR pane; **Issues** is
-the issues the description mentions without closing, the most recently updated on GitHub
-first. A mention that is not an open issue -- a closed one, or a pull request -- is dimmed and
-says which. ↓ on either copies the item into Local
-and leaves it where it was.
+Two more tabs read GitHub rather than your queue, and ↓ on either copies an item into Local and
+leaves it where it was. **PR** is there with a pull request on screen: the description's own
+checklist, ticked through to GitHub like the boxes in the PR pane.
+
+**Issues** is always there, since a repository has issues whatever is checked out: its open
+issues, read when the tab is opened and again on every visit, in groups you fold. With a pull
+request on screen the first group is what its description mentions without closing, the most
+recently updated on GitHub first; a mention that is not an open issue -- a closed one, or a pull
+request -- is dimmed and says which. Then one group per open milestone, in the order the owner's
+milestones are read ([MILESTONES.md](https://github.com/gaurav/milestones/blob/main/MILESTONES.md)):
+`Critical`, then releases and deadlines soonest first and the undated after them, then `Needed
+soon`, `Needed later`, `Not urgent` and `Upstream`, matched by name whatever their case; and last
+the issues on no milestone. A milestone's line is its title, linking to it on GitHub, its due date,
+and how many issues it holds; an empty one is still drawn, folded. Only the mentions and the first
+milestone with an issue start open, which is the one to focus on; a group you open or close stays
+so until the page is reloaded, through every poll.
+
+The box above the groups searches the number, title, labels and body of every issue listed; a
+group with a match opens and one without closes, and the tab's count becomes how many matched.
+Cleared, the groups go back to how you left them. The count is otherwise the repository's open
+issues, and `…` until the first listing lands. The listing stops at 500, the most recently
+updated, and says so under the groups when a repository has more.
+
+Each row is the issue's number, as a link, its title, and its labels as plain chips -- names only,
+with none of GitHub's colours, which would fight the pane. ▸ at the row's start opens the issue's
+body under it, drawn by the same renderer as a description and under the same rules
+([Design.md](Design.md)), with a checklist box drawn but not tickable, since it is GitHub's, and
+**Open on GitHub** under it, filled, for the comments and everything else the body is not. ▶ types
+the title with the issue's link into the coding agent's prompt, unsent, and ticks nothing, since
+there is no item to tick; the row stays where it is. ↓ copies the title into Local, tagged with
+the issue, as the PR tab's ↓ copies a checklist line.
