@@ -143,7 +143,8 @@ A modified file's diff is not highlighted at all, and
   its own files is held to the same rule, since anyone can edit them: each one `.prcoder/prs.json`
   remembers goes to `gh pr view`, so `readPrs` in `store.js` keeps only a whole pull request link
   in the repository written beside it, and `lookupPrs` in `github.js` reads only one whose URL is
-  in `repos` -- the URL, not only that `repo`, since the URL is what gh is given
+  in `repos` -- the URL, not only that `repo`, since the URL is what gh is given. Both compare the
+  repository case-blind, as GitHub does, since a remote may spell it in another case than the link
   (`test/store.test.js`, `test/github.test.js`).
 - **Text from GitHub** — descriptions, titles, issue bodies, file names — is built into the page with
   `h()` and text nodes. `innerHTML` only through `inline()`, and a new kind of link only through

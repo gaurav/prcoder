@@ -258,14 +258,17 @@ const STATES = ['OPEN', 'CLOSED', 'MERGED'];
  * argument to `gh pr view` and `repo` is what is compared with the
  * repositories the caller trusts: a hand-edit may not put a flag in the URL,
  * nor pair a trusted `repo` with a URL somewhere else (docs/Security.md). A
- * search only ever records a pull request under the repository it is in.
+ * search only ever records a pull request under the repository it is in. The
+ * two are compared case-blind, as GitHub names them: `repo` is spelled as a
+ * remote's URL spells it, and the link as GitHub does.
  */
 function prsEntry(e) {
   const searched = Date.parse(e?.searched);
   if (!Number.isFinite(searched) || !Array.isArray(e?.prs)) return null;
   const prs = e.prs.filter((p) => {
     const l = link(p?.url);
-    return l?.kind === 'pull' && l.repo === p.repo && STATES.includes(p.state);
+    return l?.kind === 'pull' && typeof p.repo === 'string' && l.repo.toLowerCase() === p.repo.toLowerCase()
+      && STATES.includes(p.state);
   }).map(({ url, repo, state }) => ({ url, repo, state }));
   return prs.length ? { searched, prs } : null;
 }

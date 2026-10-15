@@ -739,6 +739,21 @@ test('a remembered URL outside its repository is never read', { skip: unix }, as
   assert.equal(search.runs, 1, 'searched, as for nothing known');
 });
 
+// A remote's URL may spell the repository in other case than GitHub's link
+// does, or name it from before a rename. The first is the same repository;
+// the second cannot be held to its URL, so it is shown and searched for.
+test('a remembered URL is held to its repository case-blind, and one renamed away is not remembered', { skip: unix }, async () => {
+  const search = searching([]);
+  const spelt = { ...known([HEADS[0]]), prs: [{ ...known([HEADS[0]]).prs[0], repo: 'Up/Repo' }] };
+  const { out } = await ghCalls(viewing([HEADS[0]]), () => lookupPrs(os.tmpdir(), ['Up/Repo'], spelt, search, { now: NOW }));
+  assert.equal(search.runs, 0, 'read by URL');
+  assert.deepEqual(out.prs.map((p) => p.number), [1]);
+  const renamed = { ...HEADS[0], url: 'https://github.com/up/renamed/pull/1', repo: 'up/repo' };
+  const fresh = await ghCalls(viewing([]), () => lookupPrs(os.tmpdir(), ['up/repo'], null, searching([renamed]), { now: NOW }));
+  assert.deepEqual(fresh.out.prs.map((p) => p.number), [1], 'still shown');
+  assert.equal(fresh.out.remember, undefined, 'nothing written, poll after poll');
+});
+
 // gh lists the newest first, so strangers on a common name can push the
 // branch's pull request out of the search's window long after the search
 // that found it. It is kept; and an open one found stands alone, as in branchPrs.

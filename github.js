@@ -286,7 +286,9 @@ async function viewKnown(cwd, { url, repo, state }, checks) {
  * Only one in `repos` is read, the rule the switch route holds a URL to, so a
  * hand-edit of the file cannot point gh anywhere else; a remote since removed
  * takes its pull requests with it. The URL itself is held to that, not only
- * the `repo` written beside it, since the URL is what gh is given.
+ * the `repo` written beside it, since the URL is what gh is given; and one a
+ * search finds that fails the rule -- a repository renamed under its remote --
+ * is shown but not remembered, so that branch is searched as one with none.
  *
  * A search does not forget what it does not find. gh lists the newest first,
  * and a common name's strangers can push this branch's pull request out of
@@ -310,7 +312,10 @@ export async function lookupPrs(cwd, repos, known, search, { own = async (rows) 
     debug(`${k.url} not read: ${e.message}`);
     return GONE.test(e.message) ? null : { ...k, unread: true };
   });
-  const prs = (known?.prs ?? []).filter((k) => repos.includes(k.repo) && k.url.startsWith(`https://github.com/${k.repo}/pull/`));
+  // Case-blind, since `repo` is spelled as a remote's URL spells it, and the
+  // URL as GitHub does; readPrs holds the two together the same way.
+  const held = (k) => repos.includes(k.repo) && k.url.toLowerCase().startsWith(`https://github.com/${k.repo}/pull/`.toLowerCase());
+  const prs = (known?.prs ?? []).filter(held);
   const seen = new Map();
   const age = now - known?.searched;
   if (prs.length && !fresh && age >= 0 && age < SEARCH_EVERY) {
@@ -333,8 +338,14 @@ export async function lookupPrs(cwd, repos, known, search, { own = async (rows) 
     .sort((a, b) => repos.indexOf(a.repo) - repos.indexOf(b.repo));
   const open = all.filter((p) => p.state === 'OPEN');
   const shown = open.length ? open : all;
-  if (!known && !shown.length) return { prs: shown, remember: undefined };
-  const entries = [...shown, ...unread].map(({ url, repo, state }) => ({ url, repo, state }));
+  // One whose URL is in a repository other than the one it was found in --
+  // renamed on GitHub since the remote's URL was set -- would be dropped on
+  // the next read, and written again by the search that follows, every poll.
+  const entries = [...shown, ...unread].map(({ url, repo, state }) => ({ url, repo, state })).filter((k) => {
+    if (!held(k)) debug(`${k.url} not remembered: not in ${k.repo}, which may have been renamed`);
+    return held(k);
+  });
+  if (!known && !entries.length) return { prs: shown, remember: undefined };
   return { prs: shown, remember: { searched: now, prs: entries } };
 }
 

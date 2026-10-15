@@ -323,6 +323,9 @@ test('a remembered pull request that is not one is left out, and a file we canno
   assert.deepEqual((await readPrs(dir, 'topic')).prs, [PR]);
   assert.equal(await readPrs(dir, 'none'), null);
   assert.equal(await readPrs(dir, 'undated'), null);
+  // A remote may spell the repository in other case than the link does.
+  await write({ version: 1, branches: { topic: { searched, prs: [{ ...PR, repo: 'O/R' }] } } });
+  assert.deepEqual((await readPrs(dir, 'topic')).prs, [{ ...PR, repo: 'O/R' }]);
   for (const bad of ['{', '[]', JSON.stringify({ version: 2, branches: { topic: { searched, prs: [PR] } } })]) {
     await write(bad);
     assert.equal(await readPrs(dir, 'topic'), null, bad);
