@@ -320,12 +320,17 @@ export async function lookupPrs(cwd, repos, known, search, { own = async (rows) 
     }
     prs.forEach((k, i) => seen.set(k.url, rows[i]));
   }
+  // What the search did not find is read after it, not beside it: beside it
+  // would be a `gh pr view` for each one the search finds too, which is
+  // nearly always all of them, to save a round trip on a crowded name.
   const found = await search();
   const urls = new Set(found.map((p) => p.url));
   const kept = await Promise.all(prs.filter((k) => !urls.has(k.url))
     .map((k) => (seen.has(k.url) ? seen.get(k.url) : read(k))));
   const unread = kept.filter((p) => p?.unread);
-  const all = [...found, ...await own(kept.filter((p) => p && !p.unread))];
+  // In the repositories' order, as branchPrs answers, which pickPr ranks by.
+  const all = [...found, ...await own(kept.filter((p) => p && !p.unread))]
+    .sort((a, b) => repos.indexOf(a.repo) - repos.indexOf(b.repo));
   const open = all.filter((p) => p.state === 'OPEN');
   const shown = open.length ? open : all;
   if (!known && !shown.length) return { prs: shown, remember: undefined };

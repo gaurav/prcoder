@@ -753,6 +753,11 @@ test('a search keeps a known pull request it did not find, and open ones stand a
     lookupPrs(os.tmpdir(), ['up/repo'], known([HEADS[0]]), searching([{ ...HEADS[1], repo: 'up/repo' }]), { now: NOW }));
   assert.deepEqual(replaced.out.prs.map((p) => p.number), [2]);
   assert.equal(replaced.calls.length, 1, 'the merged one is not read twice');
+  // Kept beside one found, in the repositories' order, which pickPr ranks by.
+  const later = { ...HEADS[1], url: 'https://github.com/me/repo/pull/2', repo: 'me/repo' };
+  const ranked = await ghCalls(viewing([HEADS[0]]), () =>
+    lookupPrs(os.tmpdir(), ['up/repo', 'me/repo'], known([HEADS[0]]), searching([later]), { fresh: true, now: NOW }));
+  assert.deepEqual(ranked.out.prs.map((p) => p.repo), ['up/repo', 'me/repo']);
   // Found by the search too: read once, by the search.
   const both = await ghCalls(viewing([]), () =>
     lookupPrs(os.tmpdir(), ['up/repo'], known([HEADS[0]]), searching([{ ...HEADS[0], repo: 'up/repo' }]), { fresh: true, now: NOW }));
