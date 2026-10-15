@@ -745,6 +745,63 @@ export async function issueLinks(cwd, prUrl, numbers) {
   }
 }
 
+// Milestones come on every page, since the query is one text; repoIssues keeps
+// the first page's. `issueFieldValues` -- GitHub's per-issue custom fields,
+// where a priority would live -- is not asked for: on 2026-10-15 it answered
+// "Something went wrong while executing your query" for this repository, so
+// there is no priority here, and labels are the nearest thing (#66).
+const ISSUES_QUERY = `query($owner:String!,$repo:String!,$after:String){
+  repository(owner:$owner,name:$repo){
+    milestones(first:50,states:OPEN){ nodes{ number title dueOn description issues(states:OPEN){ totalCount } } }
+    issues(first:100,after:$after,states:OPEN,orderBy:{field:UPDATED_AT,direction:DESC}){
+      totalCount pageInfo{ hasNextPage endCursor }
+      nodes{ number title url updatedAt body milestone{ number } labels(first:10){ nodes{ name } } } } } }`;
+
+/**
+ * The repository's open issues and open milestones, for the queue's Issues
+ * tab: `{ milestones: [{ number, title, dueOn, description, open }], issues:
+ * [{ number, title, url, updatedAt, body, milestone, labels }], total, listed }`.
+ * An issue's `milestone` is the milestone's number or null, and `labels` is
+ * names only. Most recently updated first, as GitHub orders them. The body
+ * comes too, LF-ended like a description (lf), so the tab can show one and
+ * search them; the pane renders it through the same allowlist as a
+ * description (docs/Security.md).
+ *
+ * Owner and repo go as variables (-f, the prFiles note), and the pages by
+ * cursor as prFiles pages. Unlike issueLinks this throws when gh does: a
+ * listing that failed is a toast, not an empty tab.
+ */
+export async function repoIssues(cwd, owner, repo) {
+  const issues = [];
+  let milestones = null;
+  let total = 0;
+  let after = null;
+  // ponytail: five pages, 500 open issues; `listed` under `total` says so.
+  for (let page = 0; page < 5; page++) {
+    const args = ['api', 'graphql', '-f', `query=${ISSUES_QUERY}`, '-f', `owner=${owner}`, '-f', `repo=${repo}`];
+    if (after) args.push('-f', `after=${after}`);
+    const { data } = JSON.parse(await gh(args, { cwd }));
+    const r = data.repository;
+    milestones ??= r.milestones.nodes.map((m) => ({
+      number: m.number, title: printable(m.title ?? '').trim() || `#${m.number}`,
+      dueOn: m.dueOn ?? null, description: printable(m.description ?? '').trim(), open: m.issues?.totalCount ?? 0,
+    }));
+    total = r.issues.totalCount;
+    for (const i of r.issues.nodes) {
+      issues.push({
+        number: i.number, title: printable(i.title ?? '').trim() || `#${i.number}`, url: i.url,
+        updatedAt: i.updatedAt ?? null, body: lf(i.body),
+        milestone: i.milestone?.number ?? null, labels: (i.labels?.nodes ?? []).map((l) => l.name),
+      });
+    }
+    const { hasNextPage, endCursor } = r.issues.pageInfo;
+    if (hasNextPage && !endCursor) throw new Error(`GitHub said ${owner}/${repo} has more issues, but gave no cursor to them`);
+    after = hasNextPage ? endCursor : null;
+    if (!after) break;
+  }
+  return { milestones, issues, total, listed: issues.length };
+}
+
 /**
  * The one query issueLinks and lookupRef share. Numbers only are interpolated.
  * `nameWithOwner` is GitHub's spelling of the repo, for lookupRef; linksFrom
