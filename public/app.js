@@ -53,8 +53,10 @@ term.open(document.getElementById('term-host'));
 // the letter is chosen for what Option+letter types on a Mac: G and R give ©
 // and ®, which nobody types into a prompt, where every other free letter
 // types one somebody does -- C ç, A å and Polish ą, Q œ, L ¬ and German @, Z
-// Ω and Polish ż. G over R for no better reason than "go to the agent", which
-// unfolding does.
+// Ω and Polish ż. G over R for "go to the agent", which unfolding does. R
+// types the pull request's URL and copies it: the owner asked for P, Claude
+// Code's model switch, then U, a dead key, and took R, whose ® nobody types
+// into a prompt either.
 //
 // Each binding's `label` is its row on the shortcut sheet (Alt+/ below), which
 // is built from this table and so can only list keys the page has. The
@@ -66,6 +68,7 @@ const KEYS = {
   'Alt+KeyK': { fn: () => stepFile(-1), terminal: anyFiles, label: 'open the previous file' },
   'Alt+KeyM': { fn: mentionOpenFile, terminal: () => openMention('') != null, label: 'mention the open file to the coding agent' },
   'Alt+KeyW': { fn: toggleWrap, terminal: canWrap, label: 'wrap long lines in the diff' },
+  'Alt+KeyR': { fn: mentionPr, terminal: () => last?.pr?.url != null, label: 'type the pull request\'s URL into the coding agent and copy it' },
   'Alt+KeyG': { fn: toggleTerm, terminal: () => canFold('term'), label: 'fold or unfold the coding agent pane' },
   'Alt+Slash': { fn: toggleKeys, terminal: () => true, modal: true, label: 'show these shortcuts' },
 };
@@ -461,6 +464,21 @@ function mentionOpenFile() {
   if (text != null && !typeIntoAgent(text)) toast('The coding agent is not connected — nothing was typed.', true);
 }
 document.getElementById('diff-mention').onclick = mentionOpenFile;
+
+// Alt+R: the pull request's URL, typed and not sent like the @, for a command
+// that wants a target (/simplify, /update-pr), and onto the clipboard for
+// anywhere else. Nothing with no pull request. One toast for whichever half
+// failed, since a second would replace the first in toast's one slot.
+async function mentionPr() {
+  const url = last?.pr?.url;
+  if (url == null) return;
+  const typed = typeIntoAgent(` ${url} `);
+  const copied = await navigator.clipboard.writeText(url).then(() => true, () => false);
+  if (typed && copied) return;
+  toast(!typed && !copied ? 'The coding agent is not connected and the browser refused the clipboard — the URL was neither typed nor copied.'
+    : !typed ? 'The coding agent is not connected — nothing was typed, but the URL is on the clipboard.'
+    : 'The browser refused the clipboard — the URL was not copied.', true);
+}
 
 // The diff header's ⧉: the open file's path from the repository root, the way
 // the bar and GitHub name it, onto the clipboard, with a ✓ for a moment to say
