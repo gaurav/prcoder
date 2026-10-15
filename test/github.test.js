@@ -376,7 +376,9 @@ test('a PR with more than 100 files lists every one of them', { skip: unix }, as
     assert.equal(pr.files.filter((f) => f.viewed).length, 1);
     const args = (await fs.readFile(path.join(dir, 'view-args'), 'utf8')).split('\n');
     const fields = args[args.indexOf('--json') + 1].split(',');
-    for (const f of ['files', 'changedFiles', 'headRefOid', 'baseRefOid', 'additions', 'deletions']) {
+    // headRefOid is asked for, as the commit the checks are for, and the
+    // head the PR is at is still prFiles' (the test after this one).
+    for (const f of ['files', 'changedFiles', 'baseRefOid', 'additions', 'deletions']) {
       assert.ok(!fields.includes(f), `gh pr view is not asked for ${f}: prFiles reads it`);
     }
   });
@@ -404,6 +406,27 @@ test('the head a PR is at comes from the same answer as its files', { skip: unix
     assert.deepEqual([pr.headRefOid, pr.baseRefOid, pr.additions, pr.deletions],
       [head.headRefOid, head.baseRefOid, head.additions, head.deletions]);
     assert.equal(pr.nodeId, 'PR_node');
+  });
+});
+
+// The checks come from `gh pr view`, and the head from the file pages after
+// it: a push between the two would show the old head's checks beside the new
+// head's files, so they are read again at the files' head.
+test('the checks shown are for the head the files are at', { skip: unix }, async () => {
+  const run = (name, conclusion) => [{ name, status: 'COMPLETED', conclusion }];
+  const old = { ...view, headRefOid: 'c'.repeat(40), statusCheckRollup: run('old', 'FAILURE') };
+  const atHead = { number: 1, url: view.url, headRefOid: head.headRefOid, updatedAt: 'later', statusCheckRollup: run('new', 'SUCCESS') };
+  await withPr(old, [page([file(1)], null)], async (dir) => {
+    const pr = await loadPr(os.tmpdir(), undefined, { pause: 0 });
+    assert.deepEqual(pr.checks.list.map((c) => c.name), ['new']);
+    assert.equal(pr.headRefOid, head.headRefOid);
+    assert.equal(pr.updatedAt, old.updatedAt, 'the first call\'s, so the next poll reloads');
+    assert.equal(await fs.readFile(path.join(dir, 'v'), 'utf8'), '2\n');
+  }, [atHead]);
+  // The same head both times: one call, as before.
+  await withPr({ ...view, headRefOid: head.headRefOid }, [page([file(1)], null)], async (dir) => {
+    await loadPr(os.tmpdir(), undefined, { pause: 0 });
+    assert.equal(await fs.readFile(path.join(dir, 'v'), 'utf8'), '1\n');
   });
 });
 

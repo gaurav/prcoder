@@ -79,6 +79,9 @@ const PR_FIELDS = [
   // Not the files, and not what has to agree with them: the head and base
   // commits and the line counts. prFiles reads those in the same answer as the
   // list, since gh's `files` stops at 100 and two calls can straddle a push.
+  // headRefOid is asked for all the same, as the commit the checks above are
+  // for, and loadPr keeps it apart from the one the files are at.
+  'headRefOid',
 ].join(',');
 
 /** The head repository as the page reads it: its slug, or null, and its owner. */
@@ -293,8 +296,10 @@ export async function listPrs(cwd) {
  * /api/diff diffing the old head against the new line counts.
  */
 export async function loadPr(cwd, target, { pause } = {}) {
-  const pr = await viewPr(cwd, target, PR_FIELDS);
-  if (!pr) return null;
+  const viewed = await viewPr(cwd, target, PR_FIELDS);
+  if (!viewed) return null;
+  // The commit the checks are for, which must not stand in for prFiles' head.
+  const { headRefOid: checkedAt, ...pr } = viewed;
   pr.body = lf(pr.body);
 
   // Both need only the PR, so they run together: each is a GitHub round trip.
@@ -305,6 +310,14 @@ export async function loadPr(cwd, target, { pause } = {}) {
   // The raw lists are summarised here and not sent on: every poll carries this
   // object to every tab, and nothing reads them past this point.
   const { closingIssuesReferences, comments, reviews, ...rest } = withChecks(headSide(pr));
+  // A push between `gh pr view` and the file pages leaves the checks the old
+  // head's, beside the new head's files and sync light. They are read again at
+  // the files' head; past one more push the next poll has it, since updatedAt
+  // has moved and it reloads. updatedAt stays the first call's, so that it does.
+  if (checkedAt !== snapshot.headRefOid) {
+    const fresh = await prHeads(cwd, pr.url);
+    if (fresh?.headRefOid === snapshot.headRefOid) rest.checks = fresh.checks;
+  }
 
   return {
     ...rest,
