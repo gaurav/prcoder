@@ -54,13 +54,14 @@ export const filesProgress = (files = [], pr = {}) => {
   const count = viewedCount(files, pr.changedFiles);
   const weight = viewedLines(files, (pr.additions ?? 0) + (pr.deletions ?? 0));
   // The part the count cannot say, written once for this label and filesName.
-  const lines = weight.total ? `${weight.done} of ${weight.total} changed lines viewed` : null;
+  // Not named `lines`, which is the helper above that counts a file's lines.
+  const lineNote = weight.total ? `${weight.done} of ${weight.total} changed lines viewed` : null;
   return {
     p: fraction(weight.total ? weight : count).p,
     full: tabDone(count),
-    label: `${count.done} of ${count.total} files` + (lines ? `, ${lines}` : ' viewed'),
+    label: `${count.done} of ${count.total} files` + (lineNote ? `, ${lineNote}` : ' viewed'),
     count,
-    lines,
+    lines: lineNote,
   };
 };
 
