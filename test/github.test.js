@@ -325,15 +325,27 @@ test('the cheap per-poll call carries the checks, summarised', { skip: unix }, a
   });
 });
 
-// gh answering `pr view` with `view`, and the GraphQL calls with `pages` in
-// the order they are made, so a test can have the PR move between two of them.
-const withPr = (view, pages, fn) => withGh((dir) => [
+// gh answering `pr view` with `view` -- or the second `pr view` with `view2`,
+// and so on, where a test gives one -- and the file list's GraphQL calls with
+// `pages` in the order they are made, so a test can have the PR move between
+// two of them. The pages are told apart by their query, not by being the
+// GraphQL call that came next: loadPr reads the linked issues alongside the
+// files, and a call of theirs would take a page and shift the rest by one.
+// Any other GraphQL call gets an empty answer. The counter is not atomic, so
+// only the file pages, which prFiles asks for one at a time, may use it.
+const withPr = (view, pages, fn, views = []) => withGh((dir) => [
   'case "$1" in',
-  `  pr) printf '%s\\n' "$@" > "${dir}/view-args"; cat "${dir}/view.json" ;;`,
-  `  *) n=$(( $(cat "${dir}/n" 2>/dev/null || echo 0) + 1 )); echo $n > "${dir}/n"; cat "${dir}/page$n.json" ;;`,
+  `  pr) v=$(( $(cat "${dir}/v" 2>/dev/null || echo 0) + 1 )); echo $v > "${dir}/v"`,
+  `      [ $v = 1 ] && printf '%s\\n' "$@" > "${dir}/view-args"`,
+  `      if [ -f "${dir}/view$v.json" ]; then cat "${dir}/view$v.json"; else cat "${dir}/view.json"; fi ;;`,
+  `  *) case "$*" in`,
+  `       *"files(first:100"*) n=$(( $(cat "${dir}/n" 2>/dev/null || echo 0) + 1 )); echo $n > "${dir}/n"; cat "${dir}/page$n.json" ;;`,
+  `       *) echo '{"data":{}}' ;;`,
+  '     esac ;;',
   'esac',
 ].join('\n'), async (dir) => {
   await fs.writeFile(path.join(dir, 'view.json'), JSON.stringify(view));
+  for (const [i, v] of views.entries()) await fs.writeFile(path.join(dir, `view${i + 2}.json`), JSON.stringify(v));
   for (const [i, p] of pages.entries()) await fs.writeFile(path.join(dir, `page${i + 1}.json`), JSON.stringify(p));
   return fn(dir);
 });
@@ -367,6 +379,17 @@ test('a PR with more than 100 files lists every one of them', { skip: unix }, as
     for (const f of ['files', 'changedFiles', 'headRefOid', 'baseRefOid', 'additions', 'deletions']) {
       assert.ok(!fields.includes(f), `gh pr view is not asked for ${f}: prFiles reads it`);
     }
+  });
+});
+
+// The linked issues are read alongside the files, on GraphQL as well: a
+// description that mentions one must not take one of the file pages.
+test('the file pages are the file list\'s however many other calls run beside them', { skip: unix }, async () => {
+  const all = Array.from({ length: 112 }, (_, i) => file(i));
+  await withPr({ ...view, body: 'Follows #3 and #4.' }, [page(all.slice(0, 100), 'c1'), page(all.slice(100), null)], async (dir) => {
+    const pr = await loadPr(os.tmpdir(), undefined, { pause: 0 });
+    assert.deepEqual(pr.files.map((f) => f.path), all.map((f) => f.path));
+    assert.equal(await fs.readFile(path.join(dir, 'n'), 'utf8'), '2\n');
   });
 });
 
