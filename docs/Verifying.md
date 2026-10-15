@@ -97,9 +97,9 @@ how to read it.
 
 ## Figures worth re-measuring
 
-[#129](https://github.com/gaurav/prcoder/issues/129) has a box for each figure here. Add one when
-you add a figure, and tick it when you re-measure one, writing the new commit and date next to the
-figure. Nobody is waiting on them, so re-measure one when other work makes it cheap: the server is
+Each figure here names the commit and date it was measured on; when you re-measure one, write the
+new value, commit and date in its place, so the oldest figures are the ones that show their age.
+Nobody is waiting on them, so re-measure one when other work makes it cheap: the server is
 already up with `PRCODER_VERBOSE=2`, or a `browser.mjs` run is already printing the width.
 
 - **A poll that reloads nothing costs eight subprocess calls with an open pull request**, nine

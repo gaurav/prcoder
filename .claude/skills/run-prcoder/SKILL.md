@@ -92,8 +92,7 @@ existed. The drivers assert nothing, they print `want …` lines for a human, so
 edit them for whatever you are looking at and keep the edits worth having.
 
 A run is also the cheap moment to re-measure one of `docs/Verifying.md`'s
-*Figures worth re-measuring*: update its commit and date there, and tick its
-box on #129.
+*Figures worth re-measuring*: write the new value, commit and date there.
 
 Two rules for them, and for any script after them:
 
