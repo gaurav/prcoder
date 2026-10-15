@@ -177,14 +177,22 @@ request's button would be, **Create PR** opens GitHub's compare page, pushing th
 GitHub has not seen it; on the default branch or a detached HEAD there is nothing to create, and
 the button is left out. The editing controls are disabled.
 
-It also lists the open pull requests that merge *into* the branch you are on, which on `main` is
-the question that branch is interesting for, with each one's stack nested under it. A row's `#N`
-opens that pull request on GitHub, so you can compare a few in other tabs; its **Switch** checks it
-out, the same way the switcher does. Uncommitted work disables Switch for the same reason it hides
-the switcher, and leaves the links alone.
+On the default branch the body is every open pull request, in the switcher's order with each
+stack nested under the one it builds on, since that branch is where the next pull request is
+picked. Each row is the long form: `#N` and the title on the first line, and under it the lines
+added and removed and the number of files, the Files tab's pie (it fills by changed lines viewed,
+so an empty one is probably still being written and a full one is reviewed and waiting on
+something else -- hover it for the figures), whether it can merge in a word (`ready`,
+`conflicts`, `behind base`, `blocked`, `checks failing`, `draft`, or `checking…` while GitHub
+works it out), the review decision when there is one, how long since it last moved, the first
+paragraph of its description as plain text, clipped to two lines, and the issues it closes, each
+with its milestone. A row's `#N` opens that pull request on GitHub, so you can compare a few in
+other tabs; its **Switch** checks it out, the same way the switcher does. Uncommitted work
+disables Switch for the same reason it hides the switcher, and leaves the links alone.
 
-On any other branch it also shows what the branch is built on, since that is where its pull
-request will go. A branch with no pull request has no base on GitHub, so prcoder asks git: the
+Any other branch with no pull request lists the open pull requests that merge *into* it, with
+each one's stack nested under it, in the short form: `#N`, the title and Switch. It also shows
+what the branch is built on, since that is where its pull request will go. A branch with no pull request has no base on GitHub, so prcoder asks git: the
 nearest commit on the branch's first-parent line that another branch on origin also has names the
 branch it was cut from, which still works after that one has taken more commits. It carries on down
 until it reaches the default branch or a branch with an open pull request, whose own base takes it
