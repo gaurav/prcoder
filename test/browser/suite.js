@@ -2449,6 +2449,40 @@ test('opening the Stack tab picks up a PR stacked since the page loaded', { skip
   await fresh.close();
 });
 
+// The PRs tab is the default branch's table with the pull request on screen
+// marked where it sits, and like Stack it fetches the list as it opens.
+test('the PRs tab lists every open pull request with this one marked, and fetches the list as it opens', { skip }, async () => {
+  const fresh = await newPage({ prs: STACK.slice(0, 1) });
+  await fresh.route('**/api/prs', (r) => r.fulfill({ json: STACK }));
+  const tab = fresh.locator('#pr-head .tab', { hasText: 'PRs' });
+  assert.equal(await tab.textContent(), 'PRs (1)');
+  const fetched = fresh.waitForResponse('**/api/prs');
+  await tab.click();
+  await fetched;
+  await fresh.waitForSelector('#pr-body .pr-into ul ul .pr-num');
+  assert.equal(await fresh.locator('#pr-head .tab', { hasText: 'PRs' }).textContent(), 'PRs (3)');
+  assert.equal(await fresh.locator('#pr-body .pr-into-label').textContent(), 'Open pull requests');
+  assert.deepEqual(await fresh.locator('#pr-body .pr-into > ul > li > .pr-row .pr-num').allTextContents(), ['#12']);
+  assert.deepEqual(await fresh.locator('#pr-body .pr-into ul ul .pr-num').allTextContents(), ['#13', '#14']);
+  // The one on screen is marked and has no Switch; the others keep theirs.
+  const here = fresh.locator('#pr-body .pr-row.here');
+  assert.equal(await here.locator('.pr-num').textContent(), '#12');
+  assert.equal(await here.locator('.pr-go').count(), 0);
+  assert.equal(await here.locator('xpath=..').getAttribute('aria-current'), 'true');
+  assert.equal(await fresh.locator('#pr-body .pr-go').count(), 2);
+  assert.equal(await fresh.locator('#pr-body .pr-facts').count(), 3, 'every row in its long form');
+  const switched = [];
+  await fresh.route('**/api/pr/switch', (r) => {
+    switched.push(r.request().postDataJSON().url);
+    return r.fulfill({ json: status });
+  });
+  const sent = fresh.waitForResponse('**/api/pr/switch');
+  await fresh.locator('#pr-body .pr-row', { hasText: '#13' }).locator('.pr-go').click();
+  await sent;
+  assert.deepEqual(switched, [`${REPO}/pull/13`]);
+  await fresh.close();
+});
+
 // The list once #12 has merged: GitHub retargets #13 at main, so it is no
 // longer nested under #12 in the switcher.
 const MERGED = [{ ...STACK[1], baseRefName: 'main' }, STACK[2]];

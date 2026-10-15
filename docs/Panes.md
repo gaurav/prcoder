@@ -212,7 +212,7 @@ branch with no pull request it uses git's own record of origin's head from the l
 the one `git status` reads, so a push from another machine shows only after a fetch. Either way it
 is only as fresh as the last poll.
 
-### Detail, Files, Checks and Stack
+### Detail, Files, Checks, Stack and PRs
 
 Below the head are the tabs. Reading the argument, working the files and watching CI are three
 different things and each wants the whole pane; the last, *Stack*, is the pull requests built on
@@ -222,14 +222,17 @@ one, down to the one into the default branch, each with the others built on it, 
 where it sits, with no Switch because you are there. A base with no open pull request, because it
 merged or never had one, is a row of its own, and git is asked what is under it the way the
 branch-only pane asks, but only once the tab is open. The line above says where the stack starts,
-or that nothing more could be found. Each tab carries the count the others cannot show
+or that nothing more could be found. *PRs* is the table the default branch shows with no pull
+request ([above](#moving-between-pull-requests)): every open pull request in its long form, with
+this one marked where it sits and no Switch, since you are there. Opening it fetches the list
+again, as Stack does. Each tab carries the count the others cannot show
 you -- how many description boxes are still unticked, how many files are still unviewed, how many
-checks have gone green, and for Stack the pull requests under this one and built on it,
-`Stack (↓1 ↑2)`, leaving out a direction that has none -- so none hides from you
+checks have gone green, for Stack the pull requests under this one and built on it,
+`Stack (↓1 ↑2)`, leaving out a direction that has none, and for PRs how many are open -- so none hides from you
 while you are in another. A count that has run out keeps its numbers, `Files (11/11)`, so it
 still says how many.
 
-Each tab that counts work left -- Detail, Files and Checks, not Stack -- is led by one mark, the
+Each tab that counts work left -- Detail, Files and Checks, not Stack or PRs -- is led by one mark, the
 same one the check rows and the folds below use: a pie that fills green as the work is done, and a
 green circle with a ✓ in it once none is left. The
 Files tab's pie fills by changed lines viewed rather than files viewed, so it says how much
@@ -249,7 +252,7 @@ old. While the switcher has focus its options stay as they are, since replacing 
 dropdown closes it or moves your pick; a list that lands then shows once it loses focus. So after a
 merge on github.com the switcher is right if the poll as you come back to the tab -- put off to ten
 seconds after the last one, if that was sooner -- and the list it starts finish before you
-open it, and otherwise you pick from the list as it was until you open it again. Opening the tab fetches the list again, so a pull request stacked from the terminal shows up there, and one that
+open it, and otherwise you pick from the list as it was until you open it again. Opening the Stack or PRs tab fetches the list again, so a pull request stacked from the terminal shows up there, and one that
 merged drops out. A fetch that fails keeps the list it had, and until the first one lands the tab,
 and the list of pull requests into a branch, say there is no list yet rather than that it is empty.
 

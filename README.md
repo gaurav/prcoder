@@ -31,9 +31,9 @@ is no token to configure.
 - **Pull request** -- the pull request for the checked-out branch: its description, with checkboxes
   that write back to GitHub, its changed files, with GitHub's own "viewed" checkbox, its CI checks,
   and the pull requests stacked on it. A switcher checks out another pull request, and a light says whether the
-  branch needs a push or a pull. On the default branch it is instead every open pull request with
-  its size, how much of it is viewed, whether it can merge and what it closes, for picking the
-  next one.
+  branch needs a push or a pull. A PRs tab -- and, on the default branch, the pane itself -- is
+  every open pull request with its size, how much of it is viewed, whether it can merge and what
+  it closes, for picking the next one.
 - **Diff** -- the file you clicked, as GitHub shows it, with links out to GitHub for comments,
   blame and history.
 - **Claude Code** -- the real `claude` in a PTY: Escape, slash commands and permission prompts all

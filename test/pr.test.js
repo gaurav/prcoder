@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   pageTitle, withoutHtml, inline, headLinks, noPrLinks, prsInto, prTree, stackOn, stackLabel, stackUnder, stackTree, stackTitle, stackBase, stackOrder, stackEmpty, intoEmpty, switcherRows, sideLabel, sides, branchGroup, lookedIn,
-  tabLabel, taskCount, filesName, checkCount, checksName, worst, prForest, age, REVIEW,
+  tabLabel, taskCount, filesName, checkCount, checksName, worst, prForest, age, REVIEW, prsLabel,
 } from '../public/pr.js';
 import { filesProgress } from '../public/filelist.js';
 import { tabDone } from '../public/ui.js';
@@ -435,6 +435,12 @@ test('the switcher lists each pull request with its stack under it', () => {
   const deeper = [...OPEN, { number: 61, headRefName: 'tabs-2', baseRefName: 'checks-tab' },
     { number: 9, headRefName: 'elsewhere', baseRefName: 'release' }];
   assert.deepEqual(order(deeper), ['1', '-27', '-60', '--61', '9']);
+});
+
+test('the PRs tab counts the open pull requests, and is plain until a list has landed', () => {
+  assert.equal(prsLabel(null), 'PRs');
+  assert.equal(prsLabel([]), 'PRs (0)');
+  assert.equal(prsLabel(OPEN), `PRs (${OPEN.length})`);
 });
 
 // The table draws the forest the switcher flattens, so the two cannot disagree.

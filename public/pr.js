@@ -587,7 +587,7 @@ const bareRow = ({ branch, here }, _opts, kids) => h('li', current(here),
  */
 let tab = 'detail';
 let shownFor = null;
-const scrolled = { detail: 0, files: 0, checks: 0, stack: 0 };
+const scrolled = { detail: 0, files: 0, checks: 0, stack: 0, prs: 0 };
 const openSections = new Set();
 // Whether the single-section description below is still allowed to open itself.
 let autoOpen = true;
@@ -776,9 +776,10 @@ const repoChip = (crumb) => ext(crumb.href, [
  * The pull request pane, in two roots.
  *
  * #pr-head is the identity -- which pull request, on what branch, passing or
- * not -- and does not scroll. #pr-body is one of four views of it: the argument
- * (Detail), the work (Files), CI (Checks, drawn only when there are checks) and
- * the stack it is in (Stack). They are tabs rather than one column
+ * not -- and does not scroll. #pr-body is one of five views of it: the argument
+ * (Detail), the work (Files), CI (Checks, drawn only when there are checks),
+ * the stack it is in (Stack) and every open pull request with this one marked
+ * (PRs, the default branch's table). They are tabs rather than one column
  * because they are different things to be doing, they each want the whole
  * pane, and an agent-written description is long enough to bury a file list
  * entirely. docs/Panes.md has what each shows.
@@ -793,6 +794,7 @@ export function renderPr(pr, handlers) {
     scrolled.files = 0;
     scrolled.checks = 0;
     scrolled.stack = 0;
+    scrolled.prs = 0;
     openSections.clear();
     autoOpen = true;
   }
@@ -809,10 +811,10 @@ export function renderPr(pr, handlers) {
 function renderPrHead(pr, parsed, handlers) {
   const switchTo = (name) => {
     tab = name;
-    // The Stack tab says what is and is not built on this branch, and the list
-    // it says it from is fetched only now and then (see loadPrs in app.js).
-    // Opening it asks for a fresh one, which repaints the pane when it lands.
-    if (name === 'stack') handlers.onStackOpen?.();
+    // The Stack and PRs tabs are drawn from the list of open pull requests,
+    // which is fetched only now and then (see loadPrs in app.js). Opening
+    // either asks for a fresh one, which repaints the pane when it lands.
+    if (name === 'stack' || name === 'prs') handlers.onStackOpen?.();
     renderPrHead(pr, parsed, handlers);
     renderPrTab(pr, parsed, handlers);
   };
@@ -857,7 +859,8 @@ function renderPrHead(pr, parsed, handlers) {
         ? paneTab('checks', [mark({ ...fraction(checks), state: worst(pr.checks) }),
           tabLabel('Checks', checks)], '', said(checksName(pr.checks)))
         : null,
-      paneTab('stack', stackLabel(stackOn(pr, handlers.prs), stackUnder({ pr }, handlers.prs, handlers.below, handlers.defaultBranch).nodes))),
+      paneTab('stack', stackLabel(stackOn(pr, handlers.prs), stackUnder({ pr }, handlers.prs, handlers.below, handlers.defaultBranch).nodes)),
+      paneTab('prs', prsLabel(handlers.prs))),
   };
   paintHead(rows);
 }
@@ -935,6 +938,9 @@ export const stackEmpty = (pr, prs, otherRepo = false) => (otherRepo
     : ['Nothing is stacked on ', ...stackBase(pr), '.']);
 
 const stackSize = (nodes) => nodes.reduce((n, k) => n + 1 + stackSize(k.kids), 0);
+
+/** `PRs (7)`: how many are open, which the switcher never counts; plain until a list has landed. */
+export const prsLabel = (prs) => (prs ? `PRs (${prs.length})` : 'PRs');
 
 /**
  * `Stack (↓1 ↑2)`: the pull requests under this one, and every one built on it.
@@ -1039,6 +1045,12 @@ function renderPrTab(pr, parsed, handlers) {
         h('span', { className: 'pr-into-label' }, ...named(['Pull requests built on ', ...stackBase(pr)])),
         stackList(stack, handlers))
       : h('p', { className: 'empty' }, ...named(stackEmpty(pr, handlers.prs, handlers.otherRepo))),
+  ] : tab === 'prs' ? [
+    // Every open pull request, this one marked where it sits (prTable); in
+    // another repository the list is not this one's, as the Stack tab says.
+    handlers.otherRepo
+      ? h('p', { className: 'empty' }, ...named(stackEmpty(pr, handlers.prs, true)))
+      : prTable(handlers.prs, { ...handlers, current: pr.url }),
   ] : tab === 'checks' ? [
     ...pr.checks.list.map((c) => h('div', { className: 'check' },
       mark({ full: c.state === 'pass', state: c.state, label: CHECK_WORD[c.state] ? undefined : 'passed' }),
