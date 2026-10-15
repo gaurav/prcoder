@@ -394,6 +394,28 @@ test('a stranger\'s open pull request does not stop the lookup for a merged one'
   assert.deepEqual(out.map((p) => [p.number, p.state]), [[4, 'MERGED']]);
 });
 
+// gh lists the newest first, and a common name in a big parent fills the
+// window with strangers' heads: microsoft/vscode had 63 open from a `main`
+// (2026-10-14). A full window with none of the branch's is asked again, wider;
+// one with the branch's in it, or not full, is the answer as it stands.
+test('a window full of strangers is asked again, wider', { skip: unix }, async () => {
+  const strangers = Array.from({ length: 20 }, (_, i) => ({ ...HEADS[2], number: 100 + i,
+    url: `https://github.com/up/repo/pull/${100 + i}`, headRefOid: `s${i}` }));
+  const json = (rows) => `cat <<'JSON'\n${JSON.stringify(rows)}\nJSON`;
+  const answer = (first) => `case "$*" in
+    *"--repo up/repo --head topic --state open --limit 20 "*) ${json(first)}\n;;
+    *"--repo up/repo --head topic --state open --limit 100 "*) ${json([...strangers, HEADS[0]])}\n;;
+    *) echo '[]';; esac`;
+  const limits = (calls) => calls.filter((c) => flag(c, '--repo') === 'up/repo').map((c) => flag(c, '--limit')).sort();
+  const wide = await ghCalls(answer(strangers), () => branchPrs(os.tmpdir(), ['up/repo', 'me/repo'], 'topic'));
+  assert.deepEqual(wide.out.map((p) => p.number), [1]);
+  assert.deepEqual(limits(wide.calls), ['100', '20']);
+  // The branch's own in the window: no second ask.
+  const found = await ghCalls(answer([...strangers.slice(1), HEADS[0]]), () => branchPrs(os.tmpdir(), ['up/repo', 'me/repo'], 'topic'));
+  assert.deepEqual(found.out.map((p) => p.number), [1]);
+  assert.deepEqual(limits(found.calls), ['20']);
+});
+
 // A repository past the first that cannot be read -- a parent since made
 // private, a remote to nowhere -- is skipped; the first is gh's own base
 // repository, and its failure is the poll's.

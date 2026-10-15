@@ -111,7 +111,8 @@ already up with `PRCODER_VERBOSE=2`, or a `browser.mjs` run is already printing 
   a parent or a second GitHub remote pays one more per poll, and a branch with no open pull
   request -- a merged one, or none -- pays a second pass per repository (six, never pushed); a head in a repository no remote names costs one
   local `rev-parse`, which `snapshot` then reuses (`branchPrs` in `github.js`): six on nodenorm-es's
-  fork-headed branch, 2026-10-14.
+  fork-headed branch, 2026-10-14. A repository whose answer fills its window with strangers --
+  a fork's clone on `main`, asking a big parent -- is asked once more, a page deep, on every poll.
 - **The checks are most of what the poll's cheap call fetches.** It asks for them on every poll
   (#120), and on cli/cli#14634's 30 checks they took `gh pr view`'s answer from 108 bytes to
   9KB and the call from about 0.42s to 0.54s (2026-10-09); prcoder's one check is 293 bytes. The

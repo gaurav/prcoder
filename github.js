@@ -125,6 +125,11 @@ export async function prHeads(cwd, target) {
   return heads && withChecks(heads);
 }
 
+// How far a lookup reads when its window came back full of strangers: one page
+// of gh's, so a fork's clone on `main` pays a page more per poll, not the
+// parent's whole history of `main`s (branchPrs).
+const WIDE = 100;
+
 // What the cheap call reads for a branch's pull requests: prHeads's fields,
 // and what the switcher's group and the head's labels need on top.
 const BRANCH_FIELDS = ['number', 'title', 'url', 'state', 'isDraft', 'headRefName', 'baseRefName',
@@ -156,39 +161,45 @@ const BRANCH_FIELDS = ['number', 'title', 'url', 'state', 'isDraft', 'headRefNam
  * fork's `main`, and any common branch name does the same; a row is this
  * branch's when its head is in one of `repos`, or when `has` says this clone
  * has its head commit -- the fork no remote names is exactly the case where
- * only the commit says so. The repositories' order is kept, as the rank
+ * only the commit says so. gh lists the newest first, so strangers can fill
+ * the window and push this branch's past it: microsoft/vscode had 63 open from
+ * a `main` and 200 of 200 recent ones (2026-10-14). A full window with none
+ * of the branch's in it is asked again, WIDE deep; one past that is missed. The repositories' order is kept, as the rank
  * pickPr reads it in. The first repository is gh's own base, and a failure
  * there is the poll's; one of the others may be a parent since made private,
  * or a remote to nowhere, and is skipped with a line in the log.
  */
 export async function branchPrs(cwd, repos, branch, { has = async () => false, checks = true } = {}) {
   if (!branch || !repos.length) return [];
-  const list = async (state, limit, fields) => (await Promise.all(repos.map(async (repo, i) => {
-    const args = ['pr', 'list', '--repo', repo, '--head', branch, '--state', state,
-      '--limit', String(limit), '--json', fields.join(',')];
-    try {
-      return JSON.parse(await gh(args, { cwd })).map((p) => ({ ...p, repo }));
-    } catch (e) {
-      if (!i) throw e;
-      debug(`pull requests in ${repo} not read: ${e.message}`);
-      return [];
-    }
-  }))).flat();
+  // One answer per commit, kept as the promise: the repositories are asked at once.
   const known = new Map();
   const mine = async (rows) => {
     const ours = [];
     for (const row of rows) {
       const p = headSide(row);
       if (!repos.includes(p.headRepo)) {
-        if (!known.has(p.headRefOid)) known.set(p.headRefOid, await has(p.headRefOid));
-        if (!known.get(p.headRefOid)) continue;
+        if (!known.has(p.headRefOid)) known.set(p.headRefOid, has(p.headRefOid));
+        if (!await known.get(p.headRefOid)) continue;
       }
       ours.push('statusCheckRollup' in p ? withChecks(p) : p);
     }
     return ours;
   };
-  const open = await mine(await list('open', 20, checks ? [...BRANCH_FIELDS, 'statusCheckRollup'] : BRANCH_FIELDS));
-  return open.length ? open : mine(await list('all', 5, BRANCH_FIELDS));
+  const list = async (state, limit, fields) => (await Promise.all(repos.map(async (repo, i) => {
+    const ask = async (n) => JSON.parse(await gh(['pr', 'list', '--repo', repo, '--head', branch, '--state', state,
+      '--limit', String(n), '--json', fields.join(',')], { cwd })).map((p) => ({ ...p, repo }));
+    try {
+      const rows = await ask(limit);
+      const ours = await mine(rows);
+      return rows.length < limit || ours.length ? ours : mine(await ask(WIDE));
+    } catch (e) {
+      if (!i) throw e;
+      debug(`pull requests in ${repo} not read: ${e.message}`);
+      return [];
+    }
+  }))).flat();
+  const open = await list('open', 20, checks ? [...BRANCH_FIELDS, 'statusCheckRollup'] : BRANCH_FIELDS);
+  return open.length ? open : list('all', 5, BRANCH_FIELDS);
 }
 
 /**
