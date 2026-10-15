@@ -378,6 +378,22 @@ test('a pull request is the branch\'s by its head repository or its head commit,
   assert.deepEqual(out[0].checks, rollup([]));
 });
 
+// Strangers are dropped before the second pass is decided on: a stranger's
+// open pull request from a `topic` of their own must not hide this branch's
+// merged one.
+test('a stranger\'s open pull request does not stop the lookup for a merged one', { skip: unix }, async () => {
+  const merged = { ...HEADS[0], number: 4, url: 'https://github.com/up/repo/pull/4', state: 'MERGED' };
+  delete merged.statusCheckRollup;
+  const answer = `case "$*" in
+    *"--repo up/repo --head topic --state open"*) cat <<'JSON'\n${JSON.stringify([HEADS[2]])}\nJSON\n;;
+    *"--repo up/repo --head topic --state all"*) cat <<'JSON'\n${JSON.stringify([merged])}\nJSON\n;;
+    *) echo '[]';; esac`;
+  const { out, calls } = await ghCalls(answer, () => branchPrs(os.tmpdir(), ['up/repo', 'me/repo'], 'topic',
+    { has: async () => false }));
+  assert.equal(calls.length, 4);
+  assert.deepEqual(out.map((p) => [p.number, p.state]), [[4, 'MERGED']]);
+});
+
 // A repository past the first that cannot be read -- a parent since made
 // private, a remote to nowhere -- is skipped; the first is gh's own base
 // repository, and its failure is the poll's.

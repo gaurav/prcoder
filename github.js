@@ -145,8 +145,9 @@ const BRANCH_FIELDS = ['number', 'title', 'url', 'state', 'isDraft', 'headRefNam
  * repository finds the lot, and the first candidate costs what `pr view` did.
  *
  * Open ones, with their checks, which is what the poll keeps the Checks tab
- * fresh from (prHeads says why). Only when every repository has none does a
- * second pass ask for merged and closed ones, which is what `gh pr view` falls
+ * fresh from (prHeads says why). Only when none of them is the branch's -- a
+ * stranger's open one in the parent does not count -- does a second pass ask
+ * for merged and closed ones, which is what `gh pr view` falls
  * back to today, so a merged branch keeps showing its pull request; the
  * rollup is left out of that pass, being the heavy part of the call
  * (docs/Verifying.md), and a merged pull request's checks come with loadPr.
@@ -173,19 +174,21 @@ export async function branchPrs(cwd, repos, branch, { has = async () => false, c
       return [];
     }
   }))).flat();
-  const open = await list('open', 20, checks ? [...BRANCH_FIELDS, 'statusCheckRollup'] : BRANCH_FIELDS);
-  const rows = open.length ? open : await list('all', 5, BRANCH_FIELDS);
   const known = new Map();
-  const ours = [];
-  for (const row of rows) {
-    const p = headSide(row);
-    if (!repos.includes(p.headRepo)) {
-      if (!known.has(p.headRefOid)) known.set(p.headRefOid, await has(p.headRefOid));
-      if (!known.get(p.headRefOid)) continue;
+  const mine = async (rows) => {
+    const ours = [];
+    for (const row of rows) {
+      const p = headSide(row);
+      if (!repos.includes(p.headRepo)) {
+        if (!known.has(p.headRefOid)) known.set(p.headRefOid, await has(p.headRefOid));
+        if (!known.get(p.headRefOid)) continue;
+      }
+      ours.push('statusCheckRollup' in p ? withChecks(p) : p);
     }
-    ours.push('statusCheckRollup' in p ? withChecks(p) : p);
-  }
-  return ours;
+    return ours;
+  };
+  const open = await mine(await list('open', 20, checks ? [...BRANCH_FIELDS, 'statusCheckRollup'] : BRANCH_FIELDS));
+  return open.length ? open : mine(await list('all', 5, BRANCH_FIELDS));
 }
 
 /**
