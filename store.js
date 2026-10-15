@@ -35,7 +35,7 @@ const file = (repo) => queueFile ?? path.join(dir(repo), FILE);
  * tools/browser.mjs, which drives the queue pane against a file in `data/` and
  * so never writes the queue of the working copy it runs in (#65). Resolved
  * against the directory prcoder started in. Only the queue moves; port.json
- * stays in `.prcoder/`, and so does the `.gitignore` -- a file named here is
+ * and prs.json stay in `.prcoder/`, and so does the `.gitignore` -- a file named here is
  * wherever you put it, ignored or not.
  */
 let queueFile = null;
@@ -228,6 +228,71 @@ export async function readPort(repo) {
 
 /** Written like the queue: temp file, then a rename, which is atomic in one directory. */
 export const writePort = (repo, port) => writeJson(repo, portFile(repo), { version: VERSION, port });
+
+/**
+ * `.prcoder/prs.json`: each branch's pull requests as the last lookup by name
+ * found them, and when it ran, so a poll can read them by URL instead of
+ * searching again (lookupPrs in github.js has the rules). Per working copy, as
+ * the queue is, so two worktrees on different branches each keep their own;
+ * and a cache, so a file it cannot read -- damaged, hand-edited, a newer
+ * prcoder's -- is read as empty and overwritten, which costs one search.
+ *
+ * `{ version, branches: { <branch>: { searched, prs: [{ url, repo, state }] } } }`,
+ * `searched` an ISO time. Only a branch with some are kept: one with none is
+ * searched on every poll, as it was before this file, since that is the branch
+ * a new one is opened from.
+ */
+const PRS_FILE = 'prs.json';
+const prsFile = (repo) => path.join(dir(repo), PRS_FILE);
+
+// A branch not looked at for this long is dropped on the next write, so the
+// file does not keep every branch the working copy has ever had. Coming back
+// to one costs a search, which is what it cost before this file.
+const FORGET = 30 * 24 * 60 * 60_000;
+
+const STATES = ['OPEN', 'CLOSED', 'MERGED'];
+
+/**
+ * One branch's entry, or null for anything that is not one. Each URL is held
+ * to the whole of a pull request's link and `repo` to GitHub's characters,
+ * because the URL becomes an argument to `gh pr view` and `repo` is compared
+ * with the repositories the caller trusts: a hand-edit may not put a flag in
+ * either (docs/Security.md).
+ */
+function prsEntry(e) {
+  const searched = Date.parse(e?.searched);
+  if (!Number.isFinite(searched) || !Array.isArray(e?.prs)) return null;
+  const prs = e.prs.filter((p) => link(p?.url)?.kind === 'pull' && REPO.test(p?.repo ?? '') && STATES.includes(p?.state))
+    .map(({ url, repo, state }) => ({ url, repo, state }));
+  return prs.length ? { searched, prs } : null;
+}
+
+/** Every branch's entry, by name, with whatever could not be read left out. */
+async function readAllPrs(repo) {
+  let parsed;
+  try { parsed = JSON.parse(await fs.readFile(prsFile(repo), 'utf8')); } catch { return {}; }
+  if (Number(parsed?.version) > VERSION || !parsed?.branches || typeof parsed.branches !== 'object') return {};
+  return Object.fromEntries(Object.entries(parsed.branches)
+    .map(([b, e]) => [b, prsEntry(e)]).filter(([, e]) => e));
+}
+
+/** The branch's entry, `{ searched, prs }` with `searched` in ms, or null. */
+export const readPrs = async (repo, branch) => (branch && (await readAllPrs(repo))[branch]) || null;
+
+/**
+ * The branch's entry replaced, or removed with null, and every branch not
+ * searched within FORGET dropped. A read, a change and a write: callers hold
+ * server.js's lock, so two of these do not interleave.
+ */
+export async function writePrs(repo, branch, entry, now = Date.now()) {
+  const all = await readAllPrs(repo);
+  if (entry?.prs.length) all[branch] = entry;
+  else delete all[branch];
+  const branches = Object.fromEntries(Object.entries(all)
+    .filter(([, e]) => now - e.searched < FORGET)
+    .map(([b, e]) => [b, { searched: new Date(e.searched).toISOString(), prs: e.prs }]));
+  await writeJson(repo, prsFile(repo), { version: VERSION, branches });
+}
 
 /**
  * The whole list replaced, coerced on the way in -- and where `doneAt` and
