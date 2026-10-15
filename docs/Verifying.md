@@ -102,22 +102,27 @@ you add a figure, and tick it when you re-measure one, writing the new commit an
 figure. Nobody is waiting on them, so re-measure one when other work makes it cheap: the server is
 already up with `PRCODER_VERBOSE=2`, or a `browser.mjs` run is already printing the width.
 
-- **A poll that reloads nothing costs eight subprocess calls with a pull request**, ten on a
-  branch without one that origin has, and eight on one never pushed; one more for a branch ahead
-  of its remote, and the same clean tree or dirty (re-measured on `ad79d34`, 2026-10-14, in a clone
-  whose only repository is origin's; eight on nodenorm-es's fork-headed branch). A poll
-  that reloads the pull request adds `loadPr`'s GraphQL calls on top. `PRCODER_VERBOSE=2` prints
-  the count on every poll, so a change that adds a call shows up. The pull request is looked for
-  with one `gh pr list` per repository it could be in (`repos` from `repoInfo`), so a clone with
-  a parent or a second GitHub remote pays one more per poll, and a branch with no open pull
-  request -- a merged one, or none -- pays a second pass per repository, which the figures above
-  include. Heads in a repository no remote names cost one local `cat-file` per page of them,
-  which `snapshot` then reuses (`commitMemo` in `git.js`), and where the branch pushes is one
-  `for-each-ref` (`pushRepo`); `snapshot` reads HEAD itself, beside the tree's status, after the
-  poll's own read.
+- **A poll that reloads nothing costs seven subprocess calls with a pull request**, open or
+  merged, ten on a branch without one that origin has, and eight on one never pushed; one more
+  for a branch ahead of its remote, and the same clean tree or dirty (re-measured on `4d5c842`,
+  2026-10-14, in a clone whose only repository is origin's; seven on nodenorm-es's fork-headed
+  branch too, where it was eight before #147). A poll that reloads the pull request adds
+  `loadPr`'s GraphQL calls on top, and a poll that searches adds the search's. `PRCODER_VERBOSE=2`
+  prints the count on every poll, so a change that adds a call shows up.
+  A branch's pull requests, once found, are read by URL, one `gh pr view` each, from
+  `.prcoder/prs.json` (`lookupPrs` in `github.js`), so the seven holds however many repositories
+  the clone has. The search by name (`branchPrs`) runs on a branch with none -- which is every
+  poll there, and what the ten and eight are -- and on a branch with some only after a change of
+  branch, `r`, `g`, ten minutes, or a change of state. It is one `gh pr list` per repository the
+  branch could have one in (`repos` from `repoInfo`), so a clone with a parent or a second GitHub
+  remote pays one more, and with no open pull request a second pass per repository. Heads in a
+  repository no remote names cost one local `cat-file` per page of them, which `snapshot` then
+  reuses (`commitMemo` in `git.js`), and where the branch pushes is one `for-each-ref`
+  (`pushRepo`); `snapshot` reads HEAD itself, beside the tree's status, after the poll's own read.
   A repository whose first five rows are all strangers -- a fork's clone on `main`, asking a big
-  parent -- is asked once more, a page deep and without the checks, on every poll, and any of the
-  branch's found only there costs a `gh pr view` for its checks (`branchPrs` in `github.js`).
+  parent -- is asked once more, a page deep and without the checks, and any of the branch's found
+  only there costs a `gh pr view` for its checks (`branchPrs`): on every poll while the branch
+  has none, and on each search once it has.
 - **The checks are most of what the poll's cheap call fetches.** It asks for them on every poll
   (#120), and on cli/cli#14571's 39 checks they took the lookup's `gh pr list` answer from 110
   bytes to 11.6KB and the call from about 0.41s to 0.64s, medians of seven runs each (gh 2.102.0,

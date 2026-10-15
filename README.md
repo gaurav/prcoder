@@ -79,8 +79,9 @@ are given.
 
 **prcoder does not write anything you own unless you click something that says it will.** Its
 own state lives in `.prcoder/`, a directory that ignores itself (it holds a one-line `.gitignore`
-of `*`), so nothing shows up in `git status`: `queue.json` is the queue, and `port.json` is this
-working copy's port.
+of `*`), so nothing shows up in `git status`: `queue.json` is the queue, `port.json` is this
+working copy's port, and `prs.json` remembers which pull requests each branch has, so a poll can
+ask GitHub about them directly instead of searching. It is a cache; deleting it costs a search.
 
 On GitHub, it writes only when you click: ticking a description checkbox flips that one line of
 the description, ticking a file marks it viewed, ◎ moves a queue item into a new issue, and creating

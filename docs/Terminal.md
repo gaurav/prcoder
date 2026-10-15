@@ -25,14 +25,17 @@ says `checked 7m ago` next to that count, rather than presenting them as current
 
 ## Keys
 
-- `r` polls now, which moves the block without going back to the browser.
+- `r` polls now, which moves the block without going back to the browser. It also searches for the
+  branch's pull requests afresh, rather than asking only about the ones it already knows
+  ([Panes.md](Panes.md)), so one opened on github.com a moment ago shows.
 - `v` cycles quiet → verbose → debug. Verbose reports the things that change something you care
   about: an item queued, ticked or moved into an issue, a PR checked out. Debug adds every `git`
   and `gh` subprocess with its timing, the per-poll count of them, route timings, and a line when
   the PR has moved upstream. `-v` or `-vv` (or `PRCODER_VERBOSE=1` or `=2`) starts at a level, which
   is the only way to see startup itself.
 - `o` reopens prcoder in the browser.
-- `g` opens the pull request on GitHub, in the same browser (`PRCODER_BROWSER` applies). With no
+- `g` opens the pull request on GitHub, in the same browser (`PRCODER_BROWSER` applies), searching
+  for it afresh as `r` does. With no
   pull request it opens the compare page that Create would, but only for a branch that has been
   pushed, since for any other the page shows nothing; it never pushes. On the default branch or a
   detached HEAD there is nothing to compare, so it opens the repo.
