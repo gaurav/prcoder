@@ -400,10 +400,12 @@ function issueGroups() {
   // without touching what was chosen: fold() reports its initial state too.
   const state = (key, rows) => (searching ? { open: rows.length > 0, onToggle: () => {} } : kept(closedGroups, key, 'closed'));
   const home = deps.home?.();
-  const group = (key, title, rows, extra = []) => fold({
-    className: 'milestone', dataset: { group: key }, title: [title, ...extra.flatMap((e) => [' ', e]), ' ', h('span', { className: 'count' }, String(rows.length))],
-    ...state(key, rows),
-  }, rows.length ? [h('ul', { className: 'items' }, ...rows)] : [h('p', { className: 'empty' }, 'no open issues')]);
+  // `list` is the group's issues and `rows` what they draw, which is more
+  // than one element per issue once a row is open: the count is the issues'.
+  const group = (key, title, list, rows, extra = []) => fold({
+    className: 'milestone', dataset: { group: key }, title: [title, ...extra.flatMap((e) => [' ', e]), ' ', h('span', { className: 'count' }, String(list.length))],
+    ...state(key, list),
+  }, list.length ? [h('ul', { className: 'items' }, ...rows)] : [h('p', { className: 'empty' }, 'no open issues')]);
 
   const out = [];
   // The mentions, searched by what is known of them: the looked-up title, and
@@ -412,15 +414,16 @@ function issueGroups() {
     number: i.number, title: mentions?.get(i.number)?.title, body: listing.issues.find((n) => n.number === i.number)?.body,
   }, query));
   if (pr && ment.length) {
-    const rows = newestFirst(ment, mentions).map((i) => mentionRow(i)).flat();
-    out.push(group('mentioned', `Mentioned by PR #${pr.number}`, rows));
+    out.push(group('mentioned', `Mentioned by PR #${pr.number}`, ment, newestFirst(ment, mentions).map((i) => mentionRow(i)).flat()));
   }
   for (const m of ranked) {
     const title = home ? ext(`https://github.com/${home}/milestone/${m.number}`, m.title, { title: m.description || undefined }) : m.title;
     const due = m.dueOn ? [h('span', { className: 'due', title: 'due' }, m.dueOn.slice(0, 10))] : [];
-    out.push(group(`m:${m.number}`, title, (byMilestone.get(m.number) ?? []).map((i) => issueRow(i)).flat(), due));
+    const list = byMilestone.get(m.number) ?? [];
+    out.push(group(`m:${m.number}`, title, list, list.map((i) => issueRow(i)).flat(), due));
   }
-  out.push(group(`m:${NONE}`, 'No milestone', (byMilestone.get(NONE) ?? []).map((i) => issueRow(i)).flat()));
+  const none = byMilestone.get(NONE) ?? [];
+  out.push(group(`m:${NONE}`, 'No milestone', none, none.map((i) => issueRow(i)).flat()));
   if (listing.listed < listing.total) {
     out.push(h('p', { className: 'pr-note' }, `The ${listing.listed} most recently updated of ${listing.total} open issues.`));
   }

@@ -1599,6 +1599,7 @@ test('an issue row opens to its body through the description renderer, with Open
   assert.equal(await out.getAttribute('href'), 'https://github.com/gaurav/prcoder/issues/58');
   assert.equal(await out.getAttribute('target'), '_blank');
   assert.equal(await fresh.locator('[data-group="m:1"] .disclose').getAttribute('aria-expanded'), 'true');
+  assert.equal(await fresh.locator('[data-group="m:1"] summary .count').textContent(), '1', 'an open row is still one issue');
   // ▶ types the title with its link, unsent, and the queue is untouched.
   await row.locator('button[title^="type into the coding agent"]').click();
   assert.deepEqual(typed, ['Decide what the Issues tab shows (https://github.com/gaurav/prcoder/issues/58)']);

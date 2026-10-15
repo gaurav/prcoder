@@ -287,7 +287,9 @@ const openable = page.locator('#queue-body .fold.milestone[open] .item button.di
 if (await openable.count()) {
   await openable.click();
   await page.waitForSelector('#queue-body .issue-body');
-  console.log('  opened:', JSON.stringify((await page.locator('#queue-body .issue-body').innerText()).slice(0, 80)),
+  // `.first()`: a mention that is also listed under its milestone is one row
+  // drawn twice, and opening either opens both.
+  console.log('  opened:', JSON.stringify((await page.locator('#queue-body .issue-body').first().innerText()).slice(0, 80)),
     '(want the body as rendered text, ending in Open on GitHub)');
 }
 await page.locator('#queue').screenshot({ path: path.join(out, 'queue-issues.png') });
