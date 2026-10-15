@@ -50,3 +50,36 @@ export function forClaude(i, home) {
   });
   return named ? i.text : `${i.text} (${i.issueUrl})`;
 }
+
+// The standing buckets, after every release or deadline milestone and in
+// decreasing urgency, as MILESTONES.md in gaurav/milestones has them (read
+// 2026-10-15). `Critical` is the one bucket ahead of the releases. Matched
+// case-blind: another repository may spell them a little differently.
+const BUCKETS = ['needed soon', 'needed later', 'not urgent', 'upstream'];
+
+/**
+ * Open milestones in the order the Issues tab groups by: Critical; releases
+ * and deadlines, the ones with a due date first and soonest first, then the
+ * undated by name; then the buckets, Needed soon to Upstream. The ISO dates
+ * sort as they read. "No milestone" is the caller's, last.
+ */
+export function rankMilestones(list) {
+  const rank = ({ title, dueOn }) => {
+    const name = (title ?? '').trim().toLowerCase();
+    if (name === 'critical') return [0, ''];
+    const i = BUCKETS.indexOf(name);
+    if (i >= 0) return [3 + i, ''];
+    return dueOn ? [1, dueOn] : [2, name];
+  };
+  return [...list].sort((a, b) => {
+    const [x, p] = rank(a);
+    const [y, q] = rank(b);
+    return x - y || p.localeCompare(q);
+  });
+}
+
+/** Whether the Issues tab's search matches an issue: case-blind, over `#N`, the title, the labels and the body. */
+export const issueMatches = (i, query) => {
+  const q = (query ?? '').trim().toLowerCase();
+  return !q || [`#${i.number}`, i.title ?? '', ...(i.labels ?? []), i.body ?? ''].join('\n').toLowerCase().includes(q);
+};

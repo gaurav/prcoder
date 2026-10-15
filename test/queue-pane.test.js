@@ -3,7 +3,7 @@
 // and the status block share.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { TABS, counts, forClaude, refLabel } from '../public/items.js';
+import { TABS, counts, forClaude, refLabel, rankMilestones, issueMatches } from '../public/items.js';
 import { stripFor } from '../public/queue.js';
 
 const item = (over = {}) => ({ text: 't', done: false, issue: null, deleted: false, ...over });
@@ -113,4 +113,33 @@ test('▶ adds the link to an item\'s issue only where the text does not name it
 test('the tag names the repo only when it is not this one', () => {
   assert.equal(refLabel(item({ issue: 91 })), '#91');
   assert.equal(refLabel(item({ issue: 123, repo: 'cli/cli' })), 'cli/cli#123');
+});
+
+// The Issues tab's groups, in the owner's order (MILESTONES.md in
+// gaurav/milestones): Critical, releases by date, the buckets in decreasing
+// urgency. Case-blind, since another repository may spell a bucket its own way.
+test('milestones rank Critical, then releases by due date, then the buckets in order', () => {
+  const ms = [
+    { number: 3, title: 'Not urgent', dueOn: null }, { number: 5, title: 'NEEDED LATER', dueOn: null },
+    { number: 1, title: 'PRCoder v1.0', dueOn: '2026-10-14T00:00:00Z' }, { number: 9, title: 'Upstream', dueOn: null },
+    { number: 2, title: 'PRCoder v0.1', dueOn: '2026-10-02T00:00:00Z' }, { number: 7, title: 'v2', dueOn: null },
+    { number: 4, title: 'needed soon ', dueOn: null }, { number: 8, title: 'Critical', dueOn: '2026-11-01T00:00:00Z' },
+    { number: 6, title: 'a-deadline', dueOn: null },
+  ];
+  assert.deepEqual(rankMilestones(ms).map((m) => m.number), [8, 2, 1, 6, 7, 4, 5, 3, 9]);
+  assert.deepEqual(rankMilestones([]), []);
+  assert.deepEqual(ms.map((m) => m.number)[0], 3, 'the list is not sorted in place');
+});
+
+test('the issue search is case-blind over the number, title, labels and body', () => {
+  const i = { number: 58, title: 'Decide what the Issues tab shows', labels: ['enhancement'], body: 'Focus on an upcoming milestone.' };
+  assert.ok(issueMatches(i, ''));
+  assert.ok(issueMatches(i, '  '));
+  assert.ok(issueMatches(i, '#58'));
+  assert.ok(issueMatches(i, 'issues TAB'));
+  assert.ok(issueMatches(i, 'Enhance'));
+  assert.ok(issueMatches(i, 'upcoming milestone'));
+  assert.ok(!issueMatches(i, '#59'));
+  assert.ok(!issueMatches(i, 'nothing like this'));
+  assert.ok(issueMatches({ number: 1 }, '#1'), 'an issue with nothing but a number');
 });
