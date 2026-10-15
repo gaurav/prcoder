@@ -863,7 +863,7 @@ function renderPrHead(pr, parsed, handlers) {
   const under = handlers.prs?.find((p) => !p.isCrossRepository && p.headRefName === pr.baseRefName);
   const arrow = sides(pr, handlers.remotes);
 
-  const files = filesProgress(pr.files);
+  const files = filesProgress(pr.files, pr);
   const tasks = taskCount(parsed);
   const checks = checkCount(pr.checks);
   // A tab's accessible name and its tooltip, which say the same thing.
@@ -991,15 +991,20 @@ export const stackLabel = (above, under = []) => {
   return parts.length ? `Stack (${parts.join(' ')})` : 'Stack';
 };
 
-export const viewedCount = (files = []) =>
-  ({ done: files.filter((f) => f.viewed).length, total: files.length });
+/**
+ * `whole` is the larger total to count against, when there is one: a pull
+ * request GitHub would not list in full has `changedFiles` past the list, and
+ * the unlisted ones are unviewed (filesProgress).
+ */
+export const viewedCount = (files = [], whole = 0) =>
+  ({ done: files.filter((f) => f.viewed).length, total: Math.max(files.length, whole) });
 
 const lines = (f) => (f.additions ?? 0) + (f.deletions ?? 0);
 
 /** viewedCount by changed lines, additions plus deletions, rather than by files. */
-export const viewedLines = (files = []) => ({
+export const viewedLines = (files = [], whole = 0) => ({
   done: files.filter((f) => f.viewed).reduce((n, f) => n + lines(f), 0),
-  total: files.reduce((n, f) => n + lines(f), 0),
+  total: Math.max(files.reduce((n, f) => n + lines(f), 0), whole),
 });
 
 /**
@@ -1009,10 +1014,15 @@ export const viewedLines = (files = []) => ({
  * by files only where there are no lines to weigh (renames, mode changes,
  * binaries). Full is every file viewed, not every line: an unviewed rename
  * weighs nothing, and must not let a pie read as finished.
+ *
+ * `pr` is the pull request's own totals, for the Files tab: when GitHub lists
+ * fewer files than `changedFiles`, the ones it left out are unviewed, and the
+ * tab must not read 3000/3000 and done with 412 never shown. A group or a
+ * directory is its listed files and nothing more, so it passes none.
  */
-export const filesProgress = (files = []) => {
-  const count = viewedCount(files);
-  const weight = viewedLines(files);
+export const filesProgress = (files = [], pr = {}) => {
+  const count = viewedCount(files, pr.changedFiles);
+  const weight = viewedLines(files, (pr.additions ?? 0) + (pr.deletions ?? 0));
   // The part the count cannot say, written once for this label and filesName.
   const lines = weight.total ? `${weight.done} of ${weight.total} changed lines viewed` : null;
   return {

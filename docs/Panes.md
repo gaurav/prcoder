@@ -218,7 +218,9 @@ same one the check rows and the folds below use: a pie that fills green as the w
 green circle with a ✓ in it once none is left. The
 Files tab's pie fills by changed lines viewed rather than files viewed, so it says how much
 reviewing is left where the count says how many files: fourteen of seventeen viewed with the last
-three the biggest is a pie still mostly empty. Hover the tab for both figures. The Checks tab's pie
+three the biggest is a pie still mostly empty. Hover the tab for both figures. Both count against
+the whole pull request, so where GitHub lists fewer files than it changes, the ones left out are
+unviewed and the tab is never done; a group's and a folder's count their own listed files. The Checks tab's pie
 has a yellow ring while something is still running, and turns into a red circle with a ✕ as soon as
 anything fails, which is the part a fraction alone can't tell you. Each is a shape as well as a
 colour so that it survives colour blindness, and the tab's name, read by a screen reader and shown
