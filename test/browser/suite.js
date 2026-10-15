@@ -2255,6 +2255,16 @@ test('a branch with two pull requests gets an "On this branch" group, and a pick
   assert.equal(await none.locator('#pr-head .pr-note').textContent(),
     'No pull request for topic in heal-data-stewards/heal-vlmd-AI-pipeline or upstream/heal-vlmd-AI-pipeline yet.');
   await none.close();
+
+  // The one picked gone by the time the server looks: no pull request in the
+  // answer, which the toast says rather than throwing on.
+  const gone = await newPage({ prs: STACK, st: two });
+  await gone.waitForSelector(`#pr-switch optgroup option[value="${theirs.url}"]`, { state: 'attached' });
+  await gone.route('**/api/pr/choose', (r) => r.fulfill({ json: { ...two, pr: null, branchPrs: [] } }));
+  await gone.selectOption('#pr-switch', theirs.url);
+  await gone.waitForSelector('#toast:not([hidden])');
+  assert.equal(await gone.textContent('#toast'), 'That pull request is gone; topic has none to show.');
+  await gone.close();
 });
 
 // A pick in the group needs no checkout, so a dirty tree leaves the switcher

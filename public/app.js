@@ -851,7 +851,10 @@ async function choosePr(url) {
   try {
     const status = await api('/api/pr/choose', { url });
     paint(status);
-    toast(`Showing ${prRepo(status.pr)}#${status.pr.number} for ${status.branch}.`);
+    // No pull request after all when the one picked went between the last
+    // poll and the click -- deleted, or its repository unreadable now.
+    toast(status.pr ? `Showing ${prRepo(status.pr)}#${status.pr.number} for ${status.branch}.`
+      : `That pull request is gone; ${status.branch} has none to show.`, !status.pr);
   } catch (e) {
     debug('choose failed:', e.message);
     toast(e.message, true);
