@@ -1558,6 +1558,61 @@ test('a file with no diff does not keep the last file\'s outline', { skip }, asy
   await fresh.close();
 });
 
+// Until it is dragged, the outline is one width for every file: it used to be
+// as wide as its longest label, so the diff beside it changed width from one
+// file to the next.
+test('the outline opens at the same width whatever its labels', { skip }, async () => {
+  const fresh = await newPage();
+  const long = 'function aNameLongEnoughToHaveSetTheOutlineWidthOnItsOwn(withSomeArguments, andMore)';
+  await fresh.route('**/api/diff', (r) => {
+    const { path } = r.request().postDataJSON();
+    const [one, two] = path === 'evil.js' ? ['a', 'b'] : [long, long];
+    return r.fulfill({ json: { path, patch: `@@ -1,1 +1,1 @@ ${one}\n-a\n+b\n@@ -9,1 +9,1 @@ ${two}\n-c\n+d` } });
+  });
+  await fresh.locator('#pr-head .tab', { hasText: 'Files' }).click();
+  const width = async (path, label) => {
+    await fresh.locator('.file[data-path="' + path + '"] .path').click();
+    await fresh.waitForSelector(`#diff-outline button >> text=${label}`);
+    return fresh.evaluate(() => ({
+      side: document.getElementById('diff-side').getBoundingClientRect().width,
+      main: document.getElementById('diff-main').getBoundingClientRect().width,
+      em: parseFloat(getComputedStyle(document.getElementById('diff-side')).fontSize),
+    }));
+  };
+  const short = await width('evil.js', 'a');
+  const wide = await width('app.tsx', long.slice(0, 20));
+  assert.equal(short.side, wide.side, 'the same width for short labels and long ones');
+  // Which side of the min() is in force, first: past it, both files would
+  // measure half the pane and pass without the 26.5em in the stylesheet.
+  // 26.5 * 14 is a whole pixel, so the comparison after it can be exact.
+  assert.ok(26.5 * short.em < 0.5 * short.main, `a pane wide enough for 26.5em: ${short.main}px`);
+  assert.equal(short.side, 26.5 * short.em, 'the default in the stylesheet');
+  await fresh.close();
+});
+
+// In a pane too narrow for it, 26.5em would leave the diff 40% of the pane
+// even for one-letter labels, so the outline opens at half the pane instead.
+test('the outline opens at half a narrow pane', { skip }, async () => {
+  const fresh = await newPage();
+  await fresh.setViewportSize({ width: 900, height: 720 });
+  await fresh.route('**/api/diff', (r) => {
+    const { path } = r.request().postDataJSON();
+    return r.fulfill({ json: { path, patch: '@@ -1,1 +1,1 @@ a\n-a\n+b\n@@ -9,1 +9,1 @@ b\n-c\n+d' } });
+  });
+  await fresh.locator('#pr-head .tab', { hasText: 'Files' }).click();
+  await fresh.locator('.file[data-path="evil.js"] .path').click();
+  await fresh.waitForSelector('#diff-outline button >> text=a');
+  const { side, main, em } = await fresh.evaluate(() => ({
+    side: document.getElementById('diff-side').getBoundingClientRect().width,
+    main: document.getElementById('diff-main').getBoundingClientRect().width,
+    em: parseFloat(getComputedStyle(document.getElementById('diff-side')).fontSize),
+  }));
+  assert.ok(0.5 * main < 26.5 * em, `a pane too narrow for 26.5em: ${main}px`);
+  // Layout rounds widths to a fraction of a pixel, which half of one need not be.
+  assert.ok(Math.abs(side - 0.5 * main) < 0.1, `half of ${main}px, not ${side}px`);
+  await fresh.close();
+});
+
 // The diff header's @ types the open file's mention into the agent's prompt
 // and stops there: no Enter, so the sentence about the file goes on around it,
 // and the focus is in the terminal to carry on typing it.
