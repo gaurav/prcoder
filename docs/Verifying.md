@@ -138,6 +138,14 @@ already up with `PRCODER_VERBOSE=2`, or a `browser.mjs` run is already printing 
   `gh pr list --head <branch> --state open --json number,headRefOid,updatedAt,statusCheckRollup`
   with `--limit 5` on a branch name many forks share, since that
   first page carries up to five strangers' rollups before prcoder drops them.
+- **The list of open pull requests is one GraphQL call, and the answer carries every pull
+  request's first hundred files.** On this repository's two open pull requests it is 5.4KB and
+  took 0.75s (`listPrs` timed from Node on `d2b43a8`, 2026-10-15); `gh pr list --json` with the
+  seven fields it replaced was a few hundred bytes. The page asks for it on load, when the switcher
+  is reached, when the Stack or PRs tab opens and when the branch or the pull request's state
+  changes, never on the poll. Time it on a repository with many open pull requests:
+  `node -e "import('./github.js').then(async ({ listPrs }) => { const t = Date.now(); const r = await listPrs(process.cwd(), 'owner/repo'); console.log(Date.now() - t, r.length); })"`,
+  and `PRCODER_VERBOSE=2` prints each call's time as the page asks.
 - **The description's prose is 568px wide in Firefox and 567px in Chromium**, in an 864px pane
   (re-measured on `a96dc21`, 2026-10-14). `browser.mjs` prints it every run; a line-length cap is not something the
   stylesheet can be read for.
