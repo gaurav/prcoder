@@ -1736,6 +1736,35 @@ test('Alt+M in the terminal with no file open goes to the agent', { skip }, asyn
   await fresh.close();
 });
 
+// Alt+R types the pull request's URL, unsent, for a command that wants a
+// target, and copies it; from the terminal too. With no pull request the
+// agent gets the key. The clipboard is the stub ⧉'s test uses, for its reason.
+test('Alt+R types and copies the pull request\'s URL, and goes to the agent with none', { skip }, async () => {
+  const frames = [];
+  const fresh = await newPage({ init: () => {
+    Object.defineProperty(Navigator.prototype, 'platform', { get: () => 'Linux x86_64' });   // onLinux, in the page
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText: async (t) => { (window.copiedText ??= []).push(t); } } });
+  },
+    pty: (ws) => ws.onMessage((m) => frames.push(JSON.parse(m))) });
+  const typed = () => frames.filter((f) => f.type === 'input');
+  await fresh.locator('#term-host').click();
+  await fresh.keyboard.press('Alt+KeyR');
+  for (let i = 0; !typed().length && i < 100; i++) await fresh.waitForTimeout(50);
+  await fresh.waitForTimeout(200);
+  assert.deepEqual(typed(), [{ type: 'input', data: ` ${REPO}/pull/12 ` }], 'typed, unsent, and not ESC r');
+  assert.deepEqual(await fresh.evaluate(() => window.copiedText), [`${REPO}/pull/12`]);
+  await fresh.close();
+
+  frames.length = 0;
+  const bare = await newPage({ init: onLinux, st: { ...status, pr: null }, ready: '#pr-head .pr-branch-name',
+    pty: (ws) => ws.onMessage((m) => frames.push(JSON.parse(m))) });
+  await bare.locator('#term-host').click();
+  await bare.keyboard.press('Alt+KeyR');
+  for (let i = 0; !typed().length && i < 100; i++) await bare.waitForTimeout(50);
+  assert.deepEqual(typed(), [{ type: 'input', data: '\x1br' }]);
+  await bare.close();
+});
+
 // The review loop's keys. Each fires from the terminal while it has something
 // to do, and otherwise the agent gets the key; onLinux above says why the
 // terminal tests pretend to be on Linux. `typed` is what reached the agent.
