@@ -305,8 +305,8 @@ nothing, says so, and leaves the focus where it was.
 
 A diff with more than one hunk gets an outline down its right edge, one row per hunk, named by the
 context git puts after the `@@` (the enclosing function, a heading); a click scrolls to it. It opens
-26.5em wide (371px at the default font size) for every file, whatever its labels say, and cuts a
-label too long for that short with an ellipsis; drag its left edge to change that. Its ✕
+371px wide for every file, whatever its labels say, and cuts a label too long for that short with
+an ellipsis; drag its left edge to change that. Its ✕
 hides it for every file until *Outline* in the header brings it back.
 
 A line longer than the pane runs off its right edge and scrolls sideways, until *Wrap* in the header

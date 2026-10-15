@@ -713,8 +713,10 @@ a { color: var(--accent); }
    It was `auto` -- as wide as the longest hunk label -- so the diff beside it
    changed width from file to file, and a long label could take 60% of the
    pane. 26.5em is the 371px the owner settled on by dragging, at the body's
-   14px, and scales with the font where px would not. The gutter writes a px
-   width after a drag, and the max-width is what keeps a drag from eating the diff. */
+   14px -- in em so it follows that 14px if it changes; a browser's font
+   setting doesn't reach it, since the body's size is fixed. The gutter writes
+   a px width after a drag, and the max-width is what keeps a drag from eating
+   the diff. */
 #diff-side { flex: none; width: var(--w-outline, 26.5em); max-width: 60%; overflow: auto; padding: 6px 0; }
 /* Its own row, stuck to the top so it is still there once the hunks scroll. */
 #diff-outline-hide {
