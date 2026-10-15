@@ -819,7 +819,7 @@ export async function repoIssues(cwd, owner, repo) {
 /**
  * Set an issue's milestone by title, or take it off with null. `--milestone=`
  * with the `=`, so a title that starts with `-` is still the value and never
- * a flag; both flags checked against gh 2.102 on 2026-10-15. The number and
+ * a flag; both flags checked against gh 2.100.0 on 2026-10-15. The number and
  * the title are the server's, looked up in the listing the tab was shown
  * (issueMove in server.js), not the page's strings.
  */
