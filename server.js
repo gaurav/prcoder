@@ -218,13 +218,14 @@ async function status({ full = false } = {}) {
   const facts = await repoFacts();
   // The branch's pull requests, wherever they are: the poll's cheap check,
   // whose checks keepPr takes. With a target the list is still read, since
-  // the switcher offers it.
+  // the switcher offers it, but without the checks: prHeads has the target's,
+  // and the list's would be fetched for nothing on every poll.
   // One answer per commit for the whole poll: the lookup asks whether this
   // clone has a fork's head, and snapshot asks the same of the remote head,
   // which on such a branch is the same commit.
   const known = new Map();
   const has = (oid) => known.get(oid) ?? known.set(oid, hasCommit(oid, repo)).get(oid);
-  const found = await branchPrs(repo, facts.repos, branch, { has });
+  const found = await branchPrs(repo, facts.repos, branch, { has, checks: !target });
   if (!target) {
     heads = pickPr(found, { head, chosen: chosen?.url, shown: pr?.url, repos: facts.repos });
     await refresh(heads);
