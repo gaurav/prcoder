@@ -691,7 +691,9 @@ function toggleTerm() {
 let drawn = null;
 
 function paint(status) {
-  const moved = last?.pr?.headRefOid !== status.pr?.headRefOid;
+  // A new head, or another pull request: two of a branch's share a head and
+  // differ by base, so a pick in "On this branch" is a new patch too.
+  const moved = last?.pr?.headRefOid !== status.pr?.headRefOid || last?.pr?.url !== status.pr?.url;
   // A checkout is the one thing that changes which pull requests merge into the
   // branch under you, and the branch-only pane lists them. Refreshed here rather
   // than on the poll, which is the whole reason that list is affordable.
@@ -763,7 +765,7 @@ function paint(status) {
 
   // Keep an open diff honest: close it if its file left the PR (or the PR
   // switched away), refresh it if the branch moved — the server cache is
-  // keyed by head oid, so a re-open shows the freshly pushed version.
+  // keyed by URL and head oid, so a re-open shows the freshly pushed version.
   const open = selectedPath();
   if (!open) return;
   const f = status.pr?.files.find((x) => x.path === open);

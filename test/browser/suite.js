@@ -2218,9 +2218,16 @@ test('a branch with two pull requests gets an "On this branch" group, and a pick
     chosen.push(r.request().postDataJSON().url);
     return r.fulfill({ json: { ...two, pr: { ...pr, ...theirs, files: pr.files } } });
   });
+  // A file open in the diff pane: the two share a head, not a base, so the
+  // pick is a new patch for it even though headRefOid has not moved.
+  await fresh.locator('#pr-head .tab', { hasText: 'Files' }).click();
+  await fresh.locator('.file[data-path="app.tsx"] .path').click();
+  await fresh.waitForSelector('#diff h1');
+  const repatched = fresh.waitForRequest('**/api/diff');
   const sent = fresh.waitForResponse('**/api/pr/choose');
   await fresh.selectOption('#pr-switch', theirs.url);
   await sent;
+  assert.equal((await repatched).postDataJSON().path, 'app.tsx');
   assert.deepEqual(chosen, [theirs.url]);
   assert.deepEqual(switched, []);
   await fresh.waitForSelector('#toast:not([hidden])');
