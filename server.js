@@ -350,7 +350,7 @@ const routes = {
   'GET /api/whoami': () => ({ prcoder: true, version: VERSION, repo, branch: last?.branch ?? null,
     nameWithOwner: info?.nameWithOwner ?? null, started: startedWith(agentArgs) }),
 
-  'GET /api/prs': () => listPrs(repo),
+  'GET /api/prs': async () => listPrs(repo, (await repoFacts()).nameWithOwner),
 
   // The exit panel's Quit button, asking what the terminal's q asks. Without
   // `force`, a quit that would cost something only says what it would cost, so

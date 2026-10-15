@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { rollup, linkedIssues, linksFrom, parsePrUrl, run, issueNumber, lf, setViewed, listPrs, loadPr, prHeads, branchPrs, lookupPrs, ownPrs, SEARCH_EVERY, UNREAD_FOR, pickPr, lookupRef, createIssue } from '../github.js';
+import { rollup, linkedIssues, linksFrom, parsePrUrl, run, issueNumber, lf, setViewed, listPrs, prListRow, MERGE_WORD, loadPr, prHeads, branchPrs, lookupPrs, ownPrs, SEARCH_EVERY, UNREAD_FOR, pickPr, lookupRef, createIssue } from '../github.js';
 import { taskLines } from '../public/tasks.js';
 import { withGh, ghArgs, ghCalls, unix } from './stub-gh.js';
 
@@ -205,8 +205,8 @@ test('a CRLF description reads as the same checklist as an LF one', () => {
 // argument on its own line and answers `[]`. gh's -F converts a value by its
 // shape -- an all-digit owner went to GitHub as an Int and was refused, and a
 // path starting with @ is read as a file -- so every string has to go as -f.
-// And `gh pr list` stops at 30 unless given a limit, which silently dropped
-// the rest from the switcher.
+// And GraphQL's pullRequests connection is a page at a time, so the list of
+// open pull requests is read to its end by cursor, as prFiles reads files.
 
 test('a file path goes to gh as a string, whatever it looks like', { skip: unix }, async () => {
   for (const p of ['404', '@types/x.d.ts']) {
@@ -216,9 +216,88 @@ test('a file path goes to gh as a string, whatever it looks like', { skip: unix 
   }
 });
 
-test('the PR list asks for more than gh\'s default 30', { skip: unix }, async () => {
-  const args = await ghArgs(() => listPrs(os.tmpdir()));
-  assert.ok(Number(args[args.indexOf('--limit') + 1]) > 30, args.join(' '));
+test('the PR list reaches GitHub as variables, not inside the query', { skip: unix }, async () => {
+  const args = await ghArgs(() => listPrs(os.tmpdir(), '12345/x"){ viewer').catch(() => {}));
+  assert.equal(args[args.indexOf('owner=12345') - 1], '-f');
+  assert.equal(args[args.indexOf('repo=x"){ viewer') - 1], '-f');
+  // The query is several lines, which ghArgs reads as several arguments.
+  const at = args.findIndex((a) => a.startsWith('query='));
+  const query = args.slice(at, args.indexOf('-f', at)).join('\n');
+  assert.ok(!query.includes('12345') && !query.includes('x"){ viewer'), query);
+  assert.ok(query.includes('viewerViewedState') && query.includes('mergeStateStatus'), query);
+});
+
+// One page of the list as GitHub answered it for gaurav/prcoder on 2026-10-15,
+// the fixture pull request #87, verbatim. The row it becomes carries the seven
+// names `gh pr list --json` used to give, the table's fields, and neither the
+// body nor the files.
+const LIST_PAGE = {"data": {"repository": {"pullRequests": {"pageInfo": {"hasNextPage": false, "endCursor": "Y3Vyc29yOnYyOpHOW4W4Lw=="}, "nodes": [{"number": 87, "title": "[fixture] A modified, a deleted and a .tsx file, for the diff-pane driver", "url": "https://github.com/gaurav/prcoder/pull/87", "isDraft": true, "isCrossRepository": false, "headRefName": "fixture/diff-views", "baseRefName": "fixture/diff-views-base", "updatedAt": "2026-09-27T02:43:13Z", "additions": 14, "deletions": 7, "changedFiles": 5, "mergeStateStatus": "CLEAN", "reviewDecision": null, "body": "**A fixture. Never merge this.**\n\n`tools/diff-views.mjs` in this repo drives this pull request. It has the things the diff pane can show that PR #1 never does, because every file in PR #1 is one the pull request adds:\n\n- `src/service.js` is **modified** in two places, so it opens as a plain DIFF with two hunks and a hunk outline.\n- `notes/old.txt` is **deleted**, so it opens under DELETED.\n- `src/Badge.tsx` is **added**, and it is the only `.tsx` file any pull request here has. It opens under NEW, highlighted by a grammar built on jsx and typescript.\n- `lib/format.js` → `lib/formatting.js` is **renamed with no other change**, so the body says only where it came from.\n- `lib/strings.js` → `lib/text.js` is **renamed with one line changed**, so the hunk sits under a first row that says where it came from.\n\nThe base is `fixture/diff-views-base`, an orphan branch with none of prcoder's history. So this pull request stays exactly these files whatever happens to `main`. See #86 and #74.\n\n", "closingIssuesReferences": {"nodes": []}, "files": {"nodes": [{"additions": 0, "deletions": 0, "viewerViewedState": "UNVIEWED"}, {"additions": 1, "deletions": 1, "viewerViewedState": "UNVIEWED"}, {"additions": 0, "deletions": 3, "viewerViewedState": "UNVIEWED"}, {"additions": 9, "deletions": 0, "viewerViewedState": "UNVIEWED"}, {"additions": 4, "deletions": 3, "viewerViewedState": "UNVIEWED"}]}}]}}}};
+const LIST_ROW = {
+  number: 87, title: '[fixture] A modified, a deleted and a .tsx file, for the diff-pane driver',
+  url: 'https://github.com/gaurav/prcoder/pull/87', isDraft: true, isCrossRepository: false,
+  headRefName: 'fixture/diff-views', baseRefName: 'fixture/diff-views-base', updatedAt: '2026-09-27T02:43:13Z',
+  additions: 14, deletions: 7, changedFiles: 5, reviewDecision: null,
+  viewed: { p: 0, full: false, label: '0 of 5 files, 0 of 21 changed lines viewed', count: { done: 0, total: 5 }, lines: '0 of 21 changed lines viewed' },
+  merge: 'ready', lead: '**A fixture. Never merge this.**', closes: [],
+};
+
+test('a recorded page of the PR list becomes rows the switcher and the table can read', { skip: unix }, async () => {
+  await withGh(() => `cat <<'JSON'\n${JSON.stringify(LIST_PAGE)}\nJSON`, async () => {
+    assert.deepEqual(await listPrs(os.tmpdir(), 'gaurav/prcoder'), [LIST_ROW]);
+  });
+});
+
+test('a list with a second page is read to its end, and stops where the cursor runs out', { skip: unix }, async () => {
+  const first = JSON.stringify({ data: { repository: { pullRequests: {
+    pageInfo: { hasNextPage: true, endCursor: 'C1' }, nodes: [{ ...LIST_PAGE.data.repository.pullRequests.nodes[0], number: 1 }] } } } });
+  // The first call writes a marker beside the stub; the second finds it and
+  // answers the last page.
+  const script = `if [ -e "$(dirname "$0")/again" ]; then cat <<'JSON'\n${JSON.stringify(LIST_PAGE)}\nJSON\nelse\ntouch "$(dirname "$0")/again"\ncat <<'JSON'\n${first}\nJSON\nfi`;
+  const { out, calls } = await ghCalls(script, () => listPrs(os.tmpdir(), 'gaurav/prcoder'));
+  assert.deepEqual(out.map((r) => r.number), [1, 87]);
+  assert.equal(calls.length, 2);
+  const second = calls.find((c) => c.includes('after=C1'));
+  assert.ok(second, 'the second call carries the cursor');
+  assert.equal(second[second.indexOf('after=C1') - 1], '-f');
+  assert.ok(!calls.find((c) => !c.includes('after=C1')).some((a) => a.startsWith('after=')), 'the first call has no cursor');
+});
+
+test('a page gh exits 1 on is still read for its list, and one with no list says why', { skip: unix }, async () => {
+  const errored = JSON.stringify({ ...LIST_PAGE, errors: [{ message: 'one field could not be resolved' }] });
+  await withGh(() => `cat <<'JSON'\n${errored}\nJSON\nexit 1`, async () => {
+    assert.deepEqual((await listPrs(os.tmpdir(), 'gaurav/prcoder')).map((r) => r.number), [87]);
+  });
+  const none = JSON.stringify({ data: { repository: null }, errors: [{ message: "Could not resolve to a Repository with the name 'gaurav/nope'." }] });
+  await withGh(() => `cat <<'JSON'\n${none}\nJSON\nexit 1`, () =>
+    assert.rejects(listPrs(os.tmpdir(), 'gaurav/nope'), { message: "Could not resolve to a Repository with the name 'gaurav/nope'." }));
+  await withGh(() => `echo 'error connecting to api.github.com' >&2\nexit 1`, () =>
+    assert.rejects(listPrs(os.tmpdir(), 'gaurav/prcoder'), { message: 'error connecting to api.github.com' }));
+});
+
+test('a list row says in a word whether the pull request can merge, and keeps nothing it does not show', () => {
+  const node = LIST_PAGE.data.repository.pullRequests.nodes[0];
+  for (const [state, word] of Object.entries(MERGE_WORD)) {
+    assert.equal(prListRow({ ...node, mergeStateStatus: state }).merge, word, state);
+  }
+  assert.equal(prListRow({ ...node, mergeStateStatus: null }).merge, 'checking…');
+  assert.equal(prListRow({ ...node, mergeStateStatus: 'SOMETHING_NEW' }).merge, 'checking…');
+  // A title that is nothing but control characters is the number, as linksFrom has it.
+  assert.equal(prListRow({ ...node, title: '\x1b\r\x07' }).title, '#87');
+  // The lead is the first paragraph, one line, even under a heading; none is ''.
+  assert.equal(prListRow({ ...node, body: '# Heading\r\n\r\nFirst\r\nparagraph.\r\n\r\nSecond.' }).lead, 'First paragraph.');
+  assert.equal(prListRow({ ...node, body: '- only a list' }).lead, '');
+  assert.equal(prListRow({ ...node, body: null }).lead, '');
+  assert.equal(prListRow({ ...node, body: 'x'.repeat(400) }).lead.length, 300);
+  // What it closes, each with its milestone, and the viewed pie over the files.
+  const row = prListRow({ ...node,
+    closingIssuesReferences: { nodes: [{ number: 5, title: 'Five\x07', url: 'https://github.com/gaurav/prcoder/issues/5', milestone: { title: 'v1' } },
+      { number: 6, title: '', url: null, milestone: null }] },
+    files: { nodes: [{ additions: 10, deletions: 0, viewerViewedState: 'VIEWED' }, { additions: 0, deletions: 10, viewerViewedState: 'UNVIEWED' }] },
+    additions: 10, deletions: 10, changedFiles: 2 });
+  assert.deepEqual(row.closes, [{ number: 5, title: 'Five', url: 'https://github.com/gaurav/prcoder/issues/5', milestone: 'v1' },
+    { number: 6, title: '#6', url: null, milestone: null }]);
+  assert.equal(row.viewed.p, 0.5);
+  assert.ok(!('body' in row) && !('files' in row) && !('mergeStateStatus' in row));
 });
 
 // Everything runs behind one serial lock, so a call that waits holds every
