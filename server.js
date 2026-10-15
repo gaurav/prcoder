@@ -333,9 +333,12 @@ const routes = {
     term.verbose(`checked out ${url}`);
     // Clear rather than pin: the checkout put us on the branch, so following it
     // gives the same answer and self-heals when Claude switches branches later.
-    // The choice made on the old branch goes with it.
+    // The choice made on the old branch goes with it, and the one asked for here
+    // is the new branch's: of two pull requests on it into different bases,
+    // pickPr has nothing to tell them apart by but age, and the one clicked
+    // must be the one shown. Like any choice, it goes when the branch does.
     target = undefined;
-    chosen = null;
+    chosen = { branch: await currentBranch(repo), url };
     return status({ full: true });
   },
 

@@ -150,7 +150,8 @@ leads with all of them under **On this branch**, the ones in another repository 
 `owner/repo#N` as the tab's title names them, each with what is stacked on it under it, and the
 rest of the list follows without them. Picking one there changes what the pane shows and checks
 nothing out, since the branch is already this one, and it stays shown until the branch changes;
-every other option is the checkout it always was. Because a pick there needs no checkout, a dirty
+every other option is the checkout it always was, and shows the pull request picked even when the
+branch it lands on has others. Because a pick there needs no checkout, a dirty
 tree does not hide a switcher that has the group: it stays beside the Commit button with every
 option but the group's own disabled. The list the rest comes from is the one
 repository's, `gh`'s own, so a pull request in another repository has no Stack and no `#N` beside
