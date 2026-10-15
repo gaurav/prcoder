@@ -240,7 +240,7 @@ test('run() turns gh and git prompts off, whatever env it is given', { skip: uni
 test('a detached HEAD is no pull request, not an error', { skip: unix }, async () => {
   const detached = () => `echo 'could not determine current branch: failed to run git: not on any branch' >&2\nexit 1`;
   await withGh(detached, async () => {
-    assert.equal(await loadPr(os.tmpdir()), null);
+    assert.equal(await loadPr(os.tmpdir(), undefined, { pause: 0 }), null);
     assert.equal(await prHeads(os.tmpdir()), null);
   });
 });
@@ -322,6 +322,174 @@ test('the cheap per-poll call carries the checks, summarised', { skip: unix }, a
     assert.match(args, /statusCheckRollup/);
     assert.equal(heads.statusCheckRollup, undefined);
     assert.deepEqual([heads.checks.passed, heads.checks.pending], [1, 1]);
+  });
+});
+
+// gh answering `pr view` with `view` -- or the second `pr view` with `view2`,
+// and so on, where a test gives one -- and the file list's GraphQL calls with
+// `pages` in the order they are made, so a test can have the PR move between
+// two of them. The pages are told apart by their query, not by being the
+// GraphQL call that came next: loadPr reads the linked issues alongside the
+// files, and a call of theirs would take a page and shift the rest by one.
+// Any other GraphQL call gets an empty answer. The counter is not atomic, so
+// only the file pages, which prFiles asks for one at a time, may use it.
+const withPr = (view, pages, fn, views = []) => withGh((dir) => [
+  'case "$1" in',
+  `  pr) v=$(( $(cat "${dir}/v" 2>/dev/null || echo 0) + 1 )); echo $v > "${dir}/v"`,
+  `      [ $v = 1 ] && printf '%s\\n' "$@" > "${dir}/view-args"`,
+  `      if [ -f "${dir}/view$v.json" ]; then cat "${dir}/view$v.json"; else cat "${dir}/view.json"; fi ;;`,
+  `  *) case "$*" in`,
+  `       *"files(first:100"*) n=$(( $(cat "${dir}/n" 2>/dev/null || echo 0) + 1 )); echo $n > "${dir}/n"; cat "${dir}/page$n.json" ;;`,
+  `       *) echo '{"data":{}}' ;;`,
+  '     esac ;;',
+  'esac',
+].join('\n'), async (dir) => {
+  await fs.writeFile(path.join(dir, 'view.json'), JSON.stringify(view));
+  for (const [i, v] of views.entries()) await fs.writeFile(path.join(dir, `view${i + 2}.json`), JSON.stringify(v));
+  for (const [i, p] of pages.entries()) await fs.writeFile(path.join(dir, `page${i + 1}.json`), JSON.stringify(p));
+  return fn(dir);
+});
+const view = { number: 1, url: 'https://github.com/o/r/pull/1', body: '',
+  statusCheckRollup: [], comments: [], reviews: [], closingIssuesReferences: [] };
+const file = (i) => ({ path: `src/f${i}.js`, additions: i, deletions: 1 });
+const node = (f) => ({ ...f, viewerViewedState: f.path === 'src/f105.js' ? 'VIEWED' : 'UNVIEWED' });
+const head = { headRefOid: 'a'.repeat(40), baseRefOid: 'b'.repeat(40), additions: 10, deletions: 2 };
+const page = (files, endCursor, at = head) => ({ data: { repository: { pullRequest: { id: 'PR_node', ...at,
+  files: { pageInfo: { hasNextPage: endCursor != null, endCursor }, nodes: files.map(node) } } } } });
+
+// gh's `files` is GraphQL's `files(first: 100)`, unpaged, so a PR past 100
+// files lost the rest from the Files tab without a word. Seen on
+// NCATSTranslator/translator-diagram#32 (112 files, 100 shown); checked
+// 2026-10-14 on gaurav/taxondna#76, whose `gh pr view --json changedFiles,files`
+// says 110 and lists 100, while the paged GraphQL query answers 100 + 10. The
+// stub has 112 across two pages, and `gh pr view` is not asked for any: a
+// `files` back in PR_FIELDS would be the first 100 again, under whichever list
+// the merge favoured.
+test('a PR with more than 100 files lists every one of them', { skip: unix }, async () => {
+  const all = Array.from({ length: 112 }, (_, i) => file(i));
+  await withPr(view, [page(all.slice(0, 100), 'c1'), page(all.slice(100), null)], async (dir) => {
+    const pr = await loadPr(os.tmpdir(), undefined, { pause: 0 });
+    assert.equal(pr.files.length, 112);
+    assert.deepEqual(pr.files.map((f) => f.path), all.map((f) => f.path));
+    const f105 = pr.files.find((f) => f.path === 'src/f105.js');
+    assert.deepEqual(f105, { path: 'src/f105.js', additions: 105, deletions: 1, viewed: true });
+    assert.equal(pr.files.filter((f) => f.viewed).length, 1);
+    const args = (await fs.readFile(path.join(dir, 'view-args'), 'utf8')).split('\n');
+    const fields = args[args.indexOf('--json') + 1].split(',');
+    // headRefOid is asked for, as the commit the checks are for, and the
+    // head the PR is at is still prFiles' (the test after this one).
+    for (const f of ['files', 'changedFiles', 'baseRefOid', 'additions', 'deletions']) {
+      assert.ok(!fields.includes(f), `gh pr view is not asked for ${f}: prFiles reads it`);
+    }
+  });
+});
+
+// The linked issues are read alongside the files, on GraphQL as well: a
+// description that mentions one must not take one of the file pages.
+test('the file pages are the file list\'s however many other calls run beside them', { skip: unix }, async () => {
+  const all = Array.from({ length: 112 }, (_, i) => file(i));
+  await withPr({ ...view, body: 'Follows #3 and #4.' }, [page(all.slice(0, 100), 'c1'), page(all.slice(100), null)], async (dir) => {
+    const pr = await loadPr(os.tmpdir(), undefined, { pause: 0 });
+    assert.deepEqual(pr.files.map((f) => f.path), all.map((f) => f.path));
+    assert.equal(await fs.readFile(path.join(dir, 'n'), 'utf8'), '2\n');
+  });
+});
+
+// `gh pr view` and the file list are two calls, and a push can land between
+// them. Each file's link is built at headRefOid and /api/diff diffs from
+// baseRefOid with the file's line counts, so all of those have to be the
+// answer the list came in, not the one before it.
+test('the head a PR is at comes from the same answer as its files', { skip: unix }, async () => {
+  const stale = { headRefOid: 'c'.repeat(40), baseRefOid: 'd'.repeat(40), additions: 1, deletions: 1 };
+  await withPr({ ...view, ...stale }, [page([file(1)], null)], async () => {
+    const pr = await loadPr(os.tmpdir(), undefined, { pause: 0 });
+    assert.deepEqual([pr.headRefOid, pr.baseRefOid, pr.additions, pr.deletions],
+      [head.headRefOid, head.baseRefOid, head.additions, head.deletions]);
+    assert.equal(pr.nodeId, 'PR_node');
+  });
+});
+
+// The checks come from `gh pr view`, and the head from the file pages after
+// it: a push between the two would show the old head's checks beside the new
+// head's files, so they are read again at the files' head.
+test('the checks shown are for the head the files are at', { skip: unix }, async () => {
+  const run = (name, conclusion) => [{ name, status: 'COMPLETED', conclusion }];
+  const old = { ...view, headRefOid: 'c'.repeat(40), statusCheckRollup: run('old', 'FAILURE') };
+  const atHead = { number: 1, url: view.url, headRefOid: head.headRefOid, updatedAt: 'later', statusCheckRollup: run('new', 'SUCCESS') };
+  await withPr(old, [page([file(1)], null)], async (dir) => {
+    const pr = await loadPr(os.tmpdir(), undefined, { pause: 0 });
+    assert.deepEqual(pr.checks.list.map((c) => c.name), ['new']);
+    assert.equal(pr.headRefOid, head.headRefOid);
+    assert.equal(pr.updatedAt, old.updatedAt, 'the first call\'s, so the next poll reloads');
+    assert.equal(await fs.readFile(path.join(dir, 'v'), 'utf8'), '2\n');
+  }, [atHead]);
+  // The same head both times: one call, as before.
+  await withPr({ ...view, headRefOid: head.headRefOid }, [page([file(1)], null)], async (dir) => {
+    await loadPr(os.tmpdir(), undefined, { pause: 0 });
+    assert.equal(await fs.readFile(path.join(dir, 'v'), 'utf8'), '1\n');
+  });
+});
+
+// The pages are separate calls, so a push between two of them shifts the list
+// under the cursor: here page 2 is the moved PR's, which repeats a file and
+// would have lost another. A page at a different head starts the read over.
+test('a PR that moves between pages of its files is read again', { skip: unix }, async () => {
+  const moved = { ...head, headRefOid: 'e'.repeat(40) };
+  const all = Array.from({ length: 101 }, (_, i) => file(i));
+  await withPr(view, [
+    page(all.slice(0, 100), 'c1'), page(all.slice(99), null, moved),
+    page(all.slice(0, 100), 'c1', moved), page(all.slice(100), null, moved),
+  ], async (dir) => {
+    const pr = await loadPr(os.tmpdir(), undefined, { pause: 0 });
+    assert.deepEqual(pr.files.map((f) => f.path), all.map((f) => f.path));
+    assert.equal(pr.headRefOid, moved.headRefOid);
+    assert.equal(await fs.readFile(path.join(dir, 'n'), 'utf8'), '4\n');
+  });
+});
+
+// A base branch moving on does not move the merge base the list is the diff
+// from, so it is no reason to read again: a busy `main` must not fail a read
+// whose list was never at risk. Retargeting is a different diff, and is.
+test('a PR whose base branch moves on is read once, and one retargeted is read again', { skip: unix }, async () => {
+  const all = Array.from({ length: 101 }, (_, i) => file(i));
+  const onward = { ...head, baseRefOid: 'f'.repeat(40) };
+  await withPr(view, [page(all.slice(0, 100), 'c1'), page(all.slice(100), null, onward)], async (dir) => {
+    const pr = await loadPr(os.tmpdir(), undefined, { pause: 0 });
+    assert.deepEqual(pr.files.map((f) => f.path), all.map((f) => f.path));
+    assert.equal(pr.baseRefOid, head.baseRefOid, 'the first page\'s, which has the same merge base');
+    assert.equal(await fs.readFile(path.join(dir, 'n'), 'utf8'), '2\n');
+  });
+  const retargeted = { ...head, baseRefName: 'release' };
+  await withPr(view, [
+    page(all.slice(0, 100), 'c1'), page(all.slice(100), null, retargeted),
+    page(all.slice(0, 100), 'c1', retargeted), page(all.slice(100), null, retargeted),
+  ], async (dir) => {
+    await loadPr(os.tmpdir(), undefined, { pause: 0 });
+    assert.equal(await fs.readFile(path.join(dir, 'n'), 'utf8'), '4\n');
+  });
+});
+
+test('a PR that moves during every read of its files is an error, not a list', { skip: unix }, async () => {
+  const at = (c) => ({ ...head, headRefOid: c.repeat(40) });
+  const pages = ['1', '2', '3', '4', '5', '6'].map((c, i) => page([file(i)], i % 2 ? null : 'c1', at(c)));
+  await withPr(view, pages, async () => {
+    await assert.rejects(loadPr(os.tmpdir(), undefined, { pause: 0 }), /moved on GitHub during each of 3 reads of its files/);
+  });
+  // It names the pull request, which the server keeps showing (refreshPr), and
+  // waits between reads -- pause, then twice it -- so a burst of pushes can settle.
+  await withPr(view, pages, async () => {
+    const started = Date.now();
+    const e = await loadPr(os.tmpdir(), undefined, { pause: 40 }).catch((x) => x);
+    assert.equal(e.moving, view.url);
+    assert.ok(Date.now() - started >= 120, `${Date.now() - started}ms`);
+  });
+});
+
+test('a next page of files with no cursor to it is an error, not the end', { skip: unix }, async () => {
+  const lost = page([file(0)], null);
+  lost.data.repository.pullRequest.files.pageInfo.hasNextPage = true;
+  await withPr(view, [lost], async () => {
+    await assert.rejects(loadPr(os.tmpdir(), undefined, { pause: 0 }), /has more files, but gave no cursor to them/);
   });
 });
 

@@ -97,7 +97,18 @@ const requirePr = () => {
  * branch is what branchPrs replaces.
  */
 async function refreshPr(what) {
-  pr = what ? await loadPr(repo, what) : null;
+  try {
+    pr = what ? await loadPr(repo, what) : null;
+  } catch (e) {
+    // Pushed to faster than it can be read (prFiles): the one on screen stays,
+    // and its updatedAt has moved, so the next poll reads it again. Another
+    // pull request, or none shown yet, is a failure as before.
+    if (e.moving && e.moving === pr?.url) {
+      term.debug(e.message);
+      return;
+    }
+    throw e;
+  }
   // Once per load rather than per poll: nothing it reads changes until the PR
   // is reloaded.
   if (pr) decorateFiles(pr);
