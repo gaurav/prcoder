@@ -12,7 +12,7 @@ import { text as readBody } from 'node:stream/consumers';
 import { spawn as ptySpawn } from 'node-pty';
 import { WebSocketServer } from 'ws';
 import { loadPr, prHeads, prUrl, prBody, parsePrUrl, listPrs, branchPrs, pickPr, issueLinks, lookupRef, setViewed, setBody, createIssue, fetchPatches, runCount } from './github.js';
-import { notAWorkTree, snapshot, currentBranch, headCommit, hasCommit, repoInfo, pushRepo, prScope, compareUrl, githubUrl, originOwner, wholePrRepo, checkoutPr, pushBranch, remoteBranchHead, trackingHead, localPatch, branchesBelow } from './git.js';
+import { notAWorkTree, snapshot, currentBranch, headCommit, commitsKnown, commitMemo, repoInfo, pushRepo, prScope, compareUrl, githubUrl, originOwner, wholePrRepo, checkoutPr, pushBranch, remoteBranchHead, trackingHead, localPatch, branchesBelow } from './git.js';
 import { bucket, fileUrl, fileViews } from './files.js';
 import { readPort, writePort, pick, useQueueFile, movedQueue, issueUrl } from './store.js';
 import { readQueue, writeQueue, quote } from './queue.js';
@@ -222,13 +222,10 @@ async function status({ full = false } = {}) {
   // whose checks keepPr takes. With a target the list is still read, since
   // the switcher offers it, but without the checks: prHeads has the target's,
   // and the list's would be fetched for nothing on every poll.
-  // One answer per commit for the whole poll: the lookup asks whether this
-  // clone has a fork's head, and snapshot asks the same of the remote head,
-  // which on such a branch is the same commit.
-  const known = new Map();
-  const has = (oid) => known.get(oid) ?? known.set(oid, hasCommit(oid, repo)).get(oid);
+  // One answer per commit for the whole poll (commitMemo).
+  const commits = commitMemo(repo);
   const home = await pushRepo(repo, branch, facts.repoOf);
-  const found = await branchPrs(repo, facts.repos, branch, { has, checks: !target, home });
+  const found = await branchPrs(repo, facts.repos, branch, { has: commits.many, checks: !target, home });
   if (!target) {
     heads = pickPr(found, { head, chosen: chosen?.url, shown: pr?.url, repos: facts.repos });
     await refresh(heads);
@@ -240,7 +237,7 @@ async function status({ full = false } = {}) {
   // you push (#19). The create route is the one place that still asks origin,
   // because it pushes on the answer.
   const oid = pr?.headRefOid ?? heads?.headRefOid ?? await trackingHead(repo, branch);
-  const snap = await snapshot(repo, oid, branch, has);
+  const snap = await snapshot(repo, oid, branch, commits.one);
   const scope = prScope(pr, { repos: facts.repos, found: found.map((p) => p.url) });
   const tracked = scope === 'current' || scope === 'none';
 
@@ -855,7 +852,7 @@ async function openGithub() {
   const [branch, head] = await Promise.all([currentBranch(repo), headCommit(repo)]);
   const { nameWithOwner, defaultBranch, repos, repoOf } = await repoFacts();
   const url = target ? await prUrl(repo, target) : pickPr(
-    await branchPrs(repo, repos, branch, { has: (oid) => hasCommit(oid, repo), checks: false, home: await pushRepo(repo, branch, repoOf) }),
+    await branchPrs(repo, repos, branch, { has: (oids) => commitsKnown(oids, repo), checks: false, home: await pushRepo(repo, branch, repoOf) }),
     { head, chosen: chosen?.branch === branch ? chosen.url : null, shown: pr?.url, repos })?.url;
   openBrowser(githubUrl({
     prUrl: url, nameWithOwner, defaultBranch, branch,

@@ -35,7 +35,44 @@ async function answer(args, cwd, ok = 1) {
 const asks = async (args, cwd, ok) => (await answer(args, cwd, ok)) !== null;
 
 /** Whether this clone has `rev` as a commit. 1 is "no"; 128 would be a bad name. */
-export const hasCommit = (rev, cwd) => asks(['rev-parse', '--verify', '--quiet', `${rev}^{commit}`], cwd);
+const hasCommit = (rev, cwd) => asks(['rev-parse', '--verify', '--quiet', `${rev}^{commit}`], cwd);
+
+/**
+ * Which of `oids` this clone has as commits, as a Set: one `cat-file
+ * --batch-check` for the lot, where hasCommit is a spawn each -- the branch
+ * lookup asks about every stranger's head on a page of up to a hundred. The
+ * format prints the type alone, and a name git lacks prints `<name> missing`,
+ * so line i answers oid i. Only a full hex oid is sent: these come from
+ * GitHub, and a newline in one would shift every answer after it.
+ */
+export async function commitsKnown(oids, cwd) {
+  const asked = oids.filter((o) => /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/.test(o));
+  if (!asked.length) return new Set();
+  const out = await run('git', ['cat-file', '--batch-check=%(objecttype)'], { cwd, timeout: 30_000, input: `${asked.join('\n')}\n` });
+  const lines = out.split('\n');
+  return new Set(asked.filter((_, i) => lines[i] === 'commit'));
+}
+
+/**
+ * commitsKnown with each commit asked about once for as long as the memo is
+ * kept. The poll keeps one: the lookup asks about a fork's head, and snapshot
+ * about the remote head, which on such a branch is the same commit. `many`
+ * answers with a Set, `one` with a boolean, the shapes branchPrs and
+ * snapshot take.
+ */
+export function commitMemo(cwd) {
+  const known = new Map();
+  const many = async (oids) => {
+    const fresh = [...new Set(oids)].filter((o) => !known.has(o));
+    if (fresh.length) {
+      const got = commitsKnown(fresh, cwd);
+      for (const o of fresh) known.set(o, got.then((held) => held.has(o)));
+    }
+    const answers = await Promise.all(oids.map((o) => known.get(o)));
+    return new Set(oids.filter((_, i) => answers[i]));
+  };
+  return { many, one: async (oid) => (await many([oid])).has(oid) };
+}
 
 /**
  * The commit HEAD is at. The poll reads it before the branch lookup, to rank
@@ -232,8 +269,8 @@ export async function repoInfo(cwd) {
  * `remoteHead` comes from the caller because only the PR knows it — and for a
  * fork it is not on origin at all, so `git ls-remote origin` would miss it.
  * `branch` likewise, because the caller has just asked for it, and `has` is
- * the caller's hasCommit, which it may already have asked about this very
- * commit (the lookup's stranger check, server.js). HEAD is read here, with the
+ * the poll's commitMemo, which may already have asked about this very commit
+ * (the lookup's stranger check, server.js). HEAD is read here, with the
  * status, and not taken from the caller: the caller's was read before the
  * lookup's gh calls, and a commit made during them would pair the old head
  * with the new tree -- "in sync" with a commit not yet pushed.

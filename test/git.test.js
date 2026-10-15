@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { notAWorkTree, syncState, compareUrl, githubUrl, originOwner, remoteRepo, remoteRepos, repoInfo, pushRepo, prScope, wholePrRepo, userDirt, remoteBranchHead, trackingHead, snapshot, localPatch, branchesBelow } from '../git.js';
+import { notAWorkTree, syncState, compareUrl, githubUrl, originOwner, remoteRepo, remoteRepos, repoInfo, pushRepo, commitsKnown, commitMemo, prScope, wholePrRepo, userDirt, remoteBranchHead, trackingHead, snapshot, localPatch, branchesBelow } from '../git.js';
 
 // git finds the repository through GIT_DIR and GIT_WORK_TREE before it looks
 // at cwd, and a git hook exports them. Under a hook, `npm test` ran every
@@ -22,6 +22,7 @@ process.env.LC_ALL = 'C';
 
 const git = promisify(execFile);
 import { withGh, unix } from './stub-gh.js';
+import { runCount } from '../github.js';
 // For the throwaway repos below. The identity goes on the command, not into a
 // config: a CI runner has none set, and `git commit` there is a hard failure
 // rather than a warning. Signing is turned off the same way: a machine that
@@ -195,6 +196,32 @@ test('the remotes are listed origin first, GitHub ones only', async () => {
       { name: 'origin', repo: 'TranslatorSRI/NodeNormalizationAPI' },
       { name: 'upstream', repo: 'biothings/NodeNormalizationAPI' },
     ]);
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
+
+// The lookup's stranger check, a page of heads at a time: one git call, line
+// for line, and a name that is not an oid never sent, since one with a
+// newline in it would shift the answers after it.
+test('which commits this clone has is one git call for the lot, and asked once each per memo', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'prcoder-commits-'));
+  try {
+    await git('git', ['init', '-q', dir]);
+    await testGit(dir, 'commit', '-q', '--allow-empty', '-m', 'x');
+    const head = (await testGit(dir, 'rev-parse', 'HEAD')).stdout.trim();
+    const tree = (await testGit(dir, 'rev-parse', 'HEAD^{tree}')).stdout.trim();
+    const gone = 'e'.repeat(40);
+    let calls = runCount();
+    assert.deepEqual(await commitsKnown([gone, `${head}\nHEAD`, tree, head], dir), new Set([head]));
+    assert.equal(runCount() - calls, 1);
+    assert.deepEqual(await commitsKnown(['HEAD'], dir), new Set(), 'not an oid: not asked');
+    const memo = commitMemo(dir);
+    calls = runCount();
+    assert.deepEqual(await memo.many([head, gone]), new Set([head]));
+    assert.equal(await memo.one(head), true);
+    assert.equal(await memo.one(gone), false);
+    assert.equal(runCount() - calls, 1, 'each commit asked about once');
   } finally {
     await fs.rm(dir, { recursive: true, force: true });
   }

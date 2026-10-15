@@ -363,11 +363,11 @@ test('a pull request is the branch\'s by its head repository or its head commit,
   const answer = `case "$*" in *"--repo up/repo --head topic --state open"*) cat <<'JSON'\n${JSON.stringify(HEADS)}\nJSON\n;; *) echo '[]';; esac`;
   const asked = [];
   const { out, calls } = await ghCalls(answer, () => branchPrs(os.tmpdir(), ['up/repo', 'me/repo'], 'topic',
-    { has: async (oid) => { asked.push(oid); return oid === 'bbb'; } }));
+    { has: async (oids) => { asked.push(oids); return new Set(oids.filter((o) => o === 'bbb')); } }));
   assert.equal(calls.length, 2, 'open ones found: no second pass');
   assert.deepEqual(out.map((p) => p.number), [1, 2]);
-  // The head a remote names is not asked about; the others are, once each.
-  assert.deepEqual(asked, ['bbb', 'ccc']);
+  // The head a remote names is not asked about; the others are, together.
+  assert.deepEqual(asked, [['bbb', 'ccc']]);
   // As the page and the poll read them: the repository looked in, the head
   // as a slug and an owner, and the checks summarised.
   assert.equal(out[0].repo, 'up/repo');
@@ -386,7 +386,7 @@ test('with a push target, a head in another of the repositories is a stranger', 
     headRepository: { nameWithOwner: 'up/repo' }, headRepositoryOwner: { login: 'up' }, isCrossRepository: false };
   const answer = `case "$*" in *"--repo up/repo --head topic --state open"*) cat <<'JSON'\n${JSON.stringify([HEADS[0], parents])}\nJSON\n;; *) echo '[]';; esac`;
   const asked = [];
-  const has = async (oid) => { asked.push(oid); return true; };
+  const has = async (oids) => { asked.push(...oids); return new Set(oids); };
   const pushed = await ghCalls(answer, () => branchPrs(os.tmpdir(), ['up/repo', 'me/repo'], 'topic', { has, home: 'me/repo' }));
   assert.deepEqual(pushed.out.map((p) => p.number), [1]);
   assert.deepEqual(asked, [], 'a head in one of the repositories is never asked about by commit');
@@ -405,31 +405,39 @@ test('a stranger\'s open pull request does not stop the lookup for a merged one'
     *"--repo up/repo --head topic --state all"*) cat <<'JSON'\n${JSON.stringify([merged])}\nJSON\n;;
     *) echo '[]';; esac`;
   const { out, calls } = await ghCalls(answer, () => branchPrs(os.tmpdir(), ['up/repo', 'me/repo'], 'topic',
-    { has: async () => false }));
+    { has: async () => new Set() }));
   assert.equal(calls.length, 4);
   assert.deepEqual(out.map((p) => [p.number, p.state]), [[4, 'MERGED']]);
 });
 
 // gh lists the newest first, and a common name in a big parent fills the
 // window with strangers' heads: microsoft/vscode had 63 open from a `main`
-// (2026-10-14). A full window with none of the branch's is asked again, wider;
-// one with the branch's in it, or not full, is the answer as it stands.
-test('a window full of strangers is asked again, wider', { skip: unix }, async () => {
-  const strangers = Array.from({ length: 20 }, (_, i) => ({ ...HEADS[2], number: 100 + i,
+// (2026-10-14). A full window with none of the branch's is asked again, wider
+// and without the checks, a hundred strangers' worth of them; one of the
+// branch's found there gets its own from prHeads. One with the branch's in
+// it, or not full, is the answer as it stands.
+test('a window full of strangers is asked again, wider and without the checks', { skip: unix }, async () => {
+  const strangers = Array.from({ length: 5 }, (_, i) => ({ ...HEADS[2], number: 100 + i,
     url: `https://github.com/up/repo/pull/${100 + i}`, headRefOid: `s${i}` }));
   const json = (rows) => `cat <<'JSON'\n${JSON.stringify(rows)}\nJSON`;
+  const rollup1 = { number: 1, url: HEADS[0].url, headRefOid: 'aaa', updatedAt: 'x',
+    statusCheckRollup: [{ name: 'test', status: 'COMPLETED', conclusion: 'SUCCESS' }] };
   const answer = (first) => `case "$*" in
-    *"--repo up/repo --head topic --state open --limit 20 "*) ${json(first)}\n;;
-    *"--repo up/repo --head topic --state open --limit 100 "*) ${json([...strangers, HEADS[0]])}\n;;
+    *"--repo up/repo --head topic --state open --limit 5 "*) ${json(first)}\n;;
+    *"--repo up/repo --head topic --state open --limit 100 "*) ${json([...strangers, HEADS[0]].map(({ statusCheckRollup, ...p }) => p))}\n;;
+    "pr view ${HEADS[0].url} "*) ${json(rollup1)}\n;;
     *) echo '[]';; esac`;
-  const limits = (calls) => calls.filter((c) => flag(c, '--repo') === 'up/repo').map((c) => flag(c, '--limit')).sort();
+  const ups = (calls) => calls.filter((c) => flag(c, '--repo') === 'up/repo');
   const wide = await ghCalls(answer(strangers), () => branchPrs(os.tmpdir(), ['up/repo', 'me/repo'], 'topic'));
   assert.deepEqual(wide.out.map((p) => p.number), [1]);
-  assert.deepEqual(limits(wide.calls), ['100', '20']);
+  assert.deepEqual(ups(wide.calls).map((c) => [flag(c, '--limit'), flag(c, '--json').includes('statusCheckRollup')]).sort(),
+    [['100', false], ['5', true]]);
+  assert.deepEqual(wide.out[0].checks.passed, 1, 'its checks, from prHeads');
+  assert.equal(wide.calls.filter((c) => c[1] === 'view').length, 1);
   // The branch's own in the window: no second ask.
   const found = await ghCalls(answer([...strangers.slice(1), HEADS[0]]), () => branchPrs(os.tmpdir(), ['up/repo', 'me/repo'], 'topic'));
   assert.deepEqual(found.out.map((p) => p.number), [1]);
-  assert.deepEqual(limits(found.calls), ['20']);
+  assert.deepEqual(ups(found.calls).map((c) => flag(c, '--limit')), ['5']);
 });
 
 // A repository past the first that cannot be read -- a parent since made
