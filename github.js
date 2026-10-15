@@ -142,7 +142,8 @@ const BRANCH_FIELDS = ['number', 'title', 'url', 'state', 'isDraft', 'headRefNam
 
 /**
  * The branch's pull requests, in every repository it could have one in, open
- * ones first: the poll's cheap call on a branch, in place of `gh pr view`.
+ * ones first: the search by name that lookupPrs runs, when what it remembers
+ * may be out of date, in place of `gh pr view`.
  *
  * `gh pr view` with no target finds a pull request by its head label, which
  * gh builds from the branch's push config: `owner:branch` with a remote,
@@ -175,9 +176,10 @@ const BRANCH_FIELDS = ['number', 'title', 'url', 'state', 'isDraft', 'headRefNam
  * a `main` and 200 of 200 recent ones (2026-10-14). A full window with none
  * of the branch's in it is asked again, WIDE deep and without the checks,
  * which would be a hundred strangers' rollups; one of the branch's found
- * only there gets its own from prHeads. One past WIDE is missed. Nothing is
- * remembered between polls, so a crowded name pays the narrow ask too, every
- * time: five rollups, not a hundred.
+ * only there gets its own from prHeads. One past WIDE is missed by this
+ * search, though not once found: lookupPrs remembers what a search found, and
+ * runs one only now and then, so a crowded name pays the narrow ask and the
+ * wide one then, not on every poll.
  *
  * `has(oids)` is asked once per page, for every head no repository vouches
  * for, and answers with the set of them this clone has: one git call for the
@@ -220,6 +222,78 @@ export async function branchPrs(cwd, repos, branch, { has = async () => new Set(
   }))).flat();
   const open = await list('open', checks ? [...BRANCH_FIELDS, 'statusCheckRollup'] : BRANCH_FIELDS);
   return open.length ? open : list('all', BRANCH_FIELDS);
+}
+
+// How long a branch's remembered pull requests are read by URL before the
+// search by name runs again, for one opened on the branch since: ten polls of
+// a visible tab, so the search costs a tenth of what it did.
+export const SEARCH_EVERY = 10 * 60_000;
+
+/**
+ * One remembered pull request read again by its URL, in branchPrs's shape:
+ * `repo` is the repository the search found it in, and the checks come only
+ * for one that was open, as branchPrs's pass for merged ones leaves them out.
+ */
+async function viewKnown(cwd, { url, repo, state }, checks) {
+  const fields = checks && state === 'OPEN' ? [...BRANCH_FIELDS, 'statusCheckRollup'] : BRANCH_FIELDS;
+  const p = headSide({ ...JSON.parse(await gh(['pr', 'view', url, '--json', fields.join(',')], { cwd })), repo });
+  return 'statusCheckRollup' in p ? withChecks(p) : p;
+}
+
+/**
+ * The branch's pull requests, as branchPrs finds them, from `known` -- what an
+ * earlier search found, `{ searched, prs: [{ url, repo, state }] }` (readPrs
+ * in store.js) -- when that can stand: each read again by its URL, which is
+ * exact however many forks share the branch's name, and one call per pull
+ * request however many repositories it could be in (#147).
+ *
+ * `search` is the search by name, branchPrs with the caller's arguments. It
+ * runs when there may be something the URLs cannot show:
+ * - nothing is known: every branch with no pull request, which is the branch
+ *   one is about to be opened from, is searched on every poll as before;
+ * - `fresh`, which the caller passes on a change of branch, `r` and `g`;
+ * - the last search is SEARCH_EVERY old, for a second pull request opened on
+ *   the branch since -- into the parent, say;
+ * - one of them is not in the state it was in: a pull request closed and
+ *   another opened in its place is found as soon as the first is seen closed;
+ * - one of them could not be read.
+ *
+ * Only one in `repos` is read, the rule the switch route holds a URL to, so a
+ * hand-edit of the file cannot point gh anywhere else; a remote since removed
+ * takes its pull requests with it.
+ *
+ * A search does not forget what it does not find. gh lists the newest first,
+ * and a common name's strangers can push this branch's pull request out of
+ * the window (branchPrs) long after the search that found it; it is still the
+ * branch's. So one known but not found is read by URL and kept, and then, as
+ * branchPrs does, open ones stand alone if there are any.
+ *
+ * Answers `{ prs, remember }`. `remember` is the new `known` after a search --
+ * with no pull requests in it when there are none -- and undefined when there
+ * is nothing to write.
+ */
+export async function lookupPrs(cwd, repos, known, search, { fresh = false, checks = true, now = Date.now() } = {}) {
+  const read = (k) => viewKnown(cwd, k, checks).catch((e) => {
+    debug(`${k.url} not read: ${e.message}`);
+    return null;
+  });
+  const prs = (known?.prs ?? []).filter((k) => repos.includes(k.repo));
+  const seen = new Map();
+  if (prs.length && !fresh && now - known.searched < SEARCH_EVERY) {
+    const rows = await Promise.all(prs.map(read));
+    if (rows.every((p, i) => p?.state === prs[i].state)) {
+      return { prs: rows, remember: prs.length === known.prs.length ? undefined : { ...known, prs } };
+    }
+    prs.forEach((k, i) => seen.set(k.url, rows[i]));
+  }
+  const found = await search();
+  const urls = new Set(found.map((p) => p.url));
+  const kept = await Promise.all(prs.filter((k) => !urls.has(k.url))
+    .map((k) => (seen.has(k.url) ? seen.get(k.url) : read(k))));
+  const all = [...found, ...kept.filter(Boolean)];
+  const open = all.filter((p) => p.state === 'OPEN');
+  const shown = open.length ? open : all;
+  return { prs: shown, remember: { searched: now, prs: shown.map(({ url, repo, state }) => ({ url, repo, state })) } };
 }
 
 /**
