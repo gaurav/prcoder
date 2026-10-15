@@ -6,9 +6,23 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { notAWorkTree, syncState, compareUrl, githubUrl, originOwner, prScope, userDirt, remoteBranchHead, trackingHead, snapshot, localPatch, branchesBelow } from '../git.js';
+import { notAWorkTree, syncState, compareUrl, githubUrl, originOwner, remoteRepo, remoteRepos, repoInfo, pushRepo, commitsKnown, commitMemo, prScope, wholePrRepo, userDirt, remoteBranchHead, trackingHead, snapshot, localPatch, branchesBelow } from '../git.js';
+
+// git finds the repository through GIT_DIR and GIT_WORK_TREE before it looks
+// at cwd, and a git hook exports them. Under a hook, `npm test` ran every
+// throwaway repo's commands below against the clone it was run in: on
+// 2026-10-14 that rewrote origin's URL, deleted its remote-tracking branches,
+// renamed the checked-out branch and committed to it. So none of git's own
+// variables reach this file's children, which are both the helpers here and
+// git.js's run() -- it spreads process.env.
+for (const k of Object.keys(process.env)) if (k.startsWith('GIT_')) delete process.env[k];
+// And in English: tests here match git's own words (`not a git repository`),
+// which a translated git prints in the reader's language.
+process.env.LC_ALL = 'C';
 
 const git = promisify(execFile);
+import { withGh, unix } from './stub-gh.js';
+import { runCount } from '../github.js';
 // For the throwaway repos below. The identity goes on the command, not into a
 // config: a CI runner has none set, and `git commit` there is a hard failure
 // rather than a warning. Signing is turned off the same way: a machine that
@@ -21,6 +35,16 @@ const testGit = (cwd, ...args) => git('git', [...TEST_CONFIG, ...args], { cwd })
 // The four inputs come from `git rev-parse --verify` and `git merge-base
 // --is-ancestor`; the exit codes those return are checked in git.js, not here.
 const state = (o) => syncState({ head: 'aaa', remoteHead: 'bbb', remoteKnownLocally: true, remoteIsAncestor: true, ...o });
+
+// The page's switch request on its way to gh's argv: the whole string is the
+// URL, or it is refused.
+test('a switch takes the whole of a pull request URL, and nothing with one inside it', () => {
+  assert.equal(wholePrRepo('https://github.com/heal-data-stewards/heal-vlmd.AI_pipeline/pull/12'), 'heal-data-stewards/heal-vlmd.AI_pipeline');
+  for (const url of ['140', undefined, '--flag https://github.com/a/b/pull/1', 'https://github.com/a/b/pull/1 --flag',
+    'https://elsewhere.example/github.com/a/b/pull/1', 'https://github.com/a/b/issues/1', 'https://github.com/a/b/pull/1/files']) {
+    assert.throws(() => wholePrRepo(url), /not a pull request URL/, String(url));
+  }
+});
 
 test('a branch GitHub has never seen is unpushed, not behind', () => {
   assert.equal(state({ remoteHead: null }), 'unpushed');
@@ -116,19 +140,30 @@ test("origin's owner comes off every shape of GitHub remote URL", async () => {
   }
 });
 
-const here = { branch: 'feature', nameWithOwner: 'gaurav/prcoder' };
+// A clone of a fork: gh's base repository is the parent, and the branch's own
+// pull request (`found`, from branchPrs) is in it, opened from the fork.
+const here = {
+  repos: ['upstream/prcoder', 'gaurav/prcoder'],
+  found: ['https://github.com/upstream/prcoder/pull/1'],
+};
 const pr = (url, headRefName) => ({ url, headRefName });
 
 test('no PR at all is its own scope, not a mismatch', () => {
   assert.equal(prScope(null, here), 'none');
 });
 
-test('the PR for the checked-out branch is current', () => {
-  assert.equal(prScope(pr('https://github.com/gaurav/prcoder/pull/1', 'feature'), here), 'current');
+test('the branch\'s pull request is current, in whichever of the repositories it is', () => {
+  assert.equal(prScope(pr('https://github.com/upstream/prcoder/pull/1', 'feature'), here), 'current');
+  // In the fork itself, from the same branch.
+  const inFork = { ...here, found: ['https://github.com/gaurav/prcoder/pull/4'] };
+  assert.equal(prScope(pr('https://github.com/gaurav/prcoder/pull/4', 'feature'), inFork), 'current');
 });
 
-test('same repo, another branch — checking it out would fix it', () => {
+test('same repositories, another branch — checking it out would fix it', () => {
+  assert.equal(prScope(pr('https://github.com/upstream/prcoder/pull/2', 'other'), here), 'other-branch');
   assert.equal(prScope(pr('https://github.com/gaurav/prcoder/pull/2', 'other'), here), 'other-branch');
+  // Found nowhere for this branch, so not current, whatever the branch name says.
+  assert.equal(prScope(pr('https://github.com/gaurav/prcoder/pull/3', 'feature'), here), 'other-branch');
 });
 
 // `prcoder <url>` can open a PR that has nothing to do with this checkout, and
@@ -136,6 +171,97 @@ test('same repo, another branch — checking it out would fix it', () => {
 // be suppressed rather than left reporting a permanent "behind".
 test('a PR in a different repo is other-repo even when the branch name matches', () => {
   assert.equal(prScope(pr('https://github.com/someone/else/pull/9', 'feature'), here), 'other-repo');
+});
+
+test('a remote URL on GitHub names its repository, and one elsewhere names nothing', () => {
+  for (const url of ['git@github.com:gaurav/heal-platform-sdk.git', 'https://github.com/gaurav/heal-platform-sdk',
+    'https://github.com/gaurav/heal-platform-sdk.git/', 'ssh://git@github.com/gaurav/heal-platform-sdk.git\n']) {
+    assert.equal(remoteRepo(url), 'gaurav/heal-platform-sdk', url);
+  }
+  // A mirror elsewhere is no repository to ask gh about (#53).
+  assert.equal(remoteRepo('git@gitlab.com:gaurav/heal-platform-sdk.git'), null);
+  assert.equal(remoteRepo('/srv/git/heal-platform-sdk.git'), null);
+});
+
+// origin first whatever `git remote` sorts it as, and a remote off GitHub left
+// out, so the lookup never asks gh about a repository that is not there.
+test('the remotes are listed origin first, GitHub ones only', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'prcoder-remotes-'));
+  try {
+    await git('git', ['init', '-q', dir]);
+    await git('git', ['remote', 'add', 'upstream', 'https://github.com/biothings/NodeNormalizationAPI'], { cwd: dir });
+    await git('git', ['remote', 'add', 'mirror', 'git@gitlab.com:TranslatorSRI/NodeNormalizationAPI.git'], { cwd: dir });
+    await git('git', ['remote', 'add', 'origin', 'git@github.com:TranslatorSRI/NodeNormalizationAPI.git'], { cwd: dir });
+    assert.deepEqual(await remoteRepos(dir), [
+      { name: 'origin', repo: 'TranslatorSRI/NodeNormalizationAPI' },
+      { name: 'upstream', repo: 'biothings/NodeNormalizationAPI' },
+    ]);
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
+
+// The lookup's stranger check, a page of heads at a time: one git call, line
+// for line, and a name that is not an oid never sent, since one with a
+// newline in it would shift the answers after it.
+test('which commits this clone has is one git call for the lot, and asked once each per memo', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'prcoder-commits-'));
+  try {
+    await git('git', ['init', '-q', dir]);
+    await testGit(dir, 'commit', '-q', '--allow-empty', '-m', 'x');
+    const head = (await testGit(dir, 'rev-parse', 'HEAD')).stdout.trim();
+    const tree = (await testGit(dir, 'rev-parse', 'HEAD^{tree}')).stdout.trim();
+    const gone = 'e'.repeat(40);
+    let calls = runCount();
+    assert.deepEqual(await commitsKnown([gone, `${head}\nHEAD`, tree, head], dir), new Set([head]));
+    assert.equal(runCount() - calls, 1);
+    assert.deepEqual(await commitsKnown(['HEAD'], dir), new Set(), 'not an oid: not asked');
+    const memo = commitMemo(dir);
+    calls = runCount();
+    assert.deepEqual(await memo.many([head, gone]), new Set([head]));
+    assert.equal(await memo.one(head), true);
+    assert.equal(await memo.one(gone), false);
+    assert.equal(runCount() - calls, 1, 'each commit asked about once');
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
+
+// Where a plain push of the branch goes, when it goes to a branch of the same
+// name: what tells the fork's own `main` from the parent's in branchPrs.
+test('a branch pushes to the repository of the remote a push would go to, under its own name', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'prcoder-push-'));
+  const run = (...args) => testGit(dir, ...args);
+  const repoOf = { origin: 'me/repo', upstream: 'up/repo' };
+  try {
+    await git('git', ['init', '-q', '-b', 'main', dir]);
+    await run('commit', '-q', '--allow-empty', '-m', 'x');
+    for (const [name, url] of [['origin', 'git@github.com:me/repo.git'], ['upstream', 'https://github.com/up/repo']]) {
+      await run('remote', 'add', name, url);
+      await run('update-ref', `refs/remotes/${name}/main`, 'main');
+    }
+    // No upstream, under push.default simple: a push goes nowhere.
+    assert.equal(await pushRepo(dir, 'main', repoOf), null);
+    await run('branch', '-q', '--set-upstream-to=origin/main', 'main');
+    assert.equal(await pushRepo(dir, 'main', repoOf), 'me/repo');
+    // A push remote of its own wins over the upstream's, where git resolves
+    // one: under push.default current, not simple, which leaves %(push) empty
+    // for a pushRemote though a push would go there -- the lookup's old rule
+    // then, not a wrong answer.
+    await run('config', 'branch.main.pushRemote', 'upstream');
+    assert.equal(await pushRepo(dir, 'main', repoOf), null);
+    await run('config', 'push.default', 'current');
+    assert.equal(await pushRepo(dir, 'main', repoOf), 'up/repo');
+    await run('config', '--unset', 'push.default');
+    // Tracking another name: a plain push would not go to `topic` anywhere.
+    await run('checkout', '-q', '-b', 'topic', '--track', 'origin/main');
+    assert.equal(await pushRepo(dir, 'topic', repoOf), null);
+    // A remote off GitHub is not in `repoOf`, and nothing is not a branch.
+    assert.equal(await pushRepo(dir, 'main', { origin: 'me/repo' }), null);
+    assert.equal(await pushRepo(dir, '', repoOf), null);
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
 });
 
 // Real `git status --porcelain` output: two leading status columns then the
@@ -201,6 +327,9 @@ test('a branch name that is the tail of another branch is not mistaken for it', 
     const snap = await snapshot(work, await trackingHead(work, 'feature/topic'), 'feature/topic');
     assert.equal(snap.sync, 'ahead');
     assert.equal(snap.ahead, 1);
+    // Its own read of HEAD, taken with the status: the poll's earlier one can
+    // be from before a commit made during the branch lookup.
+    assert.equal(snap.head, (await testGit(work, 'rev-parse', 'HEAD')).stdout.trim());
   } finally {
     await fs.rm(dir, { recursive: true, force: true });
   }
@@ -288,7 +417,7 @@ test('a local patch is GitHub-shaped, from the merge base, and null when git can
     await run('checkout', '-q', 'main');
     await write('a.js', 'zero\none\ntwo\n');
     await run('commit', '-q', '-am', 'later');
-    const pr = { baseOid: await oid('main'), baseRef: 'main', head };
+    const pr = { baseOid: await oid('main'), baseRef: 'main', baseRemote: 'origin', head };
 
     assert.equal(await localPatch(dir, { ...pr, ...oneLine, path: 'a.js' }), '@@ -1,2 +1,2 @@\n one\n-two\n+2');
     assert.equal(await localPatch(dir, { ...pr, additions: 1, deletions: 0, path: 'new.js' }),
@@ -302,6 +431,13 @@ test('a local patch is GitHub-shaped, from the merge base, and null when git can
     assert.equal(await localPatch(dir, unfetched), null);
     await run('update-ref', 'refs/remotes/origin/main', 'main');
     assert.equal(await localPatch(dir, unfetched), '@@ -1,2 +1,2 @@\n one\n-two\n+2');
+    // The record is the pull request's own repository's: a fork's pull request
+    // into its parent falls back to upstream's main, never origin's -- the
+    // fork's -- and with no remote for that repository, to nothing.
+    assert.equal(await localPatch(dir, { ...unfetched, baseRemote: 'upstream' }), null);
+    await run('update-ref', 'refs/remotes/upstream/main', 'main');
+    assert.equal(await localPatch(dir, { ...unfetched, baseRemote: 'upstream' }), '@@ -1,2 +1,2 @@\n one\n-two\n+2');
+    assert.equal(await localPatch(dir, { ...unfetched, baseRemote: null }), null);
 
     // And the case the counts are for. A branch built on a base commit this
     // clone's record of the base does not have yet: GitHub diffs from that
@@ -324,6 +460,37 @@ test('a local patch is GitHub-shaped, from the merge base, and null when git can
     await run('commit', '-q', '-m', 'rename');
     const renamed = { ...pr, ...oneLine, head: await oid('HEAD'), path: 'b.js', from: 'a.js' };
     assert.equal(await localPatch(dir, renamed), '@@ -1,2 +1,2 @@\n one\n-two\n+2');
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
+
+// Where the branch's pull request is looked for, in the order pickPr prefers:
+// gh's base repository, its parent when it is a fork, then each remote's,
+// once each -- here `upstream` names the base again and is not listed twice.
+// A clone of a fork with only `origin` still gets the parent, which is where
+// its pull requests are.
+test('repoInfo lists gh\'s base repository, its parent, then the remotes, once each', { skip: unix }, async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'prcoder-repoinfo-'));
+  const view = () => `cat <<'JSON'\n{"defaultBranchRef":{"name":"main"},"nameWithOwner":"up/repo","parent":{"nameWithOwner":"grand/repo"}}\nJSON`;
+  try {
+    await git('git', ['init', '-q', dir]);
+    await git('git', ['remote', 'add', 'origin', 'git@github.com:me/repo.git'], { cwd: dir });
+    await git('git', ['remote', 'add', 'upstream', 'https://github.com/up/repo'], { cwd: dir });
+    await git('git', ['remote', 'add', 'mirror', 'git@gitlab.com:me/repo.git'], { cwd: dir });
+    // A second name for origin's repository, listed after it: origin keeps it.
+    await git('git', ['remote', 'add', 'backup', 'git@github.com:me/repo.git'], { cwd: dir });
+    const info = await withGh(view, () => repoInfo(dir));
+    assert.deepEqual(info.repos, ['up/repo', 'grand/repo', 'me/repo']);
+    assert.deepEqual(info.remotes, { 'me/repo': 'origin', 'up/repo': 'upstream' });
+    assert.deepEqual(info.repoOf, { origin: 'me/repo', upstream: 'up/repo', backup: 'me/repo' });
+    assert.equal(info.nameWithOwner, 'up/repo');
+    assert.equal(info.defaultBranch, 'main');
+    assert.equal(info.prefix, '');
+    // Not a fork: no parent to add, and gh's base is origin itself.
+    const plain = () => `cat <<'JSON'\n{"defaultBranchRef":{"name":"main"},"nameWithOwner":"me/repo","parent":null}\nJSON`;
+    await git('git', ['remote', 'remove', 'upstream'], { cwd: dir });
+    assert.deepEqual((await withGh(plain, () => repoInfo(dir))).repos, ['me/repo']);
   } finally {
     await fs.rm(dir, { recursive: true, force: true });
   }

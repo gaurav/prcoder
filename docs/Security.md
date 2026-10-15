@@ -134,6 +134,12 @@ A modified file's diff is not highlighted at all, and
   value -- a model has to be a name, so `--model --dangerously-skip-permissions` never becomes two
   flags. The one exception is a value equal to what prcoder's command line already gave, which is
   dropped as a repeat rather than checked: it came from whoever started prcoder, not the page.
+  The switcher's `/api/pr/switch` hands a URL to `gh pr checkout`, so `wholePrRepo` in `git.js`
+  takes only the whole of a `https://github.com/owner/repo/pull/N` -- anchored, so a flag in front
+  of one or another host with that path behind it is refused -- and the route takes it only in one
+  of `repos`, the repositories `repoInfo` says the branch's pull requests are looked for in. Its
+  sibling `/api/pr/choose` checks nothing out, and takes only a URL the last poll listed for the
+  branch. `test/api.test.js` pins the refusals that need no `gh`.
 - **Text from GitHub** — descriptions, titles, issue bodies, file names — is built into the page with
   `h()` and text nodes. `innerHTML` only through `inline()`, and a new kind of link only through
   `target()`.
