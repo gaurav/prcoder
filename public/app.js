@@ -467,16 +467,17 @@ document.getElementById('diff-mention').onclick = mentionOpenFile;
 
 // Alt+R: the pull request's URL, typed and not sent like the @, for a command
 // that wants a target (/simplify, /update-pr), and onto the clipboard for
-// anywhere else. Nothing with no pull request.
+// anywhere else. Nothing with no pull request. One toast for whichever half
+// failed, since a second would replace the first in toast's one slot.
 async function mentionPr() {
   const url = last?.pr?.url;
   if (url == null) return;
-  if (!typeIntoAgent(` ${url} `)) toast('The coding agent is not connected — nothing was typed.', true);
-  try {
-    await navigator.clipboard.writeText(url);
-  } catch {
-    toast('The browser refused the clipboard — the URL was not copied.', true);
-  }
+  const typed = typeIntoAgent(` ${url} `);
+  const copied = await navigator.clipboard.writeText(url).then(() => true, () => false);
+  if (typed && copied) return;
+  toast(!typed && !copied ? 'The coding agent is not connected and the browser refused the clipboard — the URL was neither typed nor copied.'
+    : !typed ? 'The coding agent is not connected — nothing was typed, but the URL is on the clipboard.'
+    : 'The browser refused the clipboard — the URL was not copied.', true);
 }
 
 // The diff header's ⧉: the open file's path from the repository root, the way

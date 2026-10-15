@@ -1778,6 +1778,21 @@ test('Alt+R types and copies the pull request\'s URL, and goes to the agent with
   await bare.close();
 });
 
+// With the agent gone the URL is still copied, and the one toast says so; with
+// the clipboard refused as well it says neither happened. One toast each,
+// because toast has one slot and a second would hide the first.
+test('Alt+R says in one toast which half failed', { skip }, async () => {
+  const fresh = await newPage({ init: stubClipboard, pty: (ws) => ws.close() });
+  await fresh.waitForFunction(() => document.getElementById('term-host').textContent.includes('coding agent exited'));
+  await fresh.keyboard.press('Alt+KeyR');
+  await fresh.waitForFunction(() => document.getElementById('toast').textContent.includes('on the clipboard'));
+  assert.deepEqual(await copiedText(fresh), [`${REPO}/pull/12`]);
+  await fresh.evaluate(() => { window.refuseClipboard = true; });
+  await fresh.keyboard.press('Alt+KeyR');
+  await fresh.waitForFunction(() => document.getElementById('toast').textContent.includes('neither typed nor copied'));
+  await fresh.close();
+});
+
 // Alt+V is the diff pane's box pressed, so everything the box moves follows:
 // the row, the tab's count, and the box itself -- both ways. From the
 // terminal too, where the agent does not get it while a file is open and does
