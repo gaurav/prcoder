@@ -273,6 +273,10 @@ test('a branch\'s pull requests come back as written, and an empty list removes 
   await writePrs(dir, 'topic', { searched: now, prs: [] }, now);
   assert.equal(await readPrs(dir, 'topic'), null);
   assert.equal((await readPrs(dir, 'other')).prs.length, 1, 'the other branch is untouched');
+  // A pull request whose reads have failed since a time, which comes back too.
+  await writePrs(dir, 'unread', { searched: now, prs: [{ ...PR, unread: now - 60_000 }] }, now);
+  assert.deepEqual(await readPrs(dir, 'unread'), { searched: now, prs: [{ ...PR, unread: now - 60_000 }] });
+  await writePrs(dir, 'unread', { searched: now, prs: [] }, now);
   assert.deepEqual((await fs.readdir(path.join(dir, '.prcoder'))).sort(), ['.gitignore', 'prs.json']);
 });
 

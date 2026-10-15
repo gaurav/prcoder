@@ -246,6 +246,12 @@ const GONE = /Could not resolve to a (PullRequest|Repository)\b/;
 // a visible tab, so the search costs a tenth of what it did.
 export const SEARCH_EVERY = 10 * 60_000;
 
+// How long a remembered pull request is kept through reads that fail, from
+// the first: long enough for a passing failure, a timeout or the network, and
+// no longer, since one that keeps failing -- an organisation's SAML, a 403 --
+// would otherwise cost a failing `gh pr view` on every poll for good.
+export const UNREAD_FOR = 60 * 60_000;
+
 /**
  * One remembered pull request read again by its URL, in branchPrs's shape:
  * `repo` is the repository the search found it in, and the checks come only
@@ -283,7 +289,10 @@ async function viewKnown(cwd, { url, repo, state }, checks) {
  * - one of them could not be read. If gh says it is not there, nor its
  *   repository -- gone, or no longer visible to you -- it is forgotten; any
  *   other failure, a timeout or the network, is kept as it was remembered,
- *   unshown until a read works, rather than forgotten over one bad call.
+ *   unshown until a read works, rather than forgotten over one bad call. It
+ *   is remembered `unread` since the first failure, and a read that fails
+ *   again before UNREAD_FOR is no news, so it does not search again; past
+ *   that it is forgotten. One read again after failing is news, and searches.
  *
  * Only one in `repos` is read, the rule the switch route holds a URL to, so a
  * hand-edit of the file cannot point gh anywhere else; a remote since removed
@@ -309,21 +318,23 @@ async function viewKnown(cwd, { url, repo, state }, checks) {
  * poll there, it would rewrite the file to say what it already says.
  */
 export async function lookupPrs(cwd, repos, known, search, { own = async (rows) => rows, fresh = false, checks = true, now = Date.now() } = {}) {
-  // The row, null for one that is gone, or the entry marked unread.
+  // The row, null for one that is gone, or the entry marked unread since the
+  // first read of it that failed.
   const read = (k) => viewKnown(cwd, k, checks).catch((e) => {
     debug(`${k.url} not read: ${e.message}`);
-    return GONE.test(e.message) ? null : { ...k, unread: true };
+    return GONE.test(e.message) ? null : { ...k, unread: k.unread ?? now };
   });
   // Case-blind, since `repo` is spelled as a remote's URL spells it, and the
   // URL as GitHub does; readPrs holds the two together the same way.
   const held = (k) => repos.includes(k.repo) && k.url.toLowerCase().startsWith(`https://github.com/${k.repo}/pull/`.toLowerCase());
-  const prs = (known?.prs ?? []).filter(held);
+  const prs = (known?.prs ?? []).filter((k) => held(k) && !(k.unread && now - k.unread >= UNREAD_FOR));
   const seen = new Map();
   const age = now - known?.searched;
   if (prs.some((k) => k.state === 'OPEN') && !fresh && age >= 0 && age < SEARCH_EVERY) {
     const rows = await Promise.all(prs.map(read));
-    if (rows.every((p, i) => p && !p.unread && p.state === prs[i].state)) {
-      return { prs: rows, remember: prs.length === known.prs.length ? undefined : { ...known, prs } };
+    // Each as it was: in the state it was remembered in, or still unread.
+    if (rows.every((p, i) => p && (prs[i].unread ? p.unread : !p.unread && p.state === prs[i].state))) {
+      return { prs: rows.filter((p) => !p.unread), remember: prs.length === known.prs.length ? undefined : { ...known, prs } };
     }
     prs.forEach((k, i) => seen.set(k.url, rows[i]));
   }
@@ -335,11 +346,11 @@ export async function lookupPrs(cwd, repos, known, search, { own = async (rows) 
   const kept = await Promise.all(prs.filter((k) => !urls.has(k.url))
     .map((k) => (seen.has(k.url) ? seen.get(k.url) : read(k))));
   const unread = kept.filter((p) => p?.unread);
-  // In the repositories' order, as branchPrs answers, which pickPr ranks by.
   // One reopened since it was remembered was read without its checks, which
   // keepPr takes for an open one; the search, had it found it, had them.
   const mine = await Promise.all((await own(kept.filter((p) => p && !p.unread)))
     .map((p) => (checks && p.state === 'OPEN' && !('checks' in p) ? headChecks(cwd, p) : p)));
+  // In the repositories' order, as branchPrs answers, which pickPr ranks by.
   const all = [...found, ...mine]
     .sort((a, b) => repos.indexOf(a.repo) - repos.indexOf(b.repo));
   const open = all.filter((p) => p.state === 'OPEN');
@@ -347,7 +358,8 @@ export async function lookupPrs(cwd, repos, known, search, { own = async (rows) 
   // One whose URL is in a repository other than the one it was found in --
   // renamed on GitHub since the remote's URL was set -- would be dropped on
   // the next read, and written again by the search that follows, every poll.
-  const entries = [...shown, ...unread].map(({ url, repo, state }) => ({ url, repo, state })).filter((k) => {
+  const entries = [...shown, ...unread].map(({ url, repo, state, unread: since }) =>
+    ({ url, repo, state, ...(since && { unread: since }) })).filter((k) => {
     if (!held(k)) debug(`${k.url} not remembered: not in ${k.repo}, which may have been renamed`);
     return held(k);
   });

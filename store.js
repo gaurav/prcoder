@@ -237,8 +237,9 @@ export const writePort = (repo, port) => writeJson(repo, portFile(repo), { versi
  * and a cache, so a file it cannot read -- damaged, hand-edited, a newer
  * prcoder's -- is read as empty and overwritten, which costs one search.
  *
- * `{ version, branches: { <branch>: { searched, prs: [{ url, repo, state }] } } }`,
- * `searched` an ISO time. Only a branch with some are kept: one with none is
+ * `{ version, branches: { <branch>: { searched, prs: [{ url, repo, state, unread? }] } } }`,
+ * `searched` an ISO time, and `unread` the time a read of that pull request
+ * first failed, for one that has failed since. Only a branch with some are kept: one with none is
  * searched on every poll, as it was before this file, since that is the branch
  * a new one is opened from.
  */
@@ -269,7 +270,10 @@ function prsEntry(e) {
     const l = link(p?.url);
     return l?.kind === 'pull' && typeof p.repo === 'string' && l.repo.toLowerCase() === p.repo.toLowerCase()
       && STATES.includes(p.state);
-  }).map(({ url, repo, state }) => ({ url, repo, state }));
+  }).map(({ url, repo, state, unread }) => {
+    const since = Date.parse(unread);
+    return { url, repo, state, ...(Number.isFinite(since) && { unread: since }) };
+  });
   return prs.length ? { searched, prs } : null;
 }
 
@@ -295,7 +299,8 @@ export const readPrs = async (repo, branch) => (branch && (await readAllPrs(repo
  * searched within FORGET dropped. A read, a change and a write: callers hold
  * server.js's lock, so two of these do not interleave. A search in the future
  * -- a clock set back, a file from another machine -- is written as now, so
- * it is forgotten a FORGET from now rather than from then.
+ * it is forgotten a FORGET from now rather than from then; and so is a failed
+ * read in the future, for lookupPrs's UNREAD_FOR.
  */
 export async function writePrs(repo, branch, entry, now = Date.now()) {
   const all = await readAllPrs(repo);
@@ -304,7 +309,8 @@ export async function writePrs(repo, branch, entry, now = Date.now()) {
   const branches = Object.fromEntries([...all]
     .map(([b, e]) => [b, { ...e, searched: Math.min(e.searched, now) }])
     .filter(([, e]) => now - e.searched < FORGET)
-    .map(([b, e]) => [b, { searched: new Date(e.searched).toISOString(), prs: e.prs }]));
+    .map(([b, e]) => [b, { searched: new Date(e.searched).toISOString(), prs: e.prs.map((p) => (p.unread
+      ? { ...p, unread: new Date(Math.min(p.unread, now)).toISOString() } : p)) }]));
   await writeJson(repo, prsFile(repo), { version: VERSION, branches });
 }
 

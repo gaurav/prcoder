@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { rollup, linkedIssues, linksFrom, parsePrUrl, run, issueNumber, lf, setViewed, listPrs, loadPr, prHeads, branchPrs, lookupPrs, ownPrs, SEARCH_EVERY, pickPr, lookupRef, createIssue } from '../github.js';
+import { rollup, linkedIssues, linksFrom, parsePrUrl, run, issueNumber, lf, setViewed, listPrs, loadPr, prHeads, branchPrs, lookupPrs, ownPrs, SEARCH_EVERY, UNREAD_FOR, pickPr, lookupRef, createIssue } from '../github.js';
 import { taskLines } from '../public/tasks.js';
 import { withGh, ghArgs, ghCalls, unix } from './stub-gh.js';
 
@@ -692,7 +692,27 @@ test('a search runs when nothing open is known, when asked, when one is due, and
 test('a remembered pull request that cannot be read just now is kept, unshown', { skip: unix }, async () => {
   const offline = `echo 'error connecting to api.github.com' >&2; exit 1`;
   const { out } = await ghCalls(offline, () => lookupPrs(os.tmpdir(), ['up/repo'], known([HEADS[0]]), searching([]), { now: NOW }));
-  assert.deepEqual(out, { prs: [], remember: { searched: NOW, prs: known([HEADS[0]]).prs } });
+  const stamped = { searched: NOW, prs: [{ ...known([HEADS[0]]).prs[0], unread: NOW }] };
+  assert.deepEqual(out, { prs: [], remember: stamped }, 'remembered unread since now');
+  // Failing again is no news: no search, nothing written -- or a search, a
+  // file write and a failing read on every poll, for one that always fails.
+  const later = NOW + 60_000;
+  const search = searching([]);
+  const again = await ghCalls(offline, () => lookupPrs(os.tmpdir(), ['up/repo'], stamped, search, { now: later }));
+  assert.equal(search.runs, 0);
+  assert.deepEqual(again.out, { prs: [], remember: undefined });
+  // Through the next due search it keeps the time it first failed...
+  const due = await ghCalls(offline, () => lookupPrs(os.tmpdir(), ['up/repo'], stamped, searching([]), { fresh: true, now: later }));
+  assert.deepEqual(due.out.remember.prs, stamped.prs);
+  // ...and is forgotten UNREAD_FOR after it, unread.
+  const lapsed = await ghCalls(offline, () => lookupPrs(os.tmpdir(), ['up/repo'], stamped, searching([]), { now: NOW + UNREAD_FOR }));
+  assert.deepEqual(lapsed.calls, [], 'not read again');
+  assert.deepEqual(lapsed.out, { prs: [], remember: { searched: NOW + UNREAD_FOR, prs: [] } });
+  // Read again after failing: news, so a search, and the mark is gone.
+  const back = searching([{ ...HEADS[0], repo: 'up/repo' }]);
+  const read = await ghCalls(viewing([HEADS[0]]), () => lookupPrs(os.tmpdir(), ['up/repo'], stamped, back, { now: later }));
+  assert.equal(back.runs, 1);
+  assert.deepEqual(read.out.remember, { searched: later, prs: known([HEADS[0]]).prs });
   // Beside one the search found, both are remembered and the found one shown.
   const beside = await ghCalls(offline, () => lookupPrs(os.tmpdir(), ['up/repo'], known([HEADS[0]]),
     searching([{ ...HEADS[1], repo: 'up/repo' }]), { fresh: true, now: NOW }));
