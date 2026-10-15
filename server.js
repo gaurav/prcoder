@@ -224,7 +224,7 @@ async function findPrs(branch, { has, checks, fresh = false }) {
  * edit on github.com is picked up without prcoder having to be told. The one
  * exception is which pull requests the branch has, remembered in the file so
  * that a poll asks about them by URL (findPrs); `search` looks for them by name
- * again, which is `r`.
+ * again, which is `r` and the page's ⟳.
  */
 async function status({ full = false, search = false } = {}) {
   const calls = runCount();
@@ -338,6 +338,10 @@ const poll = () => (queuedPoll ??= serial(() => {
 const routes = {
   // Unlocked only because poll() takes the lock itself.
   'GET /api/status': poll,
+  // The page's ⟳: a poll that also searches for the branch's pull requests
+  // afresh, as `r` does, for one opened on github.com or by the agent since;
+  // a poll on its own reads only the ones prs.json already knows (findPrs).
+  'POST /api/status': () => status({ search: true }),
 
   // `started` is what the exit bar fills its fields with: the model and effort
   // given after -- on prcoder's command line, so starting the agent again offers

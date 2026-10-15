@@ -778,10 +778,10 @@ function paint(status) {
  * its own UI, and a laptop on a train would hit it every minute.
  */
 let polledAt = 0;
-async function loadStatus() {
+async function loadStatus({ search = false } = {}) {
   polledAt = Date.now();
   try {
-    paint(await api('/api/status', undefined, 'GET'));
+    paint(await api('/api/status', undefined, search ? 'POST' : 'GET'));
   } catch (e) {
     const failed = { error: e.message, dirtyFiles: [], pr: null };
     renderHeader(failed, prs, handlers);
@@ -864,7 +864,10 @@ async function choosePr(url) {
 
 const handlers = { onSwitch: switchPr, onChoose: choosePr, onCommit: askClaudeToCommit };
 
-document.getElementById('pr-refresh').onclick = loadStatus;
+// ⟳ also searches for the branch's pull requests, where a poll reads only the
+// ones the server remembers: one just opened on github.com shows now, not in
+// ten minutes.
+document.getElementById('pr-refresh').onclick = () => loadStatus({ search: true });
 
 // Polling is the client's job: no server timer, and a hidden tab costs nothing.
 setInterval(() => { if (document.visibilityState === 'visible') loadStatus(); }, 60_000);

@@ -146,9 +146,10 @@ remote -- by the branch's name, so one opened from a fork no remote names is fou
 as this clone has its head commit ([README](../README.md)). Once found, a branch's pull requests
 are remembered in `.prcoder/prs.json` and each poll asks about them directly, so a search by name
 runs only now and then: on a branch with none, every poll, since that is where one is about to be
-opened; otherwise on a change of branch, on `r` or `g` in the terminal, when one of them is seen
-merged, closed or reopened, and every ten minutes. So a second pull request opened on a branch
-that already has one -- into the parent, say -- can take up to ten minutes to show, or `r`. A
+opened; otherwise on a change of branch, on ⟳ in the pane or `r` or `g` in the terminal, when one
+of them is seen merged, closed or reopened, and every ten minutes. So a second pull request opened
+on a branch that already has one -- into the parent, say, or one opened after the branch's last
+was closed -- takes up to ten minutes to show on its own, and ⟳ shows it now. A
 branch whose `git push` goes to a
 branch of its own name counts only that repository's head as its own, so a fork's `main` is not
 handed the parent's `main`'s pull requests. A branch with more than one, into its

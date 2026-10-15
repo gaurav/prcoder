@@ -40,8 +40,10 @@ stdout. For a look with the user's own eyes, leave it running and hand them that
 
 API shape: the `routes` table in `server.js`, keyed `"METHOD /path"`, JSON
 in/out, errors as 500 `{error}`. Every handler but the few in `UNLOCKED` --
-whoami, status, the queue's reference lookup -- is serialised, so one slow
-call delays the rest.
+whoami, the `GET` status poll, the queue's reference lookup -- is serialised, so
+one slow call delays the rest. `POST /api/status` is the page's ⟳: a poll that
+also searches for the branch's pull requests, where `GET` reads the ones
+`.prcoder/prs.json` remembers by URL.
 
 ## Verifying a change
 

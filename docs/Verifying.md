@@ -113,7 +113,7 @@ already up with `PRCODER_VERBOSE=2`, or a `browser.mjs` run is already printing 
   `.prcoder/prs.json` (`lookupPrs` in `github.js`), so the seven holds however many repositories
   the clone has. The search by name (`branchPrs`) runs on a branch with none -- which is every
   poll there, and what the ten and eight are -- and on a branch with some only after a change of
-  branch, `r`, `g`, ten minutes, or a change of state. It is one `gh pr list` per repository the
+  branch, ⟳, `r`, `g`, ten minutes, or a change of state. It is one `gh pr list` per repository the
   branch could have one in (`repos` from `repoInfo`), so a clone with a parent or a second GitHub
   remote pays one more, and with no open pull request a second pass per repository. Heads in a
   repository no remote names cost one local `cat-file` per page of them, which `snapshot` then
