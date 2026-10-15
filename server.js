@@ -196,30 +196,38 @@ async function status({ full = false } = {}) {
   // Taken once and threaded through: the remote head is not known yet, and
   // asking git the same four questions three times a minute is just noise.
   const [branch, head] = await Promise.all([currentBranch(repo), headCommit(repo)]);
-  // Before the pull request, which is looked for in the repositories this
-  // names; a lookup that fails fails the poll, as it should -- gh that cannot
-  // say which repository this is cannot list its pull requests either.
-  const facts = await repoFacts();
   if (chosen && chosen.branch !== branch) chosen = null;
 
+  // Reloaded when the cheap check says it changed. A full refresh reloads
+  // regardless, so it has no use for the cheap check.
+  const refresh = async (heads) => {
+    if (full || !keepPr(pr, heads)) {
+      if (!full && pr) term.debug(`PR #${pr.number} changed upstream — reloading into the UI`);
+      await refreshPr(target ?? heads?.url);
+    }
+  };
+  // A target from the command line is checked the old way, and before the
+  // repository lookup, so a startup whose lookup fails still has the pull
+  // request to report: the PR routes and the terminal's block read `pr`.
+  let heads = target && !full ? await prHeads(repo, target) : null;
+  if (target) await refresh(heads);
+
+  // The branch's pull requests are looked for in the repositories this names;
+  // a lookup that fails fails the poll, as it should -- gh that cannot say
+  // which repository this is cannot list its pull requests either.
+  const facts = await repoFacts();
   // The branch's pull requests, wherever they are: the poll's cheap check,
-  // whose checks keepPr takes. With a target from the command line the
-  // pinned pull request is checked the old way, and the list is still read,
-  // since the switcher offers it.
+  // whose checks keepPr takes. With a target the list is still read, since
+  // the switcher offers it.
   // One answer per commit for the whole poll: the lookup asks whether this
   // clone has a fork's head, and snapshot asks the same of the remote head,
   // which on such a branch is the same commit.
   const known = new Map();
   const has = (oid) => known.get(oid) ?? known.set(oid, hasCommit(oid, repo)).get(oid);
   const found = await branchPrs(repo, facts.repos, branch, { has });
-  // A full refresh reloads regardless, so it has no use for the cheap check.
-  const heads = target
-    ? (full ? null : await prHeads(repo, target))
-    : pickPr(found, { head, chosen: chosen?.url, shown: pr?.url, repos: facts.repos });
-
-  if (full || !keepPr(pr, heads)) {
-    if (!full && pr) term.debug(`PR #${pr.number} changed upstream — reloading into the UI`);
-    await refreshPr(target ?? heads?.url);
+  if (!target) {
+    heads = pickPr(found, { head, chosen: chosen?.url, shown: pr?.url, repos: facts.repos });
+    await refresh(heads);
   }
 
   // With no PR there is no headRefOid to compare against, so read git's own
