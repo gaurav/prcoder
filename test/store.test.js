@@ -276,6 +276,17 @@ test('a branch\'s pull requests come back as written, and an empty list removes 
   assert.deepEqual((await fs.readdir(path.join(dir, '.prcoder'))).sort(), ['.gitignore', 'prs.json']);
 });
 
+// A branch's name is anything git allows, Object.prototype's members included.
+test('a branch named after an object\'s own members is remembered like any other', async () => {
+  const dir = await repo();
+  const now = Date.parse('2026-10-14T12:00:00Z');
+  for (const branch of ['constructor', '__proto__', 'toString']) {
+    assert.equal(await readPrs(dir, branch), null, `${branch}: nothing remembered yet`);
+    await writePrs(dir, branch, { searched: now, prs: [PR] }, now);
+    assert.deepEqual(await readPrs(dir, branch), { searched: now, prs: [PR] }, branch);
+  }
+});
+
 test('a branch not searched for a month is dropped on the next write', async () => {
   const dir = await repo();
   const now = Date.parse('2026-10-14T12:00:00Z');

@@ -270,17 +270,22 @@ function prsEntry(e) {
   return prs.length ? { searched, prs } : null;
 }
 
-/** Every branch's entry, by name, with whatever could not be read left out. */
+/**
+ * Every branch's entry, by name, with whatever could not be read left out. A
+ * Map, since a branch's name is anything git allows: on a plain object a
+ * branch called `constructor` reads back a function, and one called
+ * `__proto__` is never stored at all.
+ */
 async function readAllPrs(repo) {
   let parsed;
-  try { parsed = JSON.parse(await fs.readFile(prsFile(repo), 'utf8')); } catch { return {}; }
-  if (Number(parsed?.version) > VERSION || !parsed?.branches || typeof parsed.branches !== 'object') return {};
-  return Object.fromEntries(Object.entries(parsed.branches)
+  try { parsed = JSON.parse(await fs.readFile(prsFile(repo), 'utf8')); } catch { return new Map(); }
+  if (Number(parsed?.version) > VERSION || !parsed?.branches || typeof parsed.branches !== 'object') return new Map();
+  return new Map(Object.entries(parsed.branches)
     .map(([b, e]) => [b, prsEntry(e)]).filter(([, e]) => e));
 }
 
 /** The branch's entry, `{ searched, prs }` with `searched` in ms, or null. */
-export const readPrs = async (repo, branch) => (branch && (await readAllPrs(repo))[branch]) || null;
+export const readPrs = async (repo, branch) => (branch && (await readAllPrs(repo)).get(branch)) || null;
 
 /**
  * The branch's entry replaced, or removed with null, and every branch not
@@ -291,9 +296,9 @@ export const readPrs = async (repo, branch) => (branch && (await readAllPrs(repo
  */
 export async function writePrs(repo, branch, entry, now = Date.now()) {
   const all = await readAllPrs(repo);
-  if (entry?.prs.length) all[branch] = entry;
-  else delete all[branch];
-  const branches = Object.fromEntries(Object.entries(all)
+  if (entry?.prs.length) all.set(branch, entry);
+  else all.delete(branch);
+  const branches = Object.fromEntries([...all]
     .map(([b, e]) => [b, { ...e, searched: Math.min(e.searched, now) }])
     .filter(([, e]) => now - e.searched < FORGET)
     .map(([b, e]) => [b, { searched: new Date(e.searched).toISOString(), prs: e.prs }]));
