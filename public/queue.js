@@ -1,7 +1,6 @@
 import { h, btn, ext, api, toast, pref, setPref, tabBtn, writeThrough } from './ui.js';
-import { blocks } from './pr.js';
 import { TABS, refLabel, forClaude } from './items.js';
-import { refs, resolveRef } from './tasks.js';
+import { refs, resolveRef, blocks } from './tasks.js';
 
 // The client owns the list; every change persists the whole array. Single user,
 // single repo — no ids, no diffing.

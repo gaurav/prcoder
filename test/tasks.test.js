@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { toggleTask, taskLines, refs, wholeRef, resolveRef, printable } from '../public/tasks.js';
-import { blocks, sectionize } from '../public/pr.js';
+import {
+  toggleTask, taskLines, refs, wholeRef, resolveRef, printable, fences, TASK, HEADING, blocks, sectionize,
+} from '../public/tasks.js';
 
 // --- checkboxes in the description ---
 
@@ -40,11 +41,10 @@ test('a checkbox whose line has changed underneath is refused, not ticked', () =
 // which lines count, every index past the first difference ticks the wrong
 // line. Walking one body through both is what keeps them in step.
 //
-// This calls the pane's real renderer rather than a walk written here. It used
-// to be a third copy of the pattern -- which meant the one file whose whole
-// subject is "these two walks must not diverge" was comparing the server
-// against something neither side ships. public/pr.js only touches `document`
-// inside function bodies, so importing it here is safe.
+// This calls blocks(), the parser the pane draws from, rather than a walk
+// written here. It used to be a third copy of the pattern -- which meant the
+// one file whose whole subject is "these two walks must not diverge" was
+// comparing the server against something neither side ships.
 
 const paneTasks = (body) => blocks(body).filter((b) => b.kind === 'task').map((b) => b.text);
 
@@ -262,6 +262,197 @@ test('a comment ending on a task line leaves that task a task on both sides', ()
   assert.deepEqual(paneTasks(body).map((t) => t.trim()), ['after the comment', 'last']);
   assert.deepEqual(taskLines(body), [2, 3]);
   assert.doesNotThrow(() => toggleTask(body, 1, true, 'last'));
+});
+
+// --- headings ---
+
+// A checklist line and a heading are told apart by the same pass, and `#hashtag`
+// with no space is neither -- it is prose, and rendering it as a heading would
+// eat the line.
+test('a heading needs its space, and a task is not one', () => {
+  assert.equal(HEADING.exec('## TODO')[1].length, 2);
+  assert.equal(HEADING.exec('###### deep')[1].length, 6);
+  assert.equal(HEADING.exec('#hashtag'), null);
+  assert.equal(HEADING.exec('####### seven'), null);
+  assert.equal(HEADING.exec('- [ ] an item'), null);
+  assert.ok(TASK.exec('- [ ] an item'));
+});
+
+// --- fenced blocks ---
+
+// A fence contains blank lines, so it has to be lifted out before paragraphs
+// are split on them -- otherwise the block arrives in pieces.
+test('a fence is one chunk, blank lines and all', () => {
+  const out = fences('before\n\n```sh\nnpm install\n\nnpm link\n```\n\nafter');
+  assert.deepEqual(out.map((c) => (c.code !== undefined ? 'code' : 'text')), ['text', 'code', 'text']);
+  assert.equal(out[1].code, 'npm install\n\nnpm link');
+  assert.match(out[0].text, /before/);
+  assert.match(out[2].text, /after/);
+});
+
+test('a body with no fence is one chunk of text', () => {
+  assert.deepEqual(fences('just prose'), [{ text: 'just prose' }]);
+  assert.deepEqual(fences(''), []);
+});
+
+// An unterminated fence must not swallow the rest of the description.
+test('a fence that is never closed is left as text', () => {
+  const out = fences('text\n\n```sh\nnpm install\n\nstill prose');
+  assert.deepEqual(out.map((c) => (c.code !== undefined ? 'code' : 'text')), ['text']);
+  assert.match(out[0].text, /still prose/);
+});
+
+// --- lists ---
+//
+// The renderer had no list rule at all until this: every `- item` line fell
+// through into the prose accumulator and came out as a literal hyphen inside a
+// <p> joined by <br>, with no hanging indent. This repo's own description has
+// two sections that are nothing but long bullets.
+
+const kinds = (body) => blocks(body).map((b) => b.kind);
+const only = (body, kind) => blocks(body).filter((b) => b.kind === kind);
+
+test('a bullet list is a list, not a paragraph starting with a hyphen', () => {
+  const [list] = only('- one\n- two', 'list');
+  assert.equal(list.ordered, false);
+  assert.deepEqual(list.items, ['one', 'two']);
+});
+
+// The load-bearing one. TASK matches a subset of BULLET, so if the list rule
+// ran first a checklist line would never be given an index -- and every tick
+// after it in the body would then address the line above, silently.
+test('a checklist line is a task, never a bullet', () => {
+  assert.deepEqual(kinds('- [ ] a\n- b\n- [x] c'), ['task', 'list', 'task']);
+  assert.deepEqual(only('- [ ] a\n- b\n- [x] c', 'task').map((b) => b.index), [0, 1]);
+  assert.deepEqual(only('- [ ] a\n- b\n- [x] c', 'list')[0].items, ['b']);
+});
+
+test('an ordered list keeps the number the author started at', () => {
+  const [list] = only('3. c\n4. d', 'list');
+  assert.equal(list.ordered, true);
+  assert.equal(list.start, 3);
+  assert.deepEqual(list.items, ['c', 'd']);
+});
+
+test('a marker with no space after it is prose', () => {
+  for (const line of ['-flag', '--body-file -', '*emphasis* alone', '1.5 seconds']) {
+    assert.deepEqual(kinds(line), ['p'], line);
+  }
+});
+
+test('a nested list flattens to one level rather than being mis-parsed', () => {
+  assert.deepEqual(only('- a\n  - b\n- c', 'list')[0].items, ['a', 'b', 'c']);
+});
+
+test('a wrapped bullet stays one item', () => {
+  assert.deepEqual(only('- a line that\n  kept going\n- next', 'list')[0].items,
+    ['a line that\nkept going', 'next']);
+});
+
+test('a change of marker starts a new list', () => {
+  assert.deepEqual(kinds('- a\n1. b'), ['list', 'list']);
+});
+
+test('prose above a list stays its own paragraph', () => {
+  assert.deepEqual(kinds('Some prose:\n- a\n- b'), ['p', 'list']);
+});
+
+test('a quoted line is a quote, not prose starting with a chevron', () => {
+  assert.deepEqual(only('> quoted', 'quote'), [{ kind: 'quote', text: 'quoted' }]);
+});
+
+// No space needed after the `>`, unlike a bullet: `>text` is a quote on GitHub.
+test('a quote needs no space after its marker, and gives up only one', () => {
+  assert.deepEqual(only('>tight', 'quote')[0].text, 'tight');
+  assert.deepEqual(only('>   padded', 'quote')[0].text, '  padded');
+});
+
+test('consecutive quoted lines are one quote', () => {
+  assert.deepEqual(only('> one\n> two', 'quote'), [{ kind: 'quote', text: 'one\ntwo' }]);
+});
+
+test('an unmarked line under a quote is still the quote', () => {
+  assert.deepEqual(only('> one\nstill quoted', 'quote')[0].text, 'one\nstill quoted');
+});
+
+// A blank line ends a paragraph, so two quoted stanzas are two quotes -- which
+// is what GitHub renders, and what lets a description quote two people.
+test('a blank line between quoted stanzas gives two quotes', () => {
+  assert.deepEqual(kinds('> one\n\n> two'), ['quote', 'quote']);
+});
+
+test('prose and a list around a quote each stay their own block', () => {
+  assert.deepEqual(kinds('lead\n> quoted\n- a'), ['p', 'quote', 'list']);
+  assert.deepEqual(kinds('> quoted\ntail\n# head'), ['quote', 'heading']);
+});
+
+// The indexing argument, pinned: TASK in tasks.js does not match a quoted
+// checklist line either, so neither side counts it and the tick stays in step.
+test('a quoted checklist line counts on neither side', () => {
+  assert.deepEqual(kinds('- [ ] a\n\n> - [ ] b\n\n- [ ] c'), ['task', 'quote', 'task']);
+  assert.deepEqual(only('- [ ] a\n\n> - [ ] b\n\n- [ ] c', 'task').map((b) => b.index), [0, 1]);
+  assert.deepEqual(taskLines('- [ ] a\n\n> - [ ] b\n\n- [ ] c'), [0, 4]);
+});
+
+test('a quote inside a fence is a sample, not a quote', () => {
+  assert.deepEqual(kinds('```sh\n> not a quote\n```'), ['code']);
+});
+
+test('a bullet inside a fence is a sample, not a list', () => {
+  assert.deepEqual(kinds('```sh\n- not a bullet\n- [ ] not a task\n```'), ['code']);
+});
+
+// --- sectioning ---
+//
+// A description is folded by section so that ten sections of agent-written
+// prose do not bury the rest of the pane. The fold level comes from the body
+// rather than being fixed here, because one description uses `##` for its
+// sections while another someone typed may well start at `#`.
+
+const fold = (body) => sectionize(blocks(body));
+const titles = (body) => fold(body).sections.map((s) => s.title);
+
+test('a description folds at the shallowest heading level it uses', () => {
+  assert.deepEqual(titles('# One\n\ntext\n\n# Two'), ['One', 'Two']);
+  assert.deepEqual(titles('## One\n\ntext\n\n## Two'), ['One', 'Two']);
+});
+
+test('a heading deeper than the fold level stays inside its section', () => {
+  const { sections } = fold('## One\n\n#### Inner\n\ntext\n\n## Two');
+  assert.deepEqual(sections.map((s) => s.title), ['One', 'Two']);
+  assert.deepEqual(sections[0].nodes.map((b) => b.kind), ['heading', 'p']);
+  assert.equal(sections[0].nodes[0].level, 4);
+});
+
+test('everything before the first heading is the lead', () => {
+  // The shape of this repo's own description: prose, then the install fence,
+  // then the first section.
+  const { lead, sections } = fold('Run prcoder.\n\n```sh\nnpm install\n```\n\n## Why\n\nbecause');
+  assert.deepEqual(lead.map((b) => b.kind), ['p', 'code']);
+  assert.equal(sections.length, 1);
+});
+
+test('a description with no headings is all lead and no sections', () => {
+  const { lead, sections } = fold('Just a sentence.');
+  assert.deepEqual(lead.map((b) => b.kind), ['p']);
+  assert.deepEqual(sections, []);
+});
+
+test('a heading inside a fence opens no section', () => {
+  // This repo's README and its description each show a fenced `## Queue`.
+  assert.deepEqual(titles('```markdown\n## Queue\n```\n\n## Real'), ['Real']);
+});
+
+test('two sections with the same title get keys that tell them apart', () => {
+  assert.deepEqual(fold('## Why\n\na\n\n## Why\n\nb').sections.map((s) => s.key),
+    ['Why', 'Why#2']);
+});
+
+test('sectioning loses nothing', () => {
+  const body = 'lead\n\n## One\n\n- a\n- b\n\n### Deep\n\n## Two\n\n- [ ] t';
+  const { lead, sections } = fold(body);
+  const total = lead.length + sections.reduce((n, s) => n + s.nodes.length, 0) + sections.length;
+  assert.equal(total, blocks(body).length);
 });
 
 // --- references typed into the queue ---

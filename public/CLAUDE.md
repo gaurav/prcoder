@@ -7,8 +7,10 @@
 vendor map, so the list of grammars is written once, in the page that loads
 them. `tasks.js` is
 the description's grammar -- what a description shows (`withoutHtml`), its
-checklist lines, its `#N` mentions, the URL helpers, and `toggleTask`, which
-flips one box in a body. `server.js`, `github.js`, `git.js` and `files.js` at
+checklist lines, its `#N` mentions, the URL helpers, `toggleTask`, which
+flips one box in a body, and `blocks` and `sectionize`, which cut one into
+the paragraphs, lists, tasks and sections the PR pane draws and the queue's
+PR tab counts. `server.js`, `github.js`, `git.js` and `files.js` at
 the root all import it, so the server and the pane read a description by the
 same rules and cannot drift apart.
 
