@@ -322,6 +322,10 @@ const FILES_QUERY = `query($owner:String!,$repo:String!,$number:Int!,$after:Stri
       nodes{ path additions deletions viewerViewedState }
     } } } }`;
 
+// How many times prFiles reads a pull request's files before giving up on one
+// that keeps moving under it.
+const READS = 3;
+
 /**
  * Every changed file, with whether you have marked it viewed; the PR's node id
  * for setViewed; and, from the same answer, what has to agree with the list.
@@ -342,47 +346,37 @@ const FILES_QUERY = `query($owner:String!,$repo:String!,$number:Int!,$after:Stri
  * moving is one GitHub would not give, and goes out as it is: the Files tab
  * says how many are missing.
  */
-const READS = 3;
-
 async function prFiles(cwd, url) {
-  for (let n = 1; ; n++) {
-    const read = await readFiles(cwd, url);
-    if (read) return read;
-    if (n === READS) throw new Error(`${url} moved on GitHub during each of ${READS} reads of its files`);
-  }
-}
-
-/** One pass of prFiles' paging, or null when the PR moved under it. */
-async function readFiles(cwd, url) {
   const { owner, repo, number } = parsePrUrl(url);
-  const files = [];
-  let snapshot = null;
-  let after = null;
-
-  do {
-    // -f for every string, -F only for the Int. -F converts by what a value
-    // looks like: an all-digit owner went as an Int and GitHub refused it
-    // ("Could not coerce value 12345 to String", checked 2026-09-26), and a
-    // value starting with @ is read as a file name.
-    const args = ['api', 'graphql', '-f', `query=${FILES_QUERY}`,
-      '-f', `owner=${owner}`, '-f', `repo=${repo}`, '-F', `number=${number}`];
-    if (after) args.push('-f', `after=${after}`);
-    const { data } = JSON.parse(await gh(args, { cwd }));
-    const pr = data.repository.pullRequest;
-    const { id: nodeId, headRefOid, baseRefOid, additions, deletions, changedFiles } = pr;
-    snapshot ??= { nodeId, headRefOid, baseRefOid, additions, deletions, changedFiles };
-    if (headRefOid !== snapshot.headRefOid || baseRefOid !== snapshot.baseRefOid) return null;
-    for (const { viewerViewedState, ...f } of pr.files.nodes) {
-      files.push({ ...f, viewed: viewerViewedState === 'VIEWED' });
-    }
-    const { hasNextPage, endCursor } = pr.files.pageInfo;
-    // Read as "no more pages", a next page with no cursor to it would end the
-    // list short with nothing to say so -- the bug this paging is here to fix.
-    if (hasNextPage && !endCursor) throw new Error(`GitHub said ${url} has more files, but gave no cursor to them`);
-    after = hasNextPage ? endCursor : null;
-  } while (after);
-
-  return { ...snapshot, files };
+  read: for (let n = 0; n < READS; n++) {
+    const files = [];
+    let snapshot = null;
+    let after = null;
+    do {
+      // -f for every string, -F only for the Int. -F converts by what a value
+      // looks like: an all-digit owner went as an Int and GitHub refused it
+      // ("Could not coerce value 12345 to String", checked 2026-09-26), and a
+      // value starting with @ is read as a file name.
+      const args = ['api', 'graphql', '-f', `query=${FILES_QUERY}`,
+        '-f', `owner=${owner}`, '-f', `repo=${repo}`, '-F', `number=${number}`];
+      if (after) args.push('-f', `after=${after}`);
+      const { data } = JSON.parse(await gh(args, { cwd }));
+      const pr = data.repository.pullRequest;
+      const { id: nodeId, headRefOid, baseRefOid, additions, deletions, changedFiles } = pr;
+      snapshot ??= { nodeId, headRefOid, baseRefOid, additions, deletions, changedFiles };
+      if (headRefOid !== snapshot.headRefOid || baseRefOid !== snapshot.baseRefOid) continue read;
+      for (const { viewerViewedState, ...f } of pr.files.nodes) {
+        files.push({ ...f, viewed: viewerViewedState === 'VIEWED' });
+      }
+      const { hasNextPage, endCursor } = pr.files.pageInfo;
+      // Read as "no more pages", a next page with no cursor to it would end the
+      // list short with nothing to say so -- the bug this paging is here to fix.
+      if (hasNextPage && !endCursor) throw new Error(`GitHub said ${url} has more files, but gave no cursor to them`);
+      after = hasNextPage ? endCursor : null;
+    } while (after);
+    return { ...snapshot, files };
+  }
+  throw new Error(`${url} moved on GitHub during each of ${READS} reads of its files`);
 }
 
 /** Ticking this here ticks the same checkbox on github.com. */
