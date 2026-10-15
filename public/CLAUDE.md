@@ -1,26 +1,29 @@
 # public/ -- the page
 
-## Three files here are the server's as well
+## Seven files here are the server's as well
 
-`cli.js` imports `syncPhrase` from `pr.js` for the status block, and
-`server.js` imports `grammars` from `diff.js` to build the Prism half of the
-vendor map, so the list of grammars is written once, in the page that loads
-them. `tasks.js` is
-the description's grammar -- what a description shows (`withoutHtml`), its
-checklist lines, its `#N` mentions, the URL helpers, `toggleTask`, which
-flips one box in a body, and `blocks` and `sectionize`, which cut one into
-the paragraphs, lists, tasks and sections the PR pane draws and the queue's
-PR tab counts. `server.js`, `github.js`, `git.js` and `files.js` at
-the root all import it, so the server and the pane read a description by the
-same rules and cannot drift apart.
+The server imports four files from here, and with them everything they import.
+`cli.js` imports `pr.js` for the status block (`syncPhrase` and the PR's
+labels) and `items.js` for the queue's counts. `server.js` imports `grammars`
+from `diff.js` to build the Prism half of the vendor map, so the list of
+grammars is written once, in the page that loads them. `tasks.js` is the
+description's grammar -- what a description shows (`withoutHtml`), its
+checklist lines, its `#N` mentions, the URL helpers, `toggleTask`, which flips
+one box in a body, and `blocks` and `sectionize`, which cut one into the
+paragraphs, lists, tasks and sections the PR pane draws and the queue's PR tab
+counts. `server.js`, `github.js`, `git.js` and `files.js` at the root all
+import it, so the server and the pane read a description by the same rules and
+cannot drift apart. Through those four come `ui.js`, `filelist.js` and
+`folds.js`.
 
-All three therefore have to load in Node, and so does everything they import
--- `ui.js` among them -- so none of them may touch the DOM at module scope. A `document.querySelector` beside the imports is ordinary in a
-browser file, but here it stops the *server* from starting, with a stack trace
-naming a file under `public/` and nothing about why the server was reading it.
-Put DOM work inside a function, the way `el()` in `diff.js` does. A syntax
-error in any of them breaks the server the same way; `node --check public/*.js`
-catches it, and `test/api.test.js` imports all three by importing the server.
+So all seven have to load in Node, and none of them may touch the DOM at
+module scope. A `document.querySelector` beside the imports is ordinary in a
+browser file, but here it stops the *server* from starting, with a stack
+trace naming a file under `public/` and nothing about why the server was
+reading it. Put DOM work inside a function, the way `el()` in `diff.js` does.
+A syntax error in any of them breaks the server the same way; `node --check
+public/*.js` catches it, and `test/api.test.js` loads every one of them by
+importing the server. A new import in any of the seven adds to the list.
 
 ## The building blocks are in `ui.js`
 
