@@ -126,7 +126,7 @@ already up with `PRCODER_VERBOSE=2`, or a `browser.mjs` run is already printing 
   on a PR with many checks -- and with `--limit 5` on a branch name many forks share, since that
   first page carries up to five strangers' rollups before prcoder drops them.
 - **The description's prose is 568px wide in Firefox and 567px in Chromium**, in an 864px pane
-  (on `23b192f`). `browser.mjs` prints it every run; a line-length cap is not something the
+  (re-measured on `a96dc21`, 2026-10-14). `browser.mjs` prints it every run; a line-length cap is not something the
   stylesheet can be read for.
 
 ## What else is checked, and where
