@@ -200,13 +200,14 @@ const forPage = ({ checks, ...p }) => p;
  * The branch's pull requests: read by URL from what `.prcoder/prs.json`
  * remembers, or searched for by name when that may be out of date, and the
  * answer remembered (lookupPrs in github.js has the rules). `fresh` searches
- * whatever is remembered. Run under the serial lock, since it writes the file.
+ * whatever is remembered. `facts` is the caller's repoFacts(), so that what is
+ * searched and what the caller ranks and scopes by are the same repositories.
+ * Run under the serial lock, since it writes the file.
  * Where the branch pushes is asked once, being for branchPrs and for ownPrs's
  * test of what is remembered, which is held to it on every poll.
  */
-async function findPrs(branch, { has, checks, fresh = false }) {
+async function findPrs(branch, { repos, repoOf }, { has, checks, fresh = false }) {
   if (!branch) return [];
-  const { repos, repoOf } = await repoFacts();
   let pushes;
   const home = () => (pushes ??= pushRepo(repo, branch, repoOf));
   const search = async () => branchPrs(repo, repos, branch, { has, checks, home: await home() });
@@ -263,7 +264,7 @@ async function status({ full = false, search = false } = {}) {
   // file remembers.
   const commits = commitMemo(repo);
   const fresh = search || (last != null && last.branch !== branch);
-  const found = await findPrs(branch, { has: commits.many, checks: !target, fresh });
+  const found = await findPrs(branch, facts, { has: commits.many, checks: !target, fresh });
   if (!target) {
     heads = pickPr(found, { head, chosen: chosen?.url, shown: pr?.url, repos: facts.repos });
     await refresh(heads);
@@ -894,9 +895,10 @@ function watch(child, shell, failed) {
  */
 async function openGithub() {
   const [branch, head] = await Promise.all([currentBranch(repo), headCommit(repo)]);
-  const { nameWithOwner, defaultBranch, repos } = await repoFacts();
+  const facts = await repoFacts();
+  const { nameWithOwner, defaultBranch, repos } = facts;
   const url = target ? await prUrl(repo, target) : pickPr(
-    await serial(() => findPrs(branch, { has: (oids) => commitsKnown(oids, repo), checks: false, fresh: true })),
+    await serial(() => findPrs(branch, facts, { has: (oids) => commitsKnown(oids, repo), checks: false, fresh: true })),
     { head, chosen: chosen?.branch === branch ? chosen.url : null, shown: pr?.url, repos })?.url;
   openBrowser(githubUrl({
     prUrl: url, nameWithOwner, defaultBranch, branch,
