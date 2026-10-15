@@ -1,7 +1,7 @@
 import { Terminal } from '/vendor/xterm.mjs';
 import { FitAddon } from '/vendor/addon-fit.mjs';
 import { WebLinksAddon } from '/vendor/addon-web-links.mjs';
-import { renderPr, renderNoPr, renderHeader, pageTitle, api, toast, pref, setPref, debug, fileFrom, nextUnviewed, revealFile, h } from './pr.js';
+import { renderPr, renderNoPr, renderHeader, pageTitle, prRepo, api, toast, pref, setPref, debug, fileFrom, nextUnviewed, revealFile, h } from './pr.js';
 import { openDiff, closeDiff, selectedPath, setViewed, showViewed, canTickViewed, toggleViewed, toggleWrap, canWrap, openMention } from './diff.js';
 import { initQueue, addItem, setItems } from './queue.js';
 import { bindKeys, keyLabel, isTyping } from './keys.js';
@@ -691,7 +691,9 @@ function toggleTerm() {
 let drawn = null;
 
 function paint(status) {
-  const moved = last?.pr?.headRefOid !== status.pr?.headRefOid;
+  // A new head, or another pull request: two of a branch's share a head and
+  // differ by base, so a pick in "On this branch" is a new patch too.
+  const moved = last?.pr?.headRefOid !== status.pr?.headRefOid || last?.pr?.url !== status.pr?.url;
   // A checkout is the one thing that changes which pull requests merge into the
   // branch under you, and the branch-only pane lists them. Refreshed here rather
   // than on the poll, which is the whole reason that list is affordable.
@@ -707,7 +709,7 @@ function paint(status) {
   // Any change to which PR is on the branch, not only its state: one closed and
   // another opened in its place from the terminal is the same branch with a
   // new number, and a PR opened on a bare branch is a new entry in the list.
-  const replaced = last && (last.pr?.number !== status.pr?.number
+  const replaced = last && (last.pr?.url !== status.pr?.url
     || last.pr?.state !== status.pr?.state);
   last = status;
   // Named for the tab strip, not the page: which PR, in which repo. A poll
@@ -717,16 +719,18 @@ function paint(status) {
   renderHeader(status, prs, handlers);
   if (status.pr) {
     // The Stack tab reads `prs`, which is this repository's list: against a pull
-    // request in another one it would name strangers, and Switch would check
-    // out whichever PR here has the same number. Null rather than empty, so the
-    // tab says it has no list instead of saying the list is empty, and
-    // `otherRepo` says which of the two reasons for having none it is.
-    const otherRepo = status.scope === 'other-repo';
+    // request in another one it would name strangers. Null rather than empty,
+    // so the tab says it has no list instead of saying the list is empty, and
+    // `otherRepo` says which of the two reasons for having none it is. By the
+    // pull request's own repository, not by `scope`: a fork's pull request into
+    // its parent is `current` on the branch it was opened from, and still not
+    // one the list knows.
+    const otherRepo = prRepo(status.pr) !== status.nameWithOwner;
     const stack = otherRepo ? null : prs;
     const blocked = status.dirtyFiles.length > 0;
     // Everything the pane is drawn from, the Stack tab's inputs included: a
     // fresh PR list, or a tree going dirty, is a redraw even when the PR is not.
-    const key = JSON.stringify([status.pr, status.scope, stack, blocked, [...below.values()]]);
+    const key = JSON.stringify([status.pr, status.scope, stack, blocked, [...below.values()], status.remotes]);
     if (key !== drawn) {
       drawn = key;
       renderPr({ ...status.pr, note: NOTES[status.scope] }, {
@@ -734,6 +738,7 @@ function paint(status) {
         selected: selectedPath,
         prs: stack,
         otherRepo,
+        remotes: status.remotes,
         onStackOpen: () => loadPrs('Stack tab opened'),
         below: [...below.values()],
         onBelow: loadBelow,
@@ -760,7 +765,7 @@ function paint(status) {
 
   // Keep an open diff honest: close it if its file left the PR (or the PR
   // switched away), refresh it if the branch moved — the server cache is
-  // keyed by head oid, so a re-open shows the freshly pushed version.
+  // keyed by URL and head oid, so a re-open shows the freshly pushed version.
   const open = selectedPath();
   if (!open) return;
   const f = status.pr?.files.find((x) => x.path === open);
@@ -783,17 +788,18 @@ async function loadStatus() {
   }
 }
 
-async function switchPr(number) {
-  debug('switching to', number);
+/** `gh pr checkout` of the pull request at `url`, from the switcher or a Stack row. */
+async function switchPr(url) {
+  debug('switching to', url);
   try {
-    const status = await api('/api/pr/switch', { number });
-    debug('switched: now on', status.branch, `#${status.pr?.number}`);
+    const status = await api('/api/pr/switch', { url });
+    debug('switched: now on', status.branch, status.pr?.url);
     paint(status);
     // Claude's cwd survives a checkout, but its idea of the files does not, and
     // nothing tells it: prcoder has no channel into the session that isn't a
     // typed user turn (issue #21). So this is addressed to you, not to Claude,
     // and it is sticky because it stays true until you have said something.
-    toast(`Switched to ${status.branch} (#${number}). Claude still has the old`
+    toast(`Switched to ${status.branch}${status.pr ? ` (#${status.pr.number})` : ''}. Claude still has the old`
       + " branch's files in mind — tell it to re-read anything it had open.",
     false, true);
   } catch (e) {
@@ -836,7 +842,27 @@ async function createPr(btn) {
 const askClaudeToCommit = (files) =>
   sendToClaude(`Commit the current changes: ${files.join(', ')}`);
 
-const handlers = { onSwitch: switchPr, onCommit: askClaudeToCommit };
+/**
+ * One of the branch's own pull requests picked in the switcher's group: shown
+ * from now on, with nothing checked out, so no toast about the agent's files.
+ */
+async function choosePr(url) {
+  debug('choosing', url);
+  try {
+    const status = await api('/api/pr/choose', { url });
+    paint(status);
+    // No pull request after all when the one picked went between the last
+    // poll and the click -- deleted, or its repository unreadable now.
+    toast(status.pr ? `Showing ${prRepo(status.pr)}#${status.pr.number} for ${status.branch}.`
+      : `That pull request is gone; ${status.branch} has none to show.`, !status.pr);
+  } catch (e) {
+    debug('choose failed:', e.message);
+    toast(e.message, true);
+    await loadStatus();   // snap the switcher back to what is really shown
+  }
+}
+
+const handlers = { onSwitch: switchPr, onChoose: choosePr, onCommit: askClaudeToCommit };
 
 document.getElementById('pr-refresh').onclick = loadStatus;
 

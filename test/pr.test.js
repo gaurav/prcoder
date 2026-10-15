@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  pageTitle, withoutHtml, inline, headLinks, noPrLinks, prsInto, prTree, stackOn, stackLabel, stackUnder, stackTree, stackTitle, stackBase, stackOrder, stackEmpty, intoEmpty, switcherRows,
+  pageTitle, withoutHtml, inline, headLinks, noPrLinks, prsInto, prTree, stackOn, stackLabel, stackUnder, stackTree, stackTitle, stackBase, stackOrder, stackEmpty, intoEmpty, switcherRows, sideLabel, sides, branchGroup, lookedIn,
   HEADING, blocks, sectionize, tabLabel, taskCount, viewedCount, viewedLines, filesProgress, filesName, checkCount, checksName, tabDone, worst, byPath, bySize, byDir, fileTree, fileOrder, fileFrom, nextUnviewed, nums,
 } from '../public/pr.js';
 import { fences, TASK, taskLines } from '../public/tasks.js';
@@ -279,10 +279,13 @@ test('no repository means no links rather than links to nowhere', () => {
 
 // The list the switcher fetches, which carries every open pull request in the
 // repository -- the pane wants the ones that land on the branch you are on.
+const at = (n) => `https://github.com/gaurav/prcoder/pull/${n}`;
+// Each with its URL, which is what the switcher values its options by and
+// switcherRows pins the one on screen by.
 const OPEN = [
-  { number: 1, headRefName: 'initial-implementation', baseRefName: 'main', title: 'The one into main' },
-  { number: 27, headRefName: 'queue-tabs', baseRefName: 'initial-implementation', title: 'One of three' },
-  { number: 60, headRefName: 'checks-tab', baseRefName: 'initial-implementation', title: 'Another' },
+  { number: 1, headRefName: 'initial-implementation', baseRefName: 'main', title: 'The one into main', url: at(1) },
+  { number: 27, headRefName: 'queue-tabs', baseRefName: 'initial-implementation', title: 'One of three', url: at(27) },
+  { number: 60, headRefName: 'checks-tab', baseRefName: 'initial-implementation', title: 'Another', url: at(60) },
 ];
 
 test('the pane lists the pull requests that merge into this branch, and no others', () => {
@@ -447,7 +450,7 @@ test('the switcher lists each pull request with its stack under it', () => {
 // gh pr list has only open PRs, so a merged one on screen is added -- into the
 // tree, so what is still open on its branch nests under it, as in its Stack tab.
 test('a merged pull request on screen parents the ones still open on its branch', () => {
-  const merged = { number: 5, title: 'Merged', headRefName: 'merged-topic', baseRefName: 'initial-implementation' };
+  const merged = { number: 5, title: 'Merged', headRefName: 'merged-topic', baseRefName: 'initial-implementation', url: at(5) };
   const built = [...OPEN, { number: 70, headRefName: 'built-on-merged', baseRefName: 'merged-topic' }];
   const rows = (prs, pr) => switcherRows(prs, pr).map(({ pr: p, depth }) => `${'-'.repeat(depth)}${p.number}`);
   assert.deepEqual(rows(built, merged), ['1', '-5', '--70', '-27', '-60']);
@@ -455,6 +458,19 @@ test('a merged pull request on screen parents the ones still open on its branch'
   assert.deepEqual(rows(OPEN, OPEN[1]), ['1', '-27', '-60']);
   // Into a branch no open PR is on, it leads.
   assert.deepEqual(rows(OPEN, { ...merged, baseRefName: 'main' }), ['5', '1', '-27', '-60']);
+});
+
+// The parent's #27 on screen, beside the list's own #27: by number the walk
+// took them for one and the list's lost its option. In another repository it
+// leads, unnested -- its branches are not the list's either.
+test('a pull request on screen from another repository leads, and costs the list nothing', () => {
+  const parents = { number: 27, title: 'Theirs', headRefName: 'initial-implementation', baseRefName: 'main',
+    url: 'https://github.com/upstream/prcoder/pull/27' };
+  const rows = (pr, repo) => switcherRows(OPEN, pr, repo).map(({ pr: p, depth }) => `${'-'.repeat(depth)}${p.url}`);
+  assert.deepEqual(rows(parents, 'gaurav/prcoder'), [parents.url, at(1), `-${at(27)}`, `-${at(60)}`]);
+  // From the list's own repository, it still goes into the tree.
+  assert.deepEqual(switcherRows(OPEN, { ...OPEN[1], url: at(5), number: 5 }, 'gaurav/prcoder').map(({ pr }) => pr.number),
+    [1, 5, 27, 60]);
 });
 
 // A fork's head is a branch in the fork. Named `main`, it would otherwise make
@@ -936,4 +952,63 @@ test('a file row leaves out the side that did not change', () => {
     [['add', '+2'], ['del', '−3']]);
   // A rename or a mode change touches no lines and gets no counts.
   assert.deepEqual(nums({ additions: 0, deletions: 0 }), []);
+});
+
+// GitHub's own labelling of a branch in another repository, with the remote's
+// name where this clone has one: origin's branches stay bare, so a pull
+// request between them reads as it always has.
+const REMOTES = { 'biothings/NodeNormalizationAPI': 'origin', 'TranslatorSRI/NodeNormalizationAPI': 'mine' };
+
+test('a side of head → base is prefixed only when it is not in origin\'s repository', () => {
+  assert.equal(sideLabel('main', { slug: 'biothings/NodeNormalizationAPI' }, REMOTES), 'main');
+  assert.equal(sideLabel('topic', { slug: 'TranslatorSRI/NodeNormalizationAPI' }, REMOTES), 'mine:topic');
+  // A fork no remote names: its owner, as GitHub writes it.
+  assert.equal(sideLabel('topic', { slug: 'stranger/NodeNormalizationAPI' }, REMOTES), 'stranger:topic');
+  // A deleted fork has no repository left, only the owner GitHub remembers.
+  assert.equal(sideLabel('topic', { slug: null, owner: 'gone' }, REMOTES), 'gone:topic');
+  // No remotes known at all (the first poll's fixture, a clone off GitHub): the owner.
+  assert.equal(sideLabel('main', { slug: 'o/r' }), 'o:main');
+});
+
+test('both sides of a pull request, from where its head and base live', () => {
+  const inOrigin = { url: 'https://github.com/biothings/NodeNormalizationAPI/pull/52', headRefName: 'run-tests', baseRefName: 'main',
+    isCrossRepository: true, headRepo: 'TranslatorSRI/NodeNormalizationAPI', headOwner: 'TranslatorSRI' };
+  assert.deepEqual(sides(inOrigin, { 'biothings/NodeNormalizationAPI': 'origin' }), { head: 'TranslatorSRI:run-tests', base: 'main' });
+  assert.deepEqual(sides(inOrigin, REMOTES), { head: 'mine:run-tests', base: 'main' });
+  // From a clone of the fork: the base is upstream's, the head is here.
+  const fromFork = { 'TranslatorSRI/NodeNormalizationAPI': 'origin', 'biothings/NodeNormalizationAPI': 'upstream' };
+  assert.deepEqual(sides(inOrigin, fromFork), { head: 'run-tests', base: 'upstream:main' });
+  // Within one repository, with no head repository on the object (an older
+  // status): the pull request's own.
+  const plain = { url: 'https://github.com/biothings/NodeNormalizationAPI/pull/5', headRefName: 'fix', baseRefName: 'main', isCrossRepository: false };
+  assert.deepEqual(sides(plain, REMOTES), { head: 'fix', base: 'main' });
+});
+
+// The switcher's group for a branch with more than one pull request: the
+// branch's own, each a pick that shows rather than checks out, with the open
+// list's stack under the first. One alone is no choice, so no group.
+test('a branch with two pull requests gets a group of its own, stack and all', () => {
+  const mine = { number: 1, url: at(1), state: 'OPEN', headRefName: 'initial-implementation', baseRefName: 'main', repo: 'gaurav/prcoder' };
+  const theirs = { number: 9, url: 'https://github.com/upstream/prcoder/pull/9', state: 'OPEN', headRefName: 'initial-implementation',
+    baseRefName: 'main', repo: 'upstream/prcoder', isCrossRepository: true };
+  const rows = (g) => g.map(({ pr, depth, own }) => `${'-'.repeat(depth)}${pr.number}${own ? '!' : ''}`);
+  assert.deepEqual(rows(branchGroup([mine, theirs], OPEN, mine)), ['1!', '-27', '-60', '9!']);
+  // The stack hangs off whichever comes first; a fork's head carries none.
+  assert.deepEqual(rows(branchGroup([theirs, mine], OPEN, theirs)), ['9!', '1!', '-27', '-60']);
+  assert.deepEqual(branchGroup([mine], OPEN, mine), []);
+  assert.deepEqual(branchGroup([], OPEN, null), []);
+  // A merged one is in the group only while it is the one on screen.
+  const merged = { ...theirs, state: 'MERGED' };
+  assert.deepEqual(rows(branchGroup([mine, merged], OPEN, mine)), []);
+  assert.deepEqual(rows(branchGroup([mine, merged], OPEN, merged)), ['1!', '-27', '-60', '9!']);
+  // One in the parent between the parent's own branches is not cross-repository,
+  // and still not the list's: no stack under it, and it leaves the stack to mine.
+  const inParent = { ...theirs, isCrossRepository: false };
+  assert.deepEqual(rows(branchGroup([inParent, mine], OPEN, inParent, 'gaurav/prcoder')), ['9!', '1!', '-27', '-60']);
+});
+
+test('the repositories looked in read as a list', () => {
+  assert.equal(lookedIn(['a/b']), 'a/b');
+  assert.equal(lookedIn(['a/b', 'c/d']), 'a/b or c/d');
+  assert.equal(lookedIn(['a/b', 'c/d', 'e/f']), 'a/b, c/d or e/f');
 });

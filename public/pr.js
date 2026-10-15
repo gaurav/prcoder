@@ -180,7 +180,7 @@ function clamp(head, tail) {
  * close an open dropdown.
  */
 export function renderHeader(status, prs, handlers) {
-  const { onSwitch, onCommit } = handlers;
+  const { onSwitch, onChoose, onCommit } = handlers;
   const sel = document.getElementById('pr-switch');
   const commit = document.getElementById('pr-commit');
 
@@ -194,13 +194,36 @@ export function renderHeader(status, prs, handlers) {
   // than "no open pull requests" -- the pane below says there is no list yet,
   // and the two sat one above the other disagreeing. The `?` in the keys
   // rebuilds the options when a list lands, even an empty one.
-  const shown = switcherRows(prs ?? [], status.pr);
+  //
+  // A branch with more than one pull request -- into its fork's main and into
+  // the parent, say -- leads with them in a group of their own, each with what
+  // is stacked on it, and the rest of the list follows without them. Picking
+  // one of the branch's own changes what the pane shows and checks nothing
+  // out, since the branch is already this one (`choose`); every other option
+  // is the checkout it always was.
+  const group = branchGroup(status.branchPrs ?? [], prs ?? [], status.pr, status.nameWithOwner);
+  const grouped = new Set(group.map(({ pr }) => pr.url));
+  const shown = switcherRows(prs ?? [], status.pr, status.nameWithOwner).filter(({ pr }) => !grouped.has(pr.url));
+  // The repository in front of the number when it is not this checkout's, as
+  // the tab's title writes it: `owner/repo#N`.
+  const label = (p, depth) => `${depth ? `${'  '.repeat(depth)}└ ` : ''}`
+    + `${prRepo(p) === status.nameWithOwner ? '' : prRepo(p)}#${p.number} ${p.isDraft ? '(draft) ' : ''}${p.title}`;
 
-  const keys = (prs ? '' : '?') + shown.map(({ pr, depth }) => `${pr.number}:${depth}`).join(',');
+  // By URL, as the options are valued: the pull request on screen can be in
+  // another repository with a number the list has, and by number the options
+  // would never be rebuilt for it.
+  const keys = (prs ? '' : '?') + (status.dirtyFiles.length ? '~' : '') + [...group.map((r) => `${r.pr.url}:${r.depth}${r.own ? '!' : ''}`), '|',
+    ...shown.map(({ pr, depth }) => `${pr.url}:${depth}`)].join(',');
   // Nor while it has focus, the one sign a page gets that its dropdown may be
   // open: a list landing then replaced the options under the open dropdown,
   // which closed it or moved the pick. It is rebuilt as it loses focus, from
   // the status painted last -- each call here replaces the one before.
+  // Uncommitted work would make `gh pr checkout` fail, so offer the fix instead
+  // of the switch. Claude is right there in the next pane. The branch's own
+  // pull requests are the exception: picking one checks nothing out, so with
+  // a group to pick from the switcher stays, beside Commit, with every option
+  // but the group's own disabled.
+  const blocked = status.dirtyFiles.length > 0;
   const stale = sel.dataset.keys !== keys;
   const open = document.activeElement === sel;
   sel.onblur = stale && open ? () => renderHeader(status, prs, handlers) : null;
@@ -209,22 +232,27 @@ export function renderHeader(status, prs, handlers) {
     debug('switcher options rebuilt:', sel.dataset.keys ?? '(none)', '->', keys);
     sel.dataset.keys = keys;
     sel.replaceChildren(
-      h('option', { value: '' }, shown.length ? 'no pull request' : prs ? 'no open pull requests' : 'no list of pull requests yet'),
-      ...shown.map(({ pr: p, depth }) => h('option', { value: String(p.number) },
-        `${depth ? `${'\u00a0\u00a0'.repeat(depth)}└\u00a0` : ''}#${p.number} ${p.isDraft ? '(draft) ' : ''}${p.title}`)),
+      h('option', { value: '' }, shown.length || group.length ? 'no pull request' : prs ? 'no open pull requests' : 'no list of pull requests yet'),
+      // Spread, not a null: replaceChildren is the DOM's, which has no `kids()`
+      // and makes a "null" text node of one inside the select.
+      ...(group.length ? [h('optgroup', { label: 'On this branch' },
+        ...group.map(({ pr: p, depth, own }) => h('option', { value: p.url, disabled: blocked && !own, ...(own ? { dataset: { choose: '1' } } : {}) }, label(p, depth))))] : []),
+      ...shown.map(({ pr: p, depth }) => h('option', { value: p.url, disabled: blocked }, label(p, depth))),
     );
     sel.onchange = () => {
-      debug('switcher picked', sel.value || '(none)');
-      if (sel.value) onSwitch(Number(sel.value));
+      const own = sel.selectedOptions[0]?.dataset.choose;
+      debug('switcher picked', sel.value || '(none)', own ? '(this branch)' : '');
+      if (!sel.value) return;
+      if (own) onChoose(sel.value);
+      else onSwitch(sel.value);
     };
   }
   // Always re-assert: a failed switch has to snap back to the real branch.
-  sel.value = status.pr ? String(status.pr.number) : '';
+  sel.value = status.pr?.url ?? '';
 
-  // Uncommitted work would make `gh pr checkout` fail, so offer the fix instead
-  // of the switch. Claude is right there in the next pane.
-  const blocked = status.dirtyFiles.length > 0;
-  sel.hidden = blocked || status.scope === 'other-repo';
+  sel.hidden = (blocked && !group.length) || status.scope === 'other-repo';
+  sel.title = blocked ? 'pick one of this branch\'s pull requests; commit or stash to check out another'
+    : 'switch to another open pull request';
   commit.hidden = !blocked;
   commit.onclick = () => onCommit(status.dirtyFiles);
   commit.textContent = `Commit ${status.dirtyFiles.length} file${status.dirtyFiles.length === 1 ? '' : 's'}…`;
@@ -304,13 +332,42 @@ export function stackOrder(prs) {
  * tree is built from rather than in front of the finished order: pinned there,
  * the open PRs based on its branch were roots of their own in the switcher
  * while its Stack tab showed them under it. First in that list, so it still
- * leads its group.
+ * leads its group. One in another repository than the list's (`repo`) leads
+ * the whole list instead, unnested: its branches are not the list's, and the
+ * walk goes by number, which the two repositories can share.
  */
-export function switcherRows(prs, current) {
-  const missing = current && !prs.some((p) => p.number === current.number);
+export function switcherRows(prs, current, repo) {
+  const missing = current && !prs.some((p) => p.url === current.url);
   if (!missing) return stackOrder(prs);
-  const { number, title, headRefName, baseRefName, isCrossRepository } = current;
-  return stackOrder([{ number, title, isDraft: false, headRefName, baseRefName, isCrossRepository }, ...prs]);
+  const { number, title, url, headRefName, baseRefName, isCrossRepository } = current;
+  const row = { number, title, url, isDraft: false, headRefName, baseRefName, isCrossRepository };
+  if (repo && prRepo(current) !== repo) return [{ pr: row, depth: 0 }, ...stackOrder(prs)];
+  return stackOrder([row, ...prs]);
+}
+
+/**
+ * The switcher's "On this branch" group, `[{ pr, depth, own }]`: the branch's
+ * own pull requests (`branchPrs` from the status) when there are two or more
+ * to pick between, each followed by what is stacked on it from the open list,
+ * indented as stackOrder indents. `own` marks the branch's, the ones a pick
+ * shows rather than checks out. Nothing with one: the one is the pull request
+ * on screen, in the list where it always was.
+ *
+ * Open ones, and the one on screen -- the merged one a branch is left showing
+ * has no other to be picked against. The stack hangs off the first in the
+ * list's repository (`repo`), since every one of them has the same head, and
+ * never off a fork's: its head is the fork's branch, not one anything here is
+ * built on (prTree). Nor off one in another repository between that
+ * repository's own branches, whose head is a branch the list does not have.
+ */
+export function branchGroup(branchPrs, prs, current, repo) {
+  const own = branchPrs.filter((p) => p.state === 'OPEN' || p.url === current?.url);
+  if (own.length < 2) return [];
+  const seen = new Set();
+  const walk = (nodes, depth) => nodes.flatMap(({ pr, kids }) => [{ pr, depth }, ...walk(kids, depth + 1)]);
+  const here = (p) => !p.isCrossRepository && (!repo || prRepo(p) === repo);
+  return own.flatMap((p) => [{ pr: p, depth: 0, own: true },
+    ...(here(p) ? walk(prTree(prs, p.headRefName, seen), 1) : [])]);
 }
 
 /**
@@ -412,10 +469,14 @@ export function renderNoPr(status, prs, { onCreate, onSwitch, onBelow, below = [
   // Comparing a branch with itself opens an empty diff, so on main there is
   // nothing to offer — the fix is a branch, not a button.
   const can = !status.detached && !onDefault;
+  // Where it looked, when that is more than one repository: a clone of a fork
+  // has its pull requests in the parent as often as in the fork, and "no pull
+  // request" should say it looked in both.
+  const where = (status.repos?.length ?? 0) > 1 ? ` in ${lookedIn(status.repos)}` : '';
   const why = status.detached ? 'No branch to open a pull request for.'
     : onDefault ? 'Default branch. Make a branch to start a pull request.'
-    : status.sync === 'unpushed' ? `No pull request for ${status.branch} yet. It is not on GitHub, so Create PR pushes it first.`
-    : `No pull request for ${status.branch} yet.`;
+    : status.sync === 'unpushed' ? `No pull request for ${status.branch}${where} yet. It is not on GitHub, so Create PR pushes it first.`
+    : `No pull request for ${status.branch}${where} yet.`;
 
   // Create PR takes the pull request's own place in the row, as the one filled
   // button: in both views it is the way to this branch's pull request on
@@ -451,6 +512,10 @@ export function renderNoPr(status, prs, { onCreate, onSwitch, onBelow, below = [
         ?? (status.detached ? null : h('p', { className: 'empty' }, ...named(intoEmpty(status.branch, prs)))),
   ]));
 }
+
+/** `a, b or c`: the repositories the branch's pull request was looked for in. */
+export const lookedIn = (repos) => (repos.length < 2 ? repos.join('')
+  : `${repos.slice(0, -1).join(', ')} or ${repos.at(-1)}`);
 
 /**
  * Said, as the Stack tab says it, when nothing merges into the branch -- or when
@@ -525,7 +590,7 @@ const prRow = ({ pr: p, here }, { blocked, onSwitch }, kids) => h('li', current(
     ext(p.url, `#${p.number}`, { className: 'pr-num' }),
     p.isDraft ? badge('draft', 'draft') : null,
     h('span', { className: 'pr-row-title', title: p.title }, p.title),
-    here ? null : btn('Switch', () => onSwitch(p.number), {
+    here ? null : btn('Switch', () => onSwitch(p.url), {
       className: 'pr-go', disabled: blocked,
       title: blocked ? 'Commit or stash your changes first' : `Check out #${p.number} here`,
     })),
@@ -590,6 +655,38 @@ const linkBase = (pr) => ({
 
 /** `owner/repo`, from a repository URL on any host. */
 const repoName = (repoUrl) => repoUrl.replace(/^https?:\/\/[^/]+\//, '');
+
+/** The repository a pull request is in, `owner/repo`, off its own URL. */
+export const prRepo = (pr) => repoName(repoUrl(pr.url));
+
+/**
+ * One side of `head → base`, labelled the way GitHub labels a branch in
+ * another repository: the bare branch when its repository is origin's,
+ * `upstream:main` when a remote names the repository, `owner:branch` when
+ * none does -- a fork no remote names, or a pull request opened with
+ * `prcoder <url>`. So a pull request between origin's own branches reads as
+ * it always has, and only a side that is somewhere else says where.
+ *
+ * `remotes` is repository -> remote name, from the status. `slug` is null for
+ * a deleted fork, whose owner GitHub still knows.
+ */
+export function sideLabel(branch, { slug, owner }, remotes = {}) {
+  const origin = Object.keys(remotes).find((r) => remotes[r] === 'origin');
+  if (slug && slug === origin) return branch;
+  const remote = slug && remotes[slug];
+  if (remote) return `${remote}:${branch}`;
+  const who = owner ?? slug?.split('/')[0];
+  return who ? `${who}:${branch}` : branch;
+}
+
+/** Both sides of a pull request, for its head row and the terminal's block. */
+export const sides = (pr, remotes) => {
+  const base = prRepo(pr);
+  return {
+    head: sideLabel(pr.headRefName, { slug: pr.headRepo ?? (pr.isCrossRepository ? null : base), owner: pr.headOwner }, remotes),
+    base: sideLabel(pr.baseRefName, { slug: base }, remotes),
+  };
+};
 
 /**
  * The head's way out of the pane, in two parts: the links -- this pull request
@@ -729,8 +826,8 @@ export function renderPr(pr, handlers) {
   links = linkBase(pr);
   // A different pull request is a different set of sections and a different
   // amount of scroll; none of the old numbers mean anything against it.
-  if (shownFor !== pr.number) {
-    shownFor = pr.number;
+  if (shownFor !== pr.url) {
+    shownFor = pr.url;
     scrolled.detail = 0;
     scrolled.files = 0;
     scrolled.checks = 0;
@@ -764,6 +861,7 @@ function renderPrHead(pr, parsed, handlers) {
   // The base is often another pull request's branch, and which one is the
   // thing you want next to it. From the list, so it costs nothing.
   const under = handlers.prs?.find((p) => !p.isCrossRepository && p.headRefName === pr.baseRefName);
+  const arrow = sides(pr, handlers.remotes);
 
   const files = filesProgress(pr.files);
   const tasks = taskCount(parsed);
@@ -781,7 +879,7 @@ function renderPrHead(pr, parsed, handlers) {
     links: linkRow(ways.links, 'meta pr-ways pr-links', ways.repo),
     state: h('div', { className: 'meta pr-state' },
       badge(state, state),
-      h('span', {}, `${pr.headRefName} → ${pr.baseRefName}`, under ? ' (' : null,
+      h('span', {}, `${arrow.head} → ${arrow.base}`, under ? ' (' : null,
         under ? ext(under.url, `#${under.number}`) : null, under ? ')' : null),
       h('span', { className: 'add' }, `+${pr.additions}`),
       h('span', { className: 'del' }, `−${pr.deletions}`),

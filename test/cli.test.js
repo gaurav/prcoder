@@ -110,7 +110,7 @@ test('the candidates are the whole range, starting at the seed', () => {
 
 // The block under the log. Pure, so the wording is checked without a terminal.
 const STATUS = {
-  nameWithOwner: 'gaurav/prcoder', defaultBranch: 'main', branch: 'initial-implementation',
+  nameWithOwner: 'gaurav/prcoder', remotes: { 'gaurav/prcoder': 'origin' }, defaultBranch: 'main', branch: 'initial-implementation',
   sync: 'ahead', ahead: 2, dirtyFiles: ['a.js', 'b.js'], scope: 'current',
   pr: { number: 1, title: 'Drag the panes', url: 'https://github.com/gaurav/prcoder/pull/1', baseRefName: 'main' },
   queue: [{ text: 'a', issue: 4 }, { text: 'b', done: true }, { text: 'c', deleted: true },
@@ -135,6 +135,20 @@ test('the block says where the branch, the PR and the queue stand', () => {
   assert.match(out, /^open +o prcoder · g github · t terminal · f folder$/m);
   // ...and on rows that fit an 80-column window, which the serving row did not.
   assert.ok(out.split('\n').every((l) => !/^(keys|open) /.test(l) || l.length < 80));
+});
+
+// A pull request in the parent of a fork, or into another remote's branch, says
+// so the way the pane's head does, since the block is read beside it.
+test('the block names the repository of a pull request that is not in this one, and the base\'s remote', () => {
+  const out = block({
+    remotes: { 'gaurav/prcoder': 'origin', 'upstream/prcoder': 'upstream' },
+    pr: { ...STATUS.pr, url: 'https://github.com/upstream/prcoder/pull/9', number: 9, headRefName: 'initial-implementation',
+      headRepo: 'gaurav/prcoder', headOwner: 'gaurav', isCrossRepository: true },
+  });
+  assert.match(out, /initial-implementation → upstream:main/);
+  assert.match(out, /^PR upstream\/prcoder#9 +Drag the panes/m);
+  // And in its own repository, as before.
+  assert.match(block(), /^PR #1 +Drag the panes/m);
 });
 
 // The table behind t and f. A null is the "not implemented here" message, so
