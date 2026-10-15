@@ -201,7 +201,7 @@ export function renderHeader(status, prs, handlers) {
   // one of the branch's own changes what the pane shows and checks nothing
   // out, since the branch is already this one (`choose`); every other option
   // is the checkout it always was.
-  const group = branchGroup(status.branchPrs ?? [], prs ?? [], status.pr);
+  const group = branchGroup(status.branchPrs ?? [], prs ?? [], status.pr, status.nameWithOwner);
   const grouped = new Set(group.map(({ pr }) => pr.url));
   const shown = switcherRows(prs ?? [], status.pr).filter(({ pr }) => !grouped.has(pr.url));
   // The repository in front of the number when it is not this checkout's, as
@@ -348,17 +348,20 @@ export function switcherRows(prs, current) {
  * on screen, in the list where it always was.
  *
  * Open ones, and the one on screen -- the merged one a branch is left showing
- * has no other to be picked against. The stack hangs off the first, since
- * every one of them has the same head, and never off a fork's: its head is the
- * fork's branch, not one anything here is built on (prTree).
+ * has no other to be picked against. The stack hangs off the first in the
+ * list's repository (`repo`), since every one of them has the same head, and
+ * never off a fork's: its head is the fork's branch, not one anything here is
+ * built on (prTree). Nor off one in another repository between that
+ * repository's own branches, whose head is a branch the list does not have.
  */
-export function branchGroup(branchPrs, prs, current) {
+export function branchGroup(branchPrs, prs, current, repo) {
   const own = branchPrs.filter((p) => p.state === 'OPEN' || p.url === current?.url);
   if (own.length < 2) return [];
   const seen = new Set();
   const walk = (nodes, depth) => nodes.flatMap(({ pr, kids }) => [{ pr, depth }, ...walk(kids, depth + 1)]);
+  const here = (p) => !p.isCrossRepository && (!repo || prRepo(p) === repo);
   return own.flatMap((p) => [{ pr: p, depth: 0, own: true },
-    ...(p.isCrossRepository ? [] : walk(prTree(prs, p.headRefName, seen), 1))]);
+    ...(here(p) ? walk(prTree(prs, p.headRefName, seen), 1) : [])]);
 }
 
 /**

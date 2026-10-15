@@ -988,6 +988,10 @@ test('a branch with two pull requests gets a group of its own, stack and all', (
   const merged = { ...theirs, state: 'MERGED' };
   assert.deepEqual(rows(branchGroup([mine, merged], OPEN, mine)), []);
   assert.deepEqual(rows(branchGroup([mine, merged], OPEN, merged)), ['1!', '-27', '-60', '9!']);
+  // One in the parent between the parent's own branches is not cross-repository,
+  // and still not the list's: no stack under it, and it leaves the stack to mine.
+  const inParent = { ...theirs, isCrossRepository: false };
+  assert.deepEqual(rows(branchGroup([inParent, mine], OPEN, inParent, 'gaurav/prcoder')), ['9!', '1!', '-27', '-60']);
 });
 
 test('the repositories looked in read as a list', () => {
