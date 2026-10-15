@@ -103,10 +103,13 @@ busy or idle as the tab is, and the name, as a menu. The pane needs no label the
 says which pull request it is. The menu holds the keyboard shortcuts (the sheet Alt+/ opens, built
 from the same table the keys are bound from, so it can only list keys the page has), the
 documentation, an issue to report and the repository on GitHub, **Quit prcoder…**, which asks what
-the exit bar's Quit asks ([Claude Code](#claude-code)), and the version on its last line. It closes
-on a pick, a click anywhere else, or Escape -- outside the terminal, where Escape is the agent's.
-Escape from one of its items, and closing the sheet its first item opened, leave the focus on the
-menu, since the item it was on is hidden.
+the exit bar's Quit asks ([Claude Code](#claude-code)) and is greyed out once prcoder has quit, and
+the version on its last line. It closes on a pick, a click anywhere else, or Escape -- outside a
+text field, so not in the terminal, where Escape is the agent's, nor in the queue's input or the
+pull request switcher. Nothing done in the shortcut sheet closes it, so with the sheet opened over
+the menu, closing the sheet gives the focus back to the item it was opened from. Escape from one of
+its items, and closing the sheet its first item opened, leave the focus on the menu, since the item
+it was on is hidden.
 
 ### The head
 
@@ -115,6 +118,14 @@ out of the window, with this pull request on GitHub drawn as a button beside pla
 repository's issues, pulls and milestones, and the repository they are all in at the end of that
 row; then the state and the branch it targets, with the pull request that branch belongs to
 beside it as `#N` when it is another open one's head, since that is the one you want next.
+
+Each side of `head → base` is labelled the way GitHub labels a branch in another repository: a
+branch in the repository `origin` points at is bare, so a pull request between origin's own
+branches reads as it always has; one in a repository another remote names carries that name,
+`upstream:main`; one in a repository no remote names carries its owner,
+`TranslatorSRI:run-tests-in-github-actions`, which is where a pull request opened from a fork you
+pushed to by URL has its head. The terminal's status block labels the base the same way, and
+names the pull request's repository on its line when it is not the one on the block's first.
 
 The repository comes last in its row because it is the only thing there whose length has no
 bound. A short one fits beside the four links; a long one drops whole onto the next line, so the
@@ -129,8 +140,29 @@ The switcher in the head lists open pull requests, each followed by the ones sta
 and indented under it, and runs `gh pr checkout` to move between them. Uncommitted work hides it
 behind a Commit button, because the checkout would fail anyway.
 
+The pull request shown for the branch is looked for in every repository it could be in -- the one
+`gh` takes as this checkout's, its parent when that is a fork, and the repository behind each
+remote -- by the branch's name, so one opened from a fork no remote names is found too, as long
+as this clone has its head commit ([README](../README.md)). A branch whose `git push` goes to a
+branch of its own name counts only that repository's head as its own, so a fork's `main` is not
+handed the parent's `main`'s pull requests. A branch with more than one, into its
+fork's `main` and into the parent, say, shows one of them: an open one over a merged one, the one
+at this clone's HEAD, then the one `gh` calls this checkout's repository's. The switcher then
+leads with all of them under **On this branch**, the ones in another repository named
+`owner/repo#N` as the tab's title names them, each with what is stacked on it under it, and the
+rest of the list follows without them. Picking one there changes what the pane shows and checks
+nothing out, since the branch is already this one, and it stays shown until the branch changes;
+every other option is the checkout it always was, and shows the pull request picked even when the
+branch it lands on has others. Either kind of pick replaces a pull request named on prcoder's
+command line. Because a pick there needs no checkout, a dirty
+tree does not hide a switcher that has the group: it stays beside the Commit button with every
+option but the group's own disabled. The list the rest comes from is the one
+repository's, `gh`'s own, so a pull request in another repository has no Stack and no `#N` beside
+its base, as before.
+
 On a branch with no pull request the pane keeps the pull request head's shape, with the branch as
-its title and a line under it saying why there is no pull request. The way out of the window is in
+its title and a line under it saying why there is no pull request -- naming the repositories it
+looked in, when there was more than one. The way out of the window is in
 the same row: the issues, pulls and milestones, and the repository at the end of it. The head
 does not scroll, so those are on screen however long the list below it runs. Where the pull
 request's button would be, **Create PR** opens GitHub's compare page, pushing the branch first if
@@ -186,7 +218,9 @@ same one the check rows and the folds below use: a pie that fills green as the w
 green circle with a ✓ in it once none is left. The
 Files tab's pie fills by changed lines viewed rather than files viewed, so it says how much
 reviewing is left where the count says how many files: fourteen of seventeen viewed with the last
-three the biggest is a pie still mostly empty. Hover the tab for both figures. The Checks tab's pie
+three the biggest is a pie still mostly empty. Hover the tab for both figures. Both count against
+the whole pull request, so where GitHub lists fewer files than it changes, the ones left out are
+unviewed and the tab is never done; a group's and a folder's count their own listed files. The Checks tab's pie
 has a yellow ring while something is still running, and turns into a red circle with a ✕ as soon as
 anything fails, which is the part a fraction alone can't tell you. Each is a shape as well as a
 colour so that it survives colour blindness, and the tab's name, read by a screen reader and shown
@@ -223,7 +257,9 @@ fold and remember what you closed. Each fold's pie fills green by changed lines 
 tab's does, so a directory with one big file left still looks mostly empty (hover it for both
 figures). The checkbox on each file is GitHub's own "viewed" checkbox: tick it here and
 it's ticked on github.com. Clicking a file opens its diff in the **Diff** pane; cmd/ctrl-clicking
-opens GitHub's diff viewer at that file instead.
+opens GitHub's diff viewer at that file instead. A pull request with more changed files than
+GitHub will list -- the list is read to its end, so that is GitHub's limit -- says above the
+groups how many it listed and links to the rest on github.com.
 
 *Checks* is CI, one row per check, led by the same mark and ending in `pending` or `failed` for a
 check that has not passed. Each links to its run -- or is plain text, when GitHub gave no

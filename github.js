@@ -68,15 +68,28 @@ const gh = (args, opts) => run('gh', args, opts);
 
 const PR_FIELDS = [
   'number', 'title', 'body', 'url', 'state', 'isDraft', 'headRefName', 'baseRefName',
-  'additions', 'deletions', 'changedFiles', 'files', 'statusCheckRollup',
-  'closingIssuesReferences', 'reviewDecision', 'comments', 'reviews',
-  // headRefOid is GitHub's view of the branch head, which is what lets the sync
-  // light work without a fetch. updatedAt gates the expensive full reload --
-  // all but the checks, which prHeads reads on every poll.
-  'headRefOid', 'updatedAt', 'isCrossRepository',
-  // What /api/diff diffs from when GitHub sends a file no patch.
-  'baseRefOid',
+  'statusCheckRollup', 'closingIssuesReferences', 'reviewDecision', 'comments', 'reviews',
+  // updatedAt gates the expensive full reload -- all but the checks, which
+  // prHeads reads on every poll.
+  'updatedAt', 'isCrossRepository',
+  // Where the head branch lives, for the head's `owner:branch` label on a
+  // cross-repository pull request. Both, because headRepository is null once
+  // the fork is deleted and the owner's login is all that is left.
+  'headRepository', 'headRepositoryOwner',
+  // Not the files, and not what has to agree with them: the head and base
+  // commits and the line counts. prFiles reads those in the same answer as the
+  // list, since gh's `files` stops at 100 and two calls can straddle a push.
+  // headRefOid is asked for all the same, as the commit the checks above are
+  // for, and loadPr keeps it apart from the one the files are at.
+  'headRefOid',
 ].join(',');
+
+/** The head repository as the page reads it: its slug, or null, and its owner. */
+const headSide = ({ headRepository, headRepositoryOwner, ...rest }) => ({
+  ...rest,
+  headRepo: headRepository?.nameWithOwner ?? null,
+  headOwner: headRepositoryOwner?.login ?? null,
+});
 
 /**
  * `gh pr view`, or null when there is no PR to view. A detached HEAD -- mid-
@@ -100,7 +113,8 @@ async function viewPr(cwd, target, fields) {
 export const prUrl = async (cwd, target) => (await viewPr(cwd, target, 'url'))?.url;
 
 /**
- * Just enough to know whether the PR moved, without the GraphQL viewed pass.
+ * Just enough to know whether the PR moved, without the file list loadPr pages
+ * through (prFiles), which also carries the head, base and line counts.
  *
  * Plus the checks, which move without the PR: a check run belongs to the
  * commit, so finishing one leaves `updatedAt` where it was. On #120 the PR's
@@ -110,8 +124,128 @@ export const prUrl = async (cwd, target) => (await viewPr(cwd, target, 'url'))?.
  * check on the head commit, on every poll. docs/Verifying.md has the figure.
  */
 export async function prHeads(cwd, target) {
-  const heads = await viewPr(cwd, target, 'number,headRefOid,updatedAt,statusCheckRollup');
+  const heads = await viewPr(cwd, target, 'number,url,headRefOid,updatedAt,statusCheckRollup');
   return heads && withChecks(heads);
+}
+
+// How far a lookup reads first, and how far again when that window came back
+// full of strangers: one page of gh's, so a fork's clone on `main` pays a page
+// more per poll, not the parent's whole history of `main`s (branchPrs). The
+// first is small because it carries the checks, and a stranger's are wasted.
+const NARROW = 5;
+const WIDE = 100;
+
+// What the cheap call reads for a branch's pull requests: prHeads's fields,
+// and what the switcher's group and the head's labels need on top.
+const BRANCH_FIELDS = ['number', 'title', 'url', 'state', 'isDraft', 'headRefName', 'baseRefName',
+  'headRefOid', 'updatedAt', 'headRepository', 'headRepositoryOwner', 'isCrossRepository'];
+
+/**
+ * The branch's pull requests, in every repository it could have one in, open
+ * ones first: the poll's cheap call on a branch, in place of `gh pr view`.
+ *
+ * `gh pr view` with no target finds a pull request by its head label, which
+ * gh builds from the branch's push config: `owner:branch` with a remote,
+ * the bare branch with none. A cross-repository pull request's label is
+ * `fork:branch`, so a branch pushed to a fork by URL, with no tracking config,
+ * has a pull request gh says it cannot find (nodenorm-es's
+ * run-tests-in-github-actions, gh 2.102.0, 2026-10-14). `gh pr list --head
+ * <branch>` filters by the branch's name alone, whichever repository the head
+ * is in, and carries every field `pr view` does -- so one call per candidate
+ * repository finds the lot, and the first candidate costs what `pr view` did.
+ *
+ * Open ones, with their checks, which is what the poll keeps the Checks tab
+ * fresh from (prHeads says why). Only when none of them is the branch's -- a
+ * stranger's open one in the parent does not count -- does a second pass ask
+ * for merged and closed ones, which is what `gh pr view` falls
+ * back to today, so a merged branch keeps showing its pull request; the
+ * rollup is left out of that pass, being the heavy part of the call
+ * (docs/Verifying.md), and a merged pull request's checks come with loadPr.
+ *
+ * Strangers are dropped. `--head main` in the parent repository matches every
+ * fork's `main`, and any common branch name does the same; a row is this
+ * branch's when its head is in one of `repos`, or when `has` says this clone
+ * has its head commit -- the fork no remote names is exactly the case where
+ * only the commit says so. `home` is the repository a push of the branch goes
+ * to (pushRepo in git.js), when there is one: then a head in another of
+ * `repos` is that repository's own branch of the same name -- the parent's
+ * `main` in a fork's clone on `main` -- and a stranger too, commit or no
+ * commit, since the two `main`s often share theirs. gh lists the newest first, so strangers can fill
+ * the window and push this branch's past it: microsoft/vscode had 63 open from
+ * a `main` and 200 of 200 recent ones (2026-10-14). A full window with none
+ * of the branch's in it is asked again, WIDE deep and without the checks,
+ * which would be a hundred strangers' rollups; one of the branch's found
+ * only there gets its own from prHeads. One past WIDE is missed. Nothing is
+ * remembered between polls, so a crowded name pays the narrow ask too, every
+ * time: five rollups, not a hundred.
+ *
+ * `has(oids)` is asked once per page, for every head no repository vouches
+ * for, and answers with the set of them this clone has: one git call for the
+ * page, not one per stranger (commitsKnown in git.js). The repositories'
+ * order is kept, as the rank pickPr reads it in. The first repository is gh's own base, and a failure
+ * there is the poll's; one of the others may be a parent since made private,
+ * or a remote to nowhere, and is skipped with a line in the log.
+ */
+export async function branchPrs(cwd, repos, branch, { has = async () => new Set(), checks = true, home = null } = {}) {
+  if (!branch || !repos.length) return [];
+  const mine = async (rows) => {
+    const sides = rows.map(headSide);
+    // A head in one of the repositories is the branch's, or -- with a push
+    // target -- a stranger; any other is the branch's if this clone has it.
+    const vouched = (p) => repos.includes(p.headRepo);
+    const asked = [...new Set(sides.filter((p) => !vouched(p)).map((p) => p.headRefOid))];
+    const held = asked.length ? await has(asked) : new Set();
+    return sides
+      .filter((p) => (vouched(p) ? !home || p.headRepo === home : held.has(p.headRefOid)))
+      .map((p) => ('statusCheckRollup' in p ? withChecks(p) : p));
+  };
+  const list = async (state, fields) => (await Promise.all(repos.map(async (repo, i) => {
+    const ask = async (n, f) => JSON.parse(await gh(['pr', 'list', '--repo', repo, '--head', branch, '--state', state,
+      '--limit', String(n), '--json', f.join(',')], { cwd })).map((p) => ({ ...p, repo }));
+    try {
+      const rows = await ask(NARROW, fields);
+      const ours = await mine(rows);
+      if (rows.length < NARROW || ours.length) return ours;
+      const wide = await mine(await ask(WIDE, BRANCH_FIELDS));
+      if (!fields.includes('statusCheckRollup')) return wide;
+      return Promise.all(wide.map(async (p) => {
+        const heads = await prHeads(cwd, p.url);
+        return heads ? { ...p, checks: heads.checks } : p;
+      }));
+    } catch (e) {
+      if (!i) throw e;
+      debug(`pull requests in ${repo} not read: ${e.message}`);
+      return [];
+    }
+  }))).flat();
+  const open = await list('open', checks ? [...BRANCH_FIELDS, 'statusCheckRollup'] : BRANCH_FIELDS);
+  return open.length ? open : list('all', BRANCH_FIELDS);
+}
+
+/**
+ * Which of a branch's pull requests to show. `chosen` is the one picked in
+ * the switcher, for as long as it is in the list; otherwise an open one over
+ * a merged or closed one, then the one at this clone's HEAD, then the one
+ * shown by the last poll -- two pull requests from the same head, into a
+ * fork's main and into its parent, tie on everything above, and a comment on
+ * the other must not swap the pane -- then the repositories' order, which is
+ * gh's base repository first, then the newest.
+ */
+export function pickPr(list, { head, chosen, shown, repos = [] } = {}) {
+  const picked = chosen && list.find((p) => p.url === chosen);
+  if (picked) return picked;
+  const rank = (p) => [
+    p.state === 'OPEN' ? 0 : 1,
+    p.headRefOid === head ? 0 : 1,
+    p.url === shown ? 0 : 1,
+    repos.indexOf(p.repo),
+  ];
+  const first = (a, b) => {
+    const [ra, rb] = [rank(a), rank(b)];
+    for (let i = 0; i < ra.length; i++) if (ra[i] !== rb[i]) return ra[i] - rb[i];
+    return (b.updatedAt ?? '').localeCompare(a.updatedAt ?? '');
+  };
+  return [...list].sort(first)[0] ?? null;
 }
 
 /**
@@ -154,62 +288,120 @@ export async function listPrs(cwd) {
 }
 
 /**
- * The PR for the current branch, or null if there isn't one. Per-file viewed
- * state needs GraphQL — `gh pr view` doesn't expose it — so it comes from a
- * second call and is merged in by path.
+ * The PR `target` names -- a URL from branchPrs, or the command line's number,
+ * URL or branch -- or null if there isn't one. The files come from a second
+ * call, prFiles, not from `gh pr view`: per-file viewed state needs GraphQL,
+ * and gh's own list stops at 100 files. The commits the files are at come
+ * from that call too, not from `gh pr view`: a push landing between the two
+ * left the links to each file at the old head, where a new file 404s, and
+ * /api/diff diffing the old head against the new line counts.
  */
-export async function loadPr(cwd, target) {
-  const pr = await viewPr(cwd, target, PR_FIELDS);
-  if (!pr) return null;
+export async function loadPr(cwd, target, { pause } = {}) {
+  const viewed = await viewPr(cwd, target, PR_FIELDS);
+  if (!viewed) return null;
+  // The commit the checks are for, which must not stand in for prFiles' head.
+  const { headRefOid: checkedAt, ...pr } = viewed;
   pr.body = lf(pr.body);
 
   // Both need only the PR, so they run together: each is a GitHub round trip.
-  const [{ nodeId, viewed }, issues] = await Promise.all([
-    viewedState(cwd, pr.url),
+  const [snapshot, issues] = await Promise.all([
+    prFiles(cwd, pr.url, pause),
     withLinks(cwd, pr.url, linkedIssues(pr)),
   ]);
   // The raw lists are summarised here and not sent on: every poll carries this
   // object to every tab, and nothing reads them past this point.
-  const { closingIssuesReferences, comments, reviews, ...rest } = withChecks(pr);
+  const { closingIssuesReferences, comments, reviews, ...rest } = withChecks(headSide(pr));
+  // A push between `gh pr view` and the file pages leaves the checks the old
+  // head's, beside the new head's files and sync light. They are read again at
+  // the files' head; past one more push the next poll has it, since updatedAt
+  // has moved and it reloads. updatedAt stays the first call's, so that it does.
+  if (checkedAt !== snapshot.headRefOid) {
+    const fresh = await prHeads(cwd, pr.url);
+    if (fresh?.headRefOid === snapshot.headRefOid) rest.checks = fresh.checks;
+  }
 
   return {
     ...rest,
-    files: pr.files.map((f) => ({ ...f, viewed: viewed.get(f.path) === 'VIEWED' })),
-    nodeId,
+    ...snapshot,
     issues,
     counts: { comments: comments?.length ?? 0, reviews: reviews?.length ?? 0 },
   };
 }
 
-const VIEWED_QUERY = `query($owner:String!,$repo:String!,$number:Int!,$after:String){
+const FILES_QUERY = `query($owner:String!,$repo:String!,$number:Int!,$after:String){
   repository(owner:$owner,name:$repo){ pullRequest(number:$number){
-    id files(first:100,after:$after){
+    id headRefOid baseRefOid baseRefName additions deletions changedFiles
+    files(first:100,after:$after){
       pageInfo{ hasNextPage endCursor }
-      nodes{ path viewerViewedState }
+      nodes{ path additions deletions viewerViewedState }
     } } } }`;
 
-async function viewedState(cwd, url) {
+// How many times prFiles reads a pull request's files before giving up on one
+// that keeps moving under it, and how long it waits before each read after the
+// first, times the reads so far: a burst of pushes gets a second and a half to
+// settle, not three reads back to back that all straddle it. Every gh and git
+// call waits behind this one (serial in server.js), so it stays short.
+const READS = 3;
+const PAUSE = 500;
+
+/**
+ * Every changed file, with whether you have marked it viewed; the PR's node id
+ * for setViewed; and, from the same answer, what has to agree with the list.
+ * headRefOid is GitHub's view of the branch head, which is what lets the sync
+ * light work without a fetch and what each file's link is at. baseRefOid is
+ * what /api/diff diffs from when GitHub sends a file no patch.
+ *
+ * `gh pr view --json files` gives the same fields but is GraphQL's
+ * files(first: 100) unpaged, so a bigger PR lost the rest without a word:
+ * gaurav/taxondna#76 has 110, and gh listed 100 (checked 2026-10-14). This
+ * pages, in the order gh lists them.
+ *
+ * The pages are separate calls, so a push between two of them shifts the list
+ * under the cursor, and a file is listed twice or never. Each page says which
+ * head it was read at, and which base branch, and one that differs from the
+ * first in either starts the read over -- READS times, then it throws, and the
+ * poll after tries again -- the error names the pull request (`moving`), so
+ * the server keeps the one it is showing rather than failing the poll. The
+ * base's commit is not compared: the list is the
+ * diff from the merge base, which the base branch moving on does not move, so
+ * a busy `main` would only fail reads whose list was never at risk. A
+ * retargeted pull request is a different diff, and is read again. A list that is still short of `changedFiles` with nothing
+ * moving is one GitHub would not give, and goes out as it is: the Files tab
+ * says how many are missing.
+ */
+async function prFiles(cwd, url, pause = PAUSE) {
   const { owner, repo, number } = parsePrUrl(url);
-  const viewed = new Map();
-  let nodeId = null;
-  let after = null;
-
-  do {
-    // -f for every string, -F only for the Int. -F converts by what a value
-    // looks like: an all-digit owner went as an Int and GitHub refused it
-    // ("Could not coerce value 12345 to String", checked 2026-09-26), and a
-    // value starting with @ is read as a file name.
-    const args = ['api', 'graphql', '-f', `query=${VIEWED_QUERY}`,
-      '-f', `owner=${owner}`, '-f', `repo=${repo}`, '-F', `number=${number}`];
-    if (after) args.push('-f', `after=${after}`);
-    const { data } = JSON.parse(await gh(args, { cwd }));
-    const pr = data.repository.pullRequest;
-    nodeId = pr.id;
-    for (const n of pr.files.nodes) viewed.set(n.path, n.viewerViewedState);
-    after = pr.files.pageInfo.hasNextPage ? pr.files.pageInfo.endCursor : null;
-  } while (after);
-
-  return { nodeId, viewed };
+  read: for (let n = 0; n < READS; n++) {
+    if (n) await new Promise((done) => setTimeout(done, pause * n));
+    const files = [];
+    let snapshot = null;
+    let base = null;
+    let after = null;
+    do {
+      // -f for every string, -F only for the Int. -F converts by what a value
+      // looks like: an all-digit owner went as an Int and GitHub refused it
+      // ("Could not coerce value 12345 to String", checked 2026-09-26), and a
+      // value starting with @ is read as a file name.
+      const args = ['api', 'graphql', '-f', `query=${FILES_QUERY}`,
+        '-f', `owner=${owner}`, '-f', `repo=${repo}`, '-F', `number=${number}`];
+      if (after) args.push('-f', `after=${after}`);
+      const { data } = JSON.parse(await gh(args, { cwd }));
+      const pr = data.repository.pullRequest;
+      const { id: nodeId, headRefOid, baseRefOid, baseRefName, additions, deletions, changedFiles } = pr;
+      if (!snapshot) [snapshot, base] = [{ nodeId, headRefOid, baseRefOid, additions, deletions, changedFiles }, baseRefName];
+      if (headRefOid !== snapshot.headRefOid || baseRefName !== base) continue read;
+      for (const { viewerViewedState, ...f } of pr.files.nodes) {
+        files.push({ ...f, viewed: viewerViewedState === 'VIEWED' });
+      }
+      const { hasNextPage, endCursor } = pr.files.pageInfo;
+      // Read as "no more pages", a next page with no cursor to it would end the
+      // list short with nothing to say so -- the bug this paging is here to fix.
+      if (hasNextPage && !endCursor) throw new Error(`GitHub said ${url} has more files, but gave no cursor to them`);
+      after = hasNextPage ? endCursor : null;
+    } while (after);
+    return { ...snapshot, files };
+  }
+  throw Object.assign(new Error(`${url} moved on GitHub during each of ${READS} reads of its files`), { moving: url });
 }
 
 /** Ticking this here ticks the same checkbox on github.com. */
@@ -217,14 +409,14 @@ export async function setViewed(cwd, nodeId, path, viewed) {
   const op = viewed ? 'markFileAsViewed' : 'unmarkFileAsViewed';
   await gh(['api', 'graphql', '-f', `query=mutation($id:ID!,$path:String!){
     ${op}(input:{pullRequestId:$id,path:$path}){ clientMutationId } }`,
-    // -f: a file named `404` or `@types/x.d.ts` is a string (see viewedState).
+    // -f: a file named `404` or `@types/x.d.ts` is a string (see prFiles).
     '-f', `id=${nodeId}`, '-f', `path=${path}`], { cwd });
 }
 
 /**
  * Per-file `{patch, from}`, keyed by path. Shape confirmed against this repo's
  * PR #1 on 2026-08-26: --slurp wraps the pages in one array, the REST field is
- * `filename` where `gh pr view` says `path` (same string), and `patch` starts
+ * `filename` where GraphQL says `path` (same string), and `patch` starts
  * at the first @@ with no file header. It is absent for binary and oversized
  * files, and files past GitHub's 300-file cap are missing entirely — both read
  * back as null/undefined and the client falls through to the GitHub link.
@@ -234,6 +426,16 @@ export async function setViewed(cwd, nodeId, path, viewed) {
  * edited too). Without it a pure rename is a file with no patch, and the pane
  * would call it binary. `deleted` is `status: "removed"`, the one word for a
  * deleted file that has no patch to show it -- the diff header's @ reads it.
+ *
+ * This is the second read of the PR's file list, beside prFiles, and neither
+ * replaces the other: GraphQL has no patches, and REST no viewed state. It is
+ * the list the Files tab is *not* drawn from: prFiles' is complete and at a
+ * known head, while this one stops at GitHub's cap and is read lazily, once
+ * per head, when a diff is first opened (/api/diff keys it by headRefOid). So
+ * it is looked up by a path from prFiles' list, and a path it is missing falls
+ * through to localPatch like any file with no patch. A push between the two
+ * reads can leave its patches a head ahead of the list, until the poll that
+ * sees the push moves the key and it is read again.
  */
 export async function fetchPatches(cwd, prUrl) {
   const { owner, repo, number } = parsePrUrl(prUrl);
@@ -372,7 +574,7 @@ async function withLinks(cwd, prUrl, issues) {
  *
  * One aliased query for the lot, so a description mentioning a dozen issues is
  * still one subprocess. Only the numbers are interpolated into it; owner and
- * repo go through variables, as VIEWED_QUERY's do.
+ * repo go through variables, as FILES_QUERY's do.
  *
  * A number that resolves to nothing -- a typo, or an issue that lives in
  * another repo -- comes back as a NOT_FOUND *error* beside the data rather than

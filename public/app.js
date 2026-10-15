@@ -1,7 +1,7 @@
 import { Terminal } from '/vendor/xterm.mjs';
 import { FitAddon } from '/vendor/addon-fit.mjs';
 import { WebLinksAddon } from '/vendor/addon-web-links.mjs';
-import { renderPr, renderNoPr, renderHeader, pageTitle, api, toast, pref, setPref, debug, fileFrom, nextUnviewed, revealFile, h } from './pr.js';
+import { renderPr, renderNoPr, renderHeader, pageTitle, prRepo, api, toast, pref, setPref, debug, fileFrom, nextUnviewed, revealFile, h } from './pr.js';
 import { openDiff, closeDiff, selectedPath, setViewed, showViewed, canTickViewed, toggleViewed, toggleWrap, canWrap, openMention } from './diff.js';
 import { initQueue, addItem, setItems } from './queue.js';
 import { bindKeys, keyLabel, isTyping } from './keys.js';
@@ -237,11 +237,12 @@ function connect(query = '') {
     turn(false);
     const why = e.code === 1008 ? `refused: ${e.reason}` : 'coding agent exited';
     term.write(`\r\n\x1b[31m[${why}]\x1b[0m\r\n`);
+    // The PTY a quit killed closes the socket after quitPrcoder has put up the
+    // bar with its own line and no Start, so there is nothing left to do here.
+    if (quit) return;
     // The bar's note repeats the terminal's line, not the reason: that is
-    // already there in red, a line up. A quit has already filled the bar with
-    // its own line and no Start, and the PTY it killed closes the socket after.
-    const note = exitForm.querySelector('span');
-    if (note) note.textContent = e.code === 1008 ? 'Start refused.' : 'Coding agent has exited.';
+    // already there in red, a line up.
+    exitForm.querySelector('span').textContent = e.code === 1008 ? 'Start refused.' : 'Coding agent has exited.';
     exitForm.hidden = false;
     // Refit now rather than waiting on the ResizeObserver: in a page that isn't
     // in front it never delivered the shrink, and the terminal went on
@@ -249,7 +250,7 @@ function connect(query = '') {
     sync();
     // Start, not the first button: Quit is first in the bar, and Enter after
     // an exit should start again rather than ask about quitting.
-    document.getElementById('term-start')?.focus();
+    document.getElementById('term-start').focus();
   };
 }
 
@@ -276,10 +277,14 @@ exitForm.onsubmit = (e) => {
   term.reset();
   connect(new URLSearchParams(new FormData(exitForm)).toString());
 };
-// Quit, from the exit bar or the menu. The server's quit kills the PTY, so the
-// exit bar is on its way up anyway (ws.onclose); it is filled with the fact
-// rather than with a Start that would reach nothing, and from the menu, where
-// the bar may be out of sight, a sticky toast says the same.
+// Quit, from the exit bar or the menu. The exit bar goes up here, filled with
+// the fact rather than with a Start that would reach nothing; `quit` tells
+// ws.onclose, when the killed PTY's socket closes, to leave it so. From the
+// menu, where the bar may be out of sight, a sticky toast says the same. The
+// menu's Quit goes grey with it: picked again, it would reach no server and
+// put a network error in the toast's one slot, over the line saying the quit
+// worked.
+let quit = false;
 async function quitPrcoder(fromMenu = false) {
   try {
     let r = await api('/api/quit', {});
@@ -289,8 +294,11 @@ async function quitPrcoder(fromMenu = false) {
       r = await api('/api/quit', { force: true });
     }
     const gone = 'prcoder has quit — this tab can be closed.';
+    quit = true;
     exitForm.replaceChildren(gone);
     exitForm.hidden = false;
+    sync();   // as ws.onclose does, and for the same reason
+    document.getElementById('menu-quit').disabled = true;
     if (fromMenu) toast(gone, false, true);
   } catch (e) {
     toast(e.message, true);
@@ -302,15 +310,20 @@ document.getElementById('term-quit').onclick = () => quitPrcoder();
 // itself; this closes it the ways a menu is expected to close -- a pick, a
 // click anywhere else, Escape -- none of which a <details> does on its own.
 // Escape only outside a text field: in the terminal it is the agent's.
+// Neither a click nor an Escape in a dialog counts: Alt+/ from an item opens
+// the sheet over the open menu, and the sheet hands the focus back to that
+// item when it closes, so the menu has to be open still to show it.
 const menu = document.getElementById('menu');
 document.addEventListener('click', (e) => {
-  if (!menu.open) return;
+  if (!menu.open || e.target.closest('dialog')) return;
   if (!menu.contains(e.target) || e.target.closest('#menu-list a, #menu-list button')) menu.open = false;
 });
 // Escape from an item hands the focus to the summary, as a menu does, since
-// the item it was on has just been hidden.
+// the item it was on has just been hidden. Not while a modal is up: that
+// Escape is the sheet's, and a menu closed under it would have hidden the item
+// the sheet gives the focus back to, dropping it onto <body>.
 document.addEventListener('keydown', (e) => {
-  if (e.key !== 'Escape' || !menu.open || isTyping(e.target)) return;
+  if (e.key !== 'Escape' || !menu.open || isTyping(e.target) || document.querySelector('dialog:modal')) return;
   menu.open = false;
   if (menu.contains(document.activeElement)) menu.querySelector('summary').focus();
 });
@@ -327,8 +340,9 @@ document.getElementById('menu-keys').onclick = () => {
 // The shortcut sheet, built once from KEYS: a row per binding, the key as the
 // reader's keyboard has it. A modal <dialog> closes on Escape by itself, and
 // gives the focus back to where it was -- the terminal, when Alt+/ was pressed
-// there -- so the sheet is a glance, not a detour. A click on the backdrop is
-// a click whose target is the dialog itself, since the backdrop is its box.
+// there -- so the sheet is a glance, not a detour. A click on the backdrop has
+// the dialog itself as its target, but so does one on the dialog's padding,
+// so it is the click's position, outside the dialog's box, that says backdrop.
 const keysDialog = document.getElementById('keys');
 // navigator.platform, deprecated as it is, because it is what xterm reads to
 // decide whether the key is Option (its Platform.ts), so the sheet calls the
@@ -346,7 +360,11 @@ document.getElementById('keys-note').textContent = (mac ? 'Alt is Option. ' : ''
   + 'Each key works from the coding agent\'s terminal too, while it has something to do; otherwise the agent gets it.';
 document.querySelector('#menu-keys kbd').textContent = keyLabel('Alt+Slash', mac);   // the menu's hint, in the same spelling
 document.getElementById('keys-close').onclick = () => keysDialog.close();
-keysDialog.addEventListener('click', (e) => { if (e.target === keysDialog) keysDialog.close(); });
+keysDialog.addEventListener('click', (e) => {
+  if (e.target !== keysDialog) return;
+  const r = keysDialog.getBoundingClientRect();
+  if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) keysDialog.close();
+});
 function toggleKeys() {
   if (keysDialog.open) keysDialog.close();
   else keysDialog.showModal();
@@ -673,7 +691,9 @@ function toggleTerm() {
 let drawn = null;
 
 function paint(status) {
-  const moved = last?.pr?.headRefOid !== status.pr?.headRefOid;
+  // A new head, or another pull request: two of a branch's share a head and
+  // differ by base, so a pick in "On this branch" is a new patch too.
+  const moved = last?.pr?.headRefOid !== status.pr?.headRefOid || last?.pr?.url !== status.pr?.url;
   // A checkout is the one thing that changes which pull requests merge into the
   // branch under you, and the branch-only pane lists them. Refreshed here rather
   // than on the poll, which is the whole reason that list is affordable.
@@ -689,7 +709,7 @@ function paint(status) {
   // Any change to which PR is on the branch, not only its state: one closed and
   // another opened in its place from the terminal is the same branch with a
   // new number, and a PR opened on a bare branch is a new entry in the list.
-  const replaced = last && (last.pr?.number !== status.pr?.number
+  const replaced = last && (last.pr?.url !== status.pr?.url
     || last.pr?.state !== status.pr?.state);
   last = status;
   // Named for the tab strip, not the page: which PR, in which repo. A poll
@@ -699,16 +719,18 @@ function paint(status) {
   renderHeader(status, prs, handlers);
   if (status.pr) {
     // The Stack tab reads `prs`, which is this repository's list: against a pull
-    // request in another one it would name strangers, and Switch would check
-    // out whichever PR here has the same number. Null rather than empty, so the
-    // tab says it has no list instead of saying the list is empty, and
-    // `otherRepo` says which of the two reasons for having none it is.
-    const otherRepo = status.scope === 'other-repo';
+    // request in another one it would name strangers. Null rather than empty,
+    // so the tab says it has no list instead of saying the list is empty, and
+    // `otherRepo` says which of the two reasons for having none it is. By the
+    // pull request's own repository, not by `scope`: a fork's pull request into
+    // its parent is `current` on the branch it was opened from, and still not
+    // one the list knows.
+    const otherRepo = prRepo(status.pr) !== status.nameWithOwner;
     const stack = otherRepo ? null : prs;
     const blocked = status.dirtyFiles.length > 0;
     // Everything the pane is drawn from, the Stack tab's inputs included: a
     // fresh PR list, or a tree going dirty, is a redraw even when the PR is not.
-    const key = JSON.stringify([status.pr, status.scope, stack, blocked, [...below.values()]]);
+    const key = JSON.stringify([status.pr, status.scope, stack, blocked, [...below.values()], status.remotes]);
     if (key !== drawn) {
       drawn = key;
       renderPr({ ...status.pr, note: NOTES[status.scope] }, {
@@ -716,6 +738,7 @@ function paint(status) {
         selected: selectedPath,
         prs: stack,
         otherRepo,
+        remotes: status.remotes,
         onStackOpen: () => loadPrs('Stack tab opened'),
         below: [...below.values()],
         onBelow: loadBelow,
@@ -742,7 +765,7 @@ function paint(status) {
 
   // Keep an open diff honest: close it if its file left the PR (or the PR
   // switched away), refresh it if the branch moved — the server cache is
-  // keyed by head oid, so a re-open shows the freshly pushed version.
+  // keyed by URL and head oid, so a re-open shows the freshly pushed version.
   const open = selectedPath();
   if (!open) return;
   const f = status.pr?.files.find((x) => x.path === open);
@@ -765,17 +788,18 @@ async function loadStatus() {
   }
 }
 
-async function switchPr(number) {
-  debug('switching to', number);
+/** `gh pr checkout` of the pull request at `url`, from the switcher or a Stack row. */
+async function switchPr(url) {
+  debug('switching to', url);
   try {
-    const status = await api('/api/pr/switch', { number });
-    debug('switched: now on', status.branch, `#${status.pr?.number}`);
+    const status = await api('/api/pr/switch', { url });
+    debug('switched: now on', status.branch, status.pr?.url);
     paint(status);
     // Claude's cwd survives a checkout, but its idea of the files does not, and
     // nothing tells it: prcoder has no channel into the session that isn't a
     // typed user turn (issue #21). So this is addressed to you, not to Claude,
     // and it is sticky because it stays true until you have said something.
-    toast(`Switched to ${status.branch} (#${number}). Claude still has the old`
+    toast(`Switched to ${status.branch}${status.pr ? ` (#${status.pr.number})` : ''}. Claude still has the old`
       + " branch's files in mind — tell it to re-read anything it had open.",
     false, true);
   } catch (e) {
@@ -818,7 +842,27 @@ async function createPr(btn) {
 const askClaudeToCommit = (files) =>
   sendToClaude(`Commit the current changes: ${files.join(', ')}`);
 
-const handlers = { onSwitch: switchPr, onCommit: askClaudeToCommit };
+/**
+ * One of the branch's own pull requests picked in the switcher's group: shown
+ * from now on, with nothing checked out, so no toast about the agent's files.
+ */
+async function choosePr(url) {
+  debug('choosing', url);
+  try {
+    const status = await api('/api/pr/choose', { url });
+    paint(status);
+    // No pull request after all when the one picked went between the last
+    // poll and the click -- deleted, or its repository unreadable now.
+    toast(status.pr ? `Showing ${prRepo(status.pr)}#${status.pr.number} for ${status.branch}.`
+      : `That pull request is gone; ${status.branch} has none to show.`, !status.pr);
+  } catch (e) {
+    debug('choose failed:', e.message);
+    toast(e.message, true);
+    await loadStatus();   // snap the switcher back to what is really shown
+  }
+}
+
+const handlers = { onSwitch: switchPr, onChoose: choosePr, onCommit: askClaudeToCommit };
 
 document.getElementById('pr-refresh').onclick = loadStatus;
 

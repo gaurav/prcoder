@@ -102,18 +102,32 @@ you add a figure, and tick it when you re-measure one, writing the new commit an
 figure. Nobody is waiting on them, so re-measure one when other work makes it cheap: the server is
 already up with `PRCODER_VERBOSE=2`, or a `browser.mjs` run is already printing the width.
 
-- **A poll that reloads nothing costs six subprocess calls with a pull request**, seven on a
-  branch without one that origin has, and five on one never pushed; one more for a branch ahead
-  of its remote, and the same clean tree or dirty (re-measured on `43e3700`, 2026-10-09). A poll
+- **A poll that reloads nothing costs eight subprocess calls with a pull request**, ten on a
+  branch without one that origin has, and eight on one never pushed; one more for a branch ahead
+  of its remote, and the same clean tree or dirty (re-measured on `ad79d34`, 2026-10-14, in a clone
+  whose only repository is origin's; eight on nodenorm-es's fork-headed branch). A poll
   that reloads the pull request adds `loadPr`'s GraphQL calls on top. `PRCODER_VERBOSE=2` prints
-  the count on every poll, so a change that adds a call shows up.
-- **The checks are most of what the poll's cheap `gh pr view` fetches.** prHeads asks for them
-  on every poll (#120), and on cli/cli#14634's 30 checks they took its answer from 108 bytes to
-  9KB and the call from about 0.42s to 0.54s (2026-10-09); prcoder's one check is 293 bytes. The
+  the count on every poll, so a change that adds a call shows up. The pull request is looked for
+  with one `gh pr list` per repository it could be in (`repos` from `repoInfo`), so a clone with
+  a parent or a second GitHub remote pays one more per poll, and a branch with no open pull
+  request -- a merged one, or none -- pays a second pass per repository, which the figures above
+  include. Heads in a repository no remote names cost one local `cat-file` per page of them,
+  which `snapshot` then reuses (`commitMemo` in `git.js`), and where the branch pushes is one
+  `for-each-ref` (`pushRepo`); `snapshot` reads HEAD itself, beside the tree's status, after the
+  poll's own read.
+  A repository whose first five rows are all strangers -- a fork's clone on `main`, asking a big
+  parent -- is asked once more, a page deep and without the checks, on every poll, and any of the
+  branch's found only there costs a `gh pr view` for its checks (`branchPrs` in `github.js`).
+- **The checks are most of what the poll's cheap call fetches.** It asks for them on every poll
+  (#120), and on cli/cli#14571's 39 checks they took the lookup's `gh pr list` answer from 110
+  bytes to 11.6KB and the call from about 0.41s to 0.64s, medians of seven runs each (gh 2.102.0,
+  re-measured on `3b1995a`, 2026-10-14); prcoder's one check is 293 bytes. The
   call count above cannot show this growing, so time
-  `gh pr view --json number,headRefOid,updatedAt,statusCheckRollup` on a PR with many checks.
+  `gh pr list --head <branch> --state open --json number,headRefOid,updatedAt,statusCheckRollup`
+  on a PR with many checks -- and with `--limit 5` on a branch name many forks share, since that
+  first page carries up to five strangers' rollups before prcoder drops them.
 - **The description's prose is 568px wide in Firefox and 567px in Chromium**, in an 864px pane
-  (on `23b192f`). `browser.mjs` prints it every run; a line-length cap is not something the
+  (re-measured on `a96dc21`, 2026-10-14). `browser.mjs` prints it every run; a line-length cap is not something the
   stylesheet can be read for.
 
 ## What else is checked, and where
@@ -132,6 +146,9 @@ Some things were checked against the real thing rather than a stub, and the evid
 the code:
 
 - GitHub's diff-anchor scheme: pinned, with the date, in `test/files.test.js`.
+- `gh pr view --json files` stops at 100 files, so the file list is paged by hand: the dated check
+  against a real 110-file pull request is in the comment on `prFiles` in `github.js`. The test
+  in `test/github.test.js` replays it with a stub, and does not ask GitHub again.
 - `git ls-remote`'s branch argument is a pattern, not a ref name: `remoteBranchHead` in `git.js`.
 - git's exit codes, which differ per command: `answer` in `git.js`.
 - The exit bar's settings reaching the agent's argv: `sessionArgs` in `server.js`.
