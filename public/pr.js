@@ -1088,11 +1088,18 @@ function description(parsed, onTask) {
 
 /** A checkbox in the description, ticked through to GitHub. */
 function taskRow({ done, text, index }, onTask, where = links) {
-  const box = h('input', { type: 'checkbox', checked: done, title: onTask ? 'tick this on GitHub' : 'tick this on GitHub itself' });
+  const box = h('input', { type: 'checkbox', checked: done });
   const row = h('label', { className: `task${done ? ' done' : ''}` },
     box, h('span', { innerHTML: inline(text, where) }));
-  if (onTask) writeThrough(box, (v) => onTask({ index, done: v, text }));
-  else box.disabled = true;
+  if (onTask) {
+    box.title = 'tick this on GitHub';
+    writeThrough(box, (v) => onTask({ index, done: v, text }));
+  } else {
+    // On the row, not the box: a disabled input's own title is not shown in
+    // every browser, and this one is the only word on why it will not tick.
+    box.disabled = true;
+    row.title = 'tick this on GitHub itself';
+  }
   return row;
 }
 

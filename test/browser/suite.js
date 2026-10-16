@@ -1653,6 +1653,7 @@ test('an issue row opens to its body through the description renderer, with Open
   assert.equal(await body.locator('img').count(), 0, 'markup in an issue is text');
   assert.equal(await body.locator('a', { hasText: '#5' }).getAttribute('href'), 'https://github.com/gaurav/prcoder/issues/5');
   assert.equal(await body.locator('.task input').isDisabled(), true, 'an issue\'s box is GitHub\'s to tick');
+  assert.equal(await body.locator('.task').getAttribute('title'), 'tick this on GitHub itself', 'said on the row, where a hover shows it');
   const out = body.locator('.open-issue');
   assert.equal(await out.textContent(), 'Open on GitHub');
   assert.equal(await out.getAttribute('href'), 'https://github.com/gaurav/prcoder/issues/58');
