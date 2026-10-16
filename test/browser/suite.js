@@ -1595,6 +1595,27 @@ test('searching the issues narrows the rows, opens the groups with a match, and 
   await fresh.close();
 });
 
+// The search box is drawn before the listing lands, so a query can be half
+// typed when it does; the listing goes into the groups and leaves the box be.
+test('the listing landing keeps the search box\'s focus and what is typed in it', { skip }, async () => {
+  const { fresh } = await refPage(() => ({ json: { ref: null } }));
+  let release;
+  const held = new Promise((r) => { release = r; });
+  await fresh.route('**/api/issues', async (r) => { await held; return r.fulfill({ json: ISSUES }); });
+  const landed = fresh.waitForResponse('**/api/issues');
+  await fresh.locator('#queue-body .tab[data-tab="issues"]').click();
+  const search = fresh.locator('#queue-search');
+  await search.pressSequentially('row');
+  release();
+  await landed;
+  await fresh.waitForSelector('#queue-body .fold.milestone');
+  assert.equal(await fresh.evaluate(() => document.activeElement.id), 'queue-search');
+  await fresh.keyboard.type(' is');
+  assert.equal(await search.inputValue(), 'row is');
+  assert.equal(await fresh.locator('#queue-body .tab[data-tab="issues"]').textContent(), 'Issues (1)');
+  await fresh.close();
+});
+
 test('an issue row opens to its body through the description renderer, with Open on GitHub under it', { skip }, async () => {
   const { fresh, typed } = await issuesPage();
   await fresh.locator('[data-group="m:1"] summary .count').click();

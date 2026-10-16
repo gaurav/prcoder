@@ -293,6 +293,9 @@ function flashLocal() {
  * The repository's issues and milestones, and the mentions' titles and states,
  * refetched on every visit to the tab: issues change on GitHub, not here. The
  * listing on screen stays until the new one lands, and stays if it does not.
+ * It lands in the groups alone when the tab is drawn: the search box is up
+ * before the listing is, and a render() would take it out from under a
+ * query being typed.
  */
 async function loadIssues() {
   try {
@@ -302,7 +305,8 @@ async function loadIssues() {
   } catch (e) {
     toast(e.message, true);
   }
-  if (tab === 'issues') render();
+  if (tab !== 'issues') return;
+  if (document.getElementById('queue-search')) paintIssues(); else render();
 }
 
 /**
@@ -366,14 +370,19 @@ function issueList() {
   });
   search.oninput = () => {
     query = search.value;
-    paintGroups();
-    const t = document.querySelector('#queue-body .tab[data-tab="issues"]');
-    if (t) t.textContent = `${LABELS.issues} (${issueCount()})`;
+    paintIssues();
   };
   return h('div', { className: 'issues-pane' }, search, h('div', { className: 'issue-groups' }, ...issueGroups()));
 }
 
 const paintGroups = () => document.querySelector('#queue-body .issue-groups')?.replaceChildren(...issueGroups());
+
+/** The groups and the tab's count, leaving the search box, its focus and its caret alone. */
+function paintIssues() {
+  paintGroups();
+  const t = document.querySelector('#queue-body .tab[data-tab="issues"]');
+  if (t) t.textContent = `${LABELS.issues} (${issueCount()})`;
+}
 
 /** The group an issue with no milestone is in. */
 const NONE = 'none';
