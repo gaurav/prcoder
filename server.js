@@ -319,9 +319,11 @@ const repaint = () => term.status(last
  *
  * The queue's reference lookup is a GitHub round trip that reads and writes
  * nothing of prcoder's -- the item is saved by a later PUT, which does take
- * the lock -- so it does not hold up the poll, saves and ticks behind it.
+ * the lock -- so it does not hold up the poll, saves and ticks behind it. The
+ * Issues tab's listing is the same and much longer: up to five pages of a
+ * hundred issues with their bodies, on every visit to the tab.
  */
-const UNLOCKED = new Set(['GET /api/whoami', 'GET /api/status', 'POST /api/queue/ref']);
+const UNLOCKED = new Set(['GET /api/whoami', 'GET /api/status', 'POST /api/queue/ref', 'GET /api/issues']);
 
 /**
  * Status polls that arrive while one is still waiting for the lock share it:
@@ -375,13 +377,17 @@ const routes = {
    * one query: issueLinks already reads an answer gh exited 1 on for the
    * numbers it did resolve, and a listing should not have to. No pull request
    * is needed -- a repository has issues whatever branch is checked out.
+   *
+   * Unlocked (UNLOCKED), so a poll can swap `pr` while this waits on GitHub:
+   * the mentions are the pull request that was on screen when it was asked.
    */
   'GET /api/issues': async () => {
     const [owner, name] = (await repoFacts()).nameWithOwner.split('/');
-    const numbers = (pr?.issues ?? []).filter((i) => !i.closes).map((i) => i.number).slice(0, 50);
+    const cur = pr;
+    const numbers = (cur?.issues ?? []).filter((i) => !i.closes).map((i) => i.number).slice(0, 50);
     const [found, links] = await Promise.all([
       repoIssues(repo, owner, name),
-      numbers.length ? issueLinks(repo, pr.url, numbers) : new Map(),
+      numbers.length ? issueLinks(repo, cur.url, numbers) : new Map(),
     ]);
     return { ...found, mentions: numbers.map((number) => ({ number, ...links.get(number) })) };
   },
