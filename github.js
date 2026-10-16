@@ -752,14 +752,14 @@ export async function issueLinks(cwd, prUrl, numbers) {
 // there is no priority here, and labels are the nearest thing (#66).
 const ISSUES_QUERY = `query($owner:String!,$repo:String!,$after:String){
   repository(owner:$owner,name:$repo){
-    milestones(first:50,states:OPEN){ nodes{ number title dueOn description issues(states:OPEN){ totalCount } } }
+    milestones(first:50,states:OPEN){ nodes{ number title dueOn description } }
     issues(first:100,after:$after,states:OPEN,orderBy:{field:UPDATED_AT,direction:DESC}){
       totalCount pageInfo{ hasNextPage endCursor }
       nodes{ number title url updatedAt body milestone{ number } labels(first:10){ nodes{ name } } } } } }`;
 
 /**
  * The repository's open issues and open milestones, for the queue's Issues
- * tab: `{ milestones: [{ number, title, dueOn, description, open }], issues:
+ * tab: `{ milestones: [{ number, title, dueOn, description }], issues:
  * [{ number, title, url, updatedAt, body, milestone, labels }], total, listed }`.
  * An issue's `milestone` is the milestone's number or null, and `labels` is
  * names only. Most recently updated first, as GitHub orders them. The body
@@ -784,7 +784,7 @@ export async function repoIssues(cwd, owner, repo) {
     const r = data.repository;
     milestones ??= r.milestones.nodes.map((m) => ({
       number: m.number, title: printable(m.title ?? '').trim() || `#${m.number}`,
-      dueOn: m.dueOn ?? null, description: printable(m.description ?? '').trim(), open: m.issues?.totalCount ?? 0,
+      dueOn: m.dueOn ?? null, description: printable(m.description ?? '').trim(),
     }));
     total = r.issues.totalCount;
     for (const i of r.issues.nodes) {

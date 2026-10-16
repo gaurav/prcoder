@@ -1482,10 +1482,10 @@ test('↓ on the Issues tab keeps the repo the mention is in', { skip }, async (
 // buckets, one of them empty, and issues on some.
 const ISSUES = {
   milestones: [
-    { number: 3, title: 'Not urgent', dueOn: null, description: 'Worth doing eventually.', open: 1 },
-    { number: 1, title: 'v1.0', dueOn: '2026-10-14T00:00:00Z', description: '', open: 1 },
-    { number: 4, title: 'Needed soon', dueOn: null, description: '', open: 0 },
-    { number: 2, title: 'v0.1', dueOn: '2026-10-02T00:00:00Z', description: '', open: 1 },
+    { number: 3, title: 'Not urgent', dueOn: null, description: 'Worth doing eventually.' },
+    { number: 1, title: 'v1.0', dueOn: '2026-10-14T00:00:00Z', description: '' },
+    { number: 4, title: 'Needed soon', dueOn: null, description: '' },
+    { number: 2, title: 'v0.1', dueOn: '2026-10-02T00:00:00Z', description: '' },
   ],
   issues: [
     { number: 58, title: 'Decide what the Issues tab shows', url: 'https://github.com/gaurav/prcoder/issues/58', updatedAt: '2026-10-10T00:00:00Z',
