@@ -314,6 +314,19 @@ test('the issue listing reaches GitHub as variables, and becomes milestones and 
     assert.ok(got.issues[1].body.startsWith('Split out of #6'), got.issues[1].body.slice(0, 40));
   });
 
+  // An open issue on a milestone that is not among the open ones -- closed
+  // since, or past the first fifty -- brings it along, so the tab has a group
+  // to draw the issue in.
+  const stray = structuredClone(ISSUES_PAGE);
+  stray.data.repository.issues.nodes[0].milestone = { number: 7, title: 'v0.0', dueOn: '2026-09-01T00:00:00Z', state: 'CLOSED' };
+  stray.data.repository.issues.nodes[1].milestone = { number: 1, title: 'PRCoder v1.0', dueOn: '2026-10-14T00:00:00Z', state: 'OPEN' };
+  await withGh(() => `cat <<'JSON'\n${JSON.stringify(stray)}\nJSON`, async () => {
+    const got = await repoIssues(os.tmpdir(), 'gaurav', 'prcoder');
+    assert.deepEqual(got.milestones.map((m) => [m.number, m.closed]), [[1, false], [2, false], [3, false], [4, false], [5, false], [7, true]]);
+    assert.deepEqual(got.milestones[5], { number: 7, title: 'v0.0', dueOn: '2026-09-01T00:00:00Z', description: '', closed: true });
+    assert.equal(got.issues[0].milestone, 7);
+  });
+
   // A CRLF body reads as LF, as a description does, and a title of control
   // characters is the number, as linksFrom has it.
   const odd = structuredClone(ISSUES_PAGE);

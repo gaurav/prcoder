@@ -810,6 +810,7 @@ main.diff-off #diff-wrap { display: none; }
 .fold.milestone > summary a { color: inherit; text-decoration: none; }
 .fold.milestone > summary a:hover { color: var(--accent); }
 .fold.milestone > summary .due { font-variant-numeric: tabular-nums; }
+.fold.milestone > summary .closed-milestone { font-style: italic; }
 .fold.milestone > summary .count { margin-left: auto; font-variant-numeric: tabular-nums; }
 .fold.milestone > .sec-body { padding: 0 0 4px 10px; }
 .fold.milestone .empty { font-size: 12px; margin: 0 0 2px 4px; }

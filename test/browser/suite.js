@@ -1552,6 +1552,19 @@ test('the Issues tab groups the repository\'s open issues by milestone in rank o
   await fresh.close();
 });
 
+// An open issue on a closed milestone is drawn in that milestone's group,
+// which says it is closed: it is counted on the tab, so it has to be somewhere.
+test('an open issue on a closed milestone has a group of its own, marked closed', { skip }, async () => {
+  const { fresh } = await issuesPage({ ...ISSUES,
+    milestones: [...ISSUES.milestones, { number: 9, title: 'v0.0', dueOn: '2026-09-01T00:00:00Z', description: '', closed: true }],
+    issues: [...ISSUES.issues, { number: 30, title: 'Left over', url: 'https://github.com/gaurav/prcoder/issues/30', updatedAt: '2026-10-01T00:00:00Z',
+      body: '', milestone: 9, labels: [] }],
+    total: 5, listed: 5 });
+  assert.equal((await groupsOf(fresh))[1], 'm:9|v0.0 2026-09-01 closed 1|open|1');
+  assert.equal(await fresh.locator('[data-group="m:9"] .item .text').textContent(), 'Left over');
+  await fresh.close();
+});
+
 test('searching the issues narrows the rows, opens the groups with a match, and counts them on the tab', { skip }, async () => {
   const { fresh } = await issuesPage();
   const search = fresh.locator('#queue-search');

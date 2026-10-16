@@ -755,14 +755,18 @@ const ISSUES_QUERY = `query($owner:String!,$repo:String!,$after:String){
     milestones(first:50,states:OPEN){ nodes{ number title dueOn description } }
     issues(first:100,after:$after,states:OPEN,orderBy:{field:UPDATED_AT,direction:DESC}){
       totalCount pageInfo{ hasNextPage endCursor }
-      nodes{ number title url updatedAt body milestone{ number } labels(first:10){ nodes{ name } } } } } }`;
+      nodes{ number title url updatedAt body milestone{ number title dueOn state } labels(first:10){ nodes{ name } } } } } }`;
 
 /**
  * The repository's open issues and open milestones, for the queue's Issues
- * tab: `{ milestones: [{ number, title, dueOn, description }], issues:
+ * tab: `{ milestones: [{ number, title, dueOn, description, closed }], issues:
  * [{ number, title, url, updatedAt, body, milestone, labels }], total, listed }`.
  * An issue's `milestone` is the milestone's number or null, and `labels` is
- * names only. Most recently updated first, as GitHub orders them. The body
+ * names only. Most recently updated first, as GitHub orders them. A
+ * milestone an open issue is on but that is not among the open ones read --
+ * closed with the issue still open, or past the first fifty -- is added from
+ * the issue, `closed` if it is, so that every listed issue has a group to be
+ * drawn in; it has no description. The body
  * comes too, LF-ended like a description (lf), so the tab can show one and
  * search them; the pane renders it through the same allowlist as a
  * description (docs/Security.md).
@@ -784,7 +788,7 @@ export async function repoIssues(cwd, owner, repo) {
     const r = data.repository;
     milestones ??= r.milestones.nodes.map((m) => ({
       number: m.number, title: printable(m.title ?? '').trim() || `#${m.number}`,
-      dueOn: m.dueOn ?? null, description: printable(m.description ?? '').trim(),
+      dueOn: m.dueOn ?? null, description: printable(m.description ?? '').trim(), closed: false,
     }));
     total = r.issues.totalCount;
     for (const i of r.issues.nodes) {
@@ -793,6 +797,13 @@ export async function repoIssues(cwd, owner, repo) {
         updatedAt: i.updatedAt ?? null, body: lf(i.body),
         milestone: i.milestone?.number ?? null, labels: (i.labels?.nodes ?? []).map((l) => l.name),
       });
+      const m = i.milestone;
+      if (m && !milestones.some((k) => k.number === m.number)) {
+        milestones.push({
+          number: m.number, title: printable(m.title ?? '').trim() || `#${m.number}`,
+          dueOn: m.dueOn ?? null, description: '', closed: m.state === 'CLOSED',
+        });
+      }
     }
     const { hasNextPage, endCursor } = r.issues.pageInfo;
     if (hasNextPage && !endCursor) throw new Error(`GitHub said ${owner}/${repo} has more issues, but gave no cursor to them`);

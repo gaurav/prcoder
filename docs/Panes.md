@@ -403,8 +403,10 @@ request -- is dimmed and says which. Then one group per open milestone, in the o
 milestones are read ([MILESTONES.md](https://github.com/gaurav/milestones/blob/main/MILESTONES.md)):
 `Critical`, then releases and deadlines soonest first and the undated after them, then `Needed
 soon`, `Needed later`, `Not urgent` and `Upstream`, matched by name whatever their case; and last
-the issues on no milestone. A milestone's line is its title, linking to it on GitHub, its due date,
-and how many issues it holds; an empty one is still drawn, folded. Only the mentions and the first
+the issues on no milestone. A closed milestone that an open issue is still on gets a group too,
+ranked the same way and marked *closed*, so that no listed issue goes undrawn. A milestone's line
+is its title, linking to it on GitHub, its due date, and how many issues it holds; an empty one is
+still drawn, folded. Only the mentions and the first
 milestone with an issue start open, which is the one to focus on; a group you open or close stays
 so until the page is reloaded, through every poll.
 

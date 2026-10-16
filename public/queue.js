@@ -353,8 +353,8 @@ export function newestFirst(list, found) {
 /**
  * The Issues tab: a search over the repository's open issues, and the issues
  * in groups -- what the description mentions without closing first, then one
- * group per open milestone in the owner's order (rankMilestones), then the
- * issues on none. Each row can open to show the issue's body and a way to it
+ * group per milestone in the owner's order (rankMilestones), then the issues
+ * on none. Each row can open to show the issue's body and a way to it
  * on GitHub, be typed to the coding agent with its link (▶), or be copied
  * into Local (↓). The groups are repainted on their own as the search and the
  * rows change, so the search box keeps its focus.
@@ -418,9 +418,13 @@ function issueGroups() {
   }
   for (const m of ranked) {
     const title = home ? ext(`https://github.com/${home}/milestone/${m.number}`, m.title, { title: m.description || undefined }) : m.title;
-    const due = m.dueOn ? [h('span', { className: 'due', title: 'due' }, m.dueOn.slice(0, 10))] : [];
+    const extra = [
+      ...(m.dueOn ? [h('span', { className: 'due', title: 'due' }, m.dueOn.slice(0, 10))] : []),
+      // On the tab only because an open issue is still on it (repoIssues).
+      ...(m.closed ? [h('span', { className: 'closed-milestone', title: 'closed on GitHub, with open issues still on it' }, 'closed')] : []),
+    ];
     const list = byMilestone.get(m.number) ?? [];
-    out.push(group(`m:${m.number}`, title, list, list.map((i) => issueRow(i)).flat(), due));
+    out.push(group(`m:${m.number}`, title, list, list.map((i) => issueRow(i)).flat(), extra));
   }
   const none = byMilestone.get(NONE) ?? [];
   out.push(group(`m:${NONE}`, 'No milestone', none, none.map((i) => issueRow(i)).flat()));
