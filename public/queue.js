@@ -61,10 +61,12 @@ export function setItems(next, prOnScreen = null) {
 // the PR tab; and the repository's open issues, fetched when the Issues tab is
 // opened, since nothing else needs them. `listing` is /api/issues' answer --
 // milestones, issues, and the mentions the description makes without closing,
-// which `mentions` indexes by number as it always did.
+// which `mentions` indexes by number as it always did; `listed` indexes the
+// listing's issues the same way.
 let pr = null;
 let listing = null;
 let mentions = null;
+let listed = new Map();
 // The Issues tab's own state, kept across the repaint every poll causes and
 // not across a reload, like the file groups' folds: the search, which groups
 // are closed, which rows are open, and which groups a listing has had, so a
@@ -302,6 +304,7 @@ async function loadIssues() {
     const got = await api('/api/issues', undefined, 'GET');
     listing = got;
     mentions = new Map(got.mentions.map((i) => [i.number, i]));
+    listed = new Map(got.issues.map((i) => [i.number, i]));
     seedGroups();
   } catch (e) {
     toast(e.message, true);
@@ -487,7 +490,7 @@ function mentionRow(i) {
 function listedAs(i) {
   const [r] = refs(i.url ?? '');
   if (!listing?.repo || !r?.owner || resolveRef(r, listing.repo).repo) return null;
-  return listing.issues.find((n) => n.number === i.number) ?? null;
+  return listed.get(i.number) ?? null;
 }
 
 /**

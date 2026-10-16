@@ -78,8 +78,19 @@ export function rankMilestones(list) {
   });
 }
 
+// What issueMatches searches, lowercased once per issue rather than once per
+// keystroke: a listing is up to 500 issues with their bodies. Keyed on the
+// object, which a new listing replaces, so an edited issue is read afresh.
+const haystacks = new WeakMap();
+
 /** Whether the Issues tab's search matches an issue: case-blind, over `#N`, the title, the labels and the body. */
 export const issueMatches = (i, query) => {
   const q = (query ?? '').trim().toLowerCase();
-  return !q || [`#${i.number}`, i.title ?? '', ...(i.labels ?? []), i.body ?? ''].join('\n').toLowerCase().includes(q);
+  if (!q) return true;
+  let hay = haystacks.get(i);
+  if (hay == null) {
+    hay = [`#${i.number}`, i.title ?? '', ...(i.labels ?? []), i.body ?? ''].join('\n').toLowerCase();
+    haystacks.set(i, hay);
+  }
+  return hay.includes(q);
 };
