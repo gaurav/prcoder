@@ -336,9 +336,6 @@ const poll = () => (queuedPoll ??= serial(() => {
   return status();
 }));
 
-// What the Issues tab was last shown (GET /api/issues), for a route that acts on one of its rows.
-let listing = null;
-
 const routes = {
   // Unlocked only because poll() takes the lock itself.
   'GET /api/status': poll,
@@ -378,8 +375,6 @@ const routes = {
    * one query: issueLinks already reads an answer gh exited 1 on for the
    * numbers it did resolve, and a listing should not have to. No pull request
    * is needed -- a repository has issues whatever branch is checked out.
-   * The listing is kept (`listing`) so a write about an issue can be held to
-   * what the tab was last shown, as /api/pr/choose holds a pick to the poll.
    */
   'GET /api/issues': async () => {
     const [owner, name] = (await repoFacts()).nameWithOwner.split('/');
@@ -388,7 +383,6 @@ const routes = {
       repoIssues(repo, owner, name),
       numbers.length ? issueLinks(repo, pr.url, numbers) : new Map(),
     ]);
-    listing = found;
     return { ...found, mentions: numbers.map((number) => ({ number, ...links.get(number) })) };
   },
 
