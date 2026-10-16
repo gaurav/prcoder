@@ -294,11 +294,17 @@ if (await openable.count()) {
 }
 await page.locator('#queue').screenshot({ path: path.join(out, 'queue-issues.png') });
 // ↓ copies a row into Local without touching the issue -- into the driver's
-// own queue, where the next run's seed replaces it.
-const localBefore = await local();
-await page.locator('#queue-body .fold.milestone[open] .item button[title="copy into your queue"]').first().click();
-await page.locator('#queue-body .tab', { hasText: /^Local \(4\)/ }).waitFor({ timeout: 10_000 });
-console.log('  pulled: ', localBefore, '->', await local(), '(want one more)');
+// own queue, where the next run's seed replaces it. Only an open group with a
+// row has one to copy; without that the click waited out its 30s and the run
+// ended before the PR pane's half (2026-10-06, on #118), the same way the
+// ticking above is skipped for a description with no checkboxes.
+const copy = page.locator('#queue-body .fold.milestone[open] .item button[title="copy into your queue"]');
+if (await copy.count()) {
+  const localBefore = await local();
+  await copy.first().click();
+  await page.locator('#queue-body .tab', { hasText: /^Local \(4\)/ }).waitFor({ timeout: 10_000 });
+  console.log('  pulled: ', localBefore, '->', await local(), '(want one more)');
+} else console.log('  no open issue in an open group to pull');
 // Search narrows the rows and the count; cleared, both come back.
 await page.locator('#queue-search').fill('zzz-nothing-matches-zzz');
 console.log('  search: ', await page.locator('#queue-body .tab', { hasText: /^Issues/ }).innerText(),
