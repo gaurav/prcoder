@@ -67,12 +67,12 @@ let listing = null;
 let mentions = null;
 // The Issues tab's own state, kept across the repaint every poll causes and
 // not across a reload, like the file groups' folds: the search, which groups
-// are closed, which rows are open, and whether the first listing has chosen
-// what starts closed.
+// are closed, which rows are open, and which groups a listing has had, so a
+// new one can be given its starting state (seedGroups).
 let query = '';
 const closedGroups = new Set();
 const expanded = new Set();
-let seeded = false;
+const seen = new Set();
 
 // Which end the input adds to. The queue is two things at once -- a backlog in
 // the order you mean to work through it, and somewhere to put the thing you
@@ -302,6 +302,7 @@ async function loadIssues() {
     const got = await api('/api/issues', undefined, 'GET');
     listing = got;
     mentions = new Map(got.mentions.map((i) => [i.number, i]));
+    seedGroups();
   } catch (e) {
     toast(e.message, true);
   }
@@ -387,6 +388,24 @@ function paintIssues() {
 /** The group an issue with no milestone is in. */
 const NONE = 'none';
 
+/**
+ * What starts closed, as each listing lands. On the first, every group but
+ * the mentions and the first milestone in rank with an issue on it, which is
+ * the one to focus on -- chosen from every issue, not the ones a query typed
+ * before the listing came lets through. On a later one, a milestone not had
+ * before, such as one made on GitHub since, joins the rest folded. A group
+ * opened or closed by hand is remembered over all of it.
+ */
+function seedGroups() {
+  const keys = [...rankMilestones(listing.milestones).map((m) => m.number), NONE];
+  const focus = seen.size ? null : keys.find((k) => listing.issues.some((i) => (i.milestone ?? NONE) === k));
+  for (const key of keys) {
+    if (seen.has(key)) continue;
+    seen.add(key);
+    if (key !== focus) closedGroups.add(`m:${key}`);
+  }
+}
+
 function issueGroups() {
   if (!listing) return [h('p', { className: 'empty' }, 'Reading the repository\'s issues…')];
   const searching = !!query.trim();
@@ -397,14 +416,6 @@ function issueGroups() {
     byMilestone.get(key).push(i);
   }
   const ranked = rankMilestones(listing.milestones);
-  // What starts closed, chosen once per page: everything but the mentions
-  // and the first milestone in rank with an issue on it, which is the one to
-  // focus on. A group opened or closed since is remembered over it.
-  if (!seeded) {
-    seeded = true;
-    const focus = ranked.find((m) => byMilestone.has(m.number))?.number ?? NONE;
-    for (const key of [...ranked.map((m) => m.number), NONE]) if (key !== focus) closedGroups.add(`m:${key}`);
-  }
   // While searching a group with a match is open and one without is closed,
   // without touching what was chosen: fold() reports its initial state too.
   const state = (key, rows) => (searching ? { open: rows.length > 0, onToggle: () => {} } : kept(closedGroups, key, 'closed'));

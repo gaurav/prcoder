@@ -1540,15 +1540,20 @@ test('the Issues tab groups the repository\'s open issues by milestone in rank o
   assert.equal(await row.locator('.text').textContent(), 'Something for later');
   assert.deepEqual(await row.locator('.tag.label').allTextContents(), ['bug', 'help wanted']);
   // A group closed or opened by hand stays so through a repaint: leaving the
-  // tab and coming back rebuilds it from a fresh listing.
+  // tab and coming back rebuilds it from a fresh listing. A milestone that
+  // listing has and the first did not (m:10) starts closed with the rest.
   await fresh.locator('[data-group="m:2"] summary .count').click();
   await fresh.locator('[data-group="m:1"] summary .count').click();
   await fresh.locator('#queue-body .tab[data-tab="local"]').click();
+  await fresh.route('**/api/issues', (r) => r.fulfill({ json: { ...ISSUES,
+    milestones: [...ISSUES.milestones, { number: 10, title: 'v2.0', dueOn: '2026-12-01T00:00:00Z', description: '' }] } }));
   const again = fresh.waitForResponse('**/api/issues');
   await fresh.locator('#queue-body .tab[data-tab="issues"]').click();
   await again;
-  await fresh.waitForSelector('#queue-body .fold.milestone');
-  assert.deepEqual((await groupsOf(fresh)).map((g) => g.split('|')[2]), ['open', 'closed', 'open', 'closed', 'closed', 'closed']);
+  await fresh.waitForSelector('[data-group="m:10"]');
+  assert.deepEqual((await groupsOf(fresh)).map((g) => g.split('|').slice(0, 3).join(' ')), [
+    'mentioned Mentioned by PR #12 1 open', 'm:2 v0.1 2026-10-02 1 closed', 'm:1 v1.0 2026-10-14 1 open',
+    'm:10 v2.0 2026-12-01 0 closed', 'm:4 Needed soon 0 closed', 'm:3 Not urgent 1 closed', 'm:none No milestone 1 closed']);
   await fresh.close();
 });
 
@@ -1613,6 +1618,26 @@ test('the listing landing keeps the search box\'s focus and what is typed in it'
   await fresh.keyboard.type(' is');
   assert.equal(await search.inputValue(), 'row is');
   assert.equal(await fresh.locator('#queue-body .tab[data-tab="issues"]').textContent(), 'Issues (1)');
+  await fresh.close();
+});
+
+// What starts open is chosen from every issue, not from what a query typed
+// before the listing came lets through: #90 is on Not urgent, but v0.1 is
+// still the milestone to focus on once the search is cleared.
+test('a query typed before the listing lands does not choose which group starts open', { skip }, async () => {
+  const { fresh } = await refPage(() => ({ json: { ref: null } }));
+  let release;
+  const held = new Promise((r) => { release = r; });
+  await fresh.route('**/api/issues', async (r) => { await held; return r.fulfill({ json: ISSUES }); });
+  const landed = fresh.waitForResponse('**/api/issues');
+  await fresh.locator('#queue-body .tab[data-tab="issues"]').click();
+  await fresh.locator('#queue-search').fill('#90');
+  release();
+  await landed;
+  await fresh.waitForSelector('#queue-body .fold.milestone');
+  await fresh.locator('#queue-search').fill('');
+  assert.deepEqual((await groupsOf(fresh)).map((g) => `${g.split('|')[0]} ${g.split('|')[2]}`), [
+    'mentioned open', 'm:2 open', 'm:1 closed', 'm:4 closed', 'm:3 closed', 'm:none closed']);
   await fresh.close();
 });
 

@@ -407,8 +407,9 @@ the issues on no milestone. A closed milestone that an open issue is still on ge
 ranked the same way and marked *closed*, so that no listed issue goes undrawn. A milestone's line
 is its title, linking to it on GitHub, its due date, and how many issues it holds; an empty one is
 still drawn, folded. Only the mentions and the first
-milestone with an issue start open, which is the one to focus on; a group you open or close stays
-so until the page is reloaded, through every poll.
+milestone with an issue start open, which is the one to focus on, and a milestone that appears
+later, made on GitHub since, starts folded; a group you open or close stays so until the page is
+reloaded, through every poll.
 
 The box above the groups searches the number, title, labels and body of every issue listed; a
 group with a match opens and one without closes, and the tab's count becomes how many matched.
