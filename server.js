@@ -371,7 +371,8 @@ const routes = {
 
   /**
    * The repository's open issues and milestones for the queue's Issues tab
-   * (repoIssues), and, with a pull request on screen, the issues its
+   * (repoIssues), with the repository they are in as `repo`, and, with a pull
+   * request on screen, the issues its
    * description mentions without closing as `mentions`: title, state and kind,
    * asked about by number, capped at 50 as withLinks is. Two calls rather than
    * one query: issueLinks already reads an answer gh exited 1 on for the
@@ -382,14 +383,15 @@ const routes = {
    * the mentions are the pull request that was on screen when it was asked.
    */
   'GET /api/issues': async () => {
-    const [owner, name] = (await repoFacts()).nameWithOwner.split('/');
+    const { nameWithOwner } = await repoFacts();
+    const [owner, name] = nameWithOwner.split('/');
     const cur = pr;
     const numbers = (cur?.issues ?? []).filter((i) => !i.closes).map((i) => i.number).slice(0, 50);
     const [found, links] = await Promise.all([
       repoIssues(repo, owner, name),
       numbers.length ? issueLinks(repo, cur.url, numbers) : new Map(),
     ]);
-    return { ...found, mentions: numbers.map((number) => ({ number, ...links.get(number) })) };
+    return { ...found, repo: nameWithOwner, mentions: numbers.map((number) => ({ number, ...links.get(number) })) };
   },
 
   'POST /api/pr/switch': async ({ url } = {}) => {

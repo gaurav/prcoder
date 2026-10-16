@@ -431,7 +431,7 @@ function issueGroups() {
   // The mentions, searched by what is known of them: the looked-up title, and
   // the body when the mention is one of the listed issues.
   const ment = mentioned().filter((i) => issueMatches({
-    number: i.number, title: mentions?.get(i.number)?.title, body: listing.issues.find((n) => n.number === i.number)?.body,
+    number: i.number, title: mentions?.get(i.number)?.title, body: listedAs(i)?.body,
   }, query));
   if (pr && ment.length) {
     out.push(group('mentioned', `Mentioned by PR #${pr.number}`, ment, newestFirst(ment, mentions).map((i) => mentionRow(i)).flat()));
@@ -463,7 +463,7 @@ function issueGroups() {
 function mentionRow(i) {
   const found = mentions?.get(i.number);
   const repo = mentionRepo(i);
-  const own = !repo && listing?.issues.find((n) => n.number === i.number);
+  const own = listedAs(i);
   if (own) return issueRow(own);
   const title = found?.title;
   const open = found?.kind === 'issue' && found.state === 'OPEN';
@@ -474,6 +474,20 @@ function mentionRow(i) {
   return [issueRow({ number: i.number, url: i.url, title: text, body: null }, {
     repo, kind: found?.kind ?? null, closed: !open && !!mentions, text: title ?? `#${i.number}`,
   })];
+}
+
+/**
+ * The listed issue a mention is, if any. A mention is the pull request's
+ * repository's, and the listing is the one prcoder is in (`listing.repo`):
+ * in a fork-headed checkout the two differ, and by number alone a bare `#12`
+ * in upstream's description would be drawn as the fork's #12. Read against the
+ * listing's own name rather than `home`, which is not known until the first
+ * poll has answered.
+ */
+function listedAs(i) {
+  const [r] = refs(i.url ?? '');
+  if (!listing?.repo || !r?.owner || resolveRef(r, listing.repo).repo) return null;
+  return listing.issues.find((n) => n.number === i.number) ?? null;
 }
 
 /**

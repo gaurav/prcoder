@@ -148,7 +148,7 @@ const withLong = (st) => ({ ...st, pr: { ...st.pr, files: [...files, fileRow('lo
 
 // What /api/issues answers for a repository with nothing: the Issues tab is
 // always there, so every page gets this unless a test routes its own.
-const EMPTY_ISSUES = { milestones: [], issues: [], total: 0, listed: 0, mentions: [] };
+const EMPTY_ISSUES = { milestones: [], issues: [], total: 0, listed: 0, repo: 'heal-data-stewards/heal-vlmd-AI-pipeline', mentions: [] };
 
 let browser;
 let page;
@@ -1497,17 +1497,17 @@ const ISSUES = {
     { number: 149, title: 'Add a PRs pane', url: 'https://github.com/gaurav/prcoder/issues/149', updatedAt: '2026-10-07T00:00:00Z',
       body: '', milestone: null, labels: [] },
   ],
-  total: 4, listed: 4, mentions: [],
+  total: 4, listed: 4, repo: 'gaurav/prcoder', mentions: [],
 };
 const groupsOf = (p) => p.$$eval('#queue-body .fold.milestone', (gs) => gs.map((g) =>
   `${g.dataset.group}|${g.querySelector('h3').textContent.replace(/\s+/g, ' ').trim()}|${g.open ? 'open' : 'closed'}|${g.querySelectorAll('.item').length}`));
 
 // The fixture pull request mentions #7 without closing it, so every page has
 // a Mentioned group ahead of the milestones; `prIssues` replaces that list.
-async function issuesPage(listing = ISSUES, prIssues = null) {
+async function issuesPage(listing = ISSUES, prIssues = null, nameWithOwner = 'gaurav/prcoder') {
   const { fresh, typed, rows } = await refPage(() => ({ json: { ref: null } }));
   if (prIssues) {
-    await fresh.route('**/api/status', (r) => r.fulfill({ json: { ...status, nameWithOwner: 'gaurav/prcoder', pr: { ...pr, issues: prIssues } } }));
+    await fresh.route('**/api/status', (r) => r.fulfill({ json: { ...status, nameWithOwner, pr: { ...pr, issues: prIssues } } }));
     const polled = fresh.waitForResponse('**/api/status');
     await fresh.click('#pr-refresh');
     await polled;
@@ -1691,6 +1691,21 @@ test('the Issues tab leads with what the PR mentions, and a mention that is list
   assert.deepEqual(await rows.evaluateAll((ls) => ls.map((l) => l.classList.contains('closed'))), [false, true]);
   assert.equal(await rows.nth(0).locator('button.disclose').count(), 1);
   assert.equal(await rows.nth(1).locator('button.disclose').count(), 0, 'a mention with no body has nothing to open');
+  await fresh.close();
+});
+
+// A mention is the pull request's repository's, and the listing is the one
+// prcoder is in; with the two different, upstream's #66 is not the listing's
+// #66 -- including before the page knows its own repository's name.
+test('a mention from another repository is not drawn as the listed issue of the same number', { skip }, async () => {
+  const url = 'https://github.com/upstream/prcoder/issues/66';
+  const { fresh } = await issuesPage({ ...ISSUES, mentions: [
+    { number: 66, url, title: 'Upstream\'s sixty-six', kind: 'issue', state: 'OPEN', updatedAt: '2026-10-09T00:00:00Z' }] },
+  [{ number: 66, url, closes: false }], null);
+  const row = fresh.locator('[data-group="mentioned"] .item');
+  assert.equal(await row.locator('.text').textContent(), 'Upstream\'s sixty-six');
+  assert.equal(await row.locator('.tag.issue').getAttribute('href'), url);
+  assert.equal(await row.locator('button.disclose').count(), 0, 'no body: it is not the listed #66');
   await fresh.close();
 });
 
