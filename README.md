@@ -38,8 +38,9 @@ is no token to configure.
   work as they do in a terminal. When it exits, the pane offers to start it again or quit prcoder.
 - **Queue** -- your own TODO list for this working copy, kept in `.prcoder/` rather than in any
   file you own. An item can be about an issue or pull request -- type `#91` or paste its link --
-  and can be typed into Claude or moved into a GitHub issue. With a pull request on screen two more
-  tabs read its description's checklist and the issues it mentions.
+  and can be typed into Claude or moved into a GitHub issue. An Issues tab reads the repository's
+  open issues by milestone, searchable, each one readable in place and typed into Claude with its
+  link; with a pull request on screen a PR tab reads its description's checklist.
 
 prcoder follows the branch. It works out the pull request for whatever is checked out, and does
 it again every 60 seconds, so a `git checkout` in another terminal -- or by Claude in the middle

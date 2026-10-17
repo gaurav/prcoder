@@ -999,8 +999,12 @@ const badge = (text, kind) => h('span', { className: `badge ${kind}` }, text);
  * weight end to end gave the eye nowhere to land, and a wrapped title came back
  * to the margin under the `#` and read as a fourteenth. The row is still the
  * whole link -- the split is for the grid and the colour, not the click. The
- * space between them is what keeps `textContent` reading `#27 Make the …`, which
- * is how tools/browser.mjs finds a row; the grid never renders it.
+ * space between them is what keeps `textContent` reading `PR #27 Make the …`,
+ * which is how tools/browser.mjs finds a row; the grid never renders it.
+ *
+ * A pull request's number says `PR #27`, as the queue's tag does (refLabel in
+ * items.js); a bare `#N` is either on GitHub. The column is right-aligned, so
+ * the digits still line up under an issue's.
  */
 function issueRow(list, closes, label) {
   const kind = list.filter((i) => i.closes === closes);
@@ -1008,7 +1012,7 @@ function issueRow(list, closes, label) {
   return h('div', { className: 'issues' },
     h('span', { className: 'issues-label' }, label),
     ...kind.map((i) => ext(i.url, [
-      h('span', { className: 'num' }, `#${i.number}`),
+      h('span', { className: 'num' }, `${i.kind === 'pull' ? 'PR ' : ''}#${i.number}`),
       ...(i.title ? [' ', h('span', { className: 'ttl' }, i.title)] : []),
     ])));
 }
@@ -1016,19 +1020,27 @@ function issueRow(list, closes, label) {
 /** fraction, with the figure as the mark's name -- for a fold, where no label beside it says it. */
 const counted = (count, what) => ({ ...fraction(count), label: `${count.done} of ${count.total} ${what}` });
 
-/** One block as an element: the DOM half of blocks(), which is in tasks.js. */
-const blockNode = (b, onTask) => ({
+/**
+ * One block as an element: the DOM half of blocks(), which is in tasks.js.
+ * Exported for the queue's Issues tab, which shows an issue's body through
+ * the same allowlist as a description -- the one renderer there is
+ * (docs/Security.md). `where` is what a relative link and a bare `#N` are
+ * written against, the pull request's by default (`links`); an issue passes
+ * its repository. With no `onTask` a checklist box is drawn disabled: an
+ * issue's boxes are GitHub's to tick.
+ */
+export const blockNode = (b, onTask, where = links) => ({
   // textContent, not inline(): the point of a fence is that what is inside it
   // is not markdown.
   code: () => h('pre', {}, h('code', { textContent: b.code })),
-  p: () => h('p', { innerHTML: inline(b.text) }),
+  p: () => h('p', { innerHTML: inline(b.text, where) }),
   // Offset by two: the page's <h1> is prcoder's, in the corner, and the PR
   // title is the <h2>, so a description's top-level heading sits under both.
-  heading: () => h(`h${Math.min(b.level + 2, 6)}`, { innerHTML: inline(b.text) }),
-  quote: () => h('blockquote', { innerHTML: inline(b.text) }),
-  task: () => taskRow(b, onTask),
+  heading: () => h(`h${Math.min(b.level + 2, 6)}`, { innerHTML: inline(b.text, where) }),
+  quote: () => h('blockquote', { innerHTML: inline(b.text, where) }),
+  task: () => taskRow(b, onTask, where),
   list: () => h(b.ordered ? 'ol' : 'ul', b.start > 1 ? { start: b.start } : {},
-    ...b.items.map((t) => h('li', { innerHTML: inline(t) }))),
+    ...b.items.map((t) => h('li', { innerHTML: inline(t, where) }))),
 }[b.kind]());
 
 /**
@@ -1079,11 +1091,19 @@ function description(parsed, onTask) {
 }
 
 /** A checkbox in the description, ticked through to GitHub. */
-function taskRow({ done, text, index }, onTask) {
-  const box = h('input', { type: 'checkbox', checked: done, title: 'tick this on GitHub' });
+function taskRow({ done, text, index }, onTask, where = links) {
+  const box = h('input', { type: 'checkbox', checked: done });
   const row = h('label', { className: `task${done ? ' done' : ''}` },
-    box, h('span', { innerHTML: inline(text) }));
-  writeThrough(box, (v) => onTask({ index, done: v, text }));
+    box, h('span', { innerHTML: inline(text, where) }));
+  if (onTask) {
+    box.title = 'tick this on GitHub';
+    writeThrough(box, (v) => onTask({ index, done: v, text }));
+  } else {
+    // On the row, not the box: a disabled input's own title is not shown in
+    // every browser, and this one is the only word on why it will not tick.
+    box.disabled = true;
+    row.title = 'tick this on GitHub itself';
+  }
   return row;
 }
 

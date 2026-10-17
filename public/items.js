@@ -29,8 +29,13 @@ export const TABS = {
 export const counts = (items = []) =>
   Object.fromEntries(Object.entries(TABS).map(([name, f]) => [name, items.filter(f).length]));
 
-/** What the row's tag says: `#91` in this repo, `cli/cli#123` in another. */
-export const refLabel = (i) => (i.repo ? `${i.repo}#${i.issue}` : `#${i.issue}`);
+/**
+ * What the row's tag says: `#91` in this repo, `cli/cli#123` in another, and
+ * `PR ` ahead of either for a pull request -- a bare `#91` is either on GitHub,
+ * and `PR #N` is what the PR pane's head already calls one. An issue, and an
+ * item whose kind is not known, stays a bare number.
+ */
+export const refLabel = (i) => `${i.kind === 'pull' ? 'PR ' : ''}${i.repo ? `${i.repo}#${i.issue}` : `#${i.issue}`}`;
 
 /**
  * What ▶ types for an item: its text, and the link to the issue or pull
@@ -50,3 +55,47 @@ export function forClaude(i, home) {
   });
   return named ? i.text : `${i.text} (${i.issueUrl})`;
 }
+
+// The standing buckets, after every release or deadline milestone and in
+// decreasing urgency, as MILESTONES.md in gaurav/milestones has them (read
+// 2026-10-15). `Critical` is the one bucket ahead of the releases. Matched
+// case-blind: another repository may spell them a little differently.
+const BUCKETS = ['needed soon', 'needed later', 'not urgent', 'upstream'];
+
+/**
+ * Open milestones in the order the Issues tab groups by: Critical; releases
+ * and deadlines, the ones with a due date first and soonest first, then the
+ * undated by name; then the buckets, Needed soon to Upstream. The ISO dates
+ * sort as they read. "No milestone" is the caller's, last.
+ */
+export function rankMilestones(list) {
+  const rank = ({ title, dueOn }) => {
+    const name = (title ?? '').trim().toLowerCase();
+    if (name === 'critical') return [0, ''];
+    const i = BUCKETS.indexOf(name);
+    if (i >= 0) return [3 + i, ''];
+    return dueOn ? [1, dueOn] : [2, name];
+  };
+  return [...list].sort((a, b) => {
+    const [x, p] = rank(a);
+    const [y, q] = rank(b);
+    return x - y || p.localeCompare(q);
+  });
+}
+
+// What issueMatches searches, lowercased once per issue rather than once per
+// keystroke: a listing is up to 500 issues with their bodies. Keyed on the
+// object, which a new listing replaces, so an edited issue is read afresh.
+const haystacks = new WeakMap();
+
+/** Whether the Issues tab's search matches an issue: case-blind, over `#N`, the title, the labels and the body. */
+export const issueMatches = (i, query) => {
+  const q = (query ?? '').trim().toLowerCase();
+  if (!q) return true;
+  let hay = haystacks.get(i);
+  if (hay == null) {
+    hay = [`#${i.number}`, i.title ?? '', ...(i.labels ?? []), i.body ?? ''].join('\n').toLowerCase();
+    haystacks.set(i, hay);
+  }
+  return hay.includes(q);
+};
