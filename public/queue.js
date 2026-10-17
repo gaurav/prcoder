@@ -458,12 +458,13 @@ function issueGroups() {
 }
 
 /**
- * A mention as a row: a mention that is not an open issue is a closed one, or
- * a pull request -- a bare `#N` is either on GitHub -- and is dimmed rather
- * than disappearing, since the description still points at it. The tag says
- * which of the two it is (`PR #N`), so the title is followed only by the
- * state: `· merged`, `· closed`. One that is an open issue here is drawn as
- * the listing's own row, body and all.
+ * A mention as a row. A bare `#N` is an issue or a pull request on GitHub, and
+ * the tag says which (`PR #N`). One that is no longer open -- a closed issue, a
+ * merged or closed pull request, or a number GitHub does not know -- is dimmed
+ * rather than disappearing, since the description still points at it, and its
+ * title is followed by its state: `· merged`, `· closed`. An open one, issue or
+ * pull request, is still work in flight and is drawn at full strength; one that
+ * is an open issue here is the listing's own row, body and all.
  */
 function mentionRow(i) {
   const found = mentions?.get(i.number);
@@ -471,7 +472,7 @@ function mentionRow(i) {
   const own = listedAs(i);
   if (own) return issueRow(own);
   const title = found?.title;
-  const open = found?.kind === 'issue' && found.state === 'OPEN';
+  const open = found?.state === 'OPEN';
   const text = !mentions ? '…'
     : !title ? 'not found on GitHub'
       : open ? title : `${title} · ${found.state?.toLowerCase() ?? 'state unknown'}`;

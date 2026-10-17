@@ -1696,17 +1696,20 @@ test('an issue row opens to its body through the description renderer, with Open
 test('the Issues tab leads with what the PR mentions, and a mention that is listed opens like any row', { skip }, async () => {
   const { fresh } = await issuesPage({ ...ISSUES, mentions: [
     { number: 66, url: 'https://github.com/gaurav/prcoder/issues/66', title: 'Show whether each linked issue is still open', kind: 'issue', state: 'OPEN', updatedAt: '2026-10-09T00:00:00Z' },
-    { number: 7, url: `${REPO}/issues/7`, title: 'Per-route locking', kind: 'pull', state: 'MERGED', updatedAt: '2026-09-01T00:00:00Z' }] },
+    { number: 7, url: `${REPO}/issues/7`, title: 'Per-route locking', kind: 'pull', state: 'MERGED', updatedAt: '2026-09-01T00:00:00Z' },
+    { number: 8, url: `${REPO}/pull/8`, title: 'Still in review', kind: 'pull', state: 'OPEN', updatedAt: '2026-08-01T00:00:00Z' }] },
   [{ number: 7, url: `${REPO}/issues/7`, closes: false, title: 'Per-route locking' },
+    { number: 8, url: `${REPO}/pull/8`, closes: false, title: 'Still in review' },
     { number: 66, url: 'https://github.com/gaurav/prcoder/issues/66', closes: false, title: 'Show whether each linked issue is still open' }]);
   const [first] = await groupsOf(fresh);
-  assert.equal(first, 'mentioned|Mentioned by PR #12 2|open|2');
+  assert.equal(first, 'mentioned|Mentioned by PR #12 3|open|3');
   const rows = fresh.locator('[data-group="mentioned"] .item');
-  // The tag says which is a pull request, so the text needs only its state.
-  assert.deepEqual(await rows.locator('.text').allTextContents(), ['Show whether each linked issue is still open', 'Per-route locking · merged']);
-  assert.deepEqual(await rows.locator('.tag:not(.label)').allTextContents(), ['#66', 'PR #7']);
-  assert.equal(await rows.locator('.tag.pull').count(), 1);
-  assert.deepEqual(await rows.evaluateAll((ls) => ls.map((l) => l.classList.contains('closed'))), [false, true]);
+  // The tag says which is a pull request, so the text needs only its state --
+  // and an open one, like an open issue, is not dimmed and needs none.
+  assert.deepEqual(await rows.locator('.text').allTextContents(), ['Show whether each linked issue is still open', 'Per-route locking · merged', 'Still in review']);
+  assert.deepEqual(await rows.locator('.tag:not(.label)').allTextContents(), ['#66', 'PR #7', 'PR #8']);
+  assert.equal(await rows.locator('.tag.pull').count(), 2);
+  assert.deepEqual(await rows.evaluateAll((ls) => ls.map((l) => l.classList.contains('closed'))), [false, true, false]);
   assert.equal(await rows.nth(0).locator('button.disclose').count(), 1);
   assert.equal(await rows.nth(1).locator('button.disclose').count(), 0, 'a mention with no body has nothing to open');
   await fresh.close();
