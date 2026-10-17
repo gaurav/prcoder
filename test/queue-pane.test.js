@@ -115,6 +115,13 @@ test('the tag names the repo only when it is not this one', () => {
   assert.equal(refLabel(item({ issue: 123, repo: 'cli/cli' })), 'cli/cli#123');
 });
 
+test('the tag says PR for a pull request, and nothing for an issue or an unknown kind', () => {
+  assert.equal(refLabel(item({ issue: 91, kind: 'pull' })), 'PR #91');
+  assert.equal(refLabel(item({ issue: 123, repo: 'cli/cli', kind: 'pull' })), 'PR cli/cli#123');
+  assert.equal(refLabel(item({ issue: 91, kind: 'issue' })), '#91');
+  assert.equal(refLabel(item({ issue: 91, kind: null })), '#91');
+});
+
 // The Issues tab's groups, in the owner's order (MILESTONES.md in
 // gaurav/milestones): Critical, releases by date, the buckets in decreasing
 // urgency. Case-blind, since another repository may spell a bucket its own way.

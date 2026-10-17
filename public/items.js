@@ -29,8 +29,13 @@ export const TABS = {
 export const counts = (items = []) =>
   Object.fromEntries(Object.entries(TABS).map(([name, f]) => [name, items.filter(f).length]));
 
-/** What the row's tag says: `#91` in this repo, `cli/cli#123` in another. */
-export const refLabel = (i) => (i.repo ? `${i.repo}#${i.issue}` : `#${i.issue}`);
+/**
+ * What the row's tag says: `#91` in this repo, `cli/cli#123` in another, and
+ * `PR ` ahead of either for a pull request -- a bare `#91` is either on GitHub,
+ * and `PR #N` is what the PR pane's head already calls one. An issue, and an
+ * item whose kind is not known, stays a bare number.
+ */
+export const refLabel = (i) => `${i.kind === 'pull' ? 'PR ' : ''}${i.repo ? `${i.repo}#${i.issue}` : `#${i.issue}`}`;
 
 /**
  * What ▶ types for an item: its text, and the link to the issue or pull

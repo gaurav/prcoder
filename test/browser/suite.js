@@ -1400,17 +1400,19 @@ test('a reference on its own is added as the issue\'s title, tagged, and ▶ car
   const { fresh, add, typed, rows } = await refPage(() => ({ json: { ref: {
     whole: true, issue: 91, repo: null, kind: 'pull', title: 'Make the queue read references' } } }));
   await add('https://github.com/gaurav/prcoder/pull/91');
-  await fresh.waitForSelector('#queue-body .item .tag.issue');
+  // A pull request, so its tag says so, and is not an issue's.
+  await fresh.waitForSelector('#queue-body .item .tag.pull');
   assert.deepEqual(await rows().locator('.text').allTextContents(), ['Make the queue read references']);
-  const tag = rows().locator('.tag.issue');
-  assert.equal(await tag.textContent(), '#91');
+  assert.equal(await rows().locator('.tag.issue').count(), 0);
+  const tag = rows().locator('.tag.pull');
+  assert.equal(await tag.textContent(), 'PR #91');
   assert.equal(await tag.getAttribute('href'), 'https://github.com/gaurav/prcoder/pull/91');
   // Already an issue here, so there is nothing for ◎ to file.
   assert.equal(await rows().locator('button[title="move into a new issue"]').count(), 0);
   assert.equal(await fresh.locator('#queue-input').inputValue(), '');
   // The same reference again is refused, and stays in the input.
   await add('#91');
-  await fresh.waitForFunction(() => document.getElementById('toast').textContent.includes('#91 is already in your queue'));
+  await fresh.waitForFunction(() => document.getElementById('toast').textContent.includes('PR #91 is already in your queue'));
   assert.equal(await rows().count(), 1);
   assert.equal(await fresh.locator('#queue-input').inputValue(), '#91');
   await rows().locator('button[title^="type into Claude"]').click();

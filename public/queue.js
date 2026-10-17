@@ -510,7 +510,7 @@ function issueRow(i, { repo = null, kind = 'issue', closed = false, text = i.tit
   }, { className: 'disclose', title: open ? 'hide the issue' : 'show the issue', ariaExpanded: String(open) }) : h('span', { className: 'disclose' });
   const row = h('li', { className: `item source${closed ? ' closed' : ''}`, dataset: { issue: String(i.number) } },
     disclose,
-    ext(i.url, `#${i.number}`, { className: 'tag issue' }),
+    ext(i.url, refLabel({ issue: i.number, kind }), { className: tagClass(kind) }),
     h('span', { className: 'text', textContent: i.title }),
     ...(i.labels ?? []).map((l) => h('span', { className: 'tag label' }, l)),
     h('span', { className: 'actions' },
@@ -527,6 +527,13 @@ function issueRow(i, { repo = null, kind = 'issue', closed = false, text = i.tit
     ext(i.url, 'Open on GitHub', { className: 'primary open-issue' }));
   return [row, body];
 }
+
+/**
+ * A reference's chip: outlined for an issue, tinted for a pull request, whose
+ * label also says `PR` (refLabel). An unknown kind is drawn as an issue, as
+ * every tag was before the two were told apart.
+ */
+const tagClass = (kind) => (kind === 'pull' ? 'tag pull' : 'tag issue');
 
 /**
  * The repo a mention is in, as an item's `repo`: null for this one. A bare #N
@@ -585,7 +592,7 @@ function row(item, above, below) {
     ordered ? grip : null,
     box,
     text,
-    item.issue ? ext(item.issueUrl ?? '#', refLabel(item), { className: 'tag issue' }) : null,
+    item.issue ? ext(item.issueUrl ?? '#', refLabel(item), { className: tagClass(item.kind) }) : null,
     h('span', { className: 'actions' },
       // Typed, not sent: the turn is left in the prompt for you to edit, which
       // is the whole of what prcoder puts into a session (docs/Design.md).
