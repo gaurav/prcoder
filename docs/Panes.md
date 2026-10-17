@@ -251,7 +251,8 @@ checklist items says how many are still open, and its pie fills as they are tick
 set in serif at a reading size and capped to a comfortable line length, because it is the one thing
 in the window that is read rather than operated. Checklists in it are real checkboxes and write
 straight back to the description. It ends with the issues the description points at, one line
-each with its title: the ones this pull request closes, then the ones it only mentions. A bare
+each with its title: the ones this pull request closes, then the ones it only mentions, a pull
+request among them numbered `PR #N` as the queue's tags are. A bare
 `#41` in the prose is a link but says nothing about what it is, and the titles are the point of
 the list. What the renderer does and does not draw is in [Design.md](Design.md).
 

@@ -288,6 +288,18 @@ test('the issues the description mentions are listed below it, titled', { skip }
   assert.equal(await row.getAttribute('href'), `${REPO}/issues/7`);
 });
 
+// A bare #N is an issue or a pull request, and the list says which, as the
+// queue's tag does. An unknown kind -- the title lookup failed -- is a number.
+test('a mention that is a pull request is numbered PR #N', { skip }, async () => {
+  const issues = [
+    { number: 7, url: `${REPO}/issues/7`, closes: false, title: 'Per-route locking', kind: 'issue' },
+    { number: 27, url: `${REPO}/pull/27`, closes: false, title: 'Queue tabs', kind: 'pull' },
+    { number: 30, url: `${REPO}/issues/30`, closes: false, title: null, kind: null }];
+  const fresh = await newPage({ st: { ...status, pr: { ...pr, issues } } });
+  assert.deepEqual(await fresh.locator('.issues .num').allTextContents(), ['#7', 'PR #27', '#30']);
+  await fresh.close();
+});
+
 // Its own page: the shared one has had a box ticked above.
 test('the tab carries the task count', { skip }, async () => {
   const fresh = await newPage();

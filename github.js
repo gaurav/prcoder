@@ -713,6 +713,9 @@ async function withLinks(cwd, prUrl, issues) {
   for (const i of issues) {
     const found = links.get(i.number);
     i.title = found?.title ?? null;
+    // Which a bare #N is, for the pane's `PR #N`: closingIssuesReferences is
+    // only ever issues, but a mention is as often a pull request.
+    i.kind = found?.kind ?? null;
     // linkedIssues can only guess `/issues/N` from the repository URL, and half
     // the numbers in a description like this one are pull requests. GitHub
     // redirects, so the guess works -- but it is a guess, and the answer is

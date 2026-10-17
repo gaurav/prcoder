@@ -468,7 +468,7 @@ console.log('titled: ', await page.evaluate(() => {
 // the one that says whether that held -- /issues/27 redirects, and a redirect is
 // exactly what this stops being the answer.
 console.log('chip 27:', await page.evaluate(() => [...document.querySelectorAll('#pr-body .issues a')]
-  .find((a) => a.textContent.startsWith('#27 '))?.href), ' (want /pull/27, not /issues/27)');
+  .find((a) => a.textContent.startsWith('PR #27 '))?.href), ' (want /pull/27, not /issues/27; nothing means it is not marked PR)');
 
 // Where each tab was left. The two offsets are kept apart in module state, and
 // the switch is what used to lose them: renderPrTab read scrollTop *after*

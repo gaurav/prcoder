@@ -999,8 +999,12 @@ const badge = (text, kind) => h('span', { className: `badge ${kind}` }, text);
  * weight end to end gave the eye nowhere to land, and a wrapped title came back
  * to the margin under the `#` and read as a fourteenth. The row is still the
  * whole link -- the split is for the grid and the colour, not the click. The
- * space between them is what keeps `textContent` reading `#27 Make the …`, which
- * is how tools/browser.mjs finds a row; the grid never renders it.
+ * space between them is what keeps `textContent` reading `PR #27 Make the …`,
+ * which is how tools/browser.mjs finds a row; the grid never renders it.
+ *
+ * A pull request's number says `PR #27`, as the queue's tag does (refLabel in
+ * items.js); a bare `#N` is either on GitHub. The column is right-aligned, so
+ * the digits still line up under an issue's.
  */
 function issueRow(list, closes, label) {
   const kind = list.filter((i) => i.closes === closes);
@@ -1008,7 +1012,7 @@ function issueRow(list, closes, label) {
   return h('div', { className: 'issues' },
     h('span', { className: 'issues-label' }, label),
     ...kind.map((i) => ext(i.url, [
-      h('span', { className: 'num' }, `#${i.number}`),
+      h('span', { className: 'num' }, `${i.kind === 'pull' ? 'PR ' : ''}#${i.number}`),
       ...(i.title ? [' ', h('span', { className: 'ttl' }, i.title)] : []),
     ])));
 }
