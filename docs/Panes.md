@@ -253,8 +253,8 @@ in the window that is read rather than operated. Checklists in it are real check
 straight back to the description. It ends with the issues the description points at, one line
 each with its title: the ones this pull request closes, then the ones it only mentions, a pull
 request among them numbered `PR #N` as the queue's tags are. A bare
-`#41` in the prose is a link but says nothing about what it is, and the titles are the point of
-the list. What the renderer does and does not draw is in [Design.md](Design.md).
+`#41` in the prose is a link that shows its title only on hover, tinted like those tags when it is
+a pull request, so the list is still where the titles can be read. What the renderer does and does not draw is in [Design.md](Design.md).
 
 *Files* is every changed file grouped as *Config & docs* / *Tests* / *Code*, in that order. Inside
 each group the files read like a tree: the files at the top of the repository come first, and

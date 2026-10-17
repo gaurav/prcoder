@@ -526,6 +526,14 @@ a { color: var(--accent); }
 /* Up one step, to sit level with 15px serif rather than under it. */
 .md code { background: var(--bg); padding: 0 4px; border-radius: 3px; font-size: 13px; }
 .md em { font-style: italic; color: var(--fg); }
+/* A `#N` in the prose that is a pull request (mentionLink in pr.js): the
+   queue's PR tag tint, smaller, so it marks the number without making a pill
+   of it mid-sentence. The author's `#N` text is left alone. */
+.md a.ref.pull {
+  padding: 0 3px; border-radius: 4px; text-decoration: none;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent);
+}
 /* A fence scrolls on its own rather than widening the pane, which at 375px it
    would do at the first long command line. */
 .md pre {
