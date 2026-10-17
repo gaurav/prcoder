@@ -513,6 +513,9 @@ let links = null;
 /**
  * The two things `[README](README.md)` and `#28` need to become links: the
  * repository they are relative to, and the ref a path in it should be read at.
+ * And `refs`, what GitHub said each mentioned number is (`pr.issues`, by
+ * number), so a `#28` can say whether it is a pull request and what it is
+ * called.
  *
  * The head branch, because a description points at the files the pull request
  * adds as often as at ones that were already there -- except from a fork, where
@@ -524,6 +527,7 @@ let links = null;
 const linkBase = (pr) => ({
   repo: repoUrl(pr.url),
   ref: pr.isCrossRepository ? pr.baseRefName : pr.headRefName,
+  refs: new Map((pr.issues ?? []).map((i) => [i.number, i])),
 });
 
 /** `owner/repo`, from a repository URL on any host. */
@@ -1120,7 +1124,7 @@ function taskRow({ done, text, index }, onTask, where = links) {
  */
 export const inline = (s, where = links) => {
   const code = [];
-  const a = (href, text) => `<a href="${href}" target="_blank" rel="noopener">${text}</a>`;
+  const a = (href, text, attrs = '') => `<a href="${href}"${attrs} target="_blank" rel="noopener">${text}</a>`;
   return escape(s)
     .replace(/`([^`]+)`/g, (_, c) => `\u0000${code.push(c) - 1}\u0000`)
     .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
@@ -1135,11 +1139,31 @@ export const inline = (s, where = links) => {
     // a mention: those are preceded by a path character, and a mention has to
     // start a word. mentions() in tasks.js reads the same pattern over the same
     // shown text, which is what puts the same numbers in the Mentions row.
-    .replace(mention(), (m, pre, n) =>
-      (where ? `${pre}${a(`${escape(where.repo)}/issues/${n}`, `#${n}`)}` : m))
+    .replace(mention(), (m, pre, n) => (where ? pre + mentionLink(n, where, a) : m))
     .replace(/\n/g, '<br>')
     .replace(/\u0000(\d+)\u0000/g, (_, i) => `<code>${code[i]}</code>`);
 };
+
+/**
+ * A bare `#N` in the description as a link. What the title lookup found for it
+ * (`where.refs`) gives the URL GitHub has for it -- `/pull/N` for a pull
+ * request, where `/issues/N` is a guess GitHub redirects -- its title on
+ * hover, and for a pull request the `ref pull` class, which tints it like the
+ * queue's `PR #N` tag. The text stays the author's `#N`: it is their sentence,
+ * and `Builds on PR #149` where they wrote `Builds on #149` is the pane
+ * rewriting it. A number the lookup did not answer is a plain link, as before.
+ *
+ * The title and the URL are GitHub's, so anyone's text, going into attributes
+ * in a string set with innerHTML: both go through escape(), and a URL that is
+ * not http(s) is not used.
+ */
+function mentionLink(n, where, a) {
+  const found = where.refs?.get(Number(n));
+  const url = /^https?:\/\//.test(found?.url ?? '') ? escape(found.url) : `${escape(where.repo)}/issues/${n}`;
+  const pull = found?.kind === 'pull';
+  const title = found?.title ? ` title="${escape(`${pull ? 'Pull request' : 'Issue'}: ${found.title}`)}"` : '';
+  return a(url, `#${n}`, `${pull ? ' class="ref pull"' : ''}${title}`);
+}
 
 /**
  * Where a link in a description actually points, or null for one this pane will
