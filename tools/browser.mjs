@@ -463,12 +463,15 @@ console.log('titled: ', await page.evaluate(() => {
 }), ' (want every row titled: a bare number is a lookup that returned nothing)');
 
 // A number in a description is as often a pull request as an issue, and only
-// GitHub can say which: the chip's URL is the one the titles query returned, not
-// `/issues/<n>` built from the number. #27 is this repo's queue-tabs PR, so it is
-// the one that says whether that held -- /issues/27 redirects, and a redirect is
-// exactly what this stops being the answer.
-console.log('chip 27:', await page.evaluate(() => [...document.querySelectorAll('#pr-body .issues a')]
-  .find((a) => a.textContent.startsWith('PR #27 '))?.href), ' (want /pull/27, not /issues/27; nothing means it is not marked PR)');
+// GitHub can say which: a row marked `PR #N` links to the URL the titles query
+// returned, not `/issues/<n>` built from the number -- which redirects, and a
+// redirect is exactly what this stops being the answer. The first such row,
+// whichever PR is on screen, rather than one named number, which only some
+// descriptions mention.
+console.log('PR row: ', await page.evaluate(() => {
+  const a = [...document.querySelectorAll('#pr-body .issues a')].find((r) => r.textContent.startsWith('PR #'));
+  return a ? `${a.querySelector('.num').textContent} -> ${a.href}` : 'none';
+}), ' (want /pull/<n> for its number; none means no mention here is a PR, or none is marked)');
 
 // Where each tab was left. The two offsets are kept apart in module state, and
 // the switch is what used to lose them: renderPrTab read scrollTop *after*
