@@ -803,7 +803,8 @@ main.diff-off #diff-wrap { display: none; }
   border-color: color-mix(in srgb, var(--accent) 35%, transparent);
   background: color-mix(in srgb, var(--accent) 10%, transparent);
 }
-/* A mention on the Issues tab that is not an open issue: closed, or a PR. */
+/* A mention on the Issues tab that is not an open issue: closed, or a PR,
+   whose tag says so (`.tag.pull`). */
 .item.source.closed .text { color: var(--dim); }
 /* The Issues tab: the search, the milestone groups (the file list's folds,
    in the directory fold's face), a label as a dashed chip with no colour of

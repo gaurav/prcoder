@@ -400,7 +400,7 @@ checklist, ticked through to GitHub like the boxes in the PR pane.
 issues, read when the tab is opened and again on every visit, in groups you fold. With a pull
 request on screen the first group is what its description mentions without closing, the most
 recently updated on GitHub first; a mention that is not an open issue -- a closed one, or a pull
-request -- is dimmed and says which. Then one group per open milestone, in the order the owner's
+request, whose tag says `PR` -- is dimmed and followed by its state, `· closed` or `· merged`. Then one group per open milestone, in the order the owner's
 milestones are read ([MILESTONES.md](https://github.com/gaurav/milestones/blob/main/MILESTONES.md)):
 `Critical`, then releases and deadlines soonest first and the undated after them, then `Needed
 soon`, `Needed later`, `Not urgent` and `Upstream`, matched by name whatever their case; and last

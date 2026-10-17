@@ -1690,7 +1690,10 @@ test('the Issues tab leads with what the PR mentions, and a mention that is list
   const [first] = await groupsOf(fresh);
   assert.equal(first, 'mentioned|Mentioned by PR #12 2|open|2');
   const rows = fresh.locator('[data-group="mentioned"] .item');
-  assert.deepEqual(await rows.locator('.text').allTextContents(), ['Show whether each linked issue is still open', 'Per-route locking · merged pull request']);
+  // The tag says which is a pull request, so the text needs only its state.
+  assert.deepEqual(await rows.locator('.text').allTextContents(), ['Show whether each linked issue is still open', 'Per-route locking · merged']);
+  assert.deepEqual(await rows.locator('.tag:not(.label)').allTextContents(), ['#66', 'PR #7']);
+  assert.equal(await rows.locator('.tag.pull').count(), 1);
   assert.deepEqual(await rows.evaluateAll((ls) => ls.map((l) => l.classList.contains('closed'))), [false, true]);
   assert.equal(await rows.nth(0).locator('button.disclose').count(), 1);
   assert.equal(await rows.nth(1).locator('button.disclose').count(), 0, 'a mention with no body has nothing to open');
