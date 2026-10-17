@@ -201,6 +201,27 @@ test('a bare #N becomes a link to the issue of that number', () => {
   assert.equal(inline('#ffcc00 is the colour', where), '#ffcc00 is the colour');
 });
 
+// What the title lookup found: GitHub's URL rather than the /issues/ guess, the
+// title on hover, and a pull request marked as one. The text stays `#N`.
+test('a #N the lookup answered links where GitHub says, titled, and a PR is marked', () => {
+  const refs = new Map([
+    [27, { number: 27, url: 'https://github.test/o/r/pull/27', title: 'Queue tabs', kind: 'pull' }],
+    [28, { number: 28, url: 'https://github.test/o/r/issues/28', title: 'An "issue" <b>', kind: 'issue' }],
+    [29, { number: 29, url: 'javascript:alert(1)', title: 'odd', kind: 'issue' }]]);
+  const pr = inline('After #27.', { ...where, refs });
+  assert.equal(href(pr), 'https://github.test/o/r/pull/27');
+  assert.match(pr, /class="ref pull"/);
+  assert.match(pr, /title="Pull request: Queue tabs"/);
+  assert.match(pr, />#27<\/a>/);
+  const issue = inline('See #28.', { ...where, refs });
+  assert.doesNotMatch(issue, /class=/);
+  assert.match(issue, /title="Issue: An &quot;issue&quot; &lt;b&gt;"/);
+  // A URL that is not http(s) is not used; the guess stands in.
+  assert.equal(href(inline('#29', { ...where, refs })), 'https://github.test/o/r/issues/29');
+  // Not looked up: a plain link, as before.
+  assert.doesNotMatch(inline('#30', { ...where, refs }), /title=|class=/);
+});
+
 // The row under the badges. Derived from the PR's own URL rather than from the
 // status's nameWithOwner, which carries no host -- so this is also the test that
 // a GitHub Enterprise install is not quietly sent to github.com.
