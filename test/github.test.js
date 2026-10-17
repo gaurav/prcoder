@@ -403,7 +403,8 @@ test('the cheap per-poll call carries the checks, summarised', { skip: unix }, a
 // two of them. The pages are told apart by their query, not by being the
 // GraphQL call that came next: loadPr reads the linked issues alongside the
 // files, and a call of theirs would take a page and shift the rest by one.
-// Any other GraphQL call gets an empty answer. The counter is not atomic, so
+// The mentions' titles query (issueLinks) gets `links.json` where a test has
+// written one. Any other GraphQL call gets an empty answer. The counter is not atomic, so
 // only the file pages, which prFiles asks for one at a time, may use it.
 const withPr = (view, pages, fn, views = []) => withGh((dir) => [
   'case "$1" in',
@@ -412,6 +413,7 @@ const withPr = (view, pages, fn, views = []) => withGh((dir) => [
   `      if [ -f "${dir}/view$v.json" ]; then cat "${dir}/view$v.json"; else cat "${dir}/view.json"; fi ;;`,
   `  *) case "$*" in`,
   `       *"files(first:100"*) n=$(( $(cat "${dir}/n" 2>/dev/null || echo 0) + 1 )); echo $n > "${dir}/n"; cat "${dir}/page$n.json" ;;`,
+  `       *"issueOrPullRequest"*) cat "${dir}/links.json" 2>/dev/null || echo '{"data":{}}' ;;`,
   `       *) echo '{"data":{}}' ;;`,
   '     esac ;;',
   'esac',
@@ -464,6 +466,22 @@ test('the file pages are the file list\'s however many other calls run beside th
     const pr = await loadPr(os.tmpdir(), undefined, { pause: 0 });
     assert.deepEqual(pr.files.map((f) => f.path), all.map((f) => f.path));
     assert.equal(await fs.readFile(path.join(dir, 'n'), 'utf8'), '2\n');
+  });
+});
+
+// The Mentions list says which numbers are pull requests (`PR #N`), from the
+// same answer that titles them: GitHub's __typename, and its URL rather than
+// the /issues/ guess. A number it did not answer has neither.
+test('a mention carries the kind, title and URL its lookup found', { skip: unix }, async () => {
+  await withPr({ ...view, body: 'Follows #3 and #4, and #5.' }, [page([file(1)], null)], async (dir) => {
+    await fs.writeFile(path.join(dir, 'links.json'), JSON.stringify({ data: { repository: {
+      i3: { __typename: 'PullRequest', title: 'Earlier work', url: 'https://github.com/o/r/pull/3', state: 'MERGED', updatedAt: '2026-10-01T00:00:00Z' },
+      i4: { __typename: 'Issue', title: 'A bug', url: 'https://github.com/o/r/issues/4', state: 'OPEN', updatedAt: '2026-10-02T00:00:00Z' } } } }));
+    const pr = await loadPr(os.tmpdir(), undefined, { pause: 0 });
+    assert.deepEqual(pr.issues.map(({ number, kind, title, url }) => ({ number, kind, title, url })), [
+      { number: 3, kind: 'pull', title: 'Earlier work', url: 'https://github.com/o/r/pull/3' },
+      { number: 4, kind: 'issue', title: 'A bug', url: 'https://github.com/o/r/issues/4' },
+      { number: 5, kind: null, title: null, url: 'https://github.com/o/r/issues/5' }]);
   });
 });
 
