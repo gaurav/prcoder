@@ -1123,6 +1123,10 @@ function taskRow({ done, text, index }, onTask, where = links) {
  * either side or it eats snake_case; the asterisk form needs no such guard,
  * because a bare `*` mid-word is vanishingly rare in prose and common only in
  * globs, which live in code spans and are already out of reach.
+ *
+ * Strikethrough takes GitHub's `~x~` as well as `~~x~~`. No space just inside
+ * either tilde, as GFM has it, and no word character or `/` just outside, so
+ * `~/a and ~/b` and the `~user` in a URL are left alone.
  */
 export const inline = (s, where = links) => {
   const code = [];
@@ -1132,6 +1136,7 @@ export const inline = (s, where = links) => {
     .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
     .replace(/\*([^*\n]+)\*/g, '<em>$1</em>')
     .replace(/(?<![A-Za-z0-9_])_([^_\n]+)_(?![A-Za-z0-9_])/g, '<em>$1</em>')
+    .replace(/(?<![\w/~])(~~?)(?![\s~])([^~\n]*?[^\s~])\1(?![\w~])/g, '<del>$2</del>')
     .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (m, text, href) => {
       const url = target(href, where);
       return url ? a(url, text) : m;

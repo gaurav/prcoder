@@ -526,6 +526,7 @@ a { color: var(--accent); }
 /* Up one step, to sit level with 15px serif rather than under it. */
 .md code { background: var(--bg); padding: 0 4px; border-radius: 3px; font-size: 13px; }
 .md em { font-style: italic; color: var(--fg); }
+.md del { color: var(--dim); }
 /* A fence scrolls on its own rather than widening the pane, which at 375px it
    would do at the first long command line. */
 .md pre {
