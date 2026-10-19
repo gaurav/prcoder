@@ -187,8 +187,18 @@ const mentioned = (p = pr) => (p?.issues ?? []).filter((i) => !i.closes);
  */
 const issueCount = () => (!listing ? (issuesFailed ? '?' : '…') : query.trim() ? matching().length : listing.total);
 
-/** The listed issues the search lets through. */
-const matching = () => (listing?.issues ?? []).filter((i) => issueMatches(i, query));
+/**
+ * The listed issues the search lets through, worked out once per listing and
+ * query: a keystroke paints both the tab's count and the groups from it, over
+ * up to 500 issues with their bodies.
+ */
+const matching = () => {
+  if (matched.listing !== listing || matched.query !== query) {
+    matched = { listing, query, issues: (listing?.issues ?? []).filter((i) => issueMatches(i, query)) };
+  }
+  return matched.issues;
+};
+let matched = { listing: null, query: null, issues: [] };
 
 function render() {
   const host = document.getElementById('queue-body');
