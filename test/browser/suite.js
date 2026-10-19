@@ -1728,7 +1728,9 @@ test('the Issues tab leads with what the PR mentions, and a mention that is list
   // The tag says which is a pull request, so the text needs only its state --
   // and an open one, like an open issue, is not dimmed and needs none.
   assert.deepEqual(await rows.locator('.text').allTextContents(), ['Show whether each linked issue is still open', 'Per-route locking · merged', 'Still in review']);
-  assert.deepEqual(await rows.locator('.tag:not(.label)').allTextContents(), ['#66', 'PR #7', 'PR #8']);
+  // #7 and #8 are the pull request's repository's, not the one prcoder is in.
+  assert.deepEqual(await rows.locator('.tag:not(.label)').allTextContents(),
+    ['#66', 'PR heal-data-stewards/heal-vlmd-AI-pipeline#7', 'PR heal-data-stewards/heal-vlmd-AI-pipeline#8']);
   assert.equal(await rows.locator('.tag.pull').count(), 2);
   assert.deepEqual(await rows.evaluateAll((ls) => ls.map((l) => l.classList.contains('closed'))), [false, true, false]);
   assert.equal(await rows.nth(0).locator('button.disclose').count(), 1);

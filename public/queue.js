@@ -569,7 +569,9 @@ function issueRow(i, { repo = null, kind = 'issue', closed = false, text = i.tit
   }, { className: 'disclose', title: open ? 'hide the issue' : 'show the issue', ariaExpanded: String(open) }) : h('span', { className: 'disclose' });
   const row = h('li', { className: `item source${closed ? ' closed' : ''}`, dataset: { issue: String(i.number) } },
     disclose,
-    ext(i.url, refLabel({ issue: i.number, kind }), { className: tagClass(kind) }),
+    // With the repo when it is another's, as the item ↓ makes is tagged: the
+    // link, ▶ and ↓ all go there, and docs/Security.md has ▶'s link match the tag.
+    ext(i.url, refLabel({ issue: i.number, kind, repo }), { className: tagClass(kind) }),
     h('span', { className: 'text', textContent: i.title }),
     ...(i.labels ?? []).map((l) => h('span', { className: 'tag label' }, l)),
     h('span', { className: 'actions' },

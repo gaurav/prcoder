@@ -400,7 +400,8 @@ checklist, ticked through to GitHub like the boxes in the PR pane.
 **Issues** is always there, since a repository has issues whatever is checked out: its open
 issues, read when the tab is opened and again on every visit, in groups you fold. With a pull
 request on screen the first group is what its description mentions without closing, the most
-recently updated on GitHub first; a pull request's tag says `PR`, and a mention that is no longer open -- a closed
+recently updated on GitHub first; a pull request's tag says `PR`, one in another repository -- upstream's, in a
+fork-headed checkout -- is tagged with that repository's name as a queue item is, and a mention that is no longer open -- a closed
 issue, or a merged or closed pull request -- is dimmed and followed by its state, `· closed` or `· merged`.
 A poll that brings another pull request, or a description that mentions something new, while the
 tab is open has the listing read again, and a mention reads `…` until it is looked up. Then one group per open milestone, in the order the owner's
