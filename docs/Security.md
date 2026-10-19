@@ -156,7 +156,11 @@ A modified file's diff is not highlighted at all, and
   from the page and hands gh neither: `issueMove` in `server.js` looks both up in the listing the
   tab was last shown, and the listing's own values go to `gh issue edit`, with `--milestone=` so a
   title beginning with `-` stays a value (`setMilestone` in `github.js`). `test/api.test.js` pins
-  the refusals.
+  the refusals. The Pull requests tab's `/api/pull/milestone` is the same hold (`pullMove`) on the
+  listing that tab was last shown, which may have come from `.prcoder/pulls.json` rather than
+  GitHub -- so `readPulls` in `store.js` keeps a row only with an integer number and the whole of
+  a pull request link in this repository, and a milestone only with an integer number and a string
+  title, before anything from the file can be held to (`test/store.test.js`).
 - **Text from GitHub** — descriptions, titles, issue bodies, file names — is built into the page with
   `h()` and text nodes. `innerHTML` only through `inline()`, and a new kind of link only through
   `target()`.

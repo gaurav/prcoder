@@ -436,3 +436,38 @@ reads the listing again once GitHub has it, so the row moves group then and not 
 refusal is a toast. A mention that is not one of the repository's open issues cannot be dragged,
 since there is nothing of it here to move. Milestones themselves are not made, renamed or closed
 from prcoder.
+
+**Pull requests** is always there too: the repository's open pull requests, for picking the next
+one to work on, in the same groups as the issues -- one per open milestone in the owner's order,
+then **No milestone** -- or, with the second select over them set to *one list*, as one list.
+Within a group they are smallest first, since the next one to take on is usually the one that is
+nearly done; the first select over them changes that to largest first, newest, oldest, most or
+least recently updated, and both selects are remembered the way the pane sizes are. The search
+box covers the number, title, author, head branch, labels and body, and narrows the rows and
+the count as the issue search does. Each row is `PR #N` in a tinted chip, the title, its size as
+GitHub's size labels band it (`XS` under ten lines changed, `S` under thirty, `M` under a
+hundred, `L` under five hundred, `XL` under a thousand, `XXL` past that; hover for the lines
+added and removed and the file count), whether it can merge in a word (`ready`, `conflicts`,
+`behind base`, `blocked`, `checks failing`, `draft`, or `checking…` while GitHub works it out),
+the review decision when there is one, who opened it, its labels, the Files tab's pie (it fills
+by changed lines viewed, so an empty one is probably still being written and a full one is
+reviewed and waiting on something else), `new` for a week after it was opened, and how long since
+it was opened and since it last moved. A pull request not moved for three months is dimmed.
+One on no milestone that closes an issue on one shows that milestone as a dotted hint, since the
+pull request usually belongs where its issue is. Under the facts is the first paragraph of its
+description, clipped to two lines. The pull request on screen is marked *here* and offered no
+Switch; every other row's **Switch** checks it out, as the PR pane's does, and is disabled by
+uncommitted work for the same reason. ▸ opens the whole description under the row, drawn as an
+issue's body is, with the issues it closes, the milestone select, Switch and **Open on GitHub**
+under it; ▶ and ↓ do what they do on an issue's row, and the copied item is tagged `PR #N`.
+
+The list is read from GitHub only for this tab, never for the switcher: the one call that carries
+the size, the merge state and the viewed files takes seconds on a repository with many open
+([Verifying.md](Verifying.md#figures-worth-re-measuring) has the figure), so the tab opens from
+the last listing -- the server's, or `.prcoder/pulls.json`, which keeps it between runs -- and
+reads GitHub behind it, unless the listing is under a minute old. The line under the groups says
+when the listing was read and `updating…` while the read is out; ⟳ beside the search reads
+whatever the age. A read that fails leaves the list as it was and says so in a toast.
+A row dragged onto a milestone's line, or the pick in its opened row, sets the pull request's
+milestone on GitHub exactly as an issue's is set, with the same hold: the number and the title
+both come from the listing the tab was shown.

@@ -46,12 +46,14 @@ into prcoder is [#21](https://github.com/gaurav/prcoder/issues/21)'s question.
 **What else reaches GitHub, and only on a click:** ◎ files an item as a new issue, a file's checkbox
 marks it viewed, creating a pull request pushes the branch and opens GitHub's compare page, and
 dropping an issue on a milestone group in the Issues tab -- or picking one in its opened row --
-sets that issue's milestone, which is triage and not an edit: nothing in prcoder changes what an
-issue says, and no milestone is ever made, renamed or closed from here. None
+sets that issue's milestone, and the Pull requests tab does the same for a pull request, which is
+triage and not an edit: nothing in prcoder changes what an issue or a pull request says, and no
+milestone is ever made, renamed or closed from here. None
 of them writes a description.
 
-**Each permanent source is a tab, read straight from it.** PR is the description's checklist, and
-Issues is the repository's open issues; pulling from either copies the item
+**Each permanent source is a tab, read straight from it.** PR is the description's checklist,
+Issues is the repository's open issues, and Pull requests its open pull requests; pulling from any
+of them copies the item
 into Local and leaves the source alone, since a checkbox is the PR's record and an issue is the
 project's. Issues began as only the issues the description mentions, and grew on 2026-10-15
 ([#58](https://github.com/gaurav/prcoder/issues/58)) into the whole repository's, grouped by
@@ -59,7 +61,14 @@ milestone in the order the owner's milestones mean, searchable, with each issue'
 in place -- so that the next thing to do is picked with the issue read, and handed to the agent
 with its link, rather than built from memory. What it still is not is a tracker: nothing here
 edits an issue, and the groups are GitHub's milestones, not a list of prcoder's own. There is no
-milestone picker, because the ranking already says which group to open first. Quitting does not offer to file
+milestone picker, because the ranking already says which group to open first. Pull requests
+(2026-10-19) is the same shape for the other thing a repository holds, built for the repository
+with sixty open where the switcher's titles were not enough to pick from: grouped by the pull
+request's own milestone, sorted smallest first, with the facts the choice turns on in one line
+each, and its slow listing cached in `.prcoder/pulls.json` so the tab opens at once. It replaced
+a table of the same facts in the PR pane's 375px column ([#151](https://github.com/gaurav/prcoder/pull/151),
+kept as a draft), which was too narrow to scan and had put its slow call on the switcher's path.
+Quitting does not offer to file
 what is left on Local as issues: it prints the list, which is on disk anyway, and filing is ◎'s
 job, where you can see each item. FUTURE.md is not a source and
 will not be one (retired 2026-09-26): its items were all either done or already issues, and a
