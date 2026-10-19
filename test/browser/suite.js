@@ -1919,7 +1919,7 @@ test('searching the pull requests narrows the rows and counts them, and a row op
   await twelve.locator('button[title="copy into your queue"]').click();
   await fresh.waitForFunction(() => document.querySelector('#queue-body .tab[data-tab="local"]')?.textContent === 'Local (1)');
   await fresh.locator('#queue-body .tab[data-tab="local"]').click();
-  assert.equal(await fresh.locator('#queue-body .item .tag.issue').textContent(), '#12');
+  assert.equal(await fresh.locator('#queue-body .item .tag.pull').textContent(), 'PR #12');
   await fresh.close();
 });
 
