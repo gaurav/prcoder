@@ -310,6 +310,32 @@ await page.locator('#queue-search').fill('zzz-nothing-matches-zzz');
 console.log('  search: ', await page.locator('#queue-body .tab', { hasText: /^Issues/ }).innerText(),
   `${await page.locator('#queue-body .fold.milestone .item').count()} rows`, '(want Issues (0) and 0 rows)');
 await page.locator('#queue-search').fill('');
+
+// Pull requests is the repository's open pull requests by milestone, with the
+// facts the choice of the next one turns on; the tab opens from the last
+// listing and reads GitHub behind it, and the note under the groups says
+// when the listing was read. Nothing here is moved: a drag or a pick would
+// put a real pull request on a milestone.
+await page.locator('#queue-body .tab', { hasText: /^Pull requests/ }).click();
+await page.waitForFunction(() => /^Read /.test(document.querySelector('#queue-body .pull-note')?.textContent ?? '')
+  && !document.querySelector('#queue-body .pull-note').textContent.includes('updating'), null, { timeout: 60_000 });
+console.log('pulls:  ', await page.locator('#queue-body .tab', { hasText: /^Pull requests/ }).innerText(), '|',
+  (await page.$$eval('#queue-body .fold.milestone', (gs) => gs.map((g) =>
+    `${g.querySelector('h3').textContent.replace(/\s+/g, ' ').trim()}${g.open ? ' (open)' : ''}`))).join(' | '),
+  '|', await page.locator('#queue-body .pull-note').innerText(),
+  '\n  (want the open count, every open milestone in rank order with its count, the first with pull requests open, and when it was read)');
+console.log('  rows:  ', (await page.$$eval('#queue-body .item.pull', (ls) => ls.map((l) =>
+  [l.querySelector('.tag.pull')?.textContent, l.querySelector('.size')?.textContent, l.querySelector('.pr-merge')?.textContent,
+    l.querySelector('.who')?.textContent, ...[...l.querySelectorAll('.age')].map((a) => a.textContent), l.classList.contains('here') ? 'here' : ''].filter(Boolean).join(' ')))).join('\n          '),
+'\n  (want each open pull request with its size, merge word, author and ages, the one on screen marked here)');
+const openPull = page.locator('#queue-body .fold.milestone[open] .item.pull button.disclose').first();
+if (await openPull.count()) {
+  await openPull.click();
+  await page.waitForSelector('#queue-body .issue-body');
+  console.log('  opened:', JSON.stringify((await page.locator('#queue-body .issue-body').first().innerText()).slice(0, 80)),
+    '(want the description as rendered text, ending in Open on GitHub)');
+}
+await page.locator('#queue').screenshot({ path: path.join(out, 'queue-pulls.png') });
 await page.locator('#queue-body .tab', { hasText: /^Local/ }).click();
 await page.waitForTimeout(150);
 
