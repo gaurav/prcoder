@@ -1736,6 +1736,18 @@ test('the Issues tab leads with what the PR mentions, and a mention that is list
   await fresh.close();
 });
 
+// A mention that is a listed issue is searched as that issue's own row is,
+// labels and all, so a search never finds one of the two and not the other.
+test('a mention that is a listed issue matches a search on its labels, as its row does', { skip }, async () => {
+  const url = 'https://github.com/gaurav/prcoder/issues/90';
+  const { fresh } = await issuesPage({ ...ISSUES, mentions: [
+    { number: 90, url, title: 'Something for later', kind: 'issue', state: 'OPEN', updatedAt: '2026-10-08T00:00:00Z' }] },
+  [{ number: 90, url, closes: false, title: 'Something for later' }]);
+  await fresh.locator('#queue-search').fill('help wanted');
+  assert.deepEqual((await groupsOf(fresh)).filter((g) => !g.endsWith('|0')).map((g) => g.split('|')[0]), ['mentioned', 'm:3']);
+  await fresh.close();
+});
+
 // The mentions are looked up for the pull request that was on screen when
 // the listing was asked for; a poll that brings a description mentioning
 // something new asks again, and the new mention reads `…` until it lands,

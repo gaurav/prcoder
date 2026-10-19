@@ -476,11 +476,11 @@ function issueGroups() {
   }, list.length ? [h('ul', { className: 'items' }, ...rows)] : [h('p', { className: 'empty' }, 'no open issues')]);
 
   const out = [];
-  // The mentions, searched by what is known of them: the looked-up title, and
-  // the body when the mention is one of the listed issues.
-  const ment = mentioned().filter((i) => issueMatches({
-    number: i.number, title: mentions?.get(i.number)?.title, body: listedAs(i)?.body,
-  }, query));
+  // The mentions, searched by what is known of them: one that is a listed
+  // issue as that issue is, labels and body too, so the two rows match alike;
+  // any other by its looked-up title.
+  const ment = mentioned().filter((i) => issueMatches(listedAs(i)
+    ?? { number: i.number, title: mentions?.get(i.number)?.title }, query));
   if (pr && ment.length) {
     out.push(group('mentioned', `Mentioned by PR #${pr.number}`, ment, newestFirst(ment, mentions).map((i) => mentionRow(i)).flat()));
   }
