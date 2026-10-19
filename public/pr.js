@@ -1090,10 +1090,16 @@ function description(parsed, onTask) {
   ];
 }
 
-/** A checkbox in the description, ticked through to GitHub. */
+/**
+ * A checkbox in the description, ticked through to GitHub.
+ *
+ * The row is a div, not a <label>: in a label a click anywhere on the text
+ * ticks the box, so a line could not be selected to copy without writing a
+ * tick to GitHub. Only the box ticks, as in the queue's PR tab.
+ */
 function taskRow({ done, text, index }, onTask, where = links) {
   const box = h('input', { type: 'checkbox', checked: done });
-  const row = h('label', { className: `task${done ? ' done' : ''}` },
+  const row = h('div', { className: `task${done ? ' done' : ''}` },
     box, h('span', { innerHTML: inline(text, where) }));
   if (onTask) {
     box.title = 'tick this on GitHub';

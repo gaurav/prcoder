@@ -277,6 +277,11 @@ test('checkboxes render with their state, and a tick posts through', { skip }, a
   assert.deepEqual(await boxes.evaluateAll((list) => list.map((b) => b.checked)), [false, true, false]);
   assert.equal(await page.locator('.task.done').count(), 1);
 
+  // The text is for reading and copying: a click on it ticks nothing.
+  await page.locator('.task > span').first().click();
+  assert.equal(await boxes.first().isChecked(), false);
+  assert.deepEqual(posted, []);
+
   await boxes.first().click();
   await page.waitForFunction(() => document.querySelectorAll('.task.done').length === 2);
   assert.deepEqual(posted, [{ index: 0, done: true, text: 'first task' }]);
