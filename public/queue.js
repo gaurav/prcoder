@@ -533,9 +533,9 @@ function mentionRow(i) {
   const text = !found ? '…'
     : !title ? 'not found on GitHub'
       : open ? title : `${title} · ${found.state?.toLowerCase() ?? 'state unknown'}`;
-  return [issueRow({ number: i.number, url: i.url, title: text, body: null }, {
+  return issueRow({ number: i.number, url: i.url, title: text, body: null }, {
     repo, kind: found?.kind ?? null, closed: !open && !!found, text: title ?? `#${i.number}`,
-  })];
+  });
 }
 
 /**
