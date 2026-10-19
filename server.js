@@ -374,7 +374,10 @@ const routes = {
    * (repoIssues), with the repository they are in as `repo`, and, with a pull
    * request on screen, the issues its
    * description mentions without closing as `mentions`: title, state and kind,
-   * asked about by number, capped at 50 as withLinks is. Two calls rather than
+   * asked about by number, capped at 50 as withLinks is -- one past the cap is
+   * there with its number alone, as one GitHub does not know is, so that every
+   * mention has an answer and the tab can tell one not asked about yet, a
+   * mention added since, from one asked about and not found. Two calls rather than
    * one query: issueLinks already reads an answer gh exited 1 on for the
    * numbers it did resolve, and a listing should not have to. No pull request
    * is needed -- a repository has issues whatever branch is checked out.
@@ -386,10 +389,10 @@ const routes = {
     const { nameWithOwner } = await repoFacts();
     const [owner, name] = nameWithOwner.split('/');
     const cur = pr;
-    const numbers = (cur?.issues ?? []).filter((i) => !i.closes).map((i) => i.number).slice(0, 50);
+    const numbers = (cur?.issues ?? []).filter((i) => !i.closes).map((i) => i.number);
     const [found, links] = await Promise.all([
       repoIssues(repo, owner, name),
-      numbers.length ? issueLinks(repo, cur.url, numbers) : new Map(),
+      numbers.length ? issueLinks(repo, cur.url, numbers.slice(0, 50)) : new Map(),
     ]);
     return { ...found, repo: nameWithOwner, mentions: numbers.map((number) => ({ number, ...links.get(number) })) };
   },

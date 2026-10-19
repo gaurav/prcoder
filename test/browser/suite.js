@@ -1511,7 +1511,9 @@ const ISSUES = {
     { number: 149, title: 'Add a PRs pane', url: 'https://github.com/gaurav/prcoder/issues/149', updatedAt: '2026-10-07T00:00:00Z',
       body: '', milestone: null, labels: [] },
   ],
-  total: 4, listed: 4, repo: 'gaurav/prcoder', mentions: [],
+  // The fixture PR mentions #7, and /api/issues answers every mention, with
+  // its number alone when GitHub did not know it.
+  total: 4, listed: 4, repo: 'gaurav/prcoder', mentions: [{ number: 7 }],
 };
 const groupsOf = (p) => p.$$eval('#queue-body .fold.milestone', (gs) => gs.map((g) =>
   `${g.dataset.group}|${g.querySelector('h3').textContent.replace(/\s+/g, ' ').trim()}|${g.open ? 'open' : 'closed'}|${g.querySelectorAll('.item').length}`));
@@ -1543,7 +1545,7 @@ test('the Issues tab groups the repository\'s open issues by milestone in rank o
     'mentioned|Mentioned by PR #12 1|open|1',
     'm:2|v0.1 2026-10-02 1|open|1', 'm:1|v1.0 2026-10-14 1|closed|1', 'm:4|Needed soon 0|closed|0',
     'm:3|Not urgent 1|closed|1', 'm:none|No milestone 1|closed|1']);
-  // The mention is not in the listing's answer, so it says so, dimmed.
+  // GitHub did not know the mention, so it says so, dimmed.
   assert.equal(await fresh.locator('[data-group="mentioned"] .item.closed .text').textContent(), 'not found on GitHub');
   assert.equal(await fresh.locator('[data-group="m:4"] .empty').textContent(), 'no open issues');
   assert.equal(await fresh.locator('[data-group="m:3"] summary a').getAttribute('href'), 'https://github.com/gaurav/prcoder/milestone/3');
@@ -1712,6 +1714,31 @@ test('the Issues tab leads with what the PR mentions, and a mention that is list
   assert.deepEqual(await rows.evaluateAll((ls) => ls.map((l) => l.classList.contains('closed'))), [false, true, false]);
   assert.equal(await rows.nth(0).locator('button.disclose').count(), 1);
   assert.equal(await rows.nth(1).locator('button.disclose').count(), 0, 'a mention with no body has nothing to open');
+  await fresh.close();
+});
+
+// The mentions are looked up for the pull request that was on screen when
+// the listing was asked for; a poll that brings a description mentioning
+// something new asks again, and the new mention reads `…` until it lands,
+// rather than not found.
+test('a mention the description gains while the Issues tab is open is looked up', { skip }, async () => {
+  const seven = { number: 7, url: `${REPO}/issues/7`, title: 'Per-route locking', kind: 'issue', state: 'OPEN', updatedAt: '2026-09-01T00:00:00Z' };
+  const { fresh } = await issuesPage({ ...ISSUES, mentions: [seven] });
+  let release;
+  const held = new Promise((r) => { release = r; });
+  await fresh.route('**/api/issues', async (r) => { await held; return r.fulfill({ json: { ...ISSUES, mentions: [seven,
+    { number: 9, url: `${REPO}/issues/9`, title: 'Newly mentioned', kind: 'issue', state: 'OPEN', updatedAt: '2026-10-01T00:00:00Z' }] } }); });
+  const asked = fresh.waitForRequest('**/api/issues');
+  await fresh.route('**/api/status', (r) => r.fulfill({ json: { ...status, nameWithOwner: 'gaurav/prcoder', pr: { ...pr, issues: [
+    ...pr.issues, { number: 9, url: `${REPO}/issues/9`, closes: false, title: 'Newly mentioned' }] } } }));
+  await fresh.click('#pr-refresh');
+  await asked;
+  const rows = fresh.locator('[data-group="mentioned"] .item');
+  await fresh.waitForFunction(() => document.querySelectorAll('[data-group="mentioned"] .item').length === 2);
+  assert.deepEqual(await rows.locator('.text').allTextContents(), ['Per-route locking', '…']);
+  assert.equal(await rows.nth(1).evaluate((l) => l.classList.contains('closed')), false, 'not looked up is not dimmed');
+  release();
+  await fresh.waitForFunction(() => document.querySelector('[data-group="mentioned"] .item .text')?.textContent === 'Newly mentioned');
   await fresh.close();
 });
 

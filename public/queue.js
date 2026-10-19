@@ -43,6 +43,13 @@ export function setItems(next, prOnScreen = null) {
   // PR tab without changing the list, so it has to count as news too.
   const source = (p) => (p ? JSON.stringify([p.number, p.body, p.issues]) : '');
   const samePr = source(prOnScreen) === source(pr);
+  // The mentions' titles and states come with the listing, looked up for the
+  // pull request on screen when it was asked for. A different one, or a
+  // description that mentions something new -- or the first poll's, after a
+  // visit to the tab before it -- needs them asked for again, and until they
+  // land a mention not looked up reads `…` (mentionRow).
+  const asks = (p) => JSON.stringify([p?.url ?? null, mentioned(p).map((i) => i.number)]);
+  if (tab === 'issues' && asks(prOnScreen) !== asks(pr)) loadIssues(true);
   pr = prOnScreen;
   // Most polls bring the list already on screen, and a rebuild for nothing
   // costs every row and listener. `items` is kept, not swapped for the equal
@@ -172,7 +179,7 @@ const prTasks = () => (pr ? blocks(pr.body).filter((b) => b.kind === 'task') : [
  * are what the PR already answers; a bare `#N` elsewhere is work it points at.
  * The Issues tab's first group, ahead of the repository's own.
  */
-const mentioned = () => (pr?.issues ?? []).filter((i) => !i.closes);
+const mentioned = (p = pr) => (p?.issues ?? []).filter((i) => !i.closes);
 
 /** The Issues tab's count: the repository's open issues, the matches while searching, `…` before the first listing. */
 const issueCount = () => (!listing ? '…' : query.trim() ? matching().length : listing.total);
@@ -494,11 +501,13 @@ function mentionRow(i) {
   if (own) return issueRow(own);
   const title = found?.title;
   const open = found?.state === 'OPEN';
-  const text = !mentions ? '…'
+  // Not in the lookup is not looked up yet: every mention it was asked
+  // about has an entry, with no title when GitHub did not know the number.
+  const text = !found ? '…'
     : !title ? 'not found on GitHub'
       : open ? title : `${title} · ${found.state?.toLowerCase() ?? 'state unknown'}`;
   return [issueRow({ number: i.number, url: i.url, title: text, body: null }, {
-    repo, kind: found?.kind ?? null, closed: !open && !!mentions, text: title ?? `#${i.number}`,
+    repo, kind: found?.kind ?? null, closed: !open && !!found, text: title ?? `#${i.number}`,
   })];
 }
 
