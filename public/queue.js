@@ -298,8 +298,29 @@ function flashLocal() {
  * It lands in the groups alone when the tab is drawn: the search box is up
  * before the listing is, and a render() would take it out from under a
  * query being typed.
+ *
+ * One listing at a time: a listing is up to five pages of GitHub's, and
+ * clicking Issues, Local, Issues while one was out started a second, which
+ * could land first and be overwritten by the older. A visit while one is out
+ * takes that one, which was asked for moments ago. `again` is for a caller
+ * that knows the one out is stale, and has another asked for once it lands.
  */
-async function loadIssues() {
+function loadIssues(again = false) {
+  if (issuesLoading) {
+    issuesStale ||= again;
+    return;
+  }
+  issuesLoading = fetchIssues().finally(() => {
+    issuesLoading = null;
+    if (!issuesStale) return;
+    issuesStale = false;
+    if (tab === 'issues') loadIssues();
+  });
+}
+let issuesLoading = null;
+let issuesStale = false;
+
+async function fetchIssues() {
   try {
     const got = await api('/api/issues', undefined, 'GET');
     listing = got;
