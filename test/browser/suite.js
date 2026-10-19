@@ -1590,13 +1590,15 @@ test('searching the issues narrows the rows, opens the groups with a match, and 
   const { fresh } = await issuesPage();
   const search = fresh.locator('#queue-search');
   await search.fill('row is read');
-  // A mention with nothing matching drops out of the tab altogether.
-  assert.deepEqual(await groupsOf(fresh), [
-    'm:2|v0.1 2026-10-02 1|open|1', 'm:1|v1.0 2026-10-14 0|closed|0', 'm:4|Needed soon 0|closed|0',
-    'm:3|Not urgent 0|closed|0', 'm:none|No milestone 0|closed|0']);
+  // A group with nothing matching, the mentions or a milestone, drops out of
+  // the tab altogether, rather than saying it has no open issues.
+  assert.deepEqual(await groupsOf(fresh), ['m:2|v0.1 2026-10-02 1|open|1']);
   assert.equal(await fresh.locator('#queue-body .tab[data-tab="issues"]').textContent(), 'Issues (1)');
+  await search.fill('zzz');
+  assert.deepEqual(await groupsOf(fresh), []);
+  assert.equal(await fresh.locator('#queue-body .issue-groups .empty').textContent(), 'No open issues match.');
   await search.fill('#149');
-  assert.deepEqual((await groupsOf(fresh)).filter((g) => g.endsWith('|1')), ['m:none|No milestone 1|open|1']);
+  assert.deepEqual(await groupsOf(fresh), ['m:none|No milestone 1|open|1']);
   // A poll that brings news holds off while the search box has focus, so
   // its text and caret survive; the news lands with the next repaint.
   assert.equal(await fresh.evaluate(() => document.activeElement.id), 'queue-search');
@@ -1746,7 +1748,7 @@ test('a mention that is a listed issue matches a search on its labels, as its ro
     { number: 90, url, title: 'Something for later', kind: 'issue', state: 'OPEN', updatedAt: '2026-10-08T00:00:00Z' }] },
   [{ number: 90, url, closes: false, title: 'Something for later' }]);
   await fresh.locator('#queue-search').fill('help wanted');
-  assert.deepEqual((await groupsOf(fresh)).filter((g) => !g.endsWith('|0')).map((g) => g.split('|')[0]), ['mentioned', 'm:3']);
+  assert.deepEqual((await groupsOf(fresh)).map((g) => g.split('|')[0]), ['mentioned', 'm:3']);
   await fresh.close();
 });
 

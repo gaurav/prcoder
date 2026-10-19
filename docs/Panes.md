@@ -417,7 +417,7 @@ later, made on GitHub since, starts folded; a group you open or close stays so u
 reloaded, through every poll.
 
 The box above the groups searches the number, title, labels and body of every issue listed; a
-group with a match opens and one without closes, and the tab's count becomes how many matched.
+group with a match opens and one without is left out, and the tab's count becomes how many matched.
 Cleared, the groups go back to how you left them. The count is otherwise the repository's open
 issues, and `…` until the first listing lands; if that one cannot be read, the count is `?` and
 the tab says why, with a way to try again. The listing stops at 500, the most recently

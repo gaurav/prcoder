@@ -474,15 +474,17 @@ function issueGroups() {
     byMilestone.get(key).push(i);
   }
   const ranked = rankMilestones(listing.milestones);
-  // While searching a group with a match is open and one without is closed,
-  // without touching what was chosen: fold() reports its initial state too.
-  const state = (key, rows) => (searching ? { open: rows.length > 0, onToggle: () => {} } : kept(closedGroups, key, 'closed'));
+  // While searching every group drawn has a match and is open, without
+  // touching what was chosen: fold() reports its initial state too. One
+  // without a match is left out, as the mentions are -- drawn, it said "no
+  // open issues" of a milestone that has them.
+  const state = (key) => (searching ? { open: true, onToggle: () => {} } : kept(closedGroups, key, 'closed'));
   const home = deps.home?.();
   // `list` is the group's issues and `rows` what they draw, which is more
   // than one element per issue once a row is open: the count is the issues'.
   const group = (key, title, list, rows, extra = []) => fold({
     className: 'milestone', dataset: { group: key }, title: [title, ...extra.flatMap((e) => [' ', e]), ' ', h('span', { className: 'count' }, String(list.length))],
-    ...state(key, list),
+    ...state(key),
   }, list.length ? [h('ul', { className: 'items' }, ...rows)] : [h('p', { className: 'empty' }, 'no open issues')]);
 
   const out = [];
@@ -502,10 +504,12 @@ function issueGroups() {
       ...(m.closed ? [h('span', { className: 'closed-milestone', title: 'closed on GitHub, with open issues still on it' }, 'closed')] : []),
     ];
     const list = byMilestone.get(m.number) ?? [];
+    if (searching && !list.length) continue;
     out.push(group(`m:${m.number}`, title, list, list.map((i) => issueRow(i)).flat(), extra));
   }
   const none = byMilestone.get(NONE) ?? [];
-  out.push(group(`m:${NONE}`, 'No milestone', none, none.map((i) => issueRow(i)).flat()));
+  if (!searching || none.length) out.push(group(`m:${NONE}`, 'No milestone', none, none.map((i) => issueRow(i)).flat()));
+  if (!out.length) out.push(h('p', { className: 'empty' }, 'No open issues match.'));
   if (listing.listed < listing.total) {
     out.push(h('p', { className: 'pr-note' }, `The ${listing.listed} most recently updated of ${listing.total} open issues.`));
   }
