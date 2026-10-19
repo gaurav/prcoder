@@ -327,14 +327,16 @@ test('the issue listing reaches GitHub as variables, and becomes milestones and 
     assert.equal(got.issues[0].milestone, 7);
   });
 
-  // A CRLF body reads as LF, as a description does, and a title of control
-  // characters is the number, as linksFrom has it.
+  // A CRLF body reads as LF, as a description does, a title of control
+  // characters is the number, as linksFrom has it, and a label is rid of them.
   const odd = structuredClone(ISSUES_PAGE);
-  Object.assign(odd.data.repository.issues.nodes[0], { title: '\x1b\r', body: 'a\r\nb' });
+  Object.assign(odd.data.repository.issues.nodes[0], { title: '\x1b\r', body: 'a\r\nb',
+    labels: { nodes: [{ name: 'needs\x1b[2Jreview' }, { name: '\r' }] } });
   await withGh(() => `cat <<'JSON'\n${JSON.stringify(odd)}\nJSON`, async () => {
     const [first] = (await repoIssues(os.tmpdir(), 'gaurav', 'prcoder')).issues;
     assert.equal(first.title, '#149');
     assert.equal(first.body, 'a\nb');
+    assert.deepEqual(first.labels, ['needs [2Jreview']);
   });
 });
 
