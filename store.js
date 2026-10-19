@@ -35,7 +35,7 @@ const file = (repo) => queueFile ?? path.join(dir(repo), FILE);
  * tools/browser.mjs, which drives the queue pane against a file in `data/` and
  * so never writes the queue of the working copy it runs in (#65). Resolved
  * against the directory prcoder started in. Only the queue moves; port.json
- * and prs.json stay in `.prcoder/`, and so does the `.gitignore` -- a file named here is
+ * prs.json and pulls.json stay in `.prcoder/`, and so does the `.gitignore` -- a file named here is
  * wherever you put it, ignored or not.
  */
 let queueFile = null;
@@ -313,6 +313,57 @@ export async function writePrs(repo, branch, entry, now = Date.now()) {
       ? { ...p, unread: new Date(Math.min(p.unread, now)).toISOString() } : p)) }]));
   await writeJson(repo, prsFile(repo), { version: VERSION, branches });
 }
+
+/**
+ * `.prcoder/pulls.json`: the repository's open pull requests and milestones as
+ * the queue's Pull requests tab last read them (repoPulls in github.js), and
+ * when. The read takes seconds on a repository with many open -- the figure is
+ * in docs/Verifying.md -- so the tab opens from this file at once and reads
+ * GitHub behind it. One repository's list, named in the file, so a working copy
+ * whose pull requests are now looked for elsewhere (a fork's, a renamed one's)
+ * reads GitHub rather than opening on the old list. A cache, as prs.json is:
+ * a file that cannot be read -- damaged, hand-edited, a newer prcoder's -- is
+ * read as none, which costs one read of GitHub.
+ *
+ * `{ version, nameWithOwner, read, milestones, pulls, total, listed }`, `read`
+ * an ISO time, the rest as repoPulls answers. Two values from a row reach gh:
+ * a pull request's number and a milestone's title, through /api/pull/milestone's
+ * hold on the listing the tab was shown (pullMove in server.js) -- and a hand-edit
+ * can put anything in a row. So a pull request is kept only with an integer number
+ * and a URL that is the whole of a pull request link in this repository, compared
+ * case-blind as prsEntry compares, and a milestone only with an integer number and
+ * a string title. The rest of a row is drawn as text, or rendered through the
+ * description's allowlist (docs/Security.md).
+ */
+const PULLS_FILE = 'pulls.json';
+const pullsFile = (repo) => path.join(dir(repo), PULLS_FILE);
+
+const sameRepo = (a, b) => typeof a === 'string' && typeof b === 'string' && a.toLowerCase() === b.toLowerCase();
+
+/** The listing as read from disk, or null for anything that is not this repository's. */
+function pullsEntry(parsed, nameWithOwner) {
+  if (!parsed || Number(parsed.version) > VERSION || !sameRepo(parsed.nameWithOwner, nameWithOwner)) return null;
+  const read = Date.parse(parsed.read);
+  if (!Number.isFinite(read) || !Array.isArray(parsed.pulls) || !Array.isArray(parsed.milestones)) return null;
+  const pulls = parsed.pulls.filter((p) => {
+    const l = link(p?.url);
+    return Number.isInteger(p.number) && l?.kind === 'pull' && l.issue === p.number && sameRepo(l.repo, nameWithOwner);
+  });
+  const milestones = parsed.milestones.filter((m) => m && Number.isInteger(m.number) && typeof m.title === 'string' && m.title);
+  const total = Number.isInteger(parsed.total) ? parsed.total : pulls.length;
+  return { read, milestones, pulls, total, listed: pulls.length };
+}
+
+/** The last listing written for `nameWithOwner`, `read` in ms, or null. */
+export async function readPulls(repo, nameWithOwner) {
+  let parsed;
+  try { parsed = JSON.parse(await fs.readFile(pullsFile(repo), 'utf8')); } catch { return null; }
+  return pullsEntry(parsed, nameWithOwner);
+}
+
+/** The listing replaced whole, stamped with when it was read. Not under the server's lock: a temp file and a rename, so a reader sees the old file or the new. */
+export const writePulls = (repo, nameWithOwner, listing, now = Date.now()) =>
+  writeJson(repo, pullsFile(repo), { version: VERSION, nameWithOwner, ...listing, read: new Date(now).toISOString() });
 
 /**
  * The whole list replaced, coerced on the way in -- and where `doneAt` and

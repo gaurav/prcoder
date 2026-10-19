@@ -12,7 +12,7 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import { WebSocket } from 'ws';
-import { server, sessionArgs, startedWith, missingVendor, keepPr, issueMove } from '../server.js';
+import { server, sessionArgs, startedWith, missingVendor, keepPr, issueMove, pullMove } from '../server.js';
 import { grammars } from '../public/diff.js';
 import { VERSION } from '../cli.js';
 
@@ -318,4 +318,26 @@ test('/api/issue/milestone refuses an issue or a milestone the tab was not shown
   assert.throws(() => issueMove(listing, { number: 58, milestone: 'needed soon' }), { message: '"needed soon" is not an open milestone the Issues tab listed' });
   assert.throws(() => issueMove(listing, { number: 58, milestone: '--remove-milestone' }), { message: '"--remove-milestone" is not an open milestone the Issues tab listed' });
   assert.throws(() => issueMove(null, {}), { message: '#? is not an open issue the Issues tab listed' });
+});
+
+// The Pull requests tab's one write is held the same way, to the listing that
+// tab was last shown -- from the cache or from GitHub -- and says which tab.
+test('/api/pull/milestone refuses a pull request or a milestone the tab was not shown', async () => {
+  const res = await fetch(`${base}/api/pull/milestone`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ number: 151, milestone: 'Needed soon' }),
+  });
+  assert.equal(res.status, 500);
+  assert.deepEqual(await res.json(), { error: '#151 is not an open pull request the Pull requests tab listed' });
+
+  const listing = { pulls: [{ number: 151 }, { number: 153 }], milestones: [{ number: 4, title: 'Needed soon' }] };
+  assert.deepEqual(pullMove(listing, { number: 151, milestone: 'Needed soon' }), { number: 151, title: 'Needed soon' });
+  assert.deepEqual(pullMove(listing, { number: 153, milestone: null }), { number: 153, title: null });
+  assert.throws(() => pullMove(listing, { number: 152, milestone: 'Needed soon' }), { message: '#152 is not an open pull request the Pull requests tab listed' });
+  assert.throws(() => pullMove(listing, { number: '151', milestone: 'Needed soon' }), { message: '#151 is not an open pull request the Pull requests tab listed' });
+  assert.throws(() => pullMove(listing, { number: 151, milestone: 'needed soon' }), { message: '"needed soon" is not an open milestone the Pull requests tab listed' });
+  assert.throws(() => pullMove(listing, { number: 151, milestone: '--remove-milestone' }), { message: '"--remove-milestone" is not an open milestone the Pull requests tab listed' });
+  assert.throws(() => pullMove(null, {}), { message: '#? is not an open pull request the Pull requests tab listed' });
+  // An issue listing is not a pull request listing: the rows are read from `pulls` alone.
+  assert.throws(() => pullMove({ issues: [{ number: 151 }], milestones: [] }, { number: 151, milestone: null }), { message: '#151 is not an open pull request the Pull requests tab listed' });
 });
