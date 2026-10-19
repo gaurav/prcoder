@@ -942,5 +942,10 @@ input.addEventListener('input', grow);
 // lands, and loadPrs repaints the header itself when it does.
 loadPrs('page load');
 // `home` for ▶, which reads a bare #N in an item's text as this repo's.
-await initQueue({ sendToClaude, onTask: toggleTask, home: () => last?.nameWithOwner });
+// `onSwitch` and `blocked` are the PR pane's own Switch and its guard, for the
+// Pull requests tab's: a checkout is a checkout wherever it is asked for.
+await initQueue({
+  sendToClaude, onTask: toggleTask, home: () => last?.nameWithOwner,
+  onSwitch: switchPr, blocked: () => (last?.dirtyFiles?.length ?? 0) > 0,
+});
 loadStatus();

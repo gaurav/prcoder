@@ -1,5 +1,5 @@
-import { h, btn, ext, api, toast, pref, setPref, tabBtn, writeThrough, fold, kept } from './ui.js';
-import { TABS, refLabel, forClaude, rankMilestones, issueMatches } from './items.js';
+import { h, btn, ext, api, toast, pref, setPref, tabBtn, writeThrough, fold, kept, mark } from './ui.js';
+import { TABS, refLabel, forClaude, rankMilestones, issueMatches, pullMatches, sortPulls, sizeChip, age, isNew, isStale, PULL_SORTS } from './items.js';
 import { refs, resolveRef, blocks } from './tasks.js';
 import { blockNode } from './pr.js';
 
@@ -37,7 +37,7 @@ export function setItems(next, prOnScreen = null) {
   // caret: its text is kept and put back, but the caret and a composition
   // mid-word are not. Safe to hold on by the same argument as the text above
   // -- focus leaves it with the next click anywhere else -- where a tab is not.
-  if (saving || document.activeElement?.closest?.('#queue-body .text[contenteditable], #queue-search')) return;
+  if (saving || document.activeElement?.closest?.('#queue-body .text[contenteditable], #queue-search, #queue-pull-search')) return;
   if (document.querySelector('#queue-body .item.dragging')) return;
   // What the PR and Issues tabs draw from: a tick on github.com changes the
   // PR tab without changing the list, so it has to count as news too.
@@ -75,6 +75,21 @@ let query = '';
 const closedGroups = new Set();
 const expanded = new Set();
 const seen = new Set();
+// The Pull requests tab's: its listing (/api/pulls' answer -- milestones,
+// pulls, and `read`, when it was read, in ms), whether a read is out, its
+// search, and whether its first listing has chosen what starts closed; its
+// groups and opened rows share the two sets above under keys of their own.
+let pullsListing = null;
+let pullsReading = false;
+let pullQuery = '';
+let pullsSeeded = false;
+// Its order and grouping, remembered as the add-to arrow is (below).
+const PULL_SORT_KEY = 'prcoder:pull-sort';
+const PULL_GROUP_KEY = 'prcoder:pull-group';
+let pullSort = 'smallest';
+let pullGroup = 'milestone';
+// A listing younger than this is not read again on a visit to the tab; ⟳ always reads.
+const PULLS_FRESH_FOR = 60_000;
 
 // Which end the input adds to. The queue is two things at once -- a backlog in
 // the order you mean to work through it, and somewhere to put the thing you
@@ -96,6 +111,8 @@ export async function initQueue(d) {
   // browser, so the module stays importable by a node test that has no
   // localStorage to touch.
   addTo = readAddTo();
+  pullSort = PULL_SORTS[pref(PULL_SORT_KEY)] ? pref(PULL_SORT_KEY) : 'smallest';
+  pullGroup = pref(PULL_GROUP_KEY) === 'none' ? 'none' : 'milestone';
   document.getElementById('queue-where').onclick = () => {
     addTo = addTo === 'bottom' ? 'top' : 'bottom';
     setPref(ADD_TO_KEY, addTo);
@@ -135,7 +152,7 @@ const save = async (url = '/api/queue', method = 'PUT', body = { items }) => {
   return true;
 };
 
-const LABELS = { local: 'Local', pr: 'PR', issues: 'Issues', done: 'Completed', deleted: 'Deleted' };
+const LABELS = { local: 'Local', pr: 'PR', issues: 'Issues', pulls: 'Pull requests', done: 'Completed', deleted: 'Deleted' };
 
 // Local is always there because an *empty* Local is the thing worth seeing --
 // it is how a tidy session ends. Completed is always there because it is where
@@ -180,16 +197,23 @@ const issueCount = () => (!listing ? '…' : query.trim() ? matching().length : 
 /** The listed issues the search lets through. */
 const matching = () => (listing?.issues ?? []).filter((i) => issueMatches(i, query));
 
+/** The Pull requests tab's count, on the same rule as the Issues tab's. */
+const pullCount = () => (!pullsListing ? '…' : pullQuery.trim() ? matchingPulls().length : pullsListing.total);
+
+/** The listed pull requests the tab's search lets through. */
+const matchingPulls = () => (pullsListing?.pulls ?? []).filter((p) => pullMatches(p, pullQuery));
+
 function render() {
   const host = document.getElementById('queue-body');
-  // Issues is always there -- a repository has issues whatever is checked out
-  // -- and PR only with a pull request on screen.
-  const { strip, tab: active } = stripFor(items, tab, pr ? ['pr', 'issues'] : ['issues']);
+  // Issues and Pull requests are always there -- a repository has both
+  // whatever is checked out -- and PR only with a pull request on screen.
+  const { strip, tab: active } = stripFor(items, tab, pr ? ['pr', 'issues', 'pulls'] : ['issues', 'pulls']);
   tab = active;
   // A source's count is what it still holds open; the list's own are its tabs.
   const count = (name) => (name === 'pr' ? prTasks().filter((t) => !t.done).length
     : name === 'issues' ? issueCount()
-      : items.filter(TABS[name]).length);
+      : name === 'pulls' ? pullCount()
+        : items.filter(TABS[name]).length);
   const label = (n) => `${LABELS[n]} (${count(n)})`;
   const shown = TABS[tab] ? items.filter(TABS[tab]) : [];
   // Most recent first on Completed and Deleted, so the item you just ticked or
@@ -207,7 +231,8 @@ function render() {
     ),
     tab === 'pr' ? prList()
       : tab === 'issues' ? issueList()
-        : h('ul', { className: 'items' }, ...shown.map((i, n) => row(i, shown[n - 1], shown[n + 1]))),
+        : tab === 'pulls' ? pullList()
+          : h('ul', { className: 'items' }, ...shown.map((i, n) => row(i, shown[n - 1], shown[n + 1]))),
   );
 }
 
@@ -278,6 +303,7 @@ const queueTab = (name, label) => tabBtn(label, tab === name, () => {
   tab = name;
   render();
   if (name === 'issues') loadIssues();
+  if (name === 'pulls') loadPulls();
 }, '', { dataset: { tab: name } });
 
 /**
@@ -466,18 +492,19 @@ function issueGroups() {
 
 /**
  * A group's summary as somewhere to drop an issue row: lit while one is over
- * it, and the drop is the move. Only a row's own drag counts (ISSUE); a link
- * or a text selection dragged across the pane is not an issue.
+ * it, and the drop is the move. Only a row's own drag counts (`type`, ISSUE
+ * or PULL); a link or a text selection dragged across the pane is neither,
+ * and an issue row dropped on a Pull requests group is not a pull request.
  */
-function dropTarget(summary, milestone) {
-  const carrying = (e) => e.dataTransfer.types.includes(ISSUE);
+function dropTarget(summary, milestone, type = ISSUE, mover = move) {
+  const carrying = (e) => e.dataTransfer.types.includes(type);
   summary.addEventListener('dragover', (e) => { if (carrying(e)) { e.preventDefault(); summary.classList.add('over'); } });
   summary.addEventListener('dragleave', () => summary.classList.remove('over'));
   summary.addEventListener('drop', (e) => {
     summary.classList.remove('over');
     if (!carrying(e)) return;
     e.preventDefault();
-    move(Number(e.dataTransfer.getData(ISSUE)), milestone);
+    mover(Number(e.dataTransfer.getData(type)), milestone);
   });
 }
 
@@ -593,8 +620,10 @@ function mentionRepo(i) {
  */
 const ROW = 'application/x-prcoder-row';
 // And what an issue row's drag carries, its number, for a milestone group to
-// take; the same reason for a type of its own.
+// take; the same reason for a type of its own. A pull request row's is a
+// third, so the two tabs' groups take only their own rows.
 const ISSUE = 'application/x-prcoder-issue';
+const PULL = 'application/x-prcoder-pull';
 
 /**
  * An issue onto a milestone, or off one with null: the one write the Issues
@@ -610,6 +639,220 @@ async function move(number, milestone) {
     return;
   }
   await loadIssues();
+}
+
+/**
+ * The repository's open pull requests, for picking the next one to work on:
+ * the last listing first -- the server's, or the one `.prcoder/pulls.json`
+ * kept from an earlier run -- so the tab opens at once, and then GitHub's
+ * behind it, since the read is seconds long on a repository with many open,
+ * unless the listing is under a minute old. `force` is the tab's ⟳, which
+ * reads whatever the age. The listing on screen stays until the new one
+ * lands, and stays if it does not; the note under the groups says which.
+ */
+async function loadPulls(force = false) {
+  if (pullsReading) return;
+  pullsReading = true;
+  try {
+    if (!pullsListing) {
+      // With nothing to open from, the server reads GitHub itself, and a
+      // listing it answers is as fresh as the read below would be.
+      try { pullsListing = await api('/api/pulls', { fresh: false }); } catch (e) { return toast(e.message, true); }
+      paintPulls();
+    }
+    if (force || Date.now() - pullsListing.read >= PULLS_FRESH_FOR) {
+      paintPulls();
+      try { pullsListing = await api('/api/pulls', { fresh: true }); } catch (e) { toast(e.message, true); }
+    }
+  } finally {
+    pullsReading = false;
+  }
+  paintPulls();
+}
+
+/** The groups and the tab's count repainted on their own, so the search box keeps its focus. */
+function paintPulls() {
+  if (tab !== 'pulls') return;
+  document.querySelector('#queue-body .pull-groups')?.replaceChildren(...pullGroups());
+  const t = document.querySelector('#queue-body .tab[data-tab="pulls"]');
+  if (t) t.textContent = `${LABELS.pulls} (${pullCount()})`;
+}
+
+/**
+ * The Pull requests tab: a search, the order within a group and whether to
+ * group at all, ⟳, and the pull requests -- one group per open milestone in
+ * the owner's order (rankMilestones) and then the ones on none, as the Issues
+ * tab groups, or one list. Each row carries what picking the next one turns
+ * on (pullRow), opens to the description, can be typed to the coding agent
+ * with its link (▶), copied into Local (↓), or checked out (Switch), and is
+ * dragged onto a group to put it on that milestone.
+ */
+function pullList() {
+  const search = h('input', {
+    id: 'queue-pull-search', type: 'search', placeholder: 'Search pull requests', value: pullQuery,
+    autocomplete: 'off', spellcheck: false, ariaLabel: 'search the repository\'s open pull requests',
+  });
+  search.oninput = () => { pullQuery = search.value; paintPulls(); };
+  const order = h('select', { className: 'pull-sort', ariaLabel: 'the order within a group' },
+    ...Object.entries(PULL_SORTS).map(([k, { label }]) => h('option', { value: k, selected: k === pullSort }, label)));
+  order.onchange = () => { pullSort = order.value; setPref(PULL_SORT_KEY, pullSort); paintPulls(); };
+  const grouping = h('select', { className: 'pull-group', ariaLabel: 'how the pull requests are grouped' },
+    h('option', { value: 'milestone', selected: pullGroup === 'milestone' }, 'by milestone'),
+    h('option', { value: 'none', selected: pullGroup === 'none' }, 'one list'));
+  grouping.onchange = () => { pullGroup = grouping.value; setPref(PULL_GROUP_KEY, pullGroup); paintPulls(); };
+  const reload = btn('⟳', () => loadPulls(true), { className: 'pull-reload', title: 'read the pull requests again from GitHub', ariaLabel: 'read the pull requests again from GitHub' });
+  return h('div', { className: 'pulls-pane' },
+    h('div', { className: 'pull-controls' }, search, order, grouping, reload),
+    h('div', { className: 'pull-groups' }, ...pullGroups()));
+}
+
+function pullGroups() {
+  if (!pullsListing) return [h('p', { className: 'empty' }, 'Reading the repository\'s pull requests…')];
+  const searching = !!pullQuery.trim();
+  const rows = sortPulls(matchingPulls(), pullSort);
+  const out = [];
+  if (pullGroup === 'none') {
+    out.push(rows.length ? h('ul', { className: 'items' }, ...rows.map((p) => pullRow(p)).flat())
+      : h('p', { className: 'empty' }, searching ? 'No matching pull requests.' : 'No open pull requests.'));
+  } else {
+    const byMilestone = new Map();
+    for (const p of rows) {
+      const key = p.milestone ?? NONE;
+      if (!byMilestone.has(key)) byMilestone.set(key, []);
+      byMilestone.get(key).push(p);
+    }
+    const ranked = rankMilestones(pullsListing.milestones);
+    // What starts closed, chosen once per page as the Issues tab chooses:
+    // everything but the first milestone in rank with a pull request on it.
+    if (!pullsSeeded) {
+      pullsSeeded = true;
+      const focus = ranked.find((m) => byMilestone.has(m.number))?.number ?? NONE;
+      for (const key of [...ranked.map((m) => m.number), NONE]) if (key !== focus) closedGroups.add(`p:${key}`);
+    }
+    const state = (key, list) => (searching ? { open: list.length > 0, onToggle: () => {} } : kept(closedGroups, key, 'closed'));
+    const home = deps.home?.();
+    const group = (key, title, list, extra, target) => {
+      const d = fold({
+        className: 'milestone', dataset: { group: key },
+        title: [title, ...extra.flatMap((e) => [' ', e]), ' ', h('span', { className: 'count' }, String(list.length))],
+        ...state(key, list),
+      }, list.length ? [h('ul', { className: 'items' }, ...list.map((p) => pullRow(p)).flat())] : [h('p', { className: 'empty' }, 'no open pull requests')]);
+      dropTarget(d.querySelector('summary'), target, PULL, movePull);
+      return d;
+    };
+    for (const m of ranked) {
+      const title = home ? ext(`https://github.com/${home}/milestone/${m.number}`, m.title, { title: m.description || undefined }) : m.title;
+      const extra = [
+        ...(m.dueOn ? [h('span', { className: 'due', title: 'due' }, m.dueOn.slice(0, 10))] : []),
+        // Listed only because an open pull request is still on it (repoPulls).
+        ...(m.closed ? [h('span', { className: 'closed-milestone', title: 'closed on GitHub, with open pull requests still on it' }, 'closed')] : []),
+      ];
+      out.push(group(`p:${m.number}`, title, byMilestone.get(m.number) ?? [], extra, m.title));
+    }
+    out.push(group(`p:${NONE}`, 'No milestone', byMilestone.get(NONE) ?? [], [], null));
+  }
+  const { read, listed, total } = pullsListing;
+  out.push(h('p', { className: 'pull-note' },
+    `Read ${age(new Date(read).toISOString())}${pullsReading ? ' · updating…' : ''}`
+    + (listed < total ? `. The ${listed} most recently updated of ${total} open pull requests.` : '')));
+  return out;
+}
+
+/** GitHub's reviewDecision as the row says it; null, the usual case, says nothing. */
+const REVIEW = { APPROVED: 'approved', CHANGES_REQUESTED: 'changes requested', REVIEW_REQUIRED: 'review needed' };
+
+/** A merge word as a class: `checks failing` -> `checks-failing`, `checking…` -> `checking`. */
+const wordClass = (w) => w.toLowerCase().replace(/[^a-z]+/g, '-').replace(/^-|-$/g, '');
+
+/**
+ * One pull request as a row, and its description under it when the row is
+ * open. The first line is what the choice turns on: `PR #N` and the title,
+ * its size as GitHub's size label (hover for the counts), whether it can
+ * merge in a word, the review decision when there is one, whose it is, its
+ * labels, the Files tab's pie (filled by changed lines viewed, so an empty
+ * one is probably still being written and a full one is reviewed and waiting
+ * on something else), `new` within a week of opening, and how long since it
+ * was opened and last moved; a row not moved in three months is dimmed. A
+ * pull request on no milestone that closes an issue on one shows that
+ * milestone as a hint, since the pull request usually belongs where its
+ * issue is. Under the line, the description's first paragraph, clipped to two
+ * lines and as plain text. The one on screen is marked rather than offered a
+ * Switch; the rest get the PR pane's Switch, under its guard.
+ */
+function pullRow(p) {
+  const key = `pull:${p.number}`;
+  const open = expanded.has(key);
+  const here = !!pr && pr.url === p.url;
+  const now = Date.now();
+  const home = deps.home?.();
+  const disclose = btn(open ? '▾' : '▸', () => {
+    if (open) expanded.delete(key); else expanded.add(key);
+    paintPulls();
+  }, { className: 'disclose', title: open ? 'hide the description' : 'show the description', ariaExpanded: String(open) });
+  const review = REVIEW[p.reviewDecision];
+  const hint = p.milestone == null ? (p.closes ?? []).find((i) => i.milestone) : null;
+  const blocked = deps.blocked?.() ?? false;
+  const files = `${p.changedFiles ?? 0} file${p.changedFiles === 1 ? '' : 's'}`;
+  const go = () => (here ? null : btn('Switch', () => deps.onSwitch?.(p.url), {
+    className: 'pr-go', disabled: blocked,
+    title: blocked ? 'Commit or stash your changes first' : `Check out #${p.number} here`,
+  }));
+  const classes = ['item', 'source', 'pull', here ? 'here' : '', isStale(p, now) ? 'stale' : ''].filter(Boolean).join(' ');
+  const row = h('li', { className: classes, dataset: { pull: String(p.number) }, draggable: true, ...(here && { ariaCurrent: 'true' }) },
+    disclose,
+    ext(p.url, `PR #${p.number}`, { className: 'tag pull' }),
+    h('span', { className: 'text', textContent: p.title }),
+    here ? h('span', { className: 'tag here', title: 'the pull request on screen' }, 'here') : null,
+    h('span', { className: 'size', title: `+${p.additions ?? 0} −${p.deletions ?? 0} · ${files}` }, sizeChip(p.lines)),
+    p.merge ? h('span', { className: `pr-merge ${wordClass(p.merge)}` }, p.merge) : null,
+    review ? h('span', { className: 'pr-review' }, review) : null,
+    p.author ? h('span', { className: 'who', title: 'opened by' }, p.author) : null,
+    ...(p.labels ?? []).map((l) => h('span', { className: 'tag label' }, l)),
+    p.viewed ? mark({ p: p.viewed.p, full: p.viewed.full, label: p.viewed.label }) : null,
+    isNew(p, now) ? h('span', { className: 'tag new' }, 'new') : null,
+    h('span', { className: 'age', title: `opened ${p.createdAt ?? ''}` }, `opened ${age(p.createdAt, now)}`),
+    h('span', { className: 'age', title: `last updated ${p.updatedAt ?? ''}` }, `updated ${age(p.updatedAt, now)}`),
+    hint ? h('span', { className: 'tag hint', title: `closes #${hint.number}, which is on ${hint.milestone}` }, `closes #${hint.number} · ${hint.milestone}`) : null,
+    h('span', { className: 'actions' },
+      btn('▶', () => {
+        const item = { text: p.title, issue: p.number, repo: null, kind: 'pull', issueUrl: p.url };
+        if (!deps.sendToClaude(forClaude(item, home), false)) toast('The coding agent is not connected — nothing was typed.', true);
+      }, { title: 'type into the coding agent, with the link' }),
+      btn('↓', () => pull(p.title, p.number, 'pull', null), { title: 'copy into your queue' }),
+      go()),
+    p.lead ? h('p', { className: 'pr-lead' }, p.lead) : null);
+  row.addEventListener('dragstart', (e) => { e.dataTransfer.setData(PULL, String(p.number)); row.classList.add('dragging'); });
+  row.addEventListener('dragend', () => row.classList.remove('dragging'));
+  if (!open) return [row];
+  const where = home ? { repo: `https://github.com/${home}`, ref: 'HEAD' } : null;
+  const pick = h('select', { className: 'milestone', ariaLabel: `milestone of pull request #${p.number}` },
+    h('option', { value: '' }, 'No milestone'),
+    ...rankMilestones(pullsListing.milestones).map((m) => h('option', { value: m.title, selected: m.number === p.milestone }, m.title)));
+  pick.onchange = () => movePull(p.number, pick.value || null);
+  const closes = (p.closes ?? []).length ? h('p', { className: 'pull-closes' }, 'Closes ', ...(p.closes).flatMap((i, n) => [
+    n ? ', ' : '', ext(i.url ?? `https://github.com/${home}/issues/${i.number}`, `#${i.number} ${i.title}`),
+    i.milestone ? ` (${i.milestone})` : ''])) : null;
+  const body = h('li', { className: 'issue-body md' },
+    ...(p.body ? blocks(p.body).map((b) => blockNode(b, null, where)) : [h('p', { className: 'empty' }, 'No description.')]),
+    closes,
+    h('div', { className: 'issue-ways' }, pick, go(), ext(p.url, 'Open on GitHub', { className: 'primary open-issue' })));
+  return [row, body];
+}
+
+/**
+ * A pull request onto a milestone, or off one with null: the Pull requests
+ * tab's one write, on a drop or a pick in the opened row, as move is the
+ * Issues tab's. The listing is read again after, so the row moves group once
+ * GitHub has it.
+ */
+async function movePull(number, milestone) {
+  try {
+    await api('/api/pull/milestone', { number, milestone });
+  } catch (e) {
+    toast(e.message, true);
+    return;
+  }
+  await loadPulls(true);
 }
 
 const bulk = (label, fn) => btn(label, fn, { className: 'bulk' });

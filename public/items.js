@@ -99,3 +99,56 @@ export const issueMatches = (i, query) => {
   }
   return hay.includes(q);
 };
+
+/**
+ * How long ago `iso` was, in a word or two: `3 days ago`. Under a minute is
+ * `just now`; nothing, or a date that is not one, is ''. `now` is a parameter
+ * so a test can hold it still.
+ */
+// Largest first, so the first that fits is the unit.
+const UNITS = [['year', 365 * 86400], ['month', 30 * 86400], ['day', 86400], ['hour', 3600], ['minute', 60]];
+export function age(iso, now = Date.now()) {
+  const t = Date.parse(iso ?? '');
+  if (Number.isNaN(t)) return '';
+  const s = Math.max(0, Math.round((now - t) / 1000));
+  const found = UNITS.find(([, size]) => s >= size);
+  if (!found) return 'just now';
+  return new Intl.RelativeTimeFormat('en', { numeric: 'always' }).format(-Math.floor(s / found[1]), found[0]);
+}
+
+// GitHub's size labels' bands, on lines changed (additions and deletions
+// together): each name holds up to, not including, its count.
+const SIZES = [['XS', 10], ['S', 30], ['M', 100], ['L', 500], ['XL', 1000]];
+
+/** A pull request's size as a chip, `XS` to `XXL`, from its lines changed. */
+export const sizeChip = (lines) => SIZES.find(([, under]) => (lines ?? 0) < under)?.[0] ?? 'XXL';
+
+// A pull request opened within this long is `new`, and one not updated for
+// this long is stale: dimmed in the tab, since it is probably abandoned.
+export const NEW_FOR = 7 * 86400_000;
+export const STALE_AFTER = 90 * 86400_000;
+export const isNew = (p, now = Date.now()) => now - Date.parse(p.createdAt ?? '') < NEW_FOR;
+export const isStale = (p, now = Date.now()) => now - Date.parse(p.updatedAt ?? '') > STALE_AFTER;
+
+/**
+ * The Pull requests tab's orders, each a comparator over pullRow's fields; the
+ * ISO dates compare as they read. `smallest` is the default, since the next
+ * one to take on is usually the one that is nearly done.
+ */
+export const PULL_SORTS = {
+  smallest: { label: 'smallest first', by: (a, b) => a.lines - b.lines },
+  largest: { label: 'largest first', by: (a, b) => b.lines - a.lines },
+  newest: { label: 'newest first', by: (a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? '') },
+  oldest: { label: 'oldest first', by: (a, b) => (a.createdAt ?? '').localeCompare(b.createdAt ?? '') },
+  updated: { label: 'recently updated', by: (a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? '') },
+  stale: { label: 'least recently updated', by: (a, b) => (a.updatedAt ?? '').localeCompare(b.updatedAt ?? '') },
+};
+
+/** The pull requests in the order `how` names, ties in the order they came (by number, as a second key); an order not named is `smallest`. */
+export const sortPulls = (list, how) => [...list].sort((a, b) => (PULL_SORTS[how] ?? PULL_SORTS.smallest).by(a, b) || a.number - b.number);
+
+/** Whether the Pull requests tab's search matches a pull request: case-blind, over `#N`, the title, the author, the head branch, the labels and the body. */
+export const pullMatches = (p, query) => {
+  const q = (query ?? '').trim().toLowerCase();
+  return !q || [`#${p.number}`, p.title ?? '', p.author ?? '', p.headRefName ?? '', ...(p.labels ?? []), p.body ?? ''].join('\n').toLowerCase().includes(q);
+};

@@ -3,7 +3,7 @@
 // and the status block share.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { TABS, counts, forClaude, refLabel, rankMilestones, issueMatches } from '../public/items.js';
+import { TABS, counts, forClaude, refLabel, rankMilestones, issueMatches, sizeChip, sortPulls, pullMatches, age, isNew, isStale, PULL_SORTS } from '../public/items.js';
 import { stripFor } from '../public/queue.js';
 
 const item = (over = {}) => ({ text: 't', done: false, issue: null, deleted: false, ...over });
@@ -149,4 +149,64 @@ test('the issue search is case-blind over the number, title, labels and body', (
   assert.ok(!issueMatches(i, '#59'));
   assert.ok(!issueMatches(i, 'nothing like this'));
   assert.ok(issueMatches({ number: 1 }, '#1'), 'an issue with nothing but a number');
+});
+
+// The Pull requests tab's vocabulary: a size as GitHub's size labels band it,
+// the orders the tab offers, its search, and the ages a row says.
+test('a pull request\'s size chip is GitHub\'s size label, on lines changed', () => {
+  assert.deepEqual([0, 9, 10, 29, 30, 99, 100, 499, 500, 999, 1000, 5000].map(sizeChip),
+    ['XS', 'XS', 'S', 'S', 'M', 'M', 'L', 'L', 'XL', 'XL', 'XXL', 'XXL']);
+  assert.equal(sizeChip(undefined), 'XS');
+});
+
+const pulls = [
+  { number: 1, lines: 50, createdAt: '2026-10-01T00:00:00Z', updatedAt: '2026-10-10T00:00:00Z', title: 'Alpha', author: 'gaurav', headRefName: 'alpha', labels: ['bug'], body: 'fixes the thing' },
+  { number: 2, lines: 5, createdAt: '2026-10-05T00:00:00Z', updatedAt: '2026-10-06T00:00:00Z', title: 'Beta', author: 'copilot', headRefName: 'copilot/beta', labels: [], body: '' },
+  { number: 3, lines: 5, createdAt: '2026-09-01T00:00:00Z', updatedAt: '2026-10-18T00:00:00Z', title: 'Gamma', author: 'gaurav', headRefName: 'gamma', labels: [], body: 'Closes #1' },
+];
+
+test('the orders sort as named, ties by number, and the list is left alone', () => {
+  const by = (how) => sortPulls(pulls, how).map((p) => p.number);
+  assert.deepEqual(by('smallest'), [2, 3, 1]);
+  assert.deepEqual(by('largest'), [1, 2, 3]);
+  assert.deepEqual(by('newest'), [2, 1, 3]);
+  assert.deepEqual(by('oldest'), [3, 1, 2]);
+  assert.deepEqual(by('updated'), [3, 1, 2]);
+  assert.deepEqual(by('stale'), [2, 1, 3]);
+  assert.deepEqual(by('nonsense'), [2, 3, 1], 'an order not named is smallest first');
+  assert.deepEqual(pulls.map((p) => p.number), [1, 2, 3]);
+  assert.deepEqual(Object.keys(PULL_SORTS), ['smallest', 'largest', 'newest', 'oldest', 'updated', 'stale']);
+  assert.ok(Object.values(PULL_SORTS).every((s) => typeof s.label === 'string' && typeof s.by === 'function'));
+});
+
+test('the search matches the number, title, author, branch, labels and body, case-blind', () => {
+  const found = (q) => pulls.filter((p) => pullMatches(p, q)).map((p) => p.number);
+  assert.deepEqual(found(''), [1, 2, 3]);
+  assert.deepEqual(found('  '), [1, 2, 3]);
+  assert.deepEqual(found('#1'), [1, 3], 'the body counts: #3 closes #1');
+  assert.deepEqual(found('#2'), [2]);
+  assert.deepEqual(found('ALPHA'), [1]);
+  assert.deepEqual(found('copilot'), [2]);
+  assert.deepEqual(found('gamma'), [3]);
+  assert.deepEqual(found('bug'), [1]);
+  assert.deepEqual(found('closes'), [3]);
+  assert.deepEqual(found('zzz'), []);
+});
+
+test('an age is a word or two, and new and stale are a week and three months', () => {
+  const now = Date.parse('2026-10-19T12:00:00Z');
+  assert.equal(age('2026-10-19T11:59:30Z', now), 'just now');
+  assert.equal(age('2026-10-19T11:00:00Z', now), '1 hour ago');
+  assert.equal(age('2026-10-16T12:00:00Z', now), '3 days ago');
+  assert.equal(age('2026-08-19T12:00:00Z', now), '2 months ago');
+  assert.equal(age('2024-10-19T12:00:00Z', now), '2 years ago');
+  assert.equal(age('2027-01-01T00:00:00Z', now), 'just now', 'a date ahead of the clock is now');
+  assert.equal(age(null, now), '');
+  assert.equal(age('not a date', now), '');
+  assert.equal(isNew({ createdAt: '2026-10-13T00:00:00Z' }, now), true);
+  assert.equal(isNew({ createdAt: '2026-10-11T00:00:00Z' }, now), false);
+  assert.equal(isNew({}, now), false);
+  assert.equal(isStale({ updatedAt: '2026-07-01T00:00:00Z' }, now), true);
+  assert.equal(isStale({ updatedAt: '2026-09-01T00:00:00Z' }, now), false);
+  assert.equal(isStale({}, now), false);
 });

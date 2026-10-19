@@ -149,6 +149,9 @@ const withLong = (st) => ({ ...st, pr: { ...st.pr, files: [...files, fileRow('lo
 // What /api/issues answers for a repository with nothing: the Issues tab is
 // always there, so every page gets this unless a test routes its own.
 const EMPTY_ISSUES = { milestones: [], issues: [], total: 0, listed: 0, repo: 'heal-data-stewards/heal-vlmd-AI-pipeline', mentions: [] };
+// And /api/pulls, which the Pull requests tab asks twice on opening: once for
+// the last listing, once for a fresh one. `read` is when, in ms.
+const EMPTY_PULLS = { milestones: [], pulls: [], total: 0, listed: 0, read: 0 };
 
 let browser;
 let page;
@@ -194,6 +197,7 @@ async function newPage({ prs = [], st = status, ready = '#pr-head .pr-title', be
   });
   await p.route('**/api/queue', (r) => r.fulfill({ json: [] }));
   await p.route('**/api/issues', (r) => r.fulfill({ json: EMPTY_ISSUES }));
+  await p.route('**/api/pulls', (r) => r.fulfill({ json: EMPTY_PULLS }));
   await p.route('**/api/pr/viewed', (r) => r.fulfill({ json: { ok: true } }));
   await p.route('**/api/diff', (r) => {
     const { path } = r.request().postDataJSON();
@@ -1759,6 +1763,201 @@ test('a mention from another repository is not drawn as the listed issue of the 
   assert.equal(await row.locator('.text').textContent(), 'Upstream\'s sixty-six');
   assert.equal(await row.locator('.tag.issue').getAttribute('href'), url);
   assert.equal(await row.locator('button.disclose').count(), 0, 'no body: it is not the listed #66');
+  await fresh.close();
+});
+
+// The Pull requests tab: the repository's open pull requests, grouped by
+// milestone as the issues are, each row carrying what picking the next one
+// turns on. The listing is the fixture repository's, with the pull request on
+// screen (#12) among them; dates are read against the page's clock, which
+// `clock` holds at a fixed day so the ages and `new` are what the test says.
+const NOW = Date.parse('2026-10-19T12:00:00Z');
+const pullOf = (over) => ({
+  isDraft: false, isCrossRepository: false, baseRefName: 'main', author: 'gaurav', labels: [], reviewDecision: null,
+  viewed: { p: 0, full: false, label: '0 of 2 files, 0 of 20 changed lines viewed' }, closes: [], lead: '', body: '', ...over,
+});
+const PULLS = {
+  milestones: [
+    { number: 1, title: 'v1.0', dueOn: '2026-10-14T00:00:00Z', description: '', closed: false },
+    { number: 4, title: 'Needed soon', dueOn: null, description: 'Work that should land soon.', closed: false },
+    { number: 3, title: 'Not urgent', dueOn: null, description: '', closed: false },
+  ],
+  pulls: [
+    pullOf({ number: 12, title: pr.title, url: pr.url, headRefName: 'topic', createdAt: '2026-10-01T00:00:00Z', updatedAt: '2026-10-18T12:00:00Z',
+      additions: 300, deletions: 20, changedFiles: 6, lines: 320, merge: 'ready', milestone: 1, labels: ['enhancement'],
+      viewed: { p: 0.5, full: false, label: '3 of 6 files, 160 of 320 changed lines viewed' }, lead: 'The first paragraph of twelve.', body: 'The first paragraph of twelve.\n\n- [ ] a box' }),
+    pullOf({ number: 20, title: 'A small fix', url: `${REPO}/pull/20`, headRefName: 'fix', createdAt: '2026-10-17T00:00:00Z', updatedAt: '2026-10-17T00:00:00Z',
+      additions: 4, deletions: 1, changedFiles: 1, lines: 5, merge: 'conflicts', reviewDecision: 'APPROVED', milestone: 1, author: 'copilot' }),
+    pullOf({ number: 30, title: 'An old draft', url: `${REPO}/pull/30`, headRefName: 'old', createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-02-01T00:00:00Z',
+      additions: 1500, deletions: 10, changedFiles: 40, lines: 1510, merge: 'draft', isDraft: true, milestone: null,
+      closes: [{ number: 5, url: `${REPO}/issues/5`, title: 'The old thing', milestone: 'Not urgent' }], lead: 'Still being written.' }),
+  ],
+  total: 3, listed: 3, read: NOW - 3_600_000,
+};
+const pullGroupsOf = (p) => p.$$eval('#queue-body .fold.milestone', (gs) => gs.map((g) =>
+  `${g.dataset.group}|${g.querySelector('h3').textContent.replace(/\s+/g, ' ').trim()}|${g.open ? 'open' : 'closed'}|${[...g.querySelectorAll('.item')].map((i) => i.dataset.pull).join(',')}`));
+
+/** A page on the Pull requests tab with `listing` answered, counting what the route was asked. */
+async function pullsPage(listing = PULLS, { stale = true } = {}) {
+  const fresh = await newPage({ clock: true });
+  await fresh.clock.setFixedTime(NOW);
+  const typed = [];
+  await fresh.routeWebSocket('**/pty', (ws) => ws.onMessage((m) => {
+    const msg = JSON.parse(m);
+    if (msg.type === 'input') typed.push(msg.data);
+  }));
+  await fresh.route('**/api/status', (r) => r.fulfill({ json: { ...status, nameWithOwner: 'gaurav/prcoder', queue: [] } }));
+  let queue = [];
+  await fresh.route('**/api/queue', (r) => {
+    if (r.request().method() === 'PUT') queue = r.request().postDataJSON().items.map((i) => ({ ...i, issueUrl: i.issue ? `https://github.com/gaurav/prcoder/pull/${i.issue}` : null }));
+    return r.fulfill({ json: queue });
+  });
+  const asked = [];
+  await fresh.route('**/api/pulls', (r) => {
+    asked.push(r.request().postDataJSON().fresh);
+    return r.fulfill({ json: stale ? listing : { ...listing, read: NOW } });
+  });
+  await fresh.reload();
+  await fresh.waitForSelector('#queue-body .tab[data-tab="local"]');
+  await fresh.locator('#queue-body .tab[data-tab="pulls"]').click();
+  await fresh.waitForSelector('#queue-body .pull-note');
+  return { fresh, typed, asked };
+}
+
+test('the Pull requests tab groups the open pull requests by milestone, smallest first, with the facts a choice turns on', { skip }, async () => {
+  const { fresh, asked } = await pullsPage();
+  // The last listing, then a fresh one behind it, since the last was an hour old.
+  await fresh.waitForFunction(() => document.querySelector('#queue-body .pull-note')?.textContent === 'Read 1 hour ago');
+  assert.deepEqual(asked, [false, true]);
+  assert.equal(await fresh.locator('#queue-body .tab[data-tab="pulls"]').textContent(), 'Pull requests (3)');
+  // Releases first, then the buckets, then none; only the first with a pull
+  // request starts open; smallest first within a group; an empty one is drawn.
+  assert.deepEqual(await pullGroupsOf(fresh), [
+    'p:1|v1.0 2026-10-14 2|open|20,12', 'p:4|Needed soon 0|closed|', 'p:3|Not urgent 0|closed|', 'p:none|No milestone 1|closed|30']);
+  assert.equal(await fresh.locator('[data-group="p:4"] summary a').getAttribute('title'), 'Work that should land soon.');
+  // A row: the tinted PR chip, the title, the size as GitHub bands it with
+  // the counts on hover, the merge word, the review, the author, labels,
+  // the pie, and the two ages; the one on screen is marked and has no Switch.
+  const twelve = fresh.locator('.item[data-pull="12"]');
+  assert.equal(await twelve.locator('.tag.pull').textContent(), 'PR #12');
+  assert.equal(await twelve.locator('.tag.pull').getAttribute('href'), pr.url);
+  assert.equal(await twelve.locator('.text').textContent(), pr.title);
+  assert.equal(await twelve.locator('.size').textContent(), 'L');
+  assert.equal(await twelve.locator('.size').getAttribute('title'), '+300 −20 · 6 files');
+  assert.equal(await twelve.locator('.pr-merge').textContent(), 'ready');
+  assert.equal(await twelve.locator('.who').textContent(), 'gaurav');
+  assert.deepEqual(await twelve.locator('.tag.label').allTextContents(), ['enhancement']);
+  assert.equal(await twelve.locator('.mark').getAttribute('aria-label'), '3 of 6 files, 160 of 320 changed lines viewed');
+  assert.deepEqual(await twelve.locator('.age').allTextContents(), ['opened 18 days ago', 'updated 1 day ago']);
+  assert.equal(await twelve.locator('.pr-lead').textContent(), 'The first paragraph of twelve.');
+  assert.equal(await twelve.locator('.tag.here').count(), 1);
+  assert.equal(await twelve.locator('.pr-go').count(), 0, 'the one on screen is not offered a Switch');
+  assert.equal(await twelve.getAttribute('aria-current'), 'true');
+  const twenty = fresh.locator('.item[data-pull="20"]');
+  assert.deepEqual(await twenty.locator('.size, .pr-merge, .pr-review, .who, .tag.new').allTextContents(), ['XS', 'conflicts', 'approved', 'copilot', 'new']);
+  assert.equal(await twenty.locator('.pr-go').textContent(), 'Switch');
+  assert.equal(await twenty.locator('.pr-go').isDisabled(), false);
+  // An old draft on no milestone: dimmed, with the milestone of the issue it closes as a hint.
+  const thirty = fresh.locator('.item[data-pull="30"]');
+  assert.ok(await thirty.evaluate((el) => el.classList.contains('stale')));
+  assert.deepEqual(await thirty.locator('.size, .pr-merge').allTextContents(), ['XXL', 'draft']);
+  assert.equal(await thirty.locator('.tag.hint').textContent(), 'closes #5 · Not urgent');
+  // The order and the grouping are the two selects, remembered across a reload.
+  await fresh.locator('#queue-body select.pull-sort').selectOption('largest');
+  assert.deepEqual((await pullGroupsOf(fresh))[0], 'p:1|v1.0 2026-10-14 2|open|12,20');
+  await fresh.locator('#queue-body select.pull-group').selectOption('none');
+  assert.equal(await fresh.locator('#queue-body .fold.milestone').count(), 0);
+  assert.deepEqual(await fresh.locator('#queue-body .item.pull').evaluateAll((ls) => ls.map((l) => l.dataset.pull)), ['30', '12', '20']);
+  await fresh.reload();
+  await fresh.waitForSelector('#queue-body .tab[data-tab="local"]');
+  await fresh.locator('#queue-body .tab[data-tab="pulls"]').click();
+  await fresh.waitForSelector('#queue-body .item.pull');
+  assert.equal(await fresh.locator('#queue-body select.pull-sort').inputValue(), 'largest');
+  assert.equal(await fresh.locator('#queue-body select.pull-group').inputValue(), 'none');
+  await fresh.close();
+});
+
+test('a fresh listing is not read again within a minute, and ⟳ reads one whatever its age', { skip }, async () => {
+  const { fresh, asked } = await pullsPage(PULLS, { stale: false });
+  await fresh.waitForTimeout(200);
+  assert.deepEqual(asked, [false], 'read just now: nothing to ask again');
+  assert.equal(await fresh.locator('#queue-body .pull-note').textContent(), 'Read just now');
+  await fresh.locator('#queue-body .tab[data-tab="local"]').click();
+  await fresh.locator('#queue-body .tab[data-tab="pulls"]').click();
+  await fresh.waitForSelector('#queue-body .pull-note');
+  assert.deepEqual(asked, [false], 'and not on a second visit either');
+  const again = fresh.waitForResponse('**/api/pulls');
+  await fresh.locator('#queue-body .pull-reload').click();
+  await again;
+  assert.deepEqual(asked, [false, true]);
+  await fresh.close();
+});
+
+test('searching the pull requests narrows the rows and counts them, and a row opens to its description with Switch and the milestone', { skip }, async () => {
+  const { fresh, typed } = await pullsPage();
+  const search = fresh.locator('#queue-pull-search');
+  await search.fill('copilot');
+  assert.deepEqual(await pullGroupsOf(fresh), ['p:1|v1.0 2026-10-14 1|open|20', 'p:4|Needed soon 0|closed|', 'p:3|Not urgent 0|closed|', 'p:none|No milestone 0|closed|']);
+  assert.equal(await fresh.locator('#queue-body .tab[data-tab="pulls"]').textContent(), 'Pull requests (1)');
+  assert.equal(await fresh.evaluate(() => document.activeElement.id), 'queue-pull-search', 'the box keeps its focus');
+  await search.fill('');
+  assert.equal(await fresh.locator('#queue-body .tab[data-tab="pulls"]').textContent(), 'Pull requests (3)');
+  // ▸ opens the description through the description renderer, with the
+  // milestone select, Switch and Open on GitHub under it.
+  const twelve = fresh.locator('.item[data-pull="12"]');
+  await twelve.locator('.disclose').click();
+  const body = fresh.locator('[data-group="p:1"] .issue-body');
+  assert.equal(await body.locator('p').first().textContent(), 'The first paragraph of twelve.');
+  assert.equal(await body.locator('.task input').isDisabled(), true);
+  assert.deepEqual(await body.locator('select.milestone option').allTextContents(), ['No milestone', 'v1.0', 'Needed soon', 'Not urgent']);
+  assert.equal(await body.locator('select.milestone').inputValue(), 'v1.0');
+  assert.equal(await body.locator('.pr-go').count(), 0, 'on screen: no Switch here either');
+  assert.equal(await body.locator('.open-issue').getAttribute('href'), pr.url);
+  // ▶ types the title with its link, unsent; ↓ copies it into Local as a pull request.
+  await twelve.locator('button[title^="type into the coding agent"]').click();
+  assert.deepEqual(typed, [`${pr.title} (${pr.url})`]);
+  await twelve.locator('button[title="copy into your queue"]').click();
+  await fresh.waitForFunction(() => document.querySelector('#queue-body .tab[data-tab="local"]')?.textContent === 'Local (1)');
+  await fresh.locator('#queue-body .tab[data-tab="local"]').click();
+  assert.equal(await fresh.locator('#queue-body .item .tag.issue').textContent(), '#12');
+  await fresh.close();
+});
+
+test('picking a milestone in an opened pull request row posts the move and reads the listing again; Switch is the PR pane\'s', { skip }, async () => {
+  const { fresh, asked } = await pullsPage();
+  const moves = [];
+  await fresh.route('**/api/pull/milestone', (r) => { moves.push(r.request().postDataJSON()); return r.fulfill({ json: { ok: true } }); });
+  await fresh.locator('[data-group="p:none"] summary .count').click();
+  await fresh.locator('.item[data-pull="30"] .disclose').click();
+  const pick = fresh.locator('[data-group="p:none"] .issue-body select.milestone');
+  assert.equal(await pick.inputValue(), '');
+  const before = asked.length;
+  await pick.selectOption('Needed soon');
+  await fresh.waitForFunction((n) => document.querySelectorAll('#queue-body .item.pull').length && n, before);
+  await fresh.waitForTimeout(200);
+  assert.deepEqual(moves, [{ number: 30, milestone: 'Needed soon' }]);
+  assert.deepEqual(asked.slice(before), [true], 'read fresh once GitHub has it');
+  assert.equal(await fresh.locator('.item[data-pull="30"]').getAttribute('draggable'), 'true');
+  // A refusal is a toast, and nothing is read again.
+  await fresh.route('**/api/pull/milestone', (r) => r.fulfill({ status: 500, json: { error: '"x" is not an open milestone the Pull requests tab listed' } }));
+  await fresh.locator('[data-group="p:none"] .issue-body select.milestone').selectOption('Not urgent');
+  await fresh.waitForFunction(() => document.getElementById('toast').textContent.includes('not an open milestone'));
+  assert.equal(asked.length, before + 1);
+  // Switch goes through the PR pane's own route, and is disabled on a dirty tree.
+  const switched = [];
+  await fresh.route('**/api/pr/switch', (r) => { switched.push(r.request().postDataJSON()); return r.fulfill({ json: { ...status, nameWithOwner: 'gaurav/prcoder', queue: [] } }); });
+  await fresh.locator('.item[data-pull="30"] .pr-go').click();
+  await fresh.waitForFunction(() => document.getElementById('toast').textContent.includes('Switched to'));
+  assert.deepEqual(switched, [{ url: `${REPO}/pull/30` }]);
+  await fresh.route('**/api/status', (r) => r.fulfill({ json: { ...status, nameWithOwner: 'gaurav/prcoder', queue: [], dirtyFiles: ['a.js'] } }));
+  const polled = fresh.waitForResponse('**/api/status');
+  await fresh.evaluate(() => document.getElementById('pr-refresh').click());
+  await polled;
+  await fresh.locator('#queue-body .tab[data-tab="local"]').click();
+  await fresh.locator('#queue-body .tab[data-tab="pulls"]').click();
+  await fresh.waitForSelector('.item[data-pull="30"] .pr-go');
+  assert.equal(await fresh.locator('.item[data-pull="30"] .pr-go').isDisabled(), true);
+  assert.equal(await fresh.locator('.item[data-pull="30"] .pr-go').getAttribute('title'), 'Commit or stash your changes first');
   await fresh.close();
 });
 
