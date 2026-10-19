@@ -761,7 +761,7 @@ function pullGroups() {
 /** GitHub's reviewDecision as the row says it; null, the usual case, says nothing. */
 const REVIEW = { APPROVED: 'approved', CHANGES_REQUESTED: 'changes requested', REVIEW_REQUIRED: 'review needed' };
 
-/** A merge word as a class: `checks failing` -> `checks-failing`, `checking…` -> `checking`. */
+/** A merge word as a class: `checks not passing` -> `checks-not-passing`, `checking…` -> `checking`. */
 const wordClass = (w) => w.toLowerCase().replace(/[^a-z]+/g, '-').replace(/^-|-$/g, '');
 
 /**

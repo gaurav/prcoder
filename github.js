@@ -833,10 +833,14 @@ const PULLS_QUERY = `query($owner:String!,$repo:String!,$after:String){
  * `mergeable` is not asked for: DIRTY already says conflicts. HAS_HOOKS is a
  * CLEAN that waits on a pre-receive hook, which reads as ready here. UNKNOWN
  * is GitHub still working it out, which a fresh read a minute later settles.
+ * UNSTABLE is "mergeable with non-passing commit status", which a check still
+ * running is as much as one that failed -- this branch's own pull request
+ * read `checks failing` while CI was starting (2026-10-19) -- so the word is
+ * `checks not passing`, which is true of both.
  */
 export const MERGE_WORD = {
   CLEAN: 'ready', HAS_HOOKS: 'ready', DIRTY: 'conflicts', BEHIND: 'behind base', BLOCKED: 'blocked',
-  UNSTABLE: 'checks failing', DRAFT: 'draft', UNKNOWN: 'checking…',
+  UNSTABLE: 'checks not passing', DRAFT: 'draft', UNKNOWN: 'checking…',
 };
 
 // ponytail: a lead longer than this is cut; the row shows two lines of it.

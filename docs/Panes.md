@@ -448,7 +448,8 @@ the count as the issue search does. Each row is `PR #N` in a tinted chip, the ti
 GitHub's size labels band it (`XS` under ten lines changed, `S` under thirty, `M` under a
 hundred, `L` under five hundred, `XL` under a thousand, `XXL` past that; hover for the lines
 added and removed and the file count), whether it can merge in a word (`ready`, `conflicts`,
-`behind base`, `blocked`, `checks failing`, `draft`, or `checking…` while GitHub works it out),
+`behind base`, `blocked`, `checks not passing` -- failed, or still running -- `draft`, or `checking…` while GitHub
+works it out),
 the review decision when there is one, who opened it, its labels, the Files tab's pie (it fills
 by changed lines viewed, so an empty one is probably still being written and a full one is
 reviewed and waiting on something else), `new` for a week after it was opened, and how long since

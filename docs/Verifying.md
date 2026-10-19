@@ -143,9 +143,11 @@ already up with `PRCODER_VERBOSE=2`, or a `browser.mjs` run is already printing 
   answered 315KB; the same call without `additions deletions changedFiles` took 3.0–3.6s, without
   `mergeStateStatus` 1.6–4.2s, and with neither 0.5–1.3s, the bodies and the hundred files per pull
   request costing nothing to speak of (measured by hand with `gh api graphql`, two runs each, on
-  2026-10-19 before the tab was built; this repository's six take under a second). That is why the
-  switcher keeps `gh pr list` and the tab opens from `.prcoder/pulls.json`. Time it with
-  `PRCODER_VERBOSE=2`, which prints the route's milliseconds, on a visit to the tab with ⟳.
+  2026-10-19 before the tab was built; this repository's six take under a second). Through the
+  route in a shallow clone of Babel, `POST /api/pulls` took 5441ms cold and 4758ms with `fresh`,
+  and 1ms from the file (on `297714f`, 2026-10-19). That is why the switcher keeps `gh pr list`
+  and the tab opens from `.prcoder/pulls.json`. Time it with `PRCODER_VERBOSE=2`, which prints
+  the route's milliseconds, on a visit to the tab with ⟳.
 - **The description's prose is 568px wide in Firefox and 567px in Chromium**, in an 864px pane
   (re-measured on `a96dc21`, 2026-10-14). `browser.mjs` prints it every run; a line-length cap is not something the
   stylesheet can be read for.
