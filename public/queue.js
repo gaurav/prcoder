@@ -181,8 +181,11 @@ const prTasks = () => (pr ? blocks(pr.body).filter((b) => b.kind === 'task') : [
  */
 const mentioned = (p = pr) => (p?.issues ?? []).filter((i) => !i.closes);
 
-/** The Issues tab's count: the repository's open issues, the matches while searching, `…` before the first listing. */
-const issueCount = () => (!listing ? '…' : query.trim() ? matching().length : listing.total);
+/**
+ * The Issues tab's count: the repository's open issues, the matches while
+ * searching, `…` before the first listing, and `?` when it could not be read.
+ */
+const issueCount = () => (!listing ? (issuesFailed ? '?' : '…') : query.trim() ? matching().length : listing.total);
 
 /** The listed issues the search lets through. */
 const matching = () => (listing?.issues ?? []).filter((i) => issueMatches(i, query));
@@ -317,6 +320,11 @@ function loadIssues(again = false) {
     issuesStale ||= again;
     return;
   }
+  // A try after a failure says it is reading again, rather than still failed.
+  if (issuesFailed) {
+    issuesFailed = null;
+    paintIssues();
+  }
   issuesLoading = fetchIssues().finally(() => {
     issuesLoading = null;
     if (!issuesStale) return;
@@ -326,6 +334,10 @@ function loadIssues(again = false) {
 }
 let issuesLoading = null;
 let issuesStale = false;
+// Why the first listing could not be read, so the tab says so after the toast
+// has gone: left reading "Reading…" and `…`, it looked as if it still was.
+// Once there is a listing, a failed refresh keeps it and only the toast says.
+let issuesFailed = null;
 
 async function fetchIssues() {
   try {
@@ -336,6 +348,7 @@ async function fetchIssues() {
     seedGroups();
   } catch (e) {
     toast(e.message, true);
+    if (!listing) issuesFailed = e.message;
   }
   if (tab !== 'issues') return;
   if (document.getElementById('queue-search')) paintIssues(); else render();
@@ -438,6 +451,10 @@ function seedGroups() {
 }
 
 function issueGroups() {
+  if (!listing && issuesFailed) {
+    return [h('p', { className: 'empty' }, `Could not read the repository's issues: ${issuesFailed} `,
+      btn('try again', () => loadIssues(), { title: 'ask GitHub for the issues again' }))];
+  }
   if (!listing) return [h('p', { className: 'empty' }, 'Reading the repository\'s issues…')];
   const searching = !!query.trim();
   const byMilestone = new Map();

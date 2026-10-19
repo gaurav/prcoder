@@ -1637,6 +1637,25 @@ test('the listing landing keeps the search box\'s focus and what is typed in it'
   await fresh.close();
 });
 
+// A first listing that fails says so on the tab once the toast has gone,
+// rather than reading as if it were still loading, and can be asked for again.
+test('a first listing that fails says so on the tab, and tries again', { skip }, async () => {
+  const { fresh } = await refPage(() => ({ json: { ref: null } }));
+  await fresh.route('**/api/issues', (r) => r.fulfill({ status: 500, json: { error: 'gh: API rate limit exceeded' } }));
+  const failed = fresh.waitForResponse('**/api/issues');
+  await fresh.locator('#queue-body .tab[data-tab="issues"]').click();
+  await failed;
+  const note = fresh.locator('#queue-body .issue-groups .empty');
+  await fresh.waitForFunction(() => document.querySelector('#queue-body .issue-groups .empty')?.textContent.includes('Could not'));
+  assert.match(await note.textContent(), /Could not read the repository's issues: gh: API rate limit exceeded/);
+  assert.equal(await fresh.locator('#queue-body .tab[data-tab="issues"]').textContent(), 'Issues (?)');
+  await fresh.route('**/api/issues', (r) => r.fulfill({ json: ISSUES }));
+  await note.locator('button', { hasText: 'try again' }).click();
+  await fresh.waitForSelector('#queue-body .fold.milestone');
+  assert.equal(await fresh.locator('#queue-body .tab[data-tab="issues"]').textContent(), 'Issues (4)');
+  await fresh.close();
+});
+
 // What starts open is chosen from every issue, not from what a query typed
 // before the listing came lets through: #90 is on Not urgent, but v0.1 is
 // still the milestone to focus on once the search is cleared.

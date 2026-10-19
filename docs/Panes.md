@@ -418,7 +418,8 @@ reloaded, through every poll.
 The box above the groups searches the number, title, labels and body of every issue listed; a
 group with a match opens and one without closes, and the tab's count becomes how many matched.
 Cleared, the groups go back to how you left them. The count is otherwise the repository's open
-issues, and `…` until the first listing lands. The listing stops at 500, the most recently
+issues, and `…` until the first listing lands; if that one cannot be read, the count is `?` and
+the tab says why, with a way to try again. The listing stops at 500, the most recently
 updated, and says so under the groups when a repository has more.
 
 Each row is the issue's number, as a link, its title, and its labels as plain chips -- names only,
