@@ -1982,13 +1982,13 @@ test('searching the pull requests narrows the rows and counts them, and a row op
   assert.equal(await fresh.evaluate(() => document.activeElement.id), 'queue-pull-search', 'the box keeps its focus');
   await search.fill('');
   assert.equal(await fresh.locator('#queue-body .tab[data-tab="pulls"]').textContent(), 'Pull requests (3)');
-  // ▸ opens the description through the description renderer, with the
-  // milestone select, Switch and Open on GitHub under it.
+  // ▸ opens the milestone select, Switch and Open on GitHub, and not the
+  // description: that is read on GitHub.
   const twelve = fresh.locator('.item[data-pull="12"]');
   await twelve.locator('.disclose').click();
   const body = fresh.locator('[data-group="p:1"] .issue-body');
-  assert.equal(await body.locator('p').first().textContent(), 'The first paragraph of twelve.');
-  assert.equal(await body.locator('.task input').isDisabled(), true);
+  assert.equal(await body.locator('.task, .empty').count(), 0);
+  assert.equal((await body.textContent()).includes('The first paragraph of twelve.'), false);
   assert.deepEqual(await body.locator('select.milestone option').allTextContents(), ['No milestone', 'v1.0', 'Needed soon', 'Not urgent']);
   assert.equal(await body.locator('select.milestone').inputValue(), 'v1.0');
   assert.equal(await body.locator('.pr-go').count(), 0, 'on screen: no Switch here either');

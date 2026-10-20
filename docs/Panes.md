@@ -468,9 +468,10 @@ description, clipped to two lines, with its bold, code and links drawn rather th
 markdown. The pull request on screen is marked *here* after its title and
 offered no Switch; every other row's **Switch** sits there instead, in sight rather than on
 hover, since switching is what the tab is for. It checks the pull request out, as the PR pane's
-does, and is disabled by uncommitted work for the same reason. ▸ opens the whole description under the row, drawn as an
-issue's body is, with the issues it closes, the milestone select, Switch and **Open on GitHub**
-under it; ▶ and ↓, on hover at the row's end as on every row, do what they do on an issue's row,
+does, and is disabled by uncommitted work for the same reason. ▸ opens the issues it closes, the milestone select, Switch
+and **Open on GitHub** under the row, but not the description: nobody reads one here, and the
+lead is enough to pick by, so the rest is read on GitHub. Rows sit further apart than an issue's,
+since each is three lines; ▶ and ↓, on hover at the row's end as on every row, do what they do on an issue's row,
 and the copied item is tagged `PR #N`.
 
 The list is read from GitHub only for this tab, never for the switcher: the one call that carries

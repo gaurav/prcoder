@@ -79,7 +79,7 @@ straight in, unsent — so whoever can edit that description or that issue can
 write the words. Commit sends a message built from the names of the working tree's uncommitted files.
 
 The Issues tab also draws an issue's body, which is anyone's text, into the page with `innerHTML`,
-and the Pull requests tab a pull request's body and the first paragraph under its row:
+and the Pull requests tab the first paragraph of a pull request's under its row:
 through `blockNode` and `inline()` in [`public/pr.js`](../public/pr.js), the description's own
 renderer, with the repository as what a relative link is written against — the same allowlist,
 and no second path.

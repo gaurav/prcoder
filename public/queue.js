@@ -828,8 +828,9 @@ const REVIEW = { APPROVED: 'approved', CHANGES_REQUESTED: 'changes requested', R
 const wordClass = (w) => w.toLowerCase().replace(/[^a-z]+/g, '-').replace(/^-|-$/g, '');
 
 /**
- * One pull request as a row, and its description under it when the row is
- * open. The first line is `PR #N`, the title and Switch; the second, under
+ * One pull request as a row, and when the row is open, the issues it closes
+ * and its ways out under it -- not its description, which is read on GitHub:
+ * the row is for picking, and the lead says enough to pick by. The first line is `PR #N`, the title and Switch; the second, under
  * the title, is what the choice turns on:
  * whether it can merge in a word, the review decision when there is one, its
  * size as GitHub's size label (hover for the counts) coloured green to red by
@@ -860,7 +861,7 @@ function pullRow(p) {
   const disclose = btn(open ? '▾' : '▸', () => {
     if (open) expanded.delete(key); else expanded.add(key);
     paintPulls();
-  }, { className: 'disclose', title: open ? 'hide the description' : 'show the description', ariaExpanded: String(open) });
+  }, { className: 'disclose', title: open ? 'hide its milestone and the issues it closes' : 'show its milestone and the issues it closes', ariaExpanded: String(open) });
   const review = REVIEW[p.reviewDecision];
   const hint = p.milestone == null ? (p.closes ?? []).find((i) => i.milestone) : null;
   const blocked = deps.blocked?.() ?? false;
@@ -913,7 +914,6 @@ function pullRow(p) {
     n ? ', ' : '', ext(i.url ?? `https://github.com/${home}/issues/${i.number}`, `#${i.number} ${i.title}`),
     i.milestone ? ` (${i.milestone})` : ''])) : null;
   const body = h('li', { className: 'issue-body md' },
-    ...(p.body ? blocks(p.body).map((b) => blockNode(b, null, where)) : [h('p', { className: 'empty' }, 'No description.')]),
     closes,
     h('div', { className: 'issue-ways' }, pick, go(), ext(p.url, 'Open on GitHub', { className: 'primary open-issue' })));
   return [row, body];
