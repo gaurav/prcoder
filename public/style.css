@@ -793,8 +793,43 @@ main.diff-off #diff-wrap { display: none; }
 .item .text:focus { box-shadow: 0 0 0 1px var(--accent); border-radius: 2px; }
 .item input[type=checkbox]:checked ~ .text { color: var(--dim); text-decoration: line-through; }
 .item .tag { font-size: 11px; text-decoration: none; padding: 0 5px; border: 1px solid var(--line); border-radius: 8px; }
-/* A mention on the Issues tab that is not an open issue: closed, or a PR. */
+/* A pull request's tag, which also says `PR #N` (refLabel in items.js): the
+   repo chip's tint (`.pr-repo`), so it is a different object from an issue's
+   grey outline at a glance. Not the head's filled `.primary`, though that is
+   what `PR #N` wears there: a filled accent is the one thing a region is for,
+   and a group of five PR mentions would be five of them beside each row's
+   buttons. */
+.item .tag.pull {
+  border-color: color-mix(in srgb, var(--accent) 35%, transparent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+/* A mention on the Issues tab that is no longer open: a closed issue, or a
+   merged or closed PR. */
 .item.source.closed .text { color: var(--dim); }
+/* The Issues tab: the search, the milestone groups (the file list's folds,
+   in the directory fold's face), a label as a dashed chip with no colour of
+   its own (#66), and an opened row's body in the description's face. */
+#queue-search {
+  display: block; width: 100%; box-sizing: border-box; margin: 0 0 6px; padding: 3px 6px;
+  font: inherit; font-size: 12px; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 4px;
+}
+#queue-search:focus { outline: 1px solid var(--accent); }
+.fold.milestone { margin-bottom: 2px; }
+.fold.milestone > summary { padding: 1px 0; font: 400 12px/1.5 ui-sans-serif, system-ui, sans-serif; color: var(--dim); }
+.fold.milestone > summary:hover { color: var(--fg); }
+.fold.milestone > summary h3 { display: flex; gap: 6px; align-items: baseline; }
+.fold.milestone > summary a { color: inherit; text-decoration: none; }
+.fold.milestone > summary a:hover { color: var(--accent); }
+.fold.milestone > summary .due { font-variant-numeric: tabular-nums; }
+.fold.milestone > summary .closed-milestone { font-style: italic; }
+.fold.milestone > summary .count { margin-left: auto; font-variant-numeric: tabular-nums; }
+.fold.milestone > .sec-body { padding: 0 0 4px 10px; }
+.fold.milestone .empty { font-size: 12px; margin: 0 0 2px 4px; }
+.item .tag.label { color: var(--dim); border-style: dashed; }
+.item .disclose { flex: none; width: 12px; background: none; border: 0; color: var(--dim); cursor: pointer; font-size: 11px; padding: 0; line-height: 1; }
+.item .disclose:hover { color: var(--accent); }
+li.issue-body.md { font-size: 12px; max-width: none; padding: 2px 6px 8px 22px; }
+li.issue-body .open-issue { display: inline-block; margin-top: 2px; text-decoration: none; }
 
 /* The row's only reliable drag handle: the text gives up draggable while it is
    being clicked, so the caret can land where you aimed. Unlike .actions it does

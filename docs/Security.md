@@ -74,8 +74,14 @@ that): every construct it learns is new markup built from untrusted text, and ha
 Some text reaches Claude as a turn without any script involved, because a person clicked. A queue
 item's ▶ sends its text verbatim, and an item can arrive by ↓ from the PR tab, which copies a
 checklist line of the description, or from the Issues tab, which copies an issue's title (`pull` in
-[`public/queue.js`](../public/queue.js)) — so whoever can edit that description or that issue can
+[`public/queue.js`](../public/queue.js)); the Issues tab's own ▶ types an issue's title and link
+straight in, unsent — so whoever can edit that description or that issue can
 write the words. Commit sends a message built from the names of the working tree's uncommitted files.
+
+The Issues tab also draws an issue's body, which is anyone's text, into the page with `innerHTML`:
+through `blockNode` and `inline()` in [`public/pr.js`](../public/pr.js), the description's own
+renderer, with the repository as what a relative link is written against — the same allowlist,
+and no second path.
 
 The guard here is the click, and the text being visible before it. There is no filter on what the
 words say, and there should not be one pretending to be a guard. A feature that sends GitHub text
