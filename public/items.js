@@ -122,9 +122,11 @@ export const age = (iso, now = Date.now()) => when(iso, Math.max(now, Date.parse
 /** A milestone's due date as its line says it, `due 3 days ago`, with the date on hover. */
 export const dueLabel = (dueOn, now = Date.now()) => ({ textContent: `due ${when(dueOn, now)}`, title: `due ${dueOn.slice(0, 10)}` });
 
-// GitHub's size labels' bands, on lines changed (additions and deletions
-// together): each name holds up to, not including, its count.
-const SIZES = [['XS', 10], ['S', 30], ['M', 100], ['L', 500], ['XL', 1000]];
+// The size chip's bands, on lines changed (additions and deletions together):
+// each name holds up to, not including, its count. Wider at the small end than
+// GitHub's size labels (XS under 10, S under 30, M under 100), which put most
+// pull requests worth a review at M or above (2026-10-20).
+const SIZES = [['XS', 50], ['S', 100], ['M', 200], ['L', 500], ['XL', 1000]];
 
 /** A pull request's size as a chip, `XS` to `XXL`, from its lines changed. */
 export const sizeChip = (lines) => SIZES.find(([, under]) => (lines ?? 0) < under)?.[0] ?? 'XXL';

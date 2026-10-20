@@ -454,8 +454,8 @@ then `here` or **Switch**; under the title, on a line of their own, its facts in
 state, what makes it worth taking, and whose it is and when. The state is whether it can merge in
 a word (`ready`, `conflicts`, `behind base`, `blocked`, `checks not passing` -- failed, or still
 running -- `draft`, or `checking…` while GitHub works it out) and the review decision when there
-is one. Then its size as GitHub's size labels band it (`XS` under ten lines changed, `S` under
-thirty, `M` under a hundred, `L` under five hundred, `XL` under a thousand, `XXL` past that; hover
+is one. Then its size in the bands of GitHub's size labels, set wider at the small end (`XS` under
+fifty lines changed, `S` under a hundred, `M` under two hundred, `L` under five hundred, `XL` under a thousand, `XXL` past that; hover
 for the lines added and removed and the file count), coloured from green for `XS` through yellow
 for `M` to red for `XXL`, since the small one is usually the next to take; the Files tab's pie (it
 fills by changed lines viewed, so an empty one is probably still being written and a full one is

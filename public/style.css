@@ -855,7 +855,7 @@ li.issue-body select.milestone {
    first paragraph under those, clamped to two lines, in the serif the
    description is read in. A
    pull request's tag is the tinted `PR #N` chip (`.tag.pull` above), as the
-   queue's rows wear it; the size chip is GitHub's size label in a plain outline; the
+   queue's rows wear it; the size chip is a size label in a plain outline; the
    merge word takes the file list's colours; a stale row is dimmed whole. */
 .pull-controls { display: flex; gap: 6px; align-items: center; margin: 0 0 6px; }
 .pull-controls #queue-pull-search { flex: 1; margin: 0; }

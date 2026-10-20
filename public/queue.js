@@ -833,7 +833,7 @@ const wordClass = (w) => w.toLowerCase().replace(/[^a-z]+/g, '-').replace(/^-|-$
  * the row is for picking, and the lead says enough to pick by. The first line is `PR #N`, the title and Switch; the second, under
  * the title, is what the choice turns on:
  * whether it can merge in a word, the review decision when there is one, its
- * size as GitHub's size label (hover for the counts) coloured green to red by
+ * size as a size label, XS to XXL (hover for the counts) coloured green to red by
  * band, the Files tab's pie (filled by changed lines viewed, so an empty
  * one is probably still being written and a full one is reviewed and waiting
  * on something else), its labels, `new` within a week of opening, whose it

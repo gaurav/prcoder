@@ -151,10 +151,10 @@ test('the issue search is case-blind over the number, title, labels and body', (
   assert.ok(issueMatches({ number: 1 }, '#1'), 'an issue with nothing but a number');
 });
 
-// The Pull requests tab's vocabulary: a size as GitHub's size labels band it,
+// The Pull requests tab's vocabulary: a size in its band,
 // the orders the tab offers, its search, and the ages a row says.
-test('a pull request\'s size chip is GitHub\'s size label, on lines changed', () => {
-  assert.deepEqual([0, 9, 10, 29, 30, 99, 100, 499, 500, 999, 1000, 5000].map(sizeChip),
+test('a pull request\'s size chip is a size label, on lines changed', () => {
+  assert.deepEqual([0, 49, 50, 99, 100, 199, 200, 499, 500, 999, 1000, 5000].map(sizeChip),
     ['XS', 'XS', 'S', 'S', 'M', 'M', 'L', 'L', 'XL', 'XL', 'XXL', 'XXL']);
   assert.equal(sizeChip(undefined), 'XS');
 });
