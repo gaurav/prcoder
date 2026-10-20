@@ -1931,9 +1931,18 @@ test('the Pull requests tab groups the open pull requests by milestone, smallest
   assert.equal(await twenty.locator('.actions').evaluate((a) => getComputedStyle(a).opacity), '0', '▶ and ↓ still wait on hover');
   // The facts on a line of their own under the title, with ▶ ↓ on the title's
   // line: put after the facts in the row they wrapped onto a line of their own.
-  const top = async (sel) => (await twenty.locator(sel).boundingBox()).y;
-  assert.ok(await top('.pr-facts') > await top('.text') + 10, 'the facts sit under the title');
-  assert.ok(Math.abs(await top('.actions') - await top('.text')) < 8, '▶ and ↓ share the title line');
+  // Measured against the PR #N chip, which always starts the row: the title
+  // is inline text, whose box rises above the chips on its line.
+  const box = async (sel) => twenty.locator(sel).boundingBox();
+  const chip = await box('.tag.pull');
+  assert.ok((await box('.pr-facts')).y > chip.y + 10, 'the facts sit under the title');
+  assert.ok(Math.abs((await box('.actions')).y - chip.y) < 8, '▶ and ↓ share the title line');
+  // A title too long for the line wraps beside the chip, with Switch after its
+  // last word; as a flex item of its own it took a line under the chip.
+  await twenty.locator('.text').evaluate((t) => { t.textContent = 'A long title '.repeat(20); });
+  assert.ok((await box('.text')).y < chip.y + 10, 'the long title starts beside the chip');
+  assert.ok(Math.abs((await box('.actions')).y - chip.y) < 8, '▶ and ↓ stay on the first line');
+  assert.ok((await box('.pr-go')).y > chip.y + 10, 'Switch follows the wrapped title');
   // An old draft on no milestone: dimmed, with the milestone of the issue it closes as a hint.
   const thirty = fresh.locator('.item[data-pull="30"]');
   assert.ok(await thirty.evaluate((el) => el.classList.contains('stale')));

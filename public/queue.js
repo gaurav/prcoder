@@ -893,8 +893,10 @@ function pullRow(p) {
   const row = h('li', { className: classes, dataset: { pull: String(p.number) }, draggable: true, ...(here && { ariaCurrent: 'true' }) },
     disclose,
     ext(p.url, `PR #${p.number}`, { className: 'tag pull' }),
-    h('span', { className: 'text', textContent: p.title }),
-    here ? h('span', { className: 'tag here', title: 'the pull request on screen' }, 'here') : go(),
+    // The title and what follows it in one box, so a long title wraps inside it
+    // and Switch follows its last word; apart, the title took a line of its own.
+    h('span', { className: 'pull-title' }, h('span', { className: 'text', textContent: p.title }), ' ',
+      here ? h('span', { className: 'tag here', title: 'the pull request on screen' }, 'here') : go()),
     h('span', { className: 'actions' },
       btn('▶', () => {
         const item = { text: p.title, issue: p.number, repo: null, kind: 'pull', issueUrl: p.url };
