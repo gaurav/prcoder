@@ -1157,12 +1157,14 @@ export const inline = (s, where = links) => {
  * rewriting it. A number the lookup did not answer is a plain link, as before.
  *
  * The title and the URL are GitHub's, so anyone's text, going into attributes
- * in a string set with innerHTML: both go through escape(), and a URL that is
- * not http(s) is not used.
+ * in a string set with innerHTML: both go through escape(), and the URL through
+ * target() as every other link does -- with no `where`, so only an absolute
+ * http(s) one is used and anything else falls back to the guess.
  */
 function mentionLink(n, where, a) {
   const found = where.refs?.get(Number(n));
-  const url = /^https?:\/\//.test(found?.url ?? '') ? escape(found.url) : `${escape(where.repo)}/issues/${n}`;
+  const github = target(found?.url ?? '', null);
+  const url = github ? escape(github) : `${escape(where.repo)}/issues/${n}`;
   const pull = found?.kind === 'pull';
   const title = found?.title ? ` title="${escape(`${pull ? 'Pull request' : 'Issue'}: ${found.title}`)}"` : '';
   return a(url, `#${n}`, `${pull ? ' class="ref pull"' : ''}${title}`);

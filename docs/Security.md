@@ -57,6 +57,8 @@ Two functions in [`public/pr.js`](../public/pr.js) keep it out. `escape()` escap
 angle brackets, because a link's URL is interpolated into `href="..."` and a raw `"` closes the
 attribute and opens an event handler, which `innerHTML` does fire. `target()` lets through only
 `http(s)` and repository-relative links, so `javascript:` and `data:` hrefs stay as their own source.
+A bare `#N` takes its URL and title from GitHub's answer about that number, which is no safer than
+the description, so `mentionLink()` sends the URL through `target()` and both through `escape()`.
 A check's link is held to the same rule by `rollup()` in [`github.js`](../github.js): a status
 context's `targetUrl` is whatever its poster said, so anything not `http(s)` is dropped and the
 check's name stays plain text. `test/pr.test.js` pins both functions, `test/github.test.js` the
