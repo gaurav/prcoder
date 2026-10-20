@@ -101,20 +101,26 @@ export const issueMatches = (i, query) => {
 };
 
 /**
- * How long ago `iso` was, in a word or two: `3 days ago`. Under a minute is
- * `just now`; nothing, or a date that is not one, is ''. `now` is a parameter
- * so a test can hold it still.
+ * How far `iso` is from now, in a word or two: `3 days ago`, or `in 2 months`
+ * for one still to come. Under a minute is `just now`; nothing, or a date
+ * that is not one, is ''. `now` is a parameter so a test can hold it still.
  */
 // Largest first, so the first that fits is the unit.
 const UNITS = [['year', 365 * 86400], ['month', 30 * 86400], ['day', 86400], ['hour', 3600], ['minute', 60]];
-export function age(iso, now = Date.now()) {
+export function when(iso, now = Date.now()) {
   const t = Date.parse(iso ?? '');
   if (Number.isNaN(t)) return '';
-  const s = Math.max(0, Math.round((now - t) / 1000));
-  const found = UNITS.find(([, size]) => s >= size);
+  const s = Math.round((t - now) / 1000);
+  const found = UNITS.find(([, size]) => Math.abs(s) >= size);
   if (!found) return 'just now';
-  return new Intl.RelativeTimeFormat('en', { numeric: 'always' }).format(-Math.floor(s / found[1]), found[0]);
+  return new Intl.RelativeTimeFormat('en', { numeric: 'always' }).format(Math.trunc(s / found[1]), found[0]);
 }
+
+/** when() for a time that has passed: a clock a little behind GitHub's says `just now`, not `in 2 minutes`. */
+export const age = (iso, now = Date.now()) => when(iso, Math.max(now, Date.parse(iso ?? '') || now));
+
+/** A milestone's due date as its line says it, `due 3 days ago`, with the date on hover. */
+export const dueLabel = (dueOn, now = Date.now()) => ({ textContent: `due ${when(dueOn, now)}`, title: `due ${dueOn.slice(0, 10)}` });
 
 // GitHub's size labels' bands, on lines changed (additions and deletions
 // together): each name holds up to, not including, its count.

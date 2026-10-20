@@ -3,7 +3,7 @@
 // and the status block share.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { TABS, counts, forClaude, refLabel, rankMilestones, issueMatches, sizeChip, sortPulls, pullMatches, age, isNew, isStale, PULL_SORTS } from '../public/items.js';
+import { TABS, counts, forClaude, refLabel, rankMilestones, issueMatches, sizeChip, sortPulls, pullMatches, age, dueLabel, isNew, isStale, PULL_SORTS } from '../public/items.js';
 import { stripFor } from '../public/queue.js';
 
 const item = (over = {}) => ({ text: 't', done: false, issue: null, deleted: false, ...over });
@@ -209,4 +209,11 @@ test('an age is a word or two, and new and stale are a week and three months', (
   assert.equal(isStale({ updatedAt: '2026-07-01T00:00:00Z' }, now), true);
   assert.equal(isStale({ updatedAt: '2026-09-01T00:00:00Z' }, now), false);
   assert.equal(isStale({}, now), false);
+});
+
+test('a milestone is due some time ago or in some time, with its date on hover', () => {
+  const now = Date.parse('2026-10-19T12:00:00Z');
+  assert.deepEqual(dueLabel('2026-10-14T00:00:00Z', now), { textContent: 'due 5 days ago', title: 'due 2026-10-14' });
+  assert.deepEqual(dueLabel('2026-11-03T00:00:00Z', now), { textContent: 'due in 14 days', title: 'due 2026-11-03' });
+  assert.equal(dueLabel('2027-01-01T00:00:00Z', now).textContent, 'due in 2 months');
 });

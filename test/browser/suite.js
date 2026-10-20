@@ -1532,6 +1532,8 @@ async function issuesPage(listing = ISSUES, prIssues = null, nameWithOwner = 'ga
     await fresh.click('#pr-refresh');
     await polled;
   }
+  // A milestone's line says how long until it is due, against NOW.
+  await fresh.clock.setFixedTime(NOW);
   await fresh.route('**/api/issues', (r) => r.fulfill({ json: listing }));
   const landed = fresh.waitForResponse('**/api/issues');
   await fresh.locator('#queue-body .tab[data-tab="issues"]').click();
@@ -1547,7 +1549,7 @@ test('the Issues tab groups the repository\'s open issues by milestone in rank o
   // only the first with an issue starts open, and an empty bucket is drawn.
   assert.deepEqual(await groupsOf(fresh), [
     'mentioned|Mentioned by PR #12 (1)|open|1',
-    'm:2|v0.1 (1) 2026-10-02|open|1', 'm:1|v1.0 (1) 2026-10-14|closed|1', 'm:4|Needed soon (0)|closed|0',
+    'm:2|v0.1 (1) due 17 days ago|open|1', 'm:1|v1.0 (1) due 5 days ago|closed|1', 'm:4|Needed soon (0)|closed|0',
     'm:3|Not urgent (1)|closed|1', 'm:none|No milestone (1)|closed|1']);
   // GitHub did not know the mention, so it says so, dimmed.
   assert.equal(await fresh.locator('[data-group="mentioned"] .item.closed .text').textContent(), 'not found on GitHub');
@@ -1572,8 +1574,8 @@ test('the Issues tab groups the repository\'s open issues by milestone in rank o
   await again;
   await fresh.waitForSelector('[data-group="m:10"]');
   assert.deepEqual((await groupsOf(fresh)).map((g) => g.split('|').slice(0, 3).join(' ')), [
-    'mentioned Mentioned by PR #12 (1) open', 'm:2 v0.1 (1) 2026-10-02 closed', 'm:1 v1.0 (1) 2026-10-14 open',
-    'm:10 v2.0 (0) 2026-12-01 closed', 'm:4 Needed soon (0) closed', 'm:3 Not urgent (1) closed', 'm:none No milestone (1) closed']);
+    'mentioned Mentioned by PR #12 (1) open', 'm:2 v0.1 (1) due 17 days ago closed', 'm:1 v1.0 (1) due 5 days ago open',
+    'm:10 v2.0 (0) due in 1 month closed', 'm:4 Needed soon (0) closed', 'm:3 Not urgent (1) closed', 'm:none No milestone (1) closed']);
   await fresh.close();
 });
 
@@ -1585,7 +1587,7 @@ test('an open issue on a closed milestone has a group of its own, marked closed'
     issues: [...ISSUES.issues, { number: 30, title: 'Left over', url: 'https://github.com/gaurav/prcoder/issues/30', updatedAt: '2026-10-01T00:00:00Z',
       body: '', milestone: 9, labels: [] }],
     total: 5, listed: 5 });
-  assert.equal((await groupsOf(fresh))[1], 'm:9|v0.0 (1) 2026-09-01 closed|open|1');
+  assert.equal((await groupsOf(fresh))[1], 'm:9|v0.0 (1) due 1 month ago closed|open|1');
   assert.equal(await fresh.locator('[data-group="m:9"] .item .text').textContent(), 'Left over');
   await fresh.close();
 });
@@ -1596,7 +1598,7 @@ test('searching the issues narrows the rows, opens the groups with a match, and 
   await search.fill('row is read');
   // A group with nothing matching, the mentions or a milestone, drops out of
   // the tab altogether, rather than saying it has no open issues.
-  assert.deepEqual(await groupsOf(fresh), ['m:2|v0.1 (1) 2026-10-02|open|1']);
+  assert.deepEqual(await groupsOf(fresh), ['m:2|v0.1 (1) due 17 days ago|open|1']);
   assert.equal(await fresh.locator('#queue-body .tab[data-tab="issues"]').textContent(), 'Issues (1)');
   await search.fill('zzz');
   assert.deepEqual(await groupsOf(fresh), []);
@@ -1895,7 +1897,7 @@ test('the Pull requests tab groups the open pull requests by milestone, smallest
   // Releases first, then the buckets, then none; only the first with a pull
   // request starts open; smallest first within a group; an empty one is drawn.
   assert.deepEqual(await pullGroupsOf(fresh), [
-    'p:1|v1.0 (2) 2026-10-14|open|20,12', 'p:4|Needed soon (0)|closed|', 'p:3|Not urgent (0)|closed|', 'p:none|No milestone (1)|closed|30']);
+    'p:1|v1.0 (2) due 5 days ago|open|20,12', 'p:4|Needed soon (0)|closed|', 'p:3|Not urgent (0)|closed|', 'p:none|No milestone (1)|closed|30']);
   assert.equal(await fresh.locator('[data-group="p:4"] summary a').getAttribute('title'), 'Work that should land soon.');
   // A row: the tinted PR chip, the title, the size as GitHub bands it with
   // the counts on hover, the merge word, the review, the author, labels,
@@ -1953,7 +1955,7 @@ test('the Pull requests tab groups the open pull requests by milestone, smallest
     `Still <strong>being</strong> written, in <code>old.js</code>, for <a href="https://github.com/gaurav/prcoder/issues/5" target="_blank" rel="noopener">#5</a>.`);
   // The order and the grouping are the two selects, remembered across a reload.
   await fresh.locator('#queue-body select.pull-sort').selectOption('largest');
-  assert.deepEqual((await pullGroupsOf(fresh))[0], 'p:1|v1.0 (2) 2026-10-14|open|12,20');
+  assert.deepEqual((await pullGroupsOf(fresh))[0], 'p:1|v1.0 (2) due 5 days ago|open|12,20');
   await fresh.locator('#queue-body select.pull-group').selectOption('none');
   assert.equal(await fresh.locator('#queue-body .fold.milestone').count(), 0);
   assert.deepEqual(await fresh.locator('#queue-body .item.pull').evaluateAll((ls) => ls.map((l) => l.dataset.pull)), ['30', '12', '20']);
@@ -1986,7 +1988,7 @@ test('searching the pull requests narrows the rows and counts them, and a row op
   const { fresh, typed } = await pullsPage();
   const search = fresh.locator('#queue-pull-search');
   await search.fill('copilot');
-  assert.deepEqual(await pullGroupsOf(fresh), ['p:1|v1.0 (1) 2026-10-14|open|20', 'p:4|Needed soon (0)|closed|', 'p:3|Not urgent (0)|closed|', 'p:none|No milestone (0)|closed|']);
+  assert.deepEqual(await pullGroupsOf(fresh), ['p:1|v1.0 (1) due 5 days ago|open|20', 'p:4|Needed soon (0)|closed|', 'p:3|Not urgent (0)|closed|', 'p:none|No milestone (0)|closed|']);
   assert.equal(await fresh.locator('#queue-body .tab[data-tab="pulls"]').textContent(), 'Pull requests (1)');
   assert.equal(await fresh.evaluate(() => document.activeElement.id), 'queue-pull-search', 'the box keeps its focus');
   await search.fill('');

@@ -1,5 +1,5 @@
 import { h, btn, ext, api, toast, pref, setPref, tabBtn, writeThrough, fold, kept, mark } from './ui.js';
-import { TABS, refLabel, forClaude, rankMilestones, issueMatches, pullMatches, sortPulls, sizeChip, age, isNew, isStale, PULL_SORTS } from './items.js';
+import { TABS, refLabel, forClaude, rankMilestones, issueMatches, pullMatches, sortPulls, sizeChip, age, dueLabel, isNew, isStale, PULL_SORTS } from './items.js';
 import { refs, resolveRef, blocks } from './tasks.js';
 import { blockNode, inline } from './pr.js';
 
@@ -532,7 +532,7 @@ function issueGroups() {
   for (const m of ranked) {
     const title = home ? ext(`https://github.com/${home}/milestone/${m.number}`, m.title, { title: m.description || undefined }) : m.title;
     const extra = [
-      ...(m.dueOn ? [h('span', { className: 'due', title: 'due' }, m.dueOn.slice(0, 10))] : []),
+      ...(m.dueOn ? [h('span', { className: 'due', ...dueLabel(m.dueOn) })] : []),
       // On the tab only because an open issue is still on it (repoIssues).
       ...(m.closed ? [h('span', { className: 'closed-milestone', title: 'closed on GitHub, with open issues still on it' }, 'closed')] : []),
     ];
@@ -806,7 +806,7 @@ function pullGroups() {
     for (const m of ranked) {
       const title = home ? ext(`https://github.com/${home}/milestone/${m.number}`, m.title, { title: m.description || undefined }) : m.title;
       const extra = [
-        ...(m.dueOn ? [h('span', { className: 'due', title: 'due' }, m.dueOn.slice(0, 10))] : []),
+        ...(m.dueOn ? [h('span', { className: 'due', ...dueLabel(m.dueOn) })] : []),
         // Listed only because an open pull request is still on it (repoPulls).
         ...(m.closed ? [h('span', { className: 'closed-milestone', title: 'closed on GitHub, with open pull requests still on it' }, 'closed')] : []),
       ];
