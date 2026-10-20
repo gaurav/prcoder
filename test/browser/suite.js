@@ -1914,13 +1914,14 @@ test('the Pull requests tab groups the open pull requests by milestone, smallest
   assert.deepEqual(await twelve.locator('.age').allTextContents(), ['opened 18 days ago', 'updated 1 day ago']);
   // Dots between plain words only: none beside the size chip, the label or the pie.
   assert.equal(await twelve.evaluate((r) => [...r.children].filter((c) => !c.matches('.disclose, .tag.pull, .text, .actions, .pr-lead')).map((c) => c.textContent).join(' ')),
-    'here L ready · gaurav enhancement  opened 18 days ago · updated 1 day ago');   // the pie is the blank
+    'here ready L  enhancement gaurav · opened 18 days ago · updated 1 day ago');   // the pie is the blank
   assert.equal(await twelve.locator('.pr-lead').textContent(), 'The first paragraph of twelve.');
   assert.equal(await twelve.locator('.tag.here').count(), 1);
   assert.equal(await twelve.locator('.pr-go').count(), 0, 'the one on screen is not offered a Switch');
   assert.equal(await twelve.getAttribute('aria-current'), 'true');
   const twenty = fresh.locator('.item[data-pull="20"]');
-  assert.deepEqual(await twenty.locator('.size, .pr-merge, .pr-review, .who, .tag.new').allTextContents(), ['XS', 'conflicts', 'approved', 'copilot', 'new']);
+  assert.deepEqual(await twenty.locator('.size, .pr-merge, .pr-review, .who, .tag.new').allTextContents(), ['conflicts', 'approved', 'XS', 'new', 'copilot']);
+  assert.equal(await twenty.locator('.size').getAttribute('class'), 'size xs', 'the band is its class, for the colour');
   assert.equal(await twenty.locator('.pr-go').textContent(), 'Switch');
   assert.equal(await twenty.locator('.pr-go').isDisabled(), false);
   // Switch sits after the title, in sight; only ▶ and ↓ wait on hover.
@@ -1931,7 +1932,7 @@ test('the Pull requests tab groups the open pull requests by milestone, smallest
   // An old draft on no milestone: dimmed, with the milestone of the issue it closes as a hint.
   const thirty = fresh.locator('.item[data-pull="30"]');
   assert.ok(await thirty.evaluate((el) => el.classList.contains('stale')));
-  assert.deepEqual(await thirty.locator('.size, .pr-merge').allTextContents(), ['XXL', 'draft']);
+  assert.deepEqual(await thirty.locator('.size, .pr-merge').allTextContents(), ['draft', 'XXL']);
   assert.equal(await thirty.locator('.tag.hint').textContent(), 'closes #5 · Not urgent');
   // The order and the grouping are the two selects, remembered across a reload.
   await fresh.locator('#queue-body select.pull-sort').selectOption('largest');

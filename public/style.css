@@ -864,7 +864,16 @@ li.issue-body select.milestone {
 .item.pull { flex-wrap: wrap; row-gap: 0; }
 .item.pull.here { background: color-mix(in srgb, var(--accent) 8%, transparent); }
 .item.pull.stale > :not(.actions) { opacity: .55; }
-.item.pull .size { font-size: 11px; padding: 0 4px; border: 1px solid var(--line); border-radius: 3px; color: var(--dim); font-variant-numeric: tabular-nums; }
+.item.pull .size { font-size: 11px; padding: 0 4px; border: 1px solid currentColor; border-radius: 3px; font-variant-numeric: tabular-nums; }
+/* The size band as a colour, green to red: a small one is the one to take next,
+   so it is the brightest, and the scale runs through the palette's yellow and
+   red to the busy icon's deep red for XXL. */
+.item.pull .size.xs { color: color-mix(in srgb, var(--add) 70%, white); }
+.item.pull .size.s { color: var(--add); }
+.item.pull .size.m { color: var(--warn); }
+.item.pull .size.l { color: color-mix(in srgb, var(--warn) 45%, var(--fail)); }
+.item.pull .size.xl { color: var(--fail); }
+.item.pull .size.xxl { color: color-mix(in srgb, var(--busy) 70%, var(--fail)); }
 .item.pull .pr-merge, .item.pull .pr-review, .item.pull .who, .item.pull .age { font-size: 12px; color: var(--dim); white-space: nowrap; }
 .item.pull .sep { font-size: 12px; color: var(--dim); }
 .item.pull .pr-merge.ready { color: var(--add); }

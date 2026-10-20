@@ -830,11 +830,12 @@ const wordClass = (w) => w.toLowerCase().replace(/[^a-z]+/g, '-').replace(/^-|-$
 /**
  * One pull request as a row, and its description under it when the row is
  * open. The first line is what the choice turns on: `PR #N` and the title,
- * its size as GitHub's size label (hover for the counts), whether it can
- * merge in a word, the review decision when there is one, whose it is, its
- * labels, the Files tab's pie (filled by changed lines viewed, so an empty
+ * whether it can merge in a word, the review decision when there is one, its
+ * size as GitHub's size label (hover for the counts) coloured green to red by
+ * band, the Files tab's pie (filled by changed lines viewed, so an empty
  * one is probably still being written and a full one is reviewed and waiting
- * on something else), `new` within a week of opening, and how long since it
+ * on something else), its labels, `new` within a week of opening, whose it
+ * is, and how long since it
  * was opened and last moved, a dot between each pair of plain words; a row
  * not moved in three months is dimmed. A
  * pull request on no milestone that closes an issue on one shows that
@@ -868,14 +869,18 @@ function pullRow(p) {
   // The facts, each marked plain (a word) or not (a chip, the pie): a dot goes
   // between two plain neighbours and nowhere near a chip, as linkRow (pr.js)
   // sets dots -- a chip's border already separates it.
+  // In three runs: the state (the merge word, the review), then what makes
+  // this one worth taking or not (the size, coloured by band, the pie, labels,
+  // new), then whose it is and when.
+  const size = sizeChip(p.lines);
   const facts = [
-    [h('span', { className: 'size', title: `+${p.additions ?? 0} −${p.deletions ?? 0} · ${files}` }, sizeChip(p.lines)), false],
     [p.merge ? h('span', { className: `pr-merge ${wordClass(p.merge)}` }, p.merge) : null, true],
     [review ? h('span', { className: 'pr-review' }, review) : null, true],
-    [p.author ? h('span', { className: 'who', title: 'opened by' }, p.author) : null, true],
-    ...(p.labels ?? []).map((l) => [h('span', { className: 'tag label' }, l), false]),
+    [h('span', { className: `size ${size.toLowerCase()}`, title: `+${p.additions ?? 0} −${p.deletions ?? 0} · ${files}` }, size), false],
     [p.viewed ? mark({ p: p.viewed.p, full: p.viewed.full, label: p.viewed.label }) : null, false],
+    ...(p.labels ?? []).map((l) => [h('span', { className: 'tag label' }, l), false]),
     [isNew(p, now) ? h('span', { className: 'tag new' }, 'new') : null, false],
+    [p.author ? h('span', { className: 'who', title: 'opened by' }, p.author) : null, true],
     [h('span', { className: 'age', title: `opened ${p.createdAt ?? ''}` }, `opened ${age(p.createdAt, now)}`), true],
     [h('span', { className: 'age', title: `last updated ${p.updatedAt ?? ''}` }, `updated ${age(p.updatedAt, now)}`), true],
     [hint ? h('span', { className: 'tag hint', title: `closes #${hint.number}, which is on ${hint.milestone}` }, `closes #${hint.number} · ${hint.milestone}`) : null, false],
