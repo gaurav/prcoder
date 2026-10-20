@@ -873,6 +873,8 @@ li.issue-body .pull-closes { font-size: 12px; color: var(--dim); }
   flex: 1 0 100%; margin: 0 0 1px 18px; font-family: var(--serif); font-size: 12px; line-height: 1.35; color: var(--dim);
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
 }
+/* inline()'s output, which outside .md has no code face of its own. */
+.item.pull .pr-lead code { font-size: .87em; }
 .pull-note { color: var(--dim); font-size: 12px; margin: 4px 0 8px; }
 
 /* The row's only reliable drag handle: the text gives up draggable while it is

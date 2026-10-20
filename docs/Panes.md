@@ -456,7 +456,8 @@ reviewed and waiting on something else), `new` for a week after it was opened, a
 it was opened and since it last moved. A pull request not moved for three months is dimmed.
 One on no milestone that closes an issue on one shows that milestone as a dotted hint, since the
 pull request usually belongs where its issue is. Under the facts is the first paragraph of its
-description, clipped to two lines. The pull request on screen is marked *here* and offered no
+description, clipped to two lines, with its bold, code and links drawn rather than left as
+markdown. The pull request on screen is marked *here* and offered no
 Switch; every other row's **Switch** checks it out, as the PR pane's does, and is disabled by
 uncommitted work for the same reason. ▸ opens the whole description under the row, drawn as an
 issue's body is, with the issues it closes, the milestone select, Switch and **Open on GitHub**
