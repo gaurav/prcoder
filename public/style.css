@@ -863,7 +863,9 @@ li.issue-body select.milestone {
 }
 .pull-controls button { font-size: 12px; padding: 2px 6px; color: var(--dim); background: var(--bg); border: 1px solid var(--line); border-radius: 4px; cursor: pointer; }
 .pull-controls button:hover { color: var(--fg); border-color: var(--accent); }
-.item.pull { flex-wrap: wrap; row-gap: 0; }
+/* More room between pull requests than between issues: each is three lines,
+   and at the issues' 3px they ran together. */
+.item.pull { flex-wrap: wrap; row-gap: 0; padding: 7px 4px; }
 .item.pull.here { background: color-mix(in srgb, var(--accent) 8%, transparent); }
 .item.pull.stale > :not(.actions) { opacity: .55; }
 .item.pull .size { font-size: 11px; padding: 0 4px; border: 1px solid currentColor; border-radius: 3px; font-variant-numeric: tabular-nums; }
