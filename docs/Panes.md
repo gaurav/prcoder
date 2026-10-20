@@ -449,7 +449,8 @@ Within a group they are smallest first, since the next one to take on is usually
 nearly done; the first select over them changes that to largest first, newest, oldest, most or
 least recently updated, and both selects are remembered the way the pane sizes are. The search
 box covers the number, title, author, head branch, labels and body, and narrows the rows and
-the count as the issue search does. Each row is `PR #N` in a tinted chip, the title, its size as
+the count as the issue search does. Each row is `PR #N` in a tinted chip, the title, linking to the pull request on GitHub as the
+chip does, then `here` or **Switch**, then its size as
 GitHub's size labels band it (`XS` under ten lines changed, `S` under thirty, `M` under a
 hundred, `L` under five hundred, `XL` under a thousand, `XXL` past that; hover for the lines
 added and removed and the file count), whether it can merge in a word (`ready`, `conflicts`,
@@ -462,11 +463,13 @@ it was opened and since it last moved, with a dot between neighbouring words and
 chip. A pull request not moved for three months is dimmed.
 One on no milestone that closes an issue on one shows that milestone as a dotted hint, since the
 pull request usually belongs where its issue is. Under the facts is the first paragraph of its
-description, clipped to two lines. The pull request on screen is marked *here* and offered no
-Switch; every other row's **Switch** checks it out, as the PR pane's does, and is disabled by
-uncommitted work for the same reason. ▸ opens the whole description under the row, drawn as an
+description, clipped to two lines. The pull request on screen is marked *here* after its title and
+offered no Switch; every other row's **Switch** sits there instead, in sight rather than on
+hover, since switching is what the tab is for. It checks the pull request out, as the PR pane's
+does, and is disabled by uncommitted work for the same reason. ▸ opens the whole description under the row, drawn as an
 issue's body is, with the issues it closes, the milestone select, Switch and **Open on GitHub**
-under it; ▶ and ↓ do what they do on an issue's row, and the copied item is tagged `PR #N`.
+under it; ▶ and ↓, on hover at the row's end as on every row, do what they do on an issue's row,
+and the copied item is tagged `PR #N`.
 
 The list is read from GitHub only for this tab, never for the switcher: the one call that carries
 the size, the merge state and the viewed files takes seconds on a repository with many open

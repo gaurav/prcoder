@@ -1904,6 +1904,7 @@ test('the Pull requests tab groups the open pull requests by milestone, smallest
   assert.equal(await twelve.locator('.tag.pull').textContent(), 'PR #12');
   assert.equal(await twelve.locator('.tag.pull').getAttribute('href'), pr.url);
   assert.equal(await twelve.locator('.text').textContent(), pr.title);
+  assert.equal(await twelve.locator('a.text').getAttribute('href'), pr.url, 'the title links to GitHub too');
   assert.equal(await twelve.locator('.size').textContent(), 'L');
   assert.equal(await twelve.locator('.size').getAttribute('title'), '+300 −20 · 6 files');
   assert.equal(await twelve.locator('.pr-merge').textContent(), 'ready');
@@ -1922,6 +1923,11 @@ test('the Pull requests tab groups the open pull requests by milestone, smallest
   assert.deepEqual(await twenty.locator('.size, .pr-merge, .pr-review, .who, .tag.new').allTextContents(), ['XS', 'conflicts', 'approved', 'copilot', 'new']);
   assert.equal(await twenty.locator('.pr-go').textContent(), 'Switch');
   assert.equal(await twenty.locator('.pr-go').isDisabled(), false);
+  // Switch sits after the title, in sight; only ▶ and ↓ wait on hover.
+  assert.equal(await twenty.locator('.text + .pr-go').count(), 1, 'Switch follows the title');
+  assert.equal(await twenty.locator('.actions .pr-go').count(), 0);
+  assert.equal(await twenty.locator('.pr-go').evaluate((b) => getComputedStyle(b).opacity), '1');
+  assert.equal(await twenty.locator('.actions').evaluate((a) => getComputedStyle(a).opacity), '0', '▶ and ↓ still wait on hover');
   // An old draft on no milestone: dimmed, with the milestone of the issue it closes as a hint.
   const thirty = fresh.locator('.item[data-pull="30"]');
   assert.ok(await thirty.evaluate((el) => el.classList.contains('stale')));
