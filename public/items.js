@@ -164,8 +164,15 @@ export const PULL_SORTS = {
 /** The pull requests in the order `how` names, ties in the order they came (by number, as a second key); an order not named is `smallest`. */
 export const sortPulls = (list, how) => [...list].sort((a, b) => (PULL_SORTS[how] ?? PULL_SORTS.smallest).by(a, b) || a.number - b.number);
 
-/** Whether the Pull requests tab's search matches a pull request: case-blind, over `#N`, the title, the author, the head branch, the labels and the body. */
+/**
+ * Whether the Pull requests tab's search matches a pull request: case-blind,
+ * over `#N`, the title, the author, the head and base branches, the labels,
+ * the body, and the issues it closes by `#N` and title -- so a base branch
+ * finds the stack on it, and an issue finds the pull requests for it whether
+ * or not the body names it.
+ */
 export const pullMatches = (p, query) => {
   const q = (query ?? '').trim().toLowerCase();
-  return !q || [`#${p.number}`, p.title ?? '', p.author ?? '', p.headRefName ?? '', ...(p.labels ?? []), p.body ?? ''].join('\n').toLowerCase().includes(q);
+  return !q || [`#${p.number}`, p.title ?? '', p.author ?? '', p.headRefName ?? '', p.baseRefName ?? '', ...(p.labels ?? []), p.body ?? '',
+    ...(p.closes ?? []).flatMap((i) => [`#${i.number}`, i.title ?? ''])].join('\n').toLowerCase().includes(q);
 };

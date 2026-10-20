@@ -161,7 +161,8 @@ test('a pull request\'s size chip is a size label, on lines changed', () => {
 
 const pulls = [
   { number: 1, lines: 50, createdAt: '2026-10-01T00:00:00Z', updatedAt: '2026-10-10T00:00:00Z', title: 'Alpha', author: 'gaurav', headRefName: 'alpha', labels: ['bug'], body: 'fixes the thing' },
-  { number: 2, lines: 5, createdAt: '2026-10-05T00:00:00Z', updatedAt: '2026-10-06T00:00:00Z', title: 'Beta', author: 'copilot', headRefName: 'copilot/beta', labels: [], body: '' },
+  { number: 2, lines: 5, createdAt: '2026-10-05T00:00:00Z', updatedAt: '2026-10-06T00:00:00Z', title: 'Beta', author: 'copilot', headRefName: 'copilot/beta', baseRefName: 'alpha', labels: [], body: '',
+    closes: [{ number: 9, title: 'The beta thing', url: null, milestone: null }] },
   { number: 3, lines: 5, createdAt: '2026-09-01T00:00:00Z', updatedAt: '2026-10-18T00:00:00Z', title: 'Gamma', author: 'gaurav', headRefName: 'gamma', labels: [], body: 'Closes #1' },
 ];
 
@@ -179,13 +180,15 @@ test('the orders sort as named, ties by number, and the list is left alone', () 
   assert.ok(Object.values(PULL_SORTS).every((s) => typeof s.label === 'string' && typeof s.by === 'function'));
 });
 
-test('the search matches the number, title, author, branch, labels and body, case-blind', () => {
+test('the search matches the number, title, author, branches, labels, body and closed issues, case-blind', () => {
   const found = (q) => pulls.filter((p) => pullMatches(p, q)).map((p) => p.number);
   assert.deepEqual(found(''), [1, 2, 3]);
   assert.deepEqual(found('  '), [1, 2, 3]);
   assert.deepEqual(found('#1'), [1, 3], 'the body counts: #3 closes #1');
   assert.deepEqual(found('#2'), [2]);
-  assert.deepEqual(found('ALPHA'), [1]);
+  assert.deepEqual(found('ALPHA'), [1, 2], 'the base branch counts: #2 is built on alpha');
+  assert.deepEqual(found('#9'), [2], 'an issue it closes counts by number');
+  assert.deepEqual(found('beta thing'), [2], 'and by title');
   assert.deepEqual(found('copilot'), [2]);
   assert.deepEqual(found('gamma'), [3]);
   assert.deepEqual(found('bug'), [1]);
