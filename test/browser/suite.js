@@ -1515,7 +1515,9 @@ const ISSUES = {
     { number: 149, title: 'Add a PRs pane', url: 'https://github.com/gaurav/prcoder/issues/149', updatedAt: '2026-10-07T00:00:00Z',
       body: '', milestone: null, labels: [] },
   ],
-  total: 4, listed: 4, repo: 'gaurav/prcoder', mentions: [],
+  // The fixture PR mentions #7, and /api/issues answers every mention, with
+  // its number alone when GitHub did not know it.
+  total: 4, listed: 4, repo: 'gaurav/prcoder', mentions: [{ number: 7 }],
 };
 const groupsOf = (p) => p.$$eval('#queue-body .fold.milestone', (gs) => gs.map((g) =>
   `${g.dataset.group}|${g.querySelector('h3').textContent.replace(/\s+/g, ' ').trim()}|${g.open ? 'open' : 'closed'}|${g.querySelectorAll('.item').length}`));
@@ -1547,7 +1549,7 @@ test('the Issues tab groups the repository\'s open issues by milestone in rank o
     'mentioned|Mentioned by PR #12 1|open|1',
     'm:2|v0.1 2026-10-02 1|open|1', 'm:1|v1.0 2026-10-14 1|closed|1', 'm:4|Needed soon 0|closed|0',
     'm:3|Not urgent 1|closed|1', 'm:none|No milestone 1|closed|1']);
-  // The mention is not in the listing's answer, so it says so, dimmed.
+  // GitHub did not know the mention, so it says so, dimmed.
   assert.equal(await fresh.locator('[data-group="mentioned"] .item.closed .text').textContent(), 'not found on GitHub');
   assert.equal(await fresh.locator('[data-group="m:4"] .empty').textContent(), 'no open issues');
   assert.equal(await fresh.locator('[data-group="m:3"] summary a').getAttribute('href'), 'https://github.com/gaurav/prcoder/milestone/3');
@@ -1592,13 +1594,15 @@ test('searching the issues narrows the rows, opens the groups with a match, and 
   const { fresh } = await issuesPage();
   const search = fresh.locator('#queue-search');
   await search.fill('row is read');
-  // A mention with nothing matching drops out of the tab altogether.
-  assert.deepEqual(await groupsOf(fresh), [
-    'm:2|v0.1 2026-10-02 1|open|1', 'm:1|v1.0 2026-10-14 0|closed|0', 'm:4|Needed soon 0|closed|0',
-    'm:3|Not urgent 0|closed|0', 'm:none|No milestone 0|closed|0']);
+  // A group with nothing matching, the mentions or a milestone, drops out of
+  // the tab altogether, rather than saying it has no open issues.
+  assert.deepEqual(await groupsOf(fresh), ['m:2|v0.1 2026-10-02 1|open|1']);
   assert.equal(await fresh.locator('#queue-body .tab[data-tab="issues"]').textContent(), 'Issues (1)');
+  await search.fill('zzz');
+  assert.deepEqual(await groupsOf(fresh), []);
+  assert.equal(await fresh.locator('#queue-body .issue-groups .empty').textContent(), 'No open issues match.');
   await search.fill('#149');
-  assert.deepEqual((await groupsOf(fresh)).filter((g) => g.endsWith('|1')), ['m:none|No milestone 1|open|1']);
+  assert.deepEqual(await groupsOf(fresh), ['m:none|No milestone 1|open|1']);
   // A poll that brings news holds off while the search box has focus, so
   // its text and caret survive; the news lands with the next repaint.
   assert.equal(await fresh.evaluate(() => document.activeElement.id), 'queue-search');
@@ -1636,6 +1640,25 @@ test('the listing landing keeps the search box\'s focus and what is typed in it'
   await fresh.keyboard.type(' is');
   assert.equal(await search.inputValue(), 'row is');
   assert.equal(await fresh.locator('#queue-body .tab[data-tab="issues"]').textContent(), 'Issues (1)');
+  await fresh.close();
+});
+
+// A first listing that fails says so on the tab once the toast has gone,
+// rather than reading as if it were still loading, and can be asked for again.
+test('a first listing that fails says so on the tab, and tries again', { skip }, async () => {
+  const { fresh } = await refPage(() => ({ json: { ref: null } }));
+  await fresh.route('**/api/issues', (r) => r.fulfill({ status: 500, json: { error: 'gh: API rate limit exceeded' } }));
+  const failed = fresh.waitForResponse('**/api/issues');
+  await fresh.locator('#queue-body .tab[data-tab="issues"]').click();
+  await failed;
+  const note = fresh.locator('#queue-body .issue-groups .empty');
+  await fresh.waitForFunction(() => document.querySelector('#queue-body .issue-groups .empty')?.textContent.includes('Could not'));
+  assert.match(await note.textContent(), /Could not read the repository's issues: gh: API rate limit exceeded/);
+  assert.equal(await fresh.locator('#queue-body .tab[data-tab="issues"]').textContent(), 'Issues (?)');
+  await fresh.route('**/api/issues', (r) => r.fulfill({ json: ISSUES }));
+  await note.locator('button', { hasText: 'try again' }).click();
+  await fresh.waitForSelector('#queue-body .fold.milestone');
+  assert.equal(await fresh.locator('#queue-body .tab[data-tab="issues"]').textContent(), 'Issues (4)');
   await fresh.close();
 });
 
@@ -1743,11 +1766,50 @@ test('the Issues tab leads with what the PR mentions, and a mention that is list
   // The tag says which is a pull request, so the text needs only its state --
   // and an open one, like an open issue, is not dimmed and needs none.
   assert.deepEqual(await rows.locator('.text').allTextContents(), ['Show whether each linked issue is still open', 'Per-route locking · merged', 'Still in review']);
-  assert.deepEqual(await rows.locator('.tag:not(.label)').allTextContents(), ['#66', 'PR #7', 'PR #8']);
+  // #7 and #8 are the pull request's repository's, not the one prcoder is in.
+  assert.deepEqual(await rows.locator('.tag:not(.label)').allTextContents(),
+    ['#66', 'PR heal-data-stewards/heal-vlmd-AI-pipeline#7', 'PR heal-data-stewards/heal-vlmd-AI-pipeline#8']);
   assert.equal(await rows.locator('.tag.pull').count(), 2);
   assert.deepEqual(await rows.evaluateAll((ls) => ls.map((l) => l.classList.contains('closed'))), [false, true, false]);
   assert.equal(await rows.nth(0).locator('button.disclose').count(), 1);
   assert.equal(await rows.nth(1).locator('button.disclose').count(), 0, 'a mention with no body has nothing to open');
+  await fresh.close();
+});
+
+// A mention that is a listed issue is searched as that issue's own row is,
+// labels and all, so a search never finds one of the two and not the other.
+test('a mention that is a listed issue matches a search on its labels, as its row does', { skip }, async () => {
+  const url = 'https://github.com/gaurav/prcoder/issues/90';
+  const { fresh } = await issuesPage({ ...ISSUES, mentions: [
+    { number: 90, url, title: 'Something for later', kind: 'issue', state: 'OPEN', updatedAt: '2026-10-08T00:00:00Z' }] },
+  [{ number: 90, url, closes: false, title: 'Something for later' }]);
+  await fresh.locator('#queue-search').fill('help wanted');
+  assert.deepEqual((await groupsOf(fresh)).map((g) => g.split('|')[0]), ['mentioned', 'm:3']);
+  await fresh.close();
+});
+
+// The mentions are looked up for the pull request that was on screen when
+// the listing was asked for; a poll that brings a description mentioning
+// something new asks again, and the new mention reads `…` until it lands,
+// rather than not found.
+test('a mention the description gains while the Issues tab is open is looked up', { skip }, async () => {
+  const seven = { number: 7, url: `${REPO}/issues/7`, title: 'Per-route locking', kind: 'issue', state: 'OPEN', updatedAt: '2026-09-01T00:00:00Z' };
+  const { fresh } = await issuesPage({ ...ISSUES, mentions: [seven] });
+  let release;
+  const held = new Promise((r) => { release = r; });
+  await fresh.route('**/api/issues', async (r) => { await held; return r.fulfill({ json: { ...ISSUES, mentions: [seven,
+    { number: 9, url: `${REPO}/issues/9`, title: 'Newly mentioned', kind: 'issue', state: 'OPEN', updatedAt: '2026-10-01T00:00:00Z' }] } }); });
+  const asked = fresh.waitForRequest('**/api/issues');
+  await fresh.route('**/api/status', (r) => r.fulfill({ json: { ...status, nameWithOwner: 'gaurav/prcoder', pr: { ...pr, issues: [
+    ...pr.issues, { number: 9, url: `${REPO}/issues/9`, closes: false, title: 'Newly mentioned' }] } } }));
+  await fresh.click('#pr-refresh');
+  await asked;
+  const rows = fresh.locator('[data-group="mentioned"] .item');
+  await fresh.waitForFunction(() => document.querySelectorAll('[data-group="mentioned"] .item').length === 2);
+  assert.deepEqual(await rows.locator('.text').allTextContents(), ['Per-route locking', '…']);
+  assert.equal(await rows.nth(1).evaluate((l) => l.classList.contains('closed')), false, 'not looked up is not dimmed');
+  release();
+  await fresh.waitForFunction(() => document.querySelector('[data-group="mentioned"] .item .text')?.textContent === 'Newly mentioned');
   await fresh.close();
 });
 

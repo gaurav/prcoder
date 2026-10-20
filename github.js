@@ -766,7 +766,8 @@ const ISSUES_QUERY = `query($owner:String!,$repo:String!,$after:String){
  * tab: `{ milestones: [{ number, title, dueOn, description, closed }], issues:
  * [{ number, title, url, updatedAt, body, milestone, labels }], total, listed }`.
  * An issue's `milestone` is the milestone's number or null, and `labels` is
- * names only. Most recently updated first, as GitHub orders them. A
+ * names only, rid of control characters as the titles are (printable). Most
+ * recently updated first, as GitHub orders them. A
  * milestone an open issue is on but that is not among the open ones read --
  * closed with the issue still open, or past the first fifty -- is added from
  * the issue, `closed` if it is, so that every listed issue has a group to be
@@ -799,7 +800,8 @@ export async function repoIssues(cwd, owner, repo) {
       issues.push({
         number: i.number, title: printable(i.title ?? '').trim() || `#${i.number}`, url: i.url,
         updatedAt: i.updatedAt ?? null, body: lf(i.body),
-        milestone: i.milestone?.number ?? null, labels: (i.labels?.nodes ?? []).map((l) => l.name),
+        milestone: i.milestone?.number ?? null,
+        labels: (i.labels?.nodes ?? []).map((l) => printable(l.name ?? '').trim()).filter(Boolean),
       });
       const m = i.milestone;
       if (m && !milestones.some((k) => k.number === m.number)) {

@@ -400,8 +400,11 @@ checklist, ticked through to GitHub like the boxes in the PR pane.
 **Issues** is always there, since a repository has issues whatever is checked out: its open
 issues, read when the tab is opened and again on every visit, in groups you fold. With a pull
 request on screen the first group is what its description mentions without closing, the most
-recently updated on GitHub first; a pull request's tag says `PR`, and a mention that is no longer open -- a closed
-issue, or a merged or closed pull request -- is dimmed and followed by its state, `· closed` or `· merged`. Then one group per open milestone, in the order the owner's
+recently updated on GitHub first; a pull request's tag says `PR`, one in another repository -- upstream's, in a
+fork-headed checkout -- is tagged with that repository's name as a queue item is, and a mention that is no longer open -- a closed
+issue, or a merged or closed pull request -- is dimmed and followed by its state, `· closed` or `· merged`.
+A poll that brings another pull request, or a description that mentions something new, while the
+tab is open has the listing read again, and a mention reads `…` until it is looked up. Then one group per open milestone, in the order the owner's
 milestones are read ([MILESTONES.md](https://github.com/gaurav/milestones/blob/main/MILESTONES.md)):
 `Critical`, then releases and deadlines soonest first and the undated after them, then `Needed
 soon`, `Needed later`, `Not urgent` and `Upstream`, matched by name whatever their case; and last
@@ -414,9 +417,10 @@ later, made on GitHub since, starts folded; a group you open or close stays so u
 reloaded, through every poll.
 
 The box above the groups searches the number, title, labels and body of every issue listed; a
-group with a match opens and one without closes, and the tab's count becomes how many matched.
+group with a match opens and one without is left out, and the tab's count becomes how many matched.
 Cleared, the groups go back to how you left them. The count is otherwise the repository's open
-issues, and `…` until the first listing lands. The listing stops at 500, the most recently
+issues, and `…` until the first listing lands; if that one cannot be read, the count is `?` and
+the tab says why, with a way to try again. The listing stops at 500, the most recently
 updated, and says so under the groups when a repository has more.
 
 Each row is the issue's number, as a link, its title, and its labels as plain chips -- names only,

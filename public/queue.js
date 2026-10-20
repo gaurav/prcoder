@@ -43,6 +43,13 @@ export function setItems(next, prOnScreen = null) {
   // PR tab without changing the list, so it has to count as news too.
   const source = (p) => (p ? JSON.stringify([p.number, p.body, p.issues]) : '');
   const samePr = source(prOnScreen) === source(pr);
+  // The mentions' titles and states come with the listing, looked up for the
+  // pull request on screen when it was asked for. A different one, or a
+  // description that mentions something new -- or the first poll's, after a
+  // visit to the tab before it -- needs them asked for again, and until they
+  // land a mention not looked up reads `…` (mentionRow).
+  const asks = (p) => JSON.stringify([p?.url ?? null, mentioned(p).map((i) => i.number)]);
+  if (tab === 'issues' && asks(prOnScreen) !== asks(pr)) loadIssues(true);
   pr = prOnScreen;
   // Most polls bring the list already on screen, and a rebuild for nothing
   // costs every row and listener. `items` is kept, not swapped for the equal
@@ -189,13 +196,26 @@ const prTasks = () => (pr ? blocks(pr.body).filter((b) => b.kind === 'task') : [
  * are what the PR already answers; a bare `#N` elsewhere is work it points at.
  * The Issues tab's first group, ahead of the repository's own.
  */
-const mentioned = () => (pr?.issues ?? []).filter((i) => !i.closes);
+const mentioned = (p = pr) => (p?.issues ?? []).filter((i) => !i.closes);
 
-/** The Issues tab's count: the repository's open issues, the matches while searching, `…` before the first listing. */
-const issueCount = () => (!listing ? '…' : query.trim() ? matching().length : listing.total);
+/**
+ * The Issues tab's count: the repository's open issues, the matches while
+ * searching, `…` before the first listing, and `?` when it could not be read.
+ */
+const issueCount = () => (!listing ? (issuesFailed ? '?' : '…') : query.trim() ? matching().length : listing.total);
 
-/** The listed issues the search lets through. */
-const matching = () => (listing?.issues ?? []).filter((i) => issueMatches(i, query));
+/**
+ * The listed issues the search lets through, worked out once per listing and
+ * query: a keystroke paints both the tab's count and the groups from it, over
+ * up to 500 issues with their bodies.
+ */
+const matching = () => {
+  if (matched.listing !== listing || matched.query !== query) {
+    matched = { listing, query, issues: (listing?.issues ?? []).filter((i) => issueMatches(i, query)) };
+  }
+  return matched.issues;
+};
+let matched = { listing: null, query: null, issues: [] };
 
 /** The Pull requests tab's count, on the same rule as the Issues tab's. */
 const pullCount = () => (!pullsListing ? '…' : pullQuery.trim() ? matchingPulls().length : pullsListing.total);
@@ -324,8 +344,38 @@ function flashLocal() {
  * It lands in the groups alone when the tab is drawn: the search box is up
  * before the listing is, and a render() would take it out from under a
  * query being typed.
+ *
+ * One listing at a time: a listing is up to five pages of GitHub's, and
+ * clicking Issues, Local, Issues while one was out started a second, which
+ * could land first and be overwritten by the older. A visit while one is out
+ * takes that one, which was asked for moments ago. `again` is for a caller
+ * that knows the one out is stale, and has another asked for once it lands.
  */
-async function loadIssues() {
+function loadIssues(again = false) {
+  if (issuesLoading) {
+    issuesStale ||= again;
+    return;
+  }
+  // A try after a failure says it is reading again, rather than still failed.
+  if (issuesFailed) {
+    issuesFailed = null;
+    paintIssues();
+  }
+  issuesLoading = fetchIssues().finally(() => {
+    issuesLoading = null;
+    if (!issuesStale) return;
+    issuesStale = false;
+    if (tab === 'issues') loadIssues();
+  });
+}
+let issuesLoading = null;
+let issuesStale = false;
+// Why the first listing could not be read, so the tab says so after the toast
+// has gone: left reading "Reading…" and `…`, it looked as if it still was.
+// Once there is a listing, a failed refresh keeps it and only the toast says.
+let issuesFailed = null;
+
+async function fetchIssues() {
   try {
     const got = await api('/api/issues', undefined, 'GET');
     listing = got;
@@ -334,6 +384,7 @@ async function loadIssues() {
     seedGroups();
   } catch (e) {
     toast(e.message, true);
+    if (!listing) issuesFailed = e.message;
   }
   if (tab !== 'issues') return;
   if (document.getElementById('queue-search')) paintIssues(); else render();
@@ -436,6 +487,10 @@ function seedGroups() {
 }
 
 function issueGroups() {
+  if (!listing && issuesFailed) {
+    return [h('p', { className: 'empty' }, `Could not read the repository's issues: ${issuesFailed} `,
+      btn('try again', () => loadIssues(), { title: 'ask GitHub for the issues again' }))];
+  }
   if (!listing) return [h('p', { className: 'empty' }, 'Reading the repository\'s issues…')];
   const searching = !!query.trim();
   const byMilestone = new Map();
@@ -445,9 +500,11 @@ function issueGroups() {
     byMilestone.get(key).push(i);
   }
   const ranked = rankMilestones(listing.milestones);
-  // While searching a group with a match is open and one without is closed,
-  // without touching what was chosen: fold() reports its initial state too.
-  const state = (key, rows) => (searching ? { open: rows.length > 0, onToggle: () => {} } : kept(closedGroups, key, 'closed'));
+  // While searching every group drawn has a match and is open, without
+  // touching what was chosen: fold() reports its initial state too. One
+  // without a match is left out, as the mentions are -- drawn, it said "no
+  // open issues" of a milestone that has them.
+  const state = (key) => (searching ? { open: true, onToggle: () => {} } : kept(closedGroups, key, 'closed'));
   const home = deps.home?.();
   // `list` is the group's issues and `rows` what they draw, which is more
   // than one element per issue once a row is open: the count is the issues'.
@@ -457,18 +514,18 @@ function issueGroups() {
   const group = (key, title, list, rows, extra = [], target) => {
     const d = fold({
       className: 'milestone', dataset: { group: key }, title: [title, ...extra.flatMap((e) => [' ', e]), ' ', h('span', { className: 'count' }, String(list.length))],
-      ...state(key, list),
+      ...state(key),
     }, list.length ? [h('ul', { className: 'items' }, ...rows)] : [h('p', { className: 'empty' }, 'no open issues')]);
     if (target !== undefined) dropTarget(d.querySelector('summary'), target);
     return d;
   };
 
   const out = [];
-  // The mentions, searched by what is known of them: the looked-up title, and
-  // the body when the mention is one of the listed issues.
-  const ment = mentioned().filter((i) => issueMatches({
-    number: i.number, title: mentions?.get(i.number)?.title, body: listedAs(i)?.body,
-  }, query));
+  // The mentions, searched by what is known of them: one that is a listed
+  // issue as that issue is, labels and body too, so the two rows match alike;
+  // any other by its looked-up title.
+  const ment = mentioned().filter((i) => issueMatches(listedAs(i)
+    ?? { number: i.number, title: mentions?.get(i.number)?.title }, query));
   if (pr && ment.length) {
     out.push(group('mentioned', `Mentioned by PR #${pr.number}`, ment, newestFirst(ment, mentions).map((i) => mentionRow(i)).flat()));
   }
@@ -480,10 +537,12 @@ function issueGroups() {
       ...(m.closed ? [h('span', { className: 'closed-milestone', title: 'closed on GitHub, with open issues still on it' }, 'closed')] : []),
     ];
     const list = byMilestone.get(m.number) ?? [];
+    if (searching && !list.length) continue;
     out.push(group(`m:${m.number}`, title, list, list.map((i) => issueRow(i)).flat(), extra, m.title));
   }
   const none = byMilestone.get(NONE) ?? [];
-  out.push(group(`m:${NONE}`, 'No milestone', none, none.map((i) => issueRow(i)).flat(), [], null));
+  if (!searching || none.length) out.push(group(`m:${NONE}`, 'No milestone', none, none.map((i) => issueRow(i)).flat(), [], null));
+  if (!out.length) out.push(h('p', { className: 'empty' }, 'No open issues match.'));
   if (listing.listed < listing.total) {
     out.push(h('p', { className: 'pr-note' }, `The ${listing.listed} most recently updated of ${listing.total} open issues.`));
   }
@@ -492,12 +551,11 @@ function issueGroups() {
 
 /**
  * A group's summary as somewhere to drop an issue row: lit while one is over
- * it, and the drop is the move. Only a row's own drag counts (`type`, ISSUE
- * or PULL); a link or a text selection dragged across the pane is neither,
- * and an issue row dropped on a Pull requests group is not a pull request.
+ * it, and the drop is the move. Only a row's own drag counts (ISSUE); a link
+ * or a text selection dragged across the pane is not an issue.
  */
-function dropTarget(summary, milestone, type = ISSUE, mover = move) {
-  const carrying = (e) => e.dataTransfer.types.includes(type);
+function dropTarget(summary, milestone) {
+  const carrying = (e) => e.dataTransfer.types.includes(ISSUE);
   summary.addEventListener('dragover', (e) => { if (carrying(e)) { e.preventDefault(); summary.classList.add('over'); } });
   summary.addEventListener('dragleave', () => summary.classList.remove('over'));
   summary.addEventListener('drop', (e) => {
@@ -524,12 +582,14 @@ function mentionRow(i) {
   if (own) return issueRow(own);
   const title = found?.title;
   const open = found?.state === 'OPEN';
-  const text = !mentions ? '…'
+  // Not in the lookup is not looked up yet: every mention it was asked
+  // about has an entry, with no title when GitHub did not know the number.
+  const text = !found ? '…'
     : !title ? 'not found on GitHub'
       : open ? title : `${title} · ${found.state?.toLowerCase() ?? 'state unknown'}`;
-  return [issueRow({ number: i.number, url: i.url, title: text, body: null }, {
-    repo, kind: found?.kind ?? null, closed: !open && !!mentions, text: title ?? `#${i.number}`,
-  })];
+  return issueRow({ number: i.number, url: i.url, title: text, body: null }, {
+    repo, kind: found?.kind ?? null, closed: !open && !!found, text: title ?? `#${i.number}`,
+  });
 }
 
 /**
@@ -566,7 +626,9 @@ function issueRow(i, { repo = null, kind = 'issue', closed = false, text = i.tit
   // dance as Local's rows need (above): nothing here is contentEditable.
   const row = h('li', { className: `item source${closed ? ' closed' : ''}`, dataset: { issue: String(i.number) }, draggable: can },
     disclose,
-    ext(i.url, refLabel({ issue: i.number, kind }), { className: tagClass(kind) }),
+    // With the repo when it is another's, as the item ↓ makes is tagged: the
+    // link, ▶ and ↓ all go there, and docs/Security.md has ▶'s link match the tag.
+    ext(i.url, refLabel({ issue: i.number, kind, repo }), { className: tagClass(kind) }),
     h('span', { className: 'text', textContent: i.title }),
     ...(i.labels ?? []).map((l) => h('span', { className: 'tag label' }, l)),
     h('span', { className: 'actions' },
@@ -629,7 +691,8 @@ const PULL = 'application/x-prcoder-pull';
  * An issue onto a milestone, or off one with null: the one write the Issues
  * tab makes, on a drop or a pick in the row's select, which GitHub's own rules
  * call triage. The tab reads the listing again after, so the row moves group
- * once GitHub has it and not before.
+ * once GitHub has it and not before -- asking again even when a listing is
+ * already out, since that one was asked for before the write.
  */
 async function move(number, milestone) {
   try {
@@ -638,7 +701,7 @@ async function move(number, milestone) {
     toast(e.message, true);
     return;
   }
-  await loadIssues();
+  loadIssues(true);
 }
 
 /**
