@@ -828,9 +828,9 @@ const REVIEW = { APPROVED: 'approved', CHANGES_REQUESTED: 'changes requested', R
 const wordClass = (w) => w.toLowerCase().replace(/[^a-z]+/g, '-').replace(/^-|-$/g, '');
 
 /**
- * One pull request as a row, and when the row is open, the issues it closes
- * and its ways out under it -- not its description, which is read on GitHub:
- * the row is for picking, and the lead says enough to pick by. The first line is `PR #N`, the title and Switch; the second, under
+ * One pull request as a row, and when the row is open, its milestone and its
+ * ways out under it -- not its description, which is read on GitHub:
+ * the row is for picking, and the lead says enough to pick by. The first line is `PR #N`, the title, what it is built on, and Switch; the second, under
  * the title, is what the choice turns on:
  * whether it can merge in a word, the review decision when there is one, its
  * size as a size label, XS to XXL (hover for the counts) coloured green to red by
@@ -838,12 +838,13 @@ const wordClass = (w) => w.toLowerCase().replace(/[^a-z]+/g, '-').replace(/^-|-$
  * one is probably still being written and a full one is reviewed and waiting
  * on something else), its labels, `new` within a week of opening, whose it
  * is, and how long since it
- * was opened and last moved, a dot between each pair of plain words. A
- * pull request on no milestone that closes an issue on one shows that
- * milestone as a hint, since the pull request usually belongs where its
- * issue is. Under the line, the description's first paragraph, clipped to two
- * lines and through inline(), so its bold, code and links are drawn as the
- * opened description draws them rather than as their markdown. The chip is
+ * was opened and last moved, a dot between each pair of plain words. Under
+ * the line, the description's first paragraph, clipped to two lines and
+ * through inline(), so its bold, code and links are drawn as the opened
+ * description draws them rather than as their markdown; and under that the
+ * issues it closes, each linked, with its milestone after it when that is not
+ * the pull request's own -- the one on no milestone usually belongs where its
+ * issue is, and one on the wrong milestone reads the same way. The chip is
  * the way to the pull request on GitHub (the title is not a second one), and
  * switching is the other thing a row is for, so the one on screen is marked
  * `here` right after its title and every other row has the PR pane's Switch
@@ -860,9 +861,13 @@ function pullRow(p) {
   const disclose = btn(open ? '▾' : '▸', () => {
     if (open) expanded.delete(key); else expanded.add(key);
     paintPulls();
-  }, { className: 'disclose', title: open ? 'hide its milestone and the issues it closes' : 'show its milestone and the issues it closes', ariaExpanded: String(open) });
+  }, { className: 'disclose', title: open ? 'hide its milestone and ways out' : 'show its milestone and ways out', ariaExpanded: String(open) });
   const review = REVIEW[p.reviewDecision];
-  const hint = p.milestone == null ? (p.closes ?? []).find((i) => i.milestone) : null;
+  // `p.milestone` is a number and an issue's is a title (pullRow in github.js).
+  const mine = pullsListing.milestones.find((m) => m.number === p.milestone)?.title ?? null;
+  const closes = (p.closes ?? []).length ? h('p', { className: 'pull-closes' }, 'Closes ', ...(p.closes).flatMap((i, n) => [
+    n ? ', ' : '', ext(i.url ?? `https://github.com/${home}/issues/${i.number}`, `#${i.number} ${i.title}`),
+    i.milestone && i.milestone !== mine ? ` (${i.milestone})` : ''])) : null;
   const blocked = deps.blocked?.() ?? false;
   const files = `${p.changedFiles ?? 0} file${p.changedFiles === 1 ? '' : 's'}`;
   const go = () => (here ? null : btn('Switch', () => deps.onSwitch?.(p.url), {
@@ -900,7 +905,6 @@ function pullRow(p) {
     [p.author ? h('span', { className: 'who', title: 'opened by' }, p.author) : null, true],
     [h('span', { className: 'age', title: `opened ${p.createdAt ?? ''}` }, `opened ${age(p.createdAt, now)}`), true],
     [h('span', { className: 'age', title: `last updated ${p.updatedAt ?? ''}` }, `updated ${age(p.updatedAt, now)}`), true],
-    [hint ? h('span', { className: 'tag hint', title: `closes #${hint.number}, which is on ${hint.milestone}` }, `closes #${hint.number} · ${hint.milestone}`) : null, false],
   ].filter(([node]) => node);
   const row = h('li', { className: classes, dataset: { pull: String(p.number) }, draggable: true, ...(here && { ariaCurrent: 'true' }) },
     disclose,
@@ -916,7 +920,8 @@ function pullRow(p) {
       }, { title: 'type into the coding agent, with the link' }),
       btn('↓', () => pull(p.title, p.number, 'pull', null), { title: 'copy into your queue' })),
     h('div', { className: 'pr-facts' }, ...facts.flatMap(([node, plain], i) => [i && plain && facts[i - 1][1] ? h('span', { className: 'sep' }, '·') : null, node])),
-    p.lead ? h('p', { className: 'pr-lead', innerHTML: inline(p.lead, where) }) : null);
+    p.lead ? h('p', { className: 'pr-lead', innerHTML: inline(p.lead, where) }) : null,
+    closes);
   row.addEventListener('dragstart', (e) => { e.dataTransfer.setData(PULL, String(p.number)); row.classList.add('dragging'); });
   row.addEventListener('dragend', () => row.classList.remove('dragging'));
   if (!open) return [row];
@@ -924,11 +929,7 @@ function pullRow(p) {
     h('option', { value: '' }, 'No milestone'),
     ...rankMilestones(pullsListing.milestones).map((m) => h('option', { value: m.title, selected: m.number === p.milestone }, m.title)));
   pick.onchange = () => movePull(p.number, pick.value || null);
-  const closes = (p.closes ?? []).length ? h('p', { className: 'pull-closes' }, 'Closes ', ...(p.closes).flatMap((i, n) => [
-    n ? ', ' : '', ext(i.url ?? `https://github.com/${home}/issues/${i.number}`, `#${i.number} ${i.title}`),
-    i.milestone ? ` (${i.milestone})` : ''])) : null;
   const body = h('li', { className: 'issue-body md' },
-    closes,
     h('div', { className: 'issue-ways' }, pick, go(), ext(p.url, 'Open on GitHub', { className: 'primary open-issue' })));
   return [row, body];
 }

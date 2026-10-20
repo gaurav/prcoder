@@ -1957,11 +1957,15 @@ test('the Pull requests tab groups the open pull requests by milestone, smallest
   assert.ok((await box('.text')).y < chip.y + 10, 'the long title starts beside the chip');
   assert.ok(Math.abs((await box('.actions')).y - chip.y) < 8, '▶ and ↓ stay on the first line');
   assert.ok((await box('.pr-go')).y > chip.y + 10, 'Switch follows the wrapped title');
-  // An old draft on no milestone: not dimmed, with the milestone of the issue it closes as a hint.
+  // An old draft on no milestone: not dimmed. The issues it closes are under
+  // its lead, each linked, with the issue's milestone since it is not the
+  // pull request's own.
   const thirty = fresh.locator('.item[data-pull="30"]');
   assert.equal(await thirty.locator('.text').evaluate((t) => getComputedStyle(t).opacity), '1');
   assert.deepEqual(await thirty.locator('.size, .pr-merge').allTextContents(), ['draft', 'XXL']);
-  assert.equal(await thirty.locator('.tag.hint').textContent(), 'closes #5 · Not urgent');
+  assert.equal(await thirty.locator('.pull-closes').textContent(), 'Closes #5 The old thing (Not urgent)');
+  assert.equal(await thirty.locator('.pull-closes a').getAttribute('href'), `${REPO}/issues/5`);
+  assert.equal(await twelve.locator('.pull-closes').count(), 0, 'nothing closed, no line');
   // Its lead is drawn as the opened description is, not as its markdown.
   assert.equal(await thirty.locator('.pr-lead').innerHTML(),
     `Still <strong>being</strong> written, in <code>old.js</code>, for <a href="https://github.com/gaurav/prcoder/issues/5" target="_blank" rel="noopener">#5</a>.`);
@@ -2006,11 +2010,12 @@ test('searching the pull requests narrows the rows and counts them, and a row op
   await search.fill('');
   assert.equal(await fresh.locator('#queue-body .tab[data-tab="pulls"]').textContent(), 'Pull requests (3)');
   // ▸ opens the milestone select, Switch and Open on GitHub, and not the
-  // description: that is read on GitHub.
+  // description: that is read on GitHub. Nor the issues it closes, which the
+  // row itself carries.
   const twelve = fresh.locator('.item[data-pull="12"]');
   await twelve.locator('.disclose').click();
   const body = fresh.locator('[data-group="p:1"] .issue-body');
-  assert.equal(await body.locator('.task, .empty').count(), 0);
+  assert.equal(await body.locator('.task, .empty, .pull-closes').count(), 0);
   assert.equal((await body.textContent()).includes('The first paragraph of twelve.'), false);
   assert.deepEqual(await body.locator('select.milestone option').allTextContents(), ['No milestone', 'v1.0', 'Needed soon', 'Not urgent']);
   assert.equal(await body.locator('select.milestone').inputValue(), 'v1.0');

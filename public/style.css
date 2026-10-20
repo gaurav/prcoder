@@ -852,9 +852,9 @@ li.issue-body select.milestone {
 }
 /* The Pull requests tab: the Issues tab's face, with a control row over the
    groups -- the search, the order, the grouping and ⟳ -- and a row of three
-   lines: the title with Switch, the facts under it, and the description's
+   or four lines: the title with Switch, the facts under it, the description's
    first paragraph under those, clamped to two lines, in the serif the
-   description is read in. A
+   description is read in, and the issues it closes under that. A
    pull request's tag is the tinted `PR #N` chip (`.tag.pull` above), as the
    queue's rows wear it; the size chip is a size label in a plain outline; the
    merge word takes the file list's colours. */
@@ -892,14 +892,16 @@ li.issue-body select.milestone {
 .item.pull .pr-merge.behind-base, .item.pull .pr-merge.blocked { color: var(--warn); }
 .item.pull .mark { width: 10px; height: 10px; align-self: center; }
 .item.pull .tag.new { color: var(--add); border-color: var(--add); }
-.item.pull .tag.hint { color: var(--dim); border-style: dotted; }
 .item.pull .tag.here { color: var(--accent); border-color: var(--accent); }
 /* What the pull request is built on, after its title: dim, in the facts' size,
    each #N below it a link as the Closes line's are. */
 .item.pull .pr-stack { font-size: 12px; color: var(--dim); white-space: nowrap; }
 .item.pull .pr-stack a { color: var(--accent); text-decoration: none; }
 .item.pull .pr-stack a:hover { text-decoration: underline; }
-li.issue-body .pull-closes { font-size: 15px; color: var(--dim); }
+/* The issues it closes, under the lead, in the facts' size and dim, each a link. */
+.item.pull .pull-closes { flex: 1 0 100%; margin: 0 0 0 18px; font-size: 12px; color: var(--dim); }
+.item.pull .pull-closes a { color: var(--accent); text-decoration: none; }
+.item.pull .pull-closes a:hover { text-decoration: underline; }
 /* Switch sits after the title in sight, since it is what the tab is for, while
    ▶ and ↓ wait on hover. */
 .item.pull .pr-go { font-size: 12px; padding: 0 6px; }

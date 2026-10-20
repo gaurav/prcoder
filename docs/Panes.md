@@ -469,16 +469,17 @@ reviewed and waiting on something else); its labels; and `new` for a week after 
 Last, who opened it and how long since it was opened and since it last moved. A dot sits between
 neighbouring words and none beside a chip. `conflicts` and `checks not passing` are filled red badges, since a
 pull request that needs fixing is often the quickest to finish; none is dimmed, however old.
-One on no milestone that closes an issue on one shows that milestone as a dotted hint, since the
-pull request usually belongs where its issue is. Under the facts is the first paragraph of its
+Under the facts is the first paragraph of its
 description, clipped to two lines, with its bold, code and links drawn rather than left as
-markdown. The pull request on screen is marked *here* after its title and
+markdown, and under that the issues it closes, each a link, with an issue's milestone after it
+when it is not the pull request's own, since a pull request usually belongs where its issue is.
+The pull request on screen is marked *here* after its title and
 offered no Switch; every other row's **Switch** sits there instead, in sight rather than on
 hover, since switching is what the tab is for. It checks the pull request out, as the PR pane's
-does, and is disabled by uncommitted work for the same reason. ▸ opens the issues it closes, the milestone select, Switch
+does, and is disabled by uncommitted work for the same reason. ▸ opens the milestone select, Switch
 and **Open on GitHub** under the row, but not the description: nobody reads one here, and the
 lead is enough to pick by, so the rest is read on GitHub. Rows sit further apart than an issue's,
-since each is three lines; ▶ and ↓, on hover at the row's end as on every row, do what they do on an issue's row,
+since each is three lines or four; ▶ and ↓, on hover at the row's end as on every row, do what they do on an issue's row,
 and the copied item is tagged `PR #N`.
 
 The list is read from GitHub only for this tab, never for the switcher: the one call that carries
