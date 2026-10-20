@@ -847,9 +847,10 @@ li.issue-body select.milestone {
   border: 1px solid var(--line); border-radius: 4px;
 }
 /* The Pull requests tab: the Issues tab's face, with a control row over the
-   groups -- the search, the order, the grouping and ⟳ -- and a row that wraps:
-   its facts on the first line, and the description's first paragraph under
-   them, clamped to two lines, in the serif the description is read in. A
+   groups -- the search, the order, the grouping and ⟳ -- and a row of three
+   lines: the title with Switch, the facts under it, and the description's
+   first paragraph under those, clamped to two lines, in the serif the
+   description is read in. A
    pull request's tag is the tinted `PR #N` chip (`.tag.pull` above), as the
    queue's rows wear it; the size chip is GitHub's size label in a plain outline; the
    merge word takes the file list's colours; a stale row is dimmed whole. */
@@ -887,6 +888,15 @@ li.issue-body .pull-closes { font-size: 14px; color: var(--dim); }
 /* Switch sits after the title in sight, since it is what the tab is for, while
    ▶ and ↓ wait on hover. */
 .item.pull .pr-go { font-size: 12px; padding: 0 6px; }
+/* The facts on a line of their own under the title, indented with the lead:
+   on one line with the title they were read as its tail, and a long title
+   pushed them about. */
+.item.pull .pr-facts { flex: 1 0 100%; display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; margin-left: 18px; }
+/* On the title line the title gives up its stretch, so Switch follows it rather
+   than the right edge, and ▶ ↓ take that edge; without the stretch rule they
+   fell under the facts, on a line of their own. */
+.item.pull .text { flex: 0 1 auto; }
+.item.pull .actions { margin-left: auto; }
 .item.pull .pr-lead {
   flex: 1 0 100%; margin: 0 0 1px 18px; font-family: var(--serif); font-size: 14px; line-height: 1.4;
   /* Between --dim and --fg: plain --dim is right for the row's other small

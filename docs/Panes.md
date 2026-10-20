@@ -450,14 +450,14 @@ nearly done; the first select over them changes that to largest first, newest, o
 least recently updated, and both selects are remembered the way the pane sizes are. The search
 box covers the number, title, author, head branch, labels and body, and narrows the rows and
 the count as the issue search does. Each row is `PR #N` in a tinted chip, the one link to the pull request on GitHub, the title,
-then `here` or **Switch**, then its facts in three runs: its state, what makes it worth
-taking, and whose it is and when. The state is whether it can merge in a word (`ready`,
-`conflicts`, `behind base`, `blocked`, `checks not passing` -- failed, or still running --
-`draft`, or `checking…` while GitHub works it out) and the review decision when there is one.
-Then its size as GitHub's size labels band it (`XS` under ten lines changed, `S` under thirty,
-`M` under a hundred, `L` under five hundred, `XL` under a thousand, `XXL` past that; hover for
-the lines added and removed and the file count), coloured from green for `XS` through yellow for
-`M` to red for `XXL`, since the small one is usually the next to take; the Files tab's pie (it
+then `here` or **Switch**; under the title, on a line of their own, its facts in three runs: its
+state, what makes it worth taking, and whose it is and when. The state is whether it can merge in
+a word (`ready`, `conflicts`, `behind base`, `blocked`, `checks not passing` -- failed, or still
+running -- `draft`, or `checking…` while GitHub works it out) and the review decision when there
+is one. Then its size as GitHub's size labels band it (`XS` under ten lines changed, `S` under
+thirty, `M` under a hundred, `L` under five hundred, `XL` under a thousand, `XXL` past that; hover
+for the lines added and removed and the file count), coloured from green for `XS` through yellow
+for `M` to red for `XXL`, since the small one is usually the next to take; the Files tab's pie (it
 fills by changed lines viewed, so an empty one is probably still being written and a full one is
 reviewed and waiting on something else); its labels; and `new` for a week after it was opened.
 Last, who opened it and how long since it was opened and since it last moved. A dot sits between

@@ -829,7 +829,8 @@ const wordClass = (w) => w.toLowerCase().replace(/[^a-z]+/g, '-').replace(/^-|-$
 
 /**
  * One pull request as a row, and its description under it when the row is
- * open. The first line is what the choice turns on: `PR #N` and the title,
+ * open. The first line is `PR #N`, the title and Switch; the second, under
+ * the title, is what the choice turns on:
  * whether it can merge in a word, the review decision when there is one, its
  * size as GitHub's size label (hover for the counts) coloured green to red by
  * band, the Files tab's pie (filled by changed lines viewed, so an empty
@@ -890,13 +891,13 @@ function pullRow(p) {
     ext(p.url, `PR #${p.number}`, { className: 'tag pull' }),
     h('span', { className: 'text', textContent: p.title }),
     here ? h('span', { className: 'tag here', title: 'the pull request on screen' }, 'here') : go(),
-    ...facts.flatMap(([node, plain], i) => [i && plain && facts[i - 1][1] ? h('span', { className: 'sep' }, '·') : null, node]),
     h('span', { className: 'actions' },
       btn('▶', () => {
         const item = { text: p.title, issue: p.number, repo: null, kind: 'pull', issueUrl: p.url };
         if (!deps.sendToClaude(forClaude(item, home), false)) toast('The coding agent is not connected — nothing was typed.', true);
       }, { title: 'type into the coding agent, with the link' }),
       btn('↓', () => pull(p.title, p.number, 'pull', null), { title: 'copy into your queue' })),
+    h('div', { className: 'pr-facts' }, ...facts.flatMap(([node, plain], i) => [i && plain && facts[i - 1][1] ? h('span', { className: 'sep' }, '·') : null, node])),
     p.lead ? h('p', { className: 'pr-lead' }, p.lead) : null);
   row.addEventListener('dragstart', (e) => { e.dataTransfer.setData(PULL, String(p.number)); row.classList.add('dragging'); });
   row.addEventListener('dragend', () => row.classList.remove('dragging'));
