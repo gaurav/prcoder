@@ -410,7 +410,8 @@ milestones are read ([MILESTONES.md](https://github.com/gaurav/milestones/blob/m
 soon`, `Needed later`, `Not urgent` and `Upstream`, matched by name whatever their case; and last
 the issues on no milestone. A closed milestone that an open issue is still on gets a group too,
 ranked the same way and marked *closed*, so that no listed issue goes undrawn. A milestone's line
-is its title, linking to it on GitHub, its due date, and how many issues it holds; an empty one is
+is its title, linking to it on GitHub, how many issues it holds in parentheses, as the tabs count,
+and its due date; an empty one is
 still drawn, folded. Only the mentions and the first
 milestone with an issue start open, which is the one to focus on, and a milestone that appears
 later, made on GitHub since, starts folded; a group you open or close stays so until the page is

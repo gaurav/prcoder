@@ -513,7 +513,7 @@ function issueGroups() {
   // mentions have none, since they are not a milestone.
   const group = (key, title, list, rows, extra = [], target) => {
     const d = fold({
-      className: 'milestone', dataset: { group: key }, title: [title, ...extra.flatMap((e) => [' ', e]), ' ', h('span', { className: 'count' }, String(list.length))],
+      className: 'milestone', dataset: { group: key }, title: [title, ' ', h('span', { className: 'count' }, `(${list.length})`), ...extra.flatMap((e) => [' ', e])],
       ...state(key),
     }, list.length ? [h('ul', { className: 'items' }, ...rows)] : [h('p', { className: 'empty' }, 'no open issues')]);
     if (target !== undefined) dropTarget(d.querySelector('summary'), target);
@@ -797,7 +797,7 @@ function pullGroups() {
     const group = (key, title, list, extra, target) => {
       const d = fold({
         className: 'milestone', dataset: { group: key },
-        title: [title, ...extra.flatMap((e) => [' ', e]), ' ', h('span', { className: 'count' }, String(list.length))],
+        title: [title, ' ', h('span', { className: 'count' }, `(${list.length})`), ...extra.flatMap((e) => [' ', e])],
         ...state(key, list),
       }, list.length ? [h('ul', { className: 'items' }, ...list.map((p) => pullRow(p)).flat())] : [h('p', { className: 'empty' }, 'no open pull requests')]);
       dropTarget(d.querySelector('summary'), target, PULL, movePull);
