@@ -1926,6 +1926,7 @@ test('the Pull requests tab groups the open pull requests by milestone, smallest
   assert.equal(await twelve.getAttribute('aria-current'), 'true');
   const twenty = fresh.locator('.item[data-pull="20"]');
   assert.deepEqual(await twenty.locator('.size, .pr-merge, .pr-review, .who, .tag.new').allTextContents(), ['conflicts', 'approved', 'XS', 'new', 'copilot']);
+  assert.notEqual(await twenty.locator('.pr-merge').evaluate((m) => getComputedStyle(m).backgroundColor), 'rgba(0, 0, 0, 0)', 'conflicts is a filled badge');
   assert.equal(await twenty.locator('.size').getAttribute('class'), 'size xs', 'the band is its class, for the colour');
   assert.equal(await twenty.locator('.pr-go').textContent(), 'Switch');
   assert.equal(await twenty.locator('.pr-go').isDisabled(), false);
@@ -1948,9 +1949,9 @@ test('the Pull requests tab groups the open pull requests by milestone, smallest
   assert.ok((await box('.text')).y < chip.y + 10, 'the long title starts beside the chip');
   assert.ok(Math.abs((await box('.actions')).y - chip.y) < 8, '▶ and ↓ stay on the first line');
   assert.ok((await box('.pr-go')).y > chip.y + 10, 'Switch follows the wrapped title');
-  // An old draft on no milestone: dimmed, with the milestone of the issue it closes as a hint.
+  // An old draft on no milestone: not dimmed, with the milestone of the issue it closes as a hint.
   const thirty = fresh.locator('.item[data-pull="30"]');
-  assert.ok(await thirty.evaluate((el) => el.classList.contains('stale')));
+  assert.equal(await thirty.locator('.text').evaluate((t) => getComputedStyle(t).opacity), '1');
   assert.deepEqual(await thirty.locator('.size, .pr-merge').allTextContents(), ['draft', 'XXL']);
   assert.equal(await thirty.locator('.tag.hint').textContent(), 'closes #5 · Not urgent');
   // Its lead is drawn as the opened description is, not as its markdown.

@@ -856,7 +856,7 @@ li.issue-body select.milestone {
    description is read in. A
    pull request's tag is the tinted `PR #N` chip (`.tag.pull` above), as the
    queue's rows wear it; the size chip is a size label in a plain outline; the
-   merge word takes the file list's colours; a stale row is dimmed whole. */
+   merge word takes the file list's colours. */
 .pull-controls { display: flex; gap: 6px; align-items: center; margin: 0 0 6px; }
 .pull-controls #queue-pull-search { flex: 1; margin: 0; }
 .pull-controls select {
@@ -869,7 +869,6 @@ li.issue-body select.milestone {
    and at the issues' 3px they ran together. */
 .item.pull { flex-wrap: wrap; row-gap: 0; padding: 7px 4px; }
 .item.pull.here { background: color-mix(in srgb, var(--accent) 8%, transparent); }
-.item.pull.stale > :not(.actions) { opacity: .55; }
 .item.pull .size { font-size: 11px; padding: 0 4px; border: 1px solid currentColor; border-radius: 3px; font-variant-numeric: tabular-nums; }
 /* The size band as a colour, green to red: a small one is the one to take next,
    so it is the brightest, and the scale runs through the palette's yellow and
@@ -884,6 +883,11 @@ li.issue-body select.milestone {
 .item.pull .sep { font-size: 12px; color: var(--dim); }
 .item.pull .pr-merge.ready { color: var(--add); }
 .item.pull .pr-merge.conflicts, .item.pull .pr-merge.checks-not-passing { color: var(--fail); }
+/* What a pull request needs fixed before it can merge is a filled badge, not
+   just a colour: these are the ones the coding agent can most often finish. */
+.item.pull .pr-merge.conflicts, .item.pull .pr-merge.checks-not-passing {
+  color: var(--bg); background: var(--fail); padding: 0 5px; border-radius: 3px; font-weight: 600;
+}
 .item.pull .pr-merge.behind-base, .item.pull .pr-merge.blocked { color: var(--warn); }
 .item.pull .mark { width: 10px; height: 10px; align-self: center; }
 .item.pull .tag.new { color: var(--add); border-color: var(--add); }

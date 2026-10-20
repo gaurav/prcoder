@@ -3,7 +3,7 @@
 // and the status block share.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { TABS, counts, forClaude, refLabel, rankMilestones, issueMatches, sizeChip, sortPulls, pullMatches, age, dueLabel, isNew, isStale, PULL_SORTS } from '../public/items.js';
+import { TABS, counts, forClaude, refLabel, rankMilestones, issueMatches, sizeChip, sortPulls, pullMatches, age, dueLabel, isNew, PULL_SORTS } from '../public/items.js';
 import { stripFor } from '../public/queue.js';
 
 const item = (over = {}) => ({ text: 't', done: false, issue: null, deleted: false, ...over });
@@ -193,7 +193,7 @@ test('the search matches the number, title, author, branch, labels and body, cas
   assert.deepEqual(found('zzz'), []);
 });
 
-test('an age is a word or two, and new and stale are a week and three months', () => {
+test('an age is a word or two, and new is a week', () => {
   const now = Date.parse('2026-10-19T12:00:00Z');
   assert.equal(age('2026-10-19T11:59:30Z', now), 'just now');
   assert.equal(age('2026-10-19T11:00:00Z', now), '1 hour ago');
@@ -206,9 +206,6 @@ test('an age is a word or two, and new and stale are a week and three months', (
   assert.equal(isNew({ createdAt: '2026-10-13T00:00:00Z' }, now), true);
   assert.equal(isNew({ createdAt: '2026-10-11T00:00:00Z' }, now), false);
   assert.equal(isNew({}, now), false);
-  assert.equal(isStale({ updatedAt: '2026-07-01T00:00:00Z' }, now), true);
-  assert.equal(isStale({ updatedAt: '2026-09-01T00:00:00Z' }, now), false);
-  assert.equal(isStale({}, now), false);
 });
 
 test('a milestone is due some time ago or in some time, with its date on hover', () => {

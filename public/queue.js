@@ -1,5 +1,5 @@
 import { h, btn, ext, api, toast, pref, setPref, tabBtn, writeThrough, fold, kept, mark } from './ui.js';
-import { TABS, refLabel, forClaude, rankMilestones, issueMatches, pullMatches, sortPulls, sizeChip, age, dueLabel, isNew, isStale, PULL_SORTS } from './items.js';
+import { TABS, refLabel, forClaude, rankMilestones, issueMatches, pullMatches, sortPulls, sizeChip, age, dueLabel, isNew, PULL_SORTS } from './items.js';
 import { refs, resolveRef, blocks } from './tasks.js';
 import { blockNode, inline } from './pr.js';
 
@@ -838,8 +838,7 @@ const wordClass = (w) => w.toLowerCase().replace(/[^a-z]+/g, '-').replace(/^-|-$
  * one is probably still being written and a full one is reviewed and waiting
  * on something else), its labels, `new` within a week of opening, whose it
  * is, and how long since it
- * was opened and last moved, a dot between each pair of plain words; a row
- * not moved in three months is dimmed. A
+ * was opened and last moved, a dot between each pair of plain words. A
  * pull request on no milestone that closes an issue on one shows that
  * milestone as a hint, since the pull request usually belongs where its
  * issue is. Under the line, the description's first paragraph, clipped to two
@@ -870,7 +869,7 @@ function pullRow(p) {
     className: 'pr-go', disabled: blocked,
     title: blocked ? 'Commit or stash your changes first' : `Check out #${p.number} here`,
   }));
-  const classes = ['item', 'source', 'pull', here ? 'here' : '', isStale(p, now) ? 'stale' : ''].filter(Boolean).join(' ');
+  const classes = ['item', 'source', 'pull', here ? 'here' : ''].filter(Boolean).join(' ');
   // The facts, each marked plain (a word) or not (a chip, the pie): a dot goes
   // between two plain neighbours and nowhere near a chip, as linkRow (pr.js)
   // sets dots -- a chip's border already separates it.

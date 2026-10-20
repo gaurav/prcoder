@@ -461,7 +461,8 @@ for `M` to red for `XXL`, since the small one is usually the next to take; the F
 fills by changed lines viewed, so an empty one is probably still being written and a full one is
 reviewed and waiting on something else); its labels; and `new` for a week after it was opened.
 Last, who opened it and how long since it was opened and since it last moved. A dot sits between
-neighbouring words and none beside a chip. A pull request not moved for three months is dimmed.
+neighbouring words and none beside a chip. `conflicts` and `checks not passing` are filled red badges, since a
+pull request that needs fixing is often the quickest to finish; none is dimmed, however old.
 One on no milestone that closes an issue on one shows that milestone as a dotted hint, since the
 pull request usually belongs where its issue is. Under the facts is the first paragraph of its
 description, clipped to two lines, with its bold, code and links drawn rather than left as

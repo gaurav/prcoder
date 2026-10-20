@@ -131,12 +131,11 @@ const SIZES = [['XS', 50], ['S', 100], ['M', 200], ['L', 500], ['XL', 1000]];
 /** A pull request's size as a chip, `XS` to `XXL`, from its lines changed. */
 export const sizeChip = (lines) => SIZES.find(([, under]) => (lines ?? 0) < under)?.[0] ?? 'XXL';
 
-// A pull request opened within this long is `new`, and one not updated for
-// this long is stale: dimmed in the tab, since it is probably abandoned.
+// A pull request opened within this long is `new`. One not updated for months
+// is not dimmed: an old one with conflicts is often the quickest to finish,
+// since the coding agent can fix them (2026-10-20).
 export const NEW_FOR = 7 * 86400_000;
-export const STALE_AFTER = 90 * 86400_000;
 export const isNew = (p, now = Date.now()) => now - Date.parse(p.createdAt ?? '') < NEW_FOR;
-export const isStale = (p, now = Date.now()) => now - Date.parse(p.updatedAt ?? '') > STALE_AFTER;
 
 /**
  * The Pull requests tab's orders, each a comparator over pullRow's fields; the
