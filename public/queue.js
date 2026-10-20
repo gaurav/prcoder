@@ -1,7 +1,7 @@
 import { h, btn, ext, api, toast, pref, setPref, tabBtn, writeThrough, fold, kept, mark } from './ui.js';
 import { TABS, refLabel, forClaude, rankMilestones, issueMatches, pullMatches, sortPulls, sizeChip, age, isNew, isStale, PULL_SORTS } from './items.js';
 import { refs, resolveRef, blocks } from './tasks.js';
-import { blockNode } from './pr.js';
+import { blockNode, inline } from './pr.js';
 
 // The client owns the list; every change persists the whole array. Single user,
 // single repo — no ids, no diffing.
@@ -842,11 +842,13 @@ const wordClass = (w) => w.toLowerCase().replace(/[^a-z]+/g, '-').replace(/^-|-$
  * pull request on no milestone that closes an issue on one shows that
  * milestone as a hint, since the pull request usually belongs where its
  * issue is. Under the line, the description's first paragraph, clipped to two
- * lines and as plain text. The chip is the way to the pull request on GitHub
- * (the title is not a second one), and switching is the other thing a row is
- * for, so the one on screen is marked `here` right after its title and every
- * other row has the PR pane's Switch there, under its guard, in sight; ▶ and
- * ↓ wait on hover at the end, as every queue row's do.
+ * lines and through inline(), so its bold, code and links are drawn as the
+ * opened description draws them rather than as their markdown. The chip is
+ * the way to the pull request on GitHub (the title is not a second one), and
+ * switching is the other thing a row is for, so the one on screen is marked
+ * `here` right after its title and every other row has the PR pane's Switch
+ * there, under its guard, in sight; ▶ and ↓ wait on hover at the end, as every
+ * queue row's do.
  */
 function pullRow(p) {
   const key = `pull:${p.number}`;
@@ -854,6 +856,7 @@ function pullRow(p) {
   const here = !!pr && pr.url === p.url;
   const now = Date.now();
   const home = deps.home?.();
+  const where = home ? { repo: `https://github.com/${home}`, ref: 'HEAD' } : null;
   const disclose = btn(open ? '▾' : '▸', () => {
     if (open) expanded.delete(key); else expanded.add(key);
     paintPulls();
@@ -898,11 +901,10 @@ function pullRow(p) {
       }, { title: 'type into the coding agent, with the link' }),
       btn('↓', () => pull(p.title, p.number, 'pull', null), { title: 'copy into your queue' })),
     h('div', { className: 'pr-facts' }, ...facts.flatMap(([node, plain], i) => [i && plain && facts[i - 1][1] ? h('span', { className: 'sep' }, '·') : null, node])),
-    p.lead ? h('p', { className: 'pr-lead' }, p.lead) : null);
+    p.lead ? h('p', { className: 'pr-lead', innerHTML: inline(p.lead, where) }) : null);
   row.addEventListener('dragstart', (e) => { e.dataTransfer.setData(PULL, String(p.number)); row.classList.add('dragging'); });
   row.addEventListener('dragend', () => row.classList.remove('dragging'));
   if (!open) return [row];
-  const where = home ? { repo: `https://github.com/${home}`, ref: 'HEAD' } : null;
   const pick = h('select', { className: 'milestone', ariaLabel: `milestone of pull request #${p.number}` },
     h('option', { value: '' }, 'No milestone'),
     ...rankMilestones(pullsListing.milestones).map((m) => h('option', { value: m.title, selected: m.number === p.milestone }, m.title)));

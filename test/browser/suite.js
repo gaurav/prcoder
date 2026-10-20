@@ -1852,7 +1852,7 @@ const PULLS = {
       additions: 4, deletions: 1, changedFiles: 1, lines: 5, merge: 'conflicts', reviewDecision: 'APPROVED', milestone: 1, author: 'copilot' }),
     pullOf({ number: 30, title: 'An old draft', url: `${REPO}/pull/30`, headRefName: 'old', createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-02-01T00:00:00Z',
       additions: 1500, deletions: 10, changedFiles: 40, lines: 1510, merge: 'draft', isDraft: true, milestone: null,
-      closes: [{ number: 5, url: `${REPO}/issues/5`, title: 'The old thing', milestone: 'Not urgent' }], lead: 'Still being written.' }),
+      closes: [{ number: 5, url: `${REPO}/issues/5`, title: 'The old thing', milestone: 'Not urgent' }], lead: 'Still **being** written, in `old.js`, for #5.' }),
   ],
   total: 3, listed: 3, read: NOW - 3_600_000,
 };
@@ -1939,6 +1939,9 @@ test('the Pull requests tab groups the open pull requests by milestone, smallest
   assert.ok(await thirty.evaluate((el) => el.classList.contains('stale')));
   assert.deepEqual(await thirty.locator('.size, .pr-merge').allTextContents(), ['draft', 'XXL']);
   assert.equal(await thirty.locator('.tag.hint').textContent(), 'closes #5 · Not urgent');
+  // Its lead is drawn as the opened description is, not as its markdown.
+  assert.equal(await thirty.locator('.pr-lead').innerHTML(),
+    `Still <strong>being</strong> written, in <code>old.js</code>, for <a href="https://github.com/gaurav/prcoder/issues/5" target="_blank" rel="noopener">#5</a>.`);
   // The order and the grouping are the two selects, remembered across a reload.
   await fresh.locator('#queue-body select.pull-sort').selectOption('largest');
   assert.deepEqual((await pullGroupsOf(fresh))[0], 'p:1|v1.0 (2) 2026-10-14|open|12,20');

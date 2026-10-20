@@ -464,7 +464,8 @@ Last, who opened it and how long since it was opened and since it last moved. A 
 neighbouring words and none beside a chip. A pull request not moved for three months is dimmed.
 One on no milestone that closes an issue on one shows that milestone as a dotted hint, since the
 pull request usually belongs where its issue is. Under the facts is the first paragraph of its
-description, clipped to two lines. The pull request on screen is marked *here* after its title and
+description, clipped to two lines, with its bold, code and links drawn rather than left as
+markdown. The pull request on screen is marked *here* after its title and
 offered no Switch; every other row's **Switch** sits there instead, in sight rather than on
 hover, since switching is what the tab is for. It checks the pull request out, as the PR pane's
 does, and is disabled by uncommitted work for the same reason. ▸ opens the whole description under the row, drawn as an
