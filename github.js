@@ -846,6 +846,8 @@ export const MERGE_WORD = {
 };
 
 // ponytail: a lead longer than this is cut; the row shows two lines of it.
+// The cut can split a `**` pair, and the tab's inline() then shows the half
+// left over as written -- past the two lines, so cut at a word if it shows.
 const LEAD_MAX = 300;
 
 /** A milestone node in the listing's shape (repoIssues'), `closed` when GitHub says so. */
