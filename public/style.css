@@ -830,6 +830,7 @@ main.diff-off #diff-wrap { display: none; }
 .fold.milestone > summary a { color: var(--accent); text-decoration: none; }
 .fold.milestone > summary a:hover { text-decoration: underline; }
 .fold.milestone > summary .due { font-variant-numeric: tabular-nums; }
+.fold.milestone > summary .due.soon { color: var(--warn); }
 .fold.milestone > summary .closed-milestone { font-style: italic; }
 .fold.milestone > summary .count { font-variant-numeric: tabular-nums; }
 .fold.milestone > .sec-body { padding: 0 0 4px 10px; }
@@ -882,10 +883,10 @@ li.issue-body select.milestone {
 .item.pull .pr-merge, .item.pull .pr-review, .item.pull .who, .item.pull .age { font-size: 12px; color: var(--dim); white-space: nowrap; }
 .item.pull .sep { font-size: 12px; color: var(--dim); }
 .item.pull .pr-merge.ready { color: var(--add); }
-.item.pull .pr-merge.conflicts, .item.pull .pr-merge.checks-not-passing { color: var(--fail); }
-/* What a pull request needs fixed before it can merge is a filled badge, not
-   just a colour: these are the ones the coding agent can most often finish. */
-.item.pull .pr-merge.conflicts, .item.pull .pr-merge.checks-not-passing {
+/* What needs attention is a filled badge, not just a colour: a pull request's
+   conflicts or failing checks, which the coding agent can most often fix, and
+   a milestone past its due date, to be finished or rescheduled. */
+.item.pull .pr-merge.conflicts, .item.pull .pr-merge.checks-not-passing, .fold.milestone > summary .due.overdue {
   color: var(--bg); background: var(--fail); padding: 0 5px; border-radius: 3px; font-weight: 600;
 }
 .item.pull .pr-merge.behind-base, .item.pull .pr-merge.blocked { color: var(--warn); }

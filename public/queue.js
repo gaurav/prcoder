@@ -532,7 +532,7 @@ function issueGroups() {
   for (const m of ranked) {
     const title = home ? ext(`https://github.com/${home}/milestone/${m.number}`, m.title, { title: m.description || undefined }) : m.title;
     const extra = [
-      ...(m.dueOn ? [h('span', { className: 'due', ...dueLabel(m.dueOn) })] : []),
+      ...(m.dueOn ? [h('span', dueLabel(m.dueOn))] : []),
       // On the tab only because an open issue is still on it (repoIssues).
       ...(m.closed ? [h('span', { className: 'closed-milestone', title: 'closed on GitHub, with open issues still on it' }, 'closed')] : []),
     ];
@@ -806,7 +806,7 @@ function pullGroups() {
     for (const m of ranked) {
       const title = home ? ext(`https://github.com/${home}/milestone/${m.number}`, m.title, { title: m.description || undefined }) : m.title;
       const extra = [
-        ...(m.dueOn ? [h('span', { className: 'due', ...dueLabel(m.dueOn) })] : []),
+        ...(m.dueOn ? [h('span', dueLabel(m.dueOn))] : []),
         // Listed only because an open pull request is still on it (repoPulls).
         ...(m.closed ? [h('span', { className: 'closed-milestone', title: 'closed on GitHub, with open pull requests still on it' }, 'closed')] : []),
       ];

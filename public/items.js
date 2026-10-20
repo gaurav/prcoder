@@ -119,8 +119,15 @@ export function when(iso, now = Date.now()) {
 /** when() for a time that has passed: a clock a little behind GitHub's says `just now`, not `in 2 minutes`. */
 export const age = (iso, now = Date.now()) => when(iso, Math.max(now, Date.parse(iso ?? '') || now));
 
-/** A milestone's due date as its line says it, `due 3 days ago`, with the date on hover. */
-export const dueLabel = (dueOn, now = Date.now()) => ({ textContent: `due ${when(dueOn, now)}`, title: `due ${dueOn.slice(0, 10)}` });
+/**
+ * A milestone's due date as its line says it, `due 3 days ago`, with the date
+ * on hover and a class saying how near it is: `overdue`, `soon`, or neither.
+ */
+export function dueLabel(dueOn, now = Date.now()) {
+  const left = Date.parse(dueOn) - now;
+  const near = left < 0 ? ' overdue' : left < DUE_SOON ? ' soon' : '';
+  return { className: `due${near}`, textContent: `due ${when(dueOn, now)}`, title: `due ${dueOn.slice(0, 10)}` };
+}
 
 // The size chip's bands, on lines changed (additions and deletions together):
 // each name holds up to, not including, its count. Wider at the small end than
@@ -136,6 +143,9 @@ export const sizeChip = (lines) => SIZES.find(([, under]) => (lines ?? 0) < unde
 // since the coding agent can fix them (2026-10-20).
 export const NEW_FOR = 7 * 86400_000;
 export const isNew = (p, now = Date.now()) => now - Date.parse(p.createdAt ?? '') < NEW_FOR;
+// A milestone due within this long is `soon`, its due date yellow, and one past
+// it is overdue, a red badge: the two to look at for rescheduling.
+export const DUE_SOON = 7 * 86400_000;
 
 /**
  * The Pull requests tab's orders, each a comparator over pullRow's fields; the

@@ -1927,6 +1927,7 @@ test('the Pull requests tab groups the open pull requests by milestone, smallest
   const twenty = fresh.locator('.item[data-pull="20"]');
   assert.deepEqual(await twenty.locator('.size, .pr-merge, .pr-review, .who, .tag.new').allTextContents(), ['conflicts', 'approved', 'XS', 'new', 'copilot']);
   assert.notEqual(await twenty.locator('.pr-merge').evaluate((m) => getComputedStyle(m).backgroundColor), 'rgba(0, 0, 0, 0)', 'conflicts is a filled badge');
+  assert.notEqual(await fresh.locator('[data-group="p:1"] .due').evaluate((d) => getComputedStyle(d).backgroundColor), 'rgba(0, 0, 0, 0)', 'an overdue milestone is a badge too');
   assert.equal(await twenty.locator('.size').getAttribute('class'), 'size xs', 'the band is its class, for the colour');
   assert.equal(await twenty.locator('.pr-go').textContent(), 'Switch');
   assert.equal(await twenty.locator('.pr-go').isDisabled(), false);

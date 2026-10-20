@@ -411,7 +411,8 @@ soon`, `Needed later`, `Not urgent` and `Upstream`, matched by name whatever the
 the issues on no milestone. A closed milestone that an open issue is still on gets a group too,
 ranked the same way and marked *closed*, so that no listed issue goes undrawn. A milestone's line
 is its title, linking to it on GitHub, how many issues it holds in parentheses, as the tabs count,
-and when it is due, as `due 5 days ago` or `due in 2 months`, with the date on hover; an empty one is
+and when it is due, as `due 5 days ago` or `due in 2 months`, with the date on hover -- a red badge once
+it is past, yellow within a week, so a milestone to reschedule stands out; an empty one is
 still drawn, folded. Only the mentions and the first
 milestone with an issue start open, which is the one to focus on, and a milestone that appears
 later, made on GitHub since, starts folded; a group you open or close stays so until the page is

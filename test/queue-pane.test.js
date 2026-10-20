@@ -210,7 +210,10 @@ test('an age is a word or two, and new is a week', () => {
 
 test('a milestone is due some time ago or in some time, with its date on hover', () => {
   const now = Date.parse('2026-10-19T12:00:00Z');
-  assert.deepEqual(dueLabel('2026-10-14T00:00:00Z', now), { textContent: 'due 5 days ago', title: 'due 2026-10-14' });
-  assert.deepEqual(dueLabel('2026-11-03T00:00:00Z', now), { textContent: 'due in 14 days', title: 'due 2026-11-03' });
+  assert.deepEqual(dueLabel('2026-10-14T00:00:00Z', now), { className: 'due overdue', textContent: 'due 5 days ago', title: 'due 2026-10-14' });
+  assert.deepEqual(dueLabel('2026-11-03T00:00:00Z', now), { className: 'due', textContent: 'due in 14 days', title: 'due 2026-11-03' });
+  assert.equal(dueLabel('2026-10-22T00:00:00Z', now).className, 'due soon');
+  assert.equal(dueLabel('2026-10-26T11:59:00Z', now).className, 'due soon', 'a minute inside the week');
+  assert.equal(dueLabel('2026-10-26T12:00:00Z', now).className, 'due', 'a week off is not soon');
   assert.equal(dueLabel('2027-01-01T00:00:00Z', now).textContent, 'due in 2 months');
 });
