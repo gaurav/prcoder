@@ -44,7 +44,10 @@ goes through the same coercion the page's writes do; whether Claude should get a
 into prcoder is [#21](https://github.com/gaurav/prcoder/issues/21)'s question.
 
 **What else reaches GitHub, and only on a click:** ◎ files an item as a new issue, a file's checkbox
-marks it viewed, and creating a pull request pushes the branch and opens GitHub's compare page. None
+marks it viewed, creating a pull request pushes the branch and opens GitHub's compare page, and
+dropping an issue on a milestone group in the Issues tab -- or picking one in its opened row --
+sets that issue's milestone, which is triage and not an edit: nothing in prcoder changes what an
+issue says, and no milestone is ever made, renamed or closed from here. None
 of them writes a description.
 
 **Each permanent source is a tab, read straight from it.** PR is the description's checklist, and
