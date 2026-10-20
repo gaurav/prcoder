@@ -785,9 +785,13 @@ main.diff-off #diff-wrap { display: none; }
 /* --- Queue pane --- */
 
 .items { list-style: none; margin: 0; padding: 0; }
+/* 15px, the description's size (.md): a row at the terminal's 14px read a step
+   smaller than it, since sans at a size is smaller to the eye than mono at it.
+   An opened body and a pull request's lead are 14px, a step under the row and
+   still readable; the facts, chips and controls stay at 12px as chrome. */
 .item {
   display: flex; align-items: baseline; gap: 6px;
-  padding: 3px 4px; border-radius: 4px; font-size: 14px;
+  padding: 3px 4px; border-radius: 4px; font-size: 15px;
 }
 .item:hover { background: var(--bg); }
 .item.dragging { opacity: .4; }
@@ -830,7 +834,7 @@ main.diff-off #diff-wrap { display: none; }
 .item .tag.label { color: var(--dim); border-style: dashed; }
 .item .disclose { flex: none; width: 12px; background: none; border: 0; color: var(--dim); cursor: pointer; font-size: 12px; padding: 0; line-height: 1; }
 .item .disclose:hover { color: var(--accent); }
-li.issue-body.md { font-size: 13px; max-width: none; padding: 2px 6px 8px 22px; }
+li.issue-body.md { font-size: 14px; max-width: none; padding: 2px 6px 8px 22px; }
 li.issue-body .open-issue { display: inline-block; text-decoration: none; }
 /* Moving an issue between milestones: a row is dragged by any part of it, a
    summary lights while one is over it, and the opened row's select is the
@@ -871,11 +875,9 @@ li.issue-body select.milestone {
 .item.pull .tag.new { color: var(--add); border-color: var(--add); }
 .item.pull .tag.hint { color: var(--dim); border-style: dotted; }
 .item.pull .tag.here { color: var(--accent); border-color: var(--accent); }
-li.issue-body .pull-closes { font-size: 13px; color: var(--dim); }
-/* The title is the link to GitHub, in the row's own colour; Switch sits after it
-   in sight, since it is what the tab is for, while ▶ and ↓ wait on hover. */
-.item.pull a.text { color: inherit; text-decoration: none; }
-.item.pull a.text:hover { text-decoration: underline; }
+li.issue-body .pull-closes { font-size: 14px; color: var(--dim); }
+/* Switch sits after the title in sight, since it is what the tab is for, while
+   ▶ and ↓ wait on hover. */
 .item.pull .pr-go { font-size: 12px; padding: 0 6px; }
 /* The facts on a line of their own under the title, indented with the lead:
    on one line with the title they were read as its tail, and a long title
@@ -887,7 +889,7 @@ li.issue-body .pull-closes { font-size: 13px; color: var(--dim); }
 .item.pull .text { flex: 0 1 auto; }
 .item.pull .actions { margin-left: auto; }
 .item.pull .pr-lead {
-  flex: 1 0 100%; margin: 0 0 1px 18px; font-family: var(--serif); font-size: 13px; line-height: 1.4;
+  flex: 1 0 100%; margin: 0 0 1px 18px; font-family: var(--serif); font-size: 14px; line-height: 1.4;
   /* Between --dim and --fg: plain --dim is right for the row's other small
      facts, but a thin serif in it read as too faint to make out (2026-10-20). */
   color: color-mix(in srgb, var(--fg) 60%, var(--dim));

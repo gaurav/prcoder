@@ -841,11 +841,11 @@ const wordClass = (w) => w.toLowerCase().replace(/[^a-z]+/g, '-').replace(/^-|-$
  * pull request on no milestone that closes an issue on one shows that
  * milestone as a hint, since the pull request usually belongs where its
  * issue is. Under the line, the description's first paragraph, clipped to two
- * lines and as plain text. The title links to the pull request on GitHub, as
- * the chip does: that and switching are what a row is for, so the one on
- * screen is marked `here` right after its title and every other row has the
- * PR pane's Switch there, under its guard, in sight; ▶ and ↓ wait on hover at
- * the end, as every queue row's do.
+ * lines and as plain text. The chip is the way to the pull request on GitHub
+ * (the title is not a second one), and switching is the other thing a row is
+ * for, so the one on screen is marked `here` right after its title and every
+ * other row has the PR pane's Switch there, under its guard, in sight; ▶ and
+ * ↓ wait on hover at the end, as every queue row's do.
  */
 function pullRow(p) {
   const key = `pull:${p.number}`;
@@ -884,7 +884,7 @@ function pullRow(p) {
   const row = h('li', { className: classes, dataset: { pull: String(p.number) }, draggable: true, ...(here && { ariaCurrent: 'true' }) },
     disclose,
     ext(p.url, `PR #${p.number}`, { className: 'tag pull' }),
-    ext(p.url, p.title, { className: 'text' }),
+    h('span', { className: 'text', textContent: p.title }),
     here ? h('span', { className: 'tag here', title: 'the pull request on screen' }, 'here') : go(),
     h('span', { className: 'actions' },
       btn('▶', () => {

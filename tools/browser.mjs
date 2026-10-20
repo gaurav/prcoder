@@ -272,7 +272,7 @@ if (await prRows.count()) {
 // Issues is the repository's open issues by milestone, the mentions first;
 // the tab's count says `…` until the listing lands. The groups' summaries are
 // what the screenshot is for -- the folds, the chips and an opened body in a
-// 14px row are nothing a selector can judge.
+// 15px row are nothing a selector can judge.
 await page.locator('#queue-body .tab', { hasText: /^Issues/ }).click();
 await page.waitForFunction(() => !document.querySelector('#queue-body .tab[data-tab="issues"]')?.textContent.includes('…'),
   null, { timeout: 30_000 });

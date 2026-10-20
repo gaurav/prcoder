@@ -449,8 +449,8 @@ Within a group they are smallest first, since the next one to take on is usually
 nearly done; the first select over them changes that to largest first, newest, oldest, most or
 least recently updated, and both selects are remembered the way the pane sizes are. The search
 box covers the number, title, author, head branch, labels and body, and narrows the rows and
-the count as the issue search does. Each row is `PR #N` in a tinted chip, the title, linking to the pull request on GitHub as the
-chip does, then `here` or **Switch**; under the title, on a line of their own, its size as
+the count as the issue search does. Each row is `PR #N` in a tinted chip, the one link to the pull request on GitHub, the title,
+then `here` or **Switch**; under the title, on a line of their own, its size as
 GitHub's size labels band it (`XS` under ten lines changed, `S` under thirty, `M` under a
 hundred, `L` under five hundred, `XL` under a thousand, `XXL` past that; hover for the lines
 added and removed and the file count), whether it can merge in a word (`ready`, `conflicts`,
