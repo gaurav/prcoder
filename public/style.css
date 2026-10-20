@@ -787,8 +787,9 @@ main.diff-off #diff-wrap { display: none; }
 .items { list-style: none; margin: 0; padding: 0; }
 /* 15px, the description's size (.md): a row at the terminal's 14px read a step
    smaller than it, since sans at a size is smaller to the eye than mono at it.
-   An opened body and a pull request's lead are 14px, a step under the row and
-   still readable; the facts, chips and controls stay at 12px as chrome. */
+   An opened body and a pull request's lead are 15px too: a step under the row
+   was still hard to read, and the serif and the dimmer colour tell them apart.
+   The facts, chips and controls stay at 12px as chrome. */
 .item {
   display: flex; align-items: baseline; gap: 6px;
   padding: 3px 4px; border-radius: 4px; font-size: 15px;
@@ -834,7 +835,7 @@ main.diff-off #diff-wrap { display: none; }
 .item .tag.label { color: var(--dim); border-style: dashed; }
 .item .disclose { flex: none; width: 12px; background: none; border: 0; color: var(--dim); cursor: pointer; font-size: 12px; padding: 0; line-height: 1; }
 .item .disclose:hover { color: var(--accent); }
-li.issue-body.md { font-size: 14px; max-width: none; padding: 2px 6px 8px 22px; }
+li.issue-body.md { font-size: 15px; max-width: none; padding: 2px 6px 8px 22px; }
 li.issue-body .open-issue { display: inline-block; text-decoration: none; }
 /* Moving an issue between milestones: a row is dragged by any part of it, a
    summary lights while one is over it, and the opened row's select is the
@@ -884,7 +885,7 @@ li.issue-body select.milestone {
 .item.pull .tag.new { color: var(--add); border-color: var(--add); }
 .item.pull .tag.hint { color: var(--dim); border-style: dotted; }
 .item.pull .tag.here { color: var(--accent); border-color: var(--accent); }
-li.issue-body .pull-closes { font-size: 14px; color: var(--dim); }
+li.issue-body .pull-closes { font-size: 15px; color: var(--dim); }
 /* Switch sits after the title in sight, since it is what the tab is for, while
    ▶ and ↓ wait on hover. */
 .item.pull .pr-go { font-size: 12px; padding: 0 6px; }
@@ -898,7 +899,7 @@ li.issue-body .pull-closes { font-size: 14px; color: var(--dim); }
 .item.pull .text { flex: 0 1 auto; }
 .item.pull .actions { margin-left: auto; }
 .item.pull .pr-lead {
-  flex: 1 0 100%; margin: 0 0 1px 18px; font-family: var(--serif); font-size: 14px; line-height: 1.4;
+  flex: 1 0 100%; margin: 0 0 1px 18px; font-family: var(--serif); font-size: 15px; line-height: 1.4;
   /* Between --dim and --fg: plain --dim is right for the row's other small
      facts, but a thin serif in it read as too faint to make out (2026-10-20). */
   color: color-mix(in srgb, var(--fg) 60%, var(--dim));
