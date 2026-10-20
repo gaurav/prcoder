@@ -1913,8 +1913,8 @@ test('the Pull requests tab groups the open pull requests by milestone, smallest
   assert.equal(await twelve.locator('.mark').getAttribute('aria-label'), '3 of 6 files, 160 of 320 changed lines viewed');
   assert.deepEqual(await twelve.locator('.age').allTextContents(), ['opened 18 days ago', 'updated 1 day ago']);
   // Dots between plain words only: none beside the size chip, the label or the pie.
-  assert.equal(await twelve.evaluate((r) => [...r.children].filter((c) => !c.matches('.disclose, .tag.pull, .text, .actions, .pr-lead')).map((c) => c.textContent).join(' ')),
-    'here L ready · gaurav enhancement  opened 18 days ago · updated 1 day ago');   // the pie is the blank
+  assert.equal(await twelve.locator('.pr-facts').evaluate((f) => [...f.children].map((c) => c.textContent).join(' ')),
+    'L ready · gaurav enhancement  opened 18 days ago · updated 1 day ago');   // the pie is the blank
   assert.equal(await twelve.locator('.pr-lead').textContent(), 'The first paragraph of twelve.');
   assert.equal(await twelve.locator('.tag.here').count(), 1);
   assert.equal(await twelve.locator('.pr-go').count(), 0, 'the one on screen is not offered a Switch');

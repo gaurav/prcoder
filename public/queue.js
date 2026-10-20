@@ -829,7 +829,8 @@ const wordClass = (w) => w.toLowerCase().replace(/[^a-z]+/g, '-').replace(/^-|-$
 
 /**
  * One pull request as a row, and its description under it when the row is
- * open. The first line is what the choice turns on: `PR #N` and the title,
+ * open. The first line is `PR #N`, the title and Switch; the second, under
+ * the title, is what the choice turns on:
  * its size as GitHub's size label (hover for the counts), whether it can
  * merge in a word, the review decision when there is one, whose it is, its
  * labels, the Files tab's pie (filled by changed lines viewed, so an empty
@@ -885,7 +886,7 @@ function pullRow(p) {
     ext(p.url, `PR #${p.number}`, { className: 'tag pull' }),
     ext(p.url, p.title, { className: 'text' }),
     here ? h('span', { className: 'tag here', title: 'the pull request on screen' }, 'here') : go(),
-    ...facts.flatMap(([node, plain], i) => [i && plain && facts[i - 1][1] ? h('span', { className: 'sep' }, '·') : null, node]),
+    h('div', { className: 'pr-facts' }, ...facts.flatMap(([node, plain], i) => [i && plain && facts[i - 1][1] ? h('span', { className: 'sep' }, '·') : null, node])),
     h('span', { className: 'actions' },
       btn('▶', () => {
         const item = { text: p.title, issue: p.number, repo: null, kind: 'pull', issueUrl: p.url };
