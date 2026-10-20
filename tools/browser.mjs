@@ -337,6 +337,15 @@ if (await upToast.count()) await upToast.click();
 await page.keyboard.press('Alt+KeyG');
 await page.waitForTimeout(500);
 await page.locator('#queue').screenshot({ path: path.join(out, 'queue-pulls-tall.png') });
+// The same list by stack: one list, each pull request stepped in under the
+// one it is built on. The grouping is remembered, so it goes back after.
+await page.locator('#queue-body select.pull-group').selectOption('stack');
+await page.waitForTimeout(200);
+console.log('  stack: ', (await page.$$eval('#queue-body .item.pull', (ls) => ls.map((l) =>
+  `${'  '.repeat(Number(l.style.getPropertyValue('--depth')) || 0)}${l.querySelector('.tag.pull')?.textContent} ${l.querySelector('.pr-stack')?.textContent ?? ''}`))).join('\n          '),
+'\n  (want every pull request once, each built on another stepped in under it, in the order its own line names)');
+await page.locator('#queue').screenshot({ path: path.join(out, 'queue-pulls-stack.png') });
+await page.locator('#queue-body select.pull-group').selectOption('milestone');
 await page.keyboard.press('Alt+KeyG');
 await page.waitForTimeout(500);
 const openPull = page.locator('#queue-body .fold.milestone[open] .item.pull button.disclose').first();
