@@ -871,10 +871,8 @@ li.issue-body select.milestone {
 .item.pull .tag.hint { color: var(--dim); border-style: dotted; }
 .item.pull .tag.here { color: var(--accent); border-color: var(--accent); }
 li.issue-body .pull-closes { font-size: 13px; color: var(--dim); }
-/* The title is the link to GitHub, in the row's own colour; Switch sits after it
-   in sight, since it is what the tab is for, while ▶ and ↓ wait on hover. */
-.item.pull a.text { color: inherit; text-decoration: none; }
-.item.pull a.text:hover { text-decoration: underline; }
+/* Switch sits after the title in sight, since it is what the tab is for, while
+   ▶ and ↓ wait on hover. */
 .item.pull .pr-go { font-size: 12px; padding: 0 6px; }
 .item.pull .pr-lead {
   flex: 1 0 100%; margin: 0 0 1px 18px; font-family: var(--serif); font-size: 13px; line-height: 1.4;

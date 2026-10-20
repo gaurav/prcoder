@@ -1904,7 +1904,7 @@ test('the Pull requests tab groups the open pull requests by milestone, smallest
   assert.equal(await twelve.locator('.tag.pull').textContent(), 'PR #12');
   assert.equal(await twelve.locator('.tag.pull').getAttribute('href'), pr.url);
   assert.equal(await twelve.locator('.text').textContent(), pr.title);
-  assert.equal(await twelve.locator('a.text').getAttribute('href'), pr.url, 'the title links to GitHub too');
+  assert.equal(await twelve.locator('a.text').count(), 0, 'the chip is the one link to GitHub');
   assert.equal(await twelve.locator('.size').textContent(), 'L');
   assert.equal(await twelve.locator('.size').getAttribute('title'), '+300 −20 · 6 files');
   assert.equal(await twelve.locator('.pr-merge').textContent(), 'ready');
