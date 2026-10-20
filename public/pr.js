@@ -1,7 +1,7 @@
 import { withoutHtml, mention, mdLink, repoUrl, urlPath, blocks, sectionize } from './tasks.js';
 import { kids, h, btn, ext, debug, tabBtn, writeThrough, fraction, mark, kept, fold } from './ui.js';
 import { fileTree, fileGroup, filesProgress, unlisted } from './filelist.js';
-import { refLabel } from './items.js';
+import { refLabel, refClass } from './items.js';
 
 // Re-exported for the tests, which read the pane's view of a body through here.
 export { withoutHtml };
@@ -1157,10 +1157,12 @@ export const inline = (s, where = links) => {
  * A bare `#N` in the description as a link. What the title lookup found for it
  * (`where.refs`) gives the URL GitHub has for it -- `/pull/N` for a pull
  * request, where `/issues/N` is a guess GitHub redirects -- its title on
- * hover, and for a pull request the `ref pull` class, which tints it like the
- * queue's `PR #N` tag. The text stays the author's `#N`: it is their sentence,
- * and `Builds on PR #149` where they wrote `Builds on #149` is the pane
- * rewriting it. A number the lookup did not answer is a plain link, as before.
+ * hover, numbered by refLabel as the rows below are, and refClass's class,
+ * which tints a pull request like the queue's `PR #N` tag (`.md a.ref.pull`;
+ * an issue's is unstyled). The text stays the author's `#N`: it is their
+ * sentence, and `Builds on PR #149` where they wrote `Builds on #149` is the
+ * pane rewriting it. A number the lookup did not answer is a plain link, as
+ * before.
  *
  * The title and the URL are GitHub's, so anyone's text, going into attributes
  * in a string set with innerHTML: both go through escape(), and the URL through
@@ -1171,9 +1173,9 @@ function mentionLink(n, where, a) {
   const found = where.refs?.get(Number(n));
   const github = target(found?.url ?? '', null);
   const url = github ? escape(github) : `${escape(where.repo)}/issues/${n}`;
-  const pull = found?.kind === 'pull';
-  const title = found?.title ? ` title="${escape(`${pull ? 'Pull request' : 'Issue'}: ${found.title}`)}"` : '';
-  return a(url, `#${n}`, `${pull ? ' class="ref pull"' : ''}${title}`);
+  if (!found) return a(url, `#${n}`);
+  const title = found.title ? ` title="${escape(`${refLabel({ issue: n, kind: found.kind })}: ${found.title}`)}"` : '';
+  return a(url, `#${n}`, ` class="ref ${refClass(found.kind)}"${title}`);
 }
 
 /**

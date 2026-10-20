@@ -38,6 +38,14 @@ export const counts = (items = []) =>
 export const refLabel = (i) => `${i.kind === 'pull' ? 'PR ' : ''}${i.repo ? `${i.repo}#${i.issue}` : `#${i.issue}`}`;
 
 /**
+ * The class that draws a reference as what it is, beside refLabel: tinted for
+ * a pull request, outlined for an issue -- the queue's tag and the PR pane's
+ * `#N` both. An unknown kind is drawn as an issue, as every tag was before the
+ * two were told apart.
+ */
+export const refClass = (kind) => (kind === 'pull' ? 'pull' : 'issue');
+
+/**
  * What ▶ types for an item: its text, and the link to the issue or pull
  * request it is about, unless the text already refers to that one -- an item
  * whose text is the title says nothing about which issue it came from, and
