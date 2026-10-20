@@ -41,7 +41,7 @@ is no token to configure.
   and can be typed into Claude or moved into a GitHub issue. An Issues tab reads the repository's
   open issues by milestone, searchable, each one readable in place and typed into Claude with its
   link, and a Pull requests tab reads its open pull requests the same way, with each one's size,
-  merge state, age and reviewer's pie on the row, to pick the next one to work on and switch to
+  merge state, age, reviewer's pie and what it is stacked on in the row, to pick the next one to work on and switch to
   it; with a pull request on screen a PR tab reads its description's checklist.
 
 prcoder follows the branch. It works out the pull request for whatever is checked out, and does

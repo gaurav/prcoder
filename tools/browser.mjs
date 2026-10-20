@@ -325,9 +325,9 @@ console.log('pulls:  ', await page.locator('#queue-body .tab', { hasText: /^Pull
   '|', await page.locator('#queue-body .pull-note').innerText(),
   '\n  (want the open count, every open milestone in rank order with its count, the first with pull requests open, and when it was read)');
 console.log('  rows:  ', (await page.$$eval('#queue-body .item.pull', (ls) => ls.map((l) =>
-  [l.querySelector('.tag.pull')?.textContent, l.querySelector('.size')?.textContent, l.querySelector('.pr-merge')?.textContent,
+  [l.querySelector('.tag.pull')?.textContent, l.querySelector('.pr-stack')?.textContent, l.querySelector('.size')?.textContent, l.querySelector('.pr-merge')?.textContent,
     l.querySelector('.who')?.textContent, ...[...l.querySelectorAll('.age')].map((a) => a.textContent), l.classList.contains('here') ? 'here' : ''].filter(Boolean).join(' ')))).join('\n          '),
-'\n  (want each open pull request with its size, merge word, author and ages, the one on screen marked here)');
+'\n  (want each open pull request with what it is built on, its size, merge word, author and ages, the one on screen marked here)');
 // The whole list first, as it is used: the coding agent folded (Alt+G) so the
 // queue has the height, every row closed, and the Issues tab's ↓ toast
 // dismissed -- it is sticky, and it sat over the first row in every shot

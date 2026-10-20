@@ -451,7 +451,12 @@ nearly done; the first select over them changes that to largest first, newest, o
 least recently updated, and both selects are remembered the way the pane sizes are. The search
 box covers the number, title, author, head branch, labels and body, and narrows the rows and
 the count as the issue search does. Each row is `PR #N` in a tinted chip, the one link to the pull request on GitHub, the title,
-then `here` or **Switch**; under the title, on a line of their own, its facts in three runs: its
+what it is built on, then `here` or **Switch**. What it is built on is `on main`, or the pull
+requests under it nearest first and then the branch the bottom one merges into, `on #13 › #12 ›
+main`: the first word says whether it can merge straight away or only after a stack, and each
+`#N` links to that pull request on GitHub, its title on hover. A base with no open pull request
+ends the line as a bare branch; what is under that is git's to say, and the PR pane's Stack tab
+asks it, where this row does not. Under the title, on a line of their own, its facts in three runs: its
 state, what makes it worth taking, and whose it is and when. The state is whether it can merge in
 a word (`ready`, `conflicts`, `behind base`, `blocked`, `checks not passing` -- failed, or still
 running -- `draft`, or `checking…` while GitHub works it out) and the review decision when there

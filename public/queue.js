@@ -1,7 +1,7 @@
 import { h, btn, ext, api, toast, pref, setPref, tabBtn, writeThrough, fold, kept, mark } from './ui.js';
 import { TABS, refLabel, forClaude, rankMilestones, issueMatches, pullMatches, sortPulls, sizeChip, age, dueLabel, isNew, PULL_SORTS } from './items.js';
 import { refs, resolveRef, blocks } from './tasks.js';
-import { blockNode, inline } from './pr.js';
+import { blockNode, inline, stackUnder } from './pr.js';
 
 // The client owns the list; every change persists the whole array. Single user,
 // single repo — no ids, no diffing.
@@ -870,6 +870,19 @@ function pullRow(p) {
     title: blocked ? 'Commit or stash your changes first' : `Check out #${p.number} here`,
   }));
   const classes = ['item', 'source', 'pull', here ? 'here' : ''].filter(Boolean).join(' ');
+  // What it is built on, nearest first, down to the branch the bottom one
+  // merges into: `on main`, or `on #13 › #12 › main`. The first word says
+  // whether it can merge straight away, and the rest how far the stack runs.
+  // Each #N is a link to that pull request on GitHub -- another pull request,
+  // not a second way to this one -- with its title on hover. A base with no
+  // open pull request ends the line as a bare branch: what is under that is
+  // git's to say, and the PR pane's Stack tab asks it; this row does not.
+  // Nothing until the status has said which branch is the default.
+  const under = stackUnder({ pr: p }, pullsListing.pulls, [], deps.defaultBranch?.());
+  const stack = under.nodes.length || under.into ? h('span', { className: 'pr-stack' }, 'on ', ...[
+    ...under.nodes.slice().reverse().map((n) => (n.pr ? ext(n.pr.url, `#${n.pr.number}`, { title: n.pr.title }) : h('code', { className: 'branch' }, n.branch))),
+    ...(under.into ? [h('code', { className: 'branch' }, under.into)] : []),
+  ].flatMap((node, i) => (i ? [' › ', node] : [node]))) : null;
   // The facts, each marked plain (a word) or not (a chip, the pie): a dot goes
   // between two plain neighbours and nowhere near a chip, as linkRow (pr.js)
   // sets dots -- a chip's border already separates it.
@@ -894,7 +907,7 @@ function pullRow(p) {
     ext(p.url, `PR #${p.number}`, { className: 'tag pull' }),
     // The title and what follows it in one box, so a long title wraps inside it
     // and Switch follows its last word; apart, the title took a line of its own.
-    h('span', { className: 'pull-title' }, h('span', { className: 'text', textContent: p.title }), ' ',
+    h('span', { className: 'pull-title' }, h('span', { className: 'text', textContent: p.title }), ' ', stack, stack ? ' ' : null,
       here ? h('span', { className: 'tag here', title: 'the pull request on screen' }, 'here') : go()),
     h('span', { className: 'actions' },
       btn('▶', () => {

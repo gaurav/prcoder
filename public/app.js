@@ -944,8 +944,10 @@ loadPrs('page load');
 // `home` for ▶, which reads a bare #N in an item's text as this repo's.
 // `onSwitch` and `blocked` are the PR pane's own Switch and its guard, for the
 // Pull requests tab's: a checkout is a checkout wherever it is asked for.
+// `defaultBranch` is where the tab's stack lines bottom out (stackUnder).
 await initQueue({
   sendToClaude, onTask: toggleTask, home: () => last?.nameWithOwner,
   onSwitch: switchPr, blocked: () => (last?.dirtyFiles?.length ?? 0) > 0,
+  defaultBranch: () => last?.defaultBranch,
 });
 loadStatus();

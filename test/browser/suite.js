@@ -1853,7 +1853,8 @@ const PULLS = {
     pullOf({ number: 12, title: pr.title, url: pr.url, headRefName: 'topic', createdAt: '2026-10-01T00:00:00Z', updatedAt: '2026-10-18T12:00:00Z',
       additions: 300, deletions: 20, changedFiles: 6, lines: 320, merge: 'ready', milestone: 1, labels: ['enhancement'],
       viewed: { p: 0.5, full: false, label: '3 of 6 files, 160 of 320 changed lines viewed' }, lead: 'The first paragraph of twelve.', body: 'The first paragraph of twelve.\n\n- [ ] a box' }),
-    pullOf({ number: 20, title: 'A small fix', url: `${REPO}/pull/20`, headRefName: 'fix', createdAt: '2026-10-17T00:00:00Z', updatedAt: '2026-10-17T00:00:00Z',
+    // Built on #12, so its stack line names #12 and the by-stack list nests it.
+    pullOf({ number: 20, title: 'A small fix', url: `${REPO}/pull/20`, headRefName: 'fix', baseRefName: 'topic', createdAt: '2026-10-17T00:00:00Z', updatedAt: '2026-10-17T00:00:00Z',
       additions: 4, deletions: 1, changedFiles: 1, lines: 5, merge: 'conflicts', reviewDecision: 'APPROVED', milestone: 1, author: 'copilot' }),
     pullOf({ number: 30, title: 'An old draft', url: `${REPO}/pull/30`, headRefName: 'old', createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-02-01T00:00:00Z',
       additions: 1500, deletions: 10, changedFiles: 40, lines: 1510, merge: 'draft', isDraft: true, milestone: null,
@@ -1906,6 +1907,7 @@ test('the Pull requests tab groups the open pull requests by milestone, smallest
   // the counts on hover, the merge word, the review, the author, labels,
   // the pie, and the two ages; the one on screen is marked and has no Switch.
   const twelve = fresh.locator('.item[data-pull="12"]');
+  const twenty = fresh.locator('.item[data-pull="20"]');
   assert.equal(await twelve.locator('.tag.pull').textContent(), 'PR #12');
   assert.equal(await twelve.locator('.tag.pull').getAttribute('href'), pr.url);
   assert.equal(await twelve.locator('.text').textContent(), pr.title);
@@ -1921,18 +1923,23 @@ test('the Pull requests tab groups the open pull requests by milestone, smallest
   assert.equal(await twelve.locator('.pr-facts').evaluate((f) => [...f.children].map((c) => c.textContent).join(' ')),
     'ready L  enhancement gaurav · opened 18 days ago · updated 1 day ago');   // the pie is the blank
   assert.equal(await twelve.locator('.pr-lead').textContent(), 'The first paragraph of twelve.');
+  // What it is built on, after the title: the default branch, or the pull
+  // requests under it nearest first and then the branch, each #N a link.
+  assert.equal(await twelve.locator('.pr-stack').textContent(), 'on main');
+  assert.equal(await twenty.locator('.pr-stack').textContent(), 'on #12 › main');
+  assert.equal(await twenty.locator('.pr-stack a').getAttribute('href'), pr.url);
+  assert.equal(await twenty.locator('.pr-stack a').getAttribute('title'), pr.title);
   assert.equal(await twelve.locator('.tag.here').count(), 1);
   assert.equal(await twelve.locator('.pr-go').count(), 0, 'the one on screen is not offered a Switch');
   assert.equal(await twelve.getAttribute('aria-current'), 'true');
-  const twenty = fresh.locator('.item[data-pull="20"]');
   assert.deepEqual(await twenty.locator('.size, .pr-merge, .pr-review, .who, .tag.new').allTextContents(), ['conflicts', 'approved', 'XS', 'new', 'copilot']);
   assert.notEqual(await twenty.locator('.pr-merge').evaluate((m) => getComputedStyle(m).backgroundColor), 'rgba(0, 0, 0, 0)', 'conflicts is a filled badge');
   assert.notEqual(await fresh.locator('[data-group="p:1"] .due').evaluate((d) => getComputedStyle(d).backgroundColor), 'rgba(0, 0, 0, 0)', 'an overdue milestone is a badge too');
   assert.equal(await twenty.locator('.size').getAttribute('class'), 'size xs', 'the band is its class, for the colour');
   assert.equal(await twenty.locator('.pr-go').textContent(), 'Switch');
   assert.equal(await twenty.locator('.pr-go').isDisabled(), false);
-  // Switch sits after the title, in sight; only ▶ and ↓ wait on hover.
-  assert.equal(await twenty.locator('.text + .pr-go').count(), 1, 'Switch follows the title');
+  // Switch sits after the title and its stack line, in sight; only ▶ and ↓ wait on hover.
+  assert.equal(await twenty.locator('.text + .pr-stack + .pr-go').count(), 1, 'Switch follows the title and the stack line');
   assert.equal(await twenty.locator('.actions .pr-go').count(), 0);
   assert.equal(await twenty.locator('.pr-go').evaluate((b) => getComputedStyle(b).opacity), '1');
   assert.equal(await twenty.locator('.actions').evaluate((a) => getComputedStyle(a).opacity), '0', '▶ and ↓ still wait on hover');
