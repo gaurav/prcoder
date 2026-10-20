@@ -1856,18 +1856,21 @@ const PULLS = {
     // Built on #12, so its stack line names #12 and the by-stack list nests it.
     pullOf({ number: 20, title: 'A small fix', url: `${REPO}/pull/20`, headRefName: 'fix', baseRefName: 'topic', createdAt: '2026-10-17T00:00:00Z', updatedAt: '2026-10-17T00:00:00Z',
       additions: 4, deletions: 1, changedFiles: 1, lines: 5, merge: 'conflicts', reviewDecision: 'APPROVED', milestone: 1, author: 'copilot' }),
-    pullOf({ number: 30, title: 'An old draft', url: `${REPO}/pull/30`, headRefName: 'old', createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-02-01T00:00:00Z',
+    // Built on a branch with no open pull request, so its stack line asks git
+    // what that is built on (BELOW answers), as the PR pane's Stack tab would.
+    pullOf({ number: 30, title: 'An old draft', url: `${REPO}/pull/30`, headRefName: 'old', baseRefName: 'gone', createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-02-01T00:00:00Z',
       additions: 1500, deletions: 10, changedFiles: 40, lines: 1510, merge: 'draft', isDraft: true, milestone: null,
       closes: [{ number: 5, url: `${REPO}/issues/5`, title: 'The old thing', milestone: 'Not urgent' }], lead: 'Still **being** written, in `old.js`, for #5.' }),
   ],
   total: 3, listed: 3, read: NOW - 3_600_000,
 };
+const BELOW = { branch: 'gone', names: ['older'], toDefault: true };
 const pullGroupsOf = (p) => p.$$eval('#queue-body .fold.milestone', (gs) => gs.map((g) =>
   `${g.dataset.group}|${g.querySelector('h3').textContent.replace(/\s+/g, ' ').trim()}|${g.open ? 'open' : 'closed'}|${[...g.querySelectorAll('.item')].map((i) => i.dataset.pull).join(',')}`));
 
 /** A page on the Pull requests tab with `listing` answered, counting what the route was asked. */
 async function pullsPage(listing = PULLS, { stale = true } = {}) {
-  const fresh = await newPage({ clock: true });
+  const fresh = await newPage({ clock: true, below: BELOW });
   await fresh.clock.setFixedTime(NOW);
   const typed = [];
   await fresh.routeWebSocket('**/pty', (ws) => ws.onMessage((m) => {
@@ -1929,6 +1932,9 @@ test('the Pull requests tab groups the open pull requests by milestone, smallest
   assert.equal(await twenty.locator('.pr-stack').textContent(), 'on #12 › main');
   assert.equal(await twenty.locator('.pr-stack a').getAttribute('href'), pr.url);
   assert.equal(await twenty.locator('.pr-stack a').getAttribute('title'), pr.title);
+  // A bare base: the row asks git what it is built on, and draws the answer.
+  await fresh.waitForFunction(() => document.querySelector('.item[data-pull="30"] .pr-stack')?.textContent === 'on gone › older › main');
+  assert.equal(fresh.belowAsked.branch, 'gone');
   assert.equal(await twelve.locator('.tag.here').count(), 1);
   assert.equal(await twelve.locator('.pr-go').count(), 0, 'the one on screen is not offered a Switch');
   assert.equal(await twelve.getAttribute('aria-current'), 'true');
@@ -1977,9 +1983,12 @@ test('the Pull requests tab groups the open pull requests by milestone, smallest
   const listed = () => fresh.locator('#queue-body .item.pull').evaluateAll((ls) => ls.map((l) => `${l.dataset.pull}:${l.style.getPropertyValue('--depth')}`));
   assert.deepEqual(await listed(), ['30:0', '12:0', '20:0']);
   // By stack: one list in the switcher's order, #20 a step in under #12, the
-  // one it is built on, and its opened body stepped in with it.
+  // one it is built on, without a stack line (the indent says it), and its
+  // opened body stepped in with it.
   await fresh.locator('#queue-body select.pull-group').selectOption('stack');
   assert.deepEqual(await listed(), ['30:0', '12:0', '20:1']);
+  assert.equal(await fresh.locator('.item[data-pull="20"] .pr-stack').count(), 0, 'no stack line at a depth');
+  assert.equal(await fresh.locator('.item[data-pull="12"] .pr-stack').count(), 1, 'a root keeps its line');
   assert.equal(await fresh.locator('.item[data-pull="20"]').evaluate((l) => getComputedStyle(l).marginLeft), '16px');
   await fresh.locator('.item[data-pull="20"] .disclose').click();
   assert.equal(await fresh.locator('.item[data-pull="20"] + .issue-body').evaluate((l) => getComputedStyle(l).marginLeft), '16px');

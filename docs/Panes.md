@@ -459,8 +459,9 @@ what it is built on, then `here` or **Switch**. What it is built on is `on main`
 requests under it nearest first and then the branch the bottom one merges into, `on #13 › #12 ›
 main`: the first word says whether it can merge straight away or only after a stack, and each
 `#N` links to that pull request on GitHub, its title on hover. A base with no open pull request
-ends the line as a bare branch; what is under that is git's to say, and the PR pane's Stack tab
-asks it, where this row does not. Under the title, on a line of their own, its facts in three runs: its
+is a bare branch, and what is under that is git's to say: the row asks as the Stack tab does, shows
+the line as far as it goes meanwhile, and is drawn again when the answer lands. By stack the line
+is left off every row but the roots, since the indent says it. Under the title, on a line of their own, its facts in three runs: its
 state, what makes it worth taking, and whose it is and when. The state is whether it can merge in
 a word (`ready`, `conflicts`, `behind base`, `blocked`, `checks not passing` -- failed, or still
 running -- `draft`, or `checking…` while GitHub works it out) and the review decision when there

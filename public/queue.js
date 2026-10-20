@@ -733,8 +733,12 @@ async function loadPulls(force = false) {
   paintPulls();
 }
 
-/** The groups and the tab's count repainted on their own, so the search box keeps its focus. */
-function paintPulls() {
+/**
+ * The groups and the tab's count repainted on their own, so the search box
+ * keeps its focus. Exported for app.js, which calls it when git's answer about
+ * a bare branch in a stack lands (loadBelow), as the PR pane is repainted then.
+ */
+export function paintPulls() {
   if (tab !== 'pulls') return;
   document.querySelector('#queue-body .pull-groups')?.replaceChildren(...pullGroups());
   const t = document.querySelector('#queue-body .tab[data-tab="pulls"]');
@@ -889,11 +893,14 @@ function pullRow(p, depth = 0) {
   // whether it can merge straight away, and the rest how far the stack runs.
   // Each #N is a link to that pull request on GitHub -- another pull request,
   // not a second way to this one -- with its title on hover. A base with no
-  // open pull request ends the line as a bare branch: what is under that is
-  // git's to say, and the PR pane's Stack tab asks it; this row does not.
-  // Nothing until the status has said which branch is the default.
-  const under = stackUnder({ pr: p }, pullsListing.pulls, [], deps.defaultBranch?.());
-  const stack = under.nodes.length || under.into ? h('span', { className: 'pr-stack' }, 'on ', ...[
+  // open pull request is a bare branch, and what is under that is git's to
+  // say: the row asks as the PR pane's Stack tab asks (onBelow), draws the
+  // line as far as it goes meanwhile, and is painted again when the answer
+  // lands. Nothing until the status has said which branch is the default.
+  // Nothing at a depth either: by stack, the indent already says it.
+  const under = stackUnder({ pr: p }, pullsListing.pulls, deps.below?.() ?? [], deps.defaultBranch?.());
+  if (under.ask) deps.onBelow?.(under.ask);
+  const stack = !depth && (under.nodes.length || under.into) ? h('span', { className: 'pr-stack' }, 'on ', ...[
     ...under.nodes.slice().reverse().map((n) => (n.pr ? ext(n.pr.url, `#${n.pr.number}`, { title: n.pr.title }) : h('code', { className: 'branch' }, n.branch))),
     ...(under.into ? [h('code', { className: 'branch' }, under.into)] : []),
   ].flatMap((node, i) => (i ? [' › ', node] : [node]))) : null;
