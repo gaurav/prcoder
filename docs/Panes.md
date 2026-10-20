@@ -133,7 +133,9 @@ bound. A short one fits beside the four links; a long one drops whole onto the n
 four stay where they are either way. On a line of its own it truncates rather than wraps: a long
 owner is clipped and the repository's own name kept, since that is the half that says which
 checkout you are in. It is drawn as a chip rather than a fifth link: the links are places to go,
-and the chip is the one thing in the head that answers which checkout this is.
+and the chip is the one thing in the head that answers which checkout this is. A pull request on a
+milestone has a second chip after it, in grey: the milestone's title, linking to it on GitHub, with
+its due date on hover. It comes last for the same reason, since a title has no bound either.
 
 ### Moving between pull requests
 

@@ -434,6 +434,20 @@ test('a short repository shares the row with the four links', { skip }, async ()
   await p.close();
 });
 
+// The pull request's milestone follows the repository, at the end of the row
+// for the same reason, and links to the milestone with its due date on hover.
+test('a pull request on a milestone has its chip after the repository\'s', { skip }, async () => {
+  assert.equal(await page.locator('#pr-head .pr-milestone').count(), 0, 'none on a pull request with no milestone');
+  const p = await newPage({ st: { ...status, pr: { ...pr, milestone: { number: 3, title: 'Needed soon', dueOn: '2026-11-01T00:00:00Z' } } } });
+  const chip = p.locator('#pr-head .pr-links > a:last-child');
+  assert.equal(await chip.getAttribute('class'), 'pr-milestone');
+  assert.equal(await chip.textContent(), 'Needed soon');
+  assert.equal(await chip.getAttribute('href'), `${REPO}/milestone/3`);
+  assert.equal(await chip.getAttribute('title'), 'milestone, due 2026-11-01');
+  assert.equal(await p.locator('#pr-head .pr-links > a').nth(-2).getAttribute('class'), 'pr-repo');
+  await p.close();
+});
+
 // A line of its own said where the repository was, not that it was anything
 // but a fifth link -- same size, same accent, same underline as the four above
 // it. The chip is what tells them apart, so what is asserted is the contrast

@@ -587,6 +587,10 @@ export const sides = (pr, remotes) => {
  * calls and two hard-coded github.com URLs all assume it (#53) -- so this is
  * the part not to undo, not proof that the whole works.
  *
+ * The pull request's milestone, when it has one, is a chip after the
+ * repository's: at the end too, so a long title wraps there and moves nothing
+ * ahead of it. The due date is its tooltip.
+ *
  * No ↗ on any of them. Every link out of prcoder opens a new tab, so marking
  * one (it used to be the first of each row) only raised the question of what
  * the unmarked ones did.
@@ -601,6 +605,7 @@ export const headLinks = (pr) => {
   return {
     links: [{ text: `PR #${pr.number}`, href: pr.url, className: 'primary' }, ...listLinks(repo)],
     repo: repoCrumb(repo),
+    milestone: pr.milestone ? { ...pr.milestone, href: `${repo}/milestone/${pr.milestone.number}` } : null,
   };
 };
 
@@ -662,16 +667,20 @@ export const noPrLinks = ({ nameWithOwner }) => {
  * anything.
  *
  * The repository chip, when there is one, goes last and without a dot either:
- * the chip's border separates it the way the button's fill does.
+ * the chip's border separates it the way the button's fill does. The
+ * milestone's chip, on a pull request that has one, follows it.
  */
-const linkRow = (list, className, crumb) => h('div', { className },
+const linkRow = (list, className, crumb, milestone = null) => h('div', { className },
   ...list.map((l, i) => [
     i && !l.className && !list[i - 1].className ? h('span', { className: 'sep' }, '·') : null,
     l.onClick
       ? btn(l.text, (e) => l.onClick(e.currentTarget), { className: l.className, disabled: !!l.disabled })
       : ext(l.href, l.text, l.className ? { className: l.className } : {}),
   ]),
-  crumb ? repoChip(crumb) : null);
+  crumb ? repoChip(crumb) : null,
+  milestone ? ext(milestone.href, milestone.title, {
+    className: 'pr-milestone', title: milestone.dueOn ? `milestone, due ${milestone.dueOn.slice(0, 10)}` : 'milestone',
+  }) : null);
 
 /**
  * The repository, at the end of that row.
@@ -750,7 +759,7 @@ function renderPrHead(pr, parsed, handlers) {
     note: pr.note ? h('p', { className: 'pr-note' }, pr.note) : null,
     // `pr-links` carries no style of its own -- it is the hook tools/browser.mjs
     // measures the row by, so it is not dead CSS to clean up.
-    links: linkRow(ways.links, 'meta pr-ways pr-links', ways.repo),
+    links: linkRow(ways.links, 'meta pr-ways pr-links', ways.repo, ways.milestone),
     state: h('div', { className: 'meta pr-state' },
       badge(state, state),
       h('span', {}, `${arrow.head} → ${arrow.base}`, under ? ' (' : null,

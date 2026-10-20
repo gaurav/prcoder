@@ -453,6 +453,13 @@ a { color: var(--accent); }
   border-color: color-mix(in srgb, var(--accent) 60%, transparent);
   background: color-mix(in srgb, var(--accent) 14%, transparent);
 }
+/* The pull request's milestone, after the repository: the same chip in the
+   pane's neutral line rather than the accent, a different kind of thing. */
+.pr-milestone {
+  min-width: 0; padding: 1px 7px; border: 1px solid var(--line); border-radius: 9px;
+  color: var(--dim); text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.pr-milestone:hover { color: var(--fg); border-color: var(--dim); }
 .pr-repo .owner { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pr-repo .name { flex: none; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
