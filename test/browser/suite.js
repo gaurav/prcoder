@@ -1556,6 +1556,9 @@ test('the Issues tab groups the repository\'s open issues by milestone in rank o
   assert.equal(await fresh.locator('[data-group="m:4"] .empty').textContent(), 'no open issues');
   assert.equal(await fresh.locator('[data-group="m:3"] summary a').getAttribute('href'), 'https://github.com/gaurav/prcoder/milestone/3');
   assert.equal(await fresh.locator('[data-group="m:3"] summary a').getAttribute('title'), 'Worth doing eventually.');
+  // In the line's own colour the link was one nobody found.
+  const colour = (sel) => fresh.locator(sel).evaluate((e) => getComputedStyle(e).color);
+  assert.notEqual(await colour('[data-group="m:3"] summary a'), await colour('[data-group="m:3"] summary'), 'the title looks like a link');
   // A row: the number as a link, the title, the labels as plain chips.
   const row = fresh.locator('[data-group="m:3"] .item');
   assert.equal(await row.locator('.tag.issue').getAttribute('href'), 'https://github.com/gaurav/prcoder/issues/90');
