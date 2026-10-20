@@ -82,6 +82,9 @@ const PR_FIELDS = [
   // headRefOid is asked for all the same, as the commit the checks above are
   // for, and loadPr keeps it apart from the one the files are at.
   'headRefOid',
+  // The milestone the pull request is on, for the head's chip after the
+  // repository: { number, title, description, dueOn }, or null.
+  'milestone',
 ].join(',');
 
 /** The head repository as the page reads it: its slug, or null, and its owner. */
@@ -464,7 +467,12 @@ export async function loadPr(cwd, target, { pause } = {}) {
   ]);
   // The raw lists are summarised here and not sent on: every poll carries this
   // object to every tab, and nothing reads them past this point.
-  const { closingIssuesReferences, comments, reviews, ...rest } = withChecks(headSide(pr));
+  const { closingIssuesReferences, comments, reviews, milestone, ...rest } = withChecks(headSide(pr));
+  // Its number, title and due date only: the description can be long, and this
+  // goes to every tab on every poll.
+  rest.milestone = milestone
+    ? { number: milestone.number, title: printable(milestone.title ?? '').trim() || `#${milestone.number}`, dueOn: milestone.dueOn ?? null }
+    : null;
   // A push between `gh pr view` and the file pages leaves the checks the old
   // head's, beside the new head's files and sync light. They are read again at
   // the files' head; past one more push the next poll has it, since updatedAt

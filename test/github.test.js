@@ -460,6 +460,20 @@ test('a PR with more than 100 files lists every one of them', { skip: unix }, as
   });
 });
 
+// The milestone reaches the page as the head's chip needs it -- number, title
+// and due date, the title rid of control characters as the Issues tab's are --
+// and not its description, which every poll would carry to every tab.
+test('a PR\'s milestone is its number, title and due date, or null', { skip: unix }, async () => {
+  const milestone = { number: 1, title: 'v1.0\x1b[31m', description: 'A long one.', dueOn: '2026-10-14T00:00:00Z' };
+  await withPr({ ...view, milestone }, [page([file(1)], null)], async () => {
+    const pr = await loadPr(os.tmpdir(), undefined, { pause: 0 });
+    assert.deepEqual(pr.milestone, { number: 1, title: 'v1.0 [31m', dueOn: '2026-10-14T00:00:00Z' });
+  });
+  await withPr(view, [page([file(1)], null)], async () => {
+    assert.equal((await loadPr(os.tmpdir(), undefined, { pause: 0 })).milestone, null);
+  });
+});
+
 // The linked issues are read alongside the files, on GraphQL as well: a
 // description that mentions one must not take one of the file pages.
 test('the file pages are the file list\'s however many other calls run beside them', { skip: unix }, async () => {
