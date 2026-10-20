@@ -105,6 +105,12 @@ test('#N in a comment, a fence or a code span is not a mention', () => {
   assert.deepEqual(linkedIssues(pr(body)).map((i) => i.number), [4]);
 });
 
+// The pane leaves a #N in a link's text to the link (inline() in pr.js), so the
+// Mentions row does too.
+test('#N inside a markdown link is not a mention', () => {
+  assert.deepEqual(linkedIssues(pr('[see #5](https://x.test/a) and #6')).map((i) => i.number), [6]);
+});
+
 test('an empty body links nothing', () => {
   assert.deepEqual(linkedIssues(pr(null)), []);
 });

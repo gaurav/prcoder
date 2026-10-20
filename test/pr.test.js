@@ -201,6 +201,18 @@ test('a bare #N becomes a link to the issue of that number', () => {
   assert.equal(inline('#ffcc00 is the colour', where), '#ffcc00 is the colour');
 });
 
+// The link rule ran first and the mention rule then found ` #5` in its text,
+// nesting an <a> in the <a>: the browser split the link, and a click on `#5`
+// opened the pull request rather than the link's own target.
+test('a #N inside a markdown link is left to the link', () => {
+  const out = inline('[see #5](https://x.test/a) and #6', where);
+  assert.equal(out.match(/<a /g).length, 2);
+  assert.match(out, /<a href="https:\/\/x\.test\/a"[^>]*>see #5<\/a>/);
+  assert.match(out, />#6<\/a>/);
+  // One this pane will not open stays its own source, still with no link inside.
+  assert.equal(inline('[see #5](javascript:x)', where), '[see #5](javascript:x)');
+});
+
 // What the title lookup found: GitHub's URL rather than the /issues/ guess, the
 // title on hover, and a pull request marked as one. The text stays `#N`.
 test('a #N the lookup answered links where GitHub says, titled, and a PR is marked', () => {

@@ -15,6 +15,14 @@
 export const mention = () => /(^|[\s(])#(\d+)\b/g;
 
 /**
+ * A markdown link, `[text](href)`. A `#N` inside one is not a mention: the
+ * pane would draw a link inside the link, which the browser splits in two. So
+ * inline() in pr.js holds these aside before it looks for mentions and
+ * mentions() strips them, by this one pattern.
+ */
+export const mdLink = () => /\[([^\]]+)\]\(([^)\s]+)\)/g;
+
+/**
  * A reference to an issue or pull request in any repo, the four ways people
  * type one: `#91`, `owner/name#91`, `name#91`, and a github.com `/issues/` or
  * `/pull/` URL, whatever follows its number. Wider than mention(), which stays
@@ -190,7 +198,7 @@ export function fences(body) {
  */
 export function mentions(body = '') {
   return fences(withoutHtml(body)).flatMap((chunk) => (chunk.code != null ? []
-    : [...chunk.text.replace(/`[^`]+`/g, '').matchAll(mention())].map(([, , n]) => Number(n))));
+    : [...chunk.text.replace(/`[^`]+`/g, '').replace(mdLink(), '').matchAll(mention())].map(([, , n]) => Number(n))));
 }
 
 /**

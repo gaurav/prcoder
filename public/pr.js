@@ -1,4 +1,4 @@
-import { withoutHtml, mention, repoUrl, urlPath, blocks, sectionize } from './tasks.js';
+import { withoutHtml, mention, mdLink, repoUrl, urlPath, blocks, sectionize } from './tasks.js';
 import { kids, h, btn, ext, debug, tabBtn, writeThrough, fraction, mark, kept, fold } from './ui.js';
 import { fileTree, fileGroup, filesProgress, unlisted } from './filelist.js';
 import { refLabel } from './items.js';
@@ -1127,22 +1127,28 @@ function taskRow({ done, text, index }, onTask, where = links) {
  */
 export const inline = (s, where = links) => {
   const code = [];
+  const held = [];
   const a = (href, text, attrs = '') => `<a href="${href}"${attrs} target="_blank" rel="noopener">${text}</a>`;
   return escape(s)
     .replace(/`([^`]+)`/g, (_, c) => `\u0000${code.push(c) - 1}\u0000`)
     .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
     .replace(/\*([^*\n]+)\*/g, '<em>$1</em>')
     .replace(/(?<![A-Za-z0-9_])_([^_\n]+)_(?![A-Za-z0-9_])/g, '<em>$1</em>')
-    .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (m, text, href) => {
+    // Held aside until the mentions are done, link or not, so a `#5` in
+    // `[see #5](…)` does not become a link inside the link: the browser closes
+    // the outer one early, and a click on the `#5` opened the pull request.
+    .replace(mdLink(), (m, text, href) => {
       const url = target(href, where);
-      return url ? a(url, text) : m;
+      return `\u0001${held.push(url ? a(url, text) : m) - 1}\u0001`;
     })
     .replace(/(^|[\s(])(https?:\/\/[^\s)]+)/g, (_, pre, url) => pre + a(url, url))
-    // After the two link rules, so a `#` inside an href this just built is not
+    // After the bare-URL rule, so a `#` inside an href this just built is not
     // a mention: those are preceded by a path character, and a mention has to
     // start a word. mentions() in tasks.js reads the same pattern over the same
-    // shown text, which is what puts the same numbers in the Mentions row.
+    // shown text, less the same markdown links, which is what puts the same
+    // numbers in the Mentions row.
     .replace(mention(), (m, pre, n) => (where ? pre + mentionLink(n, where, a) : m))
+    .replace(/\u0001(\d+)\u0001/g, (_, i) => held[i])
     .replace(/\n/g, '<br>')
     .replace(/\u0000(\d+)\u0000/g, (_, i) => `<code>${code[i]}</code>`);
 };
