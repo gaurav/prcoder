@@ -328,6 +328,17 @@ console.log('  rows:  ', (await page.$$eval('#queue-body .item.pull', (ls) => ls
   [l.querySelector('.tag.pull')?.textContent, l.querySelector('.size')?.textContent, l.querySelector('.pr-merge')?.textContent,
     l.querySelector('.who')?.textContent, ...[...l.querySelectorAll('.age')].map((a) => a.textContent), l.classList.contains('here') ? 'here' : ''].filter(Boolean).join(' ')))).join('\n          '),
 '\n  (want each open pull request with its size, merge word, author and ages, the one on screen marked here)');
+// The whole list first, as it is used: the coding agent folded (Alt+G) so the
+// queue has the height, every row closed, and the Issues tab's ↓ toast
+// dismissed -- it is sticky, and it sat over the first row in every shot
+// until 2026-10-20. Then the terminal back, for the rest of the run.
+const upToast = page.locator('#toast:not([hidden])');
+if (await upToast.count()) await upToast.click();
+await page.keyboard.press('Alt+KeyG');
+await page.waitForTimeout(500);
+await page.locator('#queue').screenshot({ path: path.join(out, 'queue-pulls-tall.png') });
+await page.keyboard.press('Alt+KeyG');
+await page.waitForTimeout(500);
 const openPull = page.locator('#queue-body .fold.milestone[open] .item.pull button.disclose').first();
 if (await openPull.count()) {
   await openPull.click();
