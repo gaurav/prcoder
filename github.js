@@ -678,13 +678,26 @@ export function rollup(checks) {
   return { ...counts, list };
 }
 
-/** Issues the PR closes, plus any bare #N mentioned in the body. */
+/**
+ * Issues the PR closes, plus any bare #N mentioned in the body.
+ *
+ * A closing reference can be in another repository (`Fixes other/repo#3`). That
+ * one carries its `repo`, as `owner/name`, and is kept apart from this
+ * repository's #3: by number alone, a bare `#3` in the body was folded into it,
+ * and the pane linked that `#3` to the other repository.
+ */
 export function linkedIssues(pr) {
   const seen = new Map();
-  for (const i of pr.closingIssuesReferences ?? []) {
-    seen.set(i.number, { number: i.number, url: i.url, closes: true });
-  }
   const repo = repoUrl(pr.url);
+  const here = `${repo.toLowerCase()}/`;
+  for (const i of pr.closingIssuesReferences ?? []) {
+    if (i.url && !i.url.toLowerCase().startsWith(here)) {
+      const other = i.url.replace(/^https?:\/\/[^/]+\//, '').replace(/\/issues\/\d+$/, '');
+      seen.set(i.url, { number: i.number, url: i.url, closes: true, repo: other });
+    } else {
+      seen.set(i.number, { number: i.number, url: i.url, closes: true });
+    }
+  }
   for (const number of mentions(pr.body ?? '')) {
     if (!seen.has(number)) seen.set(number, { number, url: `${repo}/issues/${number}`, closes: false });
   }
@@ -708,10 +721,12 @@ export function linkedIssues(pr) {
 async function withLinks(cwd, prUrl, issues) {
   // ponytail: 50 aliases is plenty for a description; if a body ever needs more,
   // chunk the numbers rather than growing one query.
-  const numbers = issues.map((i) => i.number).slice(0, 50);
+  // Only this repository's: the query asks this repository, and another's #3
+  // came back titled and linked as this one's.
+  const numbers = issues.filter((i) => !i.repo).map((i) => i.number).slice(0, 50);
   const links = numbers.length ? await issueLinks(cwd, prUrl, numbers) : new Map();
   for (const i of issues) {
-    const found = links.get(i.number);
+    const found = i.repo ? null : links.get(i.number);
     i.title = found?.title ?? null;
     // Which a bare #N is, for the pane's `PR #N`: closingIssuesReferences is
     // only ever issues, but a mention is as often a pull request.

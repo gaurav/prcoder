@@ -516,7 +516,8 @@ let links = null;
  * repository they are relative to, and the ref a path in it should be read at.
  * And `refs`, what GitHub said each mentioned number is (`pr.issues`, by
  * number), so a `#28` can say whether it is a pull request and what it is
- * called.
+ * called. Only this repository's: a bare `#28` is never another repository's
+ * issue the pull request closes.
  *
  * The head branch, because a description points at the files the pull request
  * adds as often as at ones that were already there -- except from a fork, where
@@ -528,7 +529,7 @@ let links = null;
 const linkBase = (pr) => ({
   repo: repoUrl(pr.url),
   ref: pr.isCrossRepository ? pr.baseRefName : pr.headRefName,
-  refs: new Map((pr.issues ?? []).map((i) => [i.number, i])),
+  refs: new Map((pr.issues ?? []).filter((i) => !i.repo).map((i) => [i.number, i])),
 });
 
 /** `owner/repo`, from a repository URL on any host. */
@@ -1008,7 +1009,8 @@ const badge = (text, kind) => h('span', { className: `badge ${kind}` }, text);
  * which is how tools/browser.mjs finds a row; the grid never renders it.
  *
  * A pull request's number says `PR #27`, as the queue's tag does -- refLabel,
- * so the two cannot disagree; a bare `#N` is either on GitHub. The column is
+ * so the two cannot disagree; a bare `#N` is either on GitHub. An issue in
+ * another repository that this one closes says `owner/repo#3`. The column is
  * right-aligned, so the digits still line up under an issue's.
  */
 function issueRow(list, closes, label) {
@@ -1017,7 +1019,7 @@ function issueRow(list, closes, label) {
   return h('div', { className: 'issues' },
     h('span', { className: 'issues-label' }, label),
     ...kind.map((i) => ext(i.url, [
-      h('span', { className: 'num' }, refLabel({ issue: i.number, kind: i.kind })),
+      h('span', { className: 'num' }, refLabel({ issue: i.number, kind: i.kind, repo: i.repo })),
       ...(i.title ? [' ', h('span', { className: 'ttl' }, i.title)] : []),
     ])));
 }

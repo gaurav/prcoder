@@ -76,6 +76,22 @@ test('an issue both closed and mentioned is listed once, as closing', () => {
   assert.equal(issues[0].closes, true);
 });
 
+// `Fixes other/repo#3` and a bare `#3` are two issues. Keyed by number, the #3
+// took other/repo's URL, and the pane linked the prose `#3` there.
+test("another repository's closing reference is kept apart from this one's #N", () => {
+  assert.deepEqual(
+    linkedIssues(pr('Fixes other/repo#3; see #3.',
+      [{ number: 3, url: 'https://github.com/other/repo/issues/3' }])),
+    [
+      { number: 3, url: 'https://github.com/other/repo/issues/3', closes: true, repo: 'other/repo' },
+      { number: 3, url: 'https://github.com/o/r/issues/3', closes: false },
+    ],
+  );
+  // This repository's, in GitHub's spelling rather than the remote's, is still this one's.
+  assert.deepEqual(linkedIssues(pr('', [{ number: 4, url: 'https://github.com/O/R/issues/4' }])),
+    [{ number: 4, url: 'https://github.com/O/R/issues/4', closes: true }]);
+});
+
 test('#N attached to a word is not a linked issue, but a parenthesised one is', () => {
   assert.deepEqual(linkedIssues(pr('abc#5 and colour#5')), []);
   assert.deepEqual(linkedIssues(pr('see (#5) and #6')).map((i) => i.number), [5, 6]);
