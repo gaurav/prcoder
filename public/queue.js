@@ -835,7 +835,8 @@ const wordClass = (w) => w.toLowerCase().replace(/[^a-z]+/g, '-').replace(/^-|-$
  * labels, the Files tab's pie (filled by changed lines viewed, so an empty
  * one is probably still being written and a full one is reviewed and waiting
  * on something else), `new` within a week of opening, and how long since it
- * was opened and last moved; a row not moved in three months is dimmed. A
+ * was opened and last moved, a dot between each pair of plain words; a row
+ * not moved in three months is dimmed. A
  * pull request on no milestone that closes an issue on one shows that
  * milestone as a hint, since the pull request usually belongs where its
  * issue is. Under the line, the description's first paragraph, clipped to two
@@ -861,21 +862,27 @@ function pullRow(p) {
     title: blocked ? 'Commit or stash your changes first' : `Check out #${p.number} here`,
   }));
   const classes = ['item', 'source', 'pull', here ? 'here' : '', isStale(p, now) ? 'stale' : ''].filter(Boolean).join(' ');
+  // The facts, each marked plain (a word) or not (a chip, the pie): a dot goes
+  // between two plain neighbours and nowhere near a chip, as linkRow (pr.js)
+  // sets dots -- a chip's border already separates it.
+  const facts = [
+    [h('span', { className: 'size', title: `+${p.additions ?? 0} −${p.deletions ?? 0} · ${files}` }, sizeChip(p.lines)), false],
+    [p.merge ? h('span', { className: `pr-merge ${wordClass(p.merge)}` }, p.merge) : null, true],
+    [review ? h('span', { className: 'pr-review' }, review) : null, true],
+    [p.author ? h('span', { className: 'who', title: 'opened by' }, p.author) : null, true],
+    ...(p.labels ?? []).map((l) => [h('span', { className: 'tag label' }, l), false]),
+    [p.viewed ? mark({ p: p.viewed.p, full: p.viewed.full, label: p.viewed.label }) : null, false],
+    [isNew(p, now) ? h('span', { className: 'tag new' }, 'new') : null, false],
+    [h('span', { className: 'age', title: `opened ${p.createdAt ?? ''}` }, `opened ${age(p.createdAt, now)}`), true],
+    [h('span', { className: 'age', title: `last updated ${p.updatedAt ?? ''}` }, `updated ${age(p.updatedAt, now)}`), true],
+    [hint ? h('span', { className: 'tag hint', title: `closes #${hint.number}, which is on ${hint.milestone}` }, `closes #${hint.number} · ${hint.milestone}`) : null, false],
+  ].filter(([node]) => node);
   const row = h('li', { className: classes, dataset: { pull: String(p.number) }, draggable: true, ...(here && { ariaCurrent: 'true' }) },
     disclose,
     ext(p.url, `PR #${p.number}`, { className: 'tag pull' }),
     h('span', { className: 'text', textContent: p.title }),
     here ? h('span', { className: 'tag here', title: 'the pull request on screen' }, 'here') : null,
-    h('span', { className: 'size', title: `+${p.additions ?? 0} −${p.deletions ?? 0} · ${files}` }, sizeChip(p.lines)),
-    p.merge ? h('span', { className: `pr-merge ${wordClass(p.merge)}` }, p.merge) : null,
-    review ? h('span', { className: 'pr-review' }, review) : null,
-    p.author ? h('span', { className: 'who', title: 'opened by' }, p.author) : null,
-    ...(p.labels ?? []).map((l) => h('span', { className: 'tag label' }, l)),
-    p.viewed ? mark({ p: p.viewed.p, full: p.viewed.full, label: p.viewed.label }) : null,
-    isNew(p, now) ? h('span', { className: 'tag new' }, 'new') : null,
-    h('span', { className: 'age', title: `opened ${p.createdAt ?? ''}` }, `opened ${age(p.createdAt, now)}`),
-    h('span', { className: 'age', title: `last updated ${p.updatedAt ?? ''}` }, `updated ${age(p.updatedAt, now)}`),
-    hint ? h('span', { className: 'tag hint', title: `closes #${hint.number}, which is on ${hint.milestone}` }, `closes #${hint.number} · ${hint.milestone}`) : null,
+    ...facts.flatMap(([node, plain], i) => [i && plain && facts[i - 1][1] ? h('span', { className: 'sep' }, '·') : null, node]),
     h('span', { className: 'actions' },
       btn('▶', () => {
         const item = { text: p.title, issue: p.number, repo: null, kind: 'pull', issueUrl: p.url };

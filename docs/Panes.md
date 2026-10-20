@@ -458,7 +458,8 @@ works it out),
 the review decision when there is one, who opened it, its labels, the Files tab's pie (it fills
 by changed lines viewed, so an empty one is probably still being written and a full one is
 reviewed and waiting on something else), `new` for a week after it was opened, and how long since
-it was opened and since it last moved. A pull request not moved for three months is dimmed.
+it was opened and since it last moved, with a dot between neighbouring words and none beside a
+chip. A pull request not moved for three months is dimmed.
 One on no milestone that closes an issue on one shows that milestone as a dotted hint, since the
 pull request usually belongs where its issue is. Under the facts is the first paragraph of its
 description, clipped to two lines. The pull request on screen is marked *here* and offered no

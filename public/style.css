@@ -862,6 +862,7 @@ li.issue-body select.milestone {
 .item.pull.stale > :not(.actions) { opacity: .55; }
 .item.pull .size { font-size: 11px; padding: 0 4px; border: 1px solid var(--line); border-radius: 3px; color: var(--dim); font-variant-numeric: tabular-nums; }
 .item.pull .pr-merge, .item.pull .pr-review, .item.pull .who, .item.pull .age { font-size: 12px; color: var(--dim); white-space: nowrap; }
+.item.pull .sep { font-size: 12px; color: var(--dim); }
 .item.pull .pr-merge.ready { color: var(--add); }
 .item.pull .pr-merge.conflicts, .item.pull .pr-merge.checks-not-passing { color: var(--fail); }
 .item.pull .pr-merge.behind-base, .item.pull .pr-merge.blocked { color: var(--warn); }
