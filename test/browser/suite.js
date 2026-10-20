@@ -1929,6 +1929,11 @@ test('the Pull requests tab groups the open pull requests by milestone, smallest
   assert.equal(await twenty.locator('.actions .pr-go').count(), 0);
   assert.equal(await twenty.locator('.pr-go').evaluate((b) => getComputedStyle(b).opacity), '1');
   assert.equal(await twenty.locator('.actions').evaluate((a) => getComputedStyle(a).opacity), '0', '▶ and ↓ still wait on hover');
+  // The facts on a line of their own under the title, with ▶ ↓ on the title's
+  // line: put after the facts in the row they wrapped onto a line of their own.
+  const top = async (sel) => (await twenty.locator(sel).boundingBox()).y;
+  assert.ok(await top('.pr-facts') > await top('.text') + 10, 'the facts sit under the title');
+  assert.ok(Math.abs(await top('.actions') - await top('.text')) < 8, '▶ and ↓ share the title line');
   // An old draft on no milestone: dimmed, with the milestone of the issue it closes as a hint.
   const thirty = fresh.locator('.item[data-pull="30"]');
   assert.ok(await thirty.evaluate((el) => el.classList.contains('stale')));
