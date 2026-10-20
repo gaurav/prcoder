@@ -869,6 +869,9 @@ li.issue-body select.milestone {
 /* More room between pull requests than between issues: each is three lines,
    and at the issues' 3px they ran together. */
 .item.pull { flex-wrap: wrap; row-gap: 0; padding: 7px 4px; }
+/* By stack: a pull request and its opened body step in under the one it is
+   built on, by the depth the row carries (pullRow in queue.js). */
+.item.pull, .items > li.issue-body { margin-left: calc(var(--depth, 0) * 16px); }
 .item.pull.here { background: color-mix(in srgb, var(--accent) 8%, transparent); }
 .item.pull .size { font-size: 11px; padding: 0 4px; border: 1px solid currentColor; border-radius: 3px; font-variant-numeric: tabular-nums; }
 /* The size band as a colour, green to red: a small one is the one to take next,

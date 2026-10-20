@@ -1,7 +1,7 @@
 import { h, btn, ext, api, toast, pref, setPref, tabBtn, writeThrough, fold, kept, mark } from './ui.js';
 import { TABS, refLabel, forClaude, rankMilestones, issueMatches, pullMatches, sortPulls, sizeChip, age, dueLabel, isNew, PULL_SORTS } from './items.js';
 import { refs, resolveRef, blocks } from './tasks.js';
-import { blockNode, inline, stackUnder } from './pr.js';
+import { blockNode, inline, stackUnder, stackOrder } from './pr.js';
 
 // The client owns the list; every change persists the whole array. Single user,
 // single repo — no ids, no diffing.
@@ -119,7 +119,7 @@ export async function initQueue(d) {
   // localStorage to touch.
   addTo = readAddTo();
   pullSort = PULL_SORTS[pref(PULL_SORT_KEY)] ? pref(PULL_SORT_KEY) : 'smallest';
-  pullGroup = pref(PULL_GROUP_KEY) === 'none' ? 'none' : 'milestone';
+  pullGroup = ['none', 'stack'].includes(pref(PULL_GROUP_KEY)) ? pref(PULL_GROUP_KEY) : 'milestone';
   document.getElementById('queue-where').onclick = () => {
     addTo = addTo === 'bottom' ? 'top' : 'bottom';
     setPref(ADD_TO_KEY, addTo);
@@ -761,7 +761,8 @@ function pullList() {
   order.onchange = () => { pullSort = order.value; setPref(PULL_SORT_KEY, pullSort); paintPulls(); };
   const grouping = h('select', { className: 'pull-group', ariaLabel: 'how the pull requests are grouped' },
     h('option', { value: 'milestone', selected: pullGroup === 'milestone' }, 'by milestone'),
-    h('option', { value: 'none', selected: pullGroup === 'none' }, 'one list'));
+    h('option', { value: 'none', selected: pullGroup === 'none' }, 'one list'),
+    h('option', { value: 'stack', selected: pullGroup === 'stack' }, 'by stack'));
   grouping.onchange = () => { pullGroup = grouping.value; setPref(PULL_GROUP_KEY, pullGroup); paintPulls(); };
   const reload = btn('⟳', () => loadPulls(true), { className: 'pull-reload', title: 'read the pull requests again from GitHub', ariaLabel: 'read the pull requests again from GitHub' });
   return h('div', { className: 'pulls-pane' },
@@ -774,8 +775,16 @@ function pullGroups() {
   const searching = !!pullQuery.trim();
   const rows = sortPulls(matchingPulls(), pullSort);
   const out = [];
-  if (pullGroup === 'none') {
-    out.push(rows.length ? h('ul', { className: 'items' }, ...rows.map((p) => pullRow(p)).flat())
+  if (pullGroup !== 'milestone') {
+    // By stack: the switcher's order (stackOrder), each pull request followed
+    // by the ones built on it, indented a step deeper. The rows are sorted
+    // first, and the walk keeps that order among siblings, so the roots and
+    // each stack's branches both come in the chosen order. A parent the
+    // search hides leaves its children roots of their own, which is what a
+    // narrowed list should show. A stack cannot nest across milestone groups,
+    // so this is a grouping of its own and not a mode of the other.
+    const list = pullGroup === 'stack' ? stackOrder(rows) : rows.map((pr) => ({ pr, depth: 0 }));
+    out.push(list.length ? h('ul', { className: 'items' }, ...list.flatMap(({ pr: p, depth }) => pullRow(p, depth)))
       : h('p', { className: 'empty' }, searching ? 'No matching pull requests.' : 'No open pull requests.'));
   } else {
     const byMilestone = new Map();
@@ -851,7 +860,7 @@ const wordClass = (w) => w.toLowerCase().replace(/[^a-z]+/g, '-').replace(/^-|-$
  * there, under its guard, in sight; ▶ and ↓ wait on hover at the end, as every
  * queue row's do.
  */
-function pullRow(p) {
+function pullRow(p, depth = 0) {
   const key = `pull:${p.number}`;
   const open = expanded.has(key);
   const here = !!pr && pr.url === p.url;
@@ -906,7 +915,9 @@ function pullRow(p) {
     [h('span', { className: 'age', title: `opened ${p.createdAt ?? ''}` }, `opened ${age(p.createdAt, now)}`), true],
     [h('span', { className: 'age', title: `last updated ${p.updatedAt ?? ''}` }, `updated ${age(p.updatedAt, now)}`), true],
   ].filter(([node]) => node);
-  const row = h('li', { className: classes, dataset: { pull: String(p.number) }, draggable: true, ...(here && { ariaCurrent: 'true' }) },
+  // `depth` is the by-stack list's indent, a CSS variable the row and its
+  // opened body both carry (--depth), so the body stays under its row.
+  const row = h('li', { className: classes, dataset: { pull: String(p.number) }, draggable: true, style: `--depth:${depth}`, ...(here && { ariaCurrent: 'true' }) },
     disclose,
     ext(p.url, `PR #${p.number}`, { className: 'tag pull' }),
     // The title and what follows it in one box, so a long title wraps inside it
@@ -929,7 +940,7 @@ function pullRow(p) {
     h('option', { value: '' }, 'No milestone'),
     ...rankMilestones(pullsListing.milestones).map((m) => h('option', { value: m.title, selected: m.number === p.milestone }, m.title)));
   pick.onchange = () => movePull(p.number, pick.value || null);
-  const body = h('li', { className: 'issue-body md' },
+  const body = h('li', { className: 'issue-body md', style: `--depth:${depth}` },
     h('div', { className: 'issue-ways' }, pick, go(), ext(p.url, 'Open on GitHub', { className: 'primary open-issue' })));
   return [row, body];
 }

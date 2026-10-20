@@ -1974,13 +1974,21 @@ test('the Pull requests tab groups the open pull requests by milestone, smallest
   assert.deepEqual((await pullGroupsOf(fresh))[0], 'p:1|v1.0 (2) due 5 days ago|open|12,20');
   await fresh.locator('#queue-body select.pull-group').selectOption('none');
   assert.equal(await fresh.locator('#queue-body .fold.milestone').count(), 0);
-  assert.deepEqual(await fresh.locator('#queue-body .item.pull').evaluateAll((ls) => ls.map((l) => l.dataset.pull)), ['30', '12', '20']);
+  const listed = () => fresh.locator('#queue-body .item.pull').evaluateAll((ls) => ls.map((l) => `${l.dataset.pull}:${l.style.getPropertyValue('--depth')}`));
+  assert.deepEqual(await listed(), ['30:0', '12:0', '20:0']);
+  // By stack: one list in the switcher's order, #20 a step in under #12, the
+  // one it is built on, and its opened body stepped in with it.
+  await fresh.locator('#queue-body select.pull-group').selectOption('stack');
+  assert.deepEqual(await listed(), ['30:0', '12:0', '20:1']);
+  assert.equal(await fresh.locator('.item[data-pull="20"]').evaluate((l) => getComputedStyle(l).marginLeft), '16px');
+  await fresh.locator('.item[data-pull="20"] .disclose').click();
+  assert.equal(await fresh.locator('.item[data-pull="20"] + .issue-body').evaluate((l) => getComputedStyle(l).marginLeft), '16px');
   await fresh.reload();
   await fresh.waitForSelector('#queue-body .tab[data-tab="local"]');
   await fresh.locator('#queue-body .tab[data-tab="pulls"]').click();
   await fresh.waitForSelector('#queue-body .item.pull');
   assert.equal(await fresh.locator('#queue-body select.pull-sort').inputValue(), 'largest');
-  assert.equal(await fresh.locator('#queue-body select.pull-group').inputValue(), 'none');
+  assert.equal(await fresh.locator('#queue-body select.pull-group').inputValue(), 'stack');
   await fresh.close();
 });
 
