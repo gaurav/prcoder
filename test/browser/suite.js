@@ -1549,9 +1549,15 @@ test('the Issues tab groups the repository\'s open issues by milestone in rank o
   // soonest first, then the buckets in order; only the first with an issue
   // starts open, and an empty bucket is drawn.
   assert.deepEqual(await groupsOf(fresh), [
-    'mentioned|Mentioned by PR #12 (1)|open|1', 'm:none|No milestone (1)|open|1',
+    'mentioned|Mentioned by PR #12 (1)|open|1', 'm:none|No milestone (1) to triage|open|1',
     'm:2|v0.1 (1) due 17 days ago|closed|1', 'm:1|v1.0 (1) due 5 days ago|closed|1', 'm:4|Needed soon (0)|closed|0',
     'm:3|Not urgent (1)|closed|1']);
+  // No milestone is marked as the pile to triage: its line in the text's own
+  // colour, not the dim of a milestone's, with a badge.
+  assert.equal(await fresh.locator('[data-group="m:none"].untriaged summary .triage').textContent(), 'to triage');
+  const tint = (sel) => fresh.locator(sel).evaluate((e) => getComputedStyle(e).color);
+  assert.notEqual(await tint('[data-group="m:none"] summary'), await tint('[data-group="m:3"] summary'), 'brighter than a milestone line');
+  assert.equal(await fresh.locator('#queue-body .fold.untriaged').count(), 1, 'and nothing else is');
   // GitHub did not know the mention, so it says so, dimmed.
   assert.equal(await fresh.locator('[data-group="mentioned"] .item.closed .text').textContent(), 'not found on GitHub');
   assert.equal(await fresh.locator('[data-group="m:4"] .empty').textContent(), 'no open issues');
@@ -1578,7 +1584,7 @@ test('the Issues tab groups the repository\'s open issues by milestone in rank o
   await again;
   await fresh.waitForSelector('[data-group="m:10"]');
   assert.deepEqual((await groupsOf(fresh)).map((g) => g.split('|').slice(0, 3).join(' ')), [
-    'mentioned Mentioned by PR #12 (1) open', 'm:none No milestone (1) closed', 'm:2 v0.1 (1) due 17 days ago closed',
+    'mentioned Mentioned by PR #12 (1) open', 'm:none No milestone (1) to triage closed', 'm:2 v0.1 (1) due 17 days ago closed',
     'm:1 v1.0 (1) due 5 days ago open', 'm:10 v2.0 (0) due in 1 month closed', 'm:4 Needed soon (0) closed', 'm:3 Not urgent (1) closed']);
   await fresh.close();
 });
@@ -1619,7 +1625,7 @@ test('searching the issues narrows the rows, opens the groups with a match, and 
   assert.deepEqual(await groupsOf(fresh), []);
   assert.equal(await fresh.locator('#queue-body .issue-groups .empty').textContent(), 'No open issues match.');
   await search.fill('#149');
-  assert.deepEqual(await groupsOf(fresh), ['m:none|No milestone (1)|open|1']);
+  assert.deepEqual(await groupsOf(fresh), ['m:none|No milestone (1) to triage|open|1']);
   // A poll that brings news holds off while the search box has focus, so
   // its text and caret survive; the news lands with the next repaint.
   assert.equal(await fresh.evaluate(() => document.activeElement.id), 'queue-search');
@@ -1944,7 +1950,8 @@ test('the Pull requests tab groups the open pull requests by milestone, smallest
   // with a pull request starts open; smallest first within a group; an empty
   // one is drawn.
   assert.deepEqual(await pullGroupsOf(fresh), [
-    'p:none|No milestone (1)|open|30', 'p:1|v1.0 (2) due 5 days ago|closed|20,12', 'p:4|Needed soon (0)|closed|', 'p:3|Not urgent (0)|closed|']);
+    'p:none|No milestone (1) to triage|open|30', 'p:1|v1.0 (2) due 5 days ago|closed|20,12', 'p:4|Needed soon (0)|closed|', 'p:3|Not urgent (0)|closed|']);
+  assert.equal(await fresh.locator('[data-group="p:none"].untriaged summary .triage').textContent(), 'to triage');
   assert.equal(await fresh.locator('[data-group="p:4"] summary a').getAttribute('title'), 'Work that should land soon.');
   // A row: the tinted PR chip, the title, the size as GitHub bands it with
   // the counts on hover, the merge word, the review, the author, labels,
@@ -2119,6 +2126,8 @@ test('searching the pull requests narrows the rows and counts them, and a row op
   const search = fresh.locator('#queue-pull-search');
   await search.fill('copilot');
   assert.deepEqual(await pullGroupsOf(fresh), ['p:none|No milestone (0)|closed|', 'p:1|v1.0 (1) due 5 days ago|open|20', 'p:4|Needed soon (0)|closed|', 'p:3|Not urgent (0)|closed|']);
+  // With nothing in it, No milestone has nothing to triage, and is not marked.
+  assert.equal(await fresh.locator('[data-group="p:none"].untriaged, [data-group="p:none"] .triage').count(), 0);
   assert.equal(await fresh.locator('#queue-body .tab[data-tab="pulls"]').textContent(), 'Pull requests (1)');
   assert.equal(await fresh.evaluate(() => document.activeElement.id), 'queue-pull-search', 'the box keeps its focus');
   await search.fill('');

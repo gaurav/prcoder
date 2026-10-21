@@ -406,7 +406,9 @@ issue, or a merged or closed pull request -- is dimmed and followed by its state
 A poll that brings another pull request, or a description that mentions something new, while the
 tab is open has the listing read again, and a mention reads `…` until it is looked up. Then the
 issues on no milestone, ahead of every milestone: they are the untriaged, and one could belong at
-any level, `Critical` included, so they are the ones to sort first. Then one group per open milestone, in the order the owner's
+any level, `Critical` included, so they are the ones to sort first. While it holds any, its
+line is in the text's own colour rather than the dim of a milestone's, with a yellow *to triage*
+badge. Then one group per open milestone, in the order the owner's
 milestones are read ([MILESTONES.md](https://github.com/gaurav/milestones/blob/main/MILESTONES.md)):
 `Critical`, then releases and deadlines soonest first and the undated after them, then `Needed
 soon`, `Needed later`, `Not urgent` and `Upstream`, matched by name whatever their case. A closed milestone that an open issue is still on gets a group too,

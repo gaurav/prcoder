@@ -280,7 +280,7 @@ await page.waitForSelector('#queue-body .fold.milestone');
 console.log('issues: ', await page.locator('#queue-body .tab', { hasText: /^Issues/ }).innerText(), '|',
   (await page.$$eval('#queue-body .fold.milestone', (gs) => gs.map((g) =>
     `${g.querySelector('h3').textContent.replace(/\s+/g, ' ').trim()}${g.open ? ' (open)' : ''}`))).join(' | '),
-'  (want the open-issue count, then the mentions and every open milestone in rank order with its count, the first with issues open)');
+'  (want the open-issue count, then the mentions, No milestone marked "to triage" if it has any, and every open milestone in rank order with its count, the first with issues open)');
 // The first row that can open: its body through the description renderer,
 // and Open on GitHub under it.
 const openable = page.locator('#queue-body .fold.milestone[open] .item button.disclose').first();
@@ -323,7 +323,7 @@ console.log('pulls:  ', await page.locator('#queue-body .tab', { hasText: /^Pull
   (await page.$$eval('#queue-body .fold.milestone', (gs) => gs.map((g) =>
     `${g.querySelector('h3').textContent.replace(/\s+/g, ' ').trim()}${g.open ? ' (open)' : ''}`))).join(' | '),
   '|', await page.locator('#queue-body .pull-note').innerText(),
-  '\n  (want the open count, every open milestone in rank order with its count, the first with pull requests open, and when it was read)');
+  '\n  (want the open count, No milestone marked "to triage" if it has any, every open milestone in rank order with its count, the first with pull requests open, and when it was read)');
 console.log('  rows:  ', (await page.$$eval('#queue-body .item.pull', (ls) => ls.map((l) =>
   [l.querySelector('.tag.pull')?.textContent, l.querySelector('.pr-stack')?.textContent, l.querySelector('.size')?.textContent, l.querySelector('.pr-merge')?.textContent,
     l.querySelector('.who')?.textContent, ...[...l.querySelectorAll('.age')].map((a) => a.textContent), l.classList.contains('here') ? 'here' : ''].filter(Boolean).join(' ')))).join('\n          '),

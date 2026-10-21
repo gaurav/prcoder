@@ -470,6 +470,9 @@ function paintIssues() {
 /** The group an issue with no milestone is in. */
 const NONE = 'none';
 
+/** No milestone's badge, when it holds something: the issues or pull requests not yet triaged. */
+const triage = (list) => (list.length ? [h('span', { className: 'triage', title: 'on no milestone yet, so not triaged: it could belong at any level' }, 'to triage')] : []);
+
 /**
  * What starts closed, as each listing lands. On the first, every group but
  * the mentions and the first in the drawn order with an issue on it, which is
@@ -514,10 +517,11 @@ function issueGroups() {
   // than one element per issue once a row is open: the count is the issues'.
   // `target` is the milestone the group stands for -- a title, or null for
   // none -- and makes its summary somewhere an issue row can be dropped; the
-  // mentions have none, since they are not a milestone.
+  // mentions have none, since they are not a milestone. No milestone with
+  // anything on it is marked as the pile to triage (untriaged in style.css).
   const group = (key, title, list, rows, extra = [], target) => {
     const d = fold({
-      className: 'milestone', dataset: { group: key }, title: [title, ' ', h('span', { className: 'count' }, `(${list.length})`), ...extra.flatMap((e) => [' ', e])],
+      className: target === null && list.length ? 'milestone untriaged' : 'milestone', dataset: { group: key }, title: [title, ' ', h('span', { className: 'count' }, `(${list.length})`), ...extra.flatMap((e) => [' ', e])],
       ...state(key),
     }, list.length ? [h('ul', { className: 'items' }, ...rows)] : [h('p', { className: 'empty' }, 'no open issues')]);
     if (target !== undefined) dropTarget(d.querySelector('summary'), target);
@@ -536,7 +540,7 @@ function issueGroups() {
   // No milestone before the milestones: an issue on none is untriaged, and
   // could belong at any level, Critical included.
   const none = byMilestone.get(NONE) ?? [];
-  if (!searching || none.length) out.push(group(`m:${NONE}`, 'No milestone', none, none.map((i) => issueRow(i)).flat(), [], null));
+  if (!searching || none.length) out.push(group(`m:${NONE}`, 'No milestone', none, none.map((i) => issueRow(i)).flat(), triage(none), null));
   for (const m of ranked) {
     const title = home ? ext(`https://github.com/${home}/milestone/${m.number}`, m.title, { title: m.description || undefined }) : m.title;
     const extra = [
@@ -841,14 +845,15 @@ function pullGroups() {
     const home = deps.home?.();
     const group = (key, title, list, extra, target) => {
       const d = fold({
-        className: 'milestone', dataset: { group: key },
+        className: target === null && list.length ? 'milestone untriaged' : 'milestone', dataset: { group: key },
         title: [title, ' ', h('span', { className: 'count' }, `(${list.length})`), ...extra.flatMap((e) => [' ', e])],
         ...state(key, list),
       }, list.length ? [h('ul', { className: 'items' }, ...list.map((p) => pullRow(p)).flat())] : [h('p', { className: 'empty' }, 'no open pull requests')]);
       if (target !== undefined) dropTarget(d.querySelector('summary'), target, PULL, movePull);
       return d;
     };
-    out.push(group(`p:${NONE}`, 'No milestone', byMilestone.get(NONE) ?? [], [], null));
+    const none = byMilestone.get(NONE) ?? [];
+    out.push(group(`p:${NONE}`, 'No milestone', none, triage(none), null));
     for (const m of ranked) {
       const title = home ? ext(`https://github.com/${home}/milestone/${m.number}`, m.title, { title: m.description || undefined }) : m.title;
       const extra = [

@@ -833,6 +833,15 @@ main.diff-off #diff-wrap { display: none; }
 .fold.milestone > summary .due.soon { color: var(--warn); }
 .fold.milestone > summary .closed-milestone { font-style: italic; }
 .fold.milestone > summary .count { font-variant-numeric: tabular-nums; }
+/* No milestone, with anything on it: the untriaged, any of which could be
+   Critical, so it is drawn first and in the text's own colour rather than
+   the dim of the other lines, with a yellow badge -- the soon-due yellow, not
+   the overdue red, since nothing about it is late yet. */
+.fold.milestone.untriaged > summary { color: var(--fg); font-weight: 600; }
+.fold.milestone > summary .triage {
+  font-weight: 400; color: var(--warn); background: color-mix(in srgb, var(--warn) 18%, transparent);
+  padding: 0 6px; border-radius: 9px;
+}
 .fold.milestone > .sec-body { padding: 0 0 4px 10px; }
 .fold.milestone .empty { font-size: 12px; margin: 0 0 2px 4px; }
 .item .tag.label { color: var(--dim); border-style: dashed; }
