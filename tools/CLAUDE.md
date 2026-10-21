@@ -56,6 +56,14 @@ this tree's code against that branch's PR. A switch the driver makes then
 happens in the worktree. Remove the worktree when done, and any local branch
 `gh pr checkout` made there.
 
+A worktree you *work* in -- a branch off `main` edited and tested there -- has
+no `node_modules`, and `npm test` in it fails a couple of hundred browser and
+vendor tests with nothing in common. Its imports resolve anyway, from this
+tree's `node_modules` two directories up, but the server serves xterm and
+Prism from `node_modules` beside its own `server.js` (`vendor` in server.js),
+which is the worktree's. `ln -s ../../node_modules node_modules` in the
+worktree fixes it; `.gitignore`'s `node_modules` covers the link (2026-10-21).
+
 ## A stub that only echoes is not a session
 
 A real Claude session asks the terminal for the cursor position every ~200ms,
