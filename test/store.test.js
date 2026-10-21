@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { normalise, pick, toDisk, readStore, writeStore, readPort, writePort, readPrs, writePrs, replaceItems, useQueueFile } from '../store.js';
+import { normalise, pick, toDisk, readStore, writeStore, readPort, writePort, readPrs, writePrs, readPulls, writePulls, replaceItems, useQueueFile } from '../store.js';
 
 const repo = () => fs.mkdtemp(path.join(os.tmpdir(), 'prcoder-store-'));
 const item = (over = {}) =>
@@ -337,4 +337,72 @@ test('a remembered pull request that is not one is left out, and a file we canno
   // Overwritten, not moved aside: it is a cache.
   await writePrs(dir, 'topic', { searched: Date.now(), prs: [PR] });
   assert.equal((await readPrs(dir, 'topic')).prs.length, 1);
+});
+
+// .prcoder/pulls.json: the Pull requests tab's listing as last read, so the
+// tab opens from it. A cache, read as none when it is not this repository's
+// or cannot be used, and held to the rows the move's hold can trust.
+const PULL = { number: 7, url: 'https://github.com/o/r/pull/7', title: 'seven', milestone: 4, lines: 12 };
+const LISTING = { milestones: [{ number: 4, title: 'Needed soon', dueOn: null, description: '', closed: false }], pulls: [PULL], total: 1, listed: 1 };
+
+test('the pull request listing comes back as written, stamped with when it was read', async () => {
+  const dir = await repo();
+  assert.equal(await readPulls(dir, 'o/r'), null, 'nothing read yet');
+  const now = Date.parse('2026-10-19T12:00:00Z');
+  await writePulls(dir, 'o/r', LISTING, now);
+  const back = { ...LISTING, pulls: [{ ...PULL, closes: [] }], read: now };
+  assert.deepEqual(await readPulls(dir, 'o/r'), back);
+  assert.deepEqual(await readPulls(dir, 'O/R'), back, 'the repository compares case-blind');
+  assert.equal(await readPulls(dir, 'o/other'), null, 'another repository\'s list is not this one\'s');
+  const raw = JSON.parse(await fs.readFile(path.join(dir, '.prcoder', 'pulls.json'), 'utf8'));
+  assert.equal(raw.read, '2026-10-19T12:00:00.000Z', 'a time a person can read');
+  assert.equal(raw.nameWithOwner, 'o/r');
+  assert.deepEqual((await fs.readdir(path.join(dir, '.prcoder'))).sort(), ['.gitignore', 'pulls.json']);
+  // Written whole each time: the next read replaces the last.
+  await writePulls(dir, 'o/r', { ...LISTING, pulls: [], total: 0, listed: 0 }, now + 1);
+  assert.deepEqual((await readPulls(dir, 'o/r')).pulls, []);
+});
+
+test('a listing we cannot use reads as none, and a row the hold cannot trust is left out', async () => {
+  const dir = await repo();
+  const file = path.join(dir, '.prcoder', 'pulls.json');
+  const now = Date.parse('2026-10-19T12:00:00Z');
+  const write = async (obj) => { await writePulls(dir, 'o/r', LISTING, now); await fs.writeFile(file, typeof obj === 'string' ? obj : JSON.stringify(obj)); };
+  await write('not json');
+  assert.equal(await readPulls(dir, 'o/r'), null);
+  await write({ version: 99, nameWithOwner: 'o/r', read: '2026-10-19T12:00:00Z', ...LISTING });
+  assert.equal(await readPulls(dir, 'o/r'), null, 'a newer prcoder\'s file');
+  await write({ version: 1, nameWithOwner: 'o/r', read: 'yesterday', ...LISTING });
+  assert.equal(await readPulls(dir, 'o/r'), null, 'no time it was read');
+  await write({ version: 1, nameWithOwner: 'o/r', read: '2026-10-19T12:00:00Z', milestones: {}, pulls: [PULL] });
+  assert.equal(await readPulls(dir, 'o/r'), null);
+  // The number and the URL have to agree, and both have to be this repository's.
+  await write({ version: 1, nameWithOwner: 'o/r', read: '2026-10-19T12:00:00Z', total: 9, milestones: [
+    { number: 4, title: 'Needed soon' }, { number: '5', title: 'x' }, { number: 6, title: '' }, { number: 7 }, null,
+  ], pulls: [
+    PULL, { ...PULL, number: '7' }, { ...PULL, number: 8 }, { ...PULL, url: 'https://github.com/o/r/issues/7' },
+    { ...PULL, url: 'https://github.com/o/other/pull/7' }, { ...PULL, url: '--repo=x https://github.com/o/r/pull/7' }, { number: 9 },
+    null, 'seven',
+  ] });
+  const got = await readPulls(dir, 'o/r');
+  assert.deepEqual(got.pulls, [{ ...PULL, closes: [] }], 'a null or a string among the rows is left out, not thrown on');
+  assert.deepEqual(got.milestones, [{ number: 4, title: 'Needed soon' }]);
+  assert.deepEqual([got.total, got.listed, got.read], [9, 1, now]);
+});
+
+test('an issue a cached row closes keeps its URL only when it is that issue\'s GitHub link', async () => {
+  const dir = await repo();
+  const file = path.join(dir, '.prcoder', 'pulls.json');
+  const closes = [
+    { number: 1, title: 'one', url: 'https://github.com/o/r/issues/1' },
+    { number: 2, title: 'elsewhere', url: 'https://github.com/x/y/issues/2' },
+    { number: 3, title: 'script', url: 'javascript:alert(1)' },
+    { number: 4, title: 'a pull', url: 'https://github.com/o/r/pull/4' },
+    { number: 5, title: 'mismatch', url: 'https://github.com/o/r/issues/6' },
+    { title: 'no number', url: 'https://github.com/o/r/issues/7' }, null,
+  ];
+  await fs.mkdir(path.dirname(file), { recursive: true });
+  await fs.writeFile(file, JSON.stringify({ version: 1, nameWithOwner: 'o/r', read: '2026-10-19T12:00:00Z', milestones: [], pulls: [{ ...PULL, closes }] }));
+  assert.deepEqual((await readPulls(dir, 'o/r')).pulls[0].closes.map((i) => [i.number, i.url]), [
+    [1, 'https://github.com/o/r/issues/1'], [2, 'https://github.com/x/y/issues/2'], [3, null], [4, null], [5, null]]);
 });

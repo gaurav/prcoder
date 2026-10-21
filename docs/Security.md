@@ -78,7 +78,8 @@ checklist line of the description, or from the Issues tab, which copies an issue
 straight in, unsent — so whoever can edit that description or that issue can
 write the words. Commit sends a message built from the names of the working tree's uncommitted files.
 
-The Issues tab also draws an issue's body, which is anyone's text, into the page with `innerHTML`:
+The Issues tab also draws an issue's body, which is anyone's text, into the page with `innerHTML`,
+and the Pull requests tab the first paragraph of a pull request's under its row:
 through `blockNode` and `inline()` in [`public/pr.js`](../public/pr.js), the description's own
 renderer, with the repository as what a relative link is written against — the same allowlist,
 and no second path.
@@ -156,7 +157,13 @@ A modified file's diff is not highlighted at all, and
   from the page and hands gh neither: `issueMove` in `server.js` looks both up in the listing the
   tab was last shown, and the listing's own values go to `gh issue edit`, with `--milestone=` so a
   title beginning with `-` stays a value (`setMilestone` in `github.js`). `test/api.test.js` pins
-  the refusals.
+  the refusals. The Pull requests tab's `/api/pull/milestone` is the same hold (`pullMove`) on the
+  listing that tab was last shown, which may have come from `.prcoder/pulls.json` rather than
+  GitHub -- so `readPulls` in `store.js` keeps a row only with an integer number and the whole of
+  a pull request link in this repository, and a milestone only with an integer number and a string
+  title, before anything from the file can be held to (`test/store.test.js`). A row's other href,
+  each issue it closes, is kept only as the whole of a GitHub issue link (`closesOf`), so a
+  hand-edit cannot put a `javascript:` link in the tab.
 - **Text from GitHub** — descriptions, titles, issue bodies, file names — is built into the page with
   `h()` and text nodes. `innerHTML` only through `inline()`, and a new kind of link only through
   `target()`.

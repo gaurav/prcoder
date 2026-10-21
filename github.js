@@ -2,7 +2,8 @@
 
 import { execFile } from 'node:child_process';
 import { debug } from './term.js';
-import { mentions, repoUrl, printable } from './public/tasks.js';
+import { mentions, repoUrl, printable, blocks } from './public/tasks.js';
+import { filesProgress } from './public/filelist.js';
 
 // Every gh call and every git call comes through run(), so this is the whole
 // count. What it is for: two browser tabs each poll on their own timer against
@@ -818,15 +819,145 @@ export async function repoIssues(cwd, owner, repo) {
   return { milestones, issues, total, listed: issues.length };
 }
 
+const PULLS_QUERY = `query($owner:String!,$repo:String!,$after:String){
+  repository(owner:$owner,name:$repo){
+    milestones(first:50,states:OPEN){ nodes{ number title dueOn description } }
+    pullRequests(first:100,after:$after,states:OPEN,orderBy:{field:UPDATED_AT,direction:DESC}){
+      totalCount pageInfo{ hasNextPage endCursor }
+      nodes{ number title url isDraft isCrossRepository headRefName baseRefName createdAt updatedAt
+        author{ login } additions deletions changedFiles mergeStateStatus reviewDecision body
+        milestone{ number title dueOn state } labels(first:10){ nodes{ name } }
+        closingIssuesReferences(first:10){ nodes{ number title url milestone{ title } } }
+        files(first:100){ nodes{ additions deletions viewerViewedState } } } } } }`;
+
 /**
- * Set an issue's milestone by title, or take it off with null. `--milestone=`
+ * GitHub's mergeStateStatus as the one word the Pull requests tab shows.
+ * `mergeable` is not asked for: DIRTY already says conflicts. HAS_HOOKS is a
+ * CLEAN that waits on a pre-receive hook, which reads as ready here. UNKNOWN
+ * is GitHub still working it out, which a fresh read a minute later settles.
+ * UNSTABLE is "mergeable with non-passing commit status", which a check still
+ * running is as much as one that failed -- this branch's own pull request
+ * read `checks failing` while CI was starting (2026-10-19) -- so the word is
+ * `checks not passing`, which is true of both.
+ */
+export const MERGE_WORD = {
+  CLEAN: 'ready', HAS_HOOKS: 'ready', DIRTY: 'conflicts', BEHIND: 'behind base', BLOCKED: 'blocked',
+  UNSTABLE: 'checks not passing', DRAFT: 'draft', UNKNOWN: 'checking…',
+};
+
+// ponytail: a lead longer than this is cut; the row shows two lines of it.
+// The cut can split a `**` pair, and the tab's inline() then shows the half
+// left over as written -- past the two lines, so cut at a word if it shows.
+const LEAD_MAX = 300;
+
+/** A milestone node in the listing's shape (repoIssues'), `closed` when GitHub says so. */
+const milestoneRow = (m, description = '') => ({
+  number: m.number, title: printable(m.title ?? '').trim() || `#${m.number}`,
+  dueOn: m.dueOn ?? null, description, closed: m.state === 'CLOSED',
+});
+
+/**
+ * One node of PULLS_QUERY as the row the Pull requests tab draws. The first
+ * seven fields are the ones `gh pr list` gives the switcher, under the same
+ * names, so a row here can stand in for one there. The rest is what picking
+ * the next pull request turns on: when it was opened and last moved, whose it
+ * is, its size (`lines`, additions and deletions together, which the tab sorts
+ * by and chips as GitHub's size labels do), how much of it is viewed
+ * (filesProgress, the Files tab's own pie, over the first hundred files and
+ * counted against changedFiles as that tab counts), whether it can merge
+ * (MERGE_WORD), whether it was reviewed, its milestone by number as an issue's
+ * is, its labels by name, its first paragraph for the row and its whole body
+ * for the opened row and the search, and the issues it closes with each one's
+ * milestone -- the hint for a pull request on none.
+ */
+export function pullRow(node) {
+  const { body, files, closingIssuesReferences, mergeStateStatus, milestone, labels, author, ...pr } = node;
+  const listed = (files?.nodes ?? []).map(({ viewerViewedState, ...f }) => ({ ...f, viewed: viewerViewedState === 'VIEWED' }));
+  const additions = pr.additions ?? 0;
+  const deletions = pr.deletions ?? 0;
+  const text = lf(body);
+  // The whole body, not sectionize()'s lead: a description that opens with a
+  // heading still has a first paragraph, and the row wants it.
+  const lead = blocks(text).find((b) => b.kind === 'p')?.text ?? '';
+  return {
+    ...pr,
+    title: printable(pr.title ?? '').trim() || `#${pr.number}`,
+    author: author?.login ?? null,
+    additions, deletions, changedFiles: pr.changedFiles ?? 0, lines: additions + deletions,
+    viewed: filesProgress(listed, { additions, deletions, changedFiles: pr.changedFiles ?? 0 }),
+    merge: MERGE_WORD[mergeStateStatus] ?? MERGE_WORD.UNKNOWN,
+    reviewDecision: pr.reviewDecision ?? null,
+    milestone: milestone?.number ?? null,
+    labels: (labels?.nodes ?? []).map((l) => l.name),
+    lead: printable(lead.replace(/\s+/g, ' ')).trim().slice(0, LEAD_MAX),
+    body: text,
+    closes: (closingIssuesReferences?.nodes ?? []).map((i) => ({
+      number: i.number, url: i.url ?? null,
+      title: printable(i.title ?? '').trim() || `#${i.number}`,
+      milestone: i.milestone?.title ? printable(i.milestone.title).trim() : null,
+    })),
+  };
+}
+
+/**
+ * The repository's open pull requests and open milestones, for the queue's
+ * Pull requests tab: `{ milestones, pulls, total, listed }`, the milestones as
+ * repoIssues has them and each pull request as pullRow has it, most recently
+ * updated first. A milestone a pull request is on that is not among the open
+ * ones read is added from it, `closed` if it is, as repoIssues adds one.
+ *
+ * One GraphQL call rather than `gh pr list --json`, because the viewed pie is
+ * per-file state only GraphQL carries. The call is slow where the list is
+ * long, and the slow fields are the computed ones -- additions, deletions and
+ * changedFiles, and mergeStateStatus -- not the bodies or the files
+ * (docs/Verifying.md has the figures). So the switcher keeps its own cheap
+ * list (listPrs), this is read only for the tab, and the server caches the
+ * answer in `.prcoder/pulls.json` (store.js) so the tab opens from the last
+ * read while this runs behind it. Nothing here costs a connection per pull
+ * request: `reviewThreads` would.
+ *
+ * Owner and repo go as variables (-f, the prFiles note), and the pages by
+ * cursor as repoIssues pages. Throws when gh does: a read that failed is a
+ * toast, and the tab keeps what it was showing.
+ */
+export async function repoPulls(cwd, owner, repo) {
+  const pulls = [];
+  let milestones = null;
+  let total = 0;
+  let after = null;
+  // ponytail: five pages, 500 open pull requests; `listed` under `total` says so.
+  for (let page = 0; page < 5; page++) {
+    const args = ['api', 'graphql', '-f', `query=${PULLS_QUERY}`, '-f', `owner=${owner}`, '-f', `repo=${repo}`];
+    if (after) args.push('-f', `after=${after}`);
+    const { data } = JSON.parse(await gh(args, { cwd }));
+    const r = data.repository;
+    milestones ??= r.milestones.nodes.map((m) => milestoneRow(m, printable(m.description ?? '').trim()));
+    total = r.pullRequests.totalCount;
+    for (const node of r.pullRequests.nodes) {
+      pulls.push(pullRow(node));
+      const m = node.milestone;
+      if (m && !milestones.some((k) => k.number === m.number)) milestones.push(milestoneRow(m));
+    }
+    const { hasNextPage, endCursor } = r.pullRequests.pageInfo;
+    if (hasNextPage && !endCursor) throw new Error(`GitHub said ${owner}/${repo} has more pull requests, but gave no cursor to them`);
+    after = hasNextPage ? endCursor : null;
+    if (!after) break;
+  }
+  return { milestones, pulls, total, listed: pulls.length };
+}
+
+/**
+ * Set an issue's milestone by title, or take it off with null; `kind` 'pull'
+ * does the same for a pull request, through `gh pr edit`, whose two flags are
+ * the same words (checked against gh 2.100.0 on 2026-10-19). `--milestone=`
  * with the `=`, so a title that starts with `-` is still the value and never
  * a flag; both flags checked against gh 2.100.0 on 2026-10-15. The number and
  * the title are the server's, looked up in the listing the tab was shown
- * (issueMove in server.js), not the page's strings.
+ * (issueMove and pullMove in server.js), not the page's strings.
  */
-export const setMilestone = (cwd, nameWithOwner, number, title) =>
-  gh(['issue', 'edit', String(number), '--repo', nameWithOwner, ...(title == null ? ['--remove-milestone'] : [`--milestone=${title}`])], { cwd });
+export const setMilestone = (cwd, nameWithOwner, number, title, kind = 'issue') =>
+  gh([kind === 'pull' ? 'pr' : 'issue', 'edit', String(number), '--repo', nameWithOwner,
+    ...(title == null ? ['--remove-milestone'] : [`--milestone=${title}`])], { cwd });
 
 /**
  * The one query issueLinks and lookupRef share. Numbers only are interpolated.

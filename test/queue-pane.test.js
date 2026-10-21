@@ -3,7 +3,7 @@
 // and the status block share.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { TABS, counts, forClaude, refLabel, rankMilestones, issueMatches } from '../public/items.js';
+import { TABS, counts, forClaude, refLabel, rankMilestones, issueMatches, sizeChip, sortPulls, pullMatches, age, dueLabel, isNew, PULL_SORTS } from '../public/items.js';
 import { stripFor } from '../public/queue.js';
 
 const item = (over = {}) => ({ text: 't', done: false, issue: null, deleted: false, ...over });
@@ -149,4 +149,85 @@ test('the issue search is case-blind over the number, title, labels and body', (
   assert.ok(!issueMatches(i, '#59'));
   assert.ok(!issueMatches(i, 'nothing like this'));
   assert.ok(issueMatches({ number: 1 }, '#1'), 'an issue with nothing but a number');
+});
+
+// The Pull requests tab's vocabulary: a size in its band,
+// the orders the tab offers, its search, and the ages a row says.
+test('a pull request\'s size chip is a size label, on lines changed', () => {
+  assert.deepEqual([0, 49, 50, 99, 100, 199, 200, 499, 500, 999, 1000, 5000].map(sizeChip),
+    ['XS', 'XS', 'S', 'S', 'M', 'M', 'L', 'L', 'XL', 'XL', 'XXL', 'XXL']);
+  assert.equal(sizeChip(undefined), 'XS');
+});
+
+const pulls = [
+  { number: 1, lines: 50, createdAt: '2026-10-01T00:00:00Z', updatedAt: '2026-10-10T00:00:00Z', title: 'Alpha', author: 'gaurav', headRefName: 'alpha', labels: ['bug'], body: 'fixes the thing' },
+  { number: 2, lines: 5, createdAt: '2026-10-05T00:00:00Z', updatedAt: '2026-10-06T00:00:00Z', title: 'Beta', author: 'copilot', headRefName: 'copilot/beta', baseRefName: 'alpha', labels: [], body: '',
+    closes: [{ number: 9, title: 'The beta thing', url: null, milestone: null }] },
+  { number: 3, lines: 5, createdAt: '2026-09-01T00:00:00Z', updatedAt: '2026-10-18T00:00:00Z', title: 'Gamma', author: 'gaurav', headRefName: 'gamma', labels: [], body: 'Closes #1' },
+];
+
+test('the orders sort as named, ties by number, and the list is left alone', () => {
+  const by = (how) => sortPulls(pulls, how).map((p) => p.number);
+  assert.deepEqual(by('smallest'), [2, 3, 1]);
+  assert.deepEqual(by('largest'), [1, 2, 3]);
+  assert.deepEqual(by('newest'), [2, 1, 3]);
+  assert.deepEqual(by('oldest'), [3, 1, 2]);
+  assert.deepEqual(by('updated'), [3, 1, 2]);
+  assert.deepEqual(by('stale'), [2, 1, 3]);
+  assert.deepEqual(by('nonsense'), [2, 3, 1], 'an order not named is smallest first');
+  assert.deepEqual(pulls.map((p) => p.number), [1, 2, 3]);
+  assert.deepEqual(Object.keys(PULL_SORTS), ['smallest', 'largest', 'newest', 'oldest', 'updated', 'stale']);
+  assert.ok(Object.values(PULL_SORTS).every((s) => typeof s.label === 'string' && typeof s.by === 'function'));
+});
+
+test('the search matches the number, title, author, branches, labels, body and closed issues, case-blind', () => {
+  const found = (q) => pulls.filter((p) => pullMatches(p, q)).map((p) => p.number);
+  assert.deepEqual(found(''), [1, 2, 3]);
+  assert.deepEqual(found('  '), [1, 2, 3]);
+  assert.deepEqual(found('#1'), [1, 3], 'the body counts: #3 closes #1');
+  assert.deepEqual(found('#2'), [2]);
+  assert.deepEqual(found('ALPHA'), [1, 2], 'the base branch counts: #2 is built on alpha');
+  assert.deepEqual(found('#9'), [2], 'an issue it closes counts by number');
+  assert.deepEqual(found('beta thing'), [2], 'and by title');
+  assert.deepEqual(found('copilot'), [2]);
+  assert.deepEqual(found('gamma'), [3]);
+  assert.deepEqual(found('bug'), [1]);
+  assert.deepEqual(found('closes'), [3]);
+  assert.deepEqual(found('zzz'), []);
+  // The state word the row shows: the merge word, or the caller's.
+  const ready = { number: 4, title: 'four', merge: 'ready' };
+  assert.equal(pullMatches(ready, 'READY'), true, 'the merge word counts');
+  assert.equal(pullMatches(ready, 'stacked', 'stacked (1)'), true, 'and a word the caller gives');
+  assert.equal(pullMatches(ready, 'ready', 'stacked (1)'), false, 'in place of the merge word');
+});
+
+test('an age is a word or two, and new is a week', () => {
+  const now = Date.parse('2026-10-19T12:00:00Z');
+  assert.equal(age('2026-10-19T11:59:30Z', now), 'just now');
+  assert.equal(age('2026-10-19T11:00:00Z', now), '1 hour ago');
+  assert.equal(age('2026-10-16T12:00:00Z', now), '3 days ago');
+  assert.equal(age('2026-08-19T12:00:00Z', now), '2 months ago');
+  assert.equal(age('2024-10-19T12:00:00Z', now), '2 years ago');
+  assert.equal(age('2027-01-01T00:00:00Z', now), 'just now', 'a date ahead of the clock is now');
+  assert.equal(age(null, now), '');
+  assert.equal(age('not a date', now), '');
+  assert.equal(isNew({ createdAt: '2026-10-13T00:00:00Z' }, now), true);
+  assert.equal(isNew({ createdAt: '2026-10-11T00:00:00Z' }, now), false);
+  assert.equal(isNew({}, now), false);
+});
+
+test('a milestone is due some time ago or in some time, with its date on hover', () => {
+  const now = Date.parse('2026-10-19T12:00:00Z');
+  assert.deepEqual(dueLabel('2026-10-14T00:00:00Z', now), { className: 'due overdue', textContent: 'due 5 days ago', title: 'due 2026-10-14' });
+  assert.deepEqual(dueLabel('2026-11-03T00:00:00Z', now), { className: 'due', textContent: 'due in 14 days', title: 'due 2026-11-03' });
+  assert.equal(dueLabel('2026-10-22T00:00:00Z', now).className, 'due soon');
+  assert.equal(dueLabel('2026-10-26T11:59:00Z', now).className, 'due soon', 'a minute inside the week');
+  assert.equal(dueLabel('2026-10-26T12:00:00Z', now).className, 'due', 'a week off is not soon');
+  assert.equal(dueLabel('2027-01-01T00:00:00Z', now).textContent, 'due in 2 months');
+  // GitHub sends a date as the start of that day: due today is not overdue
+  // until the day is over, however many hours past its dueOn. Today is this
+  // clock's, so the check is at local noon, true in any time zone.
+  const noon = new Date(2026, 9, 19, 12).getTime();
+  assert.deepEqual(dueLabel('2026-10-19T07:00:00Z', noon), { className: 'due soon', textContent: 'due today', title: 'due 2026-10-19' });
+  assert.equal(dueLabel('2026-10-18T07:00:00Z', noon).className, 'due overdue', 'yesterday\'s is');
 });
