@@ -12,7 +12,7 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import { WebSocket } from 'ws';
-import { server, sessionArgs, startedWith, missingVendor, keepPr, issueMove, pullMove } from '../server.js';
+import { server, sessionArgs, startedWith, missingVendor, keepPr, issueMove, pullMove, queuedRun } from '../server.js';
 import { grammars } from '../public/diff.js';
 import { VERSION } from '../cli.js';
 
@@ -318,6 +318,28 @@ test('/api/issue/milestone refuses an issue or a milestone the tab was not shown
   assert.throws(() => issueMove(listing, { number: 58, milestone: 'needed soon' }), { message: '"needed soon" is not an open milestone the Issues tab listed' });
   assert.throws(() => issueMove(listing, { number: 58, milestone: '--remove-milestone' }), { message: '"--remove-milestone" is not an open milestone the Issues tab listed' });
   assert.throws(() => issueMove(null, {}), { message: '#? is not an open issue the Issues tab listed' });
+});
+
+// The Pull requests tab's fresh read is queued: at most one runs, a call
+// while one waits shares it, and one mid-run gets a run of its own after.
+test('a queued run is shared while it waits, and run again for a call that arrives mid-run', async () => {
+  const runs = [];
+  const queued = queuedRun(() => new Promise((resolve, reject) => runs.push({ resolve, reject })));
+  const tick = () => new Promise((r) => setImmediate(r));
+  const first = queued();
+  await tick();
+  assert.equal(runs.length, 1);
+  const second = queued();
+  const third = queued();
+  assert.equal(second, third, 'two arriving mid-run share the next');
+  await tick();
+  assert.equal(runs.length, 1, 'and it waits for the one running');
+  runs[0].reject(new Error('gh failed'));
+  await assert.rejects(first, { message: 'gh failed' });
+  await tick();
+  assert.equal(runs.length, 2, 'a failure does not stop the next');
+  runs[1].resolve('listing');
+  assert.equal(await second, 'listing');
 });
 
 // The Pull requests tab's one write is held the same way, to the listing that

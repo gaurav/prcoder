@@ -324,7 +324,8 @@ const repaint = () => term.status(last
  * hundred issues with their bodies, on every visit to the tab. The Pull
  * requests tab's listing is seconds long on a repository with many open;
  * what it writes, `.prcoder/pulls.json`, is its own file, replaced whole by
- * a rename (writePulls).
+ * a rename (writePulls), and its fresh reads queue among themselves
+ * (freshPulls) rather than behind everything else.
  */
 const UNLOCKED = new Set(['GET /api/whoami', 'GET /api/status', 'POST /api/queue/ref', 'GET /api/issues', 'POST /api/pulls']);
 
@@ -347,6 +348,40 @@ let listing = null;
 // What the Pull requests tab was last shown (POST /api/pulls, from the cache
 // or GitHub), for the route that acts on one of its rows.
 let pulls = null;
+
+/**
+ * `fn` on a chain of its own, with poll()'s sharing: a call that arrives while
+ * one is waiting shares it, and one arriving mid-run waits for that run and
+ * then gets one of its own -- whatever it came to read may have changed since
+ * the running one started. At most one runs, which keeps a slow read from
+ * being repeated by every tab that asks, and two writes of its file apart.
+ * Exported for test/api.test.js.
+ */
+export const queuedRun = (fn) => {
+  let tail = Promise.resolve();
+  let waiting = null;
+  return () => (waiting ??= (tail = tail.catch(() => {}).then(() => {
+    waiting = null;
+    return fn();
+  })));
+};
+
+/**
+ * The Pull requests tab's fresh read: GitHub's listing, written to
+ * `.prcoder/pulls.json` and kept as `pulls`. Queued (queuedRun), not under the
+ * server's lock: two at once each paid for the seconds-long read and wrote
+ * the same temp file (writeJson's name is per process), which could leave it
+ * interleaved or fail the second rename.
+ */
+const freshPulls = queuedRun(async () => {
+  const { nameWithOwner } = await repoFacts();
+  const [owner, name] = nameWithOwner.split('/');
+  const got = await repoPulls(repo, owner, name);
+  const now = Date.now();
+  // A cache: a write that fails costs a read on the next start, not now.
+  await writePulls(repo, nameWithOwner, got, now).catch((e) => term.debug(`pulls.json not written: ${e.message}`));
+  return (pulls = { ...got, read: now });
+});
 
 /**
  * What /api/issue/milestone may do, from `listing`: `{ number, title }` for
@@ -455,17 +490,11 @@ const routes = {
    * tab's is. A read that fails throws: the tab keeps what it was showing.
    */
   'POST /api/pulls': async ({ fresh = false } = {}) => {
-    const { nameWithOwner } = await repoFacts();
     if (!fresh) {
-      const held = pulls ?? await readPulls(repo, nameWithOwner);
+      const held = pulls ?? await readPulls(repo, (await repoFacts()).nameWithOwner);
       if (held) return (pulls = held);
     }
-    const [owner, name] = nameWithOwner.split('/');
-    const got = await repoPulls(repo, owner, name);
-    const now = Date.now();
-    // A cache: a write that fails costs a read on the next start, not now.
-    await writePulls(repo, nameWithOwner, got, now).catch((e) => term.debug(`pulls.json not written: ${e.message}`));
-    return (pulls = { ...got, read: now });
+    return freshPulls();
   },
 
   /**
