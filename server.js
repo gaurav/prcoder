@@ -398,7 +398,8 @@ function heldMove(rows, milestones, what, tab, { number, milestone } = {}) {
   const row = rows?.find((r) => r.number === number);
   if (!row) throw new Error(`#${number ?? '?'} is not an open ${what} the ${tab} tab listed`);
   if (milestone == null) return { number: row.number, title: null };
-  const found = milestones.find((m) => m.title === milestone);
+  // A closed milestone is listed for the rows still on it, not as somewhere to move one.
+  const found = milestones?.find((m) => m.title === milestone && !m.closed);
   if (!found) throw new Error(`"${milestone}" is not an open milestone the ${tab} tab listed`);
   return { number: row.number, title: found.title };
 }

@@ -1592,6 +1592,17 @@ test('an open issue on a closed milestone has a group of its own, marked closed'
     total: 5, listed: 5 });
   assert.equal((await groupsOf(fresh))[1], 'm:9|v0.0 (1) due 1 month ago closed|open|1');
   assert.equal(await fresh.locator('[data-group="m:9"] .item .text').textContent(), 'Left over');
+  // Nothing is moved onto it: its line takes no drop, and in an opened row it
+  // is listed only for the row on it, and cannot be picked.
+  assert.equal(await dropRow(fresh, '[data-group="m:9"] summary', ISSUE_DRAG, 58), false, 'a closed milestone takes no drop');
+  await fresh.locator('[data-group="m:9"] .item .disclose').click();
+  const pick = fresh.locator('[data-group="m:9"] .issue-body select.milestone');
+  assert.equal(await pick.inputValue(), 'v0.0');
+  assert.equal(await pick.locator('option[value="v0.0"]').textContent(), 'v0.0 (closed)');
+  assert.equal(await pick.locator('option[value="v0.0"]').isDisabled(), true);
+  await fresh.locator('[data-group="m:none"] summary .count').click();
+  await fresh.locator('[data-group="m:none"] .item .disclose').click();
+  assert.equal(await fresh.locator('[data-group="m:none"] .issue-body select.milestone option[value="v0.0"]').count(), 0, 'and not offered to a row on another');
   await fresh.close();
 });
 

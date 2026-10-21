@@ -540,7 +540,8 @@ function issueGroups() {
     ];
     const list = byMilestone.get(m.number) ?? [];
     if (searching && !list.length) continue;
-    out.push(group(`m:${m.number}`, title, list, list.map((i) => issueRow(i)).flat(), extra, m.title));
+    // A closed milestone's group shows what is still on it, and takes no drop.
+    out.push(group(`m:${m.number}`, title, list, list.map((i) => issueRow(i)).flat(), extra, m.closed ? undefined : m.title));
   }
   const none = byMilestone.get(NONE) ?? [];
   if (!searching || none.length) out.push(group(`m:${NONE}`, 'No milestone', none, none.map((i) => issueRow(i)).flat(), [], null));
@@ -549,6 +550,21 @@ function issueGroups() {
     out.push(h('p', { className: 'pr-note' }, `The ${listing.listed} most recently updated of ${listing.total} open issues.`));
   }
   return out;
+}
+
+/**
+ * An opened row's milestone select: none, and every open milestone in rank.
+ * A closed one is listed only to show that the row is on it, and cannot be
+ * picked -- the server refuses a move onto it (heldMove) -- as a closed
+ * group's line is not somewhere to drop a row.
+ */
+function milestonePick(milestones, current, ariaLabel, onPick) {
+  const pick = h('select', { className: 'milestone', ariaLabel },
+    h('option', { value: '' }, 'No milestone'),
+    ...rankMilestones(milestones).filter((m) => !m.closed || m.number === current).map((m) => h('option',
+      { value: m.title, selected: m.number === current, disabled: !!m.closed }, m.closed ? `${m.title} (closed)` : m.title)));
+  pick.onchange = () => onPick(pick.value || null);
+  return pick;
 }
 
 /**
@@ -649,10 +665,7 @@ function issueRow(i, { repo = null, kind = 'issue', closed = false, text = i.tit
   const home = deps.home?.();
   const where = home ? { repo: `https://github.com/${home}`, ref: 'HEAD' } : null;
   // The keyboard's way to the drag's move: every open milestone, and none.
-  const pick = h('select', { className: 'milestone', ariaLabel: `milestone of #${i.number}` },
-    h('option', { value: '' }, 'No milestone'),
-    ...rankMilestones(listing.milestones).map((m) => h('option', { value: m.title, selected: m.number === i.milestone }, m.title)));
-  pick.onchange = () => move(i.number, pick.value || null);
+  const pick = milestonePick(listing.milestones, i.milestone, `milestone of #${i.number}`, (m) => move(i.number, m));
   const body = h('li', { className: 'issue-body md' },
     ...(i.body ? blocks(i.body).map((b) => blockNode(b, null, where)) : [h('p', { className: 'empty' }, 'No description.')]),
     h('div', { className: 'issue-ways' }, pick, ext(i.url, 'Open on GitHub', { className: 'primary open-issue' })));
@@ -826,7 +839,7 @@ function pullGroups() {
         title: [title, ' ', h('span', { className: 'count' }, `(${list.length})`), ...extra.flatMap((e) => [' ', e])],
         ...state(key, list),
       }, list.length ? [h('ul', { className: 'items' }, ...list.map((p) => pullRow(p)).flat())] : [h('p', { className: 'empty' }, 'no open pull requests')]);
-      dropTarget(d.querySelector('summary'), target, PULL, movePull);
+      if (target !== undefined) dropTarget(d.querySelector('summary'), target, PULL, movePull);
       return d;
     };
     for (const m of ranked) {
@@ -836,7 +849,7 @@ function pullGroups() {
         // Listed only because an open pull request is still on it (repoPulls).
         ...(m.closed ? [h('span', { className: 'closed-milestone', title: 'closed on GitHub, with open pull requests still on it' }, 'closed')] : []),
       ];
-      out.push(group(`p:${m.number}`, title, byMilestone.get(m.number) ?? [], extra, m.title));
+      out.push(group(`p:${m.number}`, title, byMilestone.get(m.number) ?? [], extra, m.closed ? undefined : m.title));
     }
     out.push(group(`p:${NONE}`, 'No milestone', byMilestone.get(NONE) ?? [], [], null));
   }
@@ -977,10 +990,7 @@ function pullRow(p, depth = 0) {
   row.addEventListener('dragstart', (e) => { e.dataTransfer.setData(PULL, String(p.number)); row.classList.add('dragging'); });
   row.addEventListener('dragend', () => row.classList.remove('dragging'));
   if (!open) return [row];
-  const pick = h('select', { className: 'milestone', ariaLabel: `milestone of pull request #${p.number}` },
-    h('option', { value: '' }, 'No milestone'),
-    ...rankMilestones(pullsListing.milestones).map((m) => h('option', { value: m.title, selected: m.number === p.milestone }, m.title)));
-  pick.onchange = () => movePull(p.number, pick.value || null);
+  const pick = milestonePick(pullsListing.milestones, p.milestone, `milestone of pull request #${p.number}`, (m) => movePull(p.number, m));
   const body = h('li', { className: 'issue-body md', style: `--depth:${depth}` },
     h('div', { className: 'issue-ways' }, pick, go(), ext(p.url, 'Open on GitHub', { className: 'primary open-issue' })));
   return [row, body];
