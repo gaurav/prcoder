@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { rollup, linkedIssues, linksFrom, parsePrUrl, run, issueNumber, lf, setViewed, listPrs, loadPr, prHeads, branchPrs, lookupPrs, ownPrs, SEARCH_EVERY, UNREAD_FOR, pickPr, lookupRef, createIssue, repoIssues } from '../github.js';
+import { rollup, linkedIssues, linksFrom, parsePrUrl, run, issueNumber, lf, setViewed, listPrs, loadPr, prHeads, branchPrs, lookupPrs, ownPrs, SEARCH_EVERY, UNREAD_FOR, pickPr, lookupRef, createIssue, repoIssues, setMilestone, repoMilestones } from '../github.js';
 import { taskLines } from '../public/tasks.js';
 import { withGh, ghArgs, ghCalls, unix } from './stub-gh.js';
 
@@ -458,6 +458,41 @@ test('a PR with more than 100 files lists every one of them', { skip: unix }, as
       assert.ok(!fields.includes(f), `gh pr view is not asked for ${f}: prFiles reads it`);
     }
   });
+});
+
+// The milestone reaches the page as the head's chip needs it -- number, title
+// and due date, the title rid of control characters as the Issues tab's are --
+// and not its description, which every poll would carry to every tab.
+test('a PR\'s milestone is its number, title and due date, or null', { skip: unix }, async () => {
+  const milestone = { number: 1, title: 'v1.0\x1b[31m', description: 'A long one.', dueOn: '2026-10-14T00:00:00Z' };
+  await withPr({ ...view, milestone }, [page([file(1)], null)], async () => {
+    const pr = await loadPr(os.tmpdir(), undefined, { pause: 0 });
+    assert.deepEqual(pr.milestone, { number: 1, title: 'v1.0 [31m', dueOn: '2026-10-14T00:00:00Z' });
+  });
+  await withPr(view, [page([file(1)], null)], async () => {
+    assert.equal((await loadPr(os.tmpdir(), undefined, { pause: 0 })).milestone, null);
+  });
+});
+
+// A milestone goes as -F, the one value here that must: GitHub refuses
+// `"4"` and `"null"` as strings. GitHub's answer is the issue, with the
+// milestone in REST's spelling (`due_on`), read back as the pane carries one.
+test('a pull request is put on a milestone by number, and taken off with null', { skip: unix }, async () => {
+  const answer = { number: 168, milestone: { number: 4, title: 'Needed soon', due_on: '2026-11-01T00:00:00Z', description: 'x' } };
+  const { out, calls } = await ghCalls(`echo '${JSON.stringify(answer)}'`, () => setMilestone(os.tmpdir(), 'https://github.com/o/r/pull/168', 4));
+  assert.deepEqual(calls[0], ['api', '-X', 'PATCH', 'repos/o/r/issues/168', '-F', 'milestone=4']);
+  assert.deepEqual(out, { number: 4, title: 'Needed soon', dueOn: '2026-11-01T00:00:00Z' });
+  const off = await ghCalls(`echo '{"number":168,"milestone":null}'`, () => setMilestone(os.tmpdir(), 'https://github.com/o/r/pull/168', null));
+  assert.deepEqual(off.calls[0].slice(-2), ['-F', 'milestone=null']);
+  assert.equal(off.out, null);
+});
+
+test('a repository\'s open milestones are their numbers, titles and due dates', { skip: unix }, async () => {
+  const answer = { data: { repository: { milestones: { nodes: [
+    { number: 1, title: 'v1.0', dueOn: '2026-10-14T00:00:00Z' }, { number: 4, title: 'Needed\u001bsoon', dueOn: null }] } } } };
+  const { out, calls } = await ghCalls(`cat <<'JSON'\n${JSON.stringify(answer)}\nJSON`, () => repoMilestones(os.tmpdir(), '123', 'r'));
+  assert.deepEqual(out, [{ number: 1, title: 'v1.0', dueOn: '2026-10-14T00:00:00Z' }, { number: 4, title: 'Needed soon', dueOn: null }]);
+  assert.equal(calls[0][calls[0].indexOf('owner=123') - 1], '-f', 'an all-digit owner is a string');
 });
 
 // The linked issues are read alongside the files, on GraphQL as well: a

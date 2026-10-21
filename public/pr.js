@@ -1,7 +1,7 @@
 import { withoutHtml, mention, repoUrl, urlPath, blocks, sectionize } from './tasks.js';
 import { kids, h, btn, ext, debug, tabBtn, writeThrough, fraction, mark, kept, fold } from './ui.js';
 import { fileTree, fileGroup, filesProgress, unlisted } from './filelist.js';
-import { refLabel } from './items.js';
+import { refLabel, rankMilestones, dueLabel } from './items.js';
 
 // Re-exported for the tests, which read the pane's view of a body through here.
 export { withoutHtml };
@@ -751,6 +751,7 @@ function renderPrHead(pr, parsed, handlers) {
     // `pr-links` carries no style of its own -- it is the hook tools/browser.mjs
     // measures the row by, so it is not dead CSS to clean up.
     links: linkRow(ways.links, 'meta pr-ways pr-links', ways.repo),
+    milestone: milestoneRow(pr, handlers),
     state: h('div', { className: 'meta pr-state' },
       badge(state, state),
       h('span', {}, `${arrow.head} → ${arrow.base}`, under ? ' (' : null,
@@ -776,18 +777,103 @@ function renderPrHead(pr, parsed, handlers) {
 }
 
 /**
+ * The milestone picker's options: none first, then the repository's open
+ * milestones in the order the Issues tab groups them (rankMilestones), so the
+ * dated ones come soonest first. Each is its title alone, with its due date
+ * as `title`, the option's tooltip: in the text it was said twice on the line
+ * once picked, beside the due date after the picker, and took the width a
+ * long title needs. The pull request's own milestone is
+ * always among them, last when the list lacks it -- closed, past the fifty
+ * read, or no list yet (`list` is null until the page has one) -- so the
+ * picker can show where the pull request is whatever was read.
+ *
+ * "None" says the pull request wants triage while it is on none, since that
+ * is the state it should not be left in; once it is on one, picking none is
+ * taking it off, and says so plainly.
+ */
+export const milestoneChoices = (current, list) => {
+  const open = rankMilestones(list ?? []);
+  const all = current && !open.some((m) => m.number === current.number) ? [...open, current] : open;
+  return [
+    { value: '', text: current ? 'no milestone' : 'no milestone — needs triage' },
+    ...all.map((m) => ({ value: String(m.number), text: m.title, ...(m.dueOn ? { title: `due ${m.dueOn.slice(0, 10)}` } : {}) })),
+  ];
+};
+
+/**
+ * The milestone line, between the links and the state: which milestone the
+ * pull request is on, as a picker that moves it to another or off them.
+ *
+ * Drawn on every pull request, on a milestone or not. One on none is the one
+ * that needs a decision, so the line is there to say so -- in the warning
+ * colour (`.untriaged`) -- and to make it, rather than appearing only once
+ * the decision is made on GitHub. It was a chip at the end of the links row
+ * to begin with, which said nothing on a pull request with no milestone and
+ * had nowhere to put a picker. A line of its own also gives a long title room
+ * without wrapping the links.
+ *
+ * The word in front links to the milestone on GitHub while there is one, and
+ * a dated milestone has its due date after the picker as the queue's
+ * milestone lines say it (dueLabel): `due in 3 days`, yellow within a week,
+ * a red badge once past, the date on hover. The picker takes the rest of the
+ * line, so a long title has the room before it ellipsizes. The
+ * options are milestoneChoices over `handlers.milestones`, which app.js reads
+ * when the pull request's repository changes and again as the pointer or the
+ * focus reaches the picker (`onMilestoneReach`), as the switcher's list is. A
+ * pick goes to `onMilestone` with the number, or null for none; the picker
+ * gives up the focus as it does, so the head repaints from the answer rather
+ * than holding for a blur (paintHead).
+ */
+const milestoneRow = (pr, { milestones = null, onMilestone, onMilestoneReach } = {}) => {
+  const m = pr.milestone;
+  const sel = h('select', {
+    ariaLabel: 'milestone', disabled: !onMilestone,
+    title: m ? 'move this pull request to another milestone' : 'not on a milestone: pick one to triage it',
+  }, ...milestoneChoices(m, milestones).map((c) => h('option', { value: c.value, ...(c.title ? { title: c.title } : {}) }, c.text)));
+  sel.value = m ? String(m.number) : '';
+  sel.onchange = () => {
+    const number = sel.value ? Number(sel.value) : null;
+    sel.blur();
+    sel.disabled = true;
+    onMilestone(number);
+  };
+  sel.onpointerenter = () => onMilestoneReach?.();
+  sel.onfocus = () => onMilestoneReach?.();
+  return h('div', { className: `meta pr-milestone${m ? '' : ' untriaged'}` },
+    m ? ext(`${linkBase(pr).repo}/milestone/${m.number}`, 'milestone', { title: `${m.title} on GitHub` })
+      : h('span', {}, 'milestone'),
+    sel,
+    m?.dueOn ? h('span', dueLabel(m.dueOn)) : null);
+};
+
+/**
  * The head, top to bottom, in the order it is read: what this is, the way to
- * it on GitHub with the lists beside it and the repository they are in,
- * whether it is open, and what it changes. Rearranging the head is reordering
- * this.
+ * it on GitHub with the lists beside it and the repository they are in, the
+ * milestone it is on, whether it is open, and what it changes. Rearranging
+ * the head is reordering this.
  *
  * Both views of the pane draw their head through it. The one with no pull
- * request has no state or tabs, and those rows fall out.
+ * request has no milestone, state or tabs, and those rows fall out.
  */
-const HEAD_ORDER = ['title', 'note', 'links', 'state', 'tabs'];
+const HEAD_ORDER = ['title', 'note', 'links', 'milestone', 'state', 'tabs'];
 
-const paintHead = (rows) =>
-  document.getElementById('pr-head').replaceChildren(...kids(HEAD_ORDER.map((k) => rows[k])));
+/**
+ * Held while the milestone picker has the focus, the one sign a page gets
+ * that its dropdown may be open: a poll or a list of milestones landing then
+ * would replace it under the open dropdown and close it. The head is painted
+ * as the picker loses the focus, from the rows of the last call -- each call
+ * here replaces the one before -- as the switcher's options are held
+ * (renderHeader).
+ */
+const paintHead = (rows) => {
+  const head = document.getElementById('pr-head');
+  const held = head.querySelector('.pr-milestone select');
+  if (held && document.activeElement === held) {
+    held.onblur = () => paintHead(rows);
+    return;
+  }
+  head.replaceChildren(...kids(HEAD_ORDER.map((k) => rows[k])));
+};
 
 /**
  * The count each tab carries is what it can tell you while you are on the other

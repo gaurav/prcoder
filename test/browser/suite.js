@@ -149,6 +149,11 @@ const withLong = (st) => ({ ...st, pr: { ...st.pr, files: [...files, fileRow('lo
 // What /api/issues answers for a repository with nothing: the Issues tab is
 // always there, so every page gets this unless a test routes its own.
 const EMPTY_ISSUES = { milestones: [], issues: [], total: 0, listed: 0, repo: 'heal-data-stewards/heal-vlmd-AI-pipeline', mentions: [] };
+// What /api/milestones answers: the repository's open ones, in GitHub's order,
+// which the picker ranks.
+const MILESTONES = { repo: 'heal-data-stewards/heal-vlmd-AI-pipeline', milestones: [
+  { number: 3, title: 'Not urgent', dueOn: null }, { number: 4, title: 'Needed soon', dueOn: null },
+  { number: 1, title: 'v1.0', dueOn: '2026-11-01T00:00:00Z' }] };
 
 let browser;
 let page;
@@ -194,6 +199,14 @@ async function newPage({ prs = [], st = status, ready = '#pr-head .pr-title', be
   });
   await p.route('**/api/queue', (r) => r.fulfill({ json: [] }));
   await p.route('**/api/issues', (r) => r.fulfill({ json: EMPTY_ISSUES }));
+  await p.route('**/api/milestones', (r) => r.fulfill({ json: MILESTONES }));
+  // Answers with the milestone picked, as GitHub would have it, and keeps
+  // what was asked on the page for a test to read.
+  await p.route('**/api/pr/milestone', (r) => {
+    const asked = r.request().postDataJSON();
+    (p.milestonePicks ??= []).push(asked);
+    return r.fulfill({ json: { milestone: MILESTONES.milestones.find((m) => m.number === asked.number) ?? null } });
+  });
   await p.route('**/api/pr/viewed', (r) => r.fulfill({ json: { ok: true } }));
   await p.route('**/api/diff', (r) => {
     const { path } = r.request().postDataJSON();
@@ -431,6 +444,108 @@ test('a short repository shares the row with the four links', { skip }, async ()
   const mid = (sel) => p.$eval(sel, (el) => { const b = el.getBoundingClientRect(); return Math.round(b.top + b.height / 2); });
   assert.equal(await p.locator('#pr-head .pr-repo').textContent(), 'o/r');
   assert.equal(await mid('#pr-head .pr-repo'), await mid('#pr-head .pr-links a:not(.primary)'));
+  await p.close();
+});
+
+// Every pull request has a milestone line, above the state, since one on no
+// milestone is the one that needs triaging -- in the warning colour then --
+// and the line is a picker of the repository's open milestones, ranked as the
+// Issues tab groups them, with none first.
+test('the milestone line is above the state, and asks for triage on no milestone', { skip }, async () => {
+  const rows = await page.$$eval('#pr-head > *', (rs) => rs.map((r) => r.className));
+  assert.equal(rows.indexOf('meta pr-milestone untriaged') + 1, rows.indexOf('meta pr-state'), rows.join(' | '));
+  const sel = page.locator('#pr-head .pr-milestone select');
+  await page.waitForFunction(() => document.querySelectorAll('#pr-head .pr-milestone option').length > 1);
+  assert.equal(await sel.inputValue(), '');
+  assert.deepEqual(await sel.locator('option').allTextContents(),
+    ['no milestone — needs triage', 'v1.0', 'Needed soon', 'Not urgent']);
+  assert.equal(await sel.locator('option[value="1"]').getAttribute('title'), 'due 2026-11-01');
+  assert.equal(await page.locator('#pr-head .pr-milestone a').count(), 0, 'nothing on GitHub to link to');
+  const [warn, colour] = await page.$eval('#pr-head .pr-milestone select', (s) =>
+    [getComputedStyle(document.documentElement).getPropertyValue('--warn').trim(), getComputedStyle(s).color]);
+  assert.equal(colour, await page.evaluate((c) => { const d = document.createElement('i'); d.style.color = c; document.body.append(d);
+    const out = getComputedStyle(d).color; d.remove(); return out; }, warn));
+});
+
+test('a pull request on a milestone shows it picked, linked, and its own even when the list lacks it', { skip }, async () => {
+  const p = await newPage({ st: { ...status, pr: { ...pr, milestone: { number: 7, title: 'v0.1', dueOn: null } } } });
+  await p.waitForFunction(() => document.querySelectorAll('#pr-head .pr-milestone option').length > 2);
+  const sel = p.locator('#pr-head .pr-milestone select');
+  assert.equal(await sel.inputValue(), '7');
+  assert.deepEqual(await sel.locator('option').allTextContents(),
+    ['no milestone', 'v1.0', 'Needed soon', 'Not urgent', 'v0.1']);
+  assert.equal(await p.locator('#pr-head .pr-milestone').getAttribute('class'), 'meta pr-milestone');
+  assert.equal(await p.locator('#pr-head .pr-milestone a').getAttribute('href'), `${REPO}/milestone/7`);
+  assert.equal(await p.locator('#pr-head .pr-milestone .due').count(), 0, 'an undated milestone has no due date');
+  await p.close();
+});
+
+// A dated milestone says when it is due after the picker, as the queue's
+// milestone lines do, and the picker takes the line's width up to it: the
+// word, the picker and the due date end to end, nothing left over.
+test('a dated milestone says when it is due after the picker, which takes the rest of the line', { skip }, async () => {
+  const p = await newPage({ st: { ...status, pr: { ...pr, milestone: { number: 2, title: 'v0.1', dueOn: '2020-01-01T00:00:00Z' } } } });
+  const due = p.locator('#pr-head .pr-milestone > .due');
+  assert.equal(await due.getAttribute('class'), 'due overdue');
+  assert.match(await due.textContent(), /^due \d+ years ago$/);
+  assert.equal(await due.getAttribute('title'), 'due 2020-01-01');
+  assert.equal(await p.locator('#pr-head .pr-milestone > :last-child').getAttribute('class'), 'due overdue', 'after the picker');
+  const [line, used] = await p.$eval('#pr-head .pr-milestone', (l) => {
+    const gap = parseFloat(getComputedStyle(l).columnGap);
+    return [l.clientWidth, [...l.children].reduce((w, k) => w + k.getBoundingClientRect().width, 0) + gap * (l.children.length - 1)];
+  });
+  assert.ok(Math.abs(line - used) < 2, `the picker fills the line: ${used} of ${line}px`);
+  await p.close();
+});
+
+// A pick names the pull request it was made on, and the line is redrawn from
+// GitHub's answer, out of the warning colour, without waiting for a poll.
+test('picking a milestone sends it with the pull request, and the line takes the answer', { skip }, async () => {
+  const p = await newPage();
+  await p.waitForFunction(() => document.querySelectorAll('#pr-head .pr-milestone option').length > 1);
+  await p.locator('#pr-head .pr-milestone select').selectOption('4');
+  await p.waitForSelector('#pr-head .pr-milestone:not(.untriaged) a');
+  assert.deepEqual(p.milestonePicks, [{ url: pr.url, number: 4 }]);
+  assert.equal(await p.locator('#pr-head .pr-milestone select').inputValue(), '4');
+  assert.equal(await p.locator('#pr-head .pr-milestone a').getAttribute('href'), `${REPO}/milestone/4`);
+  await p.locator('#pr-head .pr-milestone select').selectOption('');
+  await p.waitForSelector('#pr-head .pr-milestone.untriaged');
+  assert.deepEqual(p.milestonePicks.at(-1), { url: pr.url, number: null });
+  await p.close();
+});
+
+// A pick GitHub refuses is a toast with its reason, and the picker goes back
+// to where the pull request still is rather than showing a pick that never
+// happened.
+test('a refused milestone pick says why and puts the picker back', { skip }, async () => {
+  const p = await newPage();
+  await p.route('**/api/pr/milestone', (r) => r.fulfill({ status: 500, json: { error: 'gh: Validation Failed (HTTP 422)' } }));
+  await p.waitForFunction(() => document.querySelectorAll('#pr-head .pr-milestone option').length > 1);
+  await p.locator('#pr-head .pr-milestone select').selectOption('4');
+  await p.locator('#toast.bad', { hasText: 'Validation Failed' }).waitFor();
+  await p.waitForSelector('#pr-head .pr-milestone.untriaged select:not(:disabled)');
+  assert.equal(await p.locator('#pr-head .pr-milestone select').inputValue(), '');
+  await p.close();
+});
+
+// The head is redrawn whole on a poll that changes anything, and a new picker
+// in place of one with its dropdown open closes the dropdown. So the head
+// waits while the picker has the focus, and catches up as it loses it.
+test('a poll that lands while the milestone picker has the focus waits for it to lose it', { skip }, async () => {
+  const p = await newPage({ clock: true });
+  await p.waitForFunction(() => document.querySelectorAll('#pr-head .pr-milestone option').length > 1);
+  await p.route('**/api/status', (r) => r.fulfill({ json: { ...status, pr: { ...pr, title: 'Retitled on GitHub', updatedAt: '2026-09-20T00:00:00Z' } } }));
+  await p.focus('#pr-head .pr-milestone select');
+  await p.evaluate(() => { document.querySelector('#pr-head .pr-milestone select').dataset.marked = '1'; });
+  const polled = p.waitForResponse('**/api/status');
+  await p.clock.fastForward(61_000);
+  await polled;
+  await p.waitForTimeout(200);
+  assert.equal(await p.locator('#pr-head .pr-title').textContent(), pr.title, 'held');
+  assert.equal(await p.locator('#pr-head .pr-milestone select[data-marked]').count(), 1, 'the same picker');
+  await p.evaluate(() => document.activeElement.blur());
+  await p.locator('#pr-head .pr-title', { hasText: 'Retitled on GitHub' }).waitFor();
+  assert.equal(await p.locator('#pr-head .pr-milestone select[data-marked]').count(), 0);
   await p.close();
 });
 

@@ -44,7 +44,8 @@ goes through the same coercion the page's writes do; whether Claude should get a
 into prcoder is [#21](https://github.com/gaurav/prcoder/issues/21)'s question.
 
 **What else reaches GitHub, and only on a click:** ◎ files an item as a new issue, a file's checkbox
-marks it viewed, and creating a pull request pushes the branch and opens GitHub's compare page. None
+marks it viewed, the PR pane's milestone picker moves the pull request to another milestone, and
+creating a pull request pushes the branch and opens GitHub's compare page. None
 of them writes a description.
 
 **Each permanent source is a tab, read straight from it.** PR is the description's checklist, and
@@ -55,8 +56,9 @@ project's. Issues began as only the issues the description mentions, and grew on
 milestone in the order the owner's milestones mean, searchable, with each issue's body readable
 in place -- so that the next thing to do is picked with the issue read, and handed to the agent
 with its link, rather than built from memory. What it still is not is a tracker: nothing here
-edits an issue, and the groups are GitHub's milestones, not a list of prcoder's own. There is no
-milestone picker, because the ranking already says which group to open first. Quitting does not offer to file
+edits an issue, and the groups are GitHub's milestones, not a list of prcoder's own. The tab has no
+milestone picker, because the ranking already says which group to open first; the one picker is
+the PR pane's, for the pull request's own milestone. Quitting does not offer to file
 what is left on Local as issues: it prints the list, which is on disk anyway, and filing is ◎'s
 job, where you can see each item. FUTURE.md is not a source and
 will not be one (retired 2026-09-26): its items were all either done or already issues, and a

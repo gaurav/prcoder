@@ -3,7 +3,7 @@
 // and the status block share.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { TABS, counts, forClaude, refLabel, rankMilestones, issueMatches } from '../public/items.js';
+import { TABS, counts, forClaude, refLabel, rankMilestones, issueMatches, dueLabel } from '../public/items.js';
 import { stripFor } from '../public/queue.js';
 
 const item = (over = {}) => ({ text: 't', done: false, issue: null, deleted: false, ...over });
@@ -149,4 +149,20 @@ test('the issue search is case-blind over the number, title, labels and body', (
   assert.ok(!issueMatches(i, '#59'));
   assert.ok(!issueMatches(i, 'nothing like this'));
   assert.ok(issueMatches({ number: 1 }, '#1'), 'an issue with nothing but a number');
+});
+
+test('a milestone is due some time ago or in some time, with its date on hover', () => {
+  const now = Date.parse('2026-10-19T12:00:00Z');
+  assert.deepEqual(dueLabel('2026-10-14T00:00:00Z', now), { className: 'due overdue', textContent: 'due 5 days ago', title: 'due 2026-10-14' });
+  assert.deepEqual(dueLabel('2026-11-03T00:00:00Z', now), { className: 'due', textContent: 'due in 14 days', title: 'due 2026-11-03' });
+  assert.equal(dueLabel('2026-10-22T00:00:00Z', now).className, 'due soon');
+  assert.equal(dueLabel('2026-10-26T11:59:00Z', now).className, 'due soon', 'a minute inside the week');
+  assert.equal(dueLabel('2026-10-26T12:00:00Z', now).className, 'due', 'a week off is not soon');
+  assert.equal(dueLabel('2027-01-01T00:00:00Z', now).textContent, 'due in 2 months');
+  // GitHub sends a date as the start of that day: due today is not overdue
+  // until the day is over, however many hours past its dueOn. Today is this
+  // clock's, so the check is at local noon, true in any time zone.
+  const noon = new Date(2026, 9, 19, 12).getTime();
+  assert.deepEqual(dueLabel('2026-10-19T07:00:00Z', noon), { className: 'due soon', textContent: 'due today', title: 'due 2026-10-19' });
+  assert.equal(dueLabel('2026-10-18T07:00:00Z', noon).className, 'due overdue', 'yesterday\'s is');
 });

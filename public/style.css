@@ -484,6 +484,31 @@ a { color: var(--accent); }
 .meta { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; color: var(--dim); font-size: 12px; margin-bottom: 8px; }
 .add { color: var(--add); } .del { color: var(--del); }
 
+/* The milestone line: the word, the picker, and a dated milestone's due date.
+   The picker takes the rest of the line, so a long title ellipsizes rather
+   than wrapping under the word, and the due date keeps its width after it --
+   until the picker would be under 10em, where the due date goes onto a line
+   of its own instead: at a 240px pane it squeezed the picker to `PR…`.
+   Drawn like the switcher's select in the pane's header, at the line's own
+   12px. On no milestone the line is in the warning colour, picker and all,
+   since that pull request is waiting to be triaged. The due date's colours
+   are the queue's milestone lines' (dueLabel): yellow within a week, and past
+   it the round red badge of `.badge.fail`. */
+.pr-milestone { flex-wrap: wrap; }
+.pr-milestone a { color: inherit; }
+.pr-milestone .due { flex: none; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.pr-milestone .due.soon { color: var(--warn); }
+.pr-milestone .due.overdue { color: var(--fail); background: #4d1f24; padding: 0 6px; border-radius: 9px; }
+.pr-milestone select {
+  flex: 1 1 10em; min-width: 0; padding: 1px 4px; font: inherit;
+  color: var(--dim); background: var(--bg); border: 1px solid var(--line); border-radius: 4px;
+  text-overflow: ellipsis;
+}
+.pr-milestone select:hover:not(:disabled) { color: var(--fg); }
+.pr-milestone select:disabled { opacity: .5; cursor: progress; }
+.pr-milestone.untriaged, .pr-milestone.untriaged select { color: var(--warn); }
+.pr-milestone.untriaged select { border-color: color-mix(in srgb, var(--warn) 50%, transparent); }
+
 .badge { padding: 1px 6px; border-radius: 9px; background: var(--line); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; }
 .badge.open { background: #1f4d2e; color: #9ae6b4; }
 .badge.merged { background: #3d2a56; color: #d0b0f5; }
