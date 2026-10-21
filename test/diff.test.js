@@ -86,6 +86,18 @@ test('a name with no extension is no language', () => {
   assert.equal(language('src/json'), null);
 });
 
+// Snakemake's files are Python to the highlighter: by extension, `.smk` and
+// Babel's `.snakefile`, and by whole name, the `Snakefile` Snakemake looks for.
+// Only that whole name: a name that merely ends in it is no language.
+test('a Snakemake file is coloured as Python', () => {
+  assert.equal(language('Snakefile'), 'python');
+  assert.equal(language('workflow/snakefile'), 'python');
+  assert.equal(language('src/snakefiles/gene.snakefile'), 'python');
+  assert.equal(language('workflow/rules/align.smk'), 'python');
+  assert.equal(language('OldSnakefile'), null);
+  assert.equal(language('Snakefile.bak'), null);
+});
+
 // What server.js builds the Prism half of its vendor map from, derived from the
 // map above rather than written out beside it. Two things hold it together:
 // what core already carries is not asked for as a file of its own, and a
