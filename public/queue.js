@@ -869,9 +869,23 @@ const wordClass = (w) => w.toLowerCase().replace(/[^a-z]+/g, '-').replace(/^-|-$
 /**
  * What a listed pull request is built on (stackUnder in pr.js), for its row and
  * the search alike. Asking git about a bare base is the row's to do (onBelow),
- * so this only reads.
+ * so this only reads. Kept per pull request until the listing, git's answers
+ * or the default branch change: the search asks for every row on each
+ * keystroke, two or three times over (the count, the groups), and each
+ * stackUnder walks the list at every step down.
  */
-const underOf = (p) => stackUnder({ pr: p }, pullsListing.pulls, deps.below?.() ?? [], deps.defaultBranch?.());
+let unders = null;
+function underOf(p) {
+  const pulls = pullsListing.pulls;
+  const below = deps.below?.() ?? [];
+  const def = deps.defaultBranch?.();
+  if (!unders || unders.pulls !== pulls || unders.def !== def
+    || unders.below.length !== below.length || unders.below.some((b, i) => b !== below[i])) {
+    unders = { pulls, below, def, by: new Map() };
+  }
+  if (!unders.by.has(p.number)) unders.by.set(p.number, stackUnder({ pr: p }, pulls, below, def));
+  return unders.by.get(p.number);
+}
 
 /**
  * The word a row shows for its state, and its class. GitHub's `ready` is
