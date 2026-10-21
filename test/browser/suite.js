@@ -514,6 +514,20 @@ test('picking a milestone sends it with the pull request, and the line takes the
   await p.close();
 });
 
+// A pick GitHub refuses is a toast with its reason, and the picker goes back
+// to where the pull request still is rather than showing a pick that never
+// happened.
+test('a refused milestone pick says why and puts the picker back', { skip }, async () => {
+  const p = await newPage();
+  await p.route('**/api/pr/milestone', (r) => r.fulfill({ status: 500, json: { error: 'gh: Validation Failed (HTTP 422)' } }));
+  await p.waitForFunction(() => document.querySelectorAll('#pr-head .pr-milestone option').length > 1);
+  await p.locator('#pr-head .pr-milestone select').selectOption('4');
+  await p.locator('#toast.bad', { hasText: 'Validation Failed' }).waitFor();
+  await p.waitForSelector('#pr-head .pr-milestone.untriaged select:not(:disabled)');
+  assert.equal(await p.locator('#pr-head .pr-milestone select').inputValue(), '');
+  await p.close();
+});
+
 // The head is redrawn whole on a poll that changes anything, and a new picker
 // in place of one with its dropdown open closes the dropdown. So the head
 // waits while the picker has the focus, and catches up as it loses it.
