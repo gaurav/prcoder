@@ -2050,6 +2050,34 @@ test('a ready pull request built on another reads `stacked (N)`, and the search 
   await fresh.close();
 });
 
+// A move made while a read is out: that read was sent before the write, so
+// another follows it rather than the move being dropped (until 2026-10-21 the
+// row sat in its old group until the next ⟳).
+test('a move made while the pull requests are being read is read again after', { skip }, async () => {
+  const { fresh } = await pullsPage(PULLS, { stale: false });
+  let release;
+  const held = new Promise((r) => { release = r; });
+  const reads = [];
+  await fresh.route('**/api/pulls', async (r) => {
+    reads.push(r.request().postDataJSON().fresh);
+    if (reads.length === 1) await held;
+    return r.fulfill({ json: { ...PULLS, read: NOW } });
+  });
+  await fresh.route('**/api/pull/milestone', (r) => r.fulfill({ json: { ok: true } }));
+  await fresh.locator('#queue-body .pull-reload').click();
+  await fresh.waitForFunction(() => document.querySelector('#queue-body .pull-note')?.textContent.includes('updating'));
+  await fresh.locator('[data-group="p:none"] summary .count').click();
+  await fresh.locator('.item[data-pull="30"] .disclose').click();
+  await fresh.locator('[data-group="p:none"] .issue-body select.milestone').selectOption('Needed soon');
+  await fresh.waitForTimeout(200);
+  assert.deepEqual(reads, [true], 'nothing new while the first is out');
+  release();
+  await fresh.waitForFunction(() => !document.querySelector('#queue-body .pull-note')?.textContent.includes('updating'));
+  await fresh.waitForTimeout(200);
+  assert.deepEqual(reads, [true, true], 'and one more after it');
+  await fresh.close();
+});
+
 test('a fresh listing is not read again within a minute, and ⟳ reads one whatever its age', { skip }, async () => {
   const { fresh, asked } = await pullsPage(PULLS, { stale: false });
   await fresh.waitForTimeout(200);

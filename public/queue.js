@@ -88,6 +88,8 @@ const seen = new Set();
 // groups and opened rows share the two sets above under keys of their own.
 let pullsListing = null;
 let pullsReading = false;
+// A forced read was asked for while one was out (loadPulls).
+let pullsStale = false;
 let pullQuery = '';
 let pullsSeeded = false;
 // Its order and grouping, remembered as the add-to arrow is (below).
@@ -716,7 +718,12 @@ async function move(number, milestone) {
  * lands, and stays if it does not; the note under the groups says which.
  */
 async function loadPulls(force = false) {
-  if (pullsReading) return;
+  // A forced read asked for during another -- a move, whose write that read
+  // was sent before -- runs once that one is in, as loadIssues's `again` does.
+  if (pullsReading) {
+    pullsStale ||= force;
+    return;
+  }
   pullsReading = true;
   try {
     if (!pullsListing) {
@@ -733,6 +740,10 @@ async function loadPulls(force = false) {
     pullsReading = false;
   }
   paintPulls();
+  if (pullsStale) {
+    pullsStale = false;
+    await loadPulls(true);
+  }
 }
 
 /**
