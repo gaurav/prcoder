@@ -458,7 +458,8 @@ test('the milestone line is above the state, and asks for triage on no milestone
   await page.waitForFunction(() => document.querySelectorAll('#pr-head .pr-milestone option').length > 1);
   assert.equal(await sel.inputValue(), '');
   assert.deepEqual(await sel.locator('option').allTextContents(),
-    ['no milestone — needs triage', 'v1.0 (due 2026-11-01)', 'Needed soon', 'Not urgent']);
+    ['no milestone — needs triage', 'v1.0', 'Needed soon', 'Not urgent']);
+  assert.equal(await sel.locator('option[value="1"]').getAttribute('title'), 'due 2026-11-01');
   assert.equal(await page.locator('#pr-head .pr-milestone a').count(), 0, 'nothing on GitHub to link to');
   const [warn, colour] = await page.$eval('#pr-head .pr-milestone select', (s) =>
     [getComputedStyle(document.documentElement).getPropertyValue('--warn').trim(), getComputedStyle(s).color]);
@@ -472,9 +473,28 @@ test('a pull request on a milestone shows it picked, linked, and its own even wh
   const sel = p.locator('#pr-head .pr-milestone select');
   assert.equal(await sel.inputValue(), '7');
   assert.deepEqual(await sel.locator('option').allTextContents(),
-    ['no milestone', 'v1.0 (due 2026-11-01)', 'Needed soon', 'Not urgent', 'v0.1']);
+    ['no milestone', 'v1.0', 'Needed soon', 'Not urgent', 'v0.1']);
   assert.equal(await p.locator('#pr-head .pr-milestone').getAttribute('class'), 'meta pr-milestone');
   assert.equal(await p.locator('#pr-head .pr-milestone a').getAttribute('href'), `${REPO}/milestone/7`);
+  assert.equal(await p.locator('#pr-head .pr-milestone .due').count(), 0, 'an undated milestone has no due date');
+  await p.close();
+});
+
+// A dated milestone says when it is due after the picker, as the queue's
+// milestone lines do, and the picker takes the line's width up to it: the
+// word, the picker and the due date end to end, nothing left over.
+test('a dated milestone says when it is due after the picker, which takes the rest of the line', { skip }, async () => {
+  const p = await newPage({ st: { ...status, pr: { ...pr, milestone: { number: 2, title: 'v0.1', dueOn: '2020-01-01T00:00:00Z' } } } });
+  const due = p.locator('#pr-head .pr-milestone > .due');
+  assert.equal(await due.getAttribute('class'), 'due overdue');
+  assert.match(await due.textContent(), /^due \d+ years ago$/);
+  assert.equal(await due.getAttribute('title'), 'due 2020-01-01');
+  assert.equal(await p.locator('#pr-head .pr-milestone > :last-child').getAttribute('class'), 'due overdue', 'after the picker');
+  const [line, used] = await p.$eval('#pr-head .pr-milestone', (l) => {
+    const gap = parseFloat(getComputedStyle(l).columnGap);
+    return [l.clientWidth, [...l.children].reduce((w, k) => w + k.getBoundingClientRect().width, 0) + gap * (l.children.length - 1)];
+  });
+  assert.ok(Math.abs(line - used) < 2, `the picker fills the line: ${used} of ${line}px`);
   await p.close();
 });
 

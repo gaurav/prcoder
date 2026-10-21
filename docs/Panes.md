@@ -137,11 +137,14 @@ and the chip is the one thing in the head that answers which checkout this is.
 
 The milestone has a line of its own, on every pull request, because one on no milestone is the one
 that needs something done: it still has to be triaged, so its line is in the warning colour and
-reads *no milestone — needs triage*. The line is a picker. It offers none, then the repository's
-open milestones in the order the queue's Issues tab groups them, each with its due date, and the
-pull request's own milestone even when that one is closed. Picking one puts the pull request on it
-on GitHub there and then, and picking none takes it off. The word *milestone* in front links to the
-milestone on GitHub while there is one. The list is read when the pull request's repository
+reads *no milestone — needs triage*. The line is a picker, as wide as the line leaves it. It offers
+none, then the repository's open milestones in the order the queue's Issues tab groups them, so the
+dated ones soonest first, and the pull request's own milestone even when that one is closed; each is
+its title, with its due date on hover where the browser shows an option's tooltip. Picking one puts
+the pull request on it on GitHub there and then, and picking none takes it off. The word *milestone*
+in front links to the milestone on GitHub while there is one, and a dated milestone says when it is
+due after the picker, as the queue's milestone lines do: *due in 3 days*, yellow within a week, a
+red badge once past, with the date on hover. The list is read when the pull request's repository
 changes and again as the pointer or the focus reaches the picker, so a milestone made on GitHub
 since is there to pick; a poll that lands while the picker has the focus waits until it loses it,
 so an open dropdown is not redrawn shut. It was a chip after the repository's to begin with, which

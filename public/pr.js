@@ -1,7 +1,7 @@
 import { withoutHtml, mention, repoUrl, urlPath, blocks, sectionize } from './tasks.js';
 import { kids, h, btn, ext, debug, tabBtn, writeThrough, fraction, mark, kept, fold } from './ui.js';
 import { fileTree, fileGroup, filesProgress, unlisted } from './filelist.js';
-import { refLabel, rankMilestones } from './items.js';
+import { refLabel, rankMilestones, dueLabel } from './items.js';
 
 // Re-exported for the tests, which read the pane's view of a body through here.
 export { withoutHtml };
@@ -778,8 +778,11 @@ function renderPrHead(pr, parsed, handlers) {
 
 /**
  * The milestone picker's options: none first, then the repository's open
- * milestones in the order the Issues tab groups them (rankMilestones), each
- * with its due date when it has one. The pull request's own milestone is
+ * milestones in the order the Issues tab groups them (rankMilestones), so the
+ * dated ones come soonest first. Each is its title alone, with its due date
+ * as `title`, the option's tooltip: in the text it was said twice on the line
+ * once picked, beside the due date after the picker, and took the width a
+ * long title needs. The pull request's own milestone is
  * always among them, last when the list lacks it -- closed, past the fifty
  * read, or no list yet (`list` is null until the page has one) -- so the
  * picker can show where the pull request is whatever was read.
@@ -793,7 +796,7 @@ export const milestoneChoices = (current, list) => {
   const all = current && !open.some((m) => m.number === current.number) ? [...open, current] : open;
   return [
     { value: '', text: current ? 'no milestone' : 'no milestone — needs triage' },
-    ...all.map((m) => ({ value: String(m.number), text: m.dueOn ? `${m.title} (due ${m.dueOn.slice(0, 10)})` : m.title })),
+    ...all.map((m) => ({ value: String(m.number), text: m.title, ...(m.dueOn ? { title: `due ${m.dueOn.slice(0, 10)}` } : {}) })),
   ];
 };
 
@@ -809,7 +812,11 @@ export const milestoneChoices = (current, list) => {
  * had nowhere to put a picker. A line of its own also gives a long title room
  * without wrapping the links.
  *
- * The word in front links to the milestone on GitHub while there is one. The
+ * The word in front links to the milestone on GitHub while there is one, and
+ * a dated milestone has its due date after the picker as the queue's
+ * milestone lines say it (dueLabel): `due in 3 days`, yellow within a week,
+ * a red badge once past, the date on hover. The picker takes the rest of the
+ * line, so a long title has the room before it ellipsizes. The
  * options are milestoneChoices over `handlers.milestones`, which app.js reads
  * when the pull request's repository changes and again as the pointer or the
  * focus reaches the picker (`onMilestoneReach`), as the switcher's list is. A
@@ -822,7 +829,7 @@ const milestoneRow = (pr, { milestones = null, onMilestone, onMilestoneReach } =
   const sel = h('select', {
     ariaLabel: 'milestone', disabled: !onMilestone,
     title: m ? 'move this pull request to another milestone' : 'not on a milestone: pick one to triage it',
-  }, ...milestoneChoices(m, milestones).map((c) => h('option', { value: c.value }, c.text)));
+  }, ...milestoneChoices(m, milestones).map((c) => h('option', { value: c.value, ...(c.title ? { title: c.title } : {}) }, c.text)));
   sel.value = m ? String(m.number) : '';
   sel.onchange = () => {
     const number = sel.value ? Number(sel.value) : null;
@@ -835,7 +842,8 @@ const milestoneRow = (pr, { milestones = null, onMilestone, onMilestoneReach } =
   return h('div', { className: `meta pr-milestone${m ? '' : ' untriaged'}` },
     m ? ext(`${linkBase(pr).repo}/milestone/${m.number}`, 'milestone', { title: `${m.title} on GitHub` })
       : h('span', {}, 'milestone'),
-    sel);
+    sel,
+    m?.dueOn ? h('span', dueLabel(m.dueOn)) : null);
 };
 
 /**

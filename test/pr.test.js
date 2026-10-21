@@ -665,7 +665,7 @@ test('the milestone picker offers none, the open milestones in rank, and the pul
     { number: 4, title: 'Needed soon', dueOn: null }];
   assert.deepEqual(milestoneChoices(null, list), [
     { value: '', text: 'no milestone — needs triage' },
-    { value: '1', text: 'v1.0 (due 2026-10-14)' },
+    { value: '1', text: 'v1.0', title: 'due 2026-10-14' },
     { value: '4', text: 'Needed soon' },
     { value: '3', text: 'Not urgent' },
   ]);
