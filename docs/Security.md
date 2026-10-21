@@ -161,7 +161,9 @@ A modified file's diff is not highlighted at all, and
   listing that tab was last shown, which may have come from `.prcoder/pulls.json` rather than
   GitHub -- so `readPulls` in `store.js` keeps a row only with an integer number and the whole of
   a pull request link in this repository, and a milestone only with an integer number and a string
-  title, before anything from the file can be held to (`test/store.test.js`).
+  title, before anything from the file can be held to (`test/store.test.js`). A row's other href,
+  each issue it closes, is kept only as the whole of a GitHub issue link (`closesOf`), so a
+  hand-edit cannot put a `javascript:` link in the tab.
 - **Text from GitHub** — descriptions, titles, issue bodies, file names — is built into the page with
   `h()` and text nodes. `innerHTML` only through `inline()`, and a new kind of link only through
   `target()`.
