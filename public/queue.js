@@ -220,8 +220,8 @@ let matched = { listing: null, query: null, issues: [] };
 /** The Pull requests tab's count, on the same rule as the Issues tab's. */
 const pullCount = () => (!pullsListing ? '…' : pullQuery.trim() ? matchingPulls().length : pullsListing.total);
 
-/** The listed pull requests the tab's search lets through. */
-const matchingPulls = () => (pullsListing?.pulls ?? []).filter((p) => pullMatches(p, pullQuery));
+/** The listed pull requests the tab's search lets through, by the state word each row shows. */
+const matchingPulls = () => (pullsListing?.pulls ?? []).filter((p) => pullMatches(p, pullQuery, pullWord(p, underOf(p)).word));
 
 function render() {
   const host = document.getElementById('queue-body');

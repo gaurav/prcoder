@@ -452,9 +452,9 @@ not a way of nesting the milestone groups.
 Within a group they are smallest first, since the next one to take on is usually the one that is
 nearly done; the first select over them changes that to largest first, newest, oldest, most or
 least recently updated, and both selects are remembered the way the pane sizes are. The search
-box covers the number, title, author, head and base branches, labels, body and the issues it
-closes, by number and title -- so a branch finds the stack on it, and an issue the pull requests
-for it -- and narrows the rows and the count as the issue search does. Each row is `PR #N` in a tinted chip, the one link to the pull request on GitHub, the title,
+box covers the number, title, author, head and base branches, labels, body, the issues it
+closes, by number and title, and the word it shows for its state -- so a branch finds the stack on
+it, an issue the pull requests for it, and `stacked` or `conflicts` those -- and narrows the rows and the count as the issue search does. Each row is `PR #N` in a tinted chip, the one link to the pull request on GitHub, the title,
 what it is built on, then `here` or **Switch**. What it is built on is `on main`, or the pull
 requests under it nearest first and then the branch the bottom one merges into, `on #13 › #12 ›
 main`: the first word says whether it can merge straight away or only after a stack, and each

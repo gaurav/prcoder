@@ -194,6 +194,11 @@ test('the search matches the number, title, author, branches, labels, body and c
   assert.deepEqual(found('bug'), [1]);
   assert.deepEqual(found('closes'), [3]);
   assert.deepEqual(found('zzz'), []);
+  // The state word the row shows: the merge word, or the caller's.
+  const ready = { number: 4, title: 'four', merge: 'ready' };
+  assert.equal(pullMatches(ready, 'READY'), true, 'the merge word counts');
+  assert.equal(pullMatches(ready, 'stacked', 'stacked (1)'), true, 'and a word the caller gives');
+  assert.equal(pullMatches(ready, 'ready', 'stacked (1)'), false, 'in place of the merge word');
 });
 
 test('an age is a word or two, and new is a week', () => {

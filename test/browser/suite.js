@@ -2007,13 +2007,19 @@ test('the Pull requests tab groups the open pull requests by milestone, smallest
 });
 
 // GitHub's `ready` is ready to merge into the base, which for #20 is #12's
-// branch: the row says `stacked (1)` instead.
-test('a ready pull request built on another reads `stacked (N)`', { skip }, async () => {
+// branch: the row says `stacked (1)` instead, and the search finds it by that.
+test('a ready pull request built on another reads `stacked (N)`, and the search finds it by its word', { skip }, async () => {
   const { fresh } = await pullsPage({ ...PULLS, pulls: PULLS.pulls.map((p) => (p.number === 20 ? { ...p, merge: 'ready' } : p)) });
   const word = (n) => fresh.locator(`.item[data-pull="${n}"] .pr-merge`);
   assert.equal(await word(20).textContent(), 'stacked (1)');
   assert.equal(await word(20).getAttribute('class'), 'pr-merge stacked');
   assert.equal(await word(12).textContent(), 'ready', 'one on the default branch is still ready');
+  const search = fresh.locator('#queue-pull-search');
+  await search.fill('stacked');
+  assert.equal(await fresh.locator('#queue-body .tab[data-tab="pulls"]').textContent(), 'Pull requests (1)');
+  assert.deepEqual(await fresh.locator('#queue-body .item.pull').evaluateAll((ls) => ls.map((l) => l.dataset.pull)), ['20']);
+  await search.fill('ready');
+  assert.deepEqual(await fresh.locator('#queue-body .item.pull').evaluateAll((ls) => ls.map((l) => l.dataset.pull)), ['12'], 'and `ready` only the one that is');
   await fresh.close();
 });
 

@@ -167,12 +167,15 @@ export const sortPulls = (list, how) => [...list].sort((a, b) => (PULL_SORTS[how
 /**
  * Whether the Pull requests tab's search matches a pull request: case-blind,
  * over `#N`, the title, the author, the head and base branches, the labels,
- * the body, and the issues it closes by `#N` and title -- so a base branch
- * finds the stack on it, and an issue finds the pull requests for it whether
- * or not the body names it.
+ * the body, the issues it closes by `#N` and title, and `word`, the state the
+ * row shows -- so a base branch finds the stack on it, an issue finds the pull
+ * requests for it whether or not the body names it, and `stacked` or
+ * `conflicts` finds those. `word` is the merge word unless the caller knows
+ * better: the row says `stacked (N)` for a `ready` built on others (pullWord
+ * in queue.js), which needs the stack and so is the caller's to say.
  */
-export const pullMatches = (p, query) => {
+export const pullMatches = (p, query, word = p.merge) => {
   const q = (query ?? '').trim().toLowerCase();
-  return !q || [`#${p.number}`, p.title ?? '', p.author ?? '', p.headRefName ?? '', p.baseRefName ?? '', ...(p.labels ?? []), p.body ?? '',
+  return !q || [`#${p.number}`, p.title ?? '', p.author ?? '', p.headRefName ?? '', p.baseRefName ?? '', ...(p.labels ?? []), p.body ?? '', word ?? '',
     ...(p.closes ?? []).flatMap((i) => [`#${i.number}`, i.title ?? ''])].join('\n').toLowerCase().includes(q);
 };
