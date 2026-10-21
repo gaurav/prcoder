@@ -1723,9 +1723,26 @@ test('an issue row opens to its body through the description renderer, with Open
   await fresh.close();
 });
 
+/**
+ * A row's drag dropped onto `sel`, as the row's dragstart would carry it:
+ * Playwright cannot start a native drag, but a DragEvent with a DataTransfer
+ * reaches the same dragover and drop handlers. True when dragover took it,
+ * which is what lets a real drop happen at all.
+ */
+const dropRow = (page, sel, type, number) => page.evaluate(([sel, type, number]) => {
+  const dataTransfer = new DataTransfer();
+  dataTransfer.setData(type, String(number));
+  const at = document.querySelector(sel);
+  const over = new DragEvent('dragover', { dataTransfer, bubbles: true, cancelable: true });
+  at.dispatchEvent(over);
+  at.dispatchEvent(new DragEvent('drop', { dataTransfer, bubbles: true, cancelable: true }));
+  return over.defaultPrevented;
+}, [sel, type, number]);
+const ISSUE_DRAG = 'application/x-prcoder-issue';
+const PULL_DRAG = 'application/x-prcoder-pull';
+
 // The one write the Issues tab makes: a row dragged onto a group, or its
-// milestone picked in the opened row, which is the half a test can drive --
-// Playwright cannot start a native drag. The route is mocked; the move is the
+// milestone picked in the opened row. The route is mocked; the move is the
 // POST it gets and the listing being read again after.
 test('picking a milestone in an opened row posts the move and reads the listing again', { skip }, async () => {
   const { fresh } = await issuesPage();
@@ -1748,6 +1765,16 @@ test('picking a milestone in an opened row posts the move and reads the listing 
   await fresh.locator('[data-group="m:1"] .issue-body select.milestone').selectOption('');
   await again;
   assert.deepEqual(moves.at(-1), { number: 58, milestone: null });
+  // Dropped onto a group's line, the row moves there; a pull request's row is
+  // not taken, since it is not an issue (until 2026-10-21 any drop threw).
+  // A timeout, so a drop that never reaches the move fails here rather than hanging.
+  again = fresh.waitForResponse('**/api/issues', { timeout: 5000 });
+  assert.equal(await dropRow(fresh, '[data-group="m:none"] summary', ISSUE_DRAG, 58), true);
+  await again;
+  assert.deepEqual(moves.at(-1), { number: 58, milestone: null });
+  assert.equal(moves.length, 3);
+  assert.equal(await dropRow(fresh, '[data-group="m:none"] summary', PULL_DRAG, 12), false, 'a pull request is not dropped here');
+  assert.equal(moves.length, 3);
   // A refusal is a toast, and nothing is read again.
   await fresh.route('**/api/issue/milestone', (r) => r.fulfill({ status: 500, json: { error: '"x" is not an open milestone the Issues tab listed' } }));
   await fresh.locator('[data-group="m:1"] .issue-body select.milestone').selectOption('Not urgent');
@@ -2090,6 +2117,13 @@ test('picking a milestone in an opened pull request row posts the move and reads
   await fresh.locator('[data-group="p:none"] .issue-body select.milestone').selectOption('Not urgent');
   await fresh.waitForFunction(() => document.getElementById('toast').textContent.includes('not an open milestone'));
   assert.equal(asked.length, before + 1);
+  // Dropped onto a group's line, the row moves there; an issue's row is not
+  // taken (until 2026-10-21 the drop never reached movePull at all).
+  await fresh.route('**/api/pull/milestone', (r) => { moves.push(r.request().postDataJSON()); return r.fulfill({ json: { ok: true } }); });
+  assert.equal(await dropRow(fresh, '[data-group="p:none"] summary', PULL_DRAG, 12), true);
+  assert.equal(await dropRow(fresh, '[data-group="p:none"] summary', ISSUE_DRAG, 58), false, 'an issue is not dropped here');
+  await fresh.waitForTimeout(200);
+  assert.deepEqual(moves.slice(1), [{ number: 12, milestone: null }]);
   // Switch goes through the PR pane's own route, and is disabled on a dirty tree.
   const switched = [];
   await fresh.route('**/api/pr/switch', (r) => { switched.push(r.request().postDataJSON()); return r.fulfill({ json: { ...status, nameWithOwner: 'gaurav/prcoder', queue: [] } }); });

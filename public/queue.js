@@ -550,12 +550,14 @@ function issueGroups() {
 }
 
 /**
- * A group's summary as somewhere to drop an issue row: lit while one is over
- * it, and the drop is the move. Only a row's own drag counts (ISSUE); a link
- * or a text selection dragged across the pane is not an issue.
+ * A group's summary as somewhere to drop a row: lit while one is over it, and
+ * the drop is `mover(number, milestone)`. Only a row's own drag of `type`
+ * counts -- ISSUE on the Issues tab, PULL on Pull requests -- so a link or a
+ * text selection dragged across the pane is not a row, nor is a row from the
+ * other tab.
  */
-function dropTarget(summary, milestone) {
-  const carrying = (e) => e.dataTransfer.types.includes(ISSUE);
+function dropTarget(summary, milestone, type = ISSUE, mover = move) {
+  const carrying = (e) => e.dataTransfer.types.includes(type);
   summary.addEventListener('dragover', (e) => { if (carrying(e)) { e.preventDefault(); summary.classList.add('over'); } });
   summary.addEventListener('dragleave', () => summary.classList.remove('over'));
   summary.addEventListener('drop', (e) => {
