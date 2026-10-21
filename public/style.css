@@ -886,11 +886,16 @@ li.issue-body select.milestone {
 .item.pull .pr-merge, .item.pull .pr-review, .item.pull .who, .item.pull .age { font-size: 12px; color: var(--dim); white-space: nowrap; }
 .item.pull .sep { font-size: 12px; color: var(--dim); }
 .item.pull .pr-merge.ready { color: var(--add); }
-/* What needs attention is a filled badge, not just a colour: a pull request's
-   conflicts or failing checks, which the coding agent can most often fix, and
-   a milestone past its due date, to be finished or rescheduled. */
-.item.pull .pr-merge.conflicts, .item.pull .pr-merge.checks-not-passing, .fold.milestone > summary .due.overdue {
-  color: var(--bg); background: var(--fail); padding: 0 5px; border-radius: 3px; font-weight: 600;
+/* Conflicts are only red, like `ready` is green: a coding agent can usually
+   clear them in one sitting, which makes such a pull request a good pick for a
+   short session rather than an alarm. A solid red block (until 2026-10-21)
+   shouted louder than anything else in the list. */
+.item.pull .pr-merge.conflicts { color: var(--fail); }
+/* Failing checks and a milestone past its due date are badges, in the left
+   pane's status pill (`.badge.fail`): round and tinted. A square of solid red
+   with bold text was the first try, and read as more alarming than either is. */
+.item.pull .pr-merge.checks-not-passing, .fold.milestone > summary .due.overdue {
+  color: var(--fail); background: #4d1f24; padding: 0 6px; border-radius: 9px;
 }
 .item.pull .pr-merge.behind-base, .item.pull .pr-merge.blocked { color: var(--warn); }
 .item.pull .mark { width: 10px; height: 10px; align-self: center; }

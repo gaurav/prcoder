@@ -411,7 +411,7 @@ soon`, `Needed later`, `Not urgent` and `Upstream`, matched by name whatever the
 the issues on no milestone. A closed milestone that an open issue is still on gets a group too,
 ranked the same way and marked *closed*, so that no listed issue goes undrawn. A milestone's line
 is its title, linking to it on GitHub, how many issues it holds in parentheses, as the tabs count,
-and when it is due, as `due 5 days ago` or `due in 2 months`, with the date on hover -- a red badge once
+and when it is due, as `due 5 days ago` or `due in 2 months`, with the date on hover -- a round red badge once
 it is past, yellow within a week, so a milestone to reschedule stands out; an empty one is
 still drawn, folded. Only the mentions and the first
 milestone with an issue start open, which is the one to focus on, and a milestone that appears
@@ -472,8 +472,10 @@ for `M` to red for `XXL`, since the small one is usually the next to take; the F
 fills by changed lines viewed, so an empty one is probably still being written and a full one is
 reviewed and waiting on something else); its labels; and `new` for a week after it was opened.
 Last, who opened it and how long since it was opened and since it last moved. A dot sits between
-neighbouring words and none beside a chip. `conflicts` and `checks not passing` are filled red badges, since a
-pull request that needs fixing is often the quickest to finish; none is dimmed, however old.
+neighbouring words and none beside a chip. `ready` is green and `conflicts` red, as plain words:
+conflicts are usually a coding agent's quick fix, so such a pull request is a good one for a short
+session rather than an alarm. `checks not passing` is a round red badge, as the left pane's status
+is; none is dimmed, however old.
 Under the facts is the first paragraph of its
 description, clipped to two lines, with its bold, code and links drawn rather than left as
 markdown, and under that the issues it closes, each a link, with an issue's milestone after it
