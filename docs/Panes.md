@@ -291,7 +291,8 @@ the agent.
 A file the pull request adds or deletes is shown as its own text under a green **NEW** or red
 **DELETED** title rather than as a wall of `+` or `-`, since a patch that is all one sign has
 nothing to contrast. A **NEW** file is syntax-highlighted when its extension names a language
-prcoder ships a grammar for; it is the one view where a tokenizer sees a whole file rather than a
+prcoder ships a grammar for (or its whole name does: a `Snakefile` is coloured as Python, as are
+`.smk` and `.snakefile`, since Snakemake is a superset of Python); it is the one view where a tokenizer sees a whole file rather than a
 hunk that starts in the middle of one. A renamed file says where it came from on its first line,
 and a rename with no other change says only that.
 
