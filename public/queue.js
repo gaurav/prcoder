@@ -841,6 +841,24 @@ const REVIEW = { APPROVED: 'approved', CHANGES_REQUESTED: 'changes requested', R
 const wordClass = (w) => w.toLowerCase().replace(/[^a-z]+/g, '-').replace(/^-|-$/g, '');
 
 /**
+ * What a listed pull request is built on (stackUnder in pr.js), for its row and
+ * the search alike. Asking git about a bare base is the row's to do (onBelow),
+ * so this only reads.
+ */
+const underOf = (p) => stackUnder({ pr: p }, pullsListing.pulls, deps.below?.() ?? [], deps.defaultBranch?.());
+
+/**
+ * The word a row shows for its state, and its class. GitHub's `ready` is
+ * ready to merge into the base, which for a stacked pull request is the one
+ * under it and not the default branch, so there it is `stacked (N)`, N the
+ * steps that merge first -- pull requests, or now and then a bare branch. The
+ * other words say more than that one does, and stay.
+ */
+const pullWord = (p, under) => (p.merge === 'ready' && under.nodes.length
+  ? { word: `stacked (${under.nodes.length})`, cls: 'stacked' }
+  : { word: p.merge, cls: p.merge ? wordClass(p.merge) : '' });
+
+/**
  * One pull request as a row, and when the row is open, its milestone and its
  * ways out under it -- not its description, which is read on GitHub:
  * the row is for picking, and the lead says enough to pick by. The first line is `PR #N`, the title, what it is built on, and Switch; the second, under
@@ -898,10 +916,12 @@ function pullRow(p, depth = 0) {
   // line as far as it goes meanwhile, and is painted again when the answer
   // lands. Nothing until the status has said which branch is the default.
   // Nothing at a depth either: by stack, the indent already says it.
-  const under = stackUnder({ pr: p }, pullsListing.pulls, deps.below?.() ?? [], deps.defaultBranch?.());
+  // A stacked one's line is `.stacked`, and each #N in it the tinted chip the
+  // row's own `PR #N` is, so a stack stands out where `on main` stays quiet.
+  const under = underOf(p);
   if (under.ask) deps.onBelow?.(under.ask);
-  const stack = !depth && (under.nodes.length || under.into) ? h('span', { className: 'pr-stack' }, 'on ', ...[
-    ...under.nodes.slice().reverse().map((n) => (n.pr ? ext(n.pr.url, `#${n.pr.number}`, { title: n.pr.title }) : h('code', { className: 'branch' }, n.branch))),
+  const stack = !depth && (under.nodes.length || under.into) ? h('span', { className: under.nodes.length ? 'pr-stack stacked' : 'pr-stack' }, 'on ', ...[
+    ...under.nodes.slice().reverse().map((n) => (n.pr ? ext(n.pr.url, `#${n.pr.number}`, { className: 'tag pull', title: n.pr.title }) : h('code', { className: 'branch' }, n.branch))),
     ...(under.into ? [h('code', { className: 'branch' }, under.into)] : []),
   ].flatMap((node, i) => (i ? [' › ', node] : [node]))) : null;
   // The facts, each marked plain (a word) or not (a chip, the pie): a dot goes
@@ -911,8 +931,9 @@ function pullRow(p, depth = 0) {
   // this one worth taking or not (the size, coloured by band, the pie, labels,
   // new), then whose it is and when.
   const size = sizeChip(p.lines);
+  const state = pullWord(p, under);
   const facts = [
-    [p.merge ? h('span', { className: `pr-merge ${wordClass(p.merge)}` }, p.merge) : null, true],
+    [state.word ? h('span', { className: `pr-merge ${state.cls}` }, state.word) : null, true],
     [review ? h('span', { className: 'pr-review' }, review) : null, true],
     [h('span', { className: `size ${size.toLowerCase()}`, title: `+${p.additions ?? 0} −${p.deletions ?? 0} · ${files}` }, size), false],
     [p.viewed ? mark({ p: p.viewed.p, full: p.viewed.full, label: p.viewed.label }) : null, false],

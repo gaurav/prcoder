@@ -458,13 +458,16 @@ for it -- and narrows the rows and the count as the issue search does. Each row 
 what it is built on, then `here` or **Switch**. What it is built on is `on main`, or the pull
 requests under it nearest first and then the branch the bottom one merges into, `on #13 › #12 ›
 main`: the first word says whether it can merge straight away or only after a stack, and each
-`#N` links to that pull request on GitHub, its title on hover. A base with no open pull request
+`#N` links to that pull request on GitHub, its title on hover. `on main` is dim; a stacked line is
+brighter, and each `#N` in it is a tinted chip like the row's own `PR #N`, so a stack stands out. A base with no open pull request
 is a bare branch, and what is under that is git's to say: the row asks as the Stack tab does, shows
 the line as far as it goes meanwhile, and is drawn again when the answer lands. By stack the line
 is left off every row but the roots, since the indent says it. Under the title, on a line of their own, its facts in three runs: its
 state, what makes it worth taking, and whose it is and when. The state is whether it can merge in
-a word (`ready`, `conflicts`, `behind base`, `blocked`, `checks not passing` -- failed, or still
-running -- `draft`, or `checking…` while GitHub works it out) and the review decision when there
+a word (`ready`, `stacked (N)`, `conflicts`, `behind base`, `blocked`, `checks not passing` -- failed, or still
+running -- `draft`, or `checking…` while GitHub works it out). `stacked (N)` is GitHub's `ready` on a
+pull request built on N others: ready to merge into the one under it, not into the default branch,
+and in the accent rather than green and the review decision when there
 is one. Then its size in the bands of GitHub's size labels, set wider at the small end (`XS` under
 fifty lines changed, `S` under a hundred, `M` under two hundred, `L` under five hundred, `XL` under a thousand, `XXL` past that; hover
 for the lines added and removed and the file count), coloured from green for `XS` through yellow

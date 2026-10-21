@@ -1932,6 +1932,9 @@ test('the Pull requests tab groups the open pull requests by milestone, smallest
   assert.equal(await twenty.locator('.pr-stack').textContent(), 'on #12 › main');
   assert.equal(await twenty.locator('.pr-stack a').getAttribute('href'), pr.url);
   assert.equal(await twenty.locator('.pr-stack a').getAttribute('title'), pr.title);
+  // A stack stands out where `on main` stays quiet: its #N is the row's tinted chip.
+  assert.equal(await twenty.locator('.pr-stack.stacked a.tag.pull').count(), 1, 'a stacked line has its #N as a chip');
+  assert.equal(await twelve.locator('.pr-stack.stacked, .pr-stack .tag').count(), 0, '`on main` stays plain');
   // A bare base: the row asks git what it is built on, and draws the answer.
   await fresh.waitForFunction(() => document.querySelector('.item[data-pull="30"] .pr-stack')?.textContent === 'on gone › older › main');
   assert.equal(fresh.belowAsked.branch, 'gone');
@@ -1956,7 +1959,7 @@ test('the Pull requests tab groups the open pull requests by milestone, smallest
   // Measured against the PR #N chip, which always starts the row: the title
   // is inline text, whose box rises above the chips on its line.
   const box = async (sel) => twenty.locator(sel).boundingBox();
-  const chip = await box('.tag.pull');
+  const chip = await box(':scope > .tag.pull');
   assert.ok((await box('.pr-facts')).y > chip.y + 10, 'the facts sit under the title');
   assert.ok(Math.abs((await box('.actions')).y - chip.y) < 8, '▶ and ↓ share the title line');
   // A title too long for the line wraps beside the chip, with Switch after its
@@ -2000,6 +2003,17 @@ test('the Pull requests tab groups the open pull requests by milestone, smallest
   await fresh.waitForSelector('#queue-body .item.pull');
   assert.equal(await fresh.locator('#queue-body select.pull-sort').inputValue(), 'largest');
   assert.equal(await fresh.locator('#queue-body select.pull-group').inputValue(), 'stack');
+  await fresh.close();
+});
+
+// GitHub's `ready` is ready to merge into the base, which for #20 is #12's
+// branch: the row says `stacked (1)` instead.
+test('a ready pull request built on another reads `stacked (N)`', { skip }, async () => {
+  const { fresh } = await pullsPage({ ...PULLS, pulls: PULLS.pulls.map((p) => (p.number === 20 ? { ...p, merge: 'ready' } : p)) });
+  const word = (n) => fresh.locator(`.item[data-pull="${n}"] .pr-merge`);
+  assert.equal(await word(20).textContent(), 'stacked (1)');
+  assert.equal(await word(20).getAttribute('class'), 'pr-merge stacked');
+  assert.equal(await word(12).textContent(), 'ready', 'one on the default branch is still ready');
   await fresh.close();
 });
 

@@ -886,6 +886,9 @@ li.issue-body select.milestone {
 .item.pull .pr-merge, .item.pull .pr-review, .item.pull .who, .item.pull .age { font-size: 12px; color: var(--dim); white-space: nowrap; }
 .item.pull .sep { font-size: 12px; color: var(--dim); }
 .item.pull .pr-merge.ready { color: var(--add); }
+/* `stacked (N)`, the `ready` of a pull request built on others: not green,
+   since it cannot land yet, but the accent its stack line's chips wear. */
+.item.pull .pr-merge.stacked { color: var(--accent); }
 /* Conflicts are only red, like `ready` is green: a coding agent can usually
    clear them in one sitting, which makes such a pull request a good pick for a
    short session rather than an alarm. A solid red block (until 2026-10-21)
@@ -901,11 +904,15 @@ li.issue-body select.milestone {
 .item.pull .mark { width: 10px; height: 10px; align-self: center; }
 .item.pull .tag.new { color: var(--add); border-color: var(--add); }
 .item.pull .tag.here { color: var(--accent); border-color: var(--accent); }
-/* What the pull request is built on, after its title: dim, in the facts' size,
-   each #N below it a link as the Closes line's are. */
+/* What the pull request is built on, after its title: dim, in the facts' size.
+   `on main` stays that quiet. A stacked one's line is brighter, and each #N
+   below it is the tinted chip the row's own `PR #N` wears (`.tag.pull`), so a
+   stack is seen at a glance as other pull requests to merge first; as accent
+   links in a dim line they were easy to read past (2026-10-21). */
 .item.pull .pr-stack { font-size: 12px; color: var(--dim); white-space: nowrap; }
+.item.pull .pr-stack.stacked { color: color-mix(in srgb, var(--fg) 60%, var(--dim)); }
 .item.pull .pr-stack a { color: var(--accent); text-decoration: none; }
-.item.pull .pr-stack a:hover { text-decoration: underline; }
+.item.pull .pr-stack a.tag:hover { border-color: var(--accent); }
 /* The issues it closes, under the lead, in the facts' size and dim, each a link. */
 .item.pull .pull-closes { flex: 1 0 100%; margin: 0 0 0 18px; font-size: 12px; color: var(--dim); }
 .item.pull .pull-closes a { color: var(--accent); text-decoration: none; }
