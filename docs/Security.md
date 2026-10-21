@@ -138,7 +138,9 @@ A modified file's diff is not highlighted at all, and
   The Claude pane's "Start coding agent" puts a model, an effort and `--continue` on the
   `/pty` query, and `sessionArgs` in `server.js` refuses the socket before the spawn for any other
   value -- a model has to be a name, so `--model --dangerously-skip-permissions` never becomes two
-  flags. The one exception is a value equal to what prcoder's command line already gave, which is
+  flags. The milestone picker's number goes to `gh api -F`, which reads a value by its shape
+  (`null`, `true`, a number, a leading `@` as a file to read), so `/api/pr/milestone` takes only a
+  positive integer or null, before it looks at anything else. The one exception is a value equal to what prcoder's command line already gave, which is
   dropped as a repeat rather than checked: it came from whoever started prcoder, not the page.
   The switcher's `/api/pr/switch` hands a URL to `gh pr checkout`, so `wholePrRepo` in `git.js`
   takes only the whole of a `https://github.com/owner/repo/pull/N` -- anchored, so a flag in front

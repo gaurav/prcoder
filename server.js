@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { text as readBody } from 'node:stream/consumers';
 import { spawn as ptySpawn } from 'node-pty';
 import { WebSocketServer } from 'ws';
-import { loadPr, prHeads, prUrl, prBody, parsePrUrl, listPrs, branchPrs, lookupPrs, ownPrs, pickPr, issueLinks, lookupRef, setViewed, setBody, createIssue, fetchPatches, runCount, repoIssues } from './github.js';
+import { loadPr, prHeads, prUrl, prBody, parsePrUrl, listPrs, branchPrs, lookupPrs, ownPrs, pickPr, issueLinks, lookupRef, setViewed, setBody, createIssue, fetchPatches, runCount, repoIssues, repoMilestones, setMilestone } from './github.js';
 import { notAWorkTree, snapshot, currentBranch, headCommit, commitsKnown, commitMemo, repoInfo, pushRepo, prScope, compareUrl, githubUrl, originOwner, wholePrRepo, checkoutPr, pushBranch, remoteBranchHead, trackingHead, localPatch, branchesBelow } from './git.js';
 import { bucket, fileUrl, fileViews } from './files.js';
 import { readPort, writePort, readPrs, writePrs, pick, useQueueFile, movedQueue, issueUrl } from './store.js';
@@ -321,9 +321,10 @@ const repaint = () => term.status(last
  * nothing of prcoder's -- the item is saved by a later PUT, which does take
  * the lock -- so it does not hold up the poll, saves and ticks behind it. The
  * Issues tab's listing is the same and much longer: up to five pages of a
- * hundred issues with their bodies, on every visit to the tab.
+ * hundred issues with their bodies, on every visit to the tab. The PR pane's
+ * list of milestones to pick from is the same and short.
  */
-const UNLOCKED = new Set(['GET /api/whoami', 'GET /api/status', 'POST /api/queue/ref', 'GET /api/issues']);
+const UNLOCKED = new Set(['GET /api/whoami', 'GET /api/status', 'POST /api/queue/ref', 'GET /api/issues', 'GET /api/milestones']);
 
 /**
  * Status polls that arrive while one is still waiting for the lock share it:
@@ -491,6 +492,39 @@ const routes = {
     // The body GitHub now has, so both panes that show its checkboxes can
     // repaint from it rather than wait a minute for the poll to agree.
     return { body: pr.body };
+  },
+
+  /**
+   * The open milestones of the repository the pull request on screen is in,
+   * for the PR pane's milestone picker, with that repository as `repo` so the
+   * page can tell an answer about a pull request it has since left. The pull
+   * request's repository, not the clone's: a fork's pull request into its
+   * parent is on the parent's milestones. Unlocked (UNLOCKED), as the Issues
+   * tab's listing is.
+   */
+  'GET /api/milestones': async () => {
+    const { owner, repo: name } = parsePrUrl(requirePr().url);
+    return { repo: `${owner}/${name}`, milestones: await repoMilestones(repo, owner, name) };
+  },
+
+  /**
+   * The pull request on screen put on milestone `number`, or taken off one for
+   * null, from the PR pane's picker. `url` is the pull request the page drew
+   * the picker for: a poll can have moved the pane to another since, and the
+   * pick was not about that one. The answer is the milestone GitHub now has,
+   * which the cached pull request takes too: the page is drawn from that
+   * until a poll sees updatedAt move and reads the pull request again.
+   */
+  'POST /api/pr/milestone': async ({ url, number } = {}) => {
+    // Reaches gh's -F, which converts by shape (setMilestone): a positive
+    // integer or null, and nothing else.
+    if (number !== null && !(Number.isInteger(number) && number > 0)) throw new Error(`not a milestone number: ${JSON.stringify(number)}`);
+    const cur = requirePr();
+    if (url !== cur.url) throw new Error(`${url ?? '(nothing)'} is no longer the pull request on screen`);
+    const milestone = await setMilestone(repo, cur.url, number);
+    cur.milestone = milestone;
+    term.verbose(milestone ? `put PR #${cur.number} on ${quote(milestone.title)}` : `took PR #${cur.number} off its milestone`);
+    return { milestone };
   },
 
   'POST /api/diff': async ({ path: p }) => {

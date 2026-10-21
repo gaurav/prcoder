@@ -82,8 +82,8 @@ const PR_FIELDS = [
   // headRefOid is asked for all the same, as the commit the checks above are
   // for, and loadPr keeps it apart from the one the files are at.
   'headRefOid',
-  // The milestone the pull request is on, for the head's chip after the
-  // repository: { number, title, description, dueOn }, or null.
+  // The milestone the pull request is on, for the head's milestone line:
+  // { number, title, description, dueOn }, or null.
   'milestone',
 ].join(',');
 
@@ -470,9 +470,7 @@ export async function loadPr(cwd, target, { pause } = {}) {
   const { closingIssuesReferences, comments, reviews, milestone, ...rest } = withChecks(headSide(pr));
   // Its number, title and due date only: the description can be long, and this
   // goes to every tab on every poll.
-  rest.milestone = milestone
-    ? { number: milestone.number, title: printable(milestone.title ?? '').trim() || `#${milestone.number}`, dueOn: milestone.dueOn ?? null }
-    : null;
+  rest.milestone = milestoneOf(milestone);
   // A push between `gh pr view` and the file pages leaves the checks the old
   // head's, beside the new head's files and sync light. They are read again at
   // the files' head; past one more push the next poll has it, since updatedAt
@@ -615,6 +613,36 @@ export function parsePrUrl(url) {
 
 export async function setBody(cwd, prUrl, body) {
   await gh(['pr', 'edit', prUrl, '--body-file', '-'], { cwd, input: body });
+}
+
+/**
+ * A milestone as the PR pane carries one: number, title (rid of control
+ * characters, as every title from GitHub is) and due date, from GraphQL's
+ * `dueOn` or REST's `due_on`; null for none.
+ */
+export const milestoneOf = (m) => (m
+  ? { number: m.number, title: printable(m.title ?? '').trim() || `#${m.number}`, dueOn: m.dueOn ?? m.due_on ?? null }
+  : null);
+
+/**
+ * Puts the pull request on milestone `number`, or on none for null, and
+ * answers with the milestone GitHub now has it on (milestoneOf).
+ *
+ * Through the issues endpoint, which is a pull request's too, rather than
+ * `gh pr edit --milestone`: that takes a title, and resolves it to a number
+ * with a listing of its own. This is the one call here that wants -F, whose
+ * conversion by shape every string argument is kept from (see the tests on
+ * setViewed): `milestone=4` has to reach GitHub as an Int and `milestone=null`
+ * as null, and a string of either is refused. The caller has already held
+ * `number` to a positive integer, so nothing else can be converted. A number
+ * the repository has no milestone for is GitHub's 422, "Validation Failed"
+ * (tried on #168, 2026-10-21).
+ */
+export async function setMilestone(cwd, prUrl, number) {
+  const { owner, repo, number: issue } = parsePrUrl(prUrl);
+  const out = await gh(['api', '-X', 'PATCH', `repos/${owner}/${repo}/issues/${issue}`,
+    '-F', `milestone=${number ?? 'null'}`], { cwd });
+  return milestoneOf(JSON.parse(out).milestone);
 }
 
 /**
@@ -824,6 +852,21 @@ export async function repoIssues(cwd, owner, repo) {
     if (!after) break;
   }
   return { milestones, issues, total, listed: issues.length };
+}
+
+const MILESTONES_QUERY = `query($owner:String!,$repo:String!){
+  repository(owner:$owner,name:$repo){ milestones(first:50,states:OPEN){ nodes{ number title dueOn } } } }`;
+
+/**
+ * The repository's open milestones, for the PR pane's milestone picker:
+ * `[{ number, title, dueOn }]` (milestoneOf), in GitHub's order -- the page
+ * ranks them. The first fifty, as repoIssues reads; a repository with more
+ * has the pull request's own added by the pane whatever this says.
+ */
+export async function repoMilestones(cwd, owner, repo) {
+  const { data } = JSON.parse(await gh(['api', 'graphql', '-f', `query=${MILESTONES_QUERY}`,
+    '-f', `owner=${owner}`, '-f', `repo=${repo}`], { cwd }));
+  return data.repository.milestones.nodes.map(milestoneOf);
 }
 
 /**
