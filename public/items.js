@@ -66,7 +66,8 @@ const BUCKETS = ['needed soon', 'needed later', 'not urgent', 'upstream'];
  * Open milestones in the order the Issues tab groups by: Critical; releases
  * and deadlines, the ones with a due date first and soonest first, then the
  * undated by name; then the buckets, Needed soon to Upstream. The ISO dates
- * sort as they read. "No milestone" is the caller's, last.
+ * sort as they read. "No milestone" is the caller's, and comes first: those
+ * are the untriaged, which could belong at any level.
  */
 export function rankMilestones(list) {
   const rank = ({ title, dueOn }) => {

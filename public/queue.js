@@ -439,9 +439,9 @@ export function newestFirst(list, found) {
 
 /**
  * The Issues tab: a search over the repository's open issues, and the issues
- * in groups -- what the description mentions without closing first, then one
- * group per milestone in the owner's order (rankMilestones), then the issues
- * on none. Each row can open to show the issue's body and a way to it
+ * in groups -- what the description mentions without closing first, then the
+ * issues on no milestone, which are the ones to triage, then one group per
+ * milestone in the owner's order (rankMilestones). Each row can open to show the issue's body and a way to it
  * on GitHub, be typed to the coding agent with its link (▶), or be copied
  * into Local (↓). The groups are repainted on their own as the search and the
  * rows change, so the search box keeps its focus.
@@ -472,14 +472,16 @@ const NONE = 'none';
 
 /**
  * What starts closed, as each listing lands. On the first, every group but
- * the mentions and the first milestone in rank with an issue on it, which is
- * the one to focus on -- chosen from every issue, not the ones a query typed
- * before the listing came lets through. On a later one, a milestone not had
+ * the mentions and the first in the drawn order with an issue on it, which is
+ * the one to focus on: No milestone whenever it holds anything, since those
+ * are the issues to triage, or else the first milestone in rank -- chosen
+ * from every issue, not the ones a query typed before the listing came lets
+ * through. On a later one, a milestone not had
  * before, such as one made on GitHub since, joins the rest folded. A group
  * opened or closed by hand is remembered over all of it.
  */
 function seedGroups() {
-  const keys = [...rankMilestones(listing.milestones).map((m) => m.number), NONE];
+  const keys = [NONE, ...rankMilestones(listing.milestones).map((m) => m.number)];
   const focus = seen.size ? null : keys.find((k) => listing.issues.some((i) => (i.milestone ?? NONE) === k));
   for (const key of keys) {
     if (seen.has(key)) continue;
@@ -531,6 +533,10 @@ function issueGroups() {
   if (pr && ment.length) {
     out.push(group('mentioned', `Mentioned by PR #${pr.number}`, ment, newestFirst(ment, mentions).map((i) => mentionRow(i)).flat()));
   }
+  // No milestone before the milestones: an issue on none is untriaged, and
+  // could belong at any level, Critical included.
+  const none = byMilestone.get(NONE) ?? [];
+  if (!searching || none.length) out.push(group(`m:${NONE}`, 'No milestone', none, none.map((i) => issueRow(i)).flat(), [], null));
   for (const m of ranked) {
     const title = home ? ext(`https://github.com/${home}/milestone/${m.number}`, m.title, { title: m.description || undefined }) : m.title;
     const extra = [
@@ -543,8 +549,6 @@ function issueGroups() {
     // A closed milestone's group shows what is still on it, and takes no drop.
     out.push(group(`m:${m.number}`, title, list, list.map((i) => issueRow(i)).flat(), extra, m.closed ? undefined : m.title));
   }
-  const none = byMilestone.get(NONE) ?? [];
-  if (!searching || none.length) out.push(group(`m:${NONE}`, 'No milestone', none, none.map((i) => issueRow(i)).flat(), [], null));
   if (!out.length) out.push(h('p', { className: 'empty' }, 'No open issues match.'));
   if (listing.listed < listing.total) {
     out.push(h('p', { className: 'pr-note' }, `The ${listing.listed} most recently updated of ${listing.total} open issues.`));
@@ -773,9 +777,9 @@ export function paintPulls() {
 
 /**
  * The Pull requests tab: a search, the order within a group and whether to
- * group at all, ⟳, and the pull requests -- one group per open milestone in
- * the owner's order (rankMilestones) and then the ones on none, as the Issues
- * tab groups, or one list. Each row carries what picking the next one turns
+ * group at all, ⟳, and the pull requests -- the ones on no milestone, to
+ * triage, and then one group per open milestone in the owner's order
+ * (rankMilestones), as the Issues tab groups, or one list. Each row carries what picking the next one turns
  * on (pullRow), opens to the description, can be typed to the coding agent
  * with its link (▶), copied into Local (↓), or checked out (Switch), and is
  * dragged onto a group to put it on that milestone.
@@ -825,11 +829,13 @@ function pullGroups() {
     }
     const ranked = rankMilestones(pullsListing.milestones);
     // What starts closed, chosen once per page as the Issues tab chooses:
-    // everything but the first milestone in rank with a pull request on it.
+    // everything but the first group drawn with a pull request in it -- No
+    // milestone when it has one, or else the first milestone in rank.
     if (!pullsSeeded) {
       pullsSeeded = true;
-      const focus = ranked.find((m) => byMilestone.has(m.number))?.number ?? NONE;
-      for (const key of [...ranked.map((m) => m.number), NONE]) if (key !== focus) closedGroups.add(`p:${key}`);
+      const keys = [NONE, ...ranked.map((m) => m.number)];
+      const focus = keys.find((k) => byMilestone.has(k)) ?? NONE;
+      for (const key of keys) if (key !== focus) closedGroups.add(`p:${key}`);
     }
     const state = (key, list) => (searching ? { open: list.length > 0, onToggle: () => {} } : kept(closedGroups, key, 'closed'));
     const home = deps.home?.();
@@ -842,6 +848,7 @@ function pullGroups() {
       if (target !== undefined) dropTarget(d.querySelector('summary'), target, PULL, movePull);
       return d;
     };
+    out.push(group(`p:${NONE}`, 'No milestone', byMilestone.get(NONE) ?? [], [], null));
     for (const m of ranked) {
       const title = home ? ext(`https://github.com/${home}/milestone/${m.number}`, m.title, { title: m.description || undefined }) : m.title;
       const extra = [
@@ -851,7 +858,6 @@ function pullGroups() {
       ];
       out.push(group(`p:${m.number}`, title, byMilestone.get(m.number) ?? [], extra, m.closed ? undefined : m.title));
     }
-    out.push(group(`p:${NONE}`, 'No milestone', byMilestone.get(NONE) ?? [], [], null));
   }
   const { read, listed, total } = pullsListing;
   out.push(h('p', { className: 'pull-note' },
