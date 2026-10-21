@@ -117,7 +117,7 @@ it was on is hidden.
 Which pull request you are in stays at the top, in the order it is used: the title; then the way
 out of the window, with this pull request on GitHub drawn as a button beside plain links to the
 repository's issues, pulls and milestones, and the repository they are all in at the end of that
-row; then the state and the branch it targets, with the pull request that branch belongs to
+row; then the milestone the pull request is on; then the state and the branch it targets, with the pull request that branch belongs to
 beside it as `#N` when it is another open one's head, since that is the one you want next.
 
 Each side of `head → base` is labelled the way GitHub labels a branch in another repository: a
@@ -133,9 +133,19 @@ bound. A short one fits beside the four links; a long one drops whole onto the n
 four stay where they are either way. On a line of its own it truncates rather than wraps: a long
 owner is clipped and the repository's own name kept, since that is the half that says which
 checkout you are in. It is drawn as a chip rather than a fifth link: the links are places to go,
-and the chip is the one thing in the head that answers which checkout this is. A pull request on a
-milestone has a second chip after it, in grey: the milestone's title, linking to it on GitHub, with
-its due date on hover. It comes last for the same reason, since a title has no bound either.
+and the chip is the one thing in the head that answers which checkout this is.
+
+The milestone has a line of its own, on every pull request, because one on no milestone is the one
+that needs something done: it still has to be triaged, so its line is in the warning colour and
+reads *no milestone — needs triage*. The line is a picker. It offers none, then the repository's
+open milestones in the order the queue's Issues tab groups them, each with its due date, and the
+pull request's own milestone even when that one is closed. Picking one puts the pull request on it
+on GitHub there and then, and picking none takes it off. The word *milestone* in front links to the
+milestone on GitHub while there is one. The list is read when the pull request's repository
+changes and again as the pointer or the focus reaches the picker, so a milestone made on GitHub
+since is there to pick; a poll that lands while the picker has the focus waits until it loses it,
+so an open dropdown is not redrawn shut. It was a chip after the repository's to begin with, which
+said nothing on a pull request with no milestone and had nowhere to put a picker.
 
 ### Moving between pull requests
 

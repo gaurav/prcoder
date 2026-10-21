@@ -453,13 +453,6 @@ a { color: var(--accent); }
   border-color: color-mix(in srgb, var(--accent) 60%, transparent);
   background: color-mix(in srgb, var(--accent) 14%, transparent);
 }
-/* The pull request's milestone, after the repository: the same chip in the
-   pane's neutral line rather than the accent, a different kind of thing. */
-.pr-milestone {
-  min-width: 0; padding: 1px 7px; border: 1px solid var(--line); border-radius: 9px;
-  color: var(--dim); text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.pr-milestone:hover { color: var(--fg); border-color: var(--dim); }
 .pr-repo .owner { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pr-repo .name { flex: none; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
@@ -490,6 +483,23 @@ a { color: var(--accent); }
 .pr-title, .pr-branch-name { margin: 0 0 8px; font-family: var(--serif); font-size: 21px; line-height: 1.25; text-wrap: balance; }
 .meta { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; color: var(--dim); font-size: 12px; margin-bottom: 8px; }
 .add { color: var(--add); } .del { color: var(--del); }
+
+/* The milestone line: the word, then the picker, which takes the rest of the
+   line so a long title ellipsizes rather than wrapping under the word. Drawn
+   like the switcher's select in the pane's header, at the line's own 12px.
+   On no milestone the line is in the warning colour, picker and all, since
+   that pull request is waiting to be triaged. */
+.pr-milestone { flex-wrap: nowrap; }
+.pr-milestone a { color: inherit; }
+.pr-milestone select {
+  flex: 0 1 auto; min-width: 0; max-width: 100%; padding: 1px 4px; font: inherit;
+  color: var(--dim); background: var(--bg); border: 1px solid var(--line); border-radius: 4px;
+  text-overflow: ellipsis;
+}
+.pr-milestone select:hover:not(:disabled) { color: var(--fg); }
+.pr-milestone select:disabled { opacity: .5; cursor: progress; }
+.pr-milestone.untriaged, .pr-milestone.untriaged select { color: var(--warn); }
+.pr-milestone.untriaged select { border-color: color-mix(in srgb, var(--warn) 50%, transparent); }
 
 .badge { padding: 1px 6px; border-radius: 9px; background: var(--line); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; }
 .badge.open { background: #1f4d2e; color: #9ae6b4; }

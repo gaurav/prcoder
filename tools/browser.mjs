@@ -390,6 +390,17 @@ const headRow = () => page.evaluate(() => {
 console.log('head:   ', await headRow(), ' (want the two lefts the same, and the repo on the same line)');
 console.log('out:    ', await page.evaluate(() =>
   [...document.querySelectorAll('#pr-head .pr-links a')].map((a) => a.href).join(' ')));
+// The milestone line, under the links and over the state, on every pull
+// request. Read only: a pick is a write to the real pull request.
+await page.waitForFunction(() => document.querySelectorAll('#pr-head .pr-milestone option').length > 1, null, { timeout: 30_000 })
+  .catch(() => {});
+console.log('milestone:', await page.evaluate(() => {
+  const line = document.querySelector('#pr-head .pr-milestone');
+  if (!line) return 'no line';
+  const next = line.nextElementSibling?.classList.contains('pr-state') ? 'over the state' : 'NOT over the state';
+  const sel = line.querySelector('select');
+  return `${line.classList.contains('untriaged') ? 'untriaged' : 'on one'}, "${sel.selectedOptions[0]?.textContent}", ${sel.options.length - 1} to pick from, ${next}`;
+}), ' (want "untriaged" exactly when the PR is on no milestone, the open milestones to pick from, over the state)');
 // The repository ends that row because it is the one link with no bound on its
 // width: where it does not fit it wraps whole onto a line of its own, and clips
 // only there.

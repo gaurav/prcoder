@@ -585,6 +585,53 @@ const switcher = document.getElementById('pr-switch');
 switcher.addEventListener('pointerenter', () => reachSwitcher('pointer reached the switcher'));
 switcher.addEventListener('focus', () => reachSwitcher('switcher focused'));
 
+// The open milestones of the repository the pull request on screen is in, for
+// the head's milestone picker: `{ repo, list }`, or null before one lands. Read
+// when that repository changes, and again as the pointer or the focus reaches
+// the picker, not within ten seconds of the last -- the switcher's rule, for
+// the same reason: a milestone made on GitHub since is there to pick. A
+// failed read keeps what we had, and the picker still has the pull request's
+// own milestone and none. An answer about a repository the pane has since
+// left is dropped.
+let milestones = null;
+let milestonesAsking = null;
+let milestonesAt = 0;
+const loadMilestones = (why) => {
+  if (milestonesAsking) return milestonesAsking;
+  debug('fetching the milestones:', why);
+  milestonesAsking = api('/api/milestones', undefined, 'GET').then((m) => {
+    milestonesAt = Date.now();
+    if (!last?.pr || prRepo(last.pr) !== m.repo) return debug('milestones dropped: the pane has moved to', last?.pr?.url);
+    milestones = { repo: m.repo, list: m.milestones };
+    paint(last);
+  }, (e) => debug('milestones failed:', why, e.message))
+    .finally(() => { milestonesAsking = null; });
+  return milestonesAsking;
+};
+const reachMilestones = () => { if (Date.now() - milestonesAt > 10_000) loadMilestones('picker reached'); };
+
+/**
+ * The pull request moved to another milestone, or off them, from the head's
+ * picker. The route answers with the milestone GitHub now has, which becomes
+ * the pane's, as a ticked box's body does. A refusal is a toast, and the
+ * picker is put back to where the pull request still is.
+ */
+async function pickMilestone(number) {
+  const url = last?.pr?.url;
+  let milestone;
+  try {
+    ({ milestone } = await api('/api/pr/milestone', { url, number }));
+  } catch (e) {
+    toast(e.message, true);
+    drawn = null;
+    if (last) paint(last);
+    return;
+  }
+  if (last?.pr?.url === url) last.pr.milestone = milestone;
+  drawn = null;
+  if (last) paint(last);
+}
+
 const NOTES = {
   'other-branch': 'Not checked out — this pull request is on another branch.',
   'other-repo': 'This pull request is in another repository.',
@@ -750,7 +797,11 @@ function paint(status) {
     const blocked = status.dirtyFiles.length > 0;
     // Everything the pane is drawn from, the Stack tab's inputs included: a
     // fresh PR list, or a tree going dirty, is a redraw even when the PR is not.
-    const key = JSON.stringify([status.pr, status.scope, stack, blocked, [...below.values()], status.remotes]);
+    if (milestones?.repo !== prRepo(status.pr)) {
+      milestones = null;
+      loadMilestones(`now on ${prRepo(status.pr)}`);
+    }
+    const key = JSON.stringify([status.pr, status.scope, stack, blocked, [...below.values()], status.remotes, milestones]);
     if (key !== drawn) {
       drawn = key;
       renderPr({ ...status.pr, note: NOTES[status.scope] }, {
@@ -765,6 +816,9 @@ function paint(status) {
         defaultBranch: status.defaultBranch,
         onSwitch: switchPr,
         blocked,
+        milestones: milestones?.list ?? null,
+        onMilestone: pickMilestone,
+        onMilestoneReach: reachMilestones,
       });
     }
   } else {
