@@ -528,6 +528,7 @@ a { color: var(--accent); }
    and a fixed 13px there set the code larger than the prose around it. */
 .md code { background: var(--bg); padding: 0 4px; border-radius: 3px; font-size: .87em; }
 .md em { font-style: italic; color: var(--fg); }
+.md del { color: var(--dim); }
 /* A fence scrolls on its own rather than widening the pane, which at 375px it
    would do at the first long command line. */
 .md pre {

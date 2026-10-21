@@ -99,13 +99,15 @@ off limits — which is why the third state, "stopped to ask you something", is 
 match against the prompt box.
 
 **The description renderer is an allowlist and stays one.** It handles headings, fences, inline
-code, emphasis, links — including the two kinds that mean nothing without a repository behind them,
-a relative path and a bare `#N` — checklists, lists and quoted sections; everything it does not know — tables,
-nested lists, images, strikethrough, reference-style links, horizontal rules — stays escaped and
-shows as its own source. Quotes were the one construct added rather than deferred, and the reason is
-the test for the next one: `>` was the last block-level marker that arrived as its own punctuation
-down the left margin, which reads as the renderer being broken rather than as a construct it does
-not do. What was added is one block, not a grammar — a quote's content is one prose paragraph, so a
+code, emphasis, strikethrough, links — including the two kinds that mean nothing without a
+repository behind them, a relative path and a bare `#N` — checklists, lists and quoted sections;
+everything it does not know — tables, nested lists, images, reference-style links, horizontal
+rules — stays escaped and shows as its own source. Strikethrough was added on request (2026-10-19)
+because a checklist strikes out an item dropped rather than done, and it is one inline rule
+wrapping a fixed tag, like emphasis. Quotes were the one block construct added rather than
+deferred, and the reason is the test for the next one: `>` was the last block-level marker that
+arrived as its own punctuation down the left margin, which reads as the renderer being broken
+rather than as a construct it does not do. What was added is one block, not a grammar — a quote's content is one prose paragraph, so a
 bullet, a heading or a nested `> >` inside one shows as its own text, and GitHub's `> [!NOTE]`
 alerts are not alerts here. Everything past that is
 [#41](https://github.com/gaurav/prcoder/issues/41)'s decision to take; one more paper cut is an
