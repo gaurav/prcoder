@@ -1987,7 +1987,7 @@ test('the Pull requests tab groups the open pull requests by milestone, smallest
   // v1.0 starts folded behind No milestone. git's answers about bare branches
   // repaint the tab as they land, the last one after the PR list does, and in
   // Chromium a fold clicked just before such a repaint is drawn shut again; so
-  // the click is made until it holds.
+  // the click is made until it holds. A single click again once #171 is fixed.
   for (let i = 0; i < 10; i++) {
     if (!await fresh.evaluate(() => document.querySelector('[data-group="p:1"]').open)) await fresh.locator('[data-group="p:1"] summary .count').click();
     await fresh.waitForTimeout(100);
