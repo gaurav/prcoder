@@ -122,11 +122,19 @@ export const age = (iso, now = Date.now()) => when(iso, Math.max(now, Date.parse
 /**
  * A milestone's due date as its line says it, `due 3 days ago`, with the date
  * on hover and a class saying how near it is: `overdue`, `soon`, or neither.
+ * GitHub's dueOn is a date sent as the start of that day (`T07:00:00Z` for a
+ * date set in California), so it is compared as a date with today's on this
+ * clock: due today is `due today` and soon, and overdue only once the day is
+ * over -- compared as a time, a milestone was overdue for most of its own day.
  */
 export function dueLabel(dueOn, now = Date.now()) {
-  const left = Date.parse(dueOn) - now;
-  const near = left < 0 ? ' overdue' : left < DUE_SOON ? ' soon' : '';
-  return { className: `due${near}`, textContent: `due ${when(dueOn, now)}`, title: `due ${dueOn.slice(0, 10)}` };
+  const day = dueOn.slice(0, 10);
+  const d = new Date(now);
+  const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const title = `due ${day}`;
+  if (day === today) return { className: 'due soon', textContent: 'due today', title };
+  const near = day < today ? ' overdue' : Date.parse(dueOn) - now < DUE_SOON ? ' soon' : '';
+  return { className: `due${near}`, textContent: `due ${when(dueOn, now)}`, title };
 }
 
 // The size chip's bands, on lines changed (additions and deletions together):

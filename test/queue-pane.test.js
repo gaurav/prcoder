@@ -224,4 +224,10 @@ test('a milestone is due some time ago or in some time, with its date on hover',
   assert.equal(dueLabel('2026-10-26T11:59:00Z', now).className, 'due soon', 'a minute inside the week');
   assert.equal(dueLabel('2026-10-26T12:00:00Z', now).className, 'due', 'a week off is not soon');
   assert.equal(dueLabel('2027-01-01T00:00:00Z', now).textContent, 'due in 2 months');
+  // GitHub sends a date as the start of that day: due today is not overdue
+  // until the day is over, however many hours past its dueOn. Today is this
+  // clock's, so the check is at local noon, true in any time zone.
+  const noon = new Date(2026, 9, 19, 12).getTime();
+  assert.deepEqual(dueLabel('2026-10-19T07:00:00Z', noon), { className: 'due soon', textContent: 'due today', title: 'due 2026-10-19' });
+  assert.equal(dueLabel('2026-10-18T07:00:00Z', noon).className, 'due overdue', 'yesterday\'s is');
 });
