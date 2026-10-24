@@ -78,18 +78,36 @@ test('an issue both closed and mentioned is listed once, as closing', () => {
 
 // `Fixes other/repo#3` and a bare `#3` are two issues. Keyed by number, the #3
 // took other/repo's URL, and the pane linked the prose `#3` there.
+// The repository is GitHub's `repository` field, in the shape gh gives it.
+const closing = (owner, name, number, host = 'github.com') => ({
+  number, url: `https://${host}/${owner}/${name}/issues/${number}`,
+  repository: { name, owner: { login: owner } },
+});
+
 test("another repository's closing reference is kept apart from this one's #N", () => {
   assert.deepEqual(
-    linkedIssues(pr('Fixes other/repo#3; see #3.',
-      [{ number: 3, url: 'https://github.com/other/repo/issues/3' }])),
+    linkedIssues(pr('Fixes other/repo#3; see #3.', [closing('other', 'repo', 3)])),
     [
       { number: 3, url: 'https://github.com/other/repo/issues/3', closes: true, repo: 'other/repo' },
       { number: 3, url: 'https://github.com/o/r/issues/3', closes: false },
     ],
   );
   // This repository's, in GitHub's spelling rather than the remote's, is still this one's.
-  assert.deepEqual(linkedIssues(pr('', [{ number: 4, url: 'https://github.com/O/R/issues/4' }])),
+  assert.deepEqual(linkedIssues(pr('', [closing('O', 'R', 4)])),
     [{ number: 4, url: 'https://github.com/O/R/issues/4', closes: true }]);
+});
+
+// Compared by URL prefix, a PR URL on `www.github.com` made this repository's
+// own #4 another's: labelled `o/r#4`, and a bare `#4` listed a second time.
+test("this repository's closing reference is its own whatever host the URLs name", () => {
+  const issues = linkedIssues({
+    url: 'https://www.github.com/o/r/pull/7', body: 'see #4', closingIssuesReferences: [closing('o', 'r', 4)],
+  });
+  assert.deepEqual(issues, [{ number: 4, url: 'https://github.com/o/r/issues/4', closes: true }]);
+  // And under a path prefix, as an Enterprise install can have.
+  assert.deepEqual(linkedIssues({
+    url: 'https://ghe.test/x/o/r/pull/7', body: '', closingIssuesReferences: [closing('other', 'repo', 3, 'ghe.test/x')],
+  }).map((i) => i.repo), ['other/repo']);
 });
 
 test('#N attached to a word is not a linked issue, but a parenthesised one is', () => {

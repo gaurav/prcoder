@@ -2,7 +2,7 @@
 
 import { execFile } from 'node:child_process';
 import { debug } from './term.js';
-import { mentions, repoUrl, printable } from './public/tasks.js';
+import { mentions, repoUrl, resolveRef, printable } from './public/tasks.js';
 
 // Every gh call and every git call comes through run(), so this is the whole
 // count. What it is for: two browser tabs each poll on their own timer against
@@ -685,15 +685,23 @@ export function rollup(checks) {
  * one carries its `repo`, as `owner/name`, and is kept apart from this
  * repository's #3: by number alone, a bare `#3` in the body was folded into it,
  * and the pane linked that `#3` to the other repository.
+ *
+ * Which repository is GitHub's `repository` on the reference, set against the
+ * last two segments of the PR's repository URL by resolveRef, as the queue
+ * compares them. Not by URL prefix: a remote spelled `www.github.com`, or any
+ * other host GitHub's issue URL does not match, made this repository's own
+ * issue another's. A reference with no `repository` is taken as this one's.
  */
 export function linkedIssues(pr) {
   const seen = new Map();
   const repo = repoUrl(pr.url);
-  const here = `${repo.toLowerCase()}/`;
+  const home = repo.split('/').slice(-2).join('/');
   for (const i of pr.closingIssuesReferences ?? []) {
-    if (i.url && !i.url.toLowerCase().startsWith(here)) {
-      const other = i.url.replace(/^https?:\/\/[^/]+\//, '').replace(/\/issues\/\d+$/, '');
-      seen.set(i.url, { number: i.number, url: i.url, closes: true, repo: other });
+    const { owner, name } = i.repository ?? {};
+    const other = owner?.login && name
+      ? resolveRef({ owner: owner.login, name, number: i.number }, home).repo : null;
+    if (other) {
+      seen.set(`${other}#${i.number}`, { number: i.number, url: i.url, closes: true, repo: other });
     } else {
       seen.set(i.number, { number: i.number, url: i.url, closes: true });
     }
