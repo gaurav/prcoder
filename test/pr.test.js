@@ -125,6 +125,22 @@ test('emphasis renders in both spellings, bold before italic', () => {
   assert.equal(inline('review _for_ you'), 'review <em>for</em> you');
 });
 
+// GitHub strikes through `~x~` as well as `~~x~~`, and a checklist uses it for
+// an item dropped rather than done.
+test('strikethrough renders with one tilde or two', () => {
+  assert.equal(inline('~dropped~ and ~~also dropped~~'),
+    '<del>dropped</del> and <del>also dropped</del>');
+  assert.equal(inline('**~x~**'), '<strong><del>x</del></strong>');
+  assert.equal(inline('`~x~`'), '<code>~x~</code>');
+});
+
+test('a tilde that is not strikethrough stays a tilde', () => {
+  assert.equal(inline('~/a and ~/b'), '~/a and ~/b');
+  assert.equal(inline('~ a ~'), '~ a ~');
+  assert.equal(inline('~~a~'), '~~a~');
+  assert.match(inline('https://x.test/~u/a~b'), /href="https:\/\/x\.test\/~u\/a~b"/);
+});
+
 test('an underscore inside a word is not emphasis', () => {
   assert.equal(inline('some_var_name stays whole'), 'some_var_name stays whole');
   assert.equal(inline('PRCODER_NO_OPEN=1'), 'PRCODER_NO_OPEN=1');

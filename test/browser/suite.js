@@ -64,14 +64,14 @@ const skip = !engine ? 'playwright is not installed (npm ci without --omit=dev)'
 // Each run's names carry its engine, so a CI log says which one broke.
 const test = (name, ...rest) => nodeTest(`${name} [${engineName}]`, ...rest);
 
-// Each line here is a regression: `_for_` showed its underscores, HTML
-// comments showed as text, `##` rendered literally, and a
+// Each line here is a regression: `_for_` showed its underscores, `~struck~`
+// its tildes, HTML comments showed as text, `##` rendered literally, and a
 // <details> left a stray `</details>` behind. The quote is here because neither
 // of this repo's own descriptions has one, so no driver run ever showed it. The
 // tasks are in the lead, above the first `##`, because sections render folded
 // and a click needs a visible box.
 const BODY = [
-  'Prose with _for_ in it, and a mention of #7.',
+  'Prose with _for_ in it, ~struck~ out, and a mention of #7.',
   '',
   '> A quoted line',
   '> that continues.',
@@ -248,10 +248,11 @@ test('raw markup does not reach the page as text', { skip }, async () => {
   // textContent, not innerText: the folded sections are hidden, and a stray
   // `</details>` inside one is exactly what this is for.
   const text = await page.$eval('#pr-body .md', (el) => el.textContent);
-  for (const raw of ['<!--', '-->', '##', '</details>', '<summary>', '_for_', '> ']) {
+  for (const raw of ['<!--', '-->', '##', '</details>', '<summary>', '_for_', '~', '> ']) {
     assert.ok(!text.includes(raw), `${JSON.stringify(raw)} rendered as text in: ${text}`);
   }
-  assert.ok(text.includes('Prose with for in it'), text);
+  assert.ok(text.includes('Prose with for in it, struck out'), text);
+  assert.equal(await page.locator('#pr-body .md del').textContent(), 'struck');
 });
 
 test('a > run is one quote, its lines kept as lines', { skip }, async () => {
@@ -276,6 +277,11 @@ test('checkboxes render with their state, and a tick posts through', { skip }, a
   assert.equal(await boxes.count(), 3);
   assert.deepEqual(await boxes.evaluateAll((list) => list.map((b) => b.checked)), [false, true, false]);
   assert.equal(await page.locator('.task.done').count(), 1);
+
+  // The text is for reading and copying: a click on it ticks nothing.
+  await page.locator('.task > span').first().click();
+  assert.equal(await boxes.first().isChecked(), false);
+  assert.deepEqual(posted, []);
 
   await boxes.first().click();
   await page.waitForFunction(() => document.querySelectorAll('.task.done').length === 2);
