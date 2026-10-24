@@ -11,6 +11,10 @@
      deliberately not --fail; where it is drawn it is an octagon, like the icon,
      never a bare dot that could pass for a failed check. */
   --busy: #da3633;
+  /* A pull request's tint: the queue's `PR #N` tag and a pull request's `#N`
+     in the description, which have to read as the same kind of thing. */
+  --pull-bg: color-mix(in srgb, var(--accent) 10%, transparent);
+  --pull-line: color-mix(in srgb, var(--accent) 35%, transparent);
   color-scheme: dark;
   /* The description and the pull request's title -- the two things in this
      window that are read rather than operated. Every face here ships with an OS
@@ -526,6 +530,14 @@ a { color: var(--accent); }
 /* Up one step, to sit level with 15px serif rather than under it. */
 .md code { background: var(--bg); padding: 0 4px; border-radius: 3px; font-size: 13px; }
 .md em { font-style: italic; color: var(--fg); }
+/* A `#N` in the prose that is a pull request (mentionLink in pr.js): the
+   queue's PR tag tint (--pull-bg, --pull-line), smaller, so it marks the
+   number without making a pill of it mid-sentence. The author's `#N` text is
+   left alone. */
+.md a.ref.pull {
+  padding: 0 3px; border-radius: 4px; text-decoration: none;
+  background: var(--pull-bg); box-shadow: inset 0 0 0 1px var(--pull-line);
+}
 /* A fence scrolls on its own rather than widening the pane, which at 375px it
    would do at the first long command line. */
 .md pre {
@@ -799,10 +811,7 @@ main.diff-off #diff-wrap { display: none; }
    what `PR #N` wears there: a filled accent is the one thing a region is for,
    and a group of five PR mentions would be five of them beside each row's
    buttons. */
-.item .tag.pull {
-  border-color: color-mix(in srgb, var(--accent) 35%, transparent);
-  background: color-mix(in srgb, var(--accent) 10%, transparent);
-}
+.item .tag.pull { border-color: var(--pull-line); background: var(--pull-bg); }
 /* A mention on the Issues tab that is no longer open: a closed issue, or a
    merged or closed PR. */
 .item.source.closed .text { color: var(--dim); }

@@ -2,7 +2,7 @@
 
 import { execFile } from 'node:child_process';
 import { debug } from './term.js';
-import { mentions, repoUrl, printable } from './public/tasks.js';
+import { mentions, repoUrl, resolveRef, printable } from './public/tasks.js';
 
 // Every gh call and every git call comes through run(), so this is the whole
 // count. What it is for: two browser tabs each poll on their own timer against
@@ -678,13 +678,34 @@ export function rollup(checks) {
   return { ...counts, list };
 }
 
-/** Issues the PR closes, plus any bare #N mentioned in the body. */
+/**
+ * Issues the PR closes, plus any bare #N mentioned in the body.
+ *
+ * A closing reference can be in another repository (`Fixes other/repo#3`). That
+ * one carries its `repo`, as `owner/name`, and is kept apart from this
+ * repository's #3: by number alone, a bare `#3` in the body was folded into it,
+ * and the pane linked that `#3` to the other repository.
+ *
+ * Which repository is GitHub's `repository` on the reference, set against the
+ * last two segments of the PR's repository URL by resolveRef, as the queue
+ * compares them. Not by URL prefix: a remote spelled `www.github.com`, or any
+ * other host GitHub's issue URL does not match, made this repository's own
+ * issue another's. A reference with no `repository` is taken as this one's.
+ */
 export function linkedIssues(pr) {
   const seen = new Map();
-  for (const i of pr.closingIssuesReferences ?? []) {
-    seen.set(i.number, { number: i.number, url: i.url, closes: true });
-  }
   const repo = repoUrl(pr.url);
+  const home = repo.split('/').slice(-2).join('/');
+  for (const i of pr.closingIssuesReferences ?? []) {
+    const { owner, name } = i.repository ?? {};
+    const other = owner?.login && name
+      ? resolveRef({ owner: owner.login, name, number: i.number }, home).repo : null;
+    if (other) {
+      seen.set(`${other}#${i.number}`, { number: i.number, url: i.url, closes: true, repo: other });
+    } else {
+      seen.set(i.number, { number: i.number, url: i.url, closes: true });
+    }
+  }
   for (const number of mentions(pr.body ?? '')) {
     if (!seen.has(number)) seen.set(number, { number, url: `${repo}/issues/${number}`, closes: false });
   }
@@ -699,29 +720,38 @@ export function linkedIssues(pr) {
  * `closingIssuesReferences` gives number, url and repository and nothing else
  * (checked 2026-09-18), and a bare `#N` out of the body is only ever a number.
  * It rides on loadPr, which status() runs on a reload rather than on every
- * poll, so the poll's call count is unchanged and a reload costs one more.
+ * poll, so the poll's call count is unchanged and a reload costs one more, and
+ * one for each other repository a closing reference is in.
  *
  * `issueOrPullRequest`, not `issue`: a `#N` in a description is as often a pull
  * request as an issue -- #27 in this repo's own -- and `issue(number:)` on one
  * resolves to nothing.
  */
 async function withLinks(cwd, prUrl, issues) {
-  // ponytail: 50 aliases is plenty for a description; if a body ever needs more,
-  // chunk the numbers rather than growing one query.
-  const numbers = issues.map((i) => i.number).slice(0, 50);
-  const links = numbers.length ? await issueLinks(cwd, prUrl, numbers) : new Map();
-  for (const i of issues) {
-    const found = links.get(i.number);
-    i.title = found?.title ?? null;
-    // Which a bare #N is, for the pane's `PR #N`: closingIssuesReferences is
-    // only ever issues, but a mention is as often a pull request.
-    i.kind = found?.kind ?? null;
-    // linkedIssues can only guess `/issues/N` from the repository URL, and half
-    // the numbers in a description like this one are pull requests. GitHub
-    // redirects, so the guess works -- but it is a guess, and the answer is
-    // already in the response the title came out of.
-    if (found?.url) i.url = found.url;
-  }
+  const { owner, repo } = parsePrUrl(prUrl);
+  // One query per repository, since the query asks one: asked of this one,
+  // another's #3 came back titled and linked as this one's. Another is only
+  // ever a closing reference's (`Fixes other/repo#3`), and a description names
+  // few, so a reload costs a call for each and they run together.
+  const byRepo = Map.groupBy(issues, (i) => i.repo ?? `${owner}/${repo}`);
+  await Promise.all([...byRepo].map(async ([where, list]) => {
+    const [o, r] = where.split('/');
+    // ponytail: 50 aliases is plenty for a description; if a body ever needs
+    // more, chunk the numbers rather than growing one query.
+    const links = await repoLinks(cwd, o, r, list.map((i) => i.number).slice(0, 50));
+    for (const i of list) {
+      const found = links.get(i.number);
+      i.title = found?.title ?? null;
+      // Which a bare #N is, for the pane's `PR #N`: closingIssuesReferences is
+      // only ever issues, but a mention is as often a pull request.
+      i.kind = found?.kind ?? null;
+      // linkedIssues can only guess `/issues/N` from the repository URL, and half
+      // the numbers in a description like this one are pull requests. GitHub
+      // redirects, so the guess works -- but it is a guess, and the answer is
+      // already in the response the title came out of.
+      if (found?.url) i.url = found.url;
+    }
+  }));
   return issues;
 }
 
@@ -741,6 +771,11 @@ async function withLinks(cwd, prUrl, issues) {
  */
 export async function issueLinks(cwd, prUrl, numbers) {
   const { owner, repo } = parsePrUrl(prUrl);
+  return repoLinks(cwd, owner, repo, numbers);
+}
+
+/** issueLinks, in any repository gh can read: another's closing references. */
+async function repoLinks(cwd, owner, repo, numbers) {
   try {
     return linksFrom(await gh(linksArgs(owner, repo, numbers), { cwd }));
   } catch (e) {
