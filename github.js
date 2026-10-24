@@ -749,6 +749,25 @@ export async function issueLinks(cwd, prUrl, numbers) {
   }
 }
 
+// What a milestone holds, open and done, for its line's pie: issues on the
+// Issues tab and pull requests on the Pull requests tab, closed and merged
+// both counting as done. Milestone.issues is issues only (checked against
+// this repository on 2026-10-24), so the two tabs' pies are their own kinds.
+const ISSUE_COUNTS = 'open: issues(states:OPEN){ totalCount } done: issues(states:CLOSED){ totalCount }';
+const PULL_COUNTS = 'open: pullRequests(states:OPEN){ totalCount } done: pullRequests(states:[CLOSED,MERGED]){ totalCount }';
+
+/**
+ * A milestone node in the listings' shape, `closed` when GitHub says so, and
+ * `progress` the pie's `{ done, total }` from its counts (ISSUE_COUNTS), or
+ * null for a node without them -- a pulls.json written before they were read.
+ */
+const milestoneRow = (m, description = '') => ({
+  number: m.number, title: printable(m.title ?? '').trim() || `#${m.number}`,
+  dueOn: m.dueOn ?? null, description, closed: m.state === 'CLOSED',
+  progress: Number.isInteger(m.open?.totalCount) && Number.isInteger(m.done?.totalCount)
+    ? { done: m.done.totalCount, total: m.open.totalCount + m.done.totalCount } : null,
+});
+
 // Milestones come on every page, since the query is one text; repoIssues keeps
 // the first page's. `issueFieldValues` -- GitHub's per-issue custom fields,
 // where a priority would live -- is not asked for: on 2026-10-15 it answered
@@ -756,14 +775,14 @@ export async function issueLinks(cwd, prUrl, numbers) {
 // there is no priority here, and labels are the nearest thing (#66).
 const ISSUES_QUERY = `query($owner:String!,$repo:String!,$after:String){
   repository(owner:$owner,name:$repo){
-    milestones(first:50,states:OPEN){ nodes{ number title dueOn description } }
+    milestones(first:50,states:OPEN){ nodes{ number title dueOn description ${ISSUE_COUNTS} } }
     issues(first:100,after:$after,states:OPEN,orderBy:{field:UPDATED_AT,direction:DESC}){
       totalCount pageInfo{ hasNextPage endCursor }
-      nodes{ number title url updatedAt body milestone{ number title dueOn state } labels(first:10){ nodes{ name } } } } } }`;
+      nodes{ number title url updatedAt body milestone{ number title dueOn state ${ISSUE_COUNTS} } labels(first:10){ nodes{ name } } } } } }`;
 
 /**
  * The repository's open issues and open milestones, for the queue's Issues
- * tab: `{ milestones: [{ number, title, dueOn, description, closed }], issues:
+ * tab: `{ milestones: [{ number, title, dueOn, description, closed, progress }], issues:
  * [{ number, title, url, updatedAt, body, milestone, labels }], total, listed }`.
  * An issue's `milestone` is the milestone's number or null, and `labels` is
  * names only, rid of control characters as the titles are (printable). Most
@@ -791,10 +810,7 @@ export async function repoIssues(cwd, owner, repo) {
     if (after) args.push('-f', `after=${after}`);
     const { data } = JSON.parse(await gh(args, { cwd }));
     const r = data.repository;
-    milestones ??= r.milestones.nodes.map((m) => ({
-      number: m.number, title: printable(m.title ?? '').trim() || `#${m.number}`,
-      dueOn: m.dueOn ?? null, description: printable(m.description ?? '').trim(), closed: false,
-    }));
+    milestones ??= r.milestones.nodes.map((m) => milestoneRow(m, printable(m.description ?? '').trim()));
     total = r.issues.totalCount;
     for (const i of r.issues.nodes) {
       issues.push({
@@ -804,12 +820,7 @@ export async function repoIssues(cwd, owner, repo) {
         labels: (i.labels?.nodes ?? []).map((l) => printable(l.name ?? '').trim()).filter(Boolean),
       });
       const m = i.milestone;
-      if (m && !milestones.some((k) => k.number === m.number)) {
-        milestones.push({
-          number: m.number, title: printable(m.title ?? '').trim() || `#${m.number}`,
-          dueOn: m.dueOn ?? null, description: '', closed: m.state === 'CLOSED',
-        });
-      }
+      if (m && !milestones.some((k) => k.number === m.number)) milestones.push(milestoneRow(m));
     }
     const { hasNextPage, endCursor } = r.issues.pageInfo;
     if (hasNextPage && !endCursor) throw new Error(`GitHub said ${owner}/${repo} has more issues, but gave no cursor to them`);
@@ -821,12 +832,12 @@ export async function repoIssues(cwd, owner, repo) {
 
 const PULLS_QUERY = `query($owner:String!,$repo:String!,$after:String){
   repository(owner:$owner,name:$repo){
-    milestones(first:50,states:OPEN){ nodes{ number title dueOn description } }
+    milestones(first:50,states:OPEN){ nodes{ number title dueOn description ${PULL_COUNTS} } }
     pullRequests(first:100,after:$after,states:OPEN,orderBy:{field:UPDATED_AT,direction:DESC}){
       totalCount pageInfo{ hasNextPage endCursor }
       nodes{ number title url isDraft isCrossRepository headRefName baseRefName createdAt updatedAt
         author{ login } additions deletions changedFiles mergeStateStatus reviewDecision body
-        milestone{ number title dueOn state } labels(first:10){ nodes{ name } }
+        milestone{ number title dueOn state ${PULL_COUNTS} } labels(first:10){ nodes{ name } }
         closingIssuesReferences(first:10){ nodes{ number title url milestone{ title } } }
         files(first:100){ nodes{ additions deletions viewerViewedState } } } } } }`;
 
@@ -849,12 +860,6 @@ export const MERGE_WORD = {
 // The cut can split a `**` pair, and the tab's inline() then shows the half
 // left over as written -- past the two lines, so cut at a word if it shows.
 const LEAD_MAX = 300;
-
-/** A milestone node in the listing's shape (repoIssues'), `closed` when GitHub says so. */
-const milestoneRow = (m, description = '') => ({
-  number: m.number, title: printable(m.title ?? '').trim() || `#${m.number}`,
-  dueOn: m.dueOn ?? null, description, closed: m.state === 'CLOSED',
-});
 
 /**
  * One node of PULLS_QUERY as the row the Pull requests tab draws. The first
