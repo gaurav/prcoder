@@ -216,18 +216,26 @@ test('an age is a word or two, and new is a week', () => {
   assert.equal(isNew({}, now), false);
 });
 
-test('a milestone is due some time ago or in some time, with its date on hover', () => {
+test('a milestone is due some time ago or in some time, with its date in full on hover', () => {
   const now = Date.parse('2026-10-19T12:00:00Z');
-  assert.deepEqual(dueLabel('2026-10-14T00:00:00Z', now), { className: 'due overdue', textContent: 'due 5 days ago', title: 'due 2026-10-14' });
-  assert.deepEqual(dueLabel('2026-11-03T00:00:00Z', now), { className: 'due', textContent: 'due in 14 days', title: 'due 2026-11-03' });
+  assert.deepEqual(dueLabel('2026-10-14T00:00:00Z', now), { className: 'due overdue', textContent: 'due 5 days ago', title: 'Wednesday, October 14, 2026' });
+  assert.deepEqual(dueLabel('2026-11-03T00:00:00Z', now), { className: 'due', textContent: 'due in 15 days', title: 'Tuesday, November 3, 2026' });
   assert.equal(dueLabel('2026-10-22T00:00:00Z', now).className, 'due soon');
   assert.equal(dueLabel('2026-10-26T11:59:00Z', now).className, 'due soon', 'a minute inside the week');
   assert.equal(dueLabel('2026-10-26T12:00:00Z', now).className, 'due', 'a week off is not soon');
+  assert.equal(dueLabel('2026-11-17T00:00:00Z', now).textContent, 'due in 29 days');
+  assert.equal(dueLabel('2026-11-18T00:00:00Z', now).textContent, 'due in 1 month', 'months from 30 days, and never `next month`');
   assert.equal(dueLabel('2027-01-01T00:00:00Z', now).textContent, 'due in 2 months');
+  assert.equal(dueLabel('2025-09-01T00:00:00Z', now).textContent, 'due 1 year ago');
   // GitHub sends a date as the start of that day: due today is not overdue
   // until the day is over, however many hours past its dueOn. Today is this
-  // clock's, so the check is at local noon, true in any time zone.
+  // clock's, so the checks are at local times, true in any time zone.
   const noon = new Date(2026, 9, 19, 12).getTime();
-  assert.deepEqual(dueLabel('2026-10-19T07:00:00Z', noon), { className: 'due soon', textContent: 'due today', title: 'due 2026-10-19' });
+  assert.deepEqual(dueLabel('2026-10-19T07:00:00Z', noon), { className: 'due soon', textContent: 'due today', title: 'Monday, October 19, 2026' });
   assert.equal(dueLabel('2026-10-18T07:00:00Z', noon).className, 'due overdue', 'yesterday\'s is');
+  // Counted in days, not hours: late in the evening tomorrow is hours off,
+  // and just after midnight yesterday was too.
+  assert.equal(dueLabel('2026-10-20T07:00:00Z', new Date(2026, 9, 19, 23).getTime()).textContent, 'due tomorrow');
+  assert.equal(dueLabel('2026-10-18T07:00:00Z', new Date(2026, 9, 19, 1).getTime()).textContent, 'due yesterday');
+  assert.equal(dueLabel('2026-10-21T07:00:00Z', noon).textContent, 'due in 2 days');
 });

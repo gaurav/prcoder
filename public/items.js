@@ -122,20 +122,36 @@ export const age = (iso, now = Date.now()) => when(iso, Math.max(now, Date.parse
 
 /**
  * A milestone's due date as its line says it, `due 3 days ago`, with the date
- * on hover and a class saying how near it is: `overdue`, `soon`, or neither.
- * GitHub's dueOn is a date sent as the start of that day (`T07:00:00Z` for a
- * date set in California), so it is compared as a date with today's on this
- * clock: due today is `due today` and soon, and overdue only once the day is
- * over -- compared as a time, a milestone was overdue for most of its own day.
+ * in full on hover (`Tuesday, October 27, 2026`) and a class saying how near
+ * it is: `overdue`, `soon`, or neither. GitHub's dueOn is a date sent as the
+ * start of that day (`T07:00:00Z` for a date set in California), so it is
+ * compared as a date with today's on this clock: due today is `due today` and
+ * soon, and overdue only once the day is over -- compared as a time, a
+ * milestone was overdue for most of its own day. The distance is in whole
+ * days for the same reason: when() on the time said `due in 19 hours` of
+ * tomorrow's, and `5 hours ago` of yesterday's.
  */
 export function dueLabel(dueOn, now = Date.now()) {
   const day = dueOn.slice(0, 10);
   const d = new Date(now);
   const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-  const title = `due ${day}`;
+  // The day as written, in UTC so no time zone moves it to the one before.
+  const title = new Intl.DateTimeFormat('en', { dateStyle: 'full', timeZone: 'UTC' }).format(Date.parse(`${day}T00:00:00Z`));
   if (day === today) return { className: 'due soon', textContent: 'due today', title };
   const near = day < today ? ' overdue' : Date.parse(dueOn) - now < DUE_SOON ? ' soon' : '';
-  return { className: `due${near}`, textContent: `due ${when(dueOn, now)}`, title };
+  return { className: `due${near}`, textContent: `due ${inDays((Date.parse(day) - Date.parse(today)) / 86400_000)}`, title };
+}
+
+/**
+ * A whole number of days from today as words: `tomorrow`, `in 3 days`, `2
+ * months ago`; months from 30 days, years from 365. Only days say `tomorrow`
+ * and `yesterday`: `auto` would make 40 days `next month`, which reads as the
+ * calendar's.
+ */
+function inDays(days) {
+  if (Math.abs(days) < 30) return new Intl.RelativeTimeFormat('en', { numeric: 'auto' }).format(days, 'day');
+  const [n, unit] = Math.abs(days) >= 365 ? [Math.trunc(days / 365), 'year'] : [Math.trunc(days / 30), 'month'];
+  return new Intl.RelativeTimeFormat('en', { numeric: 'always' }).format(n, unit);
 }
 
 // The size chip's bands, on lines changed (additions and deletions together):

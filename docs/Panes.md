@@ -415,7 +415,8 @@ soon`, `Needed later`, `Not urgent` and `Upstream`, matched by name whatever the
 ranked the same way and marked *closed*, so that no listed issue goes undrawn; nothing can be moved
 onto it, by a drop or in a row's select, where it shows only on a row already on it. A milestone's line
 is its title, linking to it on GitHub, how many issues it holds in parentheses, as the tabs count,
-and when it is due, as `due 5 days ago`, `due today` or `due in 2 months`, with the date on hover -- a round red badge once
+and when it is due, in calendar days, as `due 5 days ago`, `due yesterday`, `due today`, `due tomorrow` or `due in 2
+months` (months from 30 days), with the date in full on hover, `Tuesday, October 27, 2026` -- a round red badge once
 the day is past, yellow within a week, so a milestone to reschedule stands out; an empty one is
 still drawn, folded. Only the mentions and the first
 group with an issue start open, which is the one to focus on -- **No milestone** whenever it has any -- and a milestone that appears
