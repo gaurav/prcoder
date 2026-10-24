@@ -451,7 +451,8 @@ test('the cheap per-poll call carries the checks, summarised', { skip: unix }, a
 // GraphQL call that came next: loadPr reads the linked issues alongside the
 // files, and a call of theirs would take a page and shift the rest by one.
 // The mentions' titles query (issueLinks) gets `links.json` where a test has
-// written one. Any other GraphQL call gets an empty answer. The counter is not atomic, so
+// written one, or `links-<owner>.json` when it asks another owner's repository
+// and the test has written that. Any other GraphQL call gets an empty answer. The counter is not atomic, so
 // only the file pages, which prFiles asks for one at a time, may use it.
 const withPr = (view, pages, fn, views = []) => withGh((dir) => [
   'case "$1" in',
@@ -460,7 +461,9 @@ const withPr = (view, pages, fn, views = []) => withGh((dir) => [
   `      if [ -f "${dir}/view$v.json" ]; then cat "${dir}/view$v.json"; else cat "${dir}/view.json"; fi ;;`,
   `  *) case "$*" in`,
   `       *"files(first:100"*) n=$(( $(cat "${dir}/n" 2>/dev/null || echo 0) + 1 )); echo $n > "${dir}/n"; cat "${dir}/page$n.json" ;;`,
-  `       *"issueOrPullRequest"*) cat "${dir}/links.json" 2>/dev/null || echo '{"data":{}}' ;;`,
+  `       *"issueOrPullRequest"*) f="${dir}/links.json"`,
+  `         for a in "$@"; do case "$a" in owner=*) [ -f "${dir}/links-\${a#owner=}.json" ] && f="${dir}/links-\${a#owner=}.json" ;; esac; done`,
+  `         cat "$f" 2>/dev/null || echo '{"data":{}}' ;;`,
   `       *) echo '{"data":{}}' ;;`,
   '     esac ;;',
   'esac',
@@ -529,6 +532,22 @@ test('a mention carries the kind, title and URL its lookup found', { skip: unix 
       { number: 3, kind: 'pull', title: 'Earlier work', url: 'https://github.com/o/r/pull/3' },
       { number: 4, kind: 'issue', title: 'A bug', url: 'https://github.com/o/r/issues/4' },
       { number: 5, kind: null, title: null, url: 'https://github.com/o/r/issues/5' }]);
+  });
+});
+
+// Asked of this repository, another's #3 was this one's #3; not asked at all,
+// it had no title. So it is asked of its own repository, in a call of its own.
+test("another repository's closing reference is titled from that repository", { skip: unix }, async () => {
+  const other = { number: 3, url: 'https://github.com/other/repo/issues/3', repository: { name: 'repo', owner: { login: 'other' } } };
+  await withPr({ ...view, body: 'Fixes other/repo#3; see #3.', closingIssuesReferences: [other] }, [page([file(1)], null)], async (dir) => {
+    const answer = (title, url) => JSON.stringify({ data: { repository: {
+      i3: { __typename: 'Issue', title, url, state: 'OPEN', updatedAt: '2026-10-01T00:00:00Z' } } } });
+    await fs.writeFile(path.join(dir, 'links.json'), answer('Ours', 'https://github.com/o/r/issues/3'));
+    await fs.writeFile(path.join(dir, 'links-other.json'), answer('Theirs', 'https://github.com/other/repo/issues/3'));
+    const pr = await loadPr(os.tmpdir(), undefined, { pause: 0 });
+    assert.deepEqual(pr.issues.map(({ repo, title, url }) => ({ repo, title, url })), [
+      { repo: 'other/repo', title: 'Theirs', url: 'https://github.com/other/repo/issues/3' },
+      { repo: undefined, title: 'Ours', url: 'https://github.com/o/r/issues/3' }]);
   });
 });
 
