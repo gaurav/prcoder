@@ -112,6 +112,8 @@ test('#N inside a markdown link is not a mention', () => {
   // Nor is one written against a link or a code span: the pane does not link
   // it, since what is before it is not a space.
   assert.deepEqual(linkedIssues(pr('[x](https://y)#5\n`z`#7 and #6')).map((i) => i.number), [6]);
+  // A link the pane will not open is left as its source, and its #N is linked.
+  assert.deepEqual(linkedIssues(pr('[details in #12](#notes), [see #5](javascript:x)')).map((i) => i.number), [5, 12]);
 });
 
 test('an empty body links nothing', () => {

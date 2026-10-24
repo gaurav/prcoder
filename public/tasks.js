@@ -23,6 +23,16 @@ export const mention = () => /(^|[\s(])#(\d+)\b/g;
 export const mdLink = () => /\[([^\]]+)\]\(([^)\s]+)\)/g;
 
 /**
+ * Whether the pane opens a markdown link to `href`: http(s), or a path in the
+ * repository. Not another scheme, `javascript:` and `data:` among them, and
+ * not a bare `#anchor`, a position on a page prcoder is not. target() in pr.js
+ * guards its hrefs with this; a link it fails stays its own source there, so
+ * mentions() counts the `#N` in its text as the pane draws it.
+ */
+export const opens = (href) =>
+  /^https?:\/\//.test(href) || !(/^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith('#'));
+
+/**
  * A reference to an issue or pull request in any repo, the four ways people
  * type one: `#91`, `owner/name#91`, `name#91`, and a github.com `/issues/` or
  * `/pull/` URL, whatever follows its number. Wider than mention(), which stays
@@ -199,11 +209,14 @@ export function fences(body) {
  * A code span or a link is replaced by a character, not removed, because
  * inline() leaves a placeholder where each was, and a placeholder is not the
  * space or line start a mention needs. Removed, the `#5` in `[x](y)#5` was
- * listed here and not linked there.
+ * listed here and not linked there. A link the pane will not open (opens())
+ * is left, as the pane leaves it, and the `#12` in `[see #12](#notes)` counts.
  */
 export function mentions(body = '') {
   return fences(withoutHtml(body)).flatMap((chunk) => (chunk.code != null ? []
-    : [...chunk.text.replace(/`[^`]+`/g, '\u0000').replace(mdLink(), '\u0001').matchAll(mention())].map(([, , n]) => Number(n))));
+    : [...chunk.text.replace(/`[^`]+`/g, '\u0000')
+      .replace(mdLink(), (m, text, href) => (opens(href) ? '\u0001' : m))
+      .matchAll(mention())].map(([, , n]) => Number(n))));
 }
 
 /**

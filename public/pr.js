@@ -1,4 +1,4 @@
-import { withoutHtml, mention, mdLink, repoUrl, urlPath, blocks, sectionize } from './tasks.js';
+import { withoutHtml, mention, mdLink, opens, repoUrl, urlPath, blocks, sectionize } from './tasks.js';
 import { kids, h, btn, ext, debug, tabBtn, writeThrough, fraction, mark, kept, fold } from './ui.js';
 import { fileTree, fileGroup, filesProgress, unlisted } from './filelist.js';
 import { refLabel, refClass } from './items.js';
@@ -1137,12 +1137,14 @@ export const inline = (s, where = links) => {
     .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
     .replace(/\*([^*\n]+)\*/g, '<em>$1</em>')
     .replace(/(?<![A-Za-z0-9_])_([^_\n]+)_(?![A-Za-z0-9_])/g, '<em>$1</em>')
-    // Held aside until the mentions are done, link or not, so a `#5` in
-    // `[see #5](…)` does not become a link inside the link: the browser closes
-    // the outer one early, and a click on the `#5` opened the pull request.
+    // Held aside until the mentions are done, so a `#5` in `[see #5](…)` does
+    // not become a link inside the link: the browser closes the outer one
+    // early, and a click on the `#5` opened the pull request. Only a link this
+    // draws: one it will not open stays its source, where the `#5` is a
+    // mention like any other, and mentions() lists it.
     .replace(mdLink(), (m, text, href) => {
       const url = target(href, where);
-      return `\u0001${held.push(url ? a(url, text) : m) - 1}\u0001`;
+      return url ? `\u0001${held.push(a(url, text)) - 1}\u0001` : m;
     })
     // Not across a placeholder: `https://a.com[x](…)` took the held link into
     // its own href, where the link's quotes closed the attribute and the rest
@@ -1192,12 +1194,13 @@ function mentionLink(n, where, a) {
  * The null is the guard as much as the fallback: this href is interpolated into
  * an `href="..."` and set with innerHTML, so `javascript:` and `data:` targets
  * are a typed turn into the running claude session away (see escape() below).
- * Only http(s) and repository-relative paths get through; a bare `#anchor` is a
- * position on a page prcoder is not, so it is left alone too.
+ * Only http(s) and repository-relative paths get through (opens() in tasks.js,
+ * which mentions() reads too); a bare `#anchor` is a position on a page prcoder
+ * is not, so it is left alone too.
  */
 const target = (href, where) => {
+  if (!opens(href)) return null;
   if (/^https?:\/\//.test(href)) return href;
-  if (/^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith('#')) return null;
   // `href` has been through escape() with the rest of the description, but the
   // ref comes from the pull request: raw, a branch named `a"/style="...` closed
   // the href and added an attribute to the page that holds the /pty socket.
