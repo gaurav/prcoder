@@ -832,7 +832,16 @@ main.diff-off #diff-wrap { display: none; }
 .fold.milestone > summary .due { font-variant-numeric: tabular-nums; }
 .fold.milestone > summary .due.soon { color: var(--warn); }
 .fold.milestone > summary .closed-milestone { font-style: italic; }
-.fold.milestone > summary .count { font-variant-numeric: tabular-nums; }
+/* The count as a badge straight after the title (countBadge in queue.js):
+   pushed to the line's end it was too far off to read as the milestone's.
+   Grey, so it sits under the red and yellow badges, and round at one digit;
+   an empty group's is fainter still. The pie after it is how much of the
+   milestone GitHub has closed. */
+.fold.milestone > summary .count {
+  font-variant-numeric: tabular-nums; min-width: 1.5em; box-sizing: border-box; text-align: center;
+  padding: 0 5px; border-radius: 9px; background: color-mix(in srgb, var(--dim) 22%, transparent);
+}
+.fold.milestone > summary .count.none { background: none; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--dim) 30%, transparent); }
 /* No milestone, with anything on it: the untriaged, any of which could be
    Critical, so it is drawn first and in the text's own colour rather than
    the dim of the other lines, with a yellow badge -- the soon-due yellow, not

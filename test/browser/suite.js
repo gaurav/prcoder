@@ -1501,9 +1501,9 @@ test('↓ on the Issues tab keeps the repo the mention is in', { skip }, async (
 const ISSUES = {
   milestones: [
     { number: 3, title: 'Not urgent', dueOn: null, description: 'Worth doing eventually.' },
-    { number: 1, title: 'v1.0', dueOn: '2026-10-14T00:00:00Z', description: '' },
-    { number: 4, title: 'Needed soon', dueOn: null, description: '' },
-    { number: 2, title: 'v0.1', dueOn: '2026-10-02T00:00:00Z', description: '' },
+    { number: 1, title: 'v1.0', dueOn: '2026-10-14T00:00:00Z', description: '', progress: { done: 3, total: 4 } },
+    { number: 4, title: 'Needed soon', dueOn: null, description: '', progress: { done: 0, total: 0 } },
+    { number: 2, title: 'v0.1', dueOn: '2026-10-02T00:00:00Z', description: '', progress: { done: 'x', total: 2 } },
   ],
   issues: [
     { number: 58, title: 'Decide what the Issues tab shows', url: 'https://github.com/gaurav/prcoder/issues/58', updatedAt: '2026-10-10T00:00:00Z',
@@ -1519,8 +1519,13 @@ const ISSUES = {
   // its number alone when GitHub did not know it.
   total: 4, listed: 4, repo: 'gaurav/prcoder', mentions: [{ number: 7 }],
 };
-const groupsOf = (p) => p.$$eval('#queue-body .fold.milestone', (gs) => gs.map((g) =>
-  `${g.dataset.group}|${g.querySelector('h3').textContent.replace(/\s+/g, ' ').trim()}|${g.open ? 'open' : 'closed'}|${g.querySelectorAll('.item').length}`));
+// A group's line as text, its count badge written `(N)` so a count reads
+// apart from a title that ends in a number; the badge itself is plain digits.
+const groupsOf = (p) => p.$$eval('#queue-body .fold.milestone', (gs) => gs.map((g) => {
+  const line = g.querySelector('h3').cloneNode(true);
+  for (const c of line.querySelectorAll('.count')) c.textContent = `(${c.textContent})`;
+  return `${g.dataset.group}|${line.textContent.replace(/\s+/g, ' ').trim()}|${g.open ? 'open' : 'closed'}|${g.querySelectorAll('.item').length}`;
+}));
 
 // The fixture pull request mentions #7 without closing it, so every page has
 // a Mentioned group ahead of the milestones; `prIssues` replaces that list.
@@ -1558,6 +1563,18 @@ test('the Issues tab groups the repository\'s open issues by milestone in rank o
   const tint = (sel) => fresh.locator(sel).evaluate((e) => getComputedStyle(e).color);
   assert.notEqual(await tint('[data-group="m:none"] summary'), await tint('[data-group="m:3"] summary'), 'brighter than a milestone line');
   assert.equal(await fresh.locator('#queue-body .fold.untriaged').count(), 1, 'and nothing else is');
+  // The count is a badge right after the title, with the pie of what GitHub
+  // has closed after it, and the due date after that; the date in full on hover.
+  const v1 = fresh.locator('[data-group="m:1"] summary h3');
+  assert.deepEqual(await v1.evaluate((e) => [...e.children].map((c) => c.className)), ['', 'count', 'mark', 'due overdue']);
+  assert.equal(await v1.locator('.count').textContent(), '1');
+  assert.equal(await v1.locator('.count').getAttribute('title'), '1 open issue listed');
+  assert.equal(await v1.locator('.mark').getAttribute('aria-label'), '3 of 4 issues closed');
+  assert.equal(await v1.locator('.due').getAttribute('title'), 'Wednesday, October 14, 2026');
+  assert.equal(await fresh.locator('[data-group="m:4"] summary .count.none').textContent(), '0', 'an empty one\'s badge is fainter');
+  assert.equal(await fresh.locator('[data-group="m:4"] summary .mark').count(), 0, 'and a milestone that never held anything has no pie');
+  assert.equal(await fresh.locator('[data-group="m:2"] summary .mark').count(), 0, 'nor one whose counts are not numbers');
+  assert.equal(await fresh.locator('[data-group="m:3"] summary .mark').count(), 0, 'nor one without counts');
   // GitHub did not know the mention, so it says so, dimmed.
   assert.equal(await fresh.locator('[data-group="mentioned"] .item.closed .text').textContent(), 'not found on GitHub');
   assert.equal(await fresh.locator('[data-group="m:4"] .empty').textContent(), 'no open issues');
@@ -1723,7 +1740,7 @@ test('an issue row opens to its body through the description renderer, with Open
   assert.equal(await out.getAttribute('href'), 'https://github.com/gaurav/prcoder/issues/58');
   assert.equal(await out.getAttribute('target'), '_blank');
   assert.equal(await fresh.locator('[data-group="m:1"] .disclose').getAttribute('aria-expanded'), 'true');
-  assert.equal(await fresh.locator('[data-group="m:1"] summary .count').textContent(), '(1)', 'an open row is still one issue');
+  assert.equal(await fresh.locator('[data-group="m:1"] summary .count').textContent(), '1', 'an open row is still one issue');
   // ▶ types the title with its link, unsent, and the queue is untouched.
   await row.locator('button[title^="type into the coding agent"]').click();
   assert.deepEqual(typed, ['Decide what the Issues tab shows (https://github.com/gaurav/prcoder/issues/58)']);
@@ -1890,7 +1907,7 @@ const pullOf = (over) => ({
 });
 const PULLS = {
   milestones: [
-    { number: 1, title: 'v1.0', dueOn: '2026-10-14T00:00:00Z', description: '', closed: false },
+    { number: 1, title: 'v1.0', dueOn: '2026-10-14T00:00:00Z', description: '', closed: false, progress: { done: 1, total: 3 } },
     { number: 4, title: 'Needed soon', dueOn: null, description: 'Work that should land soon.', closed: false },
     { number: 3, title: 'Not urgent', dueOn: null, description: '', closed: false },
   ],
@@ -1910,8 +1927,12 @@ const PULLS = {
   total: 3, listed: 3, read: NOW - 3_600_000,
 };
 const BELOW = { branch: 'gone', names: ['older'], toDefault: true };
-const pullGroupsOf = (p) => p.$$eval('#queue-body .fold.milestone', (gs) => gs.map((g) =>
-  `${g.dataset.group}|${g.querySelector('h3').textContent.replace(/\s+/g, ' ').trim()}|${g.open ? 'open' : 'closed'}|${[...g.querySelectorAll('.item')].map((i) => i.dataset.pull).join(',')}`));
+// The count badge written `(N)`, as groupsOf has it.
+const pullGroupsOf = (p) => p.$$eval('#queue-body .fold.milestone', (gs) => gs.map((g) => {
+  const line = g.querySelector('h3').cloneNode(true);
+  for (const c of line.querySelectorAll('.count')) c.textContent = `(${c.textContent})`;
+  return `${g.dataset.group}|${line.textContent.replace(/\s+/g, ' ').trim()}|${g.open ? 'open' : 'closed'}|${[...g.querySelectorAll('.item')].map((i) => i.dataset.pull).join(',')}`;
+}));
 
 /** A page on the Pull requests tab with `listing` answered, counting what the route was asked. */
 async function pullsPage(listing = PULLS, { stale = true } = {}) {
@@ -1953,6 +1974,9 @@ test('the Pull requests tab groups the open pull requests by milestone, smallest
     'p:none|No milestone (1) to triage|open|30', 'p:1|v1.0 (2) due 5 days ago|closed|20,12', 'p:4|Needed soon (0)|closed|', 'p:3|Not urgent (0)|closed|']);
   assert.equal(await fresh.locator('[data-group="p:none"].untriaged summary .triage').textContent(), 'to triage');
   assert.equal(await fresh.locator('[data-group="p:4"] summary a').getAttribute('title'), 'Work that should land soon.');
+  // The Issues tab's line, in pull requests: the count's badge, then the pie.
+  assert.equal(await fresh.locator('[data-group="p:1"] summary .count').getAttribute('title'), '2 open pull requests listed');
+  assert.equal(await fresh.locator('[data-group="p:1"] summary .mark').getAttribute('aria-label'), '1 of 3 pull requests closed');
   // A row: the tinted PR chip, the title, the size as GitHub bands it with
   // the counts on hover, the merge word, the review, the author, labels,
   // the pie, and the two ages; the one on screen is marked and has no Switch.

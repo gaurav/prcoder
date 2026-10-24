@@ -1,4 +1,4 @@
-import { h, btn, ext, api, toast, pref, setPref, tabBtn, writeThrough, fold, kept, mark } from './ui.js';
+import { h, btn, ext, api, toast, pref, setPref, tabBtn, writeThrough, fold, kept, mark, fraction } from './ui.js';
 import { TABS, refLabel, forClaude, rankMilestones, issueMatches, pullMatches, sortPulls, sizeChip, age, dueLabel, isNew, PULL_SORTS } from './items.js';
 import { refs, resolveRef, blocks } from './tasks.js';
 import { blockNode, inline, stackUnder, stackOrder } from './pr.js';
@@ -474,6 +474,37 @@ const NONE = 'none';
 const triage = (list) => (list.length ? [h('span', { className: 'triage', title: 'on no milestone yet, so not triaged: it could belong at any level' }, 'to triage')] : []);
 
 /**
+ * A group's count, as the badge right after its title: the rows it lists,
+ * which while searching are the ones that match. Beside the title and not at
+ * the line's end, where on a wide pane it was too far off to read as the
+ * milestone's (2026-10-24). `noun` is the plural, `issues` or `pull requests`.
+ */
+const countBadge = (n, noun, searching) => h('span', {
+  className: n ? 'count' : 'count none',
+  title: `${n} open ${several(n, noun)} ${searching ? (n === 1 ? 'matches the search' : 'match the search') : 'listed'}`,
+}, String(n));
+
+/** `noun`, a plural, as one of them when `n` is 1: `issue`, `pull request`. */
+const several = (n, noun) => (n === 1 ? noun.replace(/s$/, '') : noun);
+
+/**
+ * What follows a milestone's count on its line: the pie of how much of it is
+ * done on GitHub (`progress`, its open and done counts of the tab's kind), when
+ * it is due (dueLabel), and `closed` for a closed one still holding rows. The
+ * pie is left out without counts -- a pulls.json older than them, or one
+ * damaged -- and for a milestone that has never held anything.
+ */
+function milestoneExtra(m, noun) {
+  const { done, total } = m.progress ?? {};
+  const counted = Number.isInteger(done) && Number.isInteger(total) && total > 0 && done <= total;
+  return [
+    ...(counted ? [mark({ ...fraction({ done, total }), label: `${done} of ${total} ${several(total, noun)} closed` })] : []),
+    ...(m.dueOn ? [h('span', dueLabel(m.dueOn))] : []),
+    ...(m.closed ? [h('span', { className: 'closed-milestone', title: `closed on GitHub, with open ${noun} still on it` }, 'closed')] : []),
+  ];
+}
+
+/**
  * What starts closed, as each listing lands. On the first, every group but
  * the mentions and the first in the drawn order with an issue on it, which is
  * the one to focus on: No milestone whenever it holds anything, since those
@@ -521,7 +552,7 @@ function issueGroups() {
   // anything on it is marked as the pile to triage (untriaged in style.css).
   const group = (key, title, list, rows, extra = [], target) => {
     const d = fold({
-      className: target === null && list.length ? 'milestone untriaged' : 'milestone', dataset: { group: key }, title: [title, ' ', h('span', { className: 'count' }, `(${list.length})`), ...extra.flatMap((e) => [' ', e])],
+      className: target === null && list.length ? 'milestone untriaged' : 'milestone', dataset: { group: key }, title: [title, ' ', countBadge(list.length, 'issues', searching), ...extra.flatMap((e) => [' ', e])],
       ...state(key),
     }, list.length ? [h('ul', { className: 'items' }, ...rows)] : [h('p', { className: 'empty' }, 'no open issues')]);
     if (target !== undefined) dropTarget(d.querySelector('summary'), target);
@@ -543,11 +574,8 @@ function issueGroups() {
   if (!searching || none.length) out.push(group(`m:${NONE}`, 'No milestone', none, none.map((i) => issueRow(i)).flat(), triage(none), null));
   for (const m of ranked) {
     const title = home ? ext(`https://github.com/${home}/milestone/${m.number}`, m.title, { title: m.description || undefined }) : m.title;
-    const extra = [
-      ...(m.dueOn ? [h('span', dueLabel(m.dueOn))] : []),
-      // On the tab only because an open issue is still on it (repoIssues).
-      ...(m.closed ? [h('span', { className: 'closed-milestone', title: 'closed on GitHub, with open issues still on it' }, 'closed')] : []),
-    ];
+    // A closed one is on the tab only because an open issue is still on it (repoIssues).
+    const extra = milestoneExtra(m, 'issues');
     const list = byMilestone.get(m.number) ?? [];
     if (searching && !list.length) continue;
     // A closed milestone's group shows what is still on it, and takes no drop.
@@ -846,7 +874,7 @@ function pullGroups() {
     const group = (key, title, list, extra, target) => {
       const d = fold({
         className: target === null && list.length ? 'milestone untriaged' : 'milestone', dataset: { group: key },
-        title: [title, ' ', h('span', { className: 'count' }, `(${list.length})`), ...extra.flatMap((e) => [' ', e])],
+        title: [title, ' ', countBadge(list.length, 'pull requests', searching), ...extra.flatMap((e) => [' ', e])],
         ...state(key, list),
       }, list.length ? [h('ul', { className: 'items' }, ...list.map((p) => pullRow(p)).flat())] : [h('p', { className: 'empty' }, 'no open pull requests')]);
       if (target !== undefined) dropTarget(d.querySelector('summary'), target, PULL, movePull);
@@ -856,11 +884,8 @@ function pullGroups() {
     out.push(group(`p:${NONE}`, 'No milestone', none, triage(none), null));
     for (const m of ranked) {
       const title = home ? ext(`https://github.com/${home}/milestone/${m.number}`, m.title, { title: m.description || undefined }) : m.title;
-      const extra = [
-        ...(m.dueOn ? [h('span', dueLabel(m.dueOn))] : []),
-        // Listed only because an open pull request is still on it (repoPulls).
-        ...(m.closed ? [h('span', { className: 'closed-milestone', title: 'closed on GitHub, with open pull requests still on it' }, 'closed')] : []),
-      ];
+      // A closed one is listed only because an open pull request is still on it (repoPulls).
+      const extra = milestoneExtra(m, 'pull requests');
       out.push(group(`p:${m.number}`, title, byMilestone.get(m.number) ?? [], extra, m.closed ? undefined : m.title));
     }
   }
