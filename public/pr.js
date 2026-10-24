@@ -1129,7 +1129,10 @@ export const inline = (s, where = links) => {
   const code = [];
   const held = [];
   const a = (href, text, attrs = '') => `<a href="${href}"${attrs} target="_blank" rel="noopener">${text}</a>`;
-  return escape(s)
+  // \u0000 and \u0001 mark what is held aside, so a description gets none of
+  // its own: a typed `\u00010\u0001` was put back as `undefined`, or as a copy
+  // of another link.
+  return escape(s.replace(/[\u0000\u0001]/g, ''))
     .replace(/`([^`]+)`/g, (_, c) => `\u0000${code.push(c) - 1}\u0000`)
     .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
     .replace(/\*([^*\n]+)\*/g, '<em>$1</em>')
@@ -1141,7 +1144,10 @@ export const inline = (s, where = links) => {
       const url = target(href, where);
       return `\u0001${held.push(url ? a(url, text) : m) - 1}\u0001`;
     })
-    .replace(/(^|[\s(])(https?:\/\/[^\s)]+)/g, (_, pre, url) => pre + a(url, url))
+    // Not across a placeholder: `https://a.com[x](…)` took the held link into
+    // its own href, where the link's quotes closed the attribute and the rest
+    // of it was read as new ones -- an event handler among them.
+    .replace(/(^|[\s(])(https?:\/\/[^\s)\u0000\u0001]+)/g, (_, pre, url) => pre + a(url, url))
     // After the bare-URL rule, so a `#` inside an href this just built is not
     // a mention: those are preceded by a path character, and a mention has to
     // start a word. mentions() in tasks.js reads the same pattern over the same

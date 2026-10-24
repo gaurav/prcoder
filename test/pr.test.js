@@ -213,6 +213,24 @@ test('a #N inside a markdown link is left to the link', () => {
   assert.equal(inline('[see #5](javascript:x)', where), '[see #5](javascript:x)');
 });
 
+// A bare URL ran on into the held link's placeholder, and putting the link back
+// put its quotes inside the URL's href="...": the rest was read as attributes.
+test('a bare URL stops at a markdown link written against it', () => {
+  const out = inline("see https://a.com[x](https://y/onmouseover=alert'1'//)", where);
+  assert.equal(out.match(/<a /g).length, 2);
+  assert.equal(href(out), 'https://a.com');
+  assert.doesNotMatch(out, /href="[^"]*<a /);
+  // A code span is held the same way, and is not taken into an href either.
+  assert.equal(href(inline('https://a.com`x`', where)), 'https://a.com');
+});
+
+// The placeholders are the pane's: one typed into a description came back as
+// `undefined`, or as a copy of a link further on.
+test("a description's own placeholder characters are dropped", () => {
+  assert.equal(inline('a \u00010\u0001 b', where), 'a 0 b');
+  assert.equal(inline('a \u00000\u0000 b [x](https://y)', where).match(/<a /g).length, 1);
+});
+
 // What the title lookup found: GitHub's URL rather than the /issues/ guess, the
 // title on hover, and a pull request marked as one. The text stays `#N`.
 test('a #N the lookup answered links where GitHub says, titled, and a PR is marked', () => {
