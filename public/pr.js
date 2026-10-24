@@ -514,10 +514,6 @@ let links = null;
 /**
  * The two things `[README](README.md)` and `#28` need to become links: the
  * repository they are relative to, and the ref a path in it should be read at.
- * And `refs`, what GitHub said each mentioned number is (`pr.issues`, by
- * number), so a `#28` can say whether it is a pull request and what it is
- * called. Only this repository's: a bare `#28` is never another repository's
- * issue the pull request closes.
  *
  * The head branch, because a description points at the files the pull request
  * adds as often as at ones that were already there -- except from a fork, where
@@ -529,8 +525,17 @@ let links = null;
 const linkBase = (pr) => ({
   repo: repoUrl(pr.url),
   ref: pr.isCrossRepository ? pr.baseRefName : pr.headRefName,
-  refs: new Map((pr.issues ?? []).filter((i) => !i.repo).map((i) => [i.number, i])),
 });
+
+/**
+ * What GitHub said each mentioned number is (`pr.issues`, by number), so a
+ * `#28` can say whether it is a pull request and what it is called -- the
+ * `refs` inline() reads beside linkBase's two. Only this repository's: a bare
+ * `#28` is never another repository's issue the pull request closes. Apart
+ * from linkBase because only the description reads it: the tab title and the
+ * header links call that on every paint for the repository alone.
+ */
+const mentionRefs = (pr) => new Map((pr.issues ?? []).filter((i) => !i.repo).map((i) => [i.number, i]));
 
 /** `owner/repo`, from a repository URL on any host. */
 const repoName = (repoUrl) => repoUrl.replace(/^https?:\/\/[^/]+\//, '');
@@ -702,7 +707,7 @@ const repoChip = (crumb) => ext(crumb.href, [
  * entirely. docs/Panes.md has what each shows.
  */
 export function renderPr(pr, handlers) {
-  links = linkBase(pr);
+  links = { ...linkBase(pr), refs: mentionRefs(pr) };
   // A different pull request is a different set of sections and a different
   // amount of scroll; none of the old numbers mean anything against it.
   if (shownFor !== pr.url) {
