@@ -195,10 +195,15 @@ export function fences(body) {
  * outside fences and code spans, which is everywhere inline() does not reach.
  * The Mentions row is built from this, so a `Fixes #123` inside a template's
  * comment no longer lists an issue the description never shows.
+ *
+ * A code span or a link is replaced by a character, not removed, because
+ * inline() leaves a placeholder where each was, and a placeholder is not the
+ * space or line start a mention needs. Removed, the `#5` in `[x](y)#5` was
+ * listed here and not linked there.
  */
 export function mentions(body = '') {
   return fences(withoutHtml(body)).flatMap((chunk) => (chunk.code != null ? []
-    : [...chunk.text.replace(/`[^`]+`/g, '').replace(mdLink(), '').matchAll(mention())].map(([, , n]) => Number(n))));
+    : [...chunk.text.replace(/`[^`]+`/g, '\u0000').replace(mdLink(), '\u0001').matchAll(mention())].map(([, , n]) => Number(n))));
 }
 
 /**

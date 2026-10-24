@@ -109,6 +109,9 @@ test('#N in a comment, a fence or a code span is not a mention', () => {
 // Mentions row does too.
 test('#N inside a markdown link is not a mention', () => {
   assert.deepEqual(linkedIssues(pr('[see #5](https://x.test/a) and #6')).map((i) => i.number), [6]);
+  // Nor is one written against a link or a code span: the pane does not link
+  // it, since what is before it is not a space.
+  assert.deepEqual(linkedIssues(pr('[x](https://y)#5\n`z`#7 and #6')).map((i) => i.number), [6]);
 });
 
 test('an empty body links nothing', () => {

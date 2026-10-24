@@ -209,6 +209,9 @@ test('a #N inside a markdown link is left to the link', () => {
   assert.equal(out.match(/<a /g).length, 2);
   assert.match(out, /<a href="https:\/\/x\.test\/a"[^>]*>see #5<\/a>/);
   assert.match(out, />#6<\/a>/);
+  // Written against a link or a code span, it is not a mention, as the
+  // Mentions row (mentions() in tasks.js) agrees.
+  assert.equal(inline('[x](https://y)#5 `z`#7', where).match(/<a /g).length, 1);
   // One this pane will not open stays its own source, still with no link inside.
   assert.equal(inline('[see #5](javascript:x)', where), '[see #5](javascript:x)');
 });
