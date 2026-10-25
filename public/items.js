@@ -66,7 +66,8 @@ const BUCKETS = ['needed soon', 'needed later', 'not urgent', 'upstream'];
  * Open milestones in the order the Issues tab groups by: Critical; releases
  * and deadlines, the ones with a due date first and soonest first, then the
  * undated by name; then the buckets, Needed soon to Upstream. The ISO dates
- * sort as they read. "No milestone" is the caller's, last.
+ * sort as they read. "No milestone" is the caller's, and comes first: those
+ * are the untriaged, which could belong at any level.
  */
 export function rankMilestones(list) {
   const rank = ({ title, dueOn }) => {
@@ -98,4 +99,108 @@ export const issueMatches = (i, query) => {
     haystacks.set(i, hay);
   }
   return hay.includes(q);
+};
+
+/**
+ * How far `iso` is from now, in a word or two: `3 days ago`, or `in 2 months`
+ * for one still to come. Under a minute is `just now`; nothing, or a date
+ * that is not one, is ''. `now` is a parameter so a test can hold it still.
+ */
+// Largest first, so the first that fits is the unit.
+const UNITS = [['year', 365 * 86400], ['month', 30 * 86400], ['day', 86400], ['hour', 3600], ['minute', 60]];
+export function when(iso, now = Date.now()) {
+  const t = Date.parse(iso ?? '');
+  if (Number.isNaN(t)) return '';
+  const s = Math.round((t - now) / 1000);
+  const found = UNITS.find(([, size]) => Math.abs(s) >= size);
+  if (!found) return 'just now';
+  return new Intl.RelativeTimeFormat('en', { numeric: 'always' }).format(Math.trunc(s / found[1]), found[0]);
+}
+
+/** when() for a time that has passed: a clock a little behind GitHub's says `just now`, not `in 2 minutes`. */
+export const age = (iso, now = Date.now()) => when(iso, Math.max(now, Date.parse(iso ?? '') || now));
+
+/**
+ * A milestone's due date as its line says it, `due 3 days ago`, with the date
+ * in full on hover (`Tuesday, October 27, 2026`) and a class saying how near
+ * it is: `overdue`, `soon`, or neither. GitHub's dueOn is a date sent as the
+ * start of that day (`T07:00:00Z` for a date set in California), so it is
+ * compared as a date with today's on this clock: due today is `due today` and
+ * soon, and overdue only once the day is over -- compared as a time, a
+ * milestone was overdue for most of its own day. The distance is in whole
+ * days for the same reason: when() on the time said `due in 19 hours` of
+ * tomorrow's, and `5 hours ago` of yesterday's.
+ */
+export function dueLabel(dueOn, now = Date.now()) {
+  const day = dueOn.slice(0, 10);
+  const d = new Date(now);
+  const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  // The day as written, in UTC so no time zone moves it to the one before.
+  const title = new Intl.DateTimeFormat('en', { dateStyle: 'full', timeZone: 'UTC' }).format(Date.parse(`${day}T00:00:00Z`));
+  if (day === today) return { className: 'due soon', textContent: 'due today', title };
+  const near = day < today ? ' overdue' : Date.parse(dueOn) - now < DUE_SOON ? ' soon' : '';
+  return { className: `due${near}`, textContent: `due ${inDays((Date.parse(day) - Date.parse(today)) / 86400_000)}`, title };
+}
+
+/**
+ * A whole number of days from today as words: `tomorrow`, `in 3 days`, `2
+ * months ago`; months from 30 days, years from 365. Only days say `tomorrow`
+ * and `yesterday`: `auto` would make 40 days `next month`, which reads as the
+ * calendar's.
+ */
+function inDays(days) {
+  if (Math.abs(days) < 30) return new Intl.RelativeTimeFormat('en', { numeric: 'auto' }).format(days, 'day');
+  const [n, unit] = Math.abs(days) >= 365 ? [Math.trunc(days / 365), 'year'] : [Math.trunc(days / 30), 'month'];
+  return new Intl.RelativeTimeFormat('en', { numeric: 'always' }).format(n, unit);
+}
+
+// The size chip's bands, on lines changed (additions and deletions together):
+// each name holds up to, not including, its count. Wider at the small end than
+// GitHub's size labels (XS under 10, S under 30, M under 100), which put most
+// pull requests worth a review at M or above (2026-10-20).
+const SIZES = [['XS', 50], ['S', 100], ['M', 200], ['L', 500], ['XL', 1000]];
+
+/** A pull request's size as a chip, `XS` to `XXL`, from its lines changed. */
+export const sizeChip = (lines) => SIZES.find(([, under]) => (lines ?? 0) < under)?.[0] ?? 'XXL';
+
+// A pull request opened within this long is `new`. One not updated for months
+// is not dimmed: an old one with conflicts is often the quickest to finish,
+// since the coding agent can fix them (2026-10-20).
+export const NEW_FOR = 7 * 86400_000;
+export const isNew = (p, now = Date.now()) => now - Date.parse(p.createdAt ?? '') < NEW_FOR;
+// A milestone due within this long is `soon`, its due date yellow, and one past
+// it is overdue, a red badge: the two to look at for rescheduling.
+export const DUE_SOON = 7 * 86400_000;
+
+/**
+ * The Pull requests tab's orders, each a comparator over pullRow's fields; the
+ * ISO dates compare as they read. `smallest` is the default, since the next
+ * one to take on is usually the one that is nearly done.
+ */
+export const PULL_SORTS = {
+  smallest: { label: 'smallest first', by: (a, b) => a.lines - b.lines },
+  largest: { label: 'largest first', by: (a, b) => b.lines - a.lines },
+  newest: { label: 'newest first', by: (a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? '') },
+  oldest: { label: 'oldest first', by: (a, b) => (a.createdAt ?? '').localeCompare(b.createdAt ?? '') },
+  updated: { label: 'recently updated', by: (a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? '') },
+  stale: { label: 'least recently updated', by: (a, b) => (a.updatedAt ?? '').localeCompare(b.updatedAt ?? '') },
+};
+
+/** The pull requests in the order `how` names, ties in the order they came (by number, as a second key); an order not named is `smallest`. */
+export const sortPulls = (list, how) => [...list].sort((a, b) => (PULL_SORTS[how] ?? PULL_SORTS.smallest).by(a, b) || a.number - b.number);
+
+/**
+ * Whether the Pull requests tab's search matches a pull request: case-blind,
+ * over `#N`, the title, the author, the head and base branches, the labels,
+ * the body, the issues it closes by `#N` and title, and `word`, the state the
+ * row shows -- so a base branch finds the stack on it, an issue finds the pull
+ * requests for it whether or not the body names it, and `stacked` or
+ * `conflicts` finds those. `word` is the merge word unless the caller knows
+ * better: the row says `stacked (N)` for a `ready` built on others (pullWord
+ * in queue.js), which needs the stack and so is the caller's to say.
+ */
+export const pullMatches = (p, query, word = p.merge) => {
+  const q = (query ?? '').trim().toLowerCase();
+  return !q || [`#${p.number}`, p.title ?? '', p.author ?? '', p.headRefName ?? '', p.baseRefName ?? '', ...(p.labels ?? []), p.body ?? '', word ?? '',
+    ...(p.closes ?? []).flatMap((i) => [`#${i.number}`, i.title ?? ''])].join('\n').toLowerCase().includes(q);
 };

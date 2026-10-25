@@ -40,7 +40,9 @@ is no token to configure.
   file you own. An item can be about an issue or pull request -- type `#91` or paste its link --
   and can be typed into Claude or moved into a GitHub issue. An Issues tab reads the repository's
   open issues by milestone, searchable, each one readable in place and typed into Claude with its
-  link; with a pull request on screen a PR tab reads its description's checklist.
+  link, and a Pull requests tab reads its open pull requests the same way, with each one's size,
+  merge state, age, reviewer's pie and what it is stacked on in the row, to pick the next one to work on and switch to
+  it; with a pull request on screen a PR tab reads its description's checklist.
 
 prcoder follows the branch. It works out the pull request for whatever is checked out, and does
 it again every 60 seconds, so a `git checkout` in another terminal -- or by Claude in the middle

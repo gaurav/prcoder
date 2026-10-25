@@ -404,15 +404,36 @@ recently updated on GitHub first; a pull request's tag says `PR`, one in another
 fork-headed checkout -- is tagged with that repository's name as a queue item is, and a mention that is no longer open -- a closed
 issue, or a merged or closed pull request -- is dimmed and followed by its state, `· closed` or `· merged`.
 A poll that brings another pull request, or a description that mentions something new, while the
-tab is open has the listing read again, and a mention reads `…` until it is looked up. Then one group per open milestone, in the order the owner's
+tab is open has the listing read again, and a mention reads `…` until it is looked up. Then the
+issues on no milestone, ahead of every milestone: they are the untriaged, and one could belong at
+any level, `Critical` included, so they are the ones to sort first. While it holds any, its
+line is in the text's own colour rather than the dim of a milestone's, with a yellow *to triage*
+badge. Then one group per open milestone, in the order the owner's
 milestones are read ([MILESTONES.md](https://github.com/gaurav/milestones/blob/main/MILESTONES.md)):
 `Critical`, then releases and deadlines soonest first and the undated after them, then `Needed
-soon`, `Needed later`, `Not urgent` and `Upstream`, matched by name whatever their case; and last
-the issues on no milestone. A closed milestone that an open issue is still on gets a group too,
-ranked the same way and marked *closed*, so that no listed issue goes undrawn. A milestone's line
-is its title, linking to it on GitHub, its due date, and how many issues it holds; an empty one is
+soon`, `Needed later`, `Not urgent` and `Upstream`, matched by name whatever their case. A closed milestone that an open issue is still on gets a group too,
+ranked the same way and marked *closed*, so that no listed issue goes undrawn; nothing can be moved
+onto it, by a drop or in a row's select, where it shows only on a row already on it. A milestone's line
+is its title, linking to it on GitHub; how many issues it holds, in a grey badge right after the
+title, not at the line's end where it was too far off to read as the milestone's; how many of the
+other kind are open on it, `2 PRs` here and `9 issues` on the Pull requests tab, so the line says
+what the milestone holds beyond the rows listed; a pie of how
+much of the whole milestone is done on GitHub, its pull requests and its issues together, so it is
+the same on either tab: merged pull requests and closed issues of all of them, with a pull request
+closed without merging left out of both figures, since it is neither done nor still to do --
+`5 of 15 done: 2 pull requests merged, 3 issues closed` on hover (left out for one that has never
+held anything), which a press or Enter turns into a breakdown under it, every count as a table --
+pull requests open, merged and closed without merging, issues open and closed -- and the pie's
+figure, saying what it leaves out, closed again by Escape, a click elsewhere or a second press,
+without folding or unfolding the group; how many pull requests have merged into it, `2 merged` in
+green, since that, and not the issues that will slide on to the next milestone, is what says
+whether a release is ready, and a pie mostly of issues would hide it (it and the other kind's
+count are left out at 0);
+and when it is due, in calendar days, as `due 5 days ago`, `due yesterday`, `due today`, `due tomorrow` or `due in 2
+months` (months from 30 days), with the date in full on hover, `Tuesday, October 27, 2026` -- a round red badge once
+the day is past, yellow within a week, so a milestone to reschedule stands out; an empty one is
 still drawn, folded. Only the mentions and the first
-milestone with an issue start open, which is the one to focus on, and a milestone that appears
+group with an issue start open, which is the one to focus on -- **No milestone** whenever it has any -- and a milestone that appears
 later, made on GitHub since, starts folded; a group you open or close stays so until the page is
 reloaded, through every poll.
 
@@ -440,3 +461,63 @@ reads the listing again once GitHub has it, so the row moves group then and not 
 refusal is a toast. A mention that is not one of the repository's open issues cannot be dragged,
 since there is nothing of it here to move. Milestones themselves are not made, renamed or closed
 from prcoder.
+
+**Pull requests** is always there too: the repository's open pull requests, for picking the next
+one to work on, in the same groups as the issues -- **No milestone** first, then one per open milestone in the
+owner's order, each line drawn as the Issues tab's, its badge counting pull requests -- or, with the second select over them set to *one list*, as one list, or
+to *by stack*, as one list in the switcher's order, each pull request a step in under the one it
+is built on. A stack can run across milestones, which is why that is a grouping of its own and
+not a way of nesting the milestone groups.
+Within a group they are smallest first, since the next one to take on is usually the one that is
+nearly done; the first select over them changes that to largest first, newest, oldest, most or
+least recently updated, and both selects are remembered the way the pane sizes are. The search
+box covers the number, title, author, head and base branches, labels, body, the issues it
+closes, by number and title, and the word it shows for its state -- so a branch finds the stack on
+it, an issue the pull requests for it, and `stacked` or `conflicts` those -- and narrows the rows and the count as the issue search does. Each row is `PR #N` in a tinted chip, the one link to the pull request on GitHub, the title,
+what it is built on, then `here` or **Switch**. What it is built on is `on main`, or the pull
+requests under it nearest first and then the branch the bottom one merges into, `on #13 › #12 ›
+main`: the first word says whether it can merge straight away or only after a stack, and each
+`#N` links to that pull request on GitHub, its title on hover. `on main` is dim; a stacked line is
+brighter, and each `#N` in it is a tinted chip like the row's own `PR #N`, so a stack stands out. A base with no open pull request
+is a bare branch, and what is under that is git's to say: the row asks as the Stack tab does, shows
+the line as far as it goes meanwhile, and is drawn again when the answer lands. By stack the line
+is left off every row but the roots, since the indent says it. Under the title, on a line of their own, its facts in three runs: its
+state, what makes it worth taking, and whose it is and when. The state is whether it can merge in
+a word (`ready`, `stacked (N)`, `conflicts`, `behind base`, `blocked`, `checks not passing` -- failed, or still
+running -- `draft`, or `checking…` while GitHub works it out). `stacked (N)` is GitHub's `ready` on a
+pull request built on N others: ready to merge into the one under it, not into the default branch,
+and in the accent rather than green and the review decision when there
+is one. Then its size in the bands of GitHub's size labels, set wider at the small end (`XS` under
+fifty lines changed, `S` under a hundred, `M` under two hundred, `L` under five hundred, `XL` under a thousand, `XXL` past that; hover
+for the lines added and removed and the file count), coloured from green for `XS` through yellow
+for `M` to red for `XXL`, since the small one is usually the next to take; the Files tab's pie (it
+fills by changed lines viewed, so an empty one is probably still being written and a full one is
+reviewed and waiting on something else); its labels; and `new` for a week after it was opened.
+Last, who opened it and how long since it was opened and since it last moved. A dot sits between
+neighbouring words and none beside a chip. `ready` is green and `conflicts` red, as plain words:
+conflicts are usually a coding agent's quick fix, so such a pull request is a good one for a short
+session rather than an alarm. `checks not passing` is a round red badge, as the left pane's status
+is; none is dimmed, however old.
+Under the facts is the first paragraph of its
+description, clipped to two lines, with its bold, code and links drawn rather than left as
+markdown, and under that the issues it closes, each a link, with an issue's milestone after it
+when it is not the pull request's own, since a pull request usually belongs where its issue is.
+The pull request on screen is marked *here* after its title and
+offered no Switch; every other row's **Switch** sits there instead, in sight rather than on
+hover, since switching is what the tab is for. It checks the pull request out, as the PR pane's
+does, and is disabled by uncommitted work for the same reason. ▸ opens the milestone select, Switch
+and **Open on GitHub** under the row, but not the description: nobody reads one here, and the
+lead is enough to pick by, so the rest is read on GitHub. Rows sit further apart than an issue's,
+since each is three lines or four; ▶ and ↓, on hover at the row's end as on every row, do what they do on an issue's row,
+and the copied item is tagged `PR #N`.
+
+The list is read from GitHub only for this tab, never for the switcher: the one call that carries
+the size, the merge state and the viewed files takes seconds on a repository with many open
+([Verifying.md](Verifying.md#figures-worth-re-measuring) has the figure), so the tab opens from
+the last listing -- the server's, or `.prcoder/pulls.json`, which keeps it between runs -- and
+reads GitHub behind it, unless the listing is under a minute old. The line under the groups says
+when the listing was read and `updating…` while the read is out; ⟳ beside the search reads
+whatever the age. A read that fails leaves the list as it was and says so in a toast.
+A row dragged onto a milestone's line, or the pick in its opened row, sets the pull request's
+milestone on GitHub exactly as an issue's is set, with the same hold: the number and the title
+both come from the listing the tab was shown.

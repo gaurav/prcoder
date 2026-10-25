@@ -12,7 +12,7 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import { WebSocket } from 'ws';
-import { server, sessionArgs, startedWith, missingVendor, keepPr, issueMove } from '../server.js';
+import { server, sessionArgs, startedWith, missingVendor, keepPr, issueMove, pullMove, queuedRun } from '../server.js';
 import { grammars } from '../public/diff.js';
 import { VERSION } from '../cli.js';
 
@@ -318,4 +318,52 @@ test('/api/issue/milestone refuses an issue or a milestone the tab was not shown
   assert.throws(() => issueMove(listing, { number: 58, milestone: 'needed soon' }), { message: '"needed soon" is not an open milestone the Issues tab listed' });
   assert.throws(() => issueMove(listing, { number: 58, milestone: '--remove-milestone' }), { message: '"--remove-milestone" is not an open milestone the Issues tab listed' });
   assert.throws(() => issueMove(null, {}), { message: '#? is not an open issue the Issues tab listed' });
+});
+
+// The Pull requests tab's fresh read is queued: at most one runs, a call
+// while one waits shares it, and one mid-run gets a run of its own after.
+test('a queued run is shared while it waits, and run again for a call that arrives mid-run', async () => {
+  const runs = [];
+  const queued = queuedRun(() => new Promise((resolve, reject) => runs.push({ resolve, reject })));
+  const tick = () => new Promise((r) => setImmediate(r));
+  const first = queued();
+  await tick();
+  assert.equal(runs.length, 1);
+  const second = queued();
+  const third = queued();
+  assert.equal(second, third, 'two arriving mid-run share the next');
+  await tick();
+  assert.equal(runs.length, 1, 'and it waits for the one running');
+  runs[0].reject(new Error('gh failed'));
+  await assert.rejects(first, { message: 'gh failed' });
+  await tick();
+  assert.equal(runs.length, 2, 'a failure does not stop the next');
+  runs[1].resolve('listing');
+  assert.equal(await second, 'listing');
+});
+
+// The Pull requests tab's one write is held the same way, to the listing that
+// tab was last shown -- from the cache or from GitHub -- and says which tab.
+test('/api/pull/milestone refuses a pull request or a milestone the tab was not shown', async () => {
+  const res = await fetch(`${base}/api/pull/milestone`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ number: 151, milestone: 'Needed soon' }),
+  });
+  assert.equal(res.status, 500);
+  assert.deepEqual(await res.json(), { error: '#151 is not an open pull request the Pull requests tab listed' });
+
+  const listing = { pulls: [{ number: 151 }, { number: 153 }], milestones: [{ number: 4, title: 'Needed soon' }] };
+  assert.deepEqual(pullMove(listing, { number: 151, milestone: 'Needed soon' }), { number: 151, title: 'Needed soon' });
+  assert.deepEqual(pullMove(listing, { number: 153, milestone: null }), { number: 153, title: null });
+  assert.throws(() => pullMove(listing, { number: 152, milestone: 'Needed soon' }), { message: '#152 is not an open pull request the Pull requests tab listed' });
+  assert.throws(() => pullMove(listing, { number: '151', milestone: 'Needed soon' }), { message: '#151 is not an open pull request the Pull requests tab listed' });
+  assert.throws(() => pullMove(listing, { number: 151, milestone: 'needed soon' }), { message: '"needed soon" is not an open milestone the Pull requests tab listed' });
+  assert.throws(() => pullMove(listing, { number: 151, milestone: '--remove-milestone' }), { message: '"--remove-milestone" is not an open milestone the Pull requests tab listed' });
+  assert.throws(() => pullMove(null, {}), { message: '#? is not an open pull request the Pull requests tab listed' });
+  // A closed milestone is on the listing for the rows still on it, and is not somewhere to move one.
+  const withClosed = { ...listing, milestones: [...listing.milestones, { number: 9, title: 'v0.9', closed: true }] };
+  assert.throws(() => pullMove(withClosed, { number: 151, milestone: 'v0.9' }), { message: '"v0.9" is not an open milestone the Pull requests tab listed' });
+  assert.throws(() => issueMove({ issues: [{ number: 151 }], milestones: withClosed.milestones }, { number: 151, milestone: 'v0.9' }), { message: '"v0.9" is not an open milestone the Issues tab listed' });
+  // An issue listing is not a pull request listing: the rows are read from `pulls` alone.
+  assert.throws(() => pullMove({ issues: [{ number: 151 }], milestones: [] }, { number: 151, milestone: null }), { message: '#151 is not an open pull request the Pull requests tab listed' });
 });
