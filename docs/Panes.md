@@ -415,12 +415,16 @@ soon`, `Needed later`, `Not urgent` and `Upstream`, matched by name whatever the
 ranked the same way and marked *closed*, so that no listed issue goes undrawn; nothing can be moved
 onto it, by a drop or in a row's select, where it shows only on a row already on it. A milestone's line
 is its title, linking to it on GitHub; how many issues it holds, in a grey badge right after the
-title, not at the line's end where it was too far off to read as the milestone's; a pie of how
+title, not at the line's end where it was too far off to read as the milestone's; how many of the
+other kind are open on it, `2 PRs` here and `9 issues` on the Pull requests tab, so the line says
+what the milestone holds beyond the rows listed; a pie of how
 much of the whole milestone is done on GitHub, its pull requests and its issues together, so it is
 the same on either tab: merged pull requests and closed issues of all of them, with a pull request
 closed without merging left out of both figures, since it is neither done nor still to do --
 `5 of 15 done: 2 pull requests merged, 3 issues closed` on hover (left out for one that has never
-held anything);
+held anything); how many pull requests have merged into it, `2 merged` in green, since that, and
+not the issues that will slide on to the next milestone, is what says whether a release is ready
+and a pie mostly of issues would hide it (the two figures left out at 0);
 and when it is due, in calendar days, as `due 5 days ago`, `due yesterday`, `due today`, `due tomorrow` or `due in 2
 months` (months from 30 days), with the date in full on hover, `Tuesday, October 27, 2026` -- a round red badge once
 the day is past, yellow within a week, so a milestone to reschedule stands out; an empty one is

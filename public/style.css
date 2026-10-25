@@ -842,6 +842,12 @@ main.diff-off #diff-wrap { display: none; }
   padding: 0 5px; border-radius: 9px; background: color-mix(in srgb, var(--dim) 22%, transparent);
 }
 .fold.milestone > summary .count.none { background: none; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--dim) 30%, transparent); }
+/* After the badge, what the milestone holds beyond the rows listed: the other
+   kind's open count in the line's dim, and after the pie, the pull requests
+   merged into it in the pie's own green, since that is how near a release is
+   (milestoneExtra in queue.js). Both are left out at 0. */
+.fold.milestone > summary .other-kind, .fold.milestone > summary .merged { font-variant-numeric: tabular-nums; }
+.fold.milestone > summary .merged { color: var(--add); }
 /* No milestone, with anything on it: the untriaged, any of which could be
    Critical, so it is drawn first and in the text's own colour rather than
    the dim of the other lines, with a yellow badge -- the soon-due yellow, not

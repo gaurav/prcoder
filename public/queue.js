@@ -505,15 +505,25 @@ function tally(counts) {
 }
 
 /**
- * What follows a milestone's count on its line: the pie of how much of it is
- * done on GitHub (tally), when it is due (dueLabel), and `closed` for a closed
- * one still holding rows. `noun` is the tab's rows, `issues` or `pull requests`.
+ * What follows a milestone's count on its line, from its tally: how many of
+ * the other kind are open on it -- `9 issues` on the Pull requests tab, `2 PRs`
+ * on the Issues tab, `noun` being the tab's own rows -- so the line says what
+ * the milestone holds beyond the rows listed; the pie of how much of it is
+ * done; how many pull requests have merged into it, which is what says whether
+ * a release is ready, and which a pie mostly of issues would hide; then when
+ * it is due (dueLabel), and `closed` for a closed one still holding rows. The
+ * two figures are left out at 0, and with the pie when there is no tally.
  */
 function milestoneExtra(m, noun) {
   const t = tally(m.counts);
+  const [other, them, short] = noun === 'issues' ? [t?.pulls.open, 'pull requests', 'PRs'] : [t?.issues.open, 'issues', 'issues'];
   return [
+    ...(other ? [h('span', { className: 'other-kind', title: `${other} open ${several(other, them)} on this milestone on GitHub` },
+      `${other} ${several(other, short)}`)] : []),
     ...(t ? [mark({ ...fraction(t), label: `${t.done} of ${t.total} done: ${t.pulls.merged} ${several(t.pulls.merged, 'pull requests')} merged, `
       + `${t.issues.closed} ${several(t.issues.closed, 'issues')} closed` })] : []),
+    ...(t?.pulls.merged ? [h('span', { className: 'merged', title: `${t.pulls.merged} ${several(t.pulls.merged, 'pull requests')} merged into this milestone` },
+      `${t.pulls.merged} merged`)] : []),
     ...(m.dueOn ? [h('span', dueLabel(m.dueOn))] : []),
     ...(m.closed ? [h('span', { className: 'closed-milestone', title: `closed on GitHub, with open ${noun} still on it` }, 'closed')] : []),
   ];

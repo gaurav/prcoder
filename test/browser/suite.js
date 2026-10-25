@@ -1503,7 +1503,7 @@ const ISSUES = {
     { number: 3, title: 'Not urgent', dueOn: null, description: 'Worth doing eventually.' },
     // Five pull requests closed without merging, which the pie leaves out.
     { number: 1, title: 'v1.0', dueOn: '2026-10-14T00:00:00Z', description: '',
-      counts: { pulls: { open: 0, merged: 1, closed: 5 }, issues: { open: 1, closed: 2 } } },
+      counts: { pulls: { open: 2, merged: 1, closed: 5 }, issues: { open: 1, closed: 2 } } },
     { number: 4, title: 'Needed soon', dueOn: null, description: '', counts: { pulls: { open: 0, merged: 0, closed: 0 }, issues: { open: 0, closed: 0 } } },
     { number: 2, title: 'v0.1', dueOn: '2026-10-02T00:00:00Z', description: '', counts: { pulls: { open: 1, merged: 0, closed: 0 }, issues: { open: 'x', closed: 2 } } },
   ],
@@ -1557,7 +1557,7 @@ test('the Issues tab groups the repository\'s open issues by milestone in rank o
   // starts open, and an empty bucket is drawn.
   assert.deepEqual(await groupsOf(fresh), [
     'mentioned|Mentioned by PR #12 (1)|open|1', 'm:none|No milestone (1) to triage|open|1',
-    'm:2|v0.1 (1) due 17 days ago|closed|1', 'm:1|v1.0 (1) due 5 days ago|closed|1', 'm:4|Needed soon (0)|closed|0',
+    'm:2|v0.1 (1) due 17 days ago|closed|1', 'm:1|v1.0 (1) 2 PRs 1 merged due 5 days ago|closed|1', 'm:4|Needed soon (0)|closed|0',
     'm:3|Not urgent (1)|closed|1']);
   // No milestone is marked as the pile to triage: its line in the text's own
   // colour, not the dim of a milestone's, with a badge.
@@ -1565,18 +1565,24 @@ test('the Issues tab groups the repository\'s open issues by milestone in rank o
   const tint = (sel) => fresh.locator(sel).evaluate((e) => getComputedStyle(e).color);
   assert.notEqual(await tint('[data-group="m:none"] summary'), await tint('[data-group="m:3"] summary'), 'brighter than a milestone line');
   assert.equal(await fresh.locator('#queue-body .fold.untriaged').count(), 1, 'and nothing else is');
-  // The count is a badge right after the title, with the pie of what GitHub
-  // has merged or closed of the whole milestone after it, and the due date
-  // after that; the date in full on hover.
+  // The count is a badge right after the title, then the pull requests open
+  // on the milestone, the pie of what GitHub has merged or closed of all of
+  // it, the pull requests merged, and the due date, in full on hover.
   const v1 = fresh.locator('[data-group="m:1"] summary h3');
-  assert.deepEqual(await v1.evaluate((e) => [...e.children].map((c) => c.className)), ['', 'count', 'mark', 'due overdue']);
+  assert.deepEqual(await v1.evaluate((e) => [...e.children].map((c) => c.className)), ['', 'count', 'other-kind', 'mark', 'merged', 'due overdue']);
   assert.equal(await v1.locator('.count').textContent(), '1');
   assert.equal(await v1.locator('.count').getAttribute('title'), '1 open issue listed');
-  assert.equal(await v1.locator('.mark').getAttribute('aria-label'), '3 of 4 done: 1 pull request merged, 2 issues closed');
+  assert.equal(await v1.locator('.mark').getAttribute('aria-label'), '3 of 6 done: 1 pull request merged, 2 issues closed');
+  assert.equal(await v1.locator('.other-kind').textContent(), '2 PRs');
+  assert.equal(await v1.locator('.other-kind').getAttribute('title'), '2 open pull requests on this milestone on GitHub');
+  assert.equal(await v1.locator('.merged').textContent(), '1 merged');
+  assert.equal(await v1.locator('.merged').getAttribute('title'), '1 pull request merged into this milestone');
   assert.equal(await v1.locator('.due').getAttribute('title'), 'Wednesday, October 14, 2026');
   assert.equal(await fresh.locator('[data-group="m:4"] summary .count.none').textContent(), '0', 'an empty one\'s badge is fainter');
   assert.equal(await fresh.locator('[data-group="m:4"] summary .mark').count(), 0, 'and a milestone that never held anything has no pie');
   assert.equal(await fresh.locator('[data-group="m:2"] summary .mark').count(), 0, 'nor one whose counts are not numbers');
+  assert.equal(await fresh.locator('[data-group="m:2"] summary :is(.other-kind, .merged)').count(), 0, 'nor any of its figures');
+  assert.equal(await fresh.locator('[data-group="m:4"] summary :is(.other-kind, .merged)').count(), 0, 'and a figure of 0 is left out');
   assert.equal(await fresh.locator('[data-group="m:3"] summary .mark').count(), 0, 'nor one without counts');
   // GitHub did not know the mention, so it says so, dimmed.
   assert.equal(await fresh.locator('[data-group="mentioned"] .item.closed .text').textContent(), 'not found on GitHub');
@@ -1605,7 +1611,7 @@ test('the Issues tab groups the repository\'s open issues by milestone in rank o
   await fresh.waitForSelector('[data-group="m:10"]');
   assert.deepEqual((await groupsOf(fresh)).map((g) => g.split('|').slice(0, 3).join(' ')), [
     'mentioned Mentioned by PR #12 (1) open', 'm:none No milestone (1) to triage closed', 'm:2 v0.1 (1) due 17 days ago closed',
-    'm:1 v1.0 (1) due 5 days ago open', 'm:10 v2.0 (0) due in 1 month closed', 'm:4 Needed soon (0) closed', 'm:3 Not urgent (1) closed']);
+    'm:1 v1.0 (1) 2 PRs 1 merged due 5 days ago open', 'm:10 v2.0 (0) due in 1 month closed', 'm:4 Needed soon (0) closed', 'm:3 Not urgent (1) closed']);
   await fresh.close();
 });
 
@@ -1975,13 +1981,15 @@ test('the Pull requests tab groups the open pull requests by milestone, smallest
   // with a pull request starts open; smallest first within a group; an empty
   // one is drawn.
   assert.deepEqual(await pullGroupsOf(fresh), [
-    'p:none|No milestone (1) to triage|open|30', 'p:1|v1.0 (2) due 5 days ago|closed|20,12', 'p:4|Needed soon (0)|closed|', 'p:3|Not urgent (0)|closed|']);
+    'p:none|No milestone (1) to triage|open|30', 'p:1|v1.0 (2) 9 issues 1 merged due 5 days ago|closed|20,12', 'p:4|Needed soon (0)|closed|', 'p:3|Not urgent (0)|closed|']);
   assert.equal(await fresh.locator('[data-group="p:none"].untriaged summary .triage').textContent(), 'to triage');
   assert.equal(await fresh.locator('[data-group="p:4"] summary a').getAttribute('title'), 'Work that should land soon.');
   // The Issues tab's line: the count's badge in pull requests, then the pie of
   // the whole milestone, issues too, with the one closed unmerged left out.
   assert.equal(await fresh.locator('[data-group="p:1"] summary .count').getAttribute('title'), '2 open pull requests listed');
   assert.equal(await fresh.locator('[data-group="p:1"] summary .mark').getAttribute('aria-label'), '4 of 15 done: 1 pull request merged, 3 issues closed');
+  assert.equal(await fresh.locator('[data-group="p:1"] summary .other-kind').textContent(), '9 issues', 'the other kind, here issues');
+  assert.equal(await fresh.locator('[data-group="p:1"] summary .merged').textContent(), '1 merged');
   // A row: the tinted PR chip, the title, the size as GitHub bands it with
   // the counts on hover, the merge word, the review, the author, labels,
   // the pie, and the two ages; the one on screen is marked and has no Switch.
@@ -2066,7 +2074,7 @@ test('the Pull requests tab groups the open pull requests by milestone, smallest
     `Still <strong>being</strong> written, in <code>old.js</code>, for <a href="https://github.com/gaurav/prcoder/issues/5" target="_blank" rel="noopener">#5</a>.`);
   // The order and the grouping are the two selects, remembered across a reload.
   await fresh.locator('#queue-body select.pull-sort').selectOption('largest');
-  assert.deepEqual((await pullGroupsOf(fresh))[1], 'p:1|v1.0 (2) due 5 days ago|open|12,20');
+  assert.deepEqual((await pullGroupsOf(fresh))[1], 'p:1|v1.0 (2) 9 issues 1 merged due 5 days ago|open|12,20');
   await fresh.locator('#queue-body select.pull-group').selectOption('none');
   assert.equal(await fresh.locator('#queue-body .fold.milestone').count(), 0);
   const listed = () => fresh.locator('#queue-body .item.pull').evaluateAll((ls) => ls.map((l) => `${l.dataset.pull}:${l.style.getPropertyValue('--depth')}`));
@@ -2154,7 +2162,7 @@ test('searching the pull requests narrows the rows and counts them, and a row op
   const { fresh, typed } = await pullsPage();
   const search = fresh.locator('#queue-pull-search');
   await search.fill('copilot');
-  assert.deepEqual(await pullGroupsOf(fresh), ['p:none|No milestone (0)|closed|', 'p:1|v1.0 (1) due 5 days ago|open|20', 'p:4|Needed soon (0)|closed|', 'p:3|Not urgent (0)|closed|']);
+  assert.deepEqual(await pullGroupsOf(fresh), ['p:none|No milestone (0)|closed|', 'p:1|v1.0 (1) 9 issues 1 merged due 5 days ago|open|20', 'p:4|Needed soon (0)|closed|', 'p:3|Not urgent (0)|closed|']);
   // With nothing in it, No milestone has nothing to triage, and is not marked.
   assert.equal(await fresh.locator('[data-group="p:none"].untriaged, [data-group="p:none"] .triage').count(), 0);
   assert.equal(await fresh.locator('#queue-body .tab[data-tab="pulls"]').textContent(), 'Pull requests (1)');
