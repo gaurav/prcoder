@@ -488,17 +488,32 @@ const countBadge = (n, noun, searching) => h('span', {
 const several = (n, noun) => (n === 1 ? noun.replace(/s$/, '') : noun);
 
 /**
+ * A milestone's counts (`counts` from milestoneRow in github.js) as its pie
+ * draws them, or null when there is nothing to draw: no counts -- a pulls.json
+ * older than them -- counts that are not whole numbers, as in one damaged, or
+ * a milestone that has never held anything. The pie is the whole milestone,
+ * pull requests and issues together, so it is the same on either tab. Done is
+ * what merged or closed; a pull request closed without merging is in neither
+ * figure, since it is not done and not still to do (the owner's call, 2026-10-24).
+ */
+function tally(counts) {
+  const { open, merged, closed } = counts?.pulls ?? {};
+  const { open: issues, closed: shut } = counts?.issues ?? {};
+  if (![open, merged, closed, issues, shut].every((n) => Number.isInteger(n) && n >= 0)) return null;
+  const total = open + merged + issues + shut;
+  return total ? { pulls: { open, merged, closed }, issues: { open: issues, closed: shut }, done: merged + shut, total } : null;
+}
+
+/**
  * What follows a milestone's count on its line: the pie of how much of it is
- * done on GitHub (`progress`, its open and done counts of the tab's kind), when
- * it is due (dueLabel), and `closed` for a closed one still holding rows. The
- * pie is left out without counts -- a pulls.json older than them, or one
- * damaged -- and for a milestone that has never held anything.
+ * done on GitHub (tally), when it is due (dueLabel), and `closed` for a closed
+ * one still holding rows. `noun` is the tab's rows, `issues` or `pull requests`.
  */
 function milestoneExtra(m, noun) {
-  const { done, total } = m.progress ?? {};
-  const counted = Number.isInteger(done) && Number.isInteger(total) && total > 0 && done <= total;
+  const t = tally(m.counts);
   return [
-    ...(counted ? [mark({ ...fraction({ done, total }), label: `${done} of ${total} ${several(total, noun)} closed` })] : []),
+    ...(t ? [mark({ ...fraction(t), label: `${t.done} of ${t.total} done: ${t.pulls.merged} ${several(t.pulls.merged, 'pull requests')} merged, `
+      + `${t.issues.closed} ${several(t.issues.closed, 'issues')} closed` })] : []),
     ...(m.dueOn ? [h('span', dueLabel(m.dueOn))] : []),
     ...(m.closed ? [h('span', { className: 'closed-milestone', title: `closed on GitHub, with open ${noun} still on it` }, 'closed')] : []),
   ];

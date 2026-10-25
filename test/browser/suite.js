@@ -1501,9 +1501,11 @@ test('↓ on the Issues tab keeps the repo the mention is in', { skip }, async (
 const ISSUES = {
   milestones: [
     { number: 3, title: 'Not urgent', dueOn: null, description: 'Worth doing eventually.' },
-    { number: 1, title: 'v1.0', dueOn: '2026-10-14T00:00:00Z', description: '', progress: { done: 3, total: 4 } },
-    { number: 4, title: 'Needed soon', dueOn: null, description: '', progress: { done: 0, total: 0 } },
-    { number: 2, title: 'v0.1', dueOn: '2026-10-02T00:00:00Z', description: '', progress: { done: 'x', total: 2 } },
+    // Five pull requests closed without merging, which the pie leaves out.
+    { number: 1, title: 'v1.0', dueOn: '2026-10-14T00:00:00Z', description: '',
+      counts: { pulls: { open: 0, merged: 1, closed: 5 }, issues: { open: 1, closed: 2 } } },
+    { number: 4, title: 'Needed soon', dueOn: null, description: '', counts: { pulls: { open: 0, merged: 0, closed: 0 }, issues: { open: 0, closed: 0 } } },
+    { number: 2, title: 'v0.1', dueOn: '2026-10-02T00:00:00Z', description: '', counts: { pulls: { open: 1, merged: 0, closed: 0 }, issues: { open: 'x', closed: 2 } } },
   ],
   issues: [
     { number: 58, title: 'Decide what the Issues tab shows', url: 'https://github.com/gaurav/prcoder/issues/58', updatedAt: '2026-10-10T00:00:00Z',
@@ -1564,12 +1566,13 @@ test('the Issues tab groups the repository\'s open issues by milestone in rank o
   assert.notEqual(await tint('[data-group="m:none"] summary'), await tint('[data-group="m:3"] summary'), 'brighter than a milestone line');
   assert.equal(await fresh.locator('#queue-body .fold.untriaged').count(), 1, 'and nothing else is');
   // The count is a badge right after the title, with the pie of what GitHub
-  // has closed after it, and the due date after that; the date in full on hover.
+  // has merged or closed of the whole milestone after it, and the due date
+  // after that; the date in full on hover.
   const v1 = fresh.locator('[data-group="m:1"] summary h3');
   assert.deepEqual(await v1.evaluate((e) => [...e.children].map((c) => c.className)), ['', 'count', 'mark', 'due overdue']);
   assert.equal(await v1.locator('.count').textContent(), '1');
   assert.equal(await v1.locator('.count').getAttribute('title'), '1 open issue listed');
-  assert.equal(await v1.locator('.mark').getAttribute('aria-label'), '3 of 4 issues closed');
+  assert.equal(await v1.locator('.mark').getAttribute('aria-label'), '3 of 4 done: 1 pull request merged, 2 issues closed');
   assert.equal(await v1.locator('.due').getAttribute('title'), 'Wednesday, October 14, 2026');
   assert.equal(await fresh.locator('[data-group="m:4"] summary .count.none').textContent(), '0', 'an empty one\'s badge is fainter');
   assert.equal(await fresh.locator('[data-group="m:4"] summary .mark').count(), 0, 'and a milestone that never held anything has no pie');
@@ -1907,7 +1910,8 @@ const pullOf = (over) => ({
 });
 const PULLS = {
   milestones: [
-    { number: 1, title: 'v1.0', dueOn: '2026-10-14T00:00:00Z', description: '', closed: false, progress: { done: 1, total: 3 } },
+    { number: 1, title: 'v1.0', dueOn: '2026-10-14T00:00:00Z', description: '', closed: false,
+      counts: { pulls: { open: 2, merged: 1, closed: 1 }, issues: { open: 9, closed: 3 } } },
     { number: 4, title: 'Needed soon', dueOn: null, description: 'Work that should land soon.', closed: false },
     { number: 3, title: 'Not urgent', dueOn: null, description: '', closed: false },
   ],
@@ -1974,9 +1978,10 @@ test('the Pull requests tab groups the open pull requests by milestone, smallest
     'p:none|No milestone (1) to triage|open|30', 'p:1|v1.0 (2) due 5 days ago|closed|20,12', 'p:4|Needed soon (0)|closed|', 'p:3|Not urgent (0)|closed|']);
   assert.equal(await fresh.locator('[data-group="p:none"].untriaged summary .triage').textContent(), 'to triage');
   assert.equal(await fresh.locator('[data-group="p:4"] summary a').getAttribute('title'), 'Work that should land soon.');
-  // The Issues tab's line, in pull requests: the count's badge, then the pie.
+  // The Issues tab's line: the count's badge in pull requests, then the pie of
+  // the whole milestone, issues too, with the one closed unmerged left out.
   assert.equal(await fresh.locator('[data-group="p:1"] summary .count').getAttribute('title'), '2 open pull requests listed');
-  assert.equal(await fresh.locator('[data-group="p:1"] summary .mark').getAttribute('aria-label'), '1 of 3 pull requests closed');
+  assert.equal(await fresh.locator('[data-group="p:1"] summary .mark').getAttribute('aria-label'), '4 of 15 done: 1 pull request merged, 3 issues closed');
   // A row: the tinted PR chip, the title, the size as GitHub bands it with
   // the counts on hover, the merge word, the review, the author, labels,
   // the pie, and the two ages; the one on screen is marked and has no Switch.

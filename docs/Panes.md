@@ -416,8 +416,11 @@ ranked the same way and marked *closed*, so that no listed issue goes undrawn; n
 onto it, by a drop or in a row's select, where it shows only on a row already on it. A milestone's line
 is its title, linking to it on GitHub; how many issues it holds, in a grey badge right after the
 title, not at the line's end where it was too far off to read as the milestone's; a pie of how
-much of the milestone GitHub has closed, `3 of 4 issues closed` on hover (left out for one that has
-never held an issue);
+much of the whole milestone is done on GitHub, its pull requests and its issues together, so it is
+the same on either tab: merged pull requests and closed issues of all of them, with a pull request
+closed without merging left out of both figures, since it is neither done nor still to do --
+`5 of 15 done: 2 pull requests merged, 3 issues closed` on hover (left out for one that has never
+held anything);
 and when it is due, in calendar days, as `due 5 days ago`, `due yesterday`, `due today`, `due tomorrow` or `due in 2
 months` (months from 30 days), with the date in full on hover, `Tuesday, October 27, 2026` -- a round red badge once
 the day is past, yellow within a week, so a milestone to reschedule stands out; an empty one is
@@ -453,8 +456,7 @@ from prcoder.
 
 **Pull requests** is always there too: the repository's open pull requests, for picking the next
 one to work on, in the same groups as the issues -- **No milestone** first, then one per open milestone in the
-owner's order, each line drawn as the Issues tab's but counting pull requests, merged and closed
-both done in its pie -- or, with the second select over them set to *one list*, as one list, or
+owner's order, each line drawn as the Issues tab's, its badge counting pull requests -- or, with the second select over them set to *one list*, as one list, or
 to *by stack*, as one list in the switcher's order, each pull request a step in under the one it
 is built on. A stack can run across milestones, which is why that is a grouping of its own and
 not a way of nesting the milestone groups.
