@@ -1569,10 +1569,12 @@ test('the Issues tab groups the repository\'s open issues by milestone in rank o
   // on the milestone, the pie of what GitHub has merged or closed of all of
   // it, the pull requests merged, and the due date, in full on hover.
   const v1 = fresh.locator('[data-group="m:1"] summary h3');
-  assert.deepEqual(await v1.evaluate((e) => [...e.children].map((c) => c.className)), ['', 'count', 'other-kind', 'mark', 'merged', 'due overdue']);
+  assert.deepEqual(await v1.evaluate((e) => [...e.children].map((c) => c.className)), ['', 'count', 'other-kind', 'breakdown', 'merged', 'due overdue']);
   assert.equal(await v1.locator('.count').textContent(), '1');
   assert.equal(await v1.locator('.count').getAttribute('title'), '1 open issue listed');
-  assert.equal(await v1.locator('.mark').getAttribute('aria-label'), '3 of 6 done: 1 pull request merged, 2 issues closed');
+  // The pie is a button to the breakdown, its figure the tooltip.
+  assert.equal(await v1.locator('.breakdown').getAttribute('title'), '3 of 6 done: 1 pull request merged, 2 issues closed');
+  assert.equal(await v1.locator('.breakdown .mark').evaluate((m) => m.style.getPropertyValue('--p')), '0.5');
   assert.equal(await v1.locator('.other-kind').textContent(), '2 PRs');
   assert.equal(await v1.locator('.other-kind').getAttribute('title'), '2 open pull requests on this milestone on GitHub');
   assert.equal(await v1.locator('.merged').textContent(), '1 merged');
@@ -1987,7 +1989,7 @@ test('the Pull requests tab groups the open pull requests by milestone, smallest
   // The Issues tab's line: the count's badge in pull requests, then the pie of
   // the whole milestone, issues too, with the one closed unmerged left out.
   assert.equal(await fresh.locator('[data-group="p:1"] summary .count').getAttribute('title'), '2 open pull requests listed');
-  assert.equal(await fresh.locator('[data-group="p:1"] summary .mark').getAttribute('aria-label'), '4 of 15 done: 1 pull request merged, 3 issues closed');
+  assert.equal(await fresh.locator('[data-group="p:1"] summary .breakdown').getAttribute('title'), '4 of 15 done: 1 pull request merged, 3 issues closed');
   assert.equal(await fresh.locator('[data-group="p:1"] summary .other-kind').textContent(), '9 issues', 'the other kind, here issues');
   assert.equal(await fresh.locator('[data-group="p:1"] summary .merged').textContent(), '1 merged');
   // A row: the tinted PR chip, the title, the size as GitHub bands it with
@@ -2155,6 +2157,56 @@ test('a fresh listing is not read again within a minute, and ⟳ reads one whate
   await fresh.locator('#queue-body .pull-reload').click();
   await again;
   assert.deepEqual(asked, [false, true]);
+  await fresh.close();
+});
+
+// The pie opens a breakdown of the milestone: every count the line draws a
+// part of, as a table, without folding or unfolding the group under it.
+test('a milestone\'s pie opens a breakdown of its counts, which Escape and a second press close', { skip }, async () => {
+  const { fresh } = await pullsPage();
+  const fold = fresh.locator('[data-group="p:1"]');
+  const pie = fold.locator('summary .breakdown');
+  const pop = fresh.locator('.milestone-pop');
+  const isOpen = () => fold.evaluate((d) => d.open);
+  const before = await isOpen();
+  assert.equal(await pie.getAttribute('aria-label'), '4 of 15 done: 1 pull request merged, 3 issues closed; show the breakdown');
+  await pie.click();
+  await pop.waitFor();
+  assert.equal(await isOpen(), before, 'the press is the pie\'s, not the fold\'s');
+  assert.equal(await pop.locator('.head').textContent(), 'v1.0 · due Wednesday, October 14, 2026');
+  assert.deepEqual(await pop.locator('tr').evaluateAll((rs) => rs.map((r) => [...r.children].map((c) => c.textContent))), [
+    ['', 'open', 'merged', 'closed'], ['pull requests', '2', '1', '1'], ['issues', '9', '–', '3']]);
+  assert.equal(await pop.locator('p').last().textContent(), '4 of 15 done, leaving out the 1 pull request closed without merging');
+  assert.equal(await pop.getAttribute('aria-label'), 'v1.0: what it holds');
+  // At the pie, by its anchor: under it, or over it where the foot would cut it off.
+  const [p, b] = await Promise.all([pop.boundingBox(), pie.boundingBox()]);
+  const gap = Math.min(Math.abs(p.y - (b.y + b.height)), Math.abs(b.y - (p.y + p.height)));
+  assert.ok(gap < 8 && Math.abs(p.x - b.x) < 2, JSON.stringify({ p, b }));
+  // Escape closes it, and so does a second press of the same pie.
+  await fresh.keyboard.press('Escape');
+  await pop.waitFor({ state: 'hidden' });
+  await pie.click();
+  await pop.waitFor();
+  await pie.click();
+  await pop.waitFor({ state: 'hidden' });
+  // From the keyboard, Enter on the pie opens it and does not fold the group either.
+  await pie.focus();
+  await fresh.keyboard.press('Enter');
+  await pop.waitFor();
+  assert.equal(await isOpen(), before);
+  await fresh.keyboard.press('Enter');
+  await pop.waitFor({ state: 'hidden' });
+  // A repaint takes the pie away, and the breakdown with it, rather than
+  // leaving it anchored to nothing.
+  await pie.click();
+  await pop.waitFor();
+  // Searched from the page, not typed: a click in the box would be the
+  // popover's light dismiss, and close it whatever the repaint did.
+  await fresh.locator('#queue-pull-search').evaluate((el) => {
+    el.value = 'fix';
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await pop.waitFor({ state: 'hidden' });
   await fresh.close();
 });
 

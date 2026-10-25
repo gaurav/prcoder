@@ -422,9 +422,13 @@ much of the whole milestone is done on GitHub, its pull requests and its issues 
 the same on either tab: merged pull requests and closed issues of all of them, with a pull request
 closed without merging left out of both figures, since it is neither done nor still to do --
 `5 of 15 done: 2 pull requests merged, 3 issues closed` on hover (left out for one that has never
-held anything); how many pull requests have merged into it, `2 merged` in green, since that, and
-not the issues that will slide on to the next milestone, is what says whether a release is ready
-and a pie mostly of issues would hide it (the two figures left out at 0);
+held anything), which a press or Enter turns into a breakdown under it, every count as a table --
+pull requests open, merged and closed without merging, issues open and closed -- and the pie's
+figure, saying what it leaves out, closed again by Escape, a click elsewhere or a second press,
+without folding or unfolding the group; how many pull requests have merged into it, `2 merged` in
+green, since that, and not the issues that will slide on to the next milestone, is what says
+whether a release is ready, and a pie mostly of issues would hide it (it and the other kind's
+count are left out at 0);
 and when it is due, in calendar days, as `due 5 days ago`, `due yesterday`, `due today`, `due tomorrow` or `due in 2
 months` (months from 30 days), with the date in full on hover, `Tuesday, October 27, 2026` -- a round red badge once
 the day is past, yellow within a week, so a milestone to reschedule stands out; an empty one is

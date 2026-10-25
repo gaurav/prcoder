@@ -256,6 +256,7 @@ function render() {
         : tab === 'pulls' ? pullList()
           : h('ul', { className: 'items' }, ...shown.map((i, n) => row(i, shown[n - 1], shown[n + 1]))),
   );
+  staleBreakdown();
 }
 
 /**
@@ -458,7 +459,10 @@ function issueList() {
   return h('div', { className: 'issues-pane' }, search, h('div', { className: 'issue-groups' }, ...issueGroups()));
 }
 
-const paintGroups = () => document.querySelector('#queue-body .issue-groups')?.replaceChildren(...issueGroups());
+const paintGroups = () => {
+  document.querySelector('#queue-body .issue-groups')?.replaceChildren(...issueGroups());
+  staleBreakdown();
+};
 
 /** The groups and the tab's count, leaving the search box, its focus and its caret alone. */
 function paintIssues() {
@@ -520,13 +524,82 @@ function milestoneExtra(m, noun) {
   return [
     ...(other ? [h('span', { className: 'other-kind', title: `${other} open ${several(other, them)} on this milestone on GitHub` },
       `${other} ${several(other, short)}`)] : []),
-    ...(t ? [mark({ ...fraction(t), label: `${t.done} of ${t.total} done: ${t.pulls.merged} ${several(t.pulls.merged, 'pull requests')} merged, `
-      + `${t.issues.closed} ${several(t.issues.closed, 'issues')} closed` })] : []),
+    ...(t ? [pieButton(m, t)] : []),
     ...(t?.pulls.merged ? [h('span', { className: 'merged', title: `${t.pulls.merged} ${several(t.pulls.merged, 'pull requests')} merged into this milestone` },
       `${t.pulls.merged} merged`)] : []),
     ...(m.dueOn ? [h('span', dueLabel(m.dueOn))] : []),
     ...(m.closed ? [h('span', { className: 'closed-milestone', title: `closed on GitHub, with open ${noun} still on it` }, 'closed')] : []),
   ];
+}
+
+/**
+ * A milestone's pie, as the button that opens its breakdown. The figure is
+ * its tooltip, as a mark's is, and its name, with what a press does.
+ */
+function pieButton(m, t) {
+  const label = `${t.done} of ${t.total} done: ${t.pulls.merged} ${several(t.pulls.merged, 'pull requests')} merged, `
+    + `${t.issues.closed} ${several(t.issues.closed, 'issues')} closed`;
+  const b = h('button', { type: 'button', className: 'breakdown', title: label }, mark(fraction(t)));
+  b.setAttribute('aria-label', `${label}; show the breakdown`);
+  b.setAttribute('aria-haspopup', 'dialog');
+  // A press while it is open for this pie closes it. The popover's light
+  // dismiss has already hidden it by the click, on pointerdown, so that is
+  // read there; a key press has no pointerdown and finds it still open.
+  let wasOpen = false;
+  b.onpointerdown = () => { wasOpen = popFor === b && pop.matches(':popover-open'); };
+  b.onclick = () => {
+    if (wasOpen || (popFor === b && pop.matches(':popover-open'))) { wasOpen = false; pop.hidePopover(); return; }
+    showBreakdown(m, t, b);
+  };
+  return b;
+}
+
+/** The one breakdown popover, made on first use, and the pie it was opened from. */
+let pop = null;
+let popFor = null;
+
+/**
+ * Every figure the line draws a part of, as a table under the pie: pull
+ * requests open, merged and closed without merging, and issues open and
+ * closed, then the pie's figure, saying what it leaves out. A popover rather
+ * than a longer line or a tooltip: the line is already as long as a narrow
+ * pane allows, and a tooltip is one line of words, where this is a table to
+ * read across. `auto`, so Escape and a click anywhere else close it. One on
+ * <body> for every line, anchored by CSS to the pie it was opened from, which
+ * alone carries the anchor's name (`.milestone-pop` in style.css); Firefox 153
+ * and Chromium 151 both anchor (checked 2026-10-24). A button inside a
+ * <summary> takes its own click and keys, so a press does not fold the group
+ * (checked in both, the same day).
+ */
+function showBreakdown(m, t, at) {
+  if (!pop) {
+    pop = document.body.appendChild(h('div', { className: 'milestone-pop', popover: 'auto' }));
+    pop.setAttribute('role', 'dialog');
+  }
+  const cells = (row, ...ns) => h('tr', {}, h('th', { scope: 'row' }, row), ...ns.map((n) => h('td', {}, n)));
+  const { open, merged, closed } = t.pulls;
+  pop.setAttribute('aria-label', `${m.title}: what it holds`);
+  pop.replaceChildren(
+    h('p', { className: 'head' }, m.title, m.dueOn ? ` · due ${dueLabel(m.dueOn).title}` : ''),
+    h('table', {},
+      h('thead', {}, h('tr', {}, h('td'), ...['open', 'merged', 'closed'].map((c) => h('th', { scope: 'col' }, c)))),
+      h('tbody', {}, cells('pull requests', String(open), String(merged), String(closed)),
+        cells('issues', String(t.issues.open), '–', String(t.issues.closed)))),
+    h('p', {}, `${t.done} of ${t.total} done`
+      + (closed ? `, leaving out the ${closed} ${several(closed, 'pull requests')} closed without merging` : '')));
+  popFor?.style.removeProperty('anchor-name');
+  popFor = at;
+  at.style.setProperty('anchor-name', '--milestone-pie');
+  pop.showPopover();
+}
+
+/**
+ * Close the breakdown when a repaint -- a poll, a search, a new listing -- has
+ * taken away the pie it hangs from, which would leave it anchored to nothing.
+ * Each of the pane's three repaints calls this after it.
+ */
+function staleBreakdown() {
+  if (popFor && !popFor.isConnected && pop.matches(':popover-open')) pop.hidePopover();
 }
 
 /**
@@ -828,6 +901,7 @@ async function loadPulls(force = false) {
 export function paintPulls() {
   if (tab !== 'pulls') return;
   document.querySelector('#queue-body .pull-groups')?.replaceChildren(...pullGroups());
+  staleBreakdown();
   const t = document.querySelector('#queue-body .tab[data-tab="pulls"]');
   if (t) t.textContent = `${LABELS.pulls} (${pullCount()})`;
 }

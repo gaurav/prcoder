@@ -848,6 +848,29 @@ main.diff-off #diff-wrap { display: none; }
    (milestoneExtra in queue.js). Both are left out at 0. */
 .fold.milestone > summary .other-kind, .fold.milestone > summary .merged { font-variant-numeric: tabular-nums; }
 .fold.milestone > summary .merged { color: var(--add); }
+/* The pie as the button that opens the milestone's breakdown (pieButton in
+   queue.js): nothing of a button's own drawn, so it is the fold's mark as
+   before, centred on the line as that is. */
+.fold.milestone > summary .breakdown {
+  align-self: center; display: inline-flex; padding: 0; border: 0; background: none; cursor: pointer;
+}
+.fold.milestone > summary .breakdown:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; border-radius: 50%; }
+/* The breakdown itself: a small table of the milestone's counts, under the
+   pie it was opened from (showBreakdown names that one the anchor), or over
+   it where the pane's foot would cut it off. */
+.milestone-pop {
+  position: fixed; position-anchor: --milestone-pie; inset: auto; top: anchor(bottom); left: anchor(left);
+  position-try-fallbacks: flip-block, flip-inline;
+  margin: 4px 0; padding: 6px 10px; max-width: min(24em, calc(100vw - 16px)); box-sizing: border-box;
+  font: 400 12px/1.5 ui-sans-serif, system-ui, sans-serif; color: var(--fg);
+  background: var(--panel); border: 1px solid var(--line); border-radius: 4px; box-shadow: 0 4px 12px rgb(0 0 0 / 0.35);
+}
+.milestone-pop p { margin: 0; }
+.milestone-pop .head { font-weight: 600; margin-bottom: 4px; }
+.milestone-pop table { border-collapse: collapse; margin-bottom: 4px; font-variant-numeric: tabular-nums; }
+.milestone-pop th, .milestone-pop td { padding: 0 0 0 12px; text-align: right; font-weight: 400; }
+.milestone-pop thead th { color: var(--dim); }
+.milestone-pop tbody th { padding-left: 0; text-align: left; }
 /* No milestone, with anything on it: the untriaged, any of which could be
    Critical, so it is drawn first and in the text's own colour rather than
    the dim of the other lines, with a yellow badge -- the soon-due yellow, not
