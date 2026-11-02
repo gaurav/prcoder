@@ -826,10 +826,10 @@ export const milestoneChoices = (current, list) => {
 const milestoneRow = (pr, { milestones = null, onMilestone, onMilestoneReach } = {}) => {
   const m = pr.milestone;
   const sel = h('select', {
-    ariaLabel: 'milestone', disabled: !onMilestone, dataset: { pr: pr.url },
+    ariaLabel: 'milestone', disabled: !onMilestone, dataset: { pr: pr.url, on: m ? String(m.number) : '' },
     title: m ? 'move this pull request to another milestone' : 'not on a milestone: pick one to triage it',
   }, ...milestoneChoices(m, milestones).map((c) => h('option', { value: c.value, ...(c.title ? { title: c.title } : {}) }, c.text)));
-  sel.value = m ? String(m.number) : '';
+  sel.value = sel.dataset.on;
   sel.onchange = () => {
     const number = sel.value ? Number(sel.value) : null;
     sel.blur();
@@ -865,6 +865,33 @@ const around = (parent, kept, list, stand) => {
 };
 
 /**
+ * A kept picker brought up to what `fresh` says, in place. An option already
+ * there stays the same node, and only what differs is touched, so an open
+ * dropdown gets a new milestone rather than closing or losing its highlight.
+ * The value is set only when the pull request's own milestone has moved, since
+ * the select's may be what a keyboard is browsing in an open dropdown.
+ */
+const updatePicker = (live, fresh) => {
+  live.title = fresh.title;
+  live.disabled = fresh.disabled;
+  const have = new Map([...live.options].map((o) => [o.value, o]));
+  [...fresh.options].forEach((want, i) => {
+    const o = have.get(want.value) ?? want;
+    have.delete(want.value);
+    if (o !== want) {
+      if (o.textContent !== want.textContent) o.textContent = want.textContent;
+      o.title = want.title;
+    }
+    if (live.options[i] !== o) live.insertBefore(o, live.options[i] ?? null);
+  });
+  have.forEach((o) => o.remove());
+  if (live.dataset.on !== fresh.dataset.on) {
+    live.dataset.on = fresh.dataset.on;
+    live.value = fresh.dataset.on;
+  }
+};
+
+/**
  * The focus is the one sign a page gets that the milestone picker's dropdown
  * may be open, and replacing the picker then closes it. So while it has the
  * focus, and is still about the pull request drawn, that one node stays and the
@@ -893,6 +920,7 @@ const paintHead = (rows) => {
   line.className = rows.milestone.className;
   around(line, held, [...rows.milestone.children], fresh);
   around(head, line, next, rows.milestone);
+  updatePicker(held, fresh);
 };
 
 /**

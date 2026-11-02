@@ -625,6 +625,44 @@ test('a poll that lands while the milestone picker has the focus redraws the hea
   await p.close();
 });
 
+// The read that reaching for the picker starts is for the dropdown about to be
+// used, so its answer has to reach that very picker, which is kept: into the
+// node, without a new one, and with the pull request's milestone still chosen.
+test('milestones read as the picker takes the focus are added to it in place', { skip }, async () => {
+  const p = await newPage({ clock: true, st: { ...status, pr: { ...pr, milestone: { number: 4, title: 'Needed soon', dueOn: null } } } });
+  await p.waitForFunction(() => document.querySelectorAll('#pr-head .pr-milestone option').length > 2);
+  await p.route('**/api/milestones', (r) => r.fulfill({ json: { ...MILESTONES, milestones: [
+    { number: 4, title: 'Needed soon', dueOn: null }, { number: 1, title: 'v1.0', dueOn: '2026-11-01T00:00:00Z' },
+    { number: 6, title: 'Made since', dueOn: null }] } }));
+  await p.clock.fastForward(11_000);
+  await p.evaluate(() => { document.querySelector('#pr-head .pr-milestone select').dataset.marked = '1'; });
+  const read = p.waitForResponse('**/api/milestones');
+  await p.focus('#pr-head .pr-milestone select');
+  await read;
+  await p.locator('#pr-head .pr-milestone select[data-marked] option', { hasText: 'Made since' }).waitFor({ state: 'attached' });
+  const sel = p.locator('#pr-head .pr-milestone select');
+  assert.deepEqual(await sel.locator('option').allTextContents(), ['no milestone', 'v1.0', 'Made since', 'Needed soon'], 'in rank, and "Not urgent" has gone');
+  assert.equal(await sel.inputValue(), '4');
+  assert.ok(await p.evaluate(() => document.activeElement?.dataset.marked === '1'), 'with the focus still');
+  await p.close();
+});
+
+// The same in the other direction: a kept picker follows the pull request.
+test('a focused picker follows a milestone changed on GitHub', { skip }, async () => {
+  const p = await newPage({ clock: true });
+  await p.waitForFunction(() => document.querySelectorAll('#pr-head .pr-milestone option').length > 1);
+  await p.route('**/api/status', (r) => r.fulfill({ json: { ...status, pr: { ...pr, milestone: { number: 3, title: 'Not urgent', dueOn: null } } } }));
+  await p.focus('#pr-head .pr-milestone select');
+  await p.evaluate(() => { document.querySelector('#pr-head .pr-milestone select').dataset.marked = '1'; });
+  const polled = p.waitForResponse('**/api/status');
+  await p.clock.fastForward(61_000);
+  await polled;
+  await p.waitForSelector('#pr-head .pr-milestone:not(.untriaged) select[data-marked]');
+  assert.equal(await p.locator('#pr-head .pr-milestone select').inputValue(), '3');
+  assert.equal(await p.locator('#pr-head .pr-milestone option').first().textContent(), 'no milestone', 'no longer asking for triage');
+  await p.close();
+});
+
 // A picker kept for one pull request is a pick about the wrong one once the
 // pane has moved, so that closes the dropdown rather than keeping it.
 test('a poll that moves the pane to another pull request replaces the focused picker', { skip }, async () => {
