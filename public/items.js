@@ -99,3 +99,56 @@ export const issueMatches = (i, query) => {
   }
   return hay.includes(q);
 };
+
+/**
+ * How far `iso` is from now, in a word or two: `3 days ago`, or `in 2 months`
+ * for one still to come. Under a minute is `just now`; nothing, or a date
+ * that is not one, is ''. `now` is a parameter so a test can hold it still.
+ */
+// Largest first, so the first that fits is the unit.
+const UNITS = [['year', 365 * 86400], ['month', 30 * 86400], ['day', 86400], ['hour', 3600], ['minute', 60]];
+export function when(iso, now = Date.now()) {
+  const t = Date.parse(iso ?? '');
+  if (Number.isNaN(t)) return '';
+  const s = Math.round((t - now) / 1000);
+  const found = UNITS.find(([, size]) => Math.abs(s) >= size);
+  if (!found) return 'just now';
+  return new Intl.RelativeTimeFormat('en', { numeric: 'always' }).format(Math.trunc(s / found[1]), found[0]);
+}
+
+/**
+ * The day a milestone is due, `2026-10-20`, out of GitHub's dueOn: a date sent
+ * as midnight wherever it was set, with no word of where. Real ones read
+ * 2026-11-02 (nodejs/node, rust-lang/rust, flutter/flutter) have `T00` from
+ * UTC, `T04` to `T08` from the Americas, and `T13` and `T21` from east of
+ * Greenwich, where it is already the next day. So the UTC date is a day early
+ * for those, and this rounds: an hour from `T11` on is a zone ahead of UTC, and
+ * so the next day. That reads UTC-10 to UTC+13 right, and is a day out only for
+ * the zones past them, Samoa's and Kiribati's.
+ */
+const DUE_ROUND = 13 * 3600_000;
+export const dueDay = (dueOn) => new Date(Date.parse(dueOn) + DUE_ROUND).toISOString().slice(0, 10);
+
+/**
+ * A milestone's due date as its line says it, `due 3 days ago`, with the date
+ * on hover and a class saying how near it is: `overdue`, `soon`, or neither.
+ * Its day (dueDay) is compared with today's on this clock, and all of it is
+ * counted in whole days: due today is `due today` and soon, and overdue only
+ * once the day is over. With a time in any of it, a milestone was overdue for
+ * most of its own day, or `due 3 hours ago` and not overdue the evening before.
+ */
+export function dueLabel(dueOn, now = Date.now()) {
+  const day = dueDay(dueOn);
+  const d = new Date(now);
+  const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const title = `due ${day}`;
+  if (day === today) return { className: 'due soon', textContent: 'due today', title };
+  const due = `${day}T00:00:00Z`;
+  const from = Date.parse(`${today}T00:00:00Z`);
+  const near = day < today ? ' overdue' : Date.parse(due) - from < DUE_SOON ? ' soon' : '';
+  return { className: `due${near}`, textContent: `due ${when(due, from)}`, title };
+}
+
+// A milestone due within this long is `soon`, its due date yellow, and one past
+// it is overdue, a red badge: the two to look at for rescheduling.
+export const DUE_SOON = 7 * 86400_000;

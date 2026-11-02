@@ -149,6 +149,11 @@ const withLong = (st) => ({ ...st, pr: { ...st.pr, files: [...files, fileRow('lo
 // What /api/issues answers for a repository with nothing: the Issues tab is
 // always there, so every page gets this unless a test routes its own.
 const EMPTY_ISSUES = { milestones: [], issues: [], total: 0, listed: 0, repo: 'heal-data-stewards/heal-vlmd-AI-pipeline', mentions: [] };
+// What /api/milestones answers: the repository's open ones, in GitHub's order,
+// which the picker ranks.
+const MILESTONES = { repo: 'heal-data-stewards/heal-vlmd-AI-pipeline', milestones: [
+  { number: 3, title: 'Not urgent', dueOn: null }, { number: 4, title: 'Needed soon', dueOn: null },
+  { number: 1, title: 'v1.0', dueOn: '2026-11-01T00:00:00Z' }] };
 
 let browser;
 let page;
@@ -194,6 +199,14 @@ async function newPage({ prs = [], st = status, ready = '#pr-head .pr-title', be
   });
   await p.route('**/api/queue', (r) => r.fulfill({ json: [] }));
   await p.route('**/api/issues', (r) => r.fulfill({ json: EMPTY_ISSUES }));
+  await p.route('**/api/milestones', (r) => r.fulfill({ json: MILESTONES }));
+  // Answers with the milestone picked, as GitHub would have it, and keeps
+  // what was asked on the page for a test to read.
+  await p.route('**/api/pr/milestone', (r) => {
+    const asked = r.request().postDataJSON();
+    (p.milestonePicks ??= []).push(asked);
+    return r.fulfill({ json: { milestone: MILESTONES.milestones.find((m) => m.number === asked.number) ?? null } });
+  });
   await p.route('**/api/pr/viewed', (r) => r.fulfill({ json: { ok: true } }));
   await p.route('**/api/diff', (r) => {
     const { path } = r.request().postDataJSON();
@@ -431,6 +444,333 @@ test('a short repository shares the row with the four links', { skip }, async ()
   const mid = (sel) => p.$eval(sel, (el) => { const b = el.getBoundingClientRect(); return Math.round(b.top + b.height / 2); });
   assert.equal(await p.locator('#pr-head .pr-repo').textContent(), 'o/r');
   assert.equal(await mid('#pr-head .pr-repo'), await mid('#pr-head .pr-links a:not(.primary)'));
+  await p.close();
+});
+
+// Every pull request has a milestone line, above the state, since one on no
+// milestone is the one that needs triaging -- in the warning colour then --
+// and the line is a picker of the repository's open milestones, ranked as the
+// Issues tab groups them, with none first.
+test('the milestone line is above the state, and asks for triage on no milestone', { skip }, async () => {
+  const rows = await page.$$eval('#pr-head > *', (rs) => rs.map((r) => r.className));
+  assert.equal(rows.indexOf('meta pr-milestone untriaged') + 1, rows.indexOf('meta pr-state'), rows.join(' | '));
+  const sel = page.locator('#pr-head .pr-milestone select');
+  await page.waitForFunction(() => document.querySelectorAll('#pr-head .pr-milestone option').length > 1);
+  assert.equal(await sel.inputValue(), '');
+  assert.deepEqual(await sel.locator('option').allTextContents(),
+    ['no milestone — needs triage', 'v1.0', 'Needed soon', 'Not urgent']);
+  assert.equal(await sel.locator('option[value="1"]').getAttribute('title'), 'due 2026-11-01');
+  assert.equal(await page.locator('#pr-head .pr-milestone a').count(), 0, 'nothing on GitHub to link to');
+  const [warn, colour] = await page.$eval('#pr-head .pr-milestone select', (s) =>
+    [getComputedStyle(document.documentElement).getPropertyValue('--warn').trim(), getComputedStyle(s).color]);
+  assert.equal(colour, await page.evaluate((c) => { const d = document.createElement('i'); d.style.color = c; document.body.append(d);
+    const out = getComputedStyle(d).color; d.remove(); return out; }, warn));
+});
+
+test('a pull request on a milestone shows it picked, linked, and its own even when the list lacks it', { skip }, async () => {
+  const p = await newPage({ st: { ...status, pr: { ...pr, milestone: { number: 7, title: 'v0.1', dueOn: null } } } });
+  await p.waitForFunction(() => document.querySelectorAll('#pr-head .pr-milestone option').length > 2);
+  const sel = p.locator('#pr-head .pr-milestone select');
+  assert.equal(await sel.inputValue(), '7');
+  assert.deepEqual(await sel.locator('option').allTextContents(),
+    ['no milestone', 'v1.0', 'Needed soon', 'Not urgent', 'v0.1']);
+  assert.equal(await p.locator('#pr-head .pr-milestone').getAttribute('class'), 'meta pr-milestone');
+  assert.equal(await p.locator('#pr-head .pr-milestone a').getAttribute('href'), `${REPO}/milestone/7`);
+  assert.equal(await p.locator('#pr-head .pr-milestone .due').count(), 0, 'an undated milestone has no due date');
+  await p.close();
+});
+
+// A dated milestone says when it is due after the picker, as the queue's
+// milestone lines do, and the picker takes the line's width up to it: the
+// word, the picker and the due date end to end, nothing left over.
+test('a dated milestone says when it is due after the picker, which takes the rest of the line', { skip }, async () => {
+  const p = await newPage({ st: { ...status, pr: { ...pr, milestone: { number: 2, title: 'v0.1', dueOn: '2020-01-01T00:00:00Z' } } } });
+  const due = p.locator('#pr-head .pr-milestone > .due');
+  assert.equal(await due.getAttribute('class'), 'due overdue');
+  assert.match(await due.textContent(), /^due \d+ years ago$/);
+  assert.equal(await due.getAttribute('title'), 'due 2020-01-01');
+  assert.equal(await p.locator('#pr-head .pr-milestone > :last-child').getAttribute('class'), 'due overdue', 'after the picker');
+  const [line, used] = await p.$eval('#pr-head .pr-milestone', (l) => {
+    const gap = parseFloat(getComputedStyle(l).columnGap);
+    return [l.clientWidth, [...l.children].reduce((w, k) => w + k.getBoundingClientRect().width, 0) + gap * (l.children.length - 1)];
+  });
+  assert.ok(Math.abs(line - used) < 2, `the picker fills the line: ${used} of ${line}px`);
+  await p.close();
+});
+
+// A pick names the pull request it was made on, and the line is redrawn from
+// GitHub's answer, out of the warning colour, without waiting for a poll.
+test('picking a milestone sends it with the pull request, and the line takes the answer', { skip }, async () => {
+  const p = await newPage();
+  await p.waitForFunction(() => document.querySelectorAll('#pr-head .pr-milestone option').length > 1);
+  await p.locator('#pr-head .pr-milestone select').selectOption('4');
+  await p.waitForSelector('#pr-head .pr-milestone:not(.untriaged) a');
+  assert.deepEqual(p.milestonePicks, [{ url: pr.url, number: 4 }]);
+  assert.equal(await p.locator('#pr-head .pr-milestone select').inputValue(), '4');
+  assert.equal(await p.locator('#pr-head .pr-milestone a').getAttribute('href'), `${REPO}/milestone/4`);
+  await p.locator('#pr-head .pr-milestone select').selectOption('');
+  await p.waitForSelector('#pr-head .pr-milestone.untriaged');
+  assert.deepEqual(p.milestonePicks.at(-1), { url: pr.url, number: null });
+  await p.close();
+});
+
+// The server refuses a pick about a pull request that is no longer on screen,
+// which it can only do if the page says which one the pick was about: reading
+// that off the latest poll said the one the pane had just moved to, the check
+// passed, and the other pull request was moved instead.
+test('a pick names the pull request its picker was drawn for, even once the pane has moved on', { skip }, async () => {
+  const p = await newPage({ clock: true });
+  await p.waitForFunction(() => document.querySelectorAll('#pr-head .pr-milestone option').length > 1);
+  const picker = await p.$('#pr-head .pr-milestone select');
+  await p.focus('#pr-head .pr-milestone select');
+  await p.route('**/api/status', (r) => r.fulfill({ json: { ...status, pr: { ...pr, url: `${REPO}/pull/999`, number: 999, title: 'Another pull request' } } }));
+  const polled = p.waitForResponse('**/api/status');
+  await p.clock.fastForward(61_000);
+  await polled;
+  await p.waitForTimeout(200);
+  const sent = p.waitForRequest('**/api/pr/milestone');
+  await picker.evaluate((s) => { s.value = '4'; s.dispatchEvent(new Event('change')); });
+  assert.deepEqual((await sent).postDataJSON(), { url: pr.url, number: 4 });
+  await p.close();
+});
+
+// The list is the repository's, and a read that lands after the pane has moved
+// to another is dropped. That has to leave the new repository's list on its way
+// rather than nothing until the next poll, with hovering the picker throttled.
+test('moving to another repository during a read of the milestones reads them again for it', { skip }, async () => {
+  const p = await newPage({ clock: true });
+  await p.waitForFunction(() => document.querySelectorAll('#pr-head .pr-milestone option').length > 1);
+  let release;
+  const held = new Promise((r) => { release = r; });
+  const asked = [];
+  await p.route('**/api/milestones', async (r) => {
+    asked.push(Date.now());
+    if (asked.length === 1) { await held; return r.fulfill({ json: MILESTONES }); }
+    return r.fulfill({ json: { repo: 'o/elsewhere', milestones: [{ number: 8, title: 'Theirs', dueOn: null }] } });
+  });
+  await p.clock.fastForward(11_000);
+  const first = p.waitForRequest('**/api/milestones');
+  await p.locator('#pr-head .pr-milestone select').hover();
+  await first;
+  await p.route('**/api/status', (r) => r.fulfill({ json: { ...status, pr: { ...pr, url: 'https://github.com/o/elsewhere/pull/5', number: 5 } } }));
+  const polled = p.waitForResponse('**/api/status');
+  await p.clock.fastForward(61_000);
+  await polled;
+  await p.waitForFunction(() => document.querySelector('#pr-head .pr-milestone select').options.length === 1);
+  const again = p.waitForRequest('**/api/milestones');
+  release();
+  await again;
+  await p.locator('#pr-head .pr-milestone option', { hasText: 'Theirs' }).waitFor({ state: 'attached' });
+  assert.equal(asked.length, 2);
+  await p.close();
+});
+
+// Read when the repository changes, not on every paint: a failed read is not
+// tried again by each poll that repaints, only by reaching for the picker.
+test('a failed read of the milestones waits for the picker to be reached before trying again', { skip }, async () => {
+  const p = await newPage({ clock: true });
+  let asked = 0;
+  await p.unroute('**/api/milestones');
+  await p.route('**/api/milestones', (r) => { asked += 1; return asked === 1 ? r.fulfill({ status: 500, json: { error: 'no' } }) : r.fulfill({ json: MILESTONES }); });
+  await p.reload();
+  await p.waitForSelector('#pr-head .pr-milestone select');
+  await p.waitForTimeout(200);
+  const before = asked;
+  assert.ok(before >= 1, 'the read was made');
+  await p.route('**/api/status', (r) => r.fulfill({ json: { ...status, pr: { ...pr, title: 'Retitled on GitHub' } } }));
+  const polled = p.waitForResponse('**/api/status');
+  await p.clock.fastForward(61_000);
+  await polled;
+  await p.locator('#pr-head .pr-title', { hasText: 'Retitled on GitHub' }).waitFor();
+  assert.equal(asked, before, 'a repaint did not read them again');
+  await p.locator('#pr-head .pr-milestone select').hover();
+  await p.waitForFunction(() => document.querySelectorAll('#pr-head .pr-milestone option').length > 1);
+  await p.close();
+});
+
+// While a pick is on its way the picker says what was picked and takes no other.
+// That was a `disabled` on one node, gone with any repaint: a poll, or a tab
+// click, brought back an enabled picker showing the old milestone, as if the
+// pick had been undone, with a second one there to be made.
+test('a pick on its way survives a repaint, disabled and showing what was picked', { skip }, async () => {
+  const p = await newPage({ clock: true });
+  await p.waitForFunction(() => document.querySelectorAll('#pr-head .pr-milestone option').length > 1);
+  let release;
+  const held = new Promise((r) => { release = r; });
+  await p.route('**/api/pr/milestone', async (r) => { await held; return r.fulfill({ json: { milestone: { number: 4, title: 'Needed soon', dueOn: null } } }); });
+  await p.route('**/api/status', (r) => r.fulfill({ json: { ...status, pr: { ...pr, title: 'Retitled on GitHub' } } }));
+  const sent = p.waitForRequest('**/api/pr/milestone');
+  await p.locator('#pr-head .pr-milestone select').selectOption('4');
+  await sent;
+  const polled = p.waitForResponse('**/api/status');
+  await p.clock.fastForward(61_000);
+  await polled;
+  await p.locator('#pr-head .pr-title', { hasText: 'Retitled on GitHub' }).waitFor();
+  const sel = p.locator('#pr-head .pr-milestone select');
+  assert.equal(await sel.isDisabled(), true, 'after a poll');
+  assert.equal(await sel.inputValue(), '4');
+  await p.locator('#pr-head .tabs button', { hasText: 'Stack' }).click();
+  assert.equal(await sel.isDisabled(), true, 'after a tab click');
+  assert.equal(await sel.inputValue(), '4');
+  release();
+  await p.waitForSelector('#pr-head .pr-milestone:not(.untriaged) select:not(:disabled)');
+  assert.equal(await sel.inputValue(), '4');
+  await p.close();
+});
+
+// Every change used to write to GitHub at once, and a closed select changes on
+// a bare key: a letter on the way to the terminal moved the pull request. `seen`
+// is there so this cannot pass on a select that ignored the letter.
+test('a letter that finds an option in a closed picker changes nothing and writes nothing', { skip }, async () => {
+  const p = await newPage();
+  await p.waitForFunction(() => document.querySelectorAll('#pr-head .pr-milestone option').length > 1);
+  await p.evaluate(() => {
+    window.seen = [];
+    document.querySelector('#pr-head .pr-milestone select').addEventListener('change', (e) => window.seen.push(e.target.value), true);
+  });
+  await p.focus('#pr-head .pr-milestone select');
+  await p.keyboard.press('n');
+  await p.waitForTimeout(200);
+  assert.deepEqual(await p.evaluate(() => window.seen), ['4'], 'the letter did change the select');
+  assert.equal(p.milestonePicks, undefined, 'nothing went to GitHub');
+  assert.equal(await p.locator('#pr-head .pr-milestone select').inputValue(), '');
+  await p.close();
+});
+
+// Keys in the sequence each platform sends them, since no one machine has them
+// all. An arrow on a closed select moves it on Windows and Linux, and opens a
+// menu on a Mac; a headless browser here opens no dropdown Playwright's keys can
+// reach, and sends no change at all for Alt+Down, Space, Enter or F4 then an
+// arrow and Enter (tried 2026-11-02). So these say what the picker does with a
+// key and a change, not that the browser sends them.
+const keyThenChange = (p, key, { value = '4', wait = false, up = false } = {}) => p.evaluate(async ({ key, value, wait, up }) => {
+  const sel = document.querySelector('#pr-head .pr-milestone select');
+  sel.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
+  if (up) sel.dispatchEvent(new KeyboardEvent('keyup', { key, bubbles: true }));
+  if (wait) await new Promise((r) => { setTimeout(r, 50); });
+  sel.value = value;
+  sel.dispatchEvent(new Event('change', { bubbles: true }));
+}, { key, value, wait, up });
+
+test('a change during a browsing key is put back, and one on a choosing key is written', { skip }, async () => {
+  const p = await newPage();
+  await p.waitForFunction(() => document.querySelectorAll('#pr-head .pr-milestone option').length > 1);
+  const sel = p.locator('#pr-head .pr-milestone select');
+  for (const key of ['ArrowDown', 'ArrowUp', 'PageDown', 'Home', 'End', 'n']) {
+    await keyThenChange(p, key);
+    assert.equal(await sel.inputValue(), '', key);
+    await p.waitForTimeout(20);
+  }
+  assert.equal(p.milestonePicks, undefined, 'nothing went to GitHub');
+  await keyThenChange(p, 'Enter');
+  await p.waitForSelector('#pr-head .pr-milestone:not(.untriaged) a');
+  assert.deepEqual(p.milestonePicks, [{ url: pr.url, number: 4 }]);
+  await p.close();
+});
+
+// An arrow opens a native menu on a Mac, which keeps the keyup. The choice from
+// that menu comes later, on no key the page saw, and has to count.
+test('a pick after a browsing key whose keyup never came is written', { skip }, async () => {
+  const p = await newPage();
+  await p.waitForFunction(() => document.querySelectorAll('#pr-head .pr-milestone option').length > 1);
+  await keyThenChange(p, 'ArrowDown', { wait: true });
+  await p.waitForSelector('#pr-head .pr-milestone:not(.untriaged) a');
+  assert.deepEqual(p.milestonePicks, [{ url: pr.url, number: 4 }]);
+  await p.close();
+});
+
+// A pick GitHub refuses is a toast with its reason, and the picker goes back
+// to where the pull request still is rather than showing a pick that never
+// happened.
+test('a refused milestone pick says why and puts the picker back', { skip }, async () => {
+  const p = await newPage();
+  await p.route('**/api/pr/milestone', (r) => r.fulfill({ status: 500, json: { error: 'gh: Validation Failed (HTTP 422)' } }));
+  await p.waitForFunction(() => document.querySelectorAll('#pr-head .pr-milestone option').length > 1);
+  await p.locator('#pr-head .pr-milestone select').selectOption('4');
+  await p.locator('#toast.bad', { hasText: 'Validation Failed' }).waitFor();
+  await p.waitForSelector('#pr-head .pr-milestone.untriaged select:not(:disabled)');
+  assert.equal(await p.locator('#pr-head .pr-milestone select').inputValue(), '');
+  await p.close();
+});
+
+// A new picker in place of one with its dropdown open closes the dropdown. But
+// a select keeps the focus after its dropdown closes, so holding the whole head
+// for the focus left its title, state and tabs stale until a click elsewhere.
+// So the rest of the head is redrawn around the very same picker.
+test('a poll that lands while the milestone picker has the focus redraws the head around it', { skip }, async () => {
+  const p = await newPage({ clock: true });
+  await p.waitForFunction(() => document.querySelectorAll('#pr-head .pr-milestone option').length > 1);
+  await p.route('**/api/status', (r) => r.fulfill({ json: { ...status, pr: { ...pr, title: 'Retitled on GitHub', state: 'MERGED', updatedAt: '2026-09-20T00:00:00Z', milestone: null } } }));
+  await p.focus('#pr-head .pr-milestone select');
+  await p.evaluate(() => { document.querySelector('#pr-head .pr-milestone select').dataset.marked = '1'; });
+  const polled = p.waitForResponse('**/api/status');
+  await p.clock.fastForward(61_000);
+  await polled;
+  await p.locator('#pr-head .pr-title', { hasText: 'Retitled on GitHub' }).waitFor();
+  assert.equal(await p.locator('#pr-head .badge').textContent(), 'merged');
+  assert.equal(await p.locator('#pr-head .pr-milestone select[data-marked]').count(), 1, 'the same picker');
+  assert.ok(await p.evaluate(() => document.activeElement?.dataset.marked === '1'), 'with the focus still');
+  const rows = await p.$$eval('#pr-head > *', (rs) => rs.map((r) => r.className.split(' ').slice(0, 2).join(' ')));
+  assert.ok(rows.indexOf('meta pr-milestone') < rows.indexOf('meta pr-state'), rows.join(' | '));
+  assert.equal(rows.filter((r) => r === 'meta pr-milestone').length, 1, 'one line');
+  await p.close();
+});
+
+// The read that reaching for the picker starts is for the dropdown about to be
+// used, so its answer has to reach that very picker, which is kept: into the
+// node, without a new one, and with the pull request's milestone still chosen.
+test('milestones read as the picker takes the focus are added to it in place', { skip }, async () => {
+  const p = await newPage({ clock: true, st: { ...status, pr: { ...pr, milestone: { number: 4, title: 'Needed soon', dueOn: null } } } });
+  await p.waitForFunction(() => document.querySelectorAll('#pr-head .pr-milestone option').length > 2);
+  await p.route('**/api/milestones', (r) => r.fulfill({ json: { ...MILESTONES, milestones: [
+    { number: 4, title: 'Needed soon', dueOn: null }, { number: 1, title: 'v1.0', dueOn: '2026-11-01T00:00:00Z' },
+    { number: 6, title: 'Made since', dueOn: null }] } }));
+  await p.clock.fastForward(11_000);
+  await p.evaluate(() => { document.querySelector('#pr-head .pr-milestone select').dataset.marked = '1'; });
+  const read = p.waitForResponse('**/api/milestones');
+  await p.focus('#pr-head .pr-milestone select');
+  await read;
+  await p.locator('#pr-head .pr-milestone select[data-marked] option', { hasText: 'Made since' }).waitFor({ state: 'attached' });
+  const sel = p.locator('#pr-head .pr-milestone select');
+  assert.deepEqual(await sel.locator('option').allTextContents(), ['no milestone', 'v1.0', 'Made since', 'Needed soon'], 'in rank, and "Not urgent" has gone');
+  assert.equal(await sel.inputValue(), '4');
+  assert.ok(await p.evaluate(() => document.activeElement?.dataset.marked === '1'), 'with the focus still');
+  await p.close();
+});
+
+// The same in the other direction: a kept picker follows the pull request.
+test('a focused picker follows a milestone changed on GitHub', { skip }, async () => {
+  const p = await newPage({ clock: true });
+  await p.waitForFunction(() => document.querySelectorAll('#pr-head .pr-milestone option').length > 1);
+  await p.route('**/api/status', (r) => r.fulfill({ json: { ...status, pr: { ...pr, milestone: { number: 3, title: 'Not urgent', dueOn: null } } } }));
+  await p.focus('#pr-head .pr-milestone select');
+  await p.evaluate(() => { document.querySelector('#pr-head .pr-milestone select').dataset.marked = '1'; });
+  const polled = p.waitForResponse('**/api/status');
+  await p.clock.fastForward(61_000);
+  await polled;
+  await p.waitForSelector('#pr-head .pr-milestone:not(.untriaged) select[data-marked]');
+  assert.equal(await p.locator('#pr-head .pr-milestone select').inputValue(), '3');
+  assert.equal(await p.locator('#pr-head .pr-milestone option').first().textContent(), 'no milestone', 'no longer asking for triage');
+  await p.close();
+});
+
+// A picker kept for one pull request is a pick about the wrong one once the
+// pane has moved, so that closes the dropdown rather than keeping it.
+test('a poll that moves the pane to another pull request replaces the focused picker', { skip }, async () => {
+  const p = await newPage({ clock: true });
+  await p.waitForFunction(() => document.querySelectorAll('#pr-head .pr-milestone option').length > 1);
+  const other = { ...pr, url: `${REPO}/pull/999`, number: 999, title: 'Another pull request' };
+  await p.route('**/api/status', (r) => r.fulfill({ json: { ...status, pr: other } }));
+  await p.focus('#pr-head .pr-milestone select');
+  await p.evaluate(() => { document.querySelector('#pr-head .pr-milestone select').dataset.marked = '1'; });
+  const polled = p.waitForResponse('**/api/status');
+  await p.clock.fastForward(61_000);
+  await polled;
+  await p.locator('#pr-head .pr-title', { hasText: 'Another pull request' }).waitFor();
+  assert.equal(await p.locator('#pr-head .pr-milestone select[data-marked]').count(), 0);
+  await p.locator('#pr-head .pr-milestone select').selectOption('4');
+  await p.waitForSelector('#pr-head .pr-milestone:not(.untriaged) a');
+  assert.deepEqual(p.milestonePicks, [{ url: other.url, number: 4 }]);
   await p.close();
 });
 

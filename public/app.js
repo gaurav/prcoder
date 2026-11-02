@@ -585,6 +585,64 @@ const switcher = document.getElementById('pr-switch');
 switcher.addEventListener('pointerenter', () => reachSwitcher('pointer reached the switcher'));
 switcher.addEventListener('focus', () => reachSwitcher('switcher focused'));
 
+// The open milestones of the repository the pull request on screen is in, for
+// the head's milestone picker: `{ repo, list }`, or null before one lands. Read
+// when that repository changes (`milestonesFor`), and again as the pointer or
+// the focus reaches the picker, not within ten seconds of the last one that
+// landed -- the switcher's rule, for the same reason: a milestone made on GitHub
+// since is there to pick. A failed read keeps what we had, and the picker still
+// has the pull request's own milestone and none; reaching for it tries again.
+// There is one read at a time, so the pane moving to another repository during
+// one waits for it to end, whatever its answer, and then asks about that one.
+let milestones = null;
+let milestonesFor = null;
+let milestonesAsking = null;
+let milestonesAt = 0;
+const loadMilestones = (why) => {
+  if (milestonesAsking) return milestonesAsking;
+  const asked = milestonesFor;
+  debug('fetching the milestones:', why);
+  milestonesAsking = api('/api/milestones', undefined, 'GET').then((m) => {
+    if (m.repo !== milestonesFor) return debug('milestones dropped: the pane has moved to', milestonesFor);
+    milestonesAt = Date.now();
+    milestones = { repo: m.repo, list: m.milestones };
+    paint(last);
+  }, (e) => debug('milestones failed:', why, e.message))
+    .finally(() => {
+      milestonesAsking = null;
+      if (milestonesFor !== asked) loadMilestones(`now on ${milestonesFor}`);
+    });
+  return milestonesAsking;
+};
+const reachMilestones = () => { if (Date.now() - milestonesAt > 10_000) loadMilestones('picker reached'); };
+
+/**
+ * The pull request moved to another milestone, or off them, from the head's
+ * picker. The route answers with the milestone GitHub now has, which becomes
+ * the pane's, as a ticked box's body does. A refusal is a toast, and the
+ * picker is put back to where the pull request still is. `url` is the pull
+ * request the picker was drawn for, not `last`'s: that is the one a poll has
+ * moved the pane to, and sending it would pass the server's check that the
+ * pick is about the pull request on screen, and move the wrong one.
+ *
+ * `picking` is the pick on its way, here and in the draw key rather than a
+ * `disabled` on the select, which the next repaint would replace with an
+ * enabled picker on the old milestone, as if the pick had been undone.
+ */
+let picking = null;
+async function pickMilestone(url, number) {
+  picking = { url, number };
+  if (last) paint(last);
+  try {
+    const { milestone } = await api('/api/pr/milestone', { url, number });
+    if (last?.pr?.url === url) last.pr.milestone = milestone;
+  } catch (e) {
+    toast(e.message, true);
+  }
+  if (picking?.url === url) picking = null;
+  if (last) paint(last);
+}
+
 const NOTES = {
   'other-branch': 'Not checked out — this pull request is on another branch.',
   'other-repo': 'This pull request is in another repository.',
@@ -750,7 +808,12 @@ function paint(status) {
     const blocked = status.dirtyFiles.length > 0;
     // Everything the pane is drawn from, the Stack tab's inputs included: a
     // fresh PR list, or a tree going dirty, is a redraw even when the PR is not.
-    const key = JSON.stringify([status.pr, status.scope, stack, blocked, [...below.values()], status.remotes]);
+    if (milestonesFor !== prRepo(status.pr)) {
+      milestonesFor = prRepo(status.pr);
+      milestones = null;
+      loadMilestones(`now on ${milestonesFor}`);
+    }
+    const key = JSON.stringify([status.pr, status.scope, stack, blocked, [...below.values()], status.remotes, milestones, picking]);
     if (key !== drawn) {
       drawn = key;
       renderPr({ ...status.pr, note: NOTES[status.scope] }, {
@@ -765,6 +828,10 @@ function paint(status) {
         defaultBranch: status.defaultBranch,
         onSwitch: switchPr,
         blocked,
+        milestones: milestones?.list ?? null,
+        picking: picking?.url === status.pr.url ? picking : null,
+        onMilestone: pickMilestone,
+        onMilestoneReach: reachMilestones,
       });
     }
   } else {

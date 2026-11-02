@@ -86,8 +86,9 @@ working copy's port, and `prs.json` remembers which pull requests each branch ha
 ask GitHub about them directly instead of searching. It is a cache; deleting it costs a search.
 
 On GitHub, it writes only when you click: ticking a description checkbox flips that one line of
-the description, ticking a file marks it viewed, ◎ moves a queue item into a new issue, and creating
-a pull request pushes the branch and opens GitHub's compare page.
+the description, ticking a file marks it viewed, picking a milestone in the PR pane moves the pull
+request onto it, ◎ moves a queue item into a new issue, and creating a pull request pushes the
+branch and opens GitHub's compare page.
 
 The queue is one list per working copy, whatever branch is checked out, and it stays on this
 machine. `queue.json` is safe for something else to edit, but while prcoder is running the server

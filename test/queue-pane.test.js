@@ -3,7 +3,7 @@
 // and the status block share.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { TABS, counts, forClaude, refLabel, rankMilestones, issueMatches } from '../public/items.js';
+import { TABS, counts, forClaude, refLabel, rankMilestones, issueMatches, dueLabel, dueDay } from '../public/items.js';
 import { stripFor } from '../public/queue.js';
 
 const item = (over = {}) => ({ text: 't', done: false, issue: null, deleted: false, ...over });
@@ -149,4 +149,47 @@ test('the issue search is case-blind over the number, title, labels and body', (
   assert.ok(!issueMatches(i, '#59'));
   assert.ok(!issueMatches(i, 'nothing like this'));
   assert.ok(issueMatches({ number: 1 }, '#1'), 'an issue with nothing but a number');
+});
+
+// Noon on 19 October 2026 on this clock, in whichever time zone it is set to.
+const noon = () => new Date(2026, 9, 19, 12).getTime();
+
+// Counted in days from today on this clock, so no time of day shows through.
+test('a milestone is due some days ago or in some days, with its date on hover', () => {
+  assert.deepEqual(dueLabel('2026-10-14T00:00:00Z', noon()), { className: 'due overdue', textContent: 'due 5 days ago', title: 'due 2026-10-14' });
+  assert.deepEqual(dueLabel('2026-11-03T00:00:00Z', noon()), { className: 'due', textContent: 'due in 15 days', title: 'due 2026-11-03' });
+  assert.equal(dueLabel('2026-10-22T00:00:00Z', noon()).className, 'due soon');
+  assert.equal(dueLabel('2026-10-25T00:00:00Z', noon()).className, 'due soon', 'six days off');
+  assert.equal(dueLabel('2026-10-26T00:00:00Z', noon()).className, 'due', 'a week off is not soon');
+  assert.equal(dueLabel('2027-01-01T00:00:00Z', noon()).textContent, 'due in 2 months');
+  assert.deepEqual(dueLabel('2026-10-19T07:00:00Z', noon()), { className: 'due soon', textContent: 'due today', title: 'due 2026-10-19' });
+  assert.equal(dueLabel('2026-10-18T07:00:00Z', noon()).className, 'due overdue', 'yesterday\'s is');
+});
+
+// Every hour here is one read off a real repository's milestones on 2026-11-02
+// (nodejs/node, rust-lang/rust, flutter/flutter): midnight wherever the date
+// was set, so the UTC date is a day early for anyone east of Greenwich.
+test('a due date is the day it was set for, west or east of Greenwich', () => {
+  for (const hour of ['00', '04', '05', '07', '08']) assert.equal(dueDay(`2026-10-20T${hour}:00:00Z`), '2026-10-20', hour);
+  // Sydney's and Moscow's midnight, on the 20th there.
+  for (const hour of ['13', '21']) assert.equal(dueDay(`2026-10-19T${hour}:00:00Z`), '2026-10-20', hour);
+});
+
+// The viewer's time zone is the other half: "today" is theirs. Each of these
+// gave a wrong answer when the due day was the UTC date and nearness a time.
+test('a due date reads the same way in the viewer\'s time zone', () => {
+  const tz = process.env.TZ;
+  try {
+    process.env.TZ = 'Asia/Tokyo';
+    assert.deepEqual(dueLabel('2026-10-19T15:00:00Z', noon()),
+      { className: 'due soon', textContent: 'due in 1 day', title: 'due 2026-10-20' }, 'set in Tokyo for the 20th, seen there on the 19th');
+    assert.equal(dueLabel('2026-10-19T15:00:00Z', new Date(2026, 9, 20, 12).getTime()).textContent, 'due today', 'and on its own day');
+    assert.equal(dueLabel('2026-10-19T15:00:00Z', new Date(2026, 9, 20, 12).getTime()).className, 'due soon', 'not overdue');
+    process.env.TZ = 'America/Los_Angeles';
+    const evening = new Date(2026, 9, 19, 20).getTime();
+    assert.deepEqual(dueLabel('2026-10-20T00:00:00Z', evening), { className: 'due soon', textContent: 'due in 1 day', title: 'due 2026-10-20' }, 'not "3 hours ago"');
+    assert.equal(dueLabel('2026-10-20T03:00:30Z', new Date('2026-10-20T03:00:00Z').getTime()).textContent, 'due in 1 day', 'not "just now"');
+  } finally {
+    if (tz === undefined) delete process.env.TZ; else process.env.TZ = tz;
+  }
 });
