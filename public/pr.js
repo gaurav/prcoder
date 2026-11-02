@@ -821,13 +821,12 @@ export const milestoneChoices = (current, list) => {
  * when the pull request's repository changes and again as the pointer or the
  * focus reaches the picker (`onMilestoneReach`), as the switcher's list is. A
  * pick goes to `onMilestone` with this pull request's URL and the number, or null for none; the picker
- * gives up the focus as it does, so the head repaints from the answer rather
- * than holding for a blur (paintHead).
+ * gives up the focus as it does, so the answer redraws it too (paintHead).
  */
 const milestoneRow = (pr, { milestones = null, onMilestone, onMilestoneReach } = {}) => {
   const m = pr.milestone;
   const sel = h('select', {
-    ariaLabel: 'milestone', disabled: !onMilestone,
+    ariaLabel: 'milestone', disabled: !onMilestone, dataset: { pr: pr.url },
     title: m ? 'move this pull request to another milestone' : 'not on a milestone: pick one to triage it',
   }, ...milestoneChoices(m, milestones).map((c) => h('option', { value: c.value, ...(c.title ? { title: c.title } : {}) }, c.text)));
   sel.value = m ? String(m.number) : '';
@@ -857,22 +856,43 @@ const milestoneRow = (pr, { milestones = null, onMilestone, onMilestoneReach } =
  */
 const HEAD_ORDER = ['title', 'note', 'links', 'milestone', 'state', 'tabs'];
 
+/** Everything in `parent` but `kept` replaced by `list`, with `kept` where `stand` is in it. */
+const around = (parent, kept, list, stand) => {
+  const at = list.indexOf(stand);
+  [...parent.children].forEach((k) => { if (k !== kept) k.remove(); });
+  kept.before(...list.slice(0, at));
+  kept.after(...list.slice(at + 1));
+};
+
 /**
- * Held while the milestone picker has the focus, the one sign a page gets
- * that its dropdown may be open: a poll or a list of milestones landing then
- * would replace it under the open dropdown and close it. The head is painted
- * as the picker loses the focus, from the rows of the last call -- each call
- * here replaces the one before -- as the switcher's options are held
- * (renderHeader).
+ * The focus is the one sign a page gets that the milestone picker's dropdown
+ * may be open, and replacing the picker then closes it. So while it has the
+ * focus, and is still about the pull request drawn, that one node stays and the
+ * rest of the head is redrawn around it.
+ *
+ * Only that node, because a select keeps the focus after its dropdown closes:
+ * holding the whole head until a blur (as this did at first) left the title,
+ * state and tabs stale for as long as nobody clicked elsewhere, and the first
+ * click after that landed on a node the blur had just replaced. Around it rather
+ * than moving it into the new row, because removing a node takes the focus away
+ * and closes the dropdown, even to put it straight back.
+ *
+ * A pull request other than the picker's does replace it: a pick there is about
+ * one no longer on screen, which the server would refuse.
  */
 const paintHead = (rows) => {
   const head = document.getElementById('pr-head');
+  const next = kids(HEAD_ORDER.map((k) => rows[k]));
   const held = head.querySelector('.pr-milestone select');
-  if (held && document.activeElement === held) {
-    held.onblur = () => paintHead(rows);
+  const fresh = rows.milestone?.querySelector('select');
+  if (!fresh || !held || held !== document.activeElement || held.dataset.pr !== fresh.dataset.pr) {
+    head.replaceChildren(...next);
     return;
   }
-  head.replaceChildren(...kids(HEAD_ORDER.map((k) => rows[k])));
+  const line = held.parentElement;
+  line.className = rows.milestone.className;
+  around(line, held, [...rows.milestone.children], fresh);
+  around(head, line, next, rows.milestone);
 };
 
 /**

@@ -602,24 +602,46 @@ test('a refused milestone pick says why and puts the picker back', { skip }, asy
   await p.close();
 });
 
-// The head is redrawn whole on a poll that changes anything, and a new picker
-// in place of one with its dropdown open closes the dropdown. So the head
-// waits while the picker has the focus, and catches up as it loses it.
-test('a poll that lands while the milestone picker has the focus waits for it to lose it', { skip }, async () => {
+// A new picker in place of one with its dropdown open closes the dropdown. But
+// a select keeps the focus after its dropdown closes, so holding the whole head
+// for the focus left its title, state and tabs stale until a click elsewhere.
+// So the rest of the head is redrawn around the very same picker.
+test('a poll that lands while the milestone picker has the focus redraws the head around it', { skip }, async () => {
   const p = await newPage({ clock: true });
   await p.waitForFunction(() => document.querySelectorAll('#pr-head .pr-milestone option').length > 1);
-  await p.route('**/api/status', (r) => r.fulfill({ json: { ...status, pr: { ...pr, title: 'Retitled on GitHub', updatedAt: '2026-09-20T00:00:00Z' } } }));
+  await p.route('**/api/status', (r) => r.fulfill({ json: { ...status, pr: { ...pr, title: 'Retitled on GitHub', state: 'MERGED', updatedAt: '2026-09-20T00:00:00Z', milestone: null } } }));
   await p.focus('#pr-head .pr-milestone select');
   await p.evaluate(() => { document.querySelector('#pr-head .pr-milestone select').dataset.marked = '1'; });
   const polled = p.waitForResponse('**/api/status');
   await p.clock.fastForward(61_000);
   await polled;
-  await p.waitForTimeout(200);
-  assert.equal(await p.locator('#pr-head .pr-title').textContent(), pr.title, 'held');
-  assert.equal(await p.locator('#pr-head .pr-milestone select[data-marked]').count(), 1, 'the same picker');
-  await p.evaluate(() => document.activeElement.blur());
   await p.locator('#pr-head .pr-title', { hasText: 'Retitled on GitHub' }).waitFor();
+  assert.equal(await p.locator('#pr-head .badge').textContent(), 'merged');
+  assert.equal(await p.locator('#pr-head .pr-milestone select[data-marked]').count(), 1, 'the same picker');
+  assert.ok(await p.evaluate(() => document.activeElement?.dataset.marked === '1'), 'with the focus still');
+  const rows = await p.$$eval('#pr-head > *', (rs) => rs.map((r) => r.className.split(' ').slice(0, 2).join(' ')));
+  assert.ok(rows.indexOf('meta pr-milestone') < rows.indexOf('meta pr-state'), rows.join(' | '));
+  assert.equal(rows.filter((r) => r === 'meta pr-milestone').length, 1, 'one line');
+  await p.close();
+});
+
+// A picker kept for one pull request is a pick about the wrong one once the
+// pane has moved, so that closes the dropdown rather than keeping it.
+test('a poll that moves the pane to another pull request replaces the focused picker', { skip }, async () => {
+  const p = await newPage({ clock: true });
+  await p.waitForFunction(() => document.querySelectorAll('#pr-head .pr-milestone option').length > 1);
+  const other = { ...pr, url: `${REPO}/pull/999`, number: 999, title: 'Another pull request' };
+  await p.route('**/api/status', (r) => r.fulfill({ json: { ...status, pr: other } }));
+  await p.focus('#pr-head .pr-milestone select');
+  await p.evaluate(() => { document.querySelector('#pr-head .pr-milestone select').dataset.marked = '1'; });
+  const polled = p.waitForResponse('**/api/status');
+  await p.clock.fastForward(61_000);
+  await polled;
+  await p.locator('#pr-head .pr-title', { hasText: 'Another pull request' }).waitFor();
   assert.equal(await p.locator('#pr-head .pr-milestone select[data-marked]').count(), 0);
+  await p.locator('#pr-head .pr-milestone select').selectOption('4');
+  await p.waitForSelector('#pr-head .pr-milestone:not(.untriaged) a');
+  assert.deepEqual(p.milestonePicks, [{ url: other.url, number: 4 }]);
   await p.close();
 });
 
