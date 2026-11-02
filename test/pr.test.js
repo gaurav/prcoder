@@ -6,7 +6,7 @@ import {
 } from '../public/pr.js';
 import { filesProgress } from '../public/filelist.js';
 import { tabDone } from '../public/ui.js';
-import { blocks } from '../public/tasks.js';
+import { blocks, mentions } from '../public/tasks.js';
 
 const status = (over = {}) => ({
   nameWithOwner: 'ggvaidya/prcoder',
@@ -199,6 +199,121 @@ test('a bare #N becomes a link to the issue of that number', () => {
   // colour in prose, neither of which starts a word.
   assert.equal(href(inline('[x](y.md#3)', where)), 'https://github.test/o/r/blob/topic/y.md#3');
   assert.equal(inline('#ffcc00 is the colour', where), '#ffcc00 is the colour');
+});
+
+// The link rule ran first and the mention rule then found ` #5` in its text,
+// nesting an <a> in the <a>: the browser split the link, and a click on `#5`
+// opened the pull request rather than the link's own target.
+test('a #N inside a markdown link is left to the link', () => {
+  const out = inline('[see #5](https://x.test/a) and #6', where);
+  assert.equal(out.match(/<a /g).length, 2);
+  assert.match(out, /<a href="https:\/\/x\.test\/a"[^>]*>see #5<\/a>/);
+  assert.match(out, />#6<\/a>/);
+  // Written against a link or a code span, it is not a mention, as the
+  // Mentions row (mentions() in tasks.js) agrees.
+  assert.equal(inline('[x](https://y)#5 `z`#7', where).match(/<a /g).length, 1);
+  // One this pane will not open stays its own source, and with no outer link
+  // to sit inside, its #N is a mention like any other.
+  const source = inline('[see #5](javascript:x) and [details in #12](#notes)', where);
+  assert.equal(source.match(/<a /g).length, 2);
+  assert.match(source, /^\[see <a [^>]*>#5<\/a>\]\(javascript:x\) and \[details in <a [^>]*>#12<\/a>\]\(#notes\)$/);
+});
+
+// The Mentions row and the pane's links are two readers of one description, and
+// each row here is a body they once read differently. A mention link is told
+// from any other by `class="ref`, which only mentionLink writes.
+const allAnswered = { get: () => ({ title: 't', kind: 'issue' }) };
+const linkedBy = (body) => blocks(body)
+  .flatMap((b) => (b.kind === 'code' ? [] : b.items ?? [b.text]))
+  .flatMap((t) => [...inline(t, { ...where, refs: allAnswered }).matchAll(/class="ref [^>]*>#(\d+)</g)])
+  .map(([, n]) => Number(n));
+
+for (const [why, body, numbers] of [
+  ['a stray [ does not reach a link in a later paragraph', 'foo [bar\n\nSee #5\n\n[docs](https://x)', [5]],
+  ['a stray backtick does not reach one in a later paragraph', 'a `b\n\nSee #5\n\nc` d', [5]],
+  ['a quote with no space after its marker', '>#5', [5]],
+  ['a task and a list item, each its own start', '- [ ] #5\n\n- #6', [5, 6]],
+  ['a fence is not read', '```\n#5\n```\n#6', [6]],
+  ['a stray [ does not reach a link later in its paragraph', 'array[0 and #5, see [docs](https://x)', [5]],
+  ['a placeholder character typed before a #N is dropped by both', '\u0001#5 \u0000#6', [5, 6]],
+  ['a placeholder character typed inside a link is dropped by both', '[see #5](\u0000#notes) and #6', [5, 6]],
+  ['a #N inside a bare URL is part of the URL', 'https://a.com/(#5/x and #6', [6]],
+  ['a bare URL ends at a space or a )', '(https://a.com) #5 https://b.com #6', [5, 6]],
+  ['an anchor a link will not open is not a mention', '[x](#5) and #6', [6]],
+  ['nor is one written against that link, but its text still counts', '[see #12](#5)#7', [12]],
+]) {
+  test(`the Mentions row and the pane's links agree: ${why}`, () => {
+    assert.deepEqual(mentions(body), numbers);
+    assert.deepEqual(linkedBy(body), numbers);
+  });
+}
+
+// The text ran from the stray `[`, so the whole clause became the link.
+test('a link starts at the [ nearest its text', () => {
+  const out = inline('array[0 and more, see [docs](https://x)', where);
+  assert.match(out, /^array\[0 and more, see <a href="https:\/\/x"[^>]*>docs<\/a>$/);
+});
+
+// A bare URL ran on into the held link's placeholder, and putting the link back
+// put its quotes inside the URL's href="...": the rest was read as attributes.
+test('a bare URL stops at a markdown link written against it', () => {
+  const out = inline("see https://a.com[x](https://y/onmouseover=alert'1'//)", where);
+  assert.equal(out.match(/<a /g).length, 2);
+  assert.equal(href(out), 'https://a.com');
+  assert.doesNotMatch(out, /href="[^"]*<a /);
+  // A code span is held the same way, and is not taken into an href either.
+  assert.equal(href(inline('https://a.com`x`', where)), 'https://a.com');
+});
+
+// The mention rule ran over the href the bare-URL rule had just built, where a
+// `(` before the `#` is as good as a space, and closed it with an anchor's quote.
+test('a #N inside a bare URL stays in its href', () => {
+  const out = inline('https://a.com/(#5/x', { ...where, refs: allAnswered });
+  assert.equal(out, '<a href="https://a.com/(#5/x" target="_blank" rel="noopener">https://a.com/(#5/x</a>');
+});
+
+// A link to a numeric anchor stays its source, and the mention rule took the
+// `(#5` in it for pull request 5, tint and title included.
+test('a link to a numeric anchor shows as its own source', () => {
+  assert.equal(inline('[x](#5)', { ...where, refs: allAnswered }), '[x](#5)');
+});
+
+// The placeholders are the pane's: one typed into a description came back as
+// `undefined`, or as a copy of a link further on.
+test("a description's own placeholder characters are dropped", () => {
+  assert.equal(inline('a \u00010\u0001 b', where), 'a 0 b');
+  assert.equal(inline('a \u00000\u0000 b [x](https://y)', where).match(/<a /g).length, 1);
+});
+
+// What the title lookup found: GitHub's URL rather than the /issues/ guess, the
+// title on hover, and a pull request marked as one. The text stays `#N`.
+test('a #N the lookup answered links where GitHub says, titled, and a PR is marked', () => {
+  const refs = new Map([
+    [27, { number: 27, url: 'https://github.test/o/r/pull/27', title: 'Queue tabs', kind: 'pull' }],
+    [28, { number: 28, url: 'https://github.test/o/r/issues/28', title: 'An "issue" <b>', kind: 'issue' }],
+    [29, { number: 29, url: 'javascript:alert(1)', title: 'odd', kind: 'issue' }]]);
+  const pr = inline('After #27.', { ...where, refs });
+  assert.equal(href(pr), 'https://github.test/o/r/pull/27');
+  assert.match(pr, /class="ref pull"/);
+  assert.match(pr, /title="PR #27: Queue tabs"/);
+  assert.match(pr, />#27<\/a>/);
+  const issue = inline('See #28.', { ...where, refs });
+  assert.match(issue, /class="ref issue"/);
+  assert.match(issue, /title="#28: An &quot;issue&quot; &lt;b&gt;"/);
+  // Answered, but with no kind: not called an issue, and drawn as one.
+  const unknown = inline('#31', { ...where, refs: new Map([[31, { number: 31, title: 'Gone quiet', kind: null }]]) });
+  assert.match(unknown, /class="ref issue" title="#31: Gone quiet"/);
+  // A URL that is not http(s) is not used; the guess stands in.
+  assert.equal(href(inline('#29', { ...where, refs })), 'https://github.test/o/r/issues/29');
+  // Not looked up: a plain link, as before.
+  assert.doesNotMatch(inline('#30', { ...where, refs }), /title=|class=/);
+  // Nor when GitHub did not answer. withLinks leaves every number an entry, its
+  // title and kind null, so being in the map says nothing: this was `ref issue`,
+  // which says GitHub called it an issue.
+  const silent = { number: 32, url: 'https://github.test/o/r/issues/32', closes: false, title: null, kind: null };
+  const typo = inline('#32', { ...where, refs: new Map([[32, silent]]) });
+  assert.doesNotMatch(typo, /title=|class=/);
+  assert.equal(href(typo), silent.url);
 });
 
 // The row under the badges. Derived from the PR's own URL rather than from the

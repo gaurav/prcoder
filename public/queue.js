@@ -1,5 +1,5 @@
 import { h, btn, ext, api, toast, pref, setPref, tabBtn, writeThrough, fold, kept } from './ui.js';
-import { TABS, refLabel, forClaude, rankMilestones, issueMatches } from './items.js';
+import { TABS, refLabel, refClass, forClaude, rankMilestones, issueMatches } from './items.js';
 import { refs, resolveRef, blocks } from './tasks.js';
 import { blockNode } from './pr.js';
 
@@ -593,12 +593,8 @@ function issueRow(i, { repo = null, kind = 'issue', closed = false, text = i.tit
   return [row, body];
 }
 
-/**
- * A reference's chip: outlined for an issue, tinted for a pull request, whose
- * label also says `PR` (refLabel). An unknown kind is drawn as an issue, as
- * every tag was before the two were told apart.
- */
-const tagClass = (kind) => (kind === 'pull' ? 'tag pull' : 'tag issue');
+/** A reference's chip, drawn as its kind (refClass), whose label also says `PR` (refLabel). */
+const tagClass = (kind) => `tag ${refClass(kind)}`;
 
 /**
  * The repo a mention is in, as an item's `repo`: null for this one. A bare #N
