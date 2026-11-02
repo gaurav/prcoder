@@ -587,25 +587,31 @@ switcher.addEventListener('focus', () => reachSwitcher('switcher focused'));
 
 // The open milestones of the repository the pull request on screen is in, for
 // the head's milestone picker: `{ repo, list }`, or null before one lands. Read
-// when that repository changes, and again as the pointer or the focus reaches
-// the picker, not within ten seconds of the last -- the switcher's rule, for
-// the same reason: a milestone made on GitHub since is there to pick. A
-// failed read keeps what we had, and the picker still has the pull request's
-// own milestone and none. An answer about a repository the pane has since
-// left is dropped.
+// when that repository changes (`milestonesFor`), and again as the pointer or
+// the focus reaches the picker, not within ten seconds of the last one that
+// landed -- the switcher's rule, for the same reason: a milestone made on GitHub
+// since is there to pick. A failed read keeps what we had, and the picker still
+// has the pull request's own milestone and none; reaching for it tries again.
+// There is one read at a time, so the pane moving to another repository during
+// one waits for it to end, whatever its answer, and then asks about that one.
 let milestones = null;
+let milestonesFor = null;
 let milestonesAsking = null;
 let milestonesAt = 0;
 const loadMilestones = (why) => {
   if (milestonesAsking) return milestonesAsking;
+  const asked = milestonesFor;
   debug('fetching the milestones:', why);
   milestonesAsking = api('/api/milestones', undefined, 'GET').then((m) => {
+    if (m.repo !== milestonesFor) return debug('milestones dropped: the pane has moved to', milestonesFor);
     milestonesAt = Date.now();
-    if (!last?.pr || prRepo(last.pr) !== m.repo) return debug('milestones dropped: the pane has moved to', last?.pr?.url);
     milestones = { repo: m.repo, list: m.milestones };
     paint(last);
   }, (e) => debug('milestones failed:', why, e.message))
-    .finally(() => { milestonesAsking = null; });
+    .finally(() => {
+      milestonesAsking = null;
+      if (milestonesFor !== asked) loadMilestones(`now on ${milestonesFor}`);
+    });
   return milestonesAsking;
 };
 const reachMilestones = () => { if (Date.now() - milestonesAt > 10_000) loadMilestones('picker reached'); };
@@ -799,9 +805,10 @@ function paint(status) {
     const blocked = status.dirtyFiles.length > 0;
     // Everything the pane is drawn from, the Stack tab's inputs included: a
     // fresh PR list, or a tree going dirty, is a redraw even when the PR is not.
-    if (milestones?.repo !== prRepo(status.pr)) {
+    if (milestonesFor !== prRepo(status.pr)) {
+      milestonesFor = prRepo(status.pr);
       milestones = null;
-      loadMilestones(`now on ${prRepo(status.pr)}`);
+      loadMilestones(`now on ${milestonesFor}`);
     }
     const key = JSON.stringify([status.pr, status.scope, stack, blocked, [...below.values()], status.remotes, milestones]);
     if (key !== drawn) {

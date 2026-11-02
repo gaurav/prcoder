@@ -534,6 +534,60 @@ test('a pick names the pull request its picker was drawn for, even once the pane
   await p.close();
 });
 
+// The list is the repository's, and a read that lands after the pane has moved
+// to another is dropped. That has to leave the new repository's list on its way
+// rather than nothing until the next poll, with hovering the picker throttled.
+test('moving to another repository during a read of the milestones reads them again for it', { skip }, async () => {
+  const p = await newPage({ clock: true });
+  await p.waitForFunction(() => document.querySelectorAll('#pr-head .pr-milestone option').length > 1);
+  let release;
+  const held = new Promise((r) => { release = r; });
+  const asked = [];
+  await p.route('**/api/milestones', async (r) => {
+    asked.push(Date.now());
+    if (asked.length === 1) { await held; return r.fulfill({ json: MILESTONES }); }
+    return r.fulfill({ json: { repo: 'o/elsewhere', milestones: [{ number: 8, title: 'Theirs', dueOn: null }] } });
+  });
+  await p.clock.fastForward(11_000);
+  const first = p.waitForRequest('**/api/milestones');
+  await p.locator('#pr-head .pr-milestone select').hover();
+  await first;
+  await p.route('**/api/status', (r) => r.fulfill({ json: { ...status, pr: { ...pr, url: 'https://github.com/o/elsewhere/pull/5', number: 5 } } }));
+  const polled = p.waitForResponse('**/api/status');
+  await p.clock.fastForward(61_000);
+  await polled;
+  await p.waitForFunction(() => document.querySelector('#pr-head .pr-milestone select').options.length === 1);
+  const again = p.waitForRequest('**/api/milestones');
+  release();
+  await again;
+  await p.locator('#pr-head .pr-milestone option', { hasText: 'Theirs' }).waitFor({ state: 'attached' });
+  assert.equal(asked.length, 2);
+  await p.close();
+});
+
+// Read when the repository changes, not on every paint: a failed read is not
+// tried again by each poll that repaints, only by reaching for the picker.
+test('a failed read of the milestones waits for the picker to be reached before trying again', { skip }, async () => {
+  const p = await newPage({ clock: true });
+  let asked = 0;
+  await p.unroute('**/api/milestones');
+  await p.route('**/api/milestones', (r) => { asked += 1; return asked === 1 ? r.fulfill({ status: 500, json: { error: 'no' } }) : r.fulfill({ json: MILESTONES }); });
+  await p.reload();
+  await p.waitForSelector('#pr-head .pr-milestone select');
+  await p.waitForTimeout(200);
+  const before = asked;
+  assert.ok(before >= 1, 'the read was made');
+  await p.route('**/api/status', (r) => r.fulfill({ json: { ...status, pr: { ...pr, title: 'Retitled on GitHub' } } }));
+  const polled = p.waitForResponse('**/api/status');
+  await p.clock.fastForward(61_000);
+  await polled;
+  await p.locator('#pr-head .pr-title', { hasText: 'Retitled on GitHub' }).waitFor();
+  assert.equal(asked, before, 'a repaint did not read them again');
+  await p.locator('#pr-head .pr-milestone select').hover();
+  await p.waitForFunction(() => document.querySelectorAll('#pr-head .pr-milestone option').length > 1);
+  await p.close();
+});
+
 // A pick GitHub refuses is a toast with its reason, and the picker goes back
 // to where the pull request still is rather than showing a pick that never
 // happened.
