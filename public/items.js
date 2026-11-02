@@ -120,21 +120,36 @@ export function when(iso, now = Date.now()) {
 export const age = (iso, now = Date.now()) => when(iso, Math.max(now, Date.parse(iso ?? '') || now));
 
 /**
+ * The day a milestone is due, `2026-10-20`, out of GitHub's dueOn: a date sent
+ * as midnight wherever it was set, with no word of where. Real ones read
+ * 2026-11-02 (nodejs/node, rust-lang/rust, flutter/flutter) have `T00` from
+ * UTC, `T04` to `T08` from the Americas, and `T13` and `T21` from east of
+ * Greenwich, where it is already the next day. So the UTC date is a day early
+ * for those, and this rounds: an hour from `T11` on is a zone ahead of UTC, and
+ * so the next day. That reads UTC-10 to UTC+13 right, and is a day out only for
+ * the zones past them, Samoa's and Kiribati's.
+ */
+const DUE_ROUND = 13 * 3600_000;
+export const dueDay = (dueOn) => new Date(Date.parse(dueOn) + DUE_ROUND).toISOString().slice(0, 10);
+
+/**
  * A milestone's due date as its line says it, `due 3 days ago`, with the date
  * on hover and a class saying how near it is: `overdue`, `soon`, or neither.
- * GitHub's dueOn is a date sent as the start of that day (`T07:00:00Z` for a
- * date set in California), so it is compared as a date with today's on this
- * clock: due today is `due today` and soon, and overdue only once the day is
- * over -- compared as a time, a milestone was overdue for most of its own day.
+ * Its day (dueDay) is compared with today's on this clock, and all of it is
+ * counted in whole days: due today is `due today` and soon, and overdue only
+ * once the day is over. With a time in any of it, a milestone was overdue for
+ * most of its own day, or `due 3 hours ago` and not overdue the evening before.
  */
 export function dueLabel(dueOn, now = Date.now()) {
-  const day = dueOn.slice(0, 10);
+  const day = dueDay(dueOn);
   const d = new Date(now);
   const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   const title = `due ${day}`;
   if (day === today) return { className: 'due soon', textContent: 'due today', title };
-  const near = day < today ? ' overdue' : Date.parse(dueOn) - now < DUE_SOON ? ' soon' : '';
-  return { className: `due${near}`, textContent: `due ${when(dueOn, now)}`, title };
+  const due = `${day}T00:00:00Z`;
+  const from = Date.parse(`${today}T00:00:00Z`);
+  const near = day < today ? ' overdue' : Date.parse(due) - from < DUE_SOON ? ' soon' : '';
+  return { className: `due${near}`, textContent: `due ${when(due, from)}`, title };
 }
 
 // A milestone due within this long is `soon`, its due date yellow, and one past

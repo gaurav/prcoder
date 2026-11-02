@@ -1,7 +1,7 @@
 import { withoutHtml, mention, repoUrl, urlPath, blocks, sectionize } from './tasks.js';
 import { kids, h, btn, ext, debug, tabBtn, writeThrough, fraction, mark, kept, fold } from './ui.js';
 import { fileTree, fileGroup, filesProgress, unlisted } from './filelist.js';
-import { refLabel, rankMilestones, dueLabel } from './items.js';
+import { refLabel, rankMilestones, dueLabel, dueDay } from './items.js';
 
 // Re-exported for the tests, which read the pane's view of a body through here.
 export { withoutHtml };
@@ -796,7 +796,7 @@ export const milestoneChoices = (current, list) => {
   const all = current && !open.some((m) => m.number === current.number) ? [...open, current] : open;
   return [
     { value: '', text: current ? 'no milestone' : 'no milestone — needs triage' },
-    ...all.map((m) => ({ value: String(m.number), text: m.title, ...(m.dueOn ? { title: `due ${m.dueOn.slice(0, 10)}` } : {}) })),
+    ...all.map((m) => ({ value: String(m.number), text: m.title, ...(m.dueOn ? { title: `due ${dueDay(m.dueOn)}` } : {}) })),
   ];
 };
 
