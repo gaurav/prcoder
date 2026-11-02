@@ -685,6 +685,10 @@ const ISSUE = 'application/x-prcoder-issue';
  * showing what was refused, and which the listing may take seconds to put back.
  */
 async function move(number, milestone) {
+  // Where it already is: a row dropped on its own group, which is easily done
+  // with the group's line just above it, is not worth a write and a re-list.
+  const target = milestone === null ? null : listing?.milestones.find((m) => m.title === milestone)?.number;
+  if ((listed.get(number)?.milestone ?? null) === target) return;
   try {
     await api('/api/issue/milestone', { number, milestone });
   } catch (e) {

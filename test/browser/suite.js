@@ -1795,7 +1795,7 @@ test('an issue row\'s title can be selected with the mouse', { skip }, async () 
 
 // Chromium only: Firefox gets no HTML5 drag events from dragTo (tools/CLAUDE.md).
 // Each target is a folded group's line, on screen before the press.
-test('the grip\'s drag moves an issue, and a link\'s drag or a closed milestone does not', { skip: skip || (engineName === 'firefox' && 'dragTo sends Firefox no drag events') }, async () => {
+test('the grip\'s drag moves an issue, and a link\'s drag, its own group or a closed milestone does not', { skip: skip || (engineName === 'firefox' && 'dragTo sends Firefox no drag events') }, async () => {
   const { fresh } = await issuesPage({ ...ISSUES,
     milestones: [...ISSUES.milestones, { number: 7, title: 'v0.0', dueOn: null, description: '', closed: true }] });
   await noToast(fresh);
@@ -1804,6 +1804,7 @@ test('the grip\'s drag moves an issue, and a link\'s drag or a closed milestone 
   const row = fresh.locator('[data-group="m:2"] .item');
   await row.locator('.tag.issue').dragTo(fresh.locator('[data-group="m:4"] summary'));
   await row.locator('.grip').dragTo(fresh.locator('[data-group="m:7"] summary'));
+  await row.locator('.grip').dragTo(fresh.locator('[data-group="m:2"] summary'));
   const again = fresh.waitForResponse('**/api/issues');
   await row.locator('.grip').dragTo(fresh.locator('[data-group="m:4"] summary'));
   await again;
