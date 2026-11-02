@@ -494,7 +494,6 @@ a { color: var(--accent); }
    since that pull request is waiting to be triaged. The due date's colours
    are the queue's milestone lines' (dueLabel): yellow within a week, and past
    it the round red badge of `.badge.fail`. */
-.pr-milestone { flex-wrap: wrap; }
 .pr-milestone a { color: inherit; }
 .pr-milestone .due { flex: none; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .pr-milestone .due.soon { color: var(--warn); }

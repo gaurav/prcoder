@@ -116,9 +116,6 @@ export function when(iso, now = Date.now()) {
   return new Intl.RelativeTimeFormat('en', { numeric: 'always' }).format(Math.trunc(s / found[1]), found[0]);
 }
 
-/** when() for a time that has passed: a clock a little behind GitHub's says `just now`, not `in 2 minutes`. */
-export const age = (iso, now = Date.now()) => when(iso, Math.max(now, Date.parse(iso ?? '') || now));
-
 /**
  * The day a milestone is due, `2026-10-20`, out of GitHub's dueOn: a date sent
  * as midnight wherever it was set, with no word of where. Real ones read
