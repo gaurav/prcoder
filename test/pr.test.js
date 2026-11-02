@@ -239,6 +239,8 @@ for (const [why, body, numbers] of [
   ['a placeholder character typed inside a link is dropped by both', '[see #5](\u0000#notes) and #6', [5, 6]],
   ['a #N inside a bare URL is part of the URL', 'https://a.com/(#5/x and #6', [6]],
   ['a bare URL ends at a space or a )', '(https://a.com) #5 https://b.com #6', [5, 6]],
+  ['an anchor a link will not open is not a mention', '[x](#5) and #6', [6]],
+  ['nor is one written against that link, but its text still counts', '[see #12](#5)#7', [12]],
 ]) {
   test(`the Mentions row and the pane's links agree: ${why}`, () => {
     assert.deepEqual(mentions(body), numbers);
@@ -268,6 +270,12 @@ test('a bare URL stops at a markdown link written against it', () => {
 test('a #N inside a bare URL stays in its href', () => {
   const out = inline('https://a.com/(#5/x', { ...where, refs: allAnswered });
   assert.equal(out, '<a href="https://a.com/(#5/x" target="_blank" rel="noopener">https://a.com/(#5/x</a>');
+});
+
+// A link to a numeric anchor stays its source, and the mention rule took the
+// `(#5` in it for pull request 5, tint and title included.
+test('a link to a numeric anchor shows as its own source', () => {
+  assert.equal(inline('[x](#5)', { ...where, refs: allAnswered }), '[x](#5)');
 });
 
 // The placeholders are the pane's: one typed into a description came back as

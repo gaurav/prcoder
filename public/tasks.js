@@ -48,7 +48,8 @@ export const bareUrl = () => /(^|[\s(])(https?:\/\/[^\s)\u0000\u0001]+)/g;
  * repository. Not another scheme, `javascript:` and `data:` among them, and
  * not a bare `#anchor`, a position on a page prcoder is not. target() in pr.js
  * guards its hrefs with this; a link it fails stays its own source there, so
- * mentions() counts the `#N` in its text as the pane draws it.
+ * mentions() counts the `#N` in its text as the pane draws it, and neither
+ * counts one in its href: the `(#5` in `[x](#5)` is an anchor, not pull request 5.
  */
 export const opens = (href) =>
   /^https?:\/\//.test(href) || !(/^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith('#'));
@@ -231,7 +232,8 @@ export function fences(body) {
  * inline() leaves a placeholder where each was, and a placeholder is not the
  * space or line start a mention needs. Removed, the `#5` in `[x](y)#5` was
  * listed here and not linked there. A link the pane will not open (opens())
- * is left, as the pane leaves it, and the `#12` in `[see #12](#notes)` counts.
+ * is left, as the pane leaves it, and the `#12` in `[see #12](#notes)` counts;
+ * only its `](href)` goes.
  *
  * Read a block at a time, from blocks(), because inline() is handed one at a
  * time. Over the whole text, a stray `[` or backtick paired with one paragraphs
@@ -244,7 +246,7 @@ export function fences(body) {
 export function mentions(body = '') {
   return blocks(body).flatMap((b) => (b.kind === 'code' ? [] : b.items ?? [b.text]))
     .flatMap((text) => [...unmarked(text).replace(/`[^`]+`/g, '\u0000')
-      .replace(mdLink(), (m, _, href) => (opens(href) ? '\u0001' : m))
+      .replace(mdLink(), (m, text, href) => (opens(href) ? '\u0001' : `[${text}\u0001`))
       .replace(bareUrl(), (_, pre) => `${pre}\u0001`)
       .matchAll(mention())].map(([, , n]) => Number(n)));
 }

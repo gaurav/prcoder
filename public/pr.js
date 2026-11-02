@@ -1143,11 +1143,12 @@ export const inline = (s, where = links) => {
     // Held aside until the mentions are done, so a `#5` in `[see #5](…)` does
     // not become a link inside the link: the browser closes the outer one
     // early, and a click on the `#5` opened the pull request. Only a link this
-    // draws: one it will not open stays its source, where the `#5` is a
-    // mention like any other, and mentions() lists it.
+    // draws: one it will not open stays its source, where the `#5` in its text
+    // is a mention like any other, and mentions() lists it. Its `](href)` is
+    // still held: the `(#5` in `[x](#5)` is an anchor, not pull request 5.
     .replace(mdLink(), (m, text, href) => {
       const url = target(href, where);
-      return url ? hold(a(url, text)) : m;
+      return url ? hold(a(url, text)) : `[${text}${hold(`](${href})`)}`;
     })
     // Held as well: the mention rule took the `(#5` in `https://a.com/(#5/x`
     // for a mention, in the href this had just built, and the anchor it wrote
