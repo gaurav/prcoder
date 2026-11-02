@@ -844,7 +844,8 @@ const milestoneRow = (pr, { milestones = null, picking = null, onMilestone, onMi
   // during a browsing key is put back, and to pick by keyboard is to open the
   // dropdown first. keypress too, as that is where type-ahead happens. Cleared
   // by a timer, not keyup: on a Mac an arrow opens a native menu that keeps the
-  // keyup, and the mouse pick from that menu would then be put back.
+  // keyup, and the mouse pick from that menu would then be put back. All this
+  // goes when #174's picker of our own replaces the select.
   let browsing = false;
   const browse = (e) => {
     if (e.ctrlKey || e.metaKey || e.altKey || !BROWSING_KEY.test(e.key)) return;
