@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { text as readBody } from 'node:stream/consumers';
 import { spawn as ptySpawn } from 'node-pty';
 import { WebSocketServer } from 'ws';
-import { loadPr, prHeads, prUrl, prBody, parsePrUrl, listPrs, branchPrs, lookupPrs, ownPrs, pickPr, issueLinks, lookupRef, setViewed, setBody, createIssue, fetchPatches, runCount, repoIssues, repoMilestones, setMilestone } from './github.js';
+import { loadPr, prHeads, prUrl, prBody, parsePrUrl, listPrs, branchPrs, lookupPrs, ownPrs, pickPr, issueLinks, lookupRef, setViewed, setBody, createIssue, fetchPatches, runCount, repoIssues, repoMilestones, setIssueMilestone } from './github.js';
 import { notAWorkTree, snapshot, currentBranch, headCommit, commitsKnown, commitMemo, repoInfo, pushRepo, prScope, compareUrl, githubUrl, originOwner, wholePrRepo, checkoutPr, pushBranch, remoteBranchHead, trackingHead, localPatch, branchesBelow } from './git.js';
 import { bucket, fileUrl, fileViews } from './files.js';
 import { readPort, writePort, readPrs, writePrs, pick, useQueueFile, movedQueue, issueUrl } from './store.js';
@@ -516,12 +516,12 @@ const routes = {
    * until a poll sees updatedAt move and reads the pull request again.
    */
   'POST /api/pr/milestone': async ({ url, number } = {}) => {
-    // Reaches gh's -F, which converts by shape (setMilestone): a positive
+    // Reaches gh's -F, which converts by shape (setIssueMilestone): a positive
     // integer or null, and nothing else.
     if (number !== null && !(Number.isInteger(number) && number > 0)) throw new Error(`not a milestone number: ${JSON.stringify(number)}`);
     const cur = requirePr();
     if (url !== cur.url) throw new Error(`${url ?? '(nothing)'} is no longer the pull request on screen`);
-    const milestone = await setMilestone(repo, cur.url, number);
+    const milestone = await setIssueMilestone(repo, parsePrUrl(cur.url), number);
     cur.milestone = milestone;
     term.verbose(milestone ? `put PR #${cur.number} on ${quote(milestone.title)}` : `took PR #${cur.number} off its milestone`);
     return { milestone };

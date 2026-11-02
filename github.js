@@ -625,23 +625,23 @@ export const milestoneOf = (m) => (m
   : null);
 
 /**
- * Puts the pull request on milestone `number`, or on none for null, and
- * answers with the milestone GitHub now has it on (milestoneOf).
+ * Puts an issue or a pull request -- the issues endpoint is both's, and
+ * `{ owner, repo, number }` is what parsePrUrl answers -- on milestone
+ * `milestone`, or on none for null, and answers with the milestone GitHub now
+ * has it on (milestoneOf).
  *
- * Through the issues endpoint, which is a pull request's too, rather than
- * `gh pr edit --milestone`: that takes a title, and resolves it to a number
- * with a listing of its own. This is the one call here that wants -F, whose
- * conversion by shape every string argument is kept from (see the tests on
- * setViewed): `milestone=4` has to reach GitHub as an Int and `milestone=null`
- * as null, and a string of either is refused. The caller has already held
- * `number` to a positive integer, so nothing else can be converted. A number
- * the repository has no milestone for is GitHub's 422, "Validation Failed"
- * (tried on #168, 2026-10-21).
+ * Through the REST endpoint rather than `gh pr edit --milestone`: that takes a
+ * title, and resolves it to a number with a listing of its own. This is the
+ * one call here that wants -F, whose conversion by shape every string argument
+ * is kept from (see the tests on setViewed): `milestone=4` has to reach GitHub
+ * as an Int and `milestone=null` as null, and a string of either is refused.
+ * The caller has already held `milestone` to a positive integer, so nothing
+ * else can be converted. A number the repository has no milestone for is
+ * GitHub's 422, "Validation Failed" (tried on #168, 2026-10-21).
  */
-export async function setMilestone(cwd, prUrl, number) {
-  const { owner, repo, number: issue } = parsePrUrl(prUrl);
-  const out = await gh(['api', '-X', 'PATCH', `repos/${owner}/${repo}/issues/${issue}`,
-    '-F', `milestone=${number ?? 'null'}`], { cwd });
+export async function setIssueMilestone(cwd, { owner, repo, number }, milestone) {
+  const out = await gh(['api', '-X', 'PATCH', `repos/${owner}/${repo}/issues/${number}`,
+    '-F', `milestone=${milestone ?? 'null'}`], { cwd });
   return milestoneOf(JSON.parse(out).milestone);
 }
 

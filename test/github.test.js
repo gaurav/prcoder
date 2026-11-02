@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { rollup, linkedIssues, linksFrom, parsePrUrl, run, issueNumber, lf, setViewed, listPrs, loadPr, prHeads, branchPrs, lookupPrs, ownPrs, SEARCH_EVERY, UNREAD_FOR, pickPr, lookupRef, createIssue, repoIssues, setMilestone, repoMilestones } from '../github.js';
+import { rollup, linkedIssues, linksFrom, parsePrUrl, run, issueNumber, lf, setViewed, listPrs, loadPr, prHeads, branchPrs, lookupPrs, ownPrs, SEARCH_EVERY, UNREAD_FOR, pickPr, lookupRef, createIssue, repoIssues, setIssueMilestone, repoMilestones } from '../github.js';
 import { taskLines } from '../public/tasks.js';
 import { withGh, ghArgs, ghCalls, unix } from './stub-gh.js';
 
@@ -460,7 +460,7 @@ test('a PR with more than 100 files lists every one of them', { skip: unix }, as
   });
 });
 
-// The milestone reaches the page as the head's chip needs it -- number, title
+// The milestone reaches the page as the head's line needs it -- number, title
 // and due date, the title rid of control characters as the Issues tab's are --
 // and not its description, which every poll would carry to every tab.
 test('a PR\'s milestone is its number, title and due date, or null', { skip: unix }, async () => {
@@ -479,10 +479,10 @@ test('a PR\'s milestone is its number, title and due date, or null', { skip: uni
 // milestone in REST's spelling (`due_on`), read back as the pane carries one.
 test('a pull request is put on a milestone by number, and taken off with null', { skip: unix }, async () => {
   const answer = { number: 168, milestone: { number: 4, title: 'Needed soon', due_on: '2026-11-01T00:00:00Z', description: 'x' } };
-  const { out, calls } = await ghCalls(`echo '${JSON.stringify(answer)}'`, () => setMilestone(os.tmpdir(), 'https://github.com/o/r/pull/168', 4));
+  const { out, calls } = await ghCalls(`echo '${JSON.stringify(answer)}'`, () => setIssueMilestone(os.tmpdir(), { owner: 'o', repo: 'r', number: 168 }, 4));
   assert.deepEqual(calls[0], ['api', '-X', 'PATCH', 'repos/o/r/issues/168', '-F', 'milestone=4']);
   assert.deepEqual(out, { number: 4, title: 'Needed soon', dueOn: '2026-11-01T00:00:00Z' });
-  const off = await ghCalls(`echo '{"number":168,"milestone":null}'`, () => setMilestone(os.tmpdir(), 'https://github.com/o/r/pull/168', null));
+  const off = await ghCalls(`echo '{"number":168,"milestone":null}'`, () => setIssueMilestone(os.tmpdir(), { owner: 'o', repo: 'r', number: 168 }, null));
   assert.deepEqual(off.calls[0].slice(-2), ['-F', 'milestone=null']);
   assert.equal(off.out, null);
 });
