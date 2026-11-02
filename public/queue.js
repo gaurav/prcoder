@@ -484,7 +484,7 @@ function issueGroups() {
   // than one element per issue once a row is open: the count is the issues'.
   // `target` is the milestone the group stands for -- a title, or null for
   // none -- and makes its summary somewhere an issue row can be dropped; the
-  // mentions have none, since they are not a milestone.
+  // mentions and a closed milestone have none.
   const group = (key, title, list, rows, extra = [], target) => {
     const d = fold({
       className: 'milestone', dataset: { group: key }, title: [title, ...extra.flatMap((e) => [' ', e]), ' ', h('span', { className: 'count' }, String(list.length))],
@@ -512,7 +512,8 @@ function issueGroups() {
     ];
     const list = byMilestone.get(m.number) ?? [];
     if (searching && !list.length) continue;
-    out.push(group(`m:${m.number}`, title, list, list.map((i) => issueRow(i)).flat(), extra, m.title));
+    // A closed one is on the tab for the issues still on it; nothing moves onto it.
+    out.push(group(`m:${m.number}`, title, list, list.map((i) => issueRow(i)).flat(), extra, m.closed ? undefined : m.title));
   }
   const none = byMilestone.get(NONE) ?? [];
   if (!searching || none.length) out.push(group(`m:${NONE}`, 'No milestone', none, none.map((i) => issueRow(i)).flat(), [], null));
@@ -618,10 +619,13 @@ function issueRow(i, { repo = null, kind = 'issue', closed = false, text = i.tit
   if (!open) return [row];
   const home = deps.home?.();
   const where = home ? { repo: `https://github.com/${home}`, ref: 'HEAD' } : null;
-  // The keyboard's way to the drag's move: every open milestone, and none.
+  // The keyboard's way to the drag's move: every open milestone, and none. A
+  // closed one is there only when the issue is on it, to say so: it is the
+  // current value and cannot be chosen again.
   const pick = h('select', { className: 'milestone', ariaLabel: `milestone of #${i.number}` },
     h('option', { value: '' }, 'No milestone'),
-    ...rankMilestones(listing.milestones).map((m) => h('option', { value: m.title, selected: m.number === i.milestone }, m.title)));
+    ...rankMilestones(listing.milestones).filter((m) => !m.closed || m.number === i.milestone).map((m) =>
+      h('option', { value: m.title, selected: m.number === i.milestone, disabled: !!m.closed }, m.closed ? `${m.title} (closed)` : m.title)));
   pick.onchange = () => move(i.number, pick.value || null);
   const body = h('li', { className: 'issue-body md' },
     ...(i.body ? blocks(i.body).map((b) => blockNode(b, null, where)) : [h('p', { className: 'empty' }, 'No description.')]),

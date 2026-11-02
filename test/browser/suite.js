@@ -1774,6 +1774,24 @@ test('picking a milestone in an opened row posts the move and reads the listing 
   await fresh.close();
 });
 
+// A closed milestone has a group only for the issues still on it: their select
+// says so and no other row's offers it.
+test('a closed milestone is named in the select of an issue on it, and offered to no other', { skip }, async () => {
+  const { fresh } = await issuesPage({ ...ISSUES,
+    milestones: [...ISSUES.milestones, { number: 7, title: 'v0.0', dueOn: null, description: '', closed: true }],
+    issues: [...ISSUES.issues, { number: 91, title: 'Left open', url: 'https://github.com/gaurav/prcoder/issues/91', updatedAt: '2026-10-07T00:00:00Z', body: '', milestone: 7, labels: [] }] });
+  await fresh.locator('[data-group="m:1"] summary .count').click();
+  await fresh.locator('[data-group="m:1"] .item .disclose').click();
+  assert.ok(!(await fresh.locator('[data-group="m:1"] select.milestone option').allTextContents()).some((t) => t.includes('v0.0')));
+  await fresh.locator('[data-group="m:7"] summary .count').click();
+  await fresh.locator('[data-group="m:7"] .item .disclose').click();
+  const pick = fresh.locator('[data-group="m:7"] select.milestone');
+  assert.equal(await pick.inputValue(), 'v0.0');
+  assert.equal(await pick.locator('option[value="v0.0"]').textContent(), 'v0.0 (closed)');
+  assert.equal(await pick.locator('option[value="v0.0"]').isDisabled(), true);
+  await fresh.close();
+});
+
 // With a pull request on screen its mentions lead the tab, and one that is an
 // open issue here is the listing's own row, body and all.
 test('the Issues tab leads with what the PR mentions, and a mention that is listed opens like any row', { skip }, async () => {

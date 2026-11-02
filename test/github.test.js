@@ -414,6 +414,24 @@ test('a second page of issues is read with its cursor, and the milestones come f
     assert.rejects(repoIssues(os.tmpdir(), 'gaurav', 'prcoder'), { message: 'error connecting to api.github.com' }));
 });
 
+// The opened row's select offers every open milestone, so they are read past
+// the first page, with their own query, asked for once.
+test('open milestones past the first page are read with their cursor', { skip: unix }, async () => {
+  const first = structuredClone(ISSUES_PAGE);
+  first.data.repository.milestones.pageInfo = { hasNextPage: true, endCursor: 'M1' };
+  const more = { data: { repository: { milestones: {
+    pageInfo: { hasNextPage: false, endCursor: 'M2' },
+    nodes: [{ number: 60, title: 'v6', dueOn: null, description: 'later' }],
+  } } } };
+  const script = `case "$*" in\n*after=M1*) cat <<'JSON'\n${JSON.stringify(more)}\nJSON\n;;\n*) cat <<'JSON'\n${JSON.stringify(first)}\nJSON\n;;\nesac`;
+  const { out, calls } = await ghCalls(script, () => repoIssues(os.tmpdir(), 'gaurav', 'prcoder'));
+  assert.equal(out.milestones.length, 6);
+  assert.deepEqual(out.milestones.at(-1), { number: 60, title: 'v6', dueOn: null, description: 'later', closed: false });
+  assert.equal(calls.length, 2);
+  const paged = calls.find((c) => c.includes('after=M1'));
+  assert.equal(paged[paged.indexOf('after=M1') - 1], '-f');
+});
+
 // The one write about an issue, through the endpoint a pull request's goes
 // through too: by number as -F, so it reaches GitHub as an Int or a null, and
 // an answer that does not name that milestone is a failure, since GitHub drops

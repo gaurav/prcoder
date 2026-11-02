@@ -346,7 +346,9 @@ let listing = null;
 /**
  * What /api/issue/milestone may do, from `listing`: `{ number, milestone, title }`
  * where `number` is an open issue the tab was shown and `milestone` the number
- * of one of its milestones, found by title, or null to take the milestone off.
+ * of one of its open milestones, found by title, or null to take the milestone
+ * off. A closed one is listed only because an issue is still on it (repoIssues),
+ * and is somewhere to move off, not onto.
  * The page's strings choose; the listing's are what reach gh -- the same hold
  * /api/pr/choose keeps on a pick. Pure, and exported for test/api.test.js.
  */
@@ -356,7 +358,7 @@ export function issueMove(listing, { number, milestone } = {}) {
   // null exactly, not == null: a body with no `milestone` at all, which is what
   // JSON.stringify makes of an undefined, has not asked for it to be taken off.
   if (milestone === null) return { number: issue.number, milestone: null, title: null };
-  const found = listing.milestones.find((m) => m.title === milestone);
+  const found = listing.milestones.find((m) => m.title === milestone && !m.closed);
   if (!found) throw new Error(`"${milestone}" is not an open milestone the Issues tab listed`);
   return { number: issue.number, milestone: found.number, title: found.title };
 }

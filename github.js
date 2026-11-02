@@ -842,10 +842,31 @@ async function repoLinks(cwd, owner, repo, numbers) {
 // there is no priority here, and labels are the nearest thing (#66).
 const ISSUES_QUERY = `query($owner:String!,$repo:String!,$after:String){
   repository(owner:$owner,name:$repo){
-    milestones(first:50,states:OPEN){ nodes{ number title dueOn description } }
+    milestones(first:100,states:OPEN){ pageInfo{ hasNextPage endCursor } nodes{ number title dueOn description } }
     issues(first:100,after:$after,states:OPEN,orderBy:{field:UPDATED_AT,direction:DESC}){
       totalCount pageInfo{ hasNextPage endCursor }
       nodes{ number title url updatedAt body milestone{ number title dueOn state } labels(first:10){ nodes{ name } } } } } }`;
+
+// The rest of the open milestones, for a repository with more than ISSUES_QUERY
+// reads: the opened row's select offers every one, so they cannot stop at a page.
+const MILESTONES_QUERY = `query($owner:String!,$repo:String!,$after:String){
+  repository(owner:$owner,name:$repo){
+    milestones(first:100,after:$after,states:OPEN){ pageInfo{ hasNextPage endCursor } nodes{ number title dueOn description } } } }`;
+
+/** Every open milestone's node, from the first page ISSUES_QUERY brought. */
+async function openMilestones(cwd, owner, repo, first) {
+  const nodes = [...first.nodes];
+  let { pageInfo } = first;
+  // ponytail: five pages, 500 open milestones, past which one can only be
+  // reached by an issue already on it (repoIssues).
+  for (let page = 1; page < 5 && pageInfo?.hasNextPage && pageInfo.endCursor; page++) {
+    const { data } = JSON.parse(await gh(['api', 'graphql', '-f', `query=${MILESTONES_QUERY}`,
+      '-f', `owner=${owner}`, '-f', `repo=${repo}`, '-f', `after=${pageInfo.endCursor}`], { cwd }));
+    nodes.push(...data.repository.milestones.nodes);
+    ({ pageInfo } = data.repository.milestones);
+  }
+  return nodes;
+}
 
 /**
  * The repository's open issues and open milestones, for the queue's Issues
@@ -855,9 +876,9 @@ const ISSUES_QUERY = `query($owner:String!,$repo:String!,$after:String){
  * names only, rid of control characters as the titles are (printable). Most
  * recently updated first, as GitHub orders them. A
  * milestone an open issue is on but that is not among the open ones read --
- * closed with the issue still open, or past the first fifty -- is added from
- * the issue, `closed` if it is, so that every listed issue has a group to be
- * drawn in; it has no description. The body
+ * closed with the issue still open, or past openMilestones' pages -- is added
+ * from the issue, `closed` if it is, so that every listed issue has a group to
+ * be drawn in; it has no description. The body
  * comes too, LF-ended like a description (lf), so the tab can show one and
  * search them; the pane renders it through the same allowlist as a
  * description (docs/Security.md).
@@ -877,7 +898,7 @@ export async function repoIssues(cwd, owner, repo) {
     if (after) args.push('-f', `after=${after}`);
     const { data } = JSON.parse(await gh(args, { cwd }));
     const r = data.repository;
-    milestones ??= r.milestones.nodes.map((m) => ({
+    milestones ??= (await openMilestones(cwd, owner, repo, r.milestones)).map((m) => ({
       ...milestoneOf(m), description: printable(m.description ?? '').trim(), closed: false,
     }));
     total = r.issues.totalCount;
