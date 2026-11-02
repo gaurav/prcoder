@@ -824,6 +824,10 @@ export const milestoneChoices = (current, list) => {
  * gives up the focus as it does, so the answer redraws it too (paintHead).
  * Until GitHub answers it shows the pick, disabled (`handlers.picking`).
  */
+// What moves a closed select's value: an arrow, a page or end key, or a letter to
+// find by. Space is not one: it opens the dropdown.
+const BROWSING_KEY = /^(Arrow.*|Page.*|Home|End|[^ ])$/;
+
 const milestoneRow = (pr, { milestones = null, picking = null, onMilestone, onMilestoneReach } = {}) => {
   const m = pr.milestone;
   const on = (picking ? picking.number : m?.number) ?? '';
@@ -832,7 +836,28 @@ const milestoneRow = (pr, { milestones = null, picking = null, onMilestone, onMi
     title: m ? 'move this pull request to another milestone' : 'not on a milestone: pick one to triage it',
   }, ...milestoneChoices(m, milestones).map((c) => h('option', { value: c.value, ...(c.title ? { title: c.title } : {}) }, c.text)));
   sel.value = sel.dataset.on;
+  // A closed select changes on a bare key, and a change here is a write to
+  // GitHub: a letter on its way to the terminal moved the pull request, and an
+  // arrow did on Windows and Linux. A page cannot ask whether a dropdown is
+  // open, but a key that browses changes the value while it is being handled,
+  // and a choice from an open dropdown comes on Enter or a click. So a change
+  // during a browsing key is put back, and to pick by keyboard is to open the
+  // dropdown first. keypress too, as that is where type-ahead happens. Cleared
+  // by a timer, not keyup: on a Mac an arrow opens a native menu that keeps the
+  // keyup, and the mouse pick from that menu would then be put back.
+  let browsing = false;
+  const browse = (e) => {
+    if (e.ctrlKey || e.metaKey || e.altKey || !BROWSING_KEY.test(e.key)) return;
+    browsing = true;
+    setTimeout(() => { browsing = false; });
+  };
+  sel.onkeydown = browse;
+  sel.onkeypress = browse;
   sel.onchange = () => {
+    if (browsing) {
+      sel.value = sel.dataset.on;
+      return;
+    }
     const number = sel.value ? Number(sel.value) : null;
     sel.blur();
     onMilestone(pr.url, number);

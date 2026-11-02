@@ -618,6 +618,67 @@ test('a pick on its way survives a repaint, disabled and showing what was picked
   await p.close();
 });
 
+// Every change used to write to GitHub at once, and a closed select changes on
+// a bare key: a letter on the way to the terminal moved the pull request. `seen`
+// is there so this cannot pass on a select that ignored the letter.
+test('a letter that finds an option in a closed picker changes nothing and writes nothing', { skip }, async () => {
+  const p = await newPage();
+  await p.waitForFunction(() => document.querySelectorAll('#pr-head .pr-milestone option').length > 1);
+  await p.evaluate(() => {
+    window.seen = [];
+    document.querySelector('#pr-head .pr-milestone select').addEventListener('change', (e) => window.seen.push(e.target.value), true);
+  });
+  await p.focus('#pr-head .pr-milestone select');
+  await p.keyboard.press('n');
+  await p.waitForTimeout(200);
+  assert.deepEqual(await p.evaluate(() => window.seen), ['4'], 'the letter did change the select');
+  assert.equal(p.milestonePicks, undefined, 'nothing went to GitHub');
+  assert.equal(await p.locator('#pr-head .pr-milestone select').inputValue(), '');
+  await p.close();
+});
+
+// Keys in the sequence each platform sends them, since no one machine has them
+// all. An arrow on a closed select moves it on Windows and Linux, and opens a
+// menu on a Mac; a headless browser here opens no dropdown Playwright's keys can
+// reach, and sends no change at all for Alt+Down, Space, Enter or F4 then an
+// arrow and Enter (tried 2026-11-02). So these say what the picker does with a
+// key and a change, not that the browser sends them.
+const keyThenChange = (p, key, { value = '4', wait = false, up = false } = {}) => p.evaluate(async ({ key, value, wait, up }) => {
+  const sel = document.querySelector('#pr-head .pr-milestone select');
+  sel.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
+  if (up) sel.dispatchEvent(new KeyboardEvent('keyup', { key, bubbles: true }));
+  if (wait) await new Promise((r) => { setTimeout(r, 50); });
+  sel.value = value;
+  sel.dispatchEvent(new Event('change', { bubbles: true }));
+}, { key, value, wait, up });
+
+test('a change during a browsing key is put back, and one on a choosing key is written', { skip }, async () => {
+  const p = await newPage();
+  await p.waitForFunction(() => document.querySelectorAll('#pr-head .pr-milestone option').length > 1);
+  const sel = p.locator('#pr-head .pr-milestone select');
+  for (const key of ['ArrowDown', 'ArrowUp', 'PageDown', 'Home', 'End', 'n']) {
+    await keyThenChange(p, key);
+    assert.equal(await sel.inputValue(), '', key);
+    await p.waitForTimeout(20);
+  }
+  assert.equal(p.milestonePicks, undefined, 'nothing went to GitHub');
+  await keyThenChange(p, 'Enter');
+  await p.waitForSelector('#pr-head .pr-milestone:not(.untriaged) a');
+  assert.deepEqual(p.milestonePicks, [{ url: pr.url, number: 4 }]);
+  await p.close();
+});
+
+// An arrow opens a native menu on a Mac, which keeps the keyup. The choice from
+// that menu comes later, on no key the page saw, and has to count.
+test('a pick after a browsing key whose keyup never came is written', { skip }, async () => {
+  const p = await newPage();
+  await p.waitForFunction(() => document.querySelectorAll('#pr-head .pr-milestone option').length > 1);
+  await keyThenChange(p, 'ArrowDown', { wait: true });
+  await p.waitForSelector('#pr-head .pr-milestone:not(.untriaged) a');
+  assert.deepEqual(p.milestonePicks, [{ url: pr.url, number: 4 }]);
+  await p.close();
+});
+
 // A pick GitHub refuses is a toast with its reason, and the picker goes back
 // to where the pull request still is rather than showing a pick that never
 // happened.
