@@ -487,6 +487,22 @@ test('a pull request is put on a milestone by number, and taken off with null', 
   assert.equal(off.out, null);
 });
 
+// GitHub's docs on the endpoint, read 2026-11-02: "Without push access to the
+// repository, milestone changes are silently dropped." They do not say what it
+// answers then, so this is the shape that drop would have if it answers as
+// usual: the issue as it was, which is not a failure to gh. Not tried for real,
+// as it takes an account with no push access to a repository of ours.
+test('a milestone GitHub did not change is an error, not an answer', { skip: unix }, async () => {
+  const issue = { owner: 'o', repo: 'r', number: 168 };
+  const stayed = { number: 168, milestone: { number: 2, title: 'v0.1', due_on: null } };
+  await assert.rejects(ghCalls(`echo '${JSON.stringify(stayed)}'`, () => setIssueMilestone(os.tmpdir(), issue, 4)),
+    /GitHub left #168 on v0\.1: .*push access to o\/r/);
+  await assert.rejects(ghCalls(`echo '${JSON.stringify(stayed)}'`, () => setIssueMilestone(os.tmpdir(), issue, null)),
+    /GitHub left #168 on v0\.1/, 'taking it off is dropped the same way');
+  await assert.rejects(ghCalls(`echo '{"number":168,"milestone":null}'`, () => setIssueMilestone(os.tmpdir(), issue, 4)),
+    /GitHub left #168 on no milestone/);
+});
+
 test('a repository\'s open milestones are their numbers, titles and due dates', { skip: unix }, async () => {
   const answer = { data: { repository: { milestones: { nodes: [
     { number: 1, title: 'v1.0', dueOn: '2026-10-14T00:00:00Z' }, { number: 4, title: 'Needed\u001bsoon', dueOn: null }] } } } };

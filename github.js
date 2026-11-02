@@ -638,11 +638,22 @@ export const milestoneOf = (m) => (m
  * The caller has already held `milestone` to a positive integer, so nothing
  * else can be converted. A number the repository has no milestone for is
  * GitHub's 422, "Validation Failed" (tried on #168, 2026-10-21).
+ *
+ * A caller without push access gets no such refusal: "milestone changes are
+ * silently dropped" (the endpoint's docs, read 2026-11-02), so success is the
+ * answer naming the milestone asked for, not the exit code. Without this the
+ * picker snapped back with nothing said, on the fork-into-parent pull requests
+ * its route is written for. The docs don't say what such a drop answers, and
+ * trying it takes an account with no push access to a repository of ours.
  */
 export async function setIssueMilestone(cwd, { owner, repo, number }, milestone) {
   const out = await gh(['api', '-X', 'PATCH', `repos/${owner}/${repo}/issues/${number}`,
     '-F', `milestone=${milestone ?? 'null'}`], { cwd });
-  return milestoneOf(JSON.parse(out).milestone);
+  const now = milestoneOf(JSON.parse(out).milestone);
+  if ((now?.number ?? null) !== milestone) {
+    throw new Error(`GitHub left #${number} on ${now ? now.title : 'no milestone'}: changing a milestone takes push access to ${owner}/${repo}`);
+  }
+  return now;
 }
 
 /**
