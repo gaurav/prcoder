@@ -211,12 +211,20 @@ export function fences(body) {
  * space or line start a mention needs. Removed, the `#5` in `[x](y)#5` was
  * listed here and not linked there. A link the pane will not open (opens())
  * is left, as the pane leaves it, and the `#12` in `[see #12](#notes)` counts.
+ *
+ * Read a block at a time, from blocks(), because inline() is handed one at a
+ * time. Over the whole text, a stray `[` or backtick paired with one paragraphs
+ * later and took the `#5` between them, which the pane still linked. A quote's
+ * marker is gone from a block too, so `>#5` is listed as it is linked.
+ *
+ * One difference is left: a top-level heading is a fold's title, drawn as plain
+ * text, so the `#5` in `## After #5` is listed here and not linked there.
  */
 export function mentions(body = '') {
-  return fences(withoutHtml(body)).flatMap((chunk) => (chunk.code != null ? []
-    : [...chunk.text.replace(/`[^`]+`/g, '\u0000')
-      .replace(mdLink(), (m, text, href) => (opens(href) ? '\u0001' : m))
-      .matchAll(mention())].map(([, , n]) => Number(n))));
+  return blocks(body).flatMap((b) => (b.kind === 'code' ? [] : b.items ?? [b.text]))
+    .flatMap((text) => [...text.replace(/`[^`]+`/g, '\u0000')
+      .replace(mdLink(), (m, _, href) => (opens(href) ? '\u0001' : m))
+      .matchAll(mention())].map(([, , n]) => Number(n)));
 }
 
 /**

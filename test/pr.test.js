@@ -6,7 +6,7 @@ import {
 } from '../public/pr.js';
 import { filesProgress } from '../public/filelist.js';
 import { tabDone } from '../public/ui.js';
-import { blocks } from '../public/tasks.js';
+import { blocks, mentions } from '../public/tasks.js';
 
 const status = (over = {}) => ({
   nameWithOwner: 'ggvaidya/prcoder',
@@ -218,6 +218,28 @@ test('a #N inside a markdown link is left to the link', () => {
   assert.equal(source.match(/<a /g).length, 2);
   assert.match(source, /^\[see <a [^>]*>#5<\/a>\]\(javascript:x\) and \[details in <a [^>]*>#12<\/a>\]\(#notes\)$/);
 });
+
+// The Mentions row and the pane's links are two readers of one description, and
+// each row here is a body they once read differently. A mention link is told
+// from any other by `class="ref`, which only mentionLink writes.
+const allAnswered = { get: () => ({ title: 't', kind: 'issue' }) };
+const linkedBy = (body) => blocks(body)
+  .flatMap((b) => (b.kind === 'code' ? [] : b.items ?? [b.text]))
+  .flatMap((t) => [...inline(t, { ...where, refs: allAnswered }).matchAll(/class="ref [^>]*>#(\d+)</g)])
+  .map(([, n]) => Number(n));
+
+for (const [why, body, numbers] of [
+  ['a stray [ does not reach a link in a later paragraph', 'foo [bar\n\nSee #5\n\n[docs](https://x)', [5]],
+  ['a stray backtick does not reach one in a later paragraph', 'a `b\n\nSee #5\n\nc` d', [5]],
+  ['a quote with no space after its marker', '>#5', [5]],
+  ['a task and a list item, each its own start', '- [ ] #5\n\n- #6', [5, 6]],
+  ['a fence is not read', '```\n#5\n```\n#6', [6]],
+]) {
+  test(`the Mentions row and the pane's links agree: ${why}`, () => {
+    assert.deepEqual(mentions(body), numbers);
+    assert.deepEqual(linkedBy(body), numbers);
+  });
+}
 
 // A bare URL ran on into the held link's placeholder, and putting the link back
 // put its quotes inside the URL's href="...": the rest was read as attributes.
