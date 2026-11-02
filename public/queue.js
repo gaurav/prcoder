@@ -37,7 +37,8 @@ export function setItems(next, prOnScreen = null) {
   // caret: its text is kept and put back, but the caret and a composition
   // mid-word are not. Safe to hold on by the same argument as the text above
   // -- focus leaves it with the next click anywhere else -- where a tab is not.
-  if (saving || document.activeElement?.closest?.('#queue-body .text[contenteditable], #queue-search')) return;
+  // So is a row's milestone select (groupsInUse), which a repaint would close.
+  if (saving || document.activeElement?.closest?.('#queue-body .text[contenteditable], #queue-search, #queue-body .issue-ways')) return;
   if (document.querySelector('#queue-body .item.dragging')) return;
   // What the PR and Issues tabs draw from: a tick on github.com changes the
   // PR tab without changing the list, so it has to count as news too.
@@ -427,10 +428,32 @@ function issueList() {
     query = search.value;
     paintIssues();
   };
-  return h('div', { className: 'issues-pane' }, search, h('div', { className: 'issue-groups' }, ...issueGroups()));
+  const groups = h('div', { className: 'issue-groups' }, ...issueGroups());
+  // On the next task: during focusout the new focus is not settled yet, and may
+  // be another part of the same row.
+  groups.addEventListener('focusout', () => setTimeout(payGroups));
+  return h('div', { className: 'issues-pane' }, search, groups);
 }
 
-const paintGroups = () => document.querySelector('#queue-body .issue-groups')?.replaceChildren(...issueGroups());
+/**
+ * Whether a repaint would take something out from under the user: the row being
+ * dragged, with the group's line it is over and the drag's end event, or a row's
+ * select, which closes when it is replaced. Each visit to the tab and each move
+ * reads a listing that takes seconds, so one landing mid-gesture is ordinary.
+ * Safe to hold on for the reason setItems holds on the search box: both end with
+ * the next click anywhere else. The select's neighbours count for the same
+ * reason, since focus crosses to them on the way to what they act on.
+ */
+const groupsInUse = () => !!(document.querySelector('#queue-body .item.dragging')
+  || document.activeElement?.closest?.('#queue-body .issue-ways'));
+// A repaint held back, drawn once what held it is over.
+let groupsOwed = false;
+const drawGroups = () => {
+  groupsOwed = false;
+  document.querySelector('#queue-body .issue-groups')?.replaceChildren(...issueGroups());
+};
+const paintGroups = () => { if (groupsInUse()) groupsOwed = true; else drawGroups(); };
+const payGroups = () => { if (groupsOwed) paintGroups(); };
 
 /** The groups and the tab's count, leaving the search box, its focus and its caret alone. */
 function paintIssues() {
@@ -594,7 +617,9 @@ function issueRow(i, { repo = null, kind = 'issue', closed = false, text = i.tit
   const can = i.body != null;
   const disclose = can ? btn(open ? '▾' : '▸', () => {
     if (open) expanded.delete(key); else expanded.add(key);
-    paintGroups();
+    // Not held: this is the user's own click, which some browsers answer
+    // without moving focus off another row's select.
+    drawGroups();
   }, { className: 'disclose', title: open ? 'hide the issue' : 'show the issue', ariaExpanded: String(open) }) : h('span', { className: 'disclose' });
   // A listed issue can be dragged onto a milestone group; a mention that is
   // not listed cannot, since the move is held to the listing, and gets an empty
@@ -626,7 +651,7 @@ function issueRow(i, { repo = null, kind = 'issue', closed = false, text = i.tit
       e.dataTransfer.setDragImage(row, e.clientX - at.left, e.clientY - at.top);
       row.classList.add('dragging');
     });
-    grip.addEventListener('dragend', () => row.classList.remove('dragging'));
+    grip.addEventListener('dragend', () => { row.classList.remove('dragging'); payGroups(); });
   }
   if (!open) return [row];
   const home = deps.home?.();
@@ -685,6 +710,9 @@ const ISSUE = 'application/x-prcoder-issue';
  * showing what was refused, and which the listing may take seconds to put back.
  */
 async function move(number, milestone) {
+  // Off the select, or the repaint this is for would be held back until the
+  // user next clicks somewhere (groupsInUse).
+  if (document.activeElement?.closest?.('#queue-body .issue-ways')) document.activeElement.blur();
   // Where it already is: a row dropped on its own group, which is easily done
   // with the group's line just above it, is not worth a write and a re-list.
   const target = milestone === null ? null : listing?.milestones.find((m) => m.title === milestone)?.number;

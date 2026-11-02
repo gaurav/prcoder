@@ -1812,6 +1812,65 @@ test('the grip\'s drag moves an issue, and a link\'s drag, its own group or a cl
   await fresh.close();
 });
 
+// Each visit and each move reads a listing that takes seconds, so one lands in
+// the middle of whatever is being done. It waits until that is over.
+test('a listing landing during a drag or with a row\'s select in use waits for it to end', { skip }, async () => {
+  const { fresh } = await issuesPage();
+  const retitled = { ...ISSUES, issues: ISSUES.issues.map((i) => ({ ...i, title: `${i.title} (new)` })) };
+  await fresh.locator('[data-group="m:2"] .item .disclose').click();
+  const title = fresh.locator('[data-group="m:2"] .item .text');
+  const was = await title.textContent();
+  // A listing is out, and answers only when told to.
+  const land = async () => {
+    let answer;
+    const asked = new Promise((res) => { answer = res; });
+    await fresh.route('**/api/issues', async (r) => { await asked; await r.fulfill({ json: retitled }); });
+    await fresh.locator('#queue-body .tab[data-tab="local"]').click();
+    await fresh.locator('#queue-body .tab[data-tab="issues"]').click();
+    const landed = fresh.waitForResponse('**/api/issues');
+    return async () => { answer(); await landed; await fresh.evaluate(() => new Promise((res) => setTimeout(res))); };
+  };
+
+  // The select, and what is left of the row after it: same element, old listing.
+  let answer = await land();
+  const pick = fresh.locator('[data-group="m:2"] .issue-body select.milestone');
+  await pick.focus();
+  await fresh.evaluate(() => { window.held = document.querySelector('[data-group="m:2"] .issue-body select.milestone'); });
+  await answer();
+  assert.equal(await fresh.evaluate(() => window.held.isConnected), true);
+  assert.equal(await title.textContent(), was);
+  await fresh.evaluate(() => document.activeElement.blur());
+  await fresh.waitForFunction((t) => document.querySelector('[data-group="m:2"] .item .text').textContent !== t, was);
+  assert.equal(await fresh.evaluate(() => window.held.isConnected), false);
+
+  // A poll's repaint leaves it alone too. Clicked from the page: a real click
+  // takes the focus away, which is the end of the hold.
+  await pick.focus();
+  await fresh.evaluate(() => { window.held = document.querySelector('[data-group="m:2"] .issue-body select.milestone'); });
+  await fresh.route('**/api/status', (r) => r.fulfill({ json: { ...status, nameWithOwner: 'gaurav/prcoder', queue: [{ text: 'new', done: false, deleted: false }] } }));
+  const polled = fresh.waitForResponse('**/api/status');
+  await fresh.evaluate(() => document.getElementById('pr-refresh').click());
+  await polled;
+  await fresh.evaluate(() => new Promise((res) => setTimeout(res)));
+  assert.equal(await fresh.evaluate(() => window.held.isConnected), true);
+  await fresh.evaluate(() => document.activeElement.blur());
+
+  // The drag: the row stays until its dragend, whose event needs the row there.
+  answer = await land();
+  const before = await title.textContent();
+  await fresh.evaluate(() => {
+    window.held = document.querySelector('[data-group="m:2"] .item .grip');
+    window.held.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer: new DataTransfer() }));
+  });
+  retitled.issues = retitled.issues.map((i) => ({ ...i, title: `${i.title} again` }));
+  await answer();
+  assert.equal(await fresh.evaluate(() => window.held.isConnected), true);
+  assert.equal(await title.textContent(), before);
+  await fresh.evaluate(() => window.held.dispatchEvent(new DragEvent('dragend', { bubbles: true })));
+  assert.match(await title.textContent(), /again$/);
+  await fresh.close();
+});
+
 // A closed milestone has a group only for the issues still on it: their select
 // says so and no other row's offers it.
 test('a closed milestone is named in the select of an issue on it, and offered to no other', { skip }, async () => {
