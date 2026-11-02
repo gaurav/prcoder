@@ -154,9 +154,8 @@ A modified file's diff is not highlighted at all, and
   (`test/store.test.js`, `test/github.test.js`).
   The Issues tab's one write, `/api/issue/milestone`, takes an issue number and a milestone title
   from the page and hands gh neither: `issueMove` in `server.js` looks both up in the listing the
-  tab was last shown, and the listing's own values go to `gh issue edit`, with `--milestone=` so a
-  title beginning with `-` stays a value (`setMilestone` in `github.js`). `test/api.test.js` pins
-  the refusals.
+  tab was last shown, and the listing's own numbers go to `gh api -F` (`setIssueMilestone` in
+  `github.js`). `test/api.test.js` pins the refusals.
 - **Text from GitHub** — descriptions, titles, issue bodies, file names — is built into the page with
   `h()` and text nodes. `innerHTML` only through `inline()`, and a new kind of link only through
   `target()`.

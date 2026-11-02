@@ -311,8 +311,8 @@ test('/api/issue/milestone refuses an issue or a milestone the tab was not shown
   assert.deepEqual(await res.json(), { error: '#58 is not an open issue the Issues tab listed' });
 
   const listing = { issues: [{ number: 58 }, { number: 66 }], milestones: [{ number: 4, title: 'Needed soon' }, { number: 1, title: 'v1.0' }] };
-  assert.deepEqual(issueMove(listing, { number: 58, milestone: 'Needed soon' }), { number: 58, title: 'Needed soon' });
-  assert.deepEqual(issueMove(listing, { number: 66, milestone: null }), { number: 66, title: null });
+  assert.deepEqual(issueMove(listing, { number: 58, milestone: 'Needed soon' }), { number: 58, milestone: 4, title: 'Needed soon' });
+  assert.deepEqual(issueMove(listing, { number: 66, milestone: null }), { number: 66, milestone: null, title: null });
   assert.throws(() => issueMove(listing, { number: 59, milestone: 'Needed soon' }), { message: '#59 is not an open issue the Issues tab listed' });
   assert.throws(() => issueMove(listing, { number: '58', milestone: 'Needed soon' }), { message: '#58 is not an open issue the Issues tab listed' });
   assert.throws(() => issueMove(listing, { number: 58, milestone: 'needed soon' }), { message: '"needed soon" is not an open milestone the Issues tab listed' });
