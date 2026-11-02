@@ -526,7 +526,7 @@ function issueGroups() {
 
 /**
  * A group's summary as somewhere to drop an issue row: lit while one is over
- * it, and the drop is the move. Only a row's own drag counts (ISSUE); a link
+ * it, and the drop is the move. Only a row's grip's drag counts (ISSUE); a link
  * or a text selection dragged across the pane is not an issue.
  */
 function dropTarget(summary, milestone) {
@@ -597,9 +597,15 @@ function issueRow(i, { repo = null, kind = 'issue', closed = false, text = i.tit
     paintGroups();
   }, { className: 'disclose', title: open ? 'hide the issue' : 'show the issue', ariaExpanded: String(open) }) : h('span', { className: 'disclose' });
   // A listed issue can be dragged onto a milestone group; a mention that is
-  // not listed cannot, since the move is held to the listing. No pointerdown
-  // dance as Local's rows need (above): nothing here is contentEditable.
-  const row = h('li', { className: `item source${closed ? ' closed' : ''}`, dataset: { issue: String(i.number) }, draggable: can },
+  // not listed cannot, since the move is held to the listing, and gets an empty
+  // grip so the rows still line up. By the grip and not the row: a draggable row
+  // takes a press on its title for a drag, so the title could not be selected
+  // to copy, and every drag starting in it -- the #N link's, a selection's --
+  // would have been tagged ISSUE and moved the issue when dropped on a group.
+  const grip = can ? h('span', { className: 'grip', draggable: true, ariaHidden: 'true', title: 'drag onto a milestone to move it there' }, '⠿')
+    : h('span', { className: 'grip' });
+  const row = h('li', { className: `item source${closed ? ' closed' : ''}`, dataset: { issue: String(i.number) } },
+    grip,
     disclose,
     // With the repo when it is another's, as the item ↓ makes is tagged: the
     // link, ▶ and ↓ all go there, and docs/Security.md has ▶'s link match the tag.
@@ -613,8 +619,14 @@ function issueRow(i, { repo = null, kind = 'issue', closed = false, text = i.tit
       }, { title: 'type into the coding agent, with the link' }),
       btn('↓', () => pull(text, i.number, kind, repo), { title: 'copy into your queue' })));
   if (can) {
-    row.addEventListener('dragstart', (e) => { e.dataTransfer.setData(ISSUE, String(i.number)); row.classList.add('dragging'); });
-    row.addEventListener('dragend', () => row.classList.remove('dragging'));
+    grip.addEventListener('dragstart', (e) => {
+      e.dataTransfer.setData(ISSUE, String(i.number));
+      // The row is what is being moved, so it is what follows the pointer.
+      const at = row.getBoundingClientRect();
+      e.dataTransfer.setDragImage(row, e.clientX - at.left, e.clientY - at.top);
+      row.classList.add('dragging');
+    });
+    grip.addEventListener('dragend', () => row.classList.remove('dragging'));
   }
   if (!open) return [row];
   const home = deps.home?.();
@@ -655,7 +667,7 @@ function mentionRepo(i) {
  * NaN -- which splice() reads as 0, so the first item moved and was saved.
  */
 const ROW = 'application/x-prcoder-row';
-// And what an issue row's drag carries, its number, for a milestone group to
+// And what an issue row's grip's drag carries, its number, for a milestone group to
 // take; the same reason for a type of its own.
 const ISSUE = 'application/x-prcoder-issue';
 

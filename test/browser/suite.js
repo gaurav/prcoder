@@ -1743,9 +1743,8 @@ test('an issue row opens to its body through the description renderer, with Open
 });
 
 // The one write the Issues tab makes: a row dragged onto a group, or its
-// milestone picked in the opened row, which is the half a test can drive --
-// Playwright cannot start a native drag. The route is mocked; the move is the
-// POST it gets and the listing being read again after.
+// milestone picked in the opened row. The route is mocked; the move is the POST
+// it gets and the listing being read again after.
 test('picking a milestone in an opened row posts the move and reads the listing again', { skip }, async () => {
   const { fresh } = await issuesPage();
   const moves = [];
@@ -1759,9 +1758,9 @@ test('picking a milestone in an opened row posts the move and reads the listing 
   await pick.selectOption('Needed soon');
   await again;
   assert.deepEqual(moves, [{ number: 58, milestone: 'Needed soon' }]);
-  // The rows are draggable; the groups' summaries, not the mentions', are where they go.
-  assert.equal(await fresh.locator('[data-group="m:1"] .item').getAttribute('draggable'), 'true');
-  assert.equal(await fresh.locator('[data-group="mentioned"] .item').getAttribute('draggable'), 'false');
+  // A listed row has a grip to drag it by, and a mention that is not listed has none.
+  assert.equal(await fresh.locator('[data-group="m:1"] .item .grip').getAttribute('draggable'), 'true');
+  assert.equal(await fresh.locator('[data-group="mentioned"] .item .grip').getAttribute('draggable'), null);
   // The row is still open after the listing came back; off a milestone altogether is null.
   again = fresh.waitForResponse('**/api/issues');
   await fresh.locator('[data-group="m:1"] .issue-body select.milestone').selectOption('');
@@ -1771,6 +1770,40 @@ test('picking a milestone in an opened row posts the move and reads the listing 
   await fresh.route('**/api/issue/milestone', (r) => r.fulfill({ status: 500, json: { error: '"x" is not an open milestone the Issues tab listed' } }));
   await fresh.locator('[data-group="m:1"] .issue-body select.milestone').selectOption('Not urgent');
   await fresh.waitForFunction(() => document.getElementById('toast').textContent.includes('not an open milestone'));
+  await fresh.close();
+});
+
+// A toast sits over the pane's foot, and takes a mouse aimed at a row under it.
+const noToast = (p) => p.evaluate(() => { document.getElementById('toast').hidden = true; });
+
+// A press on the title selects it, which a draggable row would have made a drag.
+test('an issue row\'s title can be selected with the mouse', { skip }, async () => {
+  const { fresh } = await issuesPage();
+  await noToast(fresh);
+  const box = await fresh.locator('[data-group="m:2"] .item .text').boundingBox();
+  await fresh.mouse.move(box.x + 2, box.y + box.height / 2);
+  await fresh.mouse.down();
+  await fresh.mouse.move(box.x + 80, box.y + box.height / 2, { steps: 5 });
+  await fresh.mouse.up();
+  assert.ok((await fresh.evaluate(() => getSelection().toString())).length > 3);
+  await fresh.close();
+});
+
+// Chromium only: Firefox gets no HTML5 drag events from dragTo (tools/CLAUDE.md).
+// Each target is a folded group's line, on screen before the press.
+test('the grip\'s drag moves an issue, and a link\'s drag or a closed milestone does not', { skip: skip || (engineName === 'firefox' && 'dragTo sends Firefox no drag events') }, async () => {
+  const { fresh } = await issuesPage({ ...ISSUES,
+    milestones: [...ISSUES.milestones, { number: 7, title: 'v0.0', dueOn: null, description: '', closed: true }] });
+  await noToast(fresh);
+  const moves = [];
+  await fresh.route('**/api/issue/milestone', (r) => { moves.push(r.request().postDataJSON()); return r.fulfill({ json: { ok: true } }); });
+  const row = fresh.locator('[data-group="m:2"] .item');
+  await row.locator('.tag.issue').dragTo(fresh.locator('[data-group="m:4"] summary'));
+  await row.locator('.grip').dragTo(fresh.locator('[data-group="m:7"] summary'));
+  const again = fresh.waitForResponse('**/api/issues');
+  await row.locator('.grip').dragTo(fresh.locator('[data-group="m:4"] summary'));
+  await again;
+  assert.deepEqual(moves, [{ number: 66, milestone: 'Needed soon' }]);
   await fresh.close();
 });
 
