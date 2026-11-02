@@ -820,7 +820,7 @@ export const milestoneChoices = (current, list) => {
  * options are milestoneChoices over `handlers.milestones`, which app.js reads
  * when the pull request's repository changes and again as the pointer or the
  * focus reaches the picker (`onMilestoneReach`), as the switcher's list is. A
- * pick goes to `onMilestone` with the number, or null for none; the picker
+ * pick goes to `onMilestone` with this pull request's URL and the number, or null for none; the picker
  * gives up the focus as it does, so the head repaints from the answer rather
  * than holding for a blur (paintHead).
  */
@@ -835,7 +835,7 @@ const milestoneRow = (pr, { milestones = null, onMilestone, onMilestoneReach } =
     const number = sel.value ? Number(sel.value) : null;
     sel.blur();
     sel.disabled = true;
-    onMilestone(number);
+    onMilestone(pr.url, number);
   };
   sel.onpointerenter = () => onMilestoneReach?.();
   sel.onfocus = () => onMilestoneReach?.();

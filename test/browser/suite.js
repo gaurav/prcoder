@@ -514,6 +514,26 @@ test('picking a milestone sends it with the pull request, and the line takes the
   await p.close();
 });
 
+// The server refuses a pick about a pull request that is no longer on screen,
+// which it can only do if the page says which one the pick was about: reading
+// that off the latest poll said the one the pane had just moved to, the check
+// passed, and the other pull request was moved instead.
+test('a pick names the pull request its picker was drawn for, even once the pane has moved on', { skip }, async () => {
+  const p = await newPage({ clock: true });
+  await p.waitForFunction(() => document.querySelectorAll('#pr-head .pr-milestone option').length > 1);
+  const picker = await p.$('#pr-head .pr-milestone select');
+  await p.focus('#pr-head .pr-milestone select');
+  await p.route('**/api/status', (r) => r.fulfill({ json: { ...status, pr: { ...pr, url: `${REPO}/pull/999`, number: 999, title: 'Another pull request' } } }));
+  const polled = p.waitForResponse('**/api/status');
+  await p.clock.fastForward(61_000);
+  await polled;
+  await p.waitForTimeout(200);
+  const sent = p.waitForRequest('**/api/pr/milestone');
+  await picker.evaluate((s) => { s.value = '4'; s.dispatchEvent(new Event('change')); });
+  assert.deepEqual((await sent).postDataJSON(), { url: pr.url, number: 4 });
+  await p.close();
+});
+
 // A pick GitHub refuses is a toast with its reason, and the picker goes back
 // to where the pull request still is rather than showing a pick that never
 // happened.

@@ -614,10 +614,12 @@ const reachMilestones = () => { if (Date.now() - milestonesAt > 10_000) loadMile
  * The pull request moved to another milestone, or off them, from the head's
  * picker. The route answers with the milestone GitHub now has, which becomes
  * the pane's, as a ticked box's body does. A refusal is a toast, and the
- * picker is put back to where the pull request still is.
+ * picker is put back to where the pull request still is. `url` is the pull
+ * request the picker was drawn for, not `last`'s: that is the one a poll has
+ * moved the pane to, and sending it would pass the server's check that the
+ * pick is about the pull request on screen, and move the wrong one.
  */
-async function pickMilestone(number) {
-  const url = last?.pr?.url;
+async function pickMilestone(url, number) {
   let milestone;
   try {
     ({ milestone } = await api('/api/pr/milestone', { url, number }));
