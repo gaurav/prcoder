@@ -1,6 +1,7 @@
 import { withoutHtml, mention, repoUrl, urlPath, blocks, sectionize } from './tasks.js';
 import { kids, h, btn, ext, debug, tabBtn, writeThrough, fraction, mark, kept, fold } from './ui.js';
 import { fileTree, fileGroup, filesProgress, unlisted } from './filelist.js';
+import { refLabel } from './items.js';
 
 // Re-exported for the tests, which read the pane's view of a body through here.
 export { withoutHtml };
@@ -1002,9 +1003,9 @@ const badge = (text, kind) => h('span', { className: `badge ${kind}` }, text);
  * space between them is what keeps `textContent` reading `PR #27 Make the …`,
  * which is how tools/browser.mjs finds a row; the grid never renders it.
  *
- * A pull request's number says `PR #27`, as the queue's tag does (refLabel in
- * items.js); a bare `#N` is either on GitHub. The column is right-aligned, so
- * the digits still line up under an issue's.
+ * A pull request's number says `PR #27`, as the queue's tag does -- refLabel,
+ * so the two cannot disagree; a bare `#N` is either on GitHub. The column is
+ * right-aligned, so the digits still line up under an issue's.
  */
 function issueRow(list, closes, label) {
   const kind = list.filter((i) => i.closes === closes);
@@ -1012,7 +1013,7 @@ function issueRow(list, closes, label) {
   return h('div', { className: 'issues' },
     h('span', { className: 'issues-label' }, label),
     ...kind.map((i) => ext(i.url, [
-      h('span', { className: 'num' }, `${i.kind === 'pull' ? 'PR ' : ''}#${i.number}`),
+      h('span', { className: 'num' }, refLabel({ issue: i.number, kind: i.kind })),
       ...(i.title ? [' ', h('span', { className: 'ttl' }, i.title)] : []),
     ])));
 }

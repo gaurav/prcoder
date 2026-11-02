@@ -350,8 +350,9 @@ test('the pull request listing comes back as written, stamped with when it was r
   assert.equal(await readPulls(dir, 'o/r'), null, 'nothing read yet');
   const now = Date.parse('2026-10-19T12:00:00Z');
   await writePulls(dir, 'o/r', LISTING, now);
-  assert.deepEqual(await readPulls(dir, 'o/r'), { ...LISTING, read: now });
-  assert.deepEqual(await readPulls(dir, 'O/R'), { ...LISTING, read: now }, 'the repository compares case-blind');
+  const back = { ...LISTING, pulls: [{ ...PULL, closes: [] }], read: now };
+  assert.deepEqual(await readPulls(dir, 'o/r'), back);
+  assert.deepEqual(await readPulls(dir, 'O/R'), back, 'the repository compares case-blind');
   assert.equal(await readPulls(dir, 'o/other'), null, 'another repository\'s list is not this one\'s');
   const raw = JSON.parse(await fs.readFile(path.join(dir, '.prcoder', 'pulls.json'), 'utf8'));
   assert.equal(raw.read, '2026-10-19T12:00:00.000Z', 'a time a person can read');
@@ -381,9 +382,27 @@ test('a listing we cannot use reads as none, and a row the hold cannot trust is 
   ], pulls: [
     PULL, { ...PULL, number: '7' }, { ...PULL, number: 8 }, { ...PULL, url: 'https://github.com/o/r/issues/7' },
     { ...PULL, url: 'https://github.com/o/other/pull/7' }, { ...PULL, url: '--repo=x https://github.com/o/r/pull/7' }, { number: 9 },
+    null, 'seven',
   ] });
   const got = await readPulls(dir, 'o/r');
-  assert.deepEqual(got.pulls, [PULL]);
+  assert.deepEqual(got.pulls, [{ ...PULL, closes: [] }], 'a null or a string among the rows is left out, not thrown on');
   assert.deepEqual(got.milestones, [{ number: 4, title: 'Needed soon' }]);
   assert.deepEqual([got.total, got.listed, got.read], [9, 1, now]);
+});
+
+test('an issue a cached row closes keeps its URL only when it is that issue\'s GitHub link', async () => {
+  const dir = await repo();
+  const file = path.join(dir, '.prcoder', 'pulls.json');
+  const closes = [
+    { number: 1, title: 'one', url: 'https://github.com/o/r/issues/1' },
+    { number: 2, title: 'elsewhere', url: 'https://github.com/x/y/issues/2' },
+    { number: 3, title: 'script', url: 'javascript:alert(1)' },
+    { number: 4, title: 'a pull', url: 'https://github.com/o/r/pull/4' },
+    { number: 5, title: 'mismatch', url: 'https://github.com/o/r/issues/6' },
+    { title: 'no number', url: 'https://github.com/o/r/issues/7' }, null,
+  ];
+  await fs.mkdir(path.dirname(file), { recursive: true });
+  await fs.writeFile(file, JSON.stringify({ version: 1, nameWithOwner: 'o/r', read: '2026-10-19T12:00:00Z', milestones: [], pulls: [{ ...PULL, closes }] }));
+  assert.deepEqual((await readPulls(dir, 'o/r')).pulls[0].closes.map((i) => [i.number, i.url]), [
+    [1, 'https://github.com/o/r/issues/1'], [2, 'https://github.com/x/y/issues/2'], [3, null], [4, null], [5, null]]);
 });

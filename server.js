@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { text as readBody } from 'node:stream/consumers';
 import { spawn as ptySpawn } from 'node-pty';
 import { WebSocketServer } from 'ws';
-import { loadPr, prHeads, prUrl, prBody, parsePrUrl, listPrs, branchPrs, lookupPrs, ownPrs, pickPr, issueLinks, lookupRef, setViewed, setBody, createIssue, fetchPatches, runCount, repoPulls, repoIssues, setMilestone } from './github.js';
+import { loadPr, prHeads, prUrl, prBody, parsePrUrl, listPrs, branchPrs, lookupPrs, ownPrs, pickPr, issueLinks, lookupRef, setViewed, setBody, createIssue, fetchPatches, runCount, repoPulls, repoIssues, setIssueMilestone } from './github.js';
 import { notAWorkTree, snapshot, currentBranch, headCommit, commitsKnown, commitMemo, repoInfo, pushRepo, prScope, compareUrl, githubUrl, originOwner, wholePrRepo, checkoutPr, pushBranch, remoteBranchHead, trackingHead, localPatch, branchesBelow } from './git.js';
 import { bucket, fileUrl, fileViews } from './files.js';
 import { readPort, writePort, readPrs, writePrs, pick, useQueueFile, movedQueue, issueUrl, readPulls, writePulls } from './store.js';
@@ -324,7 +324,8 @@ const repaint = () => term.status(last
  * hundred issues with their bodies, on every visit to the tab. The Pull
  * requests tab's listing is seconds long on a repository with many open;
  * what it writes, `.prcoder/pulls.json`, is its own file, replaced whole by
- * a rename (writePulls).
+ * a rename (writePulls), and its fresh reads queue among themselves
+ * (freshPulls) rather than behind everything else.
  */
 const UNLOCKED = new Set(['GET /api/whoami', 'GET /api/status', 'POST /api/queue/ref', 'GET /api/issues', 'POST /api/pulls']);
 
@@ -349,10 +350,44 @@ let listing = null;
 let pulls = null;
 
 /**
- * What /api/issue/milestone may do, from `listing`: `{ number, title }` for
- * gh, where `number` is an open issue the tab was shown and `title` one of
- * its milestones' titles, or null to take the milestone off. The page's
- * strings choose; the listing's are what reach gh -- the same hold
+ * `fn` on a chain of its own, with poll()'s sharing: a call that arrives while
+ * one is waiting shares it, and one arriving mid-run waits for that run and
+ * then gets one of its own -- whatever it came to read may have changed since
+ * the running one started. At most one runs, which keeps a slow read from
+ * being repeated by every tab that asks, and two writes of its file apart.
+ * Exported for test/api.test.js.
+ */
+export const queuedRun = (fn) => {
+  let tail = Promise.resolve();
+  let waiting = null;
+  return () => (waiting ??= (tail = tail.catch(() => {}).then(() => {
+    waiting = null;
+    return fn();
+  })));
+};
+
+/**
+ * The Pull requests tab's fresh read: GitHub's listing, written to
+ * `.prcoder/pulls.json` and kept as `pulls`. Queued (queuedRun), not under the
+ * server's lock: two at once each paid for the seconds-long read and wrote
+ * the same temp file (writeJson's name is per process), which could leave it
+ * interleaved or fail the second rename.
+ */
+const freshPulls = queuedRun(async () => {
+  const { nameWithOwner } = await repoFacts();
+  const [owner, name] = nameWithOwner.split('/');
+  const got = await repoPulls(repo, owner, name);
+  const now = Date.now();
+  // A cache: a write that fails costs a read on the next start, not now.
+  await writePulls(repo, nameWithOwner, got, now).catch((e) => term.debug(`pulls.json not written: ${e.message}`));
+  return (pulls = { ...got, read: now });
+});
+
+/**
+ * What /api/issue/milestone may do, from `listing`: `{ number, milestone, title }`
+ * where `number` is an open issue the tab was shown and `milestone` the number
+ * of one of its milestones, found by title, or null to take the milestone off.
+ * The page's strings choose; the listing's are what reach gh -- the same hold
  * /api/pr/choose keeps on a pick. Pure, and exported for test/api.test.js.
  * pullMove is the same hold for /api/pull/milestone, on the pulls listing.
  */
@@ -362,10 +397,11 @@ export const pullMove = (listing, body) => heldMove(listing?.pulls, listing?.mil
 function heldMove(rows, milestones, what, tab, { number, milestone } = {}) {
   const row = rows?.find((r) => r.number === number);
   if (!row) throw new Error(`#${number ?? '?'} is not an open ${what} the ${tab} tab listed`);
-  if (milestone == null) return { number: row.number, title: null };
-  const found = milestones.find((m) => m.title === milestone);
+  if (milestone == null) return { number: row.number, milestone: null, title: null };
+  // A closed milestone is listed for the rows still on it, not as somewhere to move one.
+  const found = milestones?.find((m) => m.title === milestone && !m.closed);
   if (!found) throw new Error(`"${milestone}" is not an open milestone the ${tab} tab listed`);
-  return { number: row.number, title: found.title };
+  return { number: row.number, milestone: found.number, title: found.title };
 }
 
 const routes = {
@@ -404,7 +440,10 @@ const routes = {
    * (repoIssues), with the repository they are in as `repo`, and, with a pull
    * request on screen, the issues its
    * description mentions without closing as `mentions`: title, state and kind,
-   * asked about by number, capped at 50 as withLinks is. Two calls rather than
+   * asked about by number, capped at 50 as withLinks is -- one past the cap is
+   * there with its number alone, as one GitHub does not know is, so that every
+   * mention has an answer and the tab can tell one not asked about yet, a
+   * mention added since, from one asked about and not found. Two calls rather than
    * one query: issueLinks already reads an answer gh exited 1 on for the
    * numbers it did resolve, and a listing should not have to. No pull request
    * is needed -- a repository has issues whatever branch is checked out.
@@ -418,10 +457,10 @@ const routes = {
     const { nameWithOwner } = await repoFacts();
     const [owner, name] = nameWithOwner.split('/');
     const cur = pr;
-    const numbers = (cur?.issues ?? []).filter((i) => !i.closes).map((i) => i.number).slice(0, 50);
+    const numbers = (cur?.issues ?? []).filter((i) => !i.closes).map((i) => i.number);
     const [found, links] = await Promise.all([
       repoIssues(repo, owner, name),
-      numbers.length ? issueLinks(repo, cur.url, numbers) : new Map(),
+      numbers.length ? issueLinks(repo, cur.url, numbers.slice(0, 50)) : new Map(),
     ]);
     listing = found;
     return { ...found, repo: nameWithOwner, mentions: numbers.map((number) => ({ number, ...links.get(number) })) };
@@ -429,13 +468,14 @@ const routes = {
 
   /**
    * An issue dropped on a milestone group in the Issues tab, or one picked in
-   * its row: the milestone is set on GitHub (setMilestone), and the tab reads
+   * its row: the milestone is set on GitHub (setIssueMilestone), and the tab reads
    * the listing again. `milestone` is a title from the listing, or null to
    * take it off; issueMove holds both to what the tab was shown.
    */
   'POST /api/issue/milestone': async (body = {}) => {
-    const { number, title } = issueMove(listing, body);
-    await setMilestone(repo, (await repoFacts()).nameWithOwner, number, title);
+    const { number, milestone, title } = issueMove(listing, body);
+    const [owner, name] = (await repoFacts()).nameWithOwner.split('/');
+    await setIssueMilestone(repo, { owner, repo: name, number }, milestone);
     term.verbose(`put #${number} on ${title ? `milestone ${quote(title)}` : 'no milestone'}`);
     return { ok: true };
   },
@@ -452,28 +492,23 @@ const routes = {
    * tab's is. A read that fails throws: the tab keeps what it was showing.
    */
   'POST /api/pulls': async ({ fresh = false } = {}) => {
-    const { nameWithOwner } = await repoFacts();
     if (!fresh) {
-      const held = pulls ?? await readPulls(repo, nameWithOwner);
+      const held = pulls ?? await readPulls(repo, (await repoFacts()).nameWithOwner);
       if (held) return (pulls = held);
     }
-    const [owner, name] = nameWithOwner.split('/');
-    const got = await repoPulls(repo, owner, name);
-    const now = Date.now();
-    // A cache: a write that fails costs a read on the next start, not now.
-    await writePulls(repo, nameWithOwner, got, now).catch((e) => term.debug(`pulls.json not written: ${e.message}`));
-    return (pulls = { ...got, read: now });
+    return freshPulls();
   },
 
   /**
    * A pull request dropped on a milestone group in the Pull requests tab, or
    * one picked in its opened row: the milestone is set on GitHub
-   * (setMilestone, through `gh pr edit`), and the tab reads the listing again.
+   * (setIssueMilestone, as an issue's is), and the tab reads the listing again.
    * pullMove holds the number and the title to what the tab was shown.
    */
   'POST /api/pull/milestone': async (body = {}) => {
-    const { number, title } = pullMove(pulls, body);
-    await setMilestone(repo, (await repoFacts()).nameWithOwner, number, title, 'pull');
+    const { number, milestone, title } = pullMove(pulls, body);
+    const [owner, name] = (await repoFacts()).nameWithOwner.split('/');
+    await setIssueMilestone(repo, { owner, repo: name, number }, milestone);
     term.verbose(`put pull request #${number} on ${title ? `milestone ${quote(title)}` : 'no milestone'}`);
     return { ok: true };
   },

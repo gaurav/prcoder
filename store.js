@@ -332,13 +332,28 @@ export async function writePrs(repo, branch, entry, now = Date.now()) {
  * can put anything in a row. So a pull request is kept only with an integer number
  * and a URL that is the whole of a pull request link in this repository, compared
  * case-blind as prsEntry compares, and a milestone only with an integer number and
- * a string title. The rest of a row is drawn as text, or rendered through the
- * description's allowlist (docs/Security.md).
+ * a string title. The issues a row closes become links, so their URLs are held
+ * to GitHub issue links too (closesOf). The rest of a row is drawn as text, or
+ * rendered through the description's allowlist (docs/Security.md).
  */
 const PULLS_FILE = 'pulls.json';
 const pullsFile = (repo) => path.join(dir(repo), PULLS_FILE);
 
 const sameRepo = (a, b) => typeof a === 'string' && typeof b === 'string' && a.toLowerCase() === b.toLowerCase();
+
+/**
+ * The issues a row closes, as the row draws them: each `url` an href, so kept
+ * only when it is the whole of that issue's link on GitHub -- in any
+ * repository, since a pull request can close another's issue -- and dropped
+ * otherwise, which the row draws as this repository's issue of that number.
+ * An entry without an integer number is left out.
+ */
+const closesOf = (list) => (Array.isArray(list) ? list : [])
+  .filter((i) => i && Number.isInteger(i.number))
+  .map((i) => {
+    const l = link(i.url);
+    return { ...i, url: l && !l.kind && l.issue === i.number ? i.url : null };
+  });
 
 /** The listing as read from disk, or null for anything that is not this repository's. */
 function pullsEntry(parsed, nameWithOwner) {
@@ -347,8 +362,8 @@ function pullsEntry(parsed, nameWithOwner) {
   if (!Number.isFinite(read) || !Array.isArray(parsed.pulls) || !Array.isArray(parsed.milestones)) return null;
   const pulls = parsed.pulls.filter((p) => {
     const l = link(p?.url);
-    return Number.isInteger(p.number) && l?.kind === 'pull' && l.issue === p.number && sameRepo(l.repo, nameWithOwner);
-  });
+    return p && Number.isInteger(p.number) && l?.kind === 'pull' && l.issue === p.number && sameRepo(l.repo, nameWithOwner);
+  }).map((p) => ({ ...p, closes: closesOf(p.closes) }));
   const milestones = parsed.milestones.filter((m) => m && Number.isInteger(m.number) && typeof m.title === 'string' && m.title);
   const total = Number.isInteger(parsed.total) ? parsed.total : pulls.length;
   return { read, milestones, pulls, total, listed: pulls.length };

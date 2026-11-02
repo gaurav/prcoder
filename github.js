@@ -611,6 +611,47 @@ export async function setBody(cwd, prUrl, body) {
 }
 
 /**
+ * A milestone as the PR pane carries one: number, title (rid of control
+ * characters, as every title from GitHub is) and due date, from GraphQL's
+ * `dueOn` or REST's `due_on`; null for none.
+ */
+export const milestoneOf = (m) => (m
+  ? { number: m.number, title: printable(m.title ?? '').trim() || `#${m.number}`, dueOn: m.dueOn ?? m.due_on ?? null }
+  : null);
+
+/**
+ * Puts an issue or a pull request -- the issues endpoint is both's, and
+ * `{ owner, repo, number }` is what parsePrUrl answers -- on milestone
+ * `milestone`, or on none for null, and answers with the milestone GitHub now
+ * has it on (milestoneOf).
+ *
+ * Through the REST endpoint rather than `gh pr edit --milestone`: that takes a
+ * title, and resolves it to a number with a listing of its own. This is the
+ * one call here that wants -F, whose conversion by shape every string argument
+ * is kept from (see the tests on setViewed): `milestone=4` has to reach GitHub
+ * as an Int and `milestone=null` as null, and a string of either is refused.
+ * The caller has already held `milestone` to a positive integer, so nothing
+ * else can be converted. A number the repository has no milestone for is
+ * GitHub's 422, "Validation Failed" (tried on #168, 2026-10-21).
+ *
+ * A caller without push access gets no such refusal: "milestone changes are
+ * silently dropped" (the endpoint's docs, read 2026-11-02), so success is the
+ * answer naming the milestone asked for, not the exit code. Without this the
+ * picker snapped back with nothing said, on the fork-into-parent pull requests
+ * its route is written for. The docs don't say what such a drop answers, and
+ * trying it takes an account with no push access to a repository of ours.
+ */
+export async function setIssueMilestone(cwd, { owner, repo, number }, milestone) {
+  const out = await gh(['api', '-X', 'PATCH', `repos/${owner}/${repo}/issues/${number}`,
+    '-F', `milestone=${milestone ?? 'null'}`], { cwd });
+  const now = milestoneOf(JSON.parse(out).milestone);
+  if ((now?.number ?? null) !== milestone) {
+    throw new Error(`GitHub left #${number} on ${now ? now.title : 'no milestone'}: changing a milestone takes push access to ${owner}/${repo}`);
+  }
+  return now;
+}
+
+/**
  * The issue number out of what `gh issue create` prints. It can emit notices
  * before the URL, so the last line is the one that matters.
  *
@@ -749,6 +790,33 @@ export async function issueLinks(cwd, prUrl, numbers) {
   }
 }
 
+// What a milestone holds, for its line: pull requests open, merged and
+// closed without merging, and issues open and closed. Both tabs read all five,
+// so a milestone's pie is the whole milestone and the same on either tab.
+// Milestone.issues is issues only, and pullRequests(states:CLOSED) leaves out
+// the merged ones -- both checked against this repository on 2026-10-24.
+const MILESTONE_COUNTS = 'openPulls: pullRequests(states:OPEN){ totalCount } mergedPulls: pullRequests(states:MERGED){ totalCount } '
+  + 'closedPulls: pullRequests(states:CLOSED){ totalCount } openIssues: issues(states:OPEN){ totalCount } closedIssues: issues(states:CLOSED){ totalCount }';
+
+/**
+ * A milestone node in the listings' shape, `closed` when GitHub says so, and
+ * `counts` its MILESTONE_COUNTS as `{ pulls: { open, merged, closed }, issues:
+ * { open, closed } }`, or null for a node without all five -- a pulls.json
+ * written before they were read.
+ */
+const milestoneRow = (m, description = '') => {
+  const n = (alias) => m[alias]?.totalCount;
+  const counts = {
+    pulls: { open: n('openPulls'), merged: n('mergedPulls'), closed: n('closedPulls') },
+    issues: { open: n('openIssues'), closed: n('closedIssues') },
+  };
+  return {
+    number: m.number, title: printable(m.title ?? '').trim() || `#${m.number}`,
+    dueOn: m.dueOn ?? null, description, closed: m.state === 'CLOSED',
+    counts: [...Object.values(counts.pulls), ...Object.values(counts.issues)].every(Number.isInteger) ? counts : null,
+  };
+};
+
 // Milestones come on every page, since the query is one text; repoIssues keeps
 // the first page's. `issueFieldValues` -- GitHub's per-issue custom fields,
 // where a priority would live -- is not asked for: on 2026-10-15 it answered
@@ -756,17 +824,18 @@ export async function issueLinks(cwd, prUrl, numbers) {
 // there is no priority here, and labels are the nearest thing (#66).
 const ISSUES_QUERY = `query($owner:String!,$repo:String!,$after:String){
   repository(owner:$owner,name:$repo){
-    milestones(first:50,states:OPEN){ nodes{ number title dueOn description } }
+    milestones(first:50,states:OPEN){ nodes{ number title dueOn description ${MILESTONE_COUNTS} } }
     issues(first:100,after:$after,states:OPEN,orderBy:{field:UPDATED_AT,direction:DESC}){
       totalCount pageInfo{ hasNextPage endCursor }
-      nodes{ number title url updatedAt body milestone{ number title dueOn state } labels(first:10){ nodes{ name } } } } } }`;
+      nodes{ number title url updatedAt body milestone{ number title dueOn state ${MILESTONE_COUNTS} } labels(first:10){ nodes{ name } } } } } }`;
 
 /**
  * The repository's open issues and open milestones, for the queue's Issues
- * tab: `{ milestones: [{ number, title, dueOn, description, closed }], issues:
+ * tab: `{ milestones: [{ number, title, dueOn, description, closed, counts }], issues:
  * [{ number, title, url, updatedAt, body, milestone, labels }], total, listed }`.
  * An issue's `milestone` is the milestone's number or null, and `labels` is
- * names only. Most recently updated first, as GitHub orders them. A
+ * names only, rid of control characters as the titles are (printable). Most
+ * recently updated first, as GitHub orders them. A
  * milestone an open issue is on but that is not among the open ones read --
  * closed with the issue still open, or past the first fifty -- is added from
  * the issue, `closed` if it is, so that every listed issue has a group to be
@@ -790,24 +859,17 @@ export async function repoIssues(cwd, owner, repo) {
     if (after) args.push('-f', `after=${after}`);
     const { data } = JSON.parse(await gh(args, { cwd }));
     const r = data.repository;
-    milestones ??= r.milestones.nodes.map((m) => ({
-      number: m.number, title: printable(m.title ?? '').trim() || `#${m.number}`,
-      dueOn: m.dueOn ?? null, description: printable(m.description ?? '').trim(), closed: false,
-    }));
+    milestones ??= r.milestones.nodes.map((m) => milestoneRow(m, printable(m.description ?? '').trim()));
     total = r.issues.totalCount;
     for (const i of r.issues.nodes) {
       issues.push({
         number: i.number, title: printable(i.title ?? '').trim() || `#${i.number}`, url: i.url,
         updatedAt: i.updatedAt ?? null, body: lf(i.body),
-        milestone: i.milestone?.number ?? null, labels: (i.labels?.nodes ?? []).map((l) => l.name),
+        milestone: i.milestone?.number ?? null,
+        labels: (i.labels?.nodes ?? []).map((l) => printable(l.name ?? '').trim()).filter(Boolean),
       });
       const m = i.milestone;
-      if (m && !milestones.some((k) => k.number === m.number)) {
-        milestones.push({
-          number: m.number, title: printable(m.title ?? '').trim() || `#${m.number}`,
-          dueOn: m.dueOn ?? null, description: '', closed: m.state === 'CLOSED',
-        });
-      }
+      if (m && !milestones.some((k) => k.number === m.number)) milestones.push(milestoneRow(m));
     }
     const { hasNextPage, endCursor } = r.issues.pageInfo;
     if (hasNextPage && !endCursor) throw new Error(`GitHub said ${owner}/${repo} has more issues, but gave no cursor to them`);
@@ -819,12 +881,12 @@ export async function repoIssues(cwd, owner, repo) {
 
 const PULLS_QUERY = `query($owner:String!,$repo:String!,$after:String){
   repository(owner:$owner,name:$repo){
-    milestones(first:50,states:OPEN){ nodes{ number title dueOn description } }
+    milestones(first:50,states:OPEN){ nodes{ number title dueOn description ${MILESTONE_COUNTS} } }
     pullRequests(first:100,after:$after,states:OPEN,orderBy:{field:UPDATED_AT,direction:DESC}){
       totalCount pageInfo{ hasNextPage endCursor }
       nodes{ number title url isDraft isCrossRepository headRefName baseRefName createdAt updatedAt
         author{ login } additions deletions changedFiles mergeStateStatus reviewDecision body
-        milestone{ number title dueOn state } labels(first:10){ nodes{ name } }
+        milestone{ number title dueOn state ${MILESTONE_COUNTS} } labels(first:10){ nodes{ name } }
         closingIssuesReferences(first:10){ nodes{ number title url milestone{ title } } }
         files(first:100){ nodes{ additions deletions viewerViewedState } } } } } }`;
 
@@ -844,13 +906,9 @@ export const MERGE_WORD = {
 };
 
 // ponytail: a lead longer than this is cut; the row shows two lines of it.
+// The cut can split a `**` pair, and the tab's inline() then shows the half
+// left over as written -- past the two lines, so cut at a word if it shows.
 const LEAD_MAX = 300;
-
-/** A milestone node in the listing's shape (repoIssues'), `closed` when GitHub says so. */
-const milestoneRow = (m, description = '') => ({
-  number: m.number, title: printable(m.title ?? '').trim() || `#${m.number}`,
-  dueOn: m.dueOn ?? null, description, closed: m.state === 'CLOSED',
-});
 
 /**
  * One node of PULLS_QUERY as the row the Pull requests tab draws. The first
@@ -941,19 +999,6 @@ export async function repoPulls(cwd, owner, repo) {
   }
   return { milestones, pulls, total, listed: pulls.length };
 }
-
-/**
- * Set an issue's milestone by title, or take it off with null; `kind` 'pull'
- * does the same for a pull request, through `gh pr edit`, whose two flags are
- * the same words (checked against gh 2.100.0 on 2026-10-19). `--milestone=`
- * with the `=`, so a title that starts with `-` is still the value and never
- * a flag; both flags checked against gh 2.100.0 on 2026-10-15. The number and
- * the title are the server's, looked up in the listing the tab was shown
- * (issueMove and pullMove in server.js), not the page's strings.
- */
-export const setMilestone = (cwd, nameWithOwner, number, title, kind = 'issue') =>
-  gh([kind === 'pull' ? 'pr' : 'issue', 'edit', String(number), '--repo', nameWithOwner,
-    ...(title == null ? ['--remove-milestone'] : [`--milestone=${title}`])], { cwd });
 
 /**
  * The one query issueLinks and lookupRef share. Numbers only are interpolated.
