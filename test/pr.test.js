@@ -237,6 +237,8 @@ for (const [why, body, numbers] of [
   ['a stray [ does not reach a link later in its paragraph', 'array[0 and #5, see [docs](https://x)', [5]],
   ['a placeholder character typed before a #N is dropped by both', '\u0001#5 \u0000#6', [5, 6]],
   ['a placeholder character typed inside a link is dropped by both', '[see #5](\u0000#notes) and #6', [5, 6]],
+  ['a #N inside a bare URL is part of the URL', 'https://a.com/(#5/x and #6', [6]],
+  ['a bare URL ends at a space or a )', '(https://a.com) #5 https://b.com #6', [5, 6]],
 ]) {
   test(`the Mentions row and the pane's links agree: ${why}`, () => {
     assert.deepEqual(mentions(body), numbers);
@@ -259,6 +261,13 @@ test('a bare URL stops at a markdown link written against it', () => {
   assert.doesNotMatch(out, /href="[^"]*<a /);
   // A code span is held the same way, and is not taken into an href either.
   assert.equal(href(inline('https://a.com`x`', where)), 'https://a.com');
+});
+
+// The mention rule ran over the href the bare-URL rule had just built, where a
+// `(` before the `#` is as good as a space, and closed it with an anchor's quote.
+test('a #N inside a bare URL stays in its href', () => {
+  const out = inline('https://a.com/(#5/x', { ...where, refs: allAnswered });
+  assert.equal(out, '<a href="https://a.com/(#5/x" target="_blank" rel="noopener">https://a.com/(#5/x</a>');
 });
 
 // The placeholders are the pane's: one typed into a description came back as

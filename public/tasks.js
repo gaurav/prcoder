@@ -35,6 +35,15 @@ export const unmarked = (s) => s.replace(/[\u0000\u0001]/g, '');
 export const mdLink = () => /\[([^[\]]+)\]\(([^)\s]+)\)/g;
 
 /**
+ * A bare URL: group 1 is what is before it, group 2 the URL. Stops at a
+ * placeholder (unmarked()): `https://a.com[x](…)` took the held link into its
+ * own href, where the link's quotes closed the attribute and the rest of it was
+ * read as new ones -- an event handler among them. A `#N` in one is not a
+ * mention, so inline() holds these aside and mentions() strips them too.
+ */
+export const bareUrl = () => /(^|[\s(])(https?:\/\/[^\s)\u0000\u0001]+)/g;
+
+/**
  * Whether the pane opens a markdown link to `href`: http(s), or a path in the
  * repository. Not another scheme, `javascript:` and `data:` among them, and
  * not a bare `#anchor`, a position on a page prcoder is not. target() in pr.js
@@ -236,6 +245,7 @@ export function mentions(body = '') {
   return blocks(body).flatMap((b) => (b.kind === 'code' ? [] : b.items ?? [b.text]))
     .flatMap((text) => [...unmarked(text).replace(/`[^`]+`/g, '\u0000')
       .replace(mdLink(), (m, _, href) => (opens(href) ? '\u0001' : m))
+      .replace(bareUrl(), (_, pre) => `${pre}\u0001`)
       .matchAll(mention())].map(([, , n]) => Number(n)));
 }
 

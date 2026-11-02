@@ -1,4 +1,4 @@
-import { withoutHtml, mention, unmarked, mdLink, opens, repoUrl, urlPath, blocks, sectionize } from './tasks.js';
+import { withoutHtml, mention, unmarked, mdLink, bareUrl, opens, repoUrl, urlPath, blocks, sectionize } from './tasks.js';
 import { kids, h, btn, ext, debug, tabBtn, writeThrough, fraction, mark, kept, fold } from './ui.js';
 import { fileTree, fileGroup, filesProgress, unlisted } from './filelist.js';
 import { refLabel, refClass } from './items.js';
@@ -1134,6 +1134,7 @@ export const inline = (s, where = links) => {
   const code = [];
   const held = [];
   const a = (href, text, attrs = '') => `<a href="${href}"${attrs} target="_blank" rel="noopener">${text}</a>`;
+  const hold = (html) => `\u0001${held.push(html) - 1}\u0001`;
   return escape(unmarked(s))
     .replace(/`([^`]+)`/g, (_, c) => `\u0000${code.push(c) - 1}\u0000`)
     .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
@@ -1146,17 +1147,15 @@ export const inline = (s, where = links) => {
     // mention like any other, and mentions() lists it.
     .replace(mdLink(), (m, text, href) => {
       const url = target(href, where);
-      return url ? `\u0001${held.push(a(url, text)) - 1}\u0001` : m;
+      return url ? hold(a(url, text)) : m;
     })
-    // Not across a placeholder: `https://a.com[x](…)` took the held link into
-    // its own href, where the link's quotes closed the attribute and the rest
-    // of it was read as new ones -- an event handler among them.
-    .replace(/(^|[\s(])(https?:\/\/[^\s)\u0000\u0001]+)/g, (_, pre, url) => pre + a(url, url))
-    // After the bare-URL rule, so a `#` inside an href this just built is not
-    // a mention: those are preceded by a path character, and a mention has to
-    // start a word. mentions() in tasks.js reads the same pattern over the same
-    // shown text, less the same markdown links, which is what puts the same
-    // numbers in the Mentions row.
+    // Held as well: the mention rule took the `(#5` in `https://a.com/(#5/x`
+    // for a mention, in the href this had just built, and the anchor it wrote
+    // there closed the attribute.
+    .replace(bareUrl(), (_, pre, url) => pre + hold(a(url, url)))
+    // mentions() in tasks.js reads the same pattern over the same shown text,
+    // less the same links, which is what puts the same numbers in the Mentions
+    // row.
     .replace(mention(), (m, pre, n) => (where ? pre + mentionLink(n, where, a) : m))
     .replace(/\u0001(\d+)\u0001/g, (_, i) => held[i])
     .replace(/\n/g, '<br>')
