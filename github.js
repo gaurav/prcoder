@@ -599,6 +599,11 @@ export async function fetchPatches(cwd, prUrl) {
     [f.filename, { patch: f.patch ?? null, from: f.previous_filename, deleted: f.status === 'removed' }]));
 }
 
+/**
+ * github.com only, as the `gh api` calls this feeds are: they name no host, so
+ * widening this alone would read the same owner/repo from github.com instead of
+ * refusing. Enterprise is #53.
+ */
 export function parsePrUrl(url) {
   const m = url.match(/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/);
   if (!m) throw new Error(`not a pull request URL: ${url}`);
@@ -688,9 +693,9 @@ export function rollup(checks) {
  *
  * Which repository is GitHub's `repository` on the reference, set against the
  * last two segments of the PR's repository URL by resolveRef, as the queue
- * compares them. Not by URL prefix: a remote spelled `www.github.com`, or any
- * other host GitHub's issue URL does not match, made this repository's own
- * issue another's. A reference with no `repository` is taken as this one's.
+ * compares them. Not by URL prefix: a remote spelled `www.github.com`, which
+ * GitHub's issue URL does not match, made this repository's own issue another's.
+ * A reference with no `repository` is taken as this one's.
  */
 export function linkedIssues(pr) {
   const seen = new Map();
