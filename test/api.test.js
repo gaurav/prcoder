@@ -311,8 +311,8 @@ test('/api/issue/milestone refuses an issue or a milestone the tab was not shown
   assert.deepEqual(await res.json(), { error: '#58 is not an open issue the Issues tab listed' });
 
   const listing = { issues: [{ number: 58 }, { number: 66 }], milestones: [{ number: 4, title: 'Needed soon' }, { number: 1, title: 'v1.0' }] };
-  assert.deepEqual(issueMove(listing, { number: 58, milestone: 'Needed soon' }), { number: 58, title: 'Needed soon' });
-  assert.deepEqual(issueMove(listing, { number: 66, milestone: null }), { number: 66, title: null });
+  assert.deepEqual(issueMove(listing, { number: 58, milestone: 'Needed soon' }), { number: 58, milestone: 4, title: 'Needed soon' });
+  assert.deepEqual(issueMove(listing, { number: 66, milestone: null }), { number: 66, milestone: null, title: null });
   assert.throws(() => issueMove(listing, { number: 59, milestone: 'Needed soon' }), { message: '#59 is not an open issue the Issues tab listed' });
   assert.throws(() => issueMove(listing, { number: '58', milestone: 'Needed soon' }), { message: '#58 is not an open issue the Issues tab listed' });
   assert.throws(() => issueMove(listing, { number: 58, milestone: 'needed soon' }), { message: '"needed soon" is not an open milestone the Issues tab listed' });
@@ -353,8 +353,8 @@ test('/api/pull/milestone refuses a pull request or a milestone the tab was not 
   assert.deepEqual(await res.json(), { error: '#151 is not an open pull request the Pull requests tab listed' });
 
   const listing = { pulls: [{ number: 151 }, { number: 153 }], milestones: [{ number: 4, title: 'Needed soon' }] };
-  assert.deepEqual(pullMove(listing, { number: 151, milestone: 'Needed soon' }), { number: 151, title: 'Needed soon' });
-  assert.deepEqual(pullMove(listing, { number: 153, milestone: null }), { number: 153, title: null });
+  assert.deepEqual(pullMove(listing, { number: 151, milestone: 'Needed soon' }), { number: 151, milestone: 4, title: 'Needed soon' });
+  assert.deepEqual(pullMove(listing, { number: 153, milestone: null }), { number: 153, milestone: null, title: null });
   assert.throws(() => pullMove(listing, { number: 152, milestone: 'Needed soon' }), { message: '#152 is not an open pull request the Pull requests tab listed' });
   assert.throws(() => pullMove(listing, { number: '151', milestone: 'Needed soon' }), { message: '#151 is not an open pull request the Pull requests tab listed' });
   assert.throws(() => pullMove(listing, { number: 151, milestone: 'needed soon' }), { message: '"needed soon" is not an open milestone the Pull requests tab listed' });

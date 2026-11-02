@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { text as readBody } from 'node:stream/consumers';
 import { spawn as ptySpawn } from 'node-pty';
 import { WebSocketServer } from 'ws';
-import { loadPr, prHeads, prUrl, prBody, parsePrUrl, listPrs, branchPrs, lookupPrs, ownPrs, pickPr, issueLinks, lookupRef, setViewed, setBody, createIssue, fetchPatches, runCount, repoPulls, repoIssues, setMilestone } from './github.js';
+import { loadPr, prHeads, prUrl, prBody, parsePrUrl, listPrs, branchPrs, lookupPrs, ownPrs, pickPr, issueLinks, lookupRef, setViewed, setBody, createIssue, fetchPatches, runCount, repoPulls, repoIssues, setIssueMilestone } from './github.js';
 import { notAWorkTree, snapshot, currentBranch, headCommit, commitsKnown, commitMemo, repoInfo, pushRepo, prScope, compareUrl, githubUrl, originOwner, wholePrRepo, checkoutPr, pushBranch, remoteBranchHead, trackingHead, localPatch, branchesBelow } from './git.js';
 import { bucket, fileUrl, fileViews } from './files.js';
 import { readPort, writePort, readPrs, writePrs, pick, useQueueFile, movedQueue, issueUrl, readPulls, writePulls } from './store.js';
@@ -384,10 +384,10 @@ const freshPulls = queuedRun(async () => {
 });
 
 /**
- * What /api/issue/milestone may do, from `listing`: `{ number, title }` for
- * gh, where `number` is an open issue the tab was shown and `title` one of
- * its milestones' titles, or null to take the milestone off. The page's
- * strings choose; the listing's are what reach gh -- the same hold
+ * What /api/issue/milestone may do, from `listing`: `{ number, milestone, title }`
+ * where `number` is an open issue the tab was shown and `milestone` the number
+ * of one of its milestones, found by title, or null to take the milestone off.
+ * The page's strings choose; the listing's are what reach gh -- the same hold
  * /api/pr/choose keeps on a pick. Pure, and exported for test/api.test.js.
  * pullMove is the same hold for /api/pull/milestone, on the pulls listing.
  */
@@ -397,11 +397,11 @@ export const pullMove = (listing, body) => heldMove(listing?.pulls, listing?.mil
 function heldMove(rows, milestones, what, tab, { number, milestone } = {}) {
   const row = rows?.find((r) => r.number === number);
   if (!row) throw new Error(`#${number ?? '?'} is not an open ${what} the ${tab} tab listed`);
-  if (milestone == null) return { number: row.number, title: null };
+  if (milestone == null) return { number: row.number, milestone: null, title: null };
   // A closed milestone is listed for the rows still on it, not as somewhere to move one.
   const found = milestones?.find((m) => m.title === milestone && !m.closed);
   if (!found) throw new Error(`"${milestone}" is not an open milestone the ${tab} tab listed`);
-  return { number: row.number, title: found.title };
+  return { number: row.number, milestone: found.number, title: found.title };
 }
 
 const routes = {
@@ -468,13 +468,14 @@ const routes = {
 
   /**
    * An issue dropped on a milestone group in the Issues tab, or one picked in
-   * its row: the milestone is set on GitHub (setMilestone), and the tab reads
+   * its row: the milestone is set on GitHub (setIssueMilestone), and the tab reads
    * the listing again. `milestone` is a title from the listing, or null to
    * take it off; issueMove holds both to what the tab was shown.
    */
   'POST /api/issue/milestone': async (body = {}) => {
-    const { number, title } = issueMove(listing, body);
-    await setMilestone(repo, (await repoFacts()).nameWithOwner, number, title);
+    const { number, milestone, title } = issueMove(listing, body);
+    const [owner, name] = (await repoFacts()).nameWithOwner.split('/');
+    await setIssueMilestone(repo, { owner, repo: name, number }, milestone);
     term.verbose(`put #${number} on ${title ? `milestone ${quote(title)}` : 'no milestone'}`);
     return { ok: true };
   },
@@ -501,12 +502,13 @@ const routes = {
   /**
    * A pull request dropped on a milestone group in the Pull requests tab, or
    * one picked in its opened row: the milestone is set on GitHub
-   * (setMilestone, through `gh pr edit`), and the tab reads the listing again.
+   * (setIssueMilestone, as an issue's is), and the tab reads the listing again.
    * pullMove holds the number and the title to what the tab was shown.
    */
   'POST /api/pull/milestone': async (body = {}) => {
-    const { number, title } = pullMove(pulls, body);
-    await setMilestone(repo, (await repoFacts()).nameWithOwner, number, title, 'pull');
+    const { number, milestone, title } = pullMove(pulls, body);
+    const [owner, name] = (await repoFacts()).nameWithOwner.split('/');
+    await setIssueMilestone(repo, { owner, repo: name, number }, milestone);
     term.verbose(`put pull request #${number} on ${title ? `milestone ${quote(title)}` : 'no milestone'}`);
     return { ok: true };
   },

@@ -611,6 +611,47 @@ export async function setBody(cwd, prUrl, body) {
 }
 
 /**
+ * A milestone as the PR pane carries one: number, title (rid of control
+ * characters, as every title from GitHub is) and due date, from GraphQL's
+ * `dueOn` or REST's `due_on`; null for none.
+ */
+export const milestoneOf = (m) => (m
+  ? { number: m.number, title: printable(m.title ?? '').trim() || `#${m.number}`, dueOn: m.dueOn ?? m.due_on ?? null }
+  : null);
+
+/**
+ * Puts an issue or a pull request -- the issues endpoint is both's, and
+ * `{ owner, repo, number }` is what parsePrUrl answers -- on milestone
+ * `milestone`, or on none for null, and answers with the milestone GitHub now
+ * has it on (milestoneOf).
+ *
+ * Through the REST endpoint rather than `gh pr edit --milestone`: that takes a
+ * title, and resolves it to a number with a listing of its own. This is the
+ * one call here that wants -F, whose conversion by shape every string argument
+ * is kept from (see the tests on setViewed): `milestone=4` has to reach GitHub
+ * as an Int and `milestone=null` as null, and a string of either is refused.
+ * The caller has already held `milestone` to a positive integer, so nothing
+ * else can be converted. A number the repository has no milestone for is
+ * GitHub's 422, "Validation Failed" (tried on #168, 2026-10-21).
+ *
+ * A caller without push access gets no such refusal: "milestone changes are
+ * silently dropped" (the endpoint's docs, read 2026-11-02), so success is the
+ * answer naming the milestone asked for, not the exit code. Without this the
+ * picker snapped back with nothing said, on the fork-into-parent pull requests
+ * its route is written for. The docs don't say what such a drop answers, and
+ * trying it takes an account with no push access to a repository of ours.
+ */
+export async function setIssueMilestone(cwd, { owner, repo, number }, milestone) {
+  const out = await gh(['api', '-X', 'PATCH', `repos/${owner}/${repo}/issues/${number}`,
+    '-F', `milestone=${milestone ?? 'null'}`], { cwd });
+  const now = milestoneOf(JSON.parse(out).milestone);
+  if ((now?.number ?? null) !== milestone) {
+    throw new Error(`GitHub left #${number} on ${now ? now.title : 'no milestone'}: changing a milestone takes push access to ${owner}/${repo}`);
+  }
+  return now;
+}
+
+/**
  * The issue number out of what `gh issue create` prints. It can emit notices
  * before the URL, so the last line is the one that matters.
  *
@@ -958,19 +999,6 @@ export async function repoPulls(cwd, owner, repo) {
   }
   return { milestones, pulls, total, listed: pulls.length };
 }
-
-/**
- * Set an issue's milestone by title, or take it off with null; `kind` 'pull'
- * does the same for a pull request, through `gh pr edit`, whose two flags are
- * the same words (checked against gh 2.100.0 on 2026-10-19). `--milestone=`
- * with the `=`, so a title that starts with `-` is still the value and never
- * a flag; both flags checked against gh 2.100.0 on 2026-10-15. The number and
- * the title are the server's, looked up in the listing the tab was shown
- * (issueMove and pullMove in server.js), not the page's strings.
- */
-export const setMilestone = (cwd, nameWithOwner, number, title, kind = 'issue') =>
-  gh([kind === 'pull' ? 'pr' : 'issue', 'edit', String(number), '--repo', nameWithOwner,
-    ...(title == null ? ['--remove-milestone'] : [`--milestone=${title}`])], { cwd });
 
 /**
  * The one query issueLinks and lookupRef share. Numbers only are interpolated.

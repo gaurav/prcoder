@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { rollup, linkedIssues, linksFrom, parsePrUrl, run, issueNumber, lf, setViewed, listPrs, loadPr, prHeads, branchPrs, lookupPrs, ownPrs, SEARCH_EVERY, UNREAD_FOR, pickPr, lookupRef, createIssue, repoIssues, setMilestone, repoPulls, pullRow, MERGE_WORD } from '../github.js';
+import { rollup, linkedIssues, linksFrom, parsePrUrl, run, issueNumber, lf, setViewed, listPrs, loadPr, prHeads, branchPrs, lookupPrs, ownPrs, SEARCH_EVERY, UNREAD_FOR, pickPr, lookupRef, createIssue, repoIssues, setIssueMilestone, repoPulls, pullRow, MERGE_WORD } from '../github.js';
 import { taskLines } from '../public/tasks.js';
 import { withGh, ghArgs, ghCalls, unix } from './stub-gh.js';
 
@@ -373,18 +373,18 @@ test('a second page of issues is read with its cursor, and the milestones come f
     assert.rejects(repoIssues(os.tmpdir(), 'gaurav', 'prcoder'), { message: 'error connecting to api.github.com' }));
 });
 
-// The one write about an issue: its milestone, by title, with the `=` that
-// keeps a title beginning with `-` a value. A pull request's is the same
-// write through `gh pr edit`.
-test('a milestone is set by title with =, and removed with the flag for that', { skip: unix }, async () => {
-  const set = await ghArgs(() => setMilestone(os.tmpdir(), 'o/r', 58, '-weird title'));
-  assert.deepEqual(set, ['issue', 'edit', '58', '--repo', 'o/r', '--milestone=-weird title']);
-  const off = await ghArgs(() => setMilestone(os.tmpdir(), 'o/r', 58, null));
-  assert.deepEqual(off, ['issue', 'edit', '58', '--repo', 'o/r', '--remove-milestone']);
-  const pull = await ghArgs(() => setMilestone(os.tmpdir(), 'o/r', 151, '-weird title', 'pull'));
-  assert.deepEqual(pull, ['pr', 'edit', '151', '--repo', 'o/r', '--milestone=-weird title']);
-  const pullOff = await ghArgs(() => setMilestone(os.tmpdir(), 'o/r', 151, null, 'pull'));
-  assert.deepEqual(pullOff, ['pr', 'edit', '151', '--repo', 'o/r', '--remove-milestone']);
+// The one write about an issue, through the endpoint a pull request's goes
+// through too: by number as -F, so it reaches GitHub as an Int or a null, and
+// an answer that does not name that milestone is a failure, since GitHub drops
+// the change without saying so for a caller with no push access.
+test('an issue is put on a milestone by number, and a change GitHub dropped is an error', { skip: unix }, async () => {
+  const issue = { owner: 'o', repo: 'r', number: 58 };
+  const on = await ghCalls(`echo '{"number":58,"milestone":{"number":4,"title":"Needed soon"}}'`, () => setIssueMilestone(os.tmpdir(), issue, 4));
+  assert.deepEqual(on.calls[0], ['api', '-X', 'PATCH', 'repos/o/r/issues/58', '-F', 'milestone=4']);
+  assert.deepEqual(on.out, { number: 4, title: 'Needed soon', dueOn: null });
+  const off = await ghCalls(`echo '{"number":58,"milestone":null}'`, () => setIssueMilestone(os.tmpdir(), issue, null));
+  assert.deepEqual(off.calls[0].slice(-2), ['-F', 'milestone=null']);
+  await assert.rejects(ghCalls(`echo '{"number":58,"milestone":null}'`, () => setIssueMilestone(os.tmpdir(), issue, 4)), /GitHub left #58 on no milestone/);
 });
 
 // The repository's open pull requests and milestones, as GitHub answered for
