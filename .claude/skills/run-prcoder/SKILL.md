@@ -111,7 +111,10 @@ Two rules for them, and for any script after them:
   description checkbox — in the PR pane or the queue's PR tab — edits the
   description on GitHub. Filing a queue item with ◎
   writes to GitHub too, and one-way: putting the queue back does not close the
-  issue. Snapshot the body with `gh pr view <n> --json body -q
+  issue. Dropping an Issues-tab row on a milestone line, or Move in its opened
+  row, sets that issue's milestone on GitHub, so route
+  `/api/issue/milestone` in a driver unless a real move is the point, and put a
+  real one back. Snapshot the body with `gh pr view <n> --json body -q
   .body` before, and diff after. Opening and closing a description's sections
   is not a write — the fold is browser state and never reaches GitHub — so the
   driver clicks them freely.
