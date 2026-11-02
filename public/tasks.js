@@ -19,8 +19,11 @@ export const mention = () => /(^|[\s(])#(\d+)\b/g;
  * pane would draw a link inside the link, which the browser splits in two. So
  * inline() in pr.js holds these aside before it looks for mentions and
  * mentions() strips them, by this one pattern.
+ *
+ * No `[` in the text: with one allowed, the `[` in `array[0 and #5, see
+ * [docs](x)` opened a link that ran to the far `]`, where GitHub links `docs`.
  */
-export const mdLink = () => /\[([^\]]+)\]\(([^)\s]+)\)/g;
+export const mdLink = () => /\[([^[\]]+)\]\(([^)\s]+)\)/g;
 
 /**
  * Whether the pane opens a markdown link to `href`: http(s), or a path in the

@@ -234,12 +234,19 @@ for (const [why, body, numbers] of [
   ['a quote with no space after its marker', '>#5', [5]],
   ['a task and a list item, each its own start', '- [ ] #5\n\n- #6', [5, 6]],
   ['a fence is not read', '```\n#5\n```\n#6', [6]],
+  ['a stray [ does not reach a link later in its paragraph', 'array[0 and #5, see [docs](https://x)', [5]],
 ]) {
   test(`the Mentions row and the pane's links agree: ${why}`, () => {
     assert.deepEqual(mentions(body), numbers);
     assert.deepEqual(linkedBy(body), numbers);
   });
 }
+
+// The text ran from the stray `[`, so the whole clause became the link.
+test('a link starts at the [ nearest its text', () => {
+  const out = inline('array[0 and more, see [docs](https://x)', where);
+  assert.match(out, /^array\[0 and more, see <a href="https:\/\/x"[^>]*>docs<\/a>$/);
+});
 
 // A bare URL ran on into the held link's placeholder, and putting the link back
 // put its quotes inside the URL's href="...": the rest was read as attributes.
