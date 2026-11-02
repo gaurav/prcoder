@@ -15,6 +15,46 @@
 export const mention = () => /(^|[\s(])#(\d+)\b/g;
 
 /**
+ * A block's text without \u0000 and \u0001, the placeholders inline() in pr.js
+ * and mentions() hold things aside with, so a description gets none of its own:
+ * typed, `\u00010\u0001` was put back as `undefined`, or as a copy of another
+ * link. Both readers start from this, or a `#5` after one is linked by one of
+ * them and not the other.
+ */
+export const unmarked = (s) => s.replace(/[\u0000\u0001]/g, '');
+
+/**
+ * A markdown link, `[text](href)`. A `#N` inside one is not a mention: the
+ * pane would draw a link inside the link, which the browser splits in two. So
+ * inline() in pr.js holds these aside before it looks for mentions and
+ * mentions() strips them, by this one pattern.
+ *
+ * No `[` in the text: with one allowed, the `[` in `array[0 and #5, see
+ * [docs](x)` opened a link that ran to the far `]`, where GitHub links `docs`.
+ */
+export const mdLink = () => /\[([^[\]]+)\]\(([^)\s]+)\)/g;
+
+/**
+ * A bare URL: group 1 is what is before it, group 2 the URL. Stops at a
+ * placeholder (unmarked()): `https://a.com[x](…)` took the held link into its
+ * own href, where the link's quotes closed the attribute and the rest of it was
+ * read as new ones -- an event handler among them. A `#N` in one is not a
+ * mention, so inline() holds these aside and mentions() strips them too.
+ */
+export const bareUrl = () => /(^|[\s(])(https?:\/\/[^\s)\u0000\u0001]+)/g;
+
+/**
+ * Whether the pane opens a markdown link to `href`: http(s), or a path in the
+ * repository. Not another scheme, `javascript:` and `data:` among them, and
+ * not a bare `#anchor`, a position on a page prcoder is not. target() in pr.js
+ * guards its hrefs with this; a link it fails stays its own source there, so
+ * mentions() counts the `#N` in its text as the pane draws it, and neither
+ * counts one in its href: the `(#5` in `[x](#5)` is an anchor, not pull request 5.
+ */
+export const opens = (href) =>
+  /^https?:\/\//.test(href) || !(/^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith('#'));
+
+/**
  * A reference to an issue or pull request in any repo, the four ways people
  * type one: `#91`, `owner/name#91`, `name#91`, and a github.com `/issues/` or
  * `/pull/` URL, whatever follows its number. Wider than mention(), which stays
@@ -187,10 +227,28 @@ export function fences(body) {
  * outside fences and code spans, which is everywhere inline() does not reach.
  * The Mentions row is built from this, so a `Fixes #123` inside a template's
  * comment no longer lists an issue the description never shows.
+ *
+ * A code span or a link is replaced by a character, not removed, because
+ * inline() leaves a placeholder where each was, and a placeholder is not the
+ * space or line start a mention needs. Removed, the `#5` in `[x](y)#5` was
+ * listed here and not linked there. A link the pane will not open (opens())
+ * is left, as the pane leaves it, and the `#12` in `[see #12](#notes)` counts;
+ * only its `](href)` goes.
+ *
+ * Read a block at a time, from blocks(), because inline() is handed one at a
+ * time. Over the whole text, a stray `[` or backtick paired with one paragraphs
+ * later and took the `#5` between them, which the pane still linked. A quote's
+ * marker is gone from a block too, so `>#5` is listed as it is linked.
+ *
+ * One difference is left: a top-level heading is a fold's title, drawn as plain
+ * text, so the `#5` in `## After #5` is listed here and not linked there.
  */
 export function mentions(body = '') {
-  return fences(withoutHtml(body)).flatMap((chunk) => (chunk.code != null ? []
-    : [...chunk.text.replace(/`[^`]+`/g, '').matchAll(mention())].map(([, , n]) => Number(n))));
+  return blocks(body).flatMap((b) => (b.kind === 'code' ? [] : b.items ?? [b.text]))
+    .flatMap((text) => [...unmarked(text).replace(/`[^`]+`/g, '\u0000')
+      .replace(mdLink(), (m, text, href) => (opens(href) ? '\u0001' : `[${text}\u0001`))
+      .replace(bareUrl(), (_, pre) => `${pre}\u0001`)
+      .matchAll(mention())].map(([, , n]) => Number(n)));
 }
 
 /**
