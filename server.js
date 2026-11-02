@@ -351,7 +351,9 @@ let listing = null;
 export function issueMove(listing, { number, milestone } = {}) {
   const issue = listing?.issues.find((i) => i.number === number);
   if (!issue) throw new Error(`#${number ?? '?'} is not an open issue the Issues tab listed`);
-  if (milestone == null) return { number: issue.number, milestone: null, title: null };
+  // null exactly, not == null: a body with no `milestone` at all, which is what
+  // JSON.stringify makes of an undefined, has not asked for it to be taken off.
+  if (milestone === null) return { number: issue.number, milestone: null, title: null };
   const found = listing.milestones.find((m) => m.title === milestone);
   if (!found) throw new Error(`"${milestone}" is not an open milestone the Issues tab listed`);
   return { number: issue.number, milestone: found.number, title: found.title };
