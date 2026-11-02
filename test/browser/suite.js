@@ -288,6 +288,34 @@ test('the issues the description mentions are listed below it, titled', { skip }
   assert.equal(await row.getAttribute('href'), `${REPO}/issues/7`);
 });
 
+// A closing reference's `owner/repo#N` has no bound on its length, and it sat
+// on one line in a column as wide as its widest label: the titles were pushed
+// out of a narrow pane, those of the short rows beside it too.
+test('a long label in another repository wraps, and leaves the titles room', { skip }, async () => {
+  const repo = 'some-long-organisation/some-long-repository-name';
+  const issues = [
+    { number: 1234, url: `https://github.test/${repo}/issues/1234`, closes: true, repo, title: 'Fix the far side', kind: 'issue' },
+    { number: 7, url: `${REPO}/issues/7`, closes: true, title: 'Per-route locking', kind: 'issue' },
+    { number: 27, url: `${REPO}/pull/27`, closes: true, title: 'Queue tabs', kind: 'pull' }];
+  const fresh = await newPage({ st: { ...status, pr: { ...pr, issues } } });
+  await fresh.locator('#pr').evaluate((p) => { p.style.flex = '0 0 375px'; p.style.width = '375px'; });
+  const { width, overflow, label, short, title } = await fresh.locator('.issues').evaluate((g) => ({
+    width: g.clientWidth,
+    overflow: g.scrollWidth - g.clientWidth,
+    label: g.querySelector('a .num').getBoundingClientRect().width,
+    short: [...g.querySelectorAll('a:not(:first-of-type) .num')].map((n) => n.getBoundingClientRect().height),
+    title: g.querySelector('a .ttl').getBoundingClientRect().width,
+  }));
+  assert.ok(width <= 400, `the pane is narrow here: ${width}px`);
+  assert.equal(overflow, 0);
+  assert.ok(label <= width / 2, `the label takes ${label} of ${width}px`);
+  assert.ok(title >= width / 3, `the title has ${title} of ${width}px`);
+  // The whole label is still there, and a short one stays on its line.
+  assert.equal(await fresh.locator('.issues a .num').first().textContent(), `${repo}#1234`);
+  assert.equal(short[0], short[1]);
+  await fresh.close();
+});
+
 // A bare #N is an issue or a pull request, and the list says which, as the
 // queue's tag does. An unknown kind -- the title lookup failed -- is a number.
 test('a mention that is a pull request is numbered PR #N', { skip }, async () => {

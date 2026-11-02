@@ -618,7 +618,10 @@ a { color: var(--accent); }
    scans; hover brings a title back to full colour. The label stays sans because
    it is a heading, in the same voice as the file groups and the sections. */
 .issues {
-  display: grid; grid-template-columns: max-content 1fr;
+  /* fit-content, not max-content: an `owner/repo#N` has no bound on its length,
+     and at max-content it pushed every row's title out of a narrow pane. It
+     wraps inside this cap (.num.other); short labels never reach it. */
+  display: grid; grid-template-columns: fit-content(45%) 1fr;
   column-gap: 8px; row-gap: 3px; margin: 14px 0 0;
   font-family: var(--serif); font-size: 13px; line-height: 1.4;
 }
@@ -632,6 +635,7 @@ a { color: var(--accent); }
   text-decoration: none;
 }
 .issues .num { color: var(--accent); text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.issues .num.other { white-space: normal; overflow-wrap: anywhere; }
 .issues .ttl { color: var(--dim); }
 .issues a:hover .ttl { color: var(--fg); text-decoration: underline; }
 

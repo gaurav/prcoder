@@ -1015,8 +1015,9 @@ const badge = (text, kind) => h('span', { className: `badge ${kind}` }, text);
  *
  * A pull request's number says `PR #27`, as the queue's tag does -- refLabel,
  * so the two cannot disagree; a bare `#N` is either on GitHub. An issue in
- * another repository that this one closes says `owner/repo#3`. The column is
- * right-aligned, so the digits still line up under an issue's.
+ * another repository that this one closes says `owner/repo#3`, and is the one
+ * label that may wrap (`.num.other`), having no bound on its length. The column
+ * is right-aligned, so the digits still line up under an issue's.
  */
 function issueRow(list, closes, label) {
   const kind = list.filter((i) => i.closes === closes);
@@ -1024,7 +1025,7 @@ function issueRow(list, closes, label) {
   return h('div', { className: 'issues' },
     h('span', { className: 'issues-label' }, label),
     ...kind.map((i) => ext(i.url, [
-      h('span', { className: 'num' }, refLabel({ issue: i.number, kind: i.kind, repo: i.repo })),
+      h('span', { className: i.repo ? 'num other' : 'num' }, refLabel({ issue: i.number, kind: i.kind, repo: i.repo })),
       ...(i.title ? [' ', h('span', { className: 'ttl' }, i.title)] : []),
     ])));
 }

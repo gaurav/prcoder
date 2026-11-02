@@ -253,7 +253,7 @@ in the window that is read rather than operated. Checklists in it are real check
 straight back to the description. It ends with the issues the description points at, one line
 each with its title: the ones this pull request closes, then the ones it only mentions, a pull
 request among them numbered `PR #N` as the queue's tags are, and an issue it closes in another
-repository named `owner/repo#N`. A bare `#41` in the prose is a link that shows its title only on
+repository named `owner/repo#N`, wrapped when it is long so the titles keep their room. A bare `#41` in the prose is a link that shows its title only on
 hover, tinted like those tags when it is a pull request, so the list is still where the titles can
 be read. What the renderer does and does not draw is in [Design.md](Design.md).
 
