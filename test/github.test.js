@@ -422,7 +422,6 @@ test('an issue is put on a milestone by number, and a change GitHub dropped is a
   const issue = { owner: 'o', repo: 'r', number: 58 };
   const on = await ghCalls(`echo '{"number":58,"milestone":{"number":4,"title":"Needed soon"}}'`, () => setIssueMilestone(os.tmpdir(), issue, 4));
   assert.deepEqual(on.calls[0], ['api', '-X', 'PATCH', 'repos/o/r/issues/58', '-F', 'milestone=4']);
-  assert.deepEqual(on.out, { number: 4, title: 'Needed soon', dueOn: null });
   const off = await ghCalls(`echo '{"number":58,"milestone":null}'`, () => setIssueMilestone(os.tmpdir(), issue, null));
   assert.deepEqual(off.calls[0].slice(-2), ['-F', 'milestone=null']);
   await assert.rejects(ghCalls(`echo '{"number":58,"milestone":null}'`, () => setIssueMilestone(os.tmpdir(), issue, 4)), /GitHub left #58 on no milestone/);

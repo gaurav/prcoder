@@ -615,35 +615,33 @@ export async function setBody(cwd, prUrl, body) {
 }
 
 /**
- * A milestone as the PR pane carries one: number, title (rid of control
- * characters, as every title from GitHub is) and due date, from GraphQL's
- * `dueOn` or REST's `due_on`; null for none.
+ * A milestone's number, title and due date, from GraphQL's nodes or REST's
+ * answer (which spells the date `due_on`, and nothing here reads it from
+ * there); null for none. The title is rid of control characters, as every
+ * title from GitHub is, and issueMove matches on it exactly, so this is the one
+ * place that says what a milestone's title is.
  */
-export const milestoneOf = (m) => (m
-  ? { number: m.number, title: printable(m.title ?? '').trim() || `#${m.number}`, dueOn: m.dueOn ?? m.due_on ?? null }
+const milestoneOf = (m) => (m
+  ? { number: m.number, title: printable(m.title ?? '').trim() || `#${m.number}`, dueOn: m.dueOn ?? null }
   : null);
 
 /**
- * Puts an issue or a pull request -- the issues endpoint is both's, and
- * `{ owner, repo, number }` is what parsePrUrl answers -- on milestone
- * `milestone`, or on none for null, and answers with the milestone GitHub now
- * has it on (milestoneOf).
+ * Puts issue `number` on milestone `milestone`, or on none for null.
  *
- * Through the REST endpoint rather than `gh pr edit --milestone`: that takes a
- * title, and resolves it to a number with a listing of its own. This is the
- * one call here that wants -F, whose conversion by shape every string argument
- * is kept from (see the tests on setViewed): `milestone=4` has to reach GitHub
- * as an Int and `milestone=null` as null, and a string of either is refused.
- * The caller has already held `milestone` to a positive integer, so nothing
- * else can be converted. A number the repository has no milestone for is
- * GitHub's 422, "Validation Failed" (tried on #168, 2026-10-21).
+ * Through the REST endpoint rather than `gh issue edit --milestone`: that takes
+ * a title, and resolves it to a number with a listing of its own. It wants -F,
+ * whose conversion by shape every string argument is kept from (see the tests
+ * on setViewed): `milestone=4` has to reach GitHub as an Int and
+ * `milestone=null` as null, and a string of either is refused. The caller has
+ * already held `milestone` to a positive integer, so nothing else can be
+ * converted. A number the repository has no milestone for is GitHub's 422,
+ * "Validation Failed" (tried on #168, 2026-10-21).
  *
  * A caller without push access gets no such refusal: "milestone changes are
  * silently dropped" (the endpoint's docs, read 2026-11-02), so success is the
- * answer naming the milestone asked for, not the exit code. Without this the
- * picker snapped back with nothing said, on the fork-into-parent pull requests
- * its route is written for. The docs don't say what such a drop answers, and
- * trying it takes an account with no push access to a repository of ours.
+ * answer naming the milestone asked for, not the exit code. The docs don't say
+ * what such a drop answers, and trying it takes an account with no push access
+ * to a repository of ours.
  */
 export async function setIssueMilestone(cwd, { owner, repo, number }, milestone) {
   const out = await gh(['api', '-X', 'PATCH', `repos/${owner}/${repo}/issues/${number}`,
@@ -652,7 +650,6 @@ export async function setIssueMilestone(cwd, { owner, repo, number }, milestone)
   if ((now?.number ?? null) !== milestone) {
     throw new Error(`GitHub left #${number} on ${now ? now.title : 'no milestone'}: changing a milestone takes push access to ${owner}/${repo}`);
   }
-  return now;
 }
 
 /**
@@ -881,8 +878,7 @@ export async function repoIssues(cwd, owner, repo) {
     const { data } = JSON.parse(await gh(args, { cwd }));
     const r = data.repository;
     milestones ??= r.milestones.nodes.map((m) => ({
-      number: m.number, title: printable(m.title ?? '').trim() || `#${m.number}`,
-      dueOn: m.dueOn ?? null, description: printable(m.description ?? '').trim(), closed: false,
+      ...milestoneOf(m), description: printable(m.description ?? '').trim(), closed: false,
     }));
     total = r.issues.totalCount;
     for (const i of r.issues.nodes) {
@@ -894,10 +890,7 @@ export async function repoIssues(cwd, owner, repo) {
       });
       const m = i.milestone;
       if (m && !milestones.some((k) => k.number === m.number)) {
-        milestones.push({
-          number: m.number, title: printable(m.title ?? '').trim() || `#${m.number}`,
-          dueOn: m.dueOn ?? null, description: '', closed: m.state === 'CLOSED',
-        });
+        milestones.push({ ...milestoneOf(m), description: '', closed: m.state === 'CLOSED' });
       }
     }
     const { hasNextPage, endCursor } = r.issues.pageInfo;
