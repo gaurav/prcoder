@@ -307,6 +307,13 @@ test('a #N the lookup answered links where GitHub says, titled, and a PR is mark
   assert.equal(href(inline('#29', { ...where, refs })), 'https://github.test/o/r/issues/29');
   // Not looked up: a plain link, as before.
   assert.doesNotMatch(inline('#30', { ...where, refs }), /title=|class=/);
+  // Nor when GitHub did not answer. withLinks leaves every number an entry, its
+  // title and kind null, so being in the map says nothing: this was `ref issue`,
+  // which says GitHub called it an issue.
+  const silent = { number: 32, url: 'https://github.test/o/r/issues/32', closes: false, title: null, kind: null };
+  const typo = inline('#32', { ...where, refs: new Map([[32, silent]]) });
+  assert.doesNotMatch(typo, /title=|class=/);
+  assert.equal(href(typo), silent.url);
 });
 
 // The row under the badges. Derived from the PR's own URL rather than from the

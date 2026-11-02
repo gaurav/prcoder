@@ -1171,8 +1171,12 @@ export const inline = (s, where = links) => {
  * which tints a pull request like the queue's `PR #N` tag (`.md a.ref.pull`;
  * an issue's is unstyled). The text stays the author's `#N`: it is their
  * sentence, and `Builds on PR #149` where they wrote `Builds on #149` is the
- * pane rewriting it. A number the lookup did not answer is a plain link, as
- * before.
+ * pane rewriting it.
+ *
+ * A number the lookup did not answer is a plain link, called neither. The title
+ * is what says so: withLinks leaves every number in `pr.issues`, its title and
+ * kind null for a typo, a failed call or one past the cap, and linksFrom keeps
+ * nothing that has no title.
  *
  * The title and the URL are GitHub's, so anyone's text, going into attributes
  * in a string set with innerHTML: both go through escape(), and the URL through
@@ -1183,9 +1187,9 @@ function mentionLink(n, where, a) {
   const found = where.refs?.get(Number(n));
   const github = target(found?.url ?? '', null);
   const url = github ? escape(github) : `${escape(where.repo)}/issues/${n}`;
-  if (!found) return a(url, `#${n}`);
-  const title = found.title ? ` title="${escape(`${refLabel({ issue: n, kind: found.kind })}: ${found.title}`)}"` : '';
-  return a(url, `#${n}`, ` class="ref ${refClass(found.kind)}"${title}`);
+  if (!found?.title) return a(url, `#${n}`);
+  const title = escape(`${refLabel({ issue: n, kind: found.kind })}: ${found.title}`);
+  return a(url, `#${n}`, ` class="ref ${refClass(found.kind)}" title="${title}"`);
 }
 
 /**
