@@ -95,6 +95,12 @@ timing has to be driven against that stub, not cat. cat is fine for
   30s for a box that is gone. It failed only on CI, where the stubbed save
   answers before Playwright's re-read (2026-10-02). This goes for
   `test/browser/suite.js` too.
+- **A key can't drive a native `<select>`'s open dropdown here.** On this Mac, headless, Alt+Down,
+  Space, Enter or F4 then an arrow and Enter send no `change` in either engine, so a script waiting
+  on one sees nothing, which looks like the page ignoring the pick (2026-11-02). A letter on the
+  closed select does change it. `selectOption()` is the way to make a pick, and it is a change with
+  no key behind it. For the keys, send the sequence yourself, as `keyThenChange` in
+  `test/browser/suite.js` does.
 - **Install `MutationObserver`s after `goto`, not in `addInitScript`.** At
   init time there is no `document.head` to observe, and the throw takes the
   rest of the init script with it.
