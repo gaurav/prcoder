@@ -1,4 +1,4 @@
-import { withoutHtml, mention, mdLink, opens, repoUrl, urlPath, blocks, sectionize } from './tasks.js';
+import { withoutHtml, mention, unmarked, mdLink, opens, repoUrl, urlPath, blocks, sectionize } from './tasks.js';
 import { kids, h, btn, ext, debug, tabBtn, writeThrough, fraction, mark, kept, fold } from './ui.js';
 import { fileTree, fileGroup, filesProgress, unlisted } from './filelist.js';
 import { refLabel, refClass } from './items.js';
@@ -1134,10 +1134,7 @@ export const inline = (s, where = links) => {
   const code = [];
   const held = [];
   const a = (href, text, attrs = '') => `<a href="${href}"${attrs} target="_blank" rel="noopener">${text}</a>`;
-  // \u0000 and \u0001 mark what is held aside, so a description gets none of
-  // its own: a typed `\u00010\u0001` was put back as `undefined`, or as a copy
-  // of another link.
-  return escape(s.replace(/[\u0000\u0001]/g, ''))
+  return escape(unmarked(s))
     .replace(/`([^`]+)`/g, (_, c) => `\u0000${code.push(c) - 1}\u0000`)
     .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
     .replace(/\*([^*\n]+)\*/g, '<em>$1</em>')

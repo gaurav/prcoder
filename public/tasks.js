@@ -15,6 +15,15 @@
 export const mention = () => /(^|[\s(])#(\d+)\b/g;
 
 /**
+ * A block's text without \u0000 and \u0001, the placeholders inline() in pr.js
+ * and mentions() hold things aside with, so a description gets none of its own:
+ * typed, `\u00010\u0001` was put back as `undefined`, or as a copy of another
+ * link. Both readers start from this, or a `#5` after one is linked by one of
+ * them and not the other.
+ */
+export const unmarked = (s) => s.replace(/[\u0000\u0001]/g, '');
+
+/**
  * A markdown link, `[text](href)`. A `#N` inside one is not a mention: the
  * pane would draw a link inside the link, which the browser splits in two. So
  * inline() in pr.js holds these aside before it looks for mentions and
@@ -225,7 +234,7 @@ export function fences(body) {
  */
 export function mentions(body = '') {
   return blocks(body).flatMap((b) => (b.kind === 'code' ? [] : b.items ?? [b.text]))
-    .flatMap((text) => [...text.replace(/`[^`]+`/g, '\u0000')
+    .flatMap((text) => [...unmarked(text).replace(/`[^`]+`/g, '\u0000')
       .replace(mdLink(), (m, _, href) => (opens(href) ? '\u0001' : m))
       .matchAll(mention())].map(([, , n]) => Number(n)));
 }

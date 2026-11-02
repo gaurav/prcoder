@@ -235,6 +235,8 @@ for (const [why, body, numbers] of [
   ['a task and a list item, each its own start', '- [ ] #5\n\n- #6', [5, 6]],
   ['a fence is not read', '```\n#5\n```\n#6', [6]],
   ['a stray [ does not reach a link later in its paragraph', 'array[0 and #5, see [docs](https://x)', [5]],
+  ['a placeholder character typed before a #N is dropped by both', '\u0001#5 \u0000#6', [5, 6]],
+  ['a placeholder character typed inside a link is dropped by both', '[see #5](\u0000#notes) and #6', [5, 6]],
 ]) {
   test(`the Mentions row and the pane's links agree: ${why}`, () => {
     assert.deepEqual(mentions(body), numbers);
