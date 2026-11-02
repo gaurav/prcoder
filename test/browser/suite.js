@@ -1745,35 +1745,54 @@ test('an issue row opens to its body through the description renderer, with Open
 // The one write the Issues tab makes: a row dragged onto a group, or its
 // milestone picked in the opened row. The route is mocked; the move is the POST
 // it gets and the listing being read again after.
-test('picking a milestone in an opened row posts the move and reads the listing again', { skip }, async () => {
+test('a milestone picked in an opened row is written by Move, and the keyboard follows the row', { skip }, async () => {
   const { fresh } = await issuesPage();
   const moves = [];
   await fresh.route('**/api/issue/milestone', (r) => { moves.push(r.request().postDataJSON()); return r.fulfill({ json: { ok: true } }); });
   await fresh.locator('[data-group="m:1"] summary .count').click();
   await fresh.locator('[data-group="m:1"] .item .disclose').click();
-  const pick = fresh.locator('[data-group="m:1"] .issue-body select.milestone');
-  assert.deepEqual(await pick.locator('option').allTextContents(), ['No milestone', 'v0.1', 'v1.0', 'Needed soon', 'Not urgent']);
-  assert.equal(await pick.inputValue(), 'v1.0');
-  let again = fresh.waitForResponse('**/api/issues');
-  await pick.selectOption('Needed soon');
-  await again;
+  const opened = (group) => fresh.locator(`[data-group="${group}"] .issue-body select.milestone`);
+  const moveBtn = (group) => fresh.locator(`[data-group="${group}"] .issue-ways button`);
+  const moved = (milestone) => fresh.route('**/api/issues', (r) => r.fulfill({ json: { ...ISSUES,
+    issues: ISSUES.issues.map((i) => (i.number === 58 ? { ...i, milestone } : i)) } }));
+  assert.deepEqual(await opened('m:1').locator('option').allTextContents(), ['No milestone', 'v0.1', 'v1.0', 'Needed soon', 'Not urgent']);
+  assert.equal(await opened('m:1').inputValue(), 'v1.0');
+  assert.equal(await moveBtn('m:1').isDisabled(), true);
+  // Changing the select writes nothing: an arrow key on a closed one fires
+  // change on Linux and Windows. Stepping back disables Move again.
+  await opened('m:1').selectOption('Not urgent');
+  assert.equal(await moveBtn('m:1').isDisabled(), false);
+  await opened('m:1').selectOption('v1.0');
+  assert.equal(await moveBtn('m:1').isDisabled(), true);
+  await opened('m:1').selectOption('Needed soon');
+  assert.deepEqual(moves, []);
+  // Move writes it once, and focus goes to the select in the group it landed
+  // in, which was folded and is opened for it.
+  await moved(4);
+  await moveBtn('m:1').click();
+  await fresh.waitForFunction(() => document.activeElement?.matches?.('[data-group="m:4"] select.milestone[data-issue="58"]'));
   assert.deepEqual(moves, [{ number: 58, milestone: 'Needed soon' }]);
-  // A listed row has a grip to drag it by, and a mention that is not listed has none.
-  assert.equal(await fresh.locator('[data-group="m:1"] .item .grip').getAttribute('draggable'), 'true');
-  assert.equal(await fresh.locator('[data-group="mentioned"] .item .grip').getAttribute('draggable'), null);
-  // The row is still open after the listing came back; off a milestone altogether is null.
-  again = fresh.waitForResponse('**/api/issues');
-  await fresh.locator('[data-group="m:1"] .issue-body select.milestone').selectOption('');
-  await again;
+  assert.equal(await fresh.locator('[data-group="m:4"]').evaluate((d) => d.open), true);
+  assert.equal(await opened('m:4').inputValue(), 'Needed soon');
+  // Off a milestone altogether is null.
+  await moved(null);
+  await opened('m:4').selectOption('');
+  await moveBtn('m:4').click();
+  await fresh.waitForFunction(() => document.activeElement?.matches?.('[data-group="m:none"] select.milestone[data-issue="58"]'));
   assert.deepEqual(moves.at(-1), { number: 58, milestone: null });
+  // A listed row has a grip to drag it by, and a mention that is not listed has none.
+  assert.equal(await fresh.locator('[data-group="m:none"] .item[data-issue="58"] .grip').getAttribute('draggable'), 'true');
+  assert.equal(await fresh.locator('[data-group="mentioned"] .item .grip').getAttribute('draggable'), null);
   // A refusal is a toast, the select goes back to where the issue still is, and
   // the listing is read again, in case that is what the server and page differ on.
   await fresh.route('**/api/issue/milestone', (r) => r.fulfill({ status: 500, json: { error: '"x" is not an open milestone the Issues tab listed' } }));
-  again = fresh.waitForResponse('**/api/issues');
-  await fresh.locator('[data-group="m:1"] .issue-body select.milestone').selectOption('Not urgent');
+  const again = fresh.waitForResponse('**/api/issues');
+  await opened('m:none').selectOption('Not urgent');
+  await moveBtn('m:none').click();
   await fresh.waitForFunction(() => document.getElementById('toast').textContent.includes('not an open milestone'));
   await again;
-  assert.equal(await fresh.locator('[data-group="m:1"] .issue-body select.milestone').inputValue(), 'v1.0');
+  await fresh.waitForFunction(() => document.activeElement?.matches?.('[data-group="m:none"] select.milestone[data-issue="58"]'));
+  assert.equal(await opened('m:none').inputValue(), '');
   await fresh.close();
 });
 

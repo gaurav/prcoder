@@ -345,6 +345,8 @@ function loadIssues(again = false) {
 }
 let issuesLoading = null;
 let issuesStale = false;
+// Until no listing is out, including the one a stale one asks for as it lands.
+const listingsIn = async () => { while (issuesLoading) await issuesLoading; };
 // Why the first listing could not be read, so the tab says so after the toast
 // has gone: left reading "Reading…" and `…`, it looked as if it still was.
 // Once there is a listing, a failed refresh keeps it and only the toast says.
@@ -659,14 +661,32 @@ function issueRow(i, { repo = null, kind = 'issue', closed = false, text = i.tit
   // The keyboard's way to the drag's move: every open milestone, and none. A
   // closed one is there only when the issue is on it, to say so: it is the
   // current value and cannot be chosen again.
-  const pick = h('select', { className: 'milestone', ariaLabel: `milestone of #${i.number}` },
+  const pick = h('select', { className: 'milestone', ariaLabel: `milestone of #${i.number}`, dataset: { issue: String(i.number) } },
     h('option', { value: '' }, 'No milestone'),
     ...rankMilestones(listing.milestones).filter((m) => !m.closed || m.number === i.milestone).map((m) =>
       h('option', { value: m.title, selected: m.number === i.milestone, disabled: !!m.closed }, m.closed ? `${m.title} (closed)` : m.title)));
-  pick.onchange = () => move(i.number, pick.value || null);
+  // Written by Move, not on change. On Linux and Windows, Chromium and Firefox
+  // fire change for every arrow key on a closed select, so stepping to a
+  // milestone two down wrote the one in between to GitHub on the way. What a
+  // repaint does to a choice not yet moved is put it back: nothing was written.
+  const was = pick.value;
+  const go = btn('Move', async () => {
+    go.disabled = true;
+    const from = pick.closest('[data-group]').dataset.group;
+    await move(i.number, pick.value || null);
+    await listingsIn();
+    // The repaint took the focus with it, and the row may have gone to a folded
+    // group: the keyboard follows it there, unless it has since gone elsewhere.
+    const now = listed.get(i.number);
+    if (tab !== 'issues' || !now || (document.activeElement && document.activeElement !== document.body)) return;
+    const to = from === 'mentioned' ? from : `m:${now.milestone ?? NONE}`;
+    if (!query.trim() && closedGroups.delete(to)) drawGroups();
+    document.querySelector(`#queue-body [data-group="${to}"] select.milestone[data-issue="${i.number}"]`)?.focus();
+  }, { title: 'set this milestone on GitHub', disabled: true });
+  pick.onchange = () => { go.disabled = pick.value === was; };
   const body = h('li', { className: 'issue-body md' },
     ...(i.body ? blocks(i.body).map((b) => blockNode(b, null, where)) : [h('p', { className: 'empty' }, 'No description.')]),
-    h('div', { className: 'issue-ways' }, pick, ext(i.url, 'Open on GitHub', { className: 'primary open-issue' })));
+    h('div', { className: 'issue-ways' }, pick, go, ext(i.url, 'Open on GitHub', { className: 'primary open-issue' })));
   return [row, body];
 }
 
@@ -698,7 +718,7 @@ const ISSUE = 'application/x-prcoder-issue';
 
 /**
  * An issue onto a milestone, or off one with null: the one write the Issues
- * tab makes, on a drop or a pick in the row's select, which GitHub's own rules
+ * tab makes, on a drop or Move beside the row's select, which GitHub's own rules
  * call triage. The tab reads the listing again after, so the row moves group
  * once GitHub has it and not before -- asking again even when a listing is
  * already out, since that one was asked for before the write.

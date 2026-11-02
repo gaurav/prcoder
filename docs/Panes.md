@@ -437,11 +437,15 @@ the issue, as the PR tab's ↓ copies a checklist line.
 
 A row can be dragged by its grip (⠿) onto a milestone's line, or onto **No milestone**, and that sets the issue's
 milestone on GitHub -- the one thing the tab writes, and the only kind of change it makes to an
-issue. The line lights up while a row is over it. The opened row has the same move as a select,
-for the keyboard: every open milestone and none, with the current one chosen. A closed milestone
+issue. The line lights up while a row is over it. The opened row has the same move for the
+keyboard: a select of every open milestone and none, with the current one chosen, and **Move**
+beside it. Choosing writes nothing until Move, since an arrow key on a closed select fires its
+change event in some browsers, and after it focus goes back to the select, in the group the row
+landed in, which is opened for it. A closed milestone
 has a group only for the issues still on it, so it can be moved off but not onto: its line takes no
 drop, and it is in the select only of an issue already on it, marked closed. Either way the tab
-reads the listing again once GitHub has it, so the row moves group then and not before. A refusal
+reads the listing again once GitHub has it, so the row moves group then and not before. A listing
+that lands during a drag, or with focus in the select or Move, is drawn when that ends. A refusal
 is a toast, and the tab reads the listing again then too, with the row left where GitHub has it. Only the grip drags, so a row's title can still be selected and its #N link
 dragged as a link. A mention that is not one of the repository's open issues has no grip,
 since there is nothing of it here to move. Milestones themselves are not made, renamed or closed
