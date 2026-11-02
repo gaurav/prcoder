@@ -441,8 +441,8 @@ issue. The line lights up while a row is over it. The opened row has the same mo
 for the keyboard: every open milestone and none, with the current one chosen. A closed milestone
 has a group only for the issues still on it, so it can be moved off but not onto: its line takes no
 drop, and it is in the select only of an issue already on it, marked closed. Either way the tab
-reads the listing again once GitHub has it, so the row moves group then and not before, and a
-refusal is a toast. Only the grip drags, so a row's title can still be selected and its #N link
+reads the listing again once GitHub has it, so the row moves group then and not before. A refusal
+is a toast, and the tab reads the listing again then too, with the row left where GitHub has it. Only the grip drags, so a row's title can still be selected and its #N link
 dragged as a link. A mention that is not one of the repository's open issues has no grip,
 since there is nothing of it here to move. Milestones themselves are not made, renamed or closed
 from prcoder.

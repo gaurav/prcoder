@@ -677,13 +677,19 @@ const ISSUE = 'application/x-prcoder-issue';
  * call triage. The tab reads the listing again after, so the row moves group
  * once GitHub has it and not before -- asking again even when a listing is
  * already out, since that one was asked for before the write.
+ *
+ * After a refusal too. The listing the server holds the move to can differ from
+ * the one drawn -- it starts empty after a restart, and a milestone can be
+ * renamed on GitHub -- and left alone every move stays refused until the tab is
+ * left and come back to. The repaint is for the row's select, which is still
+ * showing what was refused, and which the listing may take seconds to put back.
  */
 async function move(number, milestone) {
   try {
     await api('/api/issue/milestone', { number, milestone });
   } catch (e) {
     toast(e.message, true);
-    return;
+    paintGroups();
   }
   loadIssues(true);
 }

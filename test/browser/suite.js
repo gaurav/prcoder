@@ -1766,10 +1766,14 @@ test('picking a milestone in an opened row posts the move and reads the listing 
   await fresh.locator('[data-group="m:1"] .issue-body select.milestone').selectOption('');
   await again;
   assert.deepEqual(moves.at(-1), { number: 58, milestone: null });
-  // A refusal is a toast, and nothing is read again.
+  // A refusal is a toast, the select goes back to where the issue still is, and
+  // the listing is read again, in case that is what the server and page differ on.
   await fresh.route('**/api/issue/milestone', (r) => r.fulfill({ status: 500, json: { error: '"x" is not an open milestone the Issues tab listed' } }));
+  again = fresh.waitForResponse('**/api/issues');
   await fresh.locator('[data-group="m:1"] .issue-body select.milestone').selectOption('Not urgent');
   await fresh.waitForFunction(() => document.getElementById('toast').textContent.includes('not an open milestone'));
+  await again;
+  assert.equal(await fresh.locator('[data-group="m:1"] .issue-body select.milestone').inputValue(), 'v1.0');
   await fresh.close();
 });
 
