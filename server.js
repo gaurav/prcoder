@@ -338,7 +338,9 @@ const poll = () => (queuedPoll ??= serial(() => {
   return status();
 }));
 
-// What the Issues tab was last shown (GET /api/issues), for a route that acts on one of its rows.
+// What the Issues tab was last shown (GET /api/issues), for a route that acts
+// on one of its rows: numbers and milestones, without the bodies of up to 500
+// issues, which nothing here reads again.
 let listing = null;
 
 /**
@@ -417,7 +419,7 @@ const routes = {
       repoIssues(repo, owner, name),
       numbers.length ? issueLinks(repo, cur.url, numbers.slice(0, 50)) : new Map(),
     ]);
-    listing = found;
+    listing = { issues: found.issues.map(({ number }) => ({ number })), milestones: found.milestones };
     return { ...found, repo: nameWithOwner, mentions: numbers.map((number) => ({ number, ...links.get(number) })) };
   },
 
