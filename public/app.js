@@ -624,19 +624,22 @@ const reachMilestones = () => { if (Date.now() - milestonesAt > 10_000) loadMile
  * request the picker was drawn for, not `last`'s: that is the one a poll has
  * moved the pane to, and sending it would pass the server's check that the
  * pick is about the pull request on screen, and move the wrong one.
+ *
+ * `picking` is the pick on its way, here and in the draw key rather than a
+ * `disabled` on the select, which the next repaint would replace with an
+ * enabled picker on the old milestone, as if the pick had been undone.
  */
+let picking = null;
 async function pickMilestone(url, number) {
-  let milestone;
+  picking = { url, number };
+  if (last) paint(last);
   try {
-    ({ milestone } = await api('/api/pr/milestone', { url, number }));
+    const { milestone } = await api('/api/pr/milestone', { url, number });
+    if (last?.pr?.url === url) last.pr.milestone = milestone;
   } catch (e) {
     toast(e.message, true);
-    drawn = null;
-    if (last) paint(last);
-    return;
   }
-  if (last?.pr?.url === url) last.pr.milestone = milestone;
-  drawn = null;
+  if (picking?.url === url) picking = null;
   if (last) paint(last);
 }
 
@@ -810,7 +813,7 @@ function paint(status) {
       milestones = null;
       loadMilestones(`now on ${milestonesFor}`);
     }
-    const key = JSON.stringify([status.pr, status.scope, stack, blocked, [...below.values()], status.remotes, milestones]);
+    const key = JSON.stringify([status.pr, status.scope, stack, blocked, [...below.values()], status.remotes, milestones, picking]);
     if (key !== drawn) {
       drawn = key;
       renderPr({ ...status.pr, note: NOTES[status.scope] }, {
@@ -826,6 +829,7 @@ function paint(status) {
         onSwitch: switchPr,
         blocked,
         milestones: milestones?.list ?? null,
+        picking: picking?.url === status.pr.url ? picking : null,
         onMilestone: pickMilestone,
         onMilestoneReach: reachMilestones,
       });

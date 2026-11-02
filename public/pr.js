@@ -822,18 +822,19 @@ export const milestoneChoices = (current, list) => {
  * focus reaches the picker (`onMilestoneReach`), as the switcher's list is. A
  * pick goes to `onMilestone` with this pull request's URL and the number, or null for none; the picker
  * gives up the focus as it does, so the answer redraws it too (paintHead).
+ * Until GitHub answers it shows the pick, disabled (`handlers.picking`).
  */
-const milestoneRow = (pr, { milestones = null, onMilestone, onMilestoneReach } = {}) => {
+const milestoneRow = (pr, { milestones = null, picking = null, onMilestone, onMilestoneReach } = {}) => {
   const m = pr.milestone;
+  const on = (picking ? picking.number : m?.number) ?? '';
   const sel = h('select', {
-    ariaLabel: 'milestone', disabled: !onMilestone, dataset: { pr: pr.url, on: m ? String(m.number) : '' },
+    ariaLabel: 'milestone', disabled: !onMilestone || !!picking, dataset: { pr: pr.url, on: String(on) },
     title: m ? 'move this pull request to another milestone' : 'not on a milestone: pick one to triage it',
   }, ...milestoneChoices(m, milestones).map((c) => h('option', { value: c.value, ...(c.title ? { title: c.title } : {}) }, c.text)));
   sel.value = sel.dataset.on;
   sel.onchange = () => {
     const number = sel.value ? Number(sel.value) : null;
     sel.blur();
-    sel.disabled = true;
     onMilestone(pr.url, number);
   };
   sel.onpointerenter = () => onMilestoneReach?.();

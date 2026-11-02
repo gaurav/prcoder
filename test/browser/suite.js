@@ -588,6 +588,36 @@ test('a failed read of the milestones waits for the picker to be reached before 
   await p.close();
 });
 
+// While a pick is on its way the picker says what was picked and takes no other.
+// That was a `disabled` on one node, gone with any repaint: a poll, or a tab
+// click, brought back an enabled picker showing the old milestone, as if the
+// pick had been undone, with a second one there to be made.
+test('a pick on its way survives a repaint, disabled and showing what was picked', { skip }, async () => {
+  const p = await newPage({ clock: true });
+  await p.waitForFunction(() => document.querySelectorAll('#pr-head .pr-milestone option').length > 1);
+  let release;
+  const held = new Promise((r) => { release = r; });
+  await p.route('**/api/pr/milestone', async (r) => { await held; return r.fulfill({ json: { milestone: { number: 4, title: 'Needed soon', dueOn: null } } }); });
+  await p.route('**/api/status', (r) => r.fulfill({ json: { ...status, pr: { ...pr, title: 'Retitled on GitHub' } } }));
+  const sent = p.waitForRequest('**/api/pr/milestone');
+  await p.locator('#pr-head .pr-milestone select').selectOption('4');
+  await sent;
+  const polled = p.waitForResponse('**/api/status');
+  await p.clock.fastForward(61_000);
+  await polled;
+  await p.locator('#pr-head .pr-title', { hasText: 'Retitled on GitHub' }).waitFor();
+  const sel = p.locator('#pr-head .pr-milestone select');
+  assert.equal(await sel.isDisabled(), true, 'after a poll');
+  assert.equal(await sel.inputValue(), '4');
+  await p.locator('#pr-head .tabs button', { hasText: 'Stack' }).click();
+  assert.equal(await sel.isDisabled(), true, 'after a tab click');
+  assert.equal(await sel.inputValue(), '4');
+  release();
+  await p.waitForSelector('#pr-head .pr-milestone:not(.untriaged) select:not(:disabled)');
+  assert.equal(await sel.inputValue(), '4');
+  await p.close();
+});
+
 // A pick GitHub refuses is a toast with its reason, and the picker goes back
 // to where the pull request still is rather than showing a pick that never
 // happened.

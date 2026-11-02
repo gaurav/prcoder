@@ -141,7 +141,8 @@ reads *no milestone — needs triage*. The line is a picker, as wide as the line
 none, then the repository's open milestones in the order the queue's Issues tab groups them, so the
 dated ones soonest first, and the pull request's own milestone even when that one is closed; each is
 its title, with its due date on hover where the browser shows an option's tooltip. Picking one puts
-the pull request on it on GitHub there and then, and picking none takes it off. The word *milestone*
+the pull request on it on GitHub there and then, and picking none takes it off; until GitHub
+answers the picker shows the pick, disabled, through any redraw. The word *milestone*
 in front links to the milestone on GitHub while there is one, and a dated milestone says when it is
 due after the picker, as the queue's milestone lines do: *due in 3 days*, yellow within a week, a
 red badge once past, with the date on hover. The list is read when the pull request's repository
