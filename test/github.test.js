@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { rollup, linkedIssues, linksFrom, parsePrUrl, run, issueNumber, lf, setViewed, listPrs, loadPr, prHeads, branchPrs, lookupPrs, ownPrs, SEARCH_EVERY, UNREAD_FOR, pickPr, lookupRef, createIssue, repoIssues } from '../github.js';
+import { rollup, linkedIssues, linksFrom, parsePrUrl, run, issueNumber, lf, setViewed, listPrs, loadPr, prHeads, branchPrs, lookupPrs, ownPrs, SEARCH_EVERY, UNREAD_FOR, pickPr, lookupRef, issueLinks, createIssue, repoIssues } from '../github.js';
 import { taskLines } from '../public/tasks.js';
 import { withGh, ghArgs, ghCalls, unix } from './stub-gh.js';
 
@@ -167,6 +167,20 @@ test('what resolved survives a NOT_FOUND on what did not, pull request URL and a
     title: 'Drive the diff pane', url: 'https://github.com/gaurav/prcoder/issues/86',
     state: 'CLOSED', kind: 'issue', updatedAt: null,
   }]]));
+});
+
+// `#1000000000000000000000` went into the query as `i1e+21`, and one alias that
+// does not parse is an answer with no data for any number. Digits are fine: on
+// 2026-11-02 GitHub gave 3000000000 and 100000000000000000000 the same NOT_FOUND
+// as a typo, beside the data for the rest.
+test('a number too long to write as digits is not asked about', { skip: unix }, async () => {
+  const url = 'https://github.com/o/r/pull/7';
+  const args = await ghArgs(() => issueLinks(os.tmpdir(), url, [27, 3000000000, 1e21, Infinity, 2 ** 53]));
+  const query = args.find((a) => a.startsWith('query='));
+  assert.deepEqual([...query.matchAll(/\bi(\S+): issueOrPullRequest/g)].map(([, n]) => n), ['27', '3000000000']);
+  // With nothing left to ask, gh is not called.
+  const { out, calls } = await ghCalls("echo '{}'", () => issueLinks(os.tmpdir(), url, [1e21]));
+  assert.deepEqual([out, calls], [new Map(), []]);
 });
 
 test('a response that is not a response is nothing, never a throw', () => {

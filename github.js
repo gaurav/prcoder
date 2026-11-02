@@ -779,10 +779,19 @@ export async function issueLinks(cwd, prUrl, numbers) {
   return repoLinks(cwd, owner, repo, numbers);
 }
 
-/** issueLinks, in any repository gh can read: another's closing references. */
+/**
+ * issueLinks, in any repository gh can read: another's closing references.
+ *
+ * Safe integers only. From 1e21 a number prints as `1e+21`, which is no alias,
+ * and a query that does not parse has no data for any number. Below that GitHub
+ * takes any digits and answers NOT_FOUND (checked 2026-11-02), but past 2^53 the
+ * number has already been rounded, so its answer would be another number's.
+ */
 async function repoLinks(cwd, owner, repo, numbers) {
+  const asked = numbers.filter((n) => Number.isSafeInteger(n));
+  if (!asked.length) return new Map();
   try {
-    return linksFrom(await gh(linksArgs(owner, repo, numbers), { cwd }));
+    return linksFrom(await gh(linksArgs(owner, repo, asked), { cwd }));
   } catch (e) {
     return linksFrom(e.stdout);
   }
