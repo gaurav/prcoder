@@ -296,6 +296,15 @@ test('checkboxes render with their state, and a tick posts through', { skip }, a
   assert.ok((await page.locator('#pr-head .tab').allTextContents()).includes('Detail (2/3)'));
 });
 
+test('the queue\'s PR tab names each box by its line', { skip }, async () => {
+  const fresh = await newPage();
+  await fresh.locator('#queue-body .tab[data-tab="pr"]').click();
+  const box = fresh.locator('#queue-body').getByRole('checkbox', { name: 'first task', exact: true });
+  assert.equal(await box.count(), 1);
+  assert.equal(await box.isChecked(), false);
+  await fresh.close();
+});
+
 // The poll repaints the whole description whenever anything on the pull request
 // moved, and the text of a line is there to be copied.
 test('a selection in the description survives a repaint, unless its text moved', { skip }, async () => {

@@ -421,7 +421,8 @@ function prList() {
   const tasks = prTasks();
   if (!tasks.length) return h('p', { className: 'empty' }, `No checkboxes in PR #${pr.number}'s description.`);
   return h('ul', { className: 'items' }, ...tasks.map((t) => {
-    const box = h('input', { type: 'checkbox', checked: t.done, title: 'tick this on GitHub' });
+    // Named by its line, or every box in the list is called by the one title.
+    const box = h('input', { type: 'checkbox', checked: t.done, title: 'tick this on GitHub', ariaLabel: t.text });
     writeThrough(box, (v) => deps.onTask({ index: t.index, done: v, text: t.text }));
     return h('li', { className: 'item source' },
       box,
