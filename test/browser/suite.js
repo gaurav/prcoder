@@ -2292,6 +2292,48 @@ test('a move made while the pull requests are being read is read again after', {
   await fresh.close();
 });
 
+// A press on the title selects it, and only the grip drags: see the Issues tab's.
+test('a pull request row\'s title can be selected, and it has a grip only by milestone', { skip }, async () => {
+  const { fresh } = await pullsPage(PULLS, { stale: false });
+  await noToast(fresh);
+  const row = fresh.locator('.item[data-pull="30"]');
+  assert.equal(await row.getAttribute('draggable'), null);
+  assert.equal(await row.locator('.grip').getAttribute('draggable'), 'true');
+  await row.scrollIntoViewIfNeeded();
+  const box = await row.locator('.text').boundingBox();
+  await fresh.mouse.move(box.x + 2, box.y + 8);
+  await fresh.mouse.down();
+  await fresh.mouse.move(box.x + 60, box.y + 8, { steps: 5 });
+  await fresh.mouse.up();
+  assert.ok((await fresh.evaluate(() => getSelection().toString())).length > 3);
+  await fresh.locator('.pull-controls .pull-group').selectOption('none');
+  assert.equal(await row.locator('.grip').count(), 0, 'one list has no line to drop it on');
+  await fresh.locator('.pull-controls .pull-group').selectOption('milestone');
+  await fresh.close();
+});
+
+test('a pull request\'s grip moves it, and its link\'s drag does not', { skip: skip || (engineName === 'firefox' && 'dragTo sends Firefox no drag events') }, async () => {
+  // One row open and the pane scrolled to it, so the next group's line is on
+  // screen before the press (tools/CLAUDE.md): a row is three lines tall.
+  const { fresh } = await pullsPage({ ...PULLS, pulls: PULLS.pulls.filter((p) => p.number === 30) }, { stale: false });
+  await noToast(fresh);
+  const moves = [];
+  await fresh.route('**/api/pull/milestone', (r) => { moves.push(r.request().postDataJSON()); return r.fulfill({ json: { ok: true } }); });
+  const row = fresh.locator('.item[data-pull="30"]');
+  const next = fresh.locator('.pull-groups [data-group]').nth(1);
+  const milestone = await next.locator('summary a').first().textContent();
+  const onScreen = () => fresh.evaluate(() => { document.getElementById('queue-body').scrollTop = 100; });
+  await onScreen();
+  await row.locator('.tag.pull').dragTo(next.locator('summary'));
+  await row.locator('.grip').dragTo(fresh.locator('[data-group="p:none"] summary'));
+  const read = fresh.waitForResponse('**/api/pulls');
+  await onScreen();
+  await row.locator('.grip').dragTo(next.locator('summary'));
+  await read;
+  assert.deepEqual(moves, [{ number: 30, milestone }]);
+  await fresh.close();
+});
+
 // As on the Issues tab, but for Switch: focus on it holds nothing, so the row
 // can say `here` once the checkout's poll lands.
 test('a pull request listing landing with a row\'s select or drag in use waits, and focus on Switch does not hold it', { skip }, async () => {
@@ -2324,9 +2366,9 @@ test('a pull request listing landing with a row\'s select or drag in use waits, 
   assert.ok((await title.textContent()).endsWith('two'));
   await fresh.evaluate(() => document.activeElement?.blur());
 
-  // A drag: the row stays until its dragend.
-  await held('.item[data-pull="30"]');
-  await fresh.evaluate(() => window.held.classList.add('dragging'));
+  // A drag: the row stays until its dragend, whose event needs the row there.
+  await held('.item[data-pull="30"] .grip');
+  await fresh.evaluate(() => window.held.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer: new DataTransfer() })));
   await land('three');
   assert.equal(await fresh.evaluate(() => window.held.isConnected), true);
   assert.ok(!(await title.textContent()).endsWith('three'));

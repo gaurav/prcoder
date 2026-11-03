@@ -528,8 +528,8 @@ the last listing -- the server's, or `.prcoder/pulls.json`, which keeps it betwe
 reads GitHub behind it, unless the listing is under a minute old. The line under the groups says
 when the listing was read and `updating…` while the read is out; ⟳ beside the search reads
 whatever the age. A read that fails leaves the list as it was and says so in a toast.
-A row dragged onto a milestone's line, or the pick in its opened row, sets the pull request's
+A row dragged by its grip (⠿) onto a milestone's line, or the pick in its opened row, sets the pull request's
 milestone on GitHub through the same call as an issue's, with the same hold: the number and the
 title both come from the listing the tab was shown. The opened row's select waits for **Move**, focus
-follows the row, a refusal reads the listing again, and a listing landing mid-gesture waits, all as on the Issues tab. Here the whole row
-still drags.
+follows the row, a refusal reads the listing again, and a listing landing mid-gesture waits, all as on the Issues tab. Only by milestone is there a grip,
+since one list and by stack have no line to drop a row on.

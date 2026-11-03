@@ -720,6 +720,25 @@ function issueGroups() {
 }
 
 /**
+ * What a row is dragged onto a milestone by. A grip and not the row: a draggable
+ * row takes a press on its title for a drag, so the title could not be selected
+ * to copy, and every drag starting in it -- the #N link's, a selection's -- would
+ * have been tagged as the row and moved it when dropped on a group.
+ */
+const dragGrip = () => h('span', { className: 'grip', draggable: true, ariaHidden: 'true', title: 'drag onto a milestone to move it there' }, '⠿');
+
+/** `grip`'s drag as `row`'s: it carries `number` as `type`, and the row follows the pointer. */
+function carries(grip, row, type, number) {
+  grip.addEventListener('dragstart', (e) => {
+    e.dataTransfer.setData(type, String(number));
+    const at = row.getBoundingClientRect();
+    e.dataTransfer.setDragImage(row, e.clientX - at.left, e.clientY - at.top);
+    row.classList.add('dragging');
+  });
+  grip.addEventListener('dragend', () => { row.classList.remove('dragging'); payGroups(); });
+}
+
+/**
  * An opened row's way to the move its drag makes, for the keyboard: a select of
  * none and every open milestone in rank, and Move. A closed milestone is listed
  * only to show that the row is on it, and cannot be picked -- the server refuses
@@ -758,9 +777,8 @@ function moveControl(name, number, current, ariaLabel) {
 
 /**
  * A group's summary as somewhere to drop a row: lit while one is over it, and
- * the drop is `mover(number, milestone)`. Only a drag of `type` counts -- ISSUE
- * from an issue row's grip, PULL from a pull request's row -- so a link or a
- * text selection dragged across the pane is not a row, nor is a row from the
+ * the drop is `mover(number, milestone)`. Only a grip's drag of `type` counts --
+ * ISSUE on the Issues tab, PULL on Pull requests -- so a link or a text selection dragged across the pane is not a row, nor is a row from the
  * other tab.
  */
 function dropTarget(summary, milestone, type = ISSUE, mover = move) {
@@ -834,12 +852,8 @@ function issueRow(i, { repo = null, kind = 'issue', closed = false, text = i.tit
   }, { className: 'disclose', title: open ? 'hide the issue' : 'show the issue', ariaExpanded: String(open) }) : h('span', { className: 'disclose' });
   // A listed issue can be dragged onto a milestone group; a mention that is
   // not listed cannot, since the move is held to the listing, and gets an empty
-  // grip so the rows still line up. By the grip and not the row: a draggable row
-  // takes a press on its title for a drag, so the title could not be selected
-  // to copy, and every drag starting in it -- the #N link's, a selection's --
-  // would have been tagged ISSUE and moved the issue when dropped on a group.
-  const grip = can ? h('span', { className: 'grip', draggable: true, ariaHidden: 'true', title: 'drag onto a milestone to move it there' }, '⠿')
-    : h('span', { className: 'grip' });
+  // grip so the rows still line up.
+  const grip = can ? dragGrip() : h('span', { className: 'grip' });
   const row = h('li', { className: `item source${closed ? ' closed' : ''}`, dataset: { issue: String(i.number) } },
     grip,
     disclose,
@@ -854,16 +868,7 @@ function issueRow(i, { repo = null, kind = 'issue', closed = false, text = i.tit
         if (!deps.sendToClaude(forClaude(item, deps.home?.()), false)) toast('The coding agent is not connected — nothing was typed.', true);
       }, { title: 'type into the coding agent, with the link' }),
       btn('↓', () => pull(text, i.number, kind, repo), { title: 'copy into your queue' })));
-  if (can) {
-    grip.addEventListener('dragstart', (e) => {
-      e.dataTransfer.setData(ISSUE, String(i.number));
-      // The row is what is being moved, so it is what follows the pointer.
-      const at = row.getBoundingClientRect();
-      e.dataTransfer.setDragImage(row, e.clientX - at.left, e.clientY - at.top);
-      row.classList.add('dragging');
-    });
-    grip.addEventListener('dragend', () => { row.classList.remove('dragging'); payGroups(); });
-  }
+  if (can) carries(grip, row, ISSUE, i.number);
   if (!open) return [row];
   const home = deps.home?.();
   const where = home ? { repo: `https://github.com/${home}`, ref: 'HEAD' } : null;
@@ -895,9 +900,9 @@ function mentionRepo(i) {
  * NaN -- which splice() reads as 0, so the first item moved and was saved.
  */
 const ROW = 'application/x-prcoder-row';
-// And what an issue row's grip's drag carries, its number, for a milestone group to
-// take; the same reason for a type of its own. A pull request row's is a
-// third, so the two tabs' groups take only their own rows.
+// And what a grip's drag carries, its row's number, for a milestone group to
+// take; the same reason for a type of its own. One per tab, so the two tabs'
+// groups take only their own rows.
 const ISSUE = 'application/x-prcoder-issue';
 const PULL = 'application/x-prcoder-pull';
 
@@ -1035,7 +1040,7 @@ export function paintPulls() {
  * (rankMilestones), as the Issues tab groups, or one list. Each row carries what picking the next one turns
  * on (pullRow), opens to the description, can be typed to the coding agent
  * with its link (▶), copied into Local (↓), or checked out (Switch), and is
- * dragged onto a group to put it on that milestone.
+ * dragged by its grip onto a group to put it on that milestone.
  */
 function pullList() {
   const search = h('input', {
@@ -1203,7 +1208,7 @@ function pullRow(p, depth = 0) {
     className: 'pr-go', disabled: blocked,
     title: blocked ? 'Commit or stash your changes first' : `Check out #${p.number} here`,
   }));
-  const classes = ['item', 'source', 'pull', here ? 'here' : ''].filter(Boolean).join(' ');
+  const classes = ['item', 'source', 'pull', here ? 'here' : '', pullGroup === 'milestone' ? 'gripped' : ''].filter(Boolean).join(' ');
   // What it is built on, nearest first, down to the branch the bottom one
   // merges into: `on main`, or `on #13 › #12 › main`. The first word says
   // whether it can merge straight away, and the rest how far the stack runs.
@@ -1243,7 +1248,10 @@ function pullRow(p, depth = 0) {
   ].filter(([node]) => node);
   // `depth` is the by-stack list's indent, a CSS variable the row and its
   // opened body both carry (--depth), so the body stays under its row.
-  const row = h('li', { className: classes, dataset: { pull: String(p.number) }, draggable: true, style: `--depth:${depth}`, ...(here && { ariaCurrent: 'true' }) },
+  // Only where there are groups to drop it on.
+  const grip = pullGroup === 'milestone' ? dragGrip() : null;
+  const row = h('li', { className: classes, dataset: { pull: String(p.number) }, style: `--depth:${depth}`, ...(here && { ariaCurrent: 'true' }) },
+    grip,
     disclose,
     ext(p.url, `PR #${p.number}`, { className: 'tag pull' }),
     // The title and what follows it in one box, so a long title wraps inside it
@@ -1259,8 +1267,7 @@ function pullRow(p, depth = 0) {
     h('div', { className: 'pr-facts' }, ...facts.flatMap(([node, plain], i) => [i && plain && facts[i - 1][1] ? h('span', { className: 'sep' }, '·') : null, node])),
     p.lead ? h('p', { className: 'pr-lead', innerHTML: inline(p.lead, where) }) : null,
     closes);
-  row.addEventListener('dragstart', (e) => { e.dataTransfer.setData(PULL, String(p.number)); row.classList.add('dragging'); });
-  row.addEventListener('dragend', () => { row.classList.remove('dragging'); payGroups(); });
+  if (grip) carries(grip, row, PULL, p.number);
   if (!open) return [row];
   const body = h('li', { className: 'issue-body md', style: `--depth:${depth}` },
     h('div', { className: 'issue-ways' }, moveControl('pulls', p.number, p.milestone, `milestone of pull request #${p.number}`), go(), ext(p.url, 'Open on GitHub', { className: 'primary open-issue' })));
