@@ -2292,6 +2292,49 @@ test('a move made while the pull requests are being read is read again after', {
   await fresh.close();
 });
 
+// As on the Issues tab, but for Switch: focus on it holds nothing, so the row
+// can say `here` once the checkout's poll lands.
+test('a pull request listing landing with a row\'s select or drag in use waits, and focus on Switch does not hold it', { skip }, async () => {
+  const { fresh } = await pullsPage(PULLS, { stale: false });
+  const retitled = (tag) => ({ ...PULLS, read: NOW, pulls: PULLS.pulls.map((p) => ({ ...p, title: `${p.title} ${tag}` })) });
+  await fresh.locator('.item[data-pull="30"] .disclose').click();
+  const title = fresh.locator('.item[data-pull="30"] .text');
+  const land = async (tag) => {
+    await fresh.route('**/api/pulls', (r) => r.fulfill({ json: retitled(tag) }));
+    const landed = fresh.waitForResponse('**/api/pulls');
+    await fresh.evaluate(() => document.querySelector('#queue-body .pull-reload').click());
+    await landed;
+    await fresh.evaluate(() => new Promise((res) => setTimeout(res, 50)));
+  };
+  const held = (sel) => fresh.evaluate((s) => { window.held = document.querySelector(s); }, sel);
+  const select = '[data-group="p:none"] .move-to select';
+
+  // Focus in the select: same element, old title, until it leaves.
+  await fresh.locator(select).focus();
+  await held(select);
+  await land('one');
+  assert.equal(await fresh.evaluate(() => window.held.isConnected), true);
+  assert.ok(!(await title.textContent()).endsWith('one'));
+  await fresh.evaluate(() => document.activeElement.blur());
+  await fresh.waitForFunction(() => document.querySelector('.item[data-pull="30"] .text').textContent.endsWith('one'));
+
+  // Focus on Switch holds nothing.
+  await fresh.locator('[data-group="p:none"] .issue-ways .pr-go').focus();
+  await land('two');
+  assert.ok((await title.textContent()).endsWith('two'));
+  await fresh.evaluate(() => document.activeElement?.blur());
+
+  // A drag: the row stays until its dragend.
+  await held('.item[data-pull="30"]');
+  await fresh.evaluate(() => window.held.classList.add('dragging'));
+  await land('three');
+  assert.equal(await fresh.evaluate(() => window.held.isConnected), true);
+  assert.ok(!(await title.textContent()).endsWith('three'));
+  await fresh.evaluate(() => { window.held.dispatchEvent(new DragEvent('dragend', { bubbles: true })); });
+  assert.ok((await title.textContent()).endsWith('three'));
+  await fresh.close();
+});
+
 test('a fresh listing is not read again within a minute, and ⟳ reads one whatever its age', { skip }, async () => {
   const { fresh, asked } = await pullsPage(PULLS, { stale: false });
   await fresh.waitForTimeout(200);

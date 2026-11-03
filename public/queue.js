@@ -461,11 +461,7 @@ function issueList() {
     query = search.value;
     paintIssues();
   };
-  const groups = h('div', { className: 'issue-groups' }, ...issueGroups());
-  // On the next task: during focusout the new focus is not settled yet, and may
-  // be another part of the same row.
-  groups.addEventListener('focusout', () => setTimeout(payGroups));
-  return h('div', { className: 'issues-pane' }, search, groups);
+  return h('div', { className: 'issues-pane' }, search, groupsList('issue-groups', issueGroups()));
 }
 
 /**
@@ -487,7 +483,19 @@ const drawGroups = () => {
   staleBreakdown();
 };
 const paintGroups = () => { if (groupsInUse()) groupsOwed = true; else drawGroups(); };
-const payGroups = () => { if (groupsOwed) paintGroups(); };
+/**
+ * The element a tab's groups are repainted into. A repaint held back is paid on
+ * the next task after focus leaves: during focusout the new focus is not settled
+ * yet, and may be the other half of the same control.
+ */
+const groupsList = (className, groups) => {
+  const list = h('div', { className }, ...groups);
+  list.addEventListener('focusout', () => setTimeout(payGroups));
+  return list;
+};
+const payGroups = () => {
+  if (groupsOwed) MOVES[tab]?.paint();
+};
 
 /** The groups and the tab's count, leaving the search box, its focus and its caret alone. */
 function paintIssues() {
@@ -1008,13 +1016,14 @@ async function readPulls(force) {
  * a bare branch in a stack lands (loadBelow), as the PR pane is repainted then.
  */
 const drawPulls = () => {
+  groupsOwed = false;
   document.querySelector('#queue-body .pull-groups')?.replaceChildren(...pullGroups());
   staleBreakdown();
 };
 
 export function paintPulls() {
   if (tab !== 'pulls') return;
-  drawPulls();
+  if (groupsInUse()) groupsOwed = true; else drawPulls();
   const t = document.querySelector('#queue-body .tab[data-tab="pulls"]');
   if (t) t.textContent = `${LABELS.pulls} (${pullCount()})`;
 }
@@ -1045,7 +1054,7 @@ function pullList() {
   const reload = btn('⟳', () => loadPulls(true), { className: 'pull-reload', title: 'read the pull requests again from GitHub', ariaLabel: 'read the pull requests again from GitHub' });
   return h('div', { className: 'pulls-pane' },
     h('div', { className: 'pull-controls' }, search, order, grouping, reload),
-    h('div', { className: 'pull-groups' }, ...pullGroups()));
+    groupsList('pull-groups', pullGroups()));
 }
 
 function pullGroups() {
@@ -1179,7 +1188,8 @@ function pullRow(p, depth = 0) {
   const where = home ? { repo: `https://github.com/${home}`, ref: 'HEAD' } : null;
   const disclose = btn(open ? '▾' : '▸', () => {
     if (open) expanded.delete(key); else expanded.add(key);
-    paintPulls();
+    // Not held, as an issue row's (issueRow): this is the user's own click.
+    drawPulls();
   }, { className: 'disclose', title: open ? 'hide its milestone and ways out' : 'show its milestone and ways out', ariaExpanded: String(open) });
   const review = REVIEW[p.reviewDecision];
   // `p.milestone` is a number and an issue's is a title (pullRow in github.js).
@@ -1250,7 +1260,7 @@ function pullRow(p, depth = 0) {
     p.lead ? h('p', { className: 'pr-lead', innerHTML: inline(p.lead, where) }) : null,
     closes);
   row.addEventListener('dragstart', (e) => { e.dataTransfer.setData(PULL, String(p.number)); row.classList.add('dragging'); });
-  row.addEventListener('dragend', () => row.classList.remove('dragging'));
+  row.addEventListener('dragend', () => { row.classList.remove('dragging'); payGroups(); });
   if (!open) return [row];
   const body = h('li', { className: 'issue-body md', style: `--depth:${depth}` },
     h('div', { className: 'issue-ways' }, moveControl('pulls', p.number, p.milestone, `milestone of pull request #${p.number}`), go(), ext(p.url, 'Open on GitHub', { className: 'primary open-issue' })));
