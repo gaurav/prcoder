@@ -530,5 +530,6 @@ when the listing was read and `updating…` while the read is out; ⟳ beside th
 whatever the age. A read that fails leaves the list as it was and says so in a toast.
 A row dragged onto a milestone's line, or the pick in its opened row, sets the pull request's
 milestone on GitHub through the same call as an issue's, with the same hold: the number and the
-title both come from the listing the tab was shown. Here the whole row drags and a pick writes as
-soon as it is made, where the Issues tab has a grip and Move.
+title both come from the listing the tab was shown. The opened row's select waits for **Move**, focus
+follows the row, and a refusal reads the listing again, all as on the Issues tab. Here the whole row
+still drags.

@@ -1825,7 +1825,7 @@ test('a milestone picked in an opened row is written by Move, and the keyboard f
   await fresh.locator('[data-group="m:1"] summary .count').click();
   await fresh.locator('[data-group="m:1"] .item .disclose').click();
   const opened = (group) => fresh.locator(`[data-group="${group}"] .issue-body select.milestone`);
-  const moveBtn = (group) => fresh.locator(`[data-group="${group}"] .issue-ways button`);
+  const moveBtn = (group) => fresh.locator(`[data-group="${group}"] .move-to button`);
   const moved = (milestone) => fresh.route('**/api/issues', (r) => r.fulfill({ json: { ...ISSUES,
     issues: ISSUES.issues.map((i) => (i.number === 58 ? { ...i, milestone } : i)) } }));
   assert.deepEqual(await opened('m:1').locator('option').allTextContents(), ['No milestone', 'v0.1', 'v1.0', 'Needed soon', 'Not urgent']);
@@ -1843,7 +1843,7 @@ test('a milestone picked in an opened row is written by Move, and the keyboard f
   // in, which was folded and is opened for it.
   await moved(4);
   await moveBtn('m:1').click();
-  await fresh.waitForFunction(() => document.activeElement?.matches?.('[data-group="m:4"] select.milestone[data-issue="58"]'));
+  await fresh.waitForFunction(() => document.activeElement?.matches?.('[data-group="m:4"] select.milestone[data-move="58"]'));
   assert.deepEqual(moves, [{ number: 58, milestone: 'Needed soon' }]);
   assert.equal(await fresh.locator('[data-group="m:4"]').evaluate((d) => d.open), true);
   assert.equal(await opened('m:4').inputValue(), 'Needed soon');
@@ -1851,7 +1851,7 @@ test('a milestone picked in an opened row is written by Move, and the keyboard f
   await moved(null);
   await opened('m:4').selectOption('');
   await moveBtn('m:4').click();
-  await fresh.waitForFunction(() => document.activeElement?.matches?.('[data-group="m:none"] select.milestone[data-issue="58"]'));
+  await fresh.waitForFunction(() => document.activeElement?.matches?.('[data-group="m:none"] select.milestone[data-move="58"]'));
   assert.deepEqual(moves.at(-1), { number: 58, milestone: null });
   // Dropped onto a group's line, the row moves there; a pull request's row is
   // not taken, since it is not an issue (until 2026-10-21 any drop threw).
@@ -1874,7 +1874,7 @@ test('a milestone picked in an opened row is written by Move, and the keyboard f
   await moveBtn('m:none').click();
   await fresh.waitForFunction(() => document.getElementById('toast').textContent.includes('not an open milestone'));
   await again;
-  await fresh.waitForFunction(() => document.activeElement?.matches?.('[data-group="m:none"] select.milestone[data-issue="58"]'));
+  await fresh.waitForFunction(() => document.activeElement?.matches?.('[data-group="m:none"] select.milestone[data-move="58"]'));
   assert.equal(await opened('m:none').inputValue(), '');
   await fresh.close();
 });
@@ -2282,6 +2282,7 @@ test('a move made while the pull requests are being read is read again after', {
   await fresh.waitForFunction(() => document.querySelector('#queue-body .pull-note')?.textContent.includes('updating'));
   await fresh.locator('.item[data-pull="30"] .disclose').click();
   await fresh.locator('[data-group="p:none"] .issue-body select.milestone').selectOption('Needed soon');
+  await fresh.locator('[data-group="p:none"] .move-to button').click();
   await fresh.waitForTimeout(200);
   assert.deepEqual(reads, [true], 'nothing new while the first is out');
   release();
@@ -2391,30 +2392,43 @@ test('searching the pull requests narrows the rows and counts them, and a row op
   await fresh.close();
 });
 
-test('picking a milestone in an opened pull request row posts the move and reads the listing again; Switch is the PR pane\'s', { skip }, async () => {
+test('a milestone picked in an opened pull request row is written by Move, and a refusal reads the listing again; Switch is the PR pane\'s', { skip }, async () => {
   const { fresh, asked } = await pullsPage();
   const moves = [];
   await fresh.route('**/api/pull/milestone', (r) => { moves.push(r.request().postDataJSON()); return r.fulfill({ json: { ok: true } }); });
   await fresh.locator('.item[data-pull="30"] .disclose').click();
   const pick = fresh.locator('[data-group="p:none"] .issue-body select.milestone');
+  const moveBtn = fresh.locator('[data-group="p:none"] .move-to button');
   assert.equal(await pick.inputValue(), '');
+  assert.equal(await moveBtn.isDisabled(), true);
   const before = asked.length;
+  // Choosing writes nothing, as an arrow key on a closed select fires change.
   await pick.selectOption('Needed soon');
-  await fresh.waitForFunction((n) => document.querySelectorAll('#queue-body .item.pull').length && n, before);
-  await fresh.waitForTimeout(200);
+  assert.deepEqual(moves, []);
+  const read = fresh.waitForResponse('**/api/pulls');
+  await moveBtn.click();
+  await read;
+  await fresh.waitForFunction(() => document.activeElement?.matches?.('[data-group="p:none"] select.milestone[data-move="30"]'));
   assert.deepEqual(moves, [{ number: 30, milestone: 'Needed soon' }]);
   assert.deepEqual(asked.slice(before), [true], 'read fresh once GitHub has it');
-  assert.equal(await fresh.locator('.item[data-pull="30"]').getAttribute('draggable'), 'true');
-  // A refusal is a toast, and nothing is read again.
+  // A refusal is a toast, the select goes back to where it still is, and the
+  // listing is read again, in case that is what the server and page differ on.
   await fresh.route('**/api/pull/milestone', (r) => r.fulfill({ status: 500, json: { error: '"x" is not an open milestone the Pull requests tab listed' } }));
-  await fresh.locator('[data-group="p:none"] .issue-body select.milestone').selectOption('Not urgent');
+  await pick.selectOption('Not urgent');
+  const again = fresh.waitForResponse('**/api/pulls');
+  await moveBtn.click();
   await fresh.waitForFunction(() => document.getElementById('toast').textContent.includes('not an open milestone'));
-  assert.equal(asked.length, before + 1);
+  await again;
+  await fresh.waitForFunction(() => document.activeElement?.matches?.('select.milestone[data-move="30"]'));
+  assert.equal(await pick.inputValue(), '');
+  assert.equal(asked.length, before + 2);
   // Dropped onto a group's line, the row moves there; an issue's row is not
-  // taken (until 2026-10-21 the drop never reached movePull at all).
+  // taken (until 2026-10-21 the drop never reached movePull at all), and a row
+  // dropped on the group it is already in sends nothing.
   await fresh.route('**/api/pull/milestone', (r) => { moves.push(r.request().postDataJSON()); return r.fulfill({ json: { ok: true } }); });
   assert.equal(await dropRow(fresh, '[data-group="p:none"] summary', PULL_DRAG, 12), true);
   assert.equal(await dropRow(fresh, '[data-group="p:none"] summary', ISSUE_DRAG, 58), false, 'an issue is not dropped here');
+  assert.equal(await dropRow(fresh, '[data-group="p:none"] summary', PULL_DRAG, 30), true);
   await fresh.waitForTimeout(200);
   assert.deepEqual(moves.slice(1), [{ number: 12, milestone: null }]);
   // Switch goes through the PR pane's own route, and is disabled on a dirty tree.

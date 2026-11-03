@@ -37,10 +37,10 @@ export function setItems(next, prOnScreen = null) {
   // caret: its text is kept and put back, but the caret and a composition
   // mid-word are not. Safe to hold on by the same argument as the text above
   // -- focus leaves it with the next click anywhere else -- where a tab is not.
-  // So is a row's milestone select (groupsInUse), which a repaint would close.
-  // The Issues tab's only: a pull request's opened row has Switch in the same
-  // place, and focus left on it must not keep the checkout's poll from landing.
-  if (saving || document.activeElement?.closest?.('#queue-body .text[contenteditable], #queue-search, #queue-pull-search, #queue-body .issue-groups .issue-ways')) return;
+  // So is a row's milestone select and Move (groupsInUse), which a repaint
+  // would close. Not the rest of the row's ways: a pull request's has Switch,
+  // and focus left on it must not keep the checkout's poll from landing.
+  if (saving || document.activeElement?.closest?.('#queue-body .text[contenteditable], #queue-search, #queue-pull-search, #queue-body .move-to')) return;
   if (document.querySelector('#queue-body .item.dragging')) return;
   // What the PR and Issues tabs draw from: a tick on github.com changes the
   // PR tab without changing the list, so it has to count as news too.
@@ -91,6 +91,8 @@ const seen = new Set();
 // groups and opened rows share the two sets above under keys of their own.
 let pullsListing = null;
 let pullsReading = false;
+// The read out, and everything after it (loadPulls), for what waits on it.
+let pullsLoading = null;
 // A forced read was asked for while one was out (loadPulls).
 let pullsStale = false;
 let pullQuery = '';
@@ -376,8 +378,6 @@ function loadIssues(again = false) {
 }
 let issuesLoading = null;
 let issuesStale = false;
-// Until no listing is out, including the one a stale one asks for as it lands.
-const listingsIn = async () => { while (issuesLoading) await issuesLoading; };
 // Why the first listing could not be read, so the tab says so after the toast
 // has gone: left reading "Reading…" and `…`, it looked as if it still was.
 // Once there is a listing, a failed refresh keeps it and only the toast says.
@@ -474,11 +474,11 @@ function issueList() {
  * select, which closes when it is replaced. Each visit to the tab and each move
  * reads a listing that takes seconds, so one landing mid-gesture is ordinary.
  * Safe to hold on for the reason setItems holds on the search box: both end with
- * the next click anywhere else. The select's neighbours count for the same
- * reason, since focus crosses to them on the way to what they act on.
+ * the next click anywhere else. Move counts with its select, since focus crosses
+ * to it on the way to what it acts on.
  */
 const groupsInUse = () => !!(document.querySelector('#queue-body .item.dragging')
-  || document.activeElement?.closest?.('#queue-body .issue-ways'));
+  || document.activeElement?.closest?.('#queue-body .move-to'));
 // A repaint held back, drawn once what held it is over.
 let groupsOwed = false;
 const drawGroups = () => {
@@ -712,17 +712,40 @@ function issueGroups() {
 }
 
 /**
- * An opened row's milestone select: none, and every open milestone in rank.
- * A closed one is listed only to show that the row is on it, and cannot be
- * picked -- the server refuses a move onto it (heldMove) -- as a closed
- * group's line is not somewhere to drop a row. Choosing writes nothing here;
- * what does is the caller's.
+ * An opened row's way to the move its drag makes, for the keyboard: a select of
+ * none and every open milestone in rank, and Move. A closed milestone is listed
+ * only to show that the row is on it, and cannot be picked -- the server refuses
+ * a move onto it (heldMove) -- as a closed group's line is not somewhere to drop
+ * a row.
+ *
+ * Written by Move, not on change. On Linux and Windows, Chromium and Firefox
+ * fire change for every arrow key on a closed select, so stepping to a milestone
+ * two down wrote the one in between to GitHub on the way. What a repaint does to
+ * a choice not yet moved is put it back: nothing was written.
  */
-function milestonePick(milestones, current, props) {
-  return h('select', { className: 'milestone', ...props },
+function moveControl(name, number, current, ariaLabel) {
+  const kind = MOVES[name];
+  const pick = h('select', { className: 'milestone', ariaLabel, dataset: { move: String(number) } },
     h('option', { value: '' }, 'No milestone'),
-    ...rankMilestones(milestones).filter((m) => !m.closed || m.number === current).map((m) => h('option',
+    ...rankMilestones(kind.milestones()).filter((m) => !m.closed || m.number === current).map((m) => h('option',
       { value: m.title, selected: m.number === current, disabled: !!m.closed }, m.closed ? `${m.title} (closed)` : m.title)));
+  const was = pick.value;
+  const go = btn('Move', async () => {
+    go.disabled = true;
+    const from = pick.closest('[data-group]')?.dataset.group;
+    await moveRow(name, number, pick.value || null);
+    await kind.settled();
+    // The repaint took the focus with it, and the row may have gone to a folded
+    // group: the keyboard follows it there, unless it has since gone elsewhere.
+    // A list with no groups (one of the Pull requests tab's) has only the row.
+    const now = kind.row(number);
+    if (tab !== name || !now || (document.activeElement && document.activeElement !== document.body)) return;
+    const to = from && kind.group(now.milestone, from);
+    if (to && !kind.searching() && closedGroups.delete(to)) kind.draw();
+    document.querySelector(`#queue-body ${to ? `[data-group="${to}"]` : ''} select.milestone[data-move="${number}"]`)?.focus();
+  }, { title: 'set this milestone on GitHub', disabled: true });
+  pick.onchange = () => { go.disabled = pick.value === was; };
+  return h('span', { className: 'move-to' }, pick, go);
 }
 
 /**
@@ -836,30 +859,9 @@ function issueRow(i, { repo = null, kind = 'issue', closed = false, text = i.tit
   if (!open) return [row];
   const home = deps.home?.();
   const where = home ? { repo: `https://github.com/${home}`, ref: 'HEAD' } : null;
-  // The keyboard's way to the drag's move: every open milestone, and none.
-  const pick = milestonePick(listing.milestones, i.milestone, { ariaLabel: `milestone of #${i.number}`, dataset: { issue: String(i.number) } });
-  // Written by Move, not on change. On Linux and Windows, Chromium and Firefox
-  // fire change for every arrow key on a closed select, so stepping to a
-  // milestone two down wrote the one in between to GitHub on the way. What a
-  // repaint does to a choice not yet moved is put it back: nothing was written.
-  const was = pick.value;
-  const go = btn('Move', async () => {
-    go.disabled = true;
-    const from = pick.closest('[data-group]').dataset.group;
-    await move(i.number, pick.value || null);
-    await listingsIn();
-    // The repaint took the focus with it, and the row may have gone to a folded
-    // group: the keyboard follows it there, unless it has since gone elsewhere.
-    const now = listed.get(i.number);
-    if (tab !== 'issues' || !now || (document.activeElement && document.activeElement !== document.body)) return;
-    const to = from === 'mentioned' ? from : `m:${now.milestone ?? NONE}`;
-    if (!query.trim() && closedGroups.delete(to)) drawGroups();
-    document.querySelector(`#queue-body [data-group="${to}"] select.milestone[data-issue="${i.number}"]`)?.focus();
-  }, { title: 'set this milestone on GitHub', disabled: true });
-  pick.onchange = () => { go.disabled = pick.value === was; };
   const body = h('li', { className: 'issue-body md' },
     ...(i.body ? blocks(i.body).map((b) => blockNode(b, null, where)) : [h('p', { className: 'empty' }, 'No description.')]),
-    h('div', { className: 'issue-ways' }, pick, go, ext(i.url, 'Open on GitHub', { className: 'primary open-issue' })));
+    h('div', { className: 'issue-ways' }, moveControl('issues', i.number, i.milestone, `milestone of #${i.number}`), ext(i.url, 'Open on GitHub', { className: 'primary open-issue' })));
   return [row, body];
 }
 
@@ -892,11 +894,43 @@ const ISSUE = 'application/x-prcoder-issue';
 const PULL = 'application/x-prcoder-pull';
 
 /**
- * An issue onto a milestone, or off one with null: the one write the Issues
- * tab makes, on a drop or Move beside the row's select, which GitHub's own rules
- * call triage. The tab reads the listing again after, so the row moves group
- * once GitHub has it and not before -- asking again even when a listing is
- * already out, since that one was asked for before the write.
+ * What differs between the two tabs that move a row onto a milestone: the route,
+ * which listing holds its milestones and rows, and how that listing is painted
+ * and read again.
+ */
+const MOVES = {
+  issues: {
+    route: '/api/issue/milestone',
+    milestones: () => listing?.milestones ?? [],
+    row: (number) => listed.get(number),
+    paint: () => paintGroups(),
+    draw: () => drawGroups(),
+    read: () => loadIssues(true),
+    settled: async () => { while (issuesLoading) await issuesLoading; },
+    // The mentions are drawn wherever a row's milestone says, so a row moved
+    // from there is still in that group; from a milestone's, it has gone.
+    group: (milestone, from) => (from === 'mentioned' ? from : `m:${milestone ?? NONE}`),
+    searching: () => query.trim(),
+  },
+  pulls: {
+    route: '/api/pull/milestone',
+    milestones: () => pullsListing?.milestones ?? [],
+    row: (number) => pullsListing?.pulls.find((p) => p.number === number),
+    paint: () => paintPulls(),
+    draw: () => drawPulls(),
+    read: () => loadPulls(true),
+    settled: async () => { while (pullsLoading) await pullsLoading; },
+    group: (milestone) => `p:${milestone ?? NONE}`,
+    searching: () => pullQuery.trim(),
+  },
+};
+
+/**
+ * A row onto a milestone, or off one with null, on a drop or Move: the one write
+ * each of the Issues and Pull requests tabs makes, which GitHub's own rules call
+ * triage. The tab reads the listing again after, so the row moves group once
+ * GitHub has it and not before -- asking again even when a listing is already
+ * out, since that one was asked for before the write.
  *
  * After a refusal too. The listing the server holds the move to can differ from
  * the one drawn -- it starts empty after a restart, and a milestone can be
@@ -904,22 +938,25 @@ const PULL = 'application/x-prcoder-pull';
  * left and come back to. The repaint is for the row's select, which is still
  * showing what was refused, and which the listing may take seconds to put back.
  */
-async function move(number, milestone) {
+async function moveRow(name, number, milestone) {
+  const kind = MOVES[name];
   // Off the select, or the repaint this is for would be held back until the
   // user next clicks somewhere (groupsInUse).
-  if (document.activeElement?.closest?.('#queue-body .issue-ways')) document.activeElement.blur();
+  if (document.activeElement?.closest?.('#queue-body .move-to')) document.activeElement.blur();
   // Where it already is: a row dropped on its own group, which is easily done
   // with the group's line just above it, is not worth a write and a re-list.
-  const target = milestone === null ? null : listing?.milestones.find((m) => m.title === milestone)?.number;
-  if ((listed.get(number)?.milestone ?? null) === target) return;
+  const target = milestone === null ? null : kind.milestones().find((m) => m.title === milestone)?.number;
+  if ((kind.row(number)?.milestone ?? null) === target) return;
   try {
-    await api('/api/issue/milestone', { number, milestone });
+    await api(kind.route, { number, milestone });
   } catch (e) {
     toast(e.message, true);
-    paintGroups();
+    kind.paint();
   }
-  loadIssues(true);
+  kind.read();
 }
+const move = (number, milestone) => moveRow('issues', number, milestone);
+const movePull = (number, milestone) => moveRow('pulls', number, milestone);
 
 /**
  * The repository's open pull requests, for picking the next one to work on:
@@ -930,13 +967,24 @@ async function move(number, milestone) {
  * reads whatever the age. The listing on screen stays until the new one
  * lands, and stays if it does not; the note under the groups says which.
  */
-async function loadPulls(force = false) {
+function loadPulls(force = false) {
   // A forced read asked for during another -- a move, whose write that read
   // was sent before -- runs once that one is in, as loadIssues's `again` does.
-  if (pullsReading) {
+  if (pullsLoading) {
     pullsStale ||= force;
-    return;
+    return pullsLoading;
   }
+  pullsLoading = readPulls(force).finally(() => {
+    pullsLoading = null;
+    paintPulls();
+    if (!pullsStale) return;
+    pullsStale = false;
+    loadPulls(true);
+  });
+  return pullsLoading;
+}
+
+async function readPulls(force) {
   pullsReading = true;
   try {
     if (!pullsListing) {
@@ -952,11 +1000,6 @@ async function loadPulls(force = false) {
   } finally {
     pullsReading = false;
   }
-  paintPulls();
-  if (pullsStale) {
-    pullsStale = false;
-    await loadPulls(true);
-  }
 }
 
 /**
@@ -964,10 +1007,14 @@ async function loadPulls(force = false) {
  * keeps its focus. Exported for app.js, which calls it when git's answer about
  * a bare branch in a stack lands (loadBelow), as the PR pane is repainted then.
  */
-export function paintPulls() {
-  if (tab !== 'pulls') return;
+const drawPulls = () => {
   document.querySelector('#queue-body .pull-groups')?.replaceChildren(...pullGroups());
   staleBreakdown();
+};
+
+export function paintPulls() {
+  if (tab !== 'pulls') return;
+  drawPulls();
   const t = document.querySelector('#queue-body .tab[data-tab="pulls"]');
   if (t) t.textContent = `${LABELS.pulls} (${pullCount()})`;
 }
@@ -1205,28 +1252,9 @@ function pullRow(p, depth = 0) {
   row.addEventListener('dragstart', (e) => { e.dataTransfer.setData(PULL, String(p.number)); row.classList.add('dragging'); });
   row.addEventListener('dragend', () => row.classList.remove('dragging'));
   if (!open) return [row];
-  const pick = milestonePick(pullsListing.milestones, p.milestone, { ariaLabel: `milestone of pull request #${p.number}` });
-  // On change, where the Issues tab's has Move: see the comment in issueRow.
-  pick.onchange = () => movePull(p.number, pick.value || null);
   const body = h('li', { className: 'issue-body md', style: `--depth:${depth}` },
-    h('div', { className: 'issue-ways' }, pick, go(), ext(p.url, 'Open on GitHub', { className: 'primary open-issue' })));
+    h('div', { className: 'issue-ways' }, moveControl('pulls', p.number, p.milestone, `milestone of pull request #${p.number}`), go(), ext(p.url, 'Open on GitHub', { className: 'primary open-issue' })));
   return [row, body];
-}
-
-/**
- * A pull request onto a milestone, or off one with null: the Pull requests
- * tab's one write, on a drop or a pick in the opened row, as move is the
- * Issues tab's. The listing is read again after, so the row moves group once
- * GitHub has it.
- */
-async function movePull(number, milestone) {
-  try {
-    await api('/api/pull/milestone', { number, milestone });
-  } catch (e) {
-    toast(e.message, true);
-    return;
-  }
-  await loadPulls(true);
 }
 
 const bulk = (label, fn) => btn(label, fn, { className: 'bulk' });

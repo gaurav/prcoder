@@ -909,6 +909,8 @@ li.issue-body .open-issue { display: inline-block; text-decoration: none; }
 .item.pull[draggable="true"] { cursor: grab; }
 .fold.milestone > summary.over { outline: 1px dashed var(--accent); outline-offset: 1px; border-radius: 3px; }
 li.issue-body .issue-ways { display: flex; gap: 8px; align-items: center; margin-top: 2px; }
+/* What the select and Move hold a repaint by (groupsInUse); laid out as the row's other ways. */
+li.issue-body .move-to { display: contents; }
 li.issue-body select.milestone {
   font: inherit; font-size: 13px; padding: 1px 4px; color: var(--fg); background: var(--bg);
   border: 1px solid var(--line); border-radius: 4px;
