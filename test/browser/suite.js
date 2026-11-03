@@ -301,7 +301,7 @@ test('checkboxes render with their state, and a tick posts through', { skip }, a
 test('a selection in the description survives a repaint, unless its text moved', { skip }, async () => {
   const fresh = await newPage();
   const select = () => fresh.evaluate(() => {
-    const [from, to] = [...document.querySelectorAll('#pr-body .md > p, #pr-body .md blockquote')].map((n) => n.lastChild);
+    const [from, to] = [...document.querySelectorAll('#pr-body .md > p, #pr-body .md blockquote')].map((n) => n.firstChild);
     getSelection().setBaseAndExtent(from, 3, to, 2);
     return getSelection().toString();
   });

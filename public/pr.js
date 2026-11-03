@@ -945,6 +945,7 @@ function renderPrTab(pr, parsed, handlers) {
   // not to freeze a whole pane over focus and that still holds -- this restores
   // it instead.
   const focused = document.activeElement?.closest?.('.md-section')?.dataset.key;
+  const selected = selectionIn(host);
 
   const stack = tab === 'stack' ? stackOn(pr, handlers.prs) : null;
   // Only an open tab asks git: most pull requests are on the default branch,
@@ -986,6 +987,55 @@ function renderPrTab(pr, parsed, handlers) {
   // late would move every line under a scroll position already restored.
   host.scrollTop = scrolled[tab];
   if (focused) host.querySelector(`.md-section[data-key="${CSS.escape(focused)}"] > summary`)?.focus();
+  // After the focus, which can take a selection with it.
+  if (selected) selectAgain(host, selected);
+}
+
+/**
+ * The selection inside `host`, as what a repaint can't invalidate: how far into
+ * the text it starts, and what it says. A repaint replaces every node, and a
+ * poll repaints when anything on the pull request moved, so a line selected to
+ * copy could vanish before the copy.
+ *
+ * Put back rather than holding the repaint until the selection ends, as the
+ * Pull requests tab holds its own during a drag: that is over in a moment, and a
+ * selection can sit there for as long as nobody clicks, with the description and
+ * a line just ticked left stale behind it.
+ */
+function selectionIn(host) {
+  const selection = getSelection();
+  if (!selection.rangeCount || selection.isCollapsed) return null;
+  const range = selection.getRangeAt(0);
+  if (!host.contains(range.commonAncestorContainer)) return null;
+  const before = document.createRange();
+  before.selectNodeContents(host);
+  before.setEnd(range.startContainer, range.startOffset);
+  return { start: before.toString().length, text: range.toString() };
+}
+
+/**
+ * Selects it again if the same words are still at the same place. If not -- text
+ * added above it, or another tab showing -- it stays gone, since the same offset
+ * is now somebody else's words. Forwards always: a selection dragged backwards
+ * comes back the other way round, which only shift-arrow would notice.
+ */
+function selectAgain(host, { start, text }) {
+  const end = start + text.length;
+  const range = document.createRange();
+  const nodes = document.createTreeWalker(host, NodeFilter.SHOW_TEXT);
+  let opened = false;
+  for (let at = 0, n = nodes.nextNode(); n; at += n.length, n = nodes.nextNode()) {
+    if (!opened && start < at + n.length) { range.setStart(n, start - at); opened = true; }
+    if (opened && end <= at + n.length) {
+      range.setEnd(n, end - at);
+      if (range.toString() !== text) return;
+      // Emptied first: Chromium keeps a collapsed range where the old nodes were,
+      // and addRange does nothing while there is a range.
+      getSelection().removeAllRanges();
+      getSelection().addRange(range);
+      return;
+    }
+  }
 }
 
 const badge = (text, kind) => h('span', { className: `badge ${kind}` }, text);

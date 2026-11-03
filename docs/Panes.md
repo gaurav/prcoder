@@ -251,7 +251,8 @@ checklist items says how many are still open, and its pie fills as they are tick
 set in serif at a reading size and capped to a comfortable line length, because it is the one thing
 in the window that is read rather than operated. Checklists in it are real checkboxes and write
 straight back to the description; only the box ticks, so a line's text selects and copies like
-the prose around it. It ends with the issues the description points at, one line
+the prose around it, and a selection outlasts the repaint a poll or a tick brings, unless the words
+it covered have moved. It ends with the issues the description points at, one line
 each with its title: the ones this pull request closes, then the ones it only mentions, a pull
 request among them numbered `PR #N` as the queue's tags are, and an issue it closes in another
 repository named `owner/repo#N`, wrapped when it is long so the titles keep their room. A bare
