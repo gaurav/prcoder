@@ -1136,15 +1136,32 @@ function taskRow({ done, text, index }, onTask, where = links) {
  * because a bare `*` mid-word is vanishingly rare in prose and common only in
  * globs, which live in code spans and are already out of reach.
  *
- * Strikethrough takes GitHub's `~x~` as well as `~~x~~`. No space just inside
- * either tilde, as GFM has it, and no word character or `/` just outside, so
- * `~/a and ~/b` and the `~user` in a URL are left alone.
+ * Strikethrough takes GitHub's `~x~` as well as `~~x~~`, with no space just
+ * inside either end, as GFM has it. See strikes() for the rest of it.
  */
-const styled = (s) => s
+const styled = (s) => strikes(s
   .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
   .replace(/\*([^*\n]+)\*/g, '<em>$1</em>')
-  .replace(/(?<![A-Za-z0-9_])_([^_\n]+)_(?![A-Za-z0-9_])/g, '<em>$1</em>')
-  .replace(/(?<![\w/~])(~~?)(?![\s~])([^~\n]*?[^\s~])\1(?![\w~])/g, '<del>$2</del>');
+  .replace(/(?<![A-Za-z0-9_])_([^_\n]+)_(?![A-Za-z0-9_])/g, '<em>$1</em>'));
+
+/**
+ * The two spellings of strikethrough, which are not equally likely to be meant.
+ *
+ * `~~` is hardly ever anything else, so it takes GFM's rule and no more: a single
+ * tilde may sit inside it, which is how a dropped item says `~~rm ~/x~~` or
+ * `~~see ~1 hr~~`, and nothing is asked of what is outside it. A paired tilde is
+ * what prose has by accident: a home directory, a backup file, an approximate
+ * figure. So `~x~` also wants no word character or `/` just outside either end
+ * and no `/` just inside the first, which leaves `~/a,~/b`, `PATH=~/a:~/b`,
+ * `~/foo~` and the `~user` in a path alone. GitHub strikes those and `a~b~c`;
+ * the cost is that `~/x~` meant as strikethrough shows its tildes.
+ *
+ * Both may run across a line: inline() is handed one block at a time, so a pair
+ * cannot reach into the next paragraph.
+ */
+const strikes = (s) => s
+  .replace(/(?<!~)~~(?![\s~])((?:[^~]|~(?!~))*?[^\s~])~~(?!~)/g, '<del>$1</del>')
+  .replace(/(?<![\w/~])~(?![\s~/])([^~]*?[^\s~])~(?![\w/~])/g, '<del>$1</del>');
 
 /**
  * Code spans are lifted out before anything else runs and put back last, so no

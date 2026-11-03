@@ -178,10 +178,36 @@ test('a mention\'s title is not read as markup', () => {
   assert.match(inline('see #5', { ...where, refs }), /title="#5: a ~b~ \*c\*"/);
 });
 
+// The space in `~/a and ~/b` hid these: the second tilde could not close, for a
+// reason the same path after a comma or a colon does not have.
+for (const path of ['PATH=~/bin:~/.local/bin', '~/a,~/b', '{~/a,~/b}', '(~/a),(~/b)',
+  '~/foo~', '~/a and foo.txt~', '~a,~/b', 'a/~b/~c']) {
+  test(`a home path or a backup file is not struck: ${path}`, () => {
+    assert.doesNotMatch(inline(path), /<del>/);
+  });
+}
+
+// What a checklist strikes out is often a line that names a path or a figure.
+test('two tildes may hold a single tilde, or sit against anything', () => {
+  assert.equal(inline('~~rm ~/x~~'), '<del>rm ~/x</del>');
+  assert.equal(inline('~~a~b~~'), '<del>a~b</del>');
+  assert.equal(inline('~~see ~1 hr~~'), '<del>see ~1 hr</del>');
+  assert.equal(inline('and/~~x~~'), 'and/<del>x</del>');
+  assert.equal(inline('a~~b~~c'), 'a<del>b</del>c');
+  assert.equal(inline('~~a~~ and ~~b~~'), '<del>a</del> and <del>b</del>');
+});
+
+test('a strike can run across a line, but not past its block', () => {
+  assert.equal(inline('~~a\nb~~'), '<del>a<br>b</del>');
+  assert.equal(inline('~a\nb~'), '<del>a<br>b</del>');
+  assert.equal(blocks('~~a\n\nb~~').flatMap((b) => inline(b.text)).join('|'), '~~a|b~~');
+});
+
 test('a tilde that is not strikethrough stays a tilde', () => {
   assert.equal(inline('~/a and ~/b'), '~/a and ~/b');
   assert.equal(inline('~ a ~'), '~ a ~');
   assert.equal(inline('~~a~'), '~~a~');
+  assert.equal(inline('~~~a~~~'), '~~~a~~~');
   assert.match(inline('https://x.test/~u/a~b'), /href="https:\/\/x\.test\/~u\/a~b"/);
 });
 
