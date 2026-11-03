@@ -39,8 +39,8 @@ is no token to configure.
 - **Queue** -- your own TODO list for this working copy, kept in `.prcoder/` rather than in any
   file you own. An item can be about an issue or pull request -- type `#91` or paste its link --
   and can be typed into Claude or moved into a GitHub issue. An Issues tab reads the repository's
-  open issues by milestone, searchable, each one readable in place and typed into Claude with its
-  link, and a Pull requests tab reads its open pull requests the same way, with each one's size,
+  open issues by milestone, searchable, each one readable in place, typed into Claude with its
+  link, and movable to another milestone; a Pull requests tab reads its open pull requests the same way, with each one's size,
   merge state, age, reviewer's pie and what it is stacked on in the row, to pick the next one to work on and switch to
   it; with a pull request on screen a PR tab reads its description's checklist.
 
@@ -81,15 +81,16 @@ are given.
 
 ## What it writes
 
-**prcoder does not write anything you own unless you click something that says it will.** Its
+**prcoder does not write anything you own unless you click or drag something that says it will.** Its
 own state lives in `.prcoder/`, a directory that ignores itself (it holds a one-line `.gitignore`
 of `*`), so nothing shows up in `git status`: `queue.json` is the queue, `port.json` is this
 working copy's port, and `prs.json` remembers which pull requests each branch has, so a poll can
 ask GitHub about them directly instead of searching. It is a cache; deleting it costs a search.
 
-On GitHub, it writes only when you click: ticking a description checkbox flips that one line of
-the description, ticking a file marks it viewed, ◎ moves a queue item into a new issue, and creating
-a pull request pushes the branch and opens GitHub's compare page.
+On GitHub, it writes only when you act on something that says it will: ticking a description
+checkbox flips that one line of the description, ticking a file marks it viewed, ◎ moves a queue
+item into a new issue, dragging an issue onto a milestone or clicking Move in its opened row sets
+its milestone, and creating a pull request pushes the branch and opens GitHub's compare page.
 
 The queue is one list per working copy, whatever branch is checked out, and it stays on this
 machine. `queue.json` is safe for something else to edit, but while prcoder is running the server

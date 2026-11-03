@@ -2,7 +2,7 @@
 
 import { execFile } from 'node:child_process';
 import { debug } from './term.js';
-import { mentions, repoUrl, printable, blocks } from './public/tasks.js';
+import { mentions, repoUrl, resolveRef, printable, blocks } from './public/tasks.js';
 import { filesProgress } from './public/filelist.js';
 
 // Every gh call and every git call comes through run(), so this is the whole
@@ -600,6 +600,11 @@ export async function fetchPatches(cwd, prUrl) {
     [f.filename, { patch: f.patch ?? null, from: f.previous_filename, deleted: f.status === 'removed' }]));
 }
 
+/**
+ * github.com only, as the `gh api` calls this feeds are: they name no host, so
+ * widening this alone would read the same owner/repo from github.com instead of
+ * refusing. Enterprise is #53.
+ */
 export function parsePrUrl(url) {
   const m = url.match(/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/);
   if (!m) throw new Error(`not a pull request URL: ${url}`);
@@ -720,13 +725,34 @@ export function rollup(checks) {
   return { ...counts, list };
 }
 
-/** Issues the PR closes, plus any bare #N mentioned in the body. */
+/**
+ * Issues the PR closes, plus any bare #N mentioned in the body.
+ *
+ * A closing reference can be in another repository (`Fixes other/repo#3`). That
+ * one carries its `repo`, as `owner/name`, and is kept apart from this
+ * repository's #3: by number alone, a bare `#3` in the body was folded into it,
+ * and the pane linked that `#3` to the other repository.
+ *
+ * Which repository is GitHub's `repository` on the reference, set against the
+ * last two segments of the PR's repository URL by resolveRef, as the queue
+ * compares them. Not by URL prefix: a remote spelled `www.github.com`, which
+ * GitHub's issue URL does not match, made this repository's own issue another's.
+ * A reference with no `repository` is taken as this one's.
+ */
 export function linkedIssues(pr) {
   const seen = new Map();
-  for (const i of pr.closingIssuesReferences ?? []) {
-    seen.set(i.number, { number: i.number, url: i.url, closes: true });
-  }
   const repo = repoUrl(pr.url);
+  const home = repo.split('/').slice(-2).join('/');
+  for (const i of pr.closingIssuesReferences ?? []) {
+    const { owner, name } = i.repository ?? {};
+    const other = owner?.login && name
+      ? resolveRef({ owner: owner.login, name, number: i.number }, home).repo : null;
+    if (other) {
+      seen.set(`${other}#${i.number}`, { number: i.number, url: i.url, closes: true, repo: other });
+    } else {
+      seen.set(i.number, { number: i.number, url: i.url, closes: true });
+    }
+  }
   for (const number of mentions(pr.body ?? '')) {
     if (!seen.has(number)) seen.set(number, { number, url: `${repo}/issues/${number}`, closes: false });
   }
@@ -741,29 +767,38 @@ export function linkedIssues(pr) {
  * `closingIssuesReferences` gives number, url and repository and nothing else
  * (checked 2026-09-18), and a bare `#N` out of the body is only ever a number.
  * It rides on loadPr, which status() runs on a reload rather than on every
- * poll, so the poll's call count is unchanged and a reload costs one more.
+ * poll, so the poll's call count is unchanged and a reload costs one more, and
+ * one for each other repository a closing reference is in.
  *
  * `issueOrPullRequest`, not `issue`: a `#N` in a description is as often a pull
  * request as an issue -- #27 in this repo's own -- and `issue(number:)` on one
  * resolves to nothing.
  */
 async function withLinks(cwd, prUrl, issues) {
-  // ponytail: 50 aliases is plenty for a description; if a body ever needs more,
-  // chunk the numbers rather than growing one query.
-  const numbers = issues.map((i) => i.number).slice(0, 50);
-  const links = numbers.length ? await issueLinks(cwd, prUrl, numbers) : new Map();
-  for (const i of issues) {
-    const found = links.get(i.number);
-    i.title = found?.title ?? null;
-    // Which a bare #N is, for the pane's `PR #N`: closingIssuesReferences is
-    // only ever issues, but a mention is as often a pull request.
-    i.kind = found?.kind ?? null;
-    // linkedIssues can only guess `/issues/N` from the repository URL, and half
-    // the numbers in a description like this one are pull requests. GitHub
-    // redirects, so the guess works -- but it is a guess, and the answer is
-    // already in the response the title came out of.
-    if (found?.url) i.url = found.url;
-  }
+  const { owner, repo } = parsePrUrl(prUrl);
+  // One query per repository, since the query asks one: asked of this one,
+  // another's #3 came back titled and linked as this one's. Another is only
+  // ever a closing reference's (`Fixes other/repo#3`), and a description names
+  // few, so a reload costs a call for each and they run together.
+  const byRepo = Map.groupBy(issues, (i) => i.repo ?? `${owner}/${repo}`);
+  await Promise.all([...byRepo].map(async ([where, list]) => {
+    const [o, r] = where.split('/');
+    // ponytail: 50 aliases is plenty for a description; if a body ever needs
+    // more, chunk the numbers rather than growing one query.
+    const links = await repoLinks(cwd, o, r, list.map((i) => i.number).slice(0, 50));
+    for (const i of list) {
+      const found = links.get(i.number);
+      i.title = found?.title ?? null;
+      // Which a bare #N is, for the pane's `PR #N`: closingIssuesReferences is
+      // only ever issues, but a mention is as often a pull request.
+      i.kind = found?.kind ?? null;
+      // linkedIssues can only guess `/issues/N` from the repository URL, and half
+      // the numbers in a description like this one are pull requests. GitHub
+      // redirects, so the guess works -- but it is a guess, and the answer is
+      // already in the response the title came out of.
+      if (found?.url) i.url = found.url;
+    }
+  }));
   return issues;
 }
 
@@ -783,8 +818,22 @@ async function withLinks(cwd, prUrl, issues) {
  */
 export async function issueLinks(cwd, prUrl, numbers) {
   const { owner, repo } = parsePrUrl(prUrl);
+  return repoLinks(cwd, owner, repo, numbers);
+}
+
+/**
+ * issueLinks, in any repository gh can read: another's closing references.
+ *
+ * Safe integers only. From 1e21 a number prints as `1e+21`, which is no alias,
+ * and a query that does not parse has no data for any number. Below that GitHub
+ * takes any digits and answers NOT_FOUND (checked 2026-11-02), but past 2^53 the
+ * number has already been rounded, so its answer would be another number's.
+ */
+async function repoLinks(cwd, owner, repo, numbers) {
+  const asked = numbers.filter((n) => Number.isSafeInteger(n));
+  if (!asked.length) return new Map();
   try {
-    return linksFrom(await gh(linksArgs(owner, repo, numbers), { cwd }));
+    return linksFrom(await gh(linksArgs(owner, repo, asked), { cwd }));
   } catch (e) {
     return linksFrom(e.stdout);
   }
@@ -811,8 +860,7 @@ const milestoneRow = (m, description = '') => {
     issues: { open: n('openIssues'), closed: n('closedIssues') },
   };
   return {
-    number: m.number, title: printable(m.title ?? '').trim() || `#${m.number}`,
-    dueOn: m.dueOn ?? null, description, closed: m.state === 'CLOSED',
+    ...milestoneOf(m), description, closed: m.state === 'CLOSED',
     counts: [...Object.values(counts.pulls), ...Object.values(counts.issues)].every(Number.isInteger) ? counts : null,
   };
 };
@@ -824,10 +872,31 @@ const milestoneRow = (m, description = '') => {
 // there is no priority here, and labels are the nearest thing (#66).
 const ISSUES_QUERY = `query($owner:String!,$repo:String!,$after:String){
   repository(owner:$owner,name:$repo){
-    milestones(first:50,states:OPEN){ nodes{ number title dueOn description ${MILESTONE_COUNTS} } }
+    milestones(first:100,states:OPEN){ pageInfo{ hasNextPage endCursor } nodes{ number title dueOn description ${MILESTONE_COUNTS} } }
     issues(first:100,after:$after,states:OPEN,orderBy:{field:UPDATED_AT,direction:DESC}){
       totalCount pageInfo{ hasNextPage endCursor }
       nodes{ number title url updatedAt body milestone{ number title dueOn state ${MILESTONE_COUNTS} } labels(first:10){ nodes{ name } } } } } }`;
+
+// The rest of the open milestones, for a repository with more than ISSUES_QUERY
+// reads: the opened row's select offers every one, so they cannot stop at a page.
+const MILESTONES_QUERY = `query($owner:String!,$repo:String!,$after:String){
+  repository(owner:$owner,name:$repo){
+    milestones(first:100,after:$after,states:OPEN){ pageInfo{ hasNextPage endCursor } nodes{ number title dueOn description ${MILESTONE_COUNTS} } } } }`;
+
+/** Every open milestone's node, from the first page ISSUES_QUERY brought. */
+async function openMilestones(cwd, owner, repo, first) {
+  const nodes = [...first.nodes];
+  let { pageInfo } = first;
+  // ponytail: five pages, 500 open milestones, past which one can only be
+  // reached by an issue already on it (repoIssues).
+  for (let page = 1; page < 5 && pageInfo?.hasNextPage && pageInfo.endCursor; page++) {
+    const { data } = JSON.parse(await gh(['api', 'graphql', '-f', `query=${MILESTONES_QUERY}`,
+      '-f', `owner=${owner}`, '-f', `repo=${repo}`, '-f', `after=${pageInfo.endCursor}`], { cwd }));
+    nodes.push(...data.repository.milestones.nodes);
+    ({ pageInfo } = data.repository.milestones);
+  }
+  return nodes;
+}
 
 /**
  * The repository's open issues and open milestones, for the queue's Issues
@@ -837,9 +906,9 @@ const ISSUES_QUERY = `query($owner:String!,$repo:String!,$after:String){
  * names only, rid of control characters as the titles are (printable). Most
  * recently updated first, as GitHub orders them. A
  * milestone an open issue is on but that is not among the open ones read --
- * closed with the issue still open, or past the first fifty -- is added from
- * the issue, `closed` if it is, so that every listed issue has a group to be
- * drawn in; it has no description. The body
+ * closed with the issue still open, or past openMilestones' pages -- is added
+ * from the issue, `closed` if it is, so that every listed issue has a group to
+ * be drawn in; it has no description. The body
  * comes too, LF-ended like a description (lf), so the tab can show one and
  * search them; the pane renders it through the same allowlist as a
  * description (docs/Security.md).
@@ -859,7 +928,7 @@ export async function repoIssues(cwd, owner, repo) {
     if (after) args.push('-f', `after=${after}`);
     const { data } = JSON.parse(await gh(args, { cwd }));
     const r = data.repository;
-    milestones ??= r.milestones.nodes.map((m) => milestoneRow(m, printable(m.description ?? '').trim()));
+    milestones ??= (await openMilestones(cwd, owner, repo, r.milestones)).map((m) => milestoneRow(m, printable(m.description ?? '').trim()));
     total = r.issues.totalCount;
     for (const i of r.issues.nodes) {
       issues.push({
