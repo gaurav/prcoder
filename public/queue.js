@@ -1301,7 +1301,9 @@ function row(item, above, below) {
     if (await save()) document.querySelectorAll('#queue-body .item .grip')[at + (e.key === 'ArrowDown' ? 1 : -1)]?.focus();
   };
 
-  const box = h('input', { type: 'checkbox', checked: item.done });
+  // Named by the item, as the grip is. Its text can be edited in place, but an
+  // edit ends in save(), which redraws this row whether or not it was accepted.
+  const box = h('input', { type: 'checkbox', checked: item.done, ariaLabel: item.text });
   box.onchange = () => { item.done = box.checked; save(); };
 
   const text = h('span', { className: 'text', contentEditable: 'true', textContent: item.text });

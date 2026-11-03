@@ -1415,6 +1415,39 @@ test('Completed lists the most recently finished first, and cannot be reordered'
 // used to leave the change on screen as if it had landed, and the next save
 // that did succeed sent it along with its own -- persisting what the toast had
 // just said was not saved.
+test('a queue item\'s box is named by its text, through an edit and a refused one', { skip }, async () => {
+  const fresh = await newPage();
+  const queue = [{ text: 'first name', done: false, issue: null, deleted: false }];
+  let refuse = false;
+  await fresh.route('**/api/status', (r) => r.fulfill({ json: { ...status, queue } }));
+  await fresh.route('**/api/queue', (r) => {
+    if (r.request().method() !== 'PUT') return r.fulfill({ json: queue });
+    if (refuse) return r.fulfill({ status: 500, json: { error: 'disk full' } });
+    queue.splice(0, 1, ...r.request().postDataJSON().items);
+    return r.fulfill({ json: queue });
+  });
+  await fresh.reload();
+  await fresh.waitForSelector('#queue-body .item');
+  const named = (name) => fresh.locator('#queue-body').getByRole('checkbox', { name, exact: true });
+  assert.equal(await named('first name').count(), 1);
+
+  const rename = async (to) => {
+    const text = fresh.locator('#queue-body .item .text');
+    await text.fill(to);
+    await text.blur();
+  };
+  await rename('second name');
+  await named('second name').waitFor();
+  assert.equal(await named('first name').count(), 0);
+
+  refuse = true;
+  await rename('refused name');
+  await fresh.waitForFunction(() => document.getElementById('toast').textContent === 'disk full');
+  await named('second name').waitFor();
+  assert.equal(await named('refused name').count(), 0);
+  await fresh.close();
+});
+
 test('a queue change the server refuses is taken back off the screen', { skip }, async () => {
   const fresh = await newPage();
   const queue = [{ text: 'refused tick', done: false, issue: null, deleted: false }];
