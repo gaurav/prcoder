@@ -161,6 +161,18 @@ test('a link is styled inside and out', () => {
     '<strong>see <a href="https://y.test/">https://y.test/</a></strong>');
 });
 
+// A struck #N or URL used to stay plain text, because the rule that links one
+// looked for its boundary after <del> had already been written in front of it.
+test('a struck mention or URL is still a link', () => {
+  const out = inline('~#5 dropped~ and ~~#6~~', where);
+  assert.match(out, /<del><a href="[^"]*\/issues\/5"[^>]*>#5<\/a> dropped<\/del>/);
+  assert.match(out, /<del><a href="[^"]*\/issues\/6"[^>]*>#6<\/a><\/del>/);
+  assert.equal(inline('~https://y.test/x~').replace(/ target.*?>/, '>'),
+    '<del><a href="https://y.test/x">https://y.test/x</a></del>');
+  assert.equal(inline('**https://y.test/x**').replace(/ target.*?>/, '>'),
+    '<strong><a href="https://y.test/x">https://y.test/x</a></strong>');
+});
+
 test('a mention\'s title is not read as markup', () => {
   const refs = new Map([[5, { title: 'a ~b~ *c*', kind: 'issue' }]]);
   assert.match(inline('see #5', { ...where, refs }), /title="#5: a ~b~ \*c\*"/);
@@ -289,6 +301,9 @@ for (const [why, body, numbers] of [
   ['a bare URL ends at a space or a )', '(https://a.com) #5 https://b.com #6', [5, 6]],
   ['an anchor a link will not open is not a mention', '[x](#5) and #6', [6]],
   ['nor is one written against that link, but its text still counts', '[see #12](#5)#7', [12]],
+  ['a struck one, wherever it falls in the strike', '~#5 dropped~ ~see #6~ ~~#7~~', [5, 6, 7]],
+  ['a tilde that strikes nothing is a boundary all the same', '~#5 and ~#6', [5, 6]],
+  ['a #N in a struck URL is part of the URL', '~https://a.com/(#5/x~ and #6', [6]],
 ]) {
   test(`the Mentions row and the pane's links agree: ${why}`, () => {
     assert.deepEqual(mentions(body), numbers);

@@ -11,8 +11,12 @@
  * A bare `#N` mention: group 2 is the number. The server lists these in the
  * Mentions row and the pane links them in the text, so the two agree by
  * construction. A factory for the same lastIndex reason as fence() below.
+ *
+ * A tilde is a boundary so that `~#5 dropped~` is a link, struck, as it is on
+ * GitHub. The pane holds a mention before it strikes anything, so the two
+ * readers see the same tilde and nothing here has to know about strikethrough.
  */
-export const mention = () => /(^|[\s(])#(\d+)\b/g;
+export const mention = () => /(^|[\s(~])#(\d+)\b/g;
 
 /**
  * A block's text without \u0000 and \u0001, the placeholders inline() in pr.js
@@ -41,11 +45,11 @@ export const mdLink = () => /\[([^[\]]+)\]\(([^)\s]+)\)/g;
  * read as new ones -- an event handler among them. A `#N` in one is not a
  * mention, so inline() holds these aside and mentions() strips them too.
  *
- * A trailing `*`, `_` or `~` is not the URL's, as in GFM's autolinks: inline()
- * holds a URL before it looks for emphasis, so `**see https://a.com**` needs
- * those two asterisks left behind to close on.
+ * A `*`, `_` or `~` can come just before one and a trailing one is not the
+ * URL's, as in GFM's autolinks. inline() holds a URL before it looks for emphasis or tildes, so
+ * `~https://a.com~` needs both of its tildes left behind to strike the link.
  */
-export const bareUrl = () => /(^|[\s(])(https?:\/\/[^\s)\u0000\u0001]*[^\s)\u0000\u0001*_~])/g;
+export const bareUrl = () => /(^|[\s(*_~])(https?:\/\/[^\s)\u0000\u0001]*[^\s)\u0000\u0001*_~])/g;
 
 /**
  * Whether the pane opens a markdown link to `href`: http(s), or a path in the
