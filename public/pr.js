@@ -1127,9 +1127,8 @@ function taskRow({ done, text, index }, onTask, where = links) {
 }
 
 /**
- * Code spans are lifted out before anything else runs and put back last, so no
- * other rule can reach inside one. Without that `PRCODER_NO_OPEN` italicises
- * its own middle, and a URL in backticks becomes a link inside a <code>.
+ * The rules that wrap text in a tag and add nothing else, which inline() runs
+ * once everything with an href is out of their reach.
  *
  * Emphasis comes after bold, so `**x**` is already <strong> by the time the
  * single-asterisk rule looks. The underscore form needs a non-word character
@@ -1141,17 +1140,31 @@ function taskRow({ done, text, index }, onTask, where = links) {
  * either tilde, as GFM has it, and no word character or `/` just outside, so
  * `~/a and ~/b` and the `~user` in a URL are left alone.
  */
+const styled = (s) => s
+  .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+  .replace(/\*([^*\n]+)\*/g, '<em>$1</em>')
+  .replace(/(?<![A-Za-z0-9_])_([^_\n]+)_(?![A-Za-z0-9_])/g, '<em>$1</em>')
+  .replace(/(?<![\w/~])(~~?)(?![\s~])([^~\n]*?[^\s~])\1(?![\w~])/g, '<del>$2</del>');
+
+/**
+ * Code spans are lifted out before anything else runs and put back last, so no
+ * other rule can reach inside one. Without that `PRCODER_NO_OPEN` italicises
+ * its own middle, and a URL in backticks becomes a link inside a <code>.
+ *
+ * Everything with an href is held aside next, and styled() runs only then, over
+ * what is left and over a link's own text. In the other order a `~`, `*` or `_`
+ * in a URL was markup: `https://y.test/?v=~1~` went out with a <del> in its
+ * href, and a pair could span a link's delimiters, with one half in its text and
+ * the other in its href. A pair around a whole link still works, because to
+ * styled() the held link is one character.
+ */
 export const inline = (s, where = links) => {
   const code = [];
   const held = [];
   const a = (href, text, attrs = '') => `<a href="${href}"${attrs} target="_blank" rel="noopener">${text}</a>`;
   const hold = (html) => `\u0001${held.push(html) - 1}\u0001`;
-  return escape(unmarked(s))
+  const lifted = escape(unmarked(s))
     .replace(/`([^`]+)`/g, (_, c) => `\u0000${code.push(c) - 1}\u0000`)
-    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*([^*\n]+)\*/g, '<em>$1</em>')
-    .replace(/(?<![A-Za-z0-9_])_([^_\n]+)_(?![A-Za-z0-9_])/g, '<em>$1</em>')
-    .replace(/(?<![\w/~])(~~?)(?![\s~])([^~\n]*?[^\s~])\1(?![\w~])/g, '<del>$2</del>')
     // Held aside until the mentions are done, so a `#5` in `[see #5](…)` does
     // not become a link inside the link: the browser closes the outer one
     // early, and a click on the `#5` opened the pull request. Only a link this
@@ -1160,7 +1173,7 @@ export const inline = (s, where = links) => {
     // still held: the `(#5` in `[x](#5)` is an anchor, not pull request 5.
     .replace(mdLink(), (m, text, href) => {
       const url = target(href, where);
-      return url ? hold(a(url, text)) : `[${text}${hold(`](${href})`)}`;
+      return url ? hold(a(url, styled(text))) : `[${text}${hold(`](${href})`)}`;
     })
     // Held as well: the mention rule took the `(#5` in `https://a.com/(#5/x`
     // for a mention, in the href this had just built, and the anchor it wrote
@@ -1168,8 +1181,9 @@ export const inline = (s, where = links) => {
     .replace(bareUrl(), (_, pre, url) => pre + hold(a(url, url)))
     // mentions() in tasks.js reads the same pattern over the same shown text,
     // less the same links, which is what puts the same numbers in the Mentions
-    // row.
-    .replace(mention(), (m, pre, n) => (where ? pre + mentionLink(n, where, a) : m))
+    // row. Held because its title is a pull request's, which can hold a `~x~`.
+    .replace(mention(), (m, pre, n) => (where ? pre + hold(mentionLink(n, where, a)) : m));
+  return styled(lifted)
     .replace(/\u0001(\d+)\u0001/g, (_, i) => held[i])
     .replace(/\n/g, '<br>')
     .replace(/\u0000(\d+)\u0000/g, (_, i) => `<code>${code[i]}</code>`);

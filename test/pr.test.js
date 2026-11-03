@@ -134,6 +134,38 @@ test('strikethrough renders with one tilde or two', () => {
   assert.equal(inline('`~x~`'), '<code>~x~</code>');
 });
 
+// Each of these wrote markup into an href, when emphasis and strikethrough ran
+// before the links were held.
+test('no markup rule reaches inside a link\'s href', () => {
+  const url = 'https://y.test/-~a~';
+  assert.equal(href(inline(`[x](${url})`)), url);
+  assert.equal(href(inline('[x](https://y.test/*a*)')), 'https://y.test/*a*');
+  assert.equal(href(inline('https://y.test/_a_/b')), 'https://y.test/_a_/b');
+  const bare = inline('https://y.test/?v=~1~');
+  assert.equal(href(bare), 'https://y.test/?v=~1');
+  assert.doesNotMatch(bare, /<del>/);
+});
+
+test('a pair of tildes does not span a link\'s delimiters', () => {
+  assert.doesNotMatch(inline('~[a](https://y.test/~)'), /<del>/);
+  assert.doesNotMatch(inline('[~a](https://y.test/-~)'), /<del>/);
+  assert.doesNotMatch(inline('~a [b~](https://y.test/)'), /<del>/);
+});
+
+test('a link is styled inside and out', () => {
+  assert.equal(inline('[~a~ *b*](https://y.test/)').replace(/ target.*?>/, '>'),
+    '<a href="https://y.test/"><del>a</del> <em>b</em></a>');
+  assert.equal(inline('~[a](https://y.test/)~').replace(/ target.*?>/, '>'),
+    '<del><a href="https://y.test/">a</a></del>');
+  assert.equal(inline('**see https://y.test/**').replace(/ target.*?>/, '>'),
+    '<strong>see <a href="https://y.test/">https://y.test/</a></strong>');
+});
+
+test('a mention\'s title is not read as markup', () => {
+  const refs = new Map([[5, { title: 'a ~b~ *c*', kind: 'issue' }]]);
+  assert.match(inline('see #5', { ...where, refs }), /title="#5: a ~b~ \*c\*"/);
+});
+
 test('a tilde that is not strikethrough stays a tilde', () => {
   assert.equal(inline('~/a and ~/b'), '~/a and ~/b');
   assert.equal(inline('~ a ~'), '~ a ~');

@@ -40,8 +40,12 @@ export const mdLink = () => /\[([^[\]]+)\]\(([^)\s]+)\)/g;
  * own href, where the link's quotes closed the attribute and the rest of it was
  * read as new ones -- an event handler among them. A `#N` in one is not a
  * mention, so inline() holds these aside and mentions() strips them too.
+ *
+ * A trailing `*`, `_` or `~` is not the URL's, as in GFM's autolinks: inline()
+ * holds a URL before it looks for emphasis, so `**see https://a.com**` needs
+ * those two asterisks left behind to close on.
  */
-export const bareUrl = () => /(^|[\s(])(https?:\/\/[^\s)\u0000\u0001]+)/g;
+export const bareUrl = () => /(^|[\s(])(https?:\/\/[^\s)\u0000\u0001]*[^\s)\u0000\u0001*_~])/g;
 
 /**
  * Whether the pane opens a markdown link to `href`: http(s), or a path in the
