@@ -296,6 +296,35 @@ test('checkboxes render with their state, and a tick posts through', { skip }, a
   assert.ok((await page.locator('#pr-head .tab').allTextContents()).includes('Detail (2/3)'));
 });
 
+// The poll repaints the whole description whenever anything on the pull request
+// moved, and the text of a line is there to be copied.
+test('a selection in the description survives a repaint, unless its text moved', { skip }, async () => {
+  const fresh = await newPage();
+  const select = () => fresh.evaluate(() => {
+    const [from, to] = [...document.querySelectorAll('#pr-body .md > p, #pr-body .md blockquote')].map((n) => n.lastChild);
+    getSelection().setBaseAndExtent(from, 3, to, 2);
+    return getSelection().toString();
+  });
+  const repaint = async (next) => {
+    await fresh.evaluate(() => { document.querySelector('#pr-body .md').dataset.old = '1'; });
+    await fresh.unroute('**/api/status');
+    await fresh.route('**/api/status', (r) => r.fulfill({ json: next }));
+    await fresh.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+    await fresh.waitForSelector('#pr-body .md:not([data-old])', { timeout: 15000 });
+  };
+  const selected = await select();
+  assert.ok(selected.length > 5, selected);
+  await repaint({ ...status, pr: { ...pr, updatedAt: '2026-09-20T00:00:00Z' } });
+  assert.equal(await fresh.evaluate(() => getSelection().toString()), selected);
+  assert.equal(await fresh.evaluate(() => document.querySelector('#pr-body').contains(getSelection().anchorNode)), true);
+
+  // Text put in above it: the same offset is now other words, and selecting
+  // those would be worse than selecting nothing.
+  await repaint({ ...status, pr: { ...pr, updatedAt: '2026-09-21T00:00:00Z', body: `Something new first.\n\n${pr.body}` } });
+  assert.equal(await fresh.evaluate(() => getSelection().toString()), '');
+  await fresh.close();
+});
+
 test('the issues the description mentions are listed below it, titled', { skip }, async () => {
   assert.deepEqual(await page.locator('.issues-label').allTextContents(), ['Mentions']);
   const row = page.locator('.issues a').first();
@@ -2093,7 +2122,7 @@ const PULLS = {
     // what that is built on (BELOW answers), as the PR pane's Stack tab would.
     pullOf({ number: 30, title: 'An old draft', url: `${REPO}/pull/30`, headRefName: 'old', baseRefName: 'gone', createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-02-01T00:00:00Z',
       additions: 1500, deletions: 10, changedFiles: 40, lines: 1510, merge: 'draft', isDraft: true, milestone: null,
-      closes: [{ number: 5, url: `${REPO}/issues/5`, title: 'The old thing', milestone: 'Not urgent' }], lead: 'Still **being** written, in `old.js`, for #5.' }),
+      closes: [{ number: 5, url: `${REPO}/issues/5`, title: 'The old thing', milestone: 'Not urgent' }], lead: 'Still **being** written, in `old.js`, for #5. ~Soon.~' }),
   ],
   total: 3, listed: 3, read: NOW - 3_600_000,
 };
@@ -2232,7 +2261,10 @@ test('the Pull requests tab groups the open pull requests by milestone, smallest
   assert.equal(await twelve.locator('.pull-closes').count(), 0, 'nothing closed, no line');
   // Its lead is drawn as the opened description is, not as its markdown.
   assert.equal(await thirty.locator('.pr-lead').innerHTML(),
-    `Still <strong>being</strong> written, in <code>old.js</code>, for <a href="https://github.com/gaurav/prcoder/issues/5" target="_blank" rel="noopener">#5</a>.`);
+    `Still <strong>being</strong> written, in <code>old.js</code>, for <a href="https://github.com/gaurav/prcoder/issues/5" target="_blank" rel="noopener">#5</a>. <del>Soon.</del>`);
+  // Dim, as it is in the opened description. Outside .md only this tab's own rule says so.
+  const colourOf = (l) => l.evaluate((n) => getComputedStyle(n).color);
+  assert.notEqual(await colourOf(thirty.locator('.pr-lead del')), await colourOf(thirty.locator('.pr-lead')));
   // The order and the grouping are the two selects, remembered across a reload.
   await fresh.locator('#queue-body select.pull-sort').selectOption('largest');
   assert.deepEqual((await pullGroupsOf(fresh))[1], 'p:1|v1.0 (2) 9 issues 1 merged due 5 days ago|open|12,20');
