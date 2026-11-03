@@ -446,6 +446,19 @@ test('open milestones past the first page are read with their cursor', { skip: u
   assert.equal(paged[paged.indexOf('after=M1') - 1], '-f');
 });
 
+test('open milestones past the first page of pull requests\' are read too', { skip: unix }, async () => {
+  const first = structuredClone(PULLS_PAGE);
+  first.data.repository.milestones.pageInfo = { hasNextPage: true, endCursor: 'M1' };
+  const more = { data: { repository: { milestones: {
+    pageInfo: { hasNextPage: false, endCursor: 'M2' },
+    nodes: [{ number: 60, title: 'v6', dueOn: null, description: '' }],
+  } } } };
+  const script = `case "$*" in\n*after=M1*) cat <<'JSON'\n${JSON.stringify(more)}\nJSON\n;;\n*) cat <<'JSON'\n${JSON.stringify(first)}\nJSON\n;;\nesac`;
+  const { out, calls } = await ghCalls(script, () => repoPulls(os.tmpdir(), 'gaurav', 'prcoder'));
+  assert.ok(out.milestones.some((m) => m.number === 60));
+  assert.equal(calls.length, 2);
+});
+
 // The one write about an issue, through the endpoint a pull request's goes
 // through too: by number as -F, so it reaches GitHub as an Int or a null, and
 // an answer that does not name that milestone is a failure, since GitHub drops

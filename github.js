@@ -878,12 +878,13 @@ const ISSUES_QUERY = `query($owner:String!,$repo:String!,$after:String){
       nodes{ number title url updatedAt body milestone{ number title dueOn state ${MILESTONE_COUNTS} } labels(first:10){ nodes{ name } } } } } }`;
 
 // The rest of the open milestones, for a repository with more than ISSUES_QUERY
-// reads: the opened row's select offers every one, so they cannot stop at a page.
+// or PULLS_QUERY read: the opened row's select offers every one, so they cannot
+// stop at a page.
 const MILESTONES_QUERY = `query($owner:String!,$repo:String!,$after:String){
   repository(owner:$owner,name:$repo){
     milestones(first:100,after:$after,states:OPEN){ pageInfo{ hasNextPage endCursor } nodes{ number title dueOn description ${MILESTONE_COUNTS} } } } }`;
 
-/** Every open milestone's node, from the first page ISSUES_QUERY brought. */
+/** Every open milestone's node, from the first page the listing's query brought. */
 async function openMilestones(cwd, owner, repo, first) {
   const nodes = [...first.nodes];
   let { pageInfo } = first;
@@ -950,7 +951,7 @@ export async function repoIssues(cwd, owner, repo) {
 
 const PULLS_QUERY = `query($owner:String!,$repo:String!,$after:String){
   repository(owner:$owner,name:$repo){
-    milestones(first:50,states:OPEN){ nodes{ number title dueOn description ${MILESTONE_COUNTS} } }
+    milestones(first:100,states:OPEN){ pageInfo{ hasNextPage endCursor } nodes{ number title dueOn description ${MILESTONE_COUNTS} } }
     pullRequests(first:100,after:$after,states:OPEN,orderBy:{field:UPDATED_AT,direction:DESC}){
       totalCount pageInfo{ hasNextPage endCursor }
       nodes{ number title url isDraft isCrossRepository headRefName baseRefName createdAt updatedAt
@@ -1054,7 +1055,7 @@ export async function repoPulls(cwd, owner, repo) {
     if (after) args.push('-f', `after=${after}`);
     const { data } = JSON.parse(await gh(args, { cwd }));
     const r = data.repository;
-    milestones ??= r.milestones.nodes.map((m) => milestoneRow(m, printable(m.description ?? '').trim()));
+    milestones ??= (await openMilestones(cwd, owner, repo, r.milestones)).map((m) => milestoneRow(m, printable(m.description ?? '').trim()));
     total = r.pullRequests.totalCount;
     for (const node of r.pullRequests.nodes) {
       pulls.push(pullRow(node));
