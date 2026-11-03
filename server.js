@@ -342,7 +342,9 @@ const poll = () => (queuedPoll ??= serial(() => {
   return status();
 }));
 
-// What the Issues tab was last shown (GET /api/issues), for a route that acts on one of its rows.
+// What the Issues tab was last shown (GET /api/issues), for a route that acts
+// on one of its rows: numbers and milestones, without the bodies of up to 500
+// issues, which nothing here reads again.
 let listing = null;
 
 // What the Pull requests tab was last shown (POST /api/pulls, from the cache
@@ -386,7 +388,9 @@ const freshPulls = queuedRun(async () => {
 /**
  * What /api/issue/milestone may do, from `listing`: `{ number, milestone, title }`
  * where `number` is an open issue the tab was shown and `milestone` the number
- * of one of its milestones, found by title, or null to take the milestone off.
+ * of one of its open milestones, found by title, or null to take the milestone
+ * off. A closed one is listed only because an issue is still on it (repoIssues),
+ * and is somewhere to move off, not onto.
  * The page's strings choose; the listing's are what reach gh -- the same hold
  * /api/pr/choose keeps on a pick. Pure, and exported for test/api.test.js.
  * pullMove is the same hold for /api/pull/milestone, on the pulls listing.
@@ -397,7 +401,9 @@ export const pullMove = (listing, body) => heldMove(listing?.pulls, listing?.mil
 function heldMove(rows, milestones, what, tab, { number, milestone } = {}) {
   const row = rows?.find((r) => r.number === number);
   if (!row) throw new Error(`#${number ?? '?'} is not an open ${what} the ${tab} tab listed`);
-  if (milestone == null) return { number: row.number, milestone: null, title: null };
+  // null exactly, not == null: a body with no `milestone` at all, which is what
+  // JSON.stringify makes of an undefined, has not asked for it to be taken off.
+  if (milestone === null) return { number: row.number, milestone: null, title: null };
   // A closed milestone is listed for the rows still on it, not as somewhere to move one.
   const found = milestones?.find((m) => m.title === milestone && !m.closed);
   if (!found) throw new Error(`"${milestone}" is not an open milestone the ${tab} tab listed`);
@@ -462,7 +468,7 @@ const routes = {
       repoIssues(repo, owner, name),
       numbers.length ? issueLinks(repo, cur.url, numbers.slice(0, 50)) : new Map(),
     ]);
-    listing = found;
+    listing = { issues: found.issues.map(({ number }) => ({ number })), milestones: found.milestones };
     return { ...found, repo: nameWithOwner, mentions: numbers.map((number) => ({ number, ...links.get(number) })) };
   },
 

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { rollup, linkedIssues, linksFrom, parsePrUrl, run, issueNumber, lf, setViewed, listPrs, loadPr, prHeads, branchPrs, lookupPrs, ownPrs, SEARCH_EVERY, UNREAD_FOR, pickPr, lookupRef, createIssue, repoIssues, setIssueMilestone, repoPulls, pullRow, MERGE_WORD } from '../github.js';
+import { rollup, linkedIssues, linksFrom, parsePrUrl, run, issueNumber, lf, setViewed, listPrs, loadPr, prHeads, branchPrs, lookupPrs, ownPrs, SEARCH_EVERY, UNREAD_FOR, pickPr, lookupRef, issueLinks, createIssue, repoIssues, setIssueMilestone, repoPulls, pullRow, MERGE_WORD } from '../github.js';
 import { taskLines } from '../public/tasks.js';
 import { withGh, ghArgs, ghCalls, unix } from './stub-gh.js';
 
@@ -76,6 +76,36 @@ test('an issue both closed and mentioned is listed once, as closing', () => {
   assert.equal(issues[0].closes, true);
 });
 
+// `Fixes other/repo#3` and a bare `#3` are two issues. Keyed by number, the #3
+// took other/repo's URL, and the pane linked the prose `#3` there.
+// The repository is GitHub's `repository` field, in the shape gh gives it.
+const closing = (owner, name, number) => ({
+  number, url: `https://github.com/${owner}/${name}/issues/${number}`,
+  repository: { name, owner: { login: owner } },
+});
+
+test("another repository's closing reference is kept apart from this one's #N", () => {
+  assert.deepEqual(
+    linkedIssues(pr('Fixes other/repo#3; see #3.', [closing('other', 'repo', 3)])),
+    [
+      { number: 3, url: 'https://github.com/other/repo/issues/3', closes: true, repo: 'other/repo' },
+      { number: 3, url: 'https://github.com/o/r/issues/3', closes: false },
+    ],
+  );
+  // This repository's, in GitHub's spelling rather than the remote's, is still this one's.
+  assert.deepEqual(linkedIssues(pr('', [closing('O', 'R', 4)])),
+    [{ number: 4, url: 'https://github.com/O/R/issues/4', closes: true }]);
+});
+
+// Compared by URL prefix, a PR URL on `www.github.com` made this repository's
+// own #4 another's: labelled `o/r#4`, and a bare `#4` listed a second time.
+test("this repository's closing reference is its own on www.github.com too", () => {
+  const issues = linkedIssues({
+    url: 'https://www.github.com/o/r/pull/7', body: 'see #4', closingIssuesReferences: [closing('o', 'r', 4)],
+  });
+  assert.deepEqual(issues, [{ number: 4, url: 'https://github.com/o/r/issues/4', closes: true }]);
+});
+
 test('#N attached to a word is not a linked issue, but a parenthesised one is', () => {
   assert.deepEqual(linkedIssues(pr('abc#5 and colour#5')), []);
   assert.deepEqual(linkedIssues(pr('see (#5) and #6')).map((i) => i.number), [5, 6]);
@@ -87,6 +117,17 @@ test('#N attached to a word is not a linked issue, but a parenthesised one is', 
 test('#N in a comment, a fence or a code span is not a mention', () => {
   const body = '<!-- e.g. Fixes #1 -->\n```\n#2\n```\nsee `#3` and #4';
   assert.deepEqual(linkedIssues(pr(body)).map((i) => i.number), [4]);
+});
+
+// The pane leaves a #N in a link's text to the link (inline() in pr.js), so the
+// Mentions row does too.
+test('#N inside a markdown link is not a mention', () => {
+  assert.deepEqual(linkedIssues(pr('[see #5](https://x.test/a) and #6')).map((i) => i.number), [6]);
+  // Nor is one written against a link or a code span: the pane does not link
+  // it, since what is before it is not a space.
+  assert.deepEqual(linkedIssues(pr('[x](https://y)#5\n`z`#7 and #6')).map((i) => i.number), [6]);
+  // A link the pane will not open is left as its source, and its #N is linked.
+  assert.deepEqual(linkedIssues(pr('[details in #12](#notes), [see #5](javascript:x)')).map((i) => i.number), [5, 12]);
 });
 
 test('an empty body links nothing', () => {
@@ -126,6 +167,20 @@ test('what resolved survives a NOT_FOUND on what did not, pull request URL and a
     title: 'Drive the diff pane', url: 'https://github.com/gaurav/prcoder/issues/86',
     state: 'CLOSED', kind: 'issue', updatedAt: null,
   }]]));
+});
+
+// `#1000000000000000000000` went into the query as `i1e+21`, and one alias that
+// does not parse is an answer with no data for any number. Digits are fine: on
+// 2026-11-02 GitHub gave 3000000000 and 100000000000000000000 the same NOT_FOUND
+// as a typo, beside the data for the rest.
+test('a number too long to write as digits is not asked about', { skip: unix }, async () => {
+  const url = 'https://github.com/o/r/pull/7';
+  const args = await ghArgs(() => issueLinks(os.tmpdir(), url, [27, 3000000000, 1e21, Infinity, 2 ** 53]));
+  const query = args.find((a) => a.startsWith('query='));
+  assert.deepEqual([...query.matchAll(/\bi(\S+): issueOrPullRequest/g)].map(([, n]) => n), ['27', '3000000000']);
+  // With nothing left to ask, gh is not called.
+  const { out, calls } = await ghCalls("echo '{}'", () => issueLinks(os.tmpdir(), url, [1e21]));
+  assert.deepEqual([out, calls], [new Map(), []]);
 });
 
 test('a response that is not a response is nothing, never a throw', () => {
@@ -373,6 +428,37 @@ test('a second page of issues is read with its cursor, and the milestones come f
     assert.rejects(repoIssues(os.tmpdir(), 'gaurav', 'prcoder'), { message: 'error connecting to api.github.com' }));
 });
 
+// The opened row's select offers every open milestone, so they are read past
+// the first page, with their own query, asked for once.
+test('open milestones past the first page are read with their cursor', { skip: unix }, async () => {
+  const first = structuredClone(ISSUES_PAGE);
+  first.data.repository.milestones.pageInfo = { hasNextPage: true, endCursor: 'M1' };
+  const more = { data: { repository: { milestones: {
+    pageInfo: { hasNextPage: false, endCursor: 'M2' },
+    nodes: [{ number: 60, title: 'v6', dueOn: null, description: 'later' }],
+  } } } };
+  const script = `case "$*" in\n*after=M1*) cat <<'JSON'\n${JSON.stringify(more)}\nJSON\n;;\n*) cat <<'JSON'\n${JSON.stringify(first)}\nJSON\n;;\nesac`;
+  const { out, calls } = await ghCalls(script, () => repoIssues(os.tmpdir(), 'gaurav', 'prcoder'));
+  assert.equal(out.milestones.length, 6);
+  assert.deepEqual(out.milestones.at(-1), { number: 60, title: 'v6', dueOn: null, description: 'later', closed: false, counts: null });
+  assert.equal(calls.length, 2);
+  const paged = calls.find((c) => c.includes('after=M1'));
+  assert.equal(paged[paged.indexOf('after=M1') - 1], '-f');
+});
+
+test('open milestones past the first page of pull requests\' are read too', { skip: unix }, async () => {
+  const first = structuredClone(PULLS_PAGE);
+  first.data.repository.milestones.pageInfo = { hasNextPage: true, endCursor: 'M1' };
+  const more = { data: { repository: { milestones: {
+    pageInfo: { hasNextPage: false, endCursor: 'M2' },
+    nodes: [{ number: 60, title: 'v6', dueOn: null, description: '' }],
+  } } } };
+  const script = `case "$*" in\n*after=M1*) cat <<'JSON'\n${JSON.stringify(more)}\nJSON\n;;\n*) cat <<'JSON'\n${JSON.stringify(first)}\nJSON\n;;\nesac`;
+  const { out, calls } = await ghCalls(script, () => repoPulls(os.tmpdir(), 'gaurav', 'prcoder'));
+  assert.ok(out.milestones.some((m) => m.number === 60));
+  assert.equal(calls.length, 2);
+});
+
 // The one write about an issue, through the endpoint a pull request's goes
 // through too: by number as -F, so it reaches GitHub as an Int or a null, and
 // an answer that does not name that milestone is a failure, since GitHub drops
@@ -517,7 +603,8 @@ test('the cheap per-poll call carries the checks, summarised', { skip: unix }, a
 // GraphQL call that came next: loadPr reads the linked issues alongside the
 // files, and a call of theirs would take a page and shift the rest by one.
 // The mentions' titles query (issueLinks) gets `links.json` where a test has
-// written one. Any other GraphQL call gets an empty answer. The counter is not atomic, so
+// written one, or `links-<owner>.json` when it asks another owner's repository
+// and the test has written that. Any other GraphQL call gets an empty answer. The counter is not atomic, so
 // only the file pages, which prFiles asks for one at a time, may use it.
 const withPr = (view, pages, fn, views = []) => withGh((dir) => [
   'case "$1" in',
@@ -526,7 +613,9 @@ const withPr = (view, pages, fn, views = []) => withGh((dir) => [
   `      if [ -f "${dir}/view$v.json" ]; then cat "${dir}/view$v.json"; else cat "${dir}/view.json"; fi ;;`,
   `  *) case "$*" in`,
   `       *"files(first:100"*) n=$(( $(cat "${dir}/n" 2>/dev/null || echo 0) + 1 )); echo $n > "${dir}/n"; cat "${dir}/page$n.json" ;;`,
-  `       *"issueOrPullRequest"*) cat "${dir}/links.json" 2>/dev/null || echo '{"data":{}}' ;;`,
+  `       *"issueOrPullRequest"*) f="${dir}/links.json"`,
+  `         for a in "$@"; do case "$a" in owner=*) [ -f "${dir}/links-\${a#owner=}.json" ] && f="${dir}/links-\${a#owner=}.json" ;; esac; done`,
+  `         cat "$f" 2>/dev/null || echo '{"data":{}}' ;;`,
   `       *) echo '{"data":{}}' ;;`,
   '     esac ;;',
   'esac',
@@ -595,6 +684,22 @@ test('a mention carries the kind, title and URL its lookup found', { skip: unix 
       { number: 3, kind: 'pull', title: 'Earlier work', url: 'https://github.com/o/r/pull/3' },
       { number: 4, kind: 'issue', title: 'A bug', url: 'https://github.com/o/r/issues/4' },
       { number: 5, kind: null, title: null, url: 'https://github.com/o/r/issues/5' }]);
+  });
+});
+
+// Asked of this repository, another's #3 was this one's #3; not asked at all,
+// it had no title. So it is asked of its own repository, in a call of its own.
+test("another repository's closing reference is titled from that repository", { skip: unix }, async () => {
+  const other = { number: 3, url: 'https://github.com/other/repo/issues/3', repository: { name: 'repo', owner: { login: 'other' } } };
+  await withPr({ ...view, body: 'Fixes other/repo#3; see #3.', closingIssuesReferences: [other] }, [page([file(1)], null)], async (dir) => {
+    const answer = (title, url) => JSON.stringify({ data: { repository: {
+      i3: { __typename: 'Issue', title, url, state: 'OPEN', updatedAt: '2026-10-01T00:00:00Z' } } } });
+    await fs.writeFile(path.join(dir, 'links.json'), answer('Ours', 'https://github.com/o/r/issues/3'));
+    await fs.writeFile(path.join(dir, 'links-other.json'), answer('Theirs', 'https://github.com/other/repo/issues/3'));
+    const pr = await loadPr(os.tmpdir(), undefined, { pause: 0 });
+    assert.deepEqual(pr.issues.map(({ repo, title, url }) => ({ repo, title, url })), [
+      { repo: 'other/repo', title: 'Theirs', url: 'https://github.com/other/repo/issues/3' },
+      { repo: undefined, title: 'Ours', url: 'https://github.com/o/r/issues/3' }]);
   });
 });
 

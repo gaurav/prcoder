@@ -11,6 +11,10 @@
      deliberately not --fail; where it is drawn it is an octagon, like the icon,
      never a bare dot that could pass for a failed check. */
   --busy: #da3633;
+  /* A pull request's tint: the queue's `PR #N` tag and a pull request's `#N`
+     in the description, which have to read as the same kind of thing. */
+  --pull-bg: color-mix(in srgb, var(--accent) 10%, transparent);
+  --pull-line: color-mix(in srgb, var(--accent) 35%, transparent);
   color-scheme: dark;
   /* The description and the pull request's title -- the two things in this
      window that are read rather than operated. Every face here ships with an OS
@@ -529,6 +533,14 @@ a { color: var(--accent); }
 .md code { background: var(--bg); padding: 0 4px; border-radius: 3px; font-size: .87em; }
 .md em { font-style: italic; color: var(--fg); }
 .md del { color: var(--dim); }
+/* A `#N` in the prose that is a pull request (mentionLink in pr.js): the
+   queue's PR tag tint (--pull-bg, --pull-line), smaller, so it marks the
+   number without making a pill of it mid-sentence. The author's `#N` text is
+   left alone. */
+.md a.ref.pull {
+  padding: 0 3px; border-radius: 4px; text-decoration: none;
+  background: var(--pull-bg); box-shadow: inset 0 0 0 1px var(--pull-line);
+}
 /* A fence scrolls on its own rather than widening the pane, which at 375px it
    would do at the first long command line. */
 .md pre {
@@ -609,7 +621,10 @@ a { color: var(--accent); }
    scans; hover brings a title back to full colour. The label stays sans because
    it is a heading, in the same voice as the file groups and the sections. */
 .issues {
-  display: grid; grid-template-columns: max-content 1fr;
+  /* fit-content, not max-content: an `owner/repo#N` has no bound on its length,
+     and at max-content it pushed every row's title out of a narrow pane. It
+     wraps inside this cap (.num.other); short labels never reach it. */
+  display: grid; grid-template-columns: fit-content(45%) 1fr;
   column-gap: 8px; row-gap: 3px; margin: 14px 0 0;
   font-family: var(--serif); font-size: 13px; line-height: 1.4;
 }
@@ -623,6 +638,7 @@ a { color: var(--accent); }
   text-decoration: none;
 }
 .issues .num { color: var(--accent); text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.issues .num.other { white-space: normal; overflow-wrap: anywhere; }
 .issues .ttl { color: var(--dim); }
 .issues a:hover .ttl { color: var(--fg); text-decoration: underline; }
 
@@ -807,10 +823,7 @@ main.diff-off #diff-wrap { display: none; }
    what `PR #N` wears there: a filled accent is the one thing a region is for,
    and a group of five PR mentions would be five of them beside each row's
    buttons. */
-.item .tag.pull {
-  border-color: color-mix(in srgb, var(--accent) 35%, transparent);
-  background: color-mix(in srgb, var(--accent) 10%, transparent);
-}
+.item .tag.pull { border-color: var(--pull-line); background: var(--pull-bg); }
 /* A mention on the Issues tab that is no longer open: a closed issue, or a
    merged or closed PR. */
 .item.source.closed .text { color: var(--dim); }
@@ -888,12 +901,15 @@ main.diff-off #diff-wrap { display: none; }
 .item .disclose:hover { color: var(--accent); }
 li.issue-body.md { font-size: 15px; max-width: none; padding: 2px 6px 8px 22px; }
 li.issue-body .open-issue { display: inline-block; text-decoration: none; }
-/* Moving an issue between milestones: a row is dragged by any part of it, a
-   summary lights while one is over it, and the opened row's select is the
-   keyboard's way to the same move. */
-.item.source[draggable="true"] { cursor: grab; }
+/* Moving an issue between milestones: a row is dragged by its grip, a summary
+   lights while one is over it, and the opened row's select is the keyboard's
+   way to the same move. A fixed width, since a mention with nothing to drag has
+   an empty grip to line up with the rest. */
+.item.source .grip { width: 8px; text-align: center; }
 .fold.milestone > summary.over { outline: 1px dashed var(--accent); outline-offset: 1px; border-radius: 3px; }
 li.issue-body .issue-ways { display: flex; gap: 8px; align-items: center; margin-top: 2px; }
+/* What the select and Move hold a repaint by (groupsInUse); laid out as the row's other ways. */
+li.issue-body .move-to { display: contents; }
 li.issue-body select.milestone {
   font: inherit; font-size: 13px; padding: 1px 4px; color: var(--fg); background: var(--bg);
   border: 1px solid var(--line); border-radius: 4px;
@@ -917,6 +933,10 @@ li.issue-body select.milestone {
 /* More room between pull requests than between issues: each is three lines,
    and at the issues' 3px they ran together. */
 .item.pull { flex-wrap: wrap; row-gap: 0; padding: 7px 4px; }
+/* What the lines under the title step in by, to start under it: the disclosure,
+   and the grip when there are groups to drag the row onto. */
+.item.pull { --under-title: 18px; }
+.item.pull.gripped { --under-title: 32px; }
 /* By stack: a pull request and its opened body step in under the one it is
    built on, by the depth the row carries (pullRow in queue.js). */
 .item.pull, .items > li.issue-body { margin-left: calc(var(--depth, 0) * 16px); }
@@ -962,7 +982,7 @@ li.issue-body select.milestone {
 .item.pull .pr-stack a { color: var(--accent); text-decoration: none; }
 .item.pull .pr-stack a.tag:hover { border-color: var(--accent); }
 /* The issues it closes, under the lead, in the facts' size and dim, each a link. */
-.item.pull .pull-closes { flex: 1 0 100%; margin: 0 0 0 18px; font-size: 12px; color: var(--dim); }
+.item.pull .pull-closes { flex: 1 0 100%; margin: 0 0 0 var(--under-title); font-size: 12px; color: var(--dim); }
 .item.pull .pull-closes a { color: var(--accent); text-decoration: none; }
 .item.pull .pull-closes a:hover { text-decoration: underline; }
 /* Switch sits after the title in sight, since it is what the tab is for, while
@@ -971,14 +991,14 @@ li.issue-body select.milestone {
 /* The facts on a line of their own under the title, indented with the lead:
    on one line with the title they were read as its tail, and a long title
    pushed them about. */
-.item.pull .pr-facts { flex: 1 0 100%; display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; margin-left: 18px; }
+.item.pull .pr-facts { flex: 1 0 100%; display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; margin-left: var(--under-title); }
 /* The title and Switch share a box that takes the line's room and wraps
    inside it, so Switch follows the title's last word and ▶ ↓ keep the right
    edge; as separate flex items a long title wrapped onto a line of its own. */
 .item.pull .pull-title { flex: 1 1 0; min-width: 0; }
 .item.pull .actions { margin-left: auto; }
 .item.pull .pr-lead {
-  flex: 1 0 100%; margin: 0 0 1px 18px; font-family: var(--serif); font-size: 15px; line-height: 1.4;
+  flex: 1 0 100%; margin: 0 0 1px var(--under-title); font-family: var(--serif); font-size: 15px; line-height: 1.4;
   /* Between --dim and --fg: plain --dim is right for the row's other small
      facts, but a thin serif in it read as too faint to make out (2026-10-20). */
   color: color-mix(in srgb, var(--fg) 60%, var(--dim));

@@ -1,7 +1,7 @@
-import { withoutHtml, mention, repoUrl, urlPath, blocks, sectionize } from './tasks.js';
+import { withoutHtml, mention, unmarked, mdLink, bareUrl, opens, repoUrl, urlPath, blocks, sectionize } from './tasks.js';
 import { kids, h, btn, ext, debug, tabBtn, writeThrough, fraction, mark, kept, fold } from './ui.js';
 import { fileTree, fileGroup, filesProgress, unlisted } from './filelist.js';
-import { refLabel } from './items.js';
+import { refLabel, refClass } from './items.js';
 
 // Re-exported for the tests, which read the pane's view of a body through here.
 export { withoutHtml };
@@ -527,6 +527,16 @@ const linkBase = (pr) => ({
   ref: pr.isCrossRepository ? pr.baseRefName : pr.headRefName,
 });
 
+/**
+ * What GitHub said each mentioned number is (`pr.issues`, by number), so a
+ * `#28` can say whether it is a pull request and what it is called -- the
+ * `refs` inline() reads beside linkBase's two. Only this repository's: a bare
+ * `#28` is never another repository's issue the pull request closes. Apart
+ * from linkBase because only the description reads it: the tab title and the
+ * header links call that on every paint for the repository alone.
+ */
+const mentionRefs = (pr) => new Map((pr.issues ?? []).filter((i) => !i.repo).map((i) => [i.number, i]));
+
 /** `owner/repo`, from a repository URL on any host. */
 const repoName = (repoUrl) => repoUrl.replace(/^https?:\/\/[^/]+\//, '');
 
@@ -697,7 +707,7 @@ const repoChip = (crumb) => ext(crumb.href, [
  * entirely. docs/Panes.md has what each shows.
  */
 export function renderPr(pr, handlers) {
-  links = linkBase(pr);
+  links = { ...linkBase(pr), refs: mentionRefs(pr) };
   // A different pull request is a different set of sections and a different
   // amount of scroll; none of the old numbers mean anything against it.
   if (shownFor !== pr.url) {
@@ -1004,8 +1014,10 @@ const badge = (text, kind) => h('span', { className: `badge ${kind}` }, text);
  * which is how tools/browser.mjs finds a row; the grid never renders it.
  *
  * A pull request's number says `PR #27`, as the queue's tag does -- refLabel,
- * so the two cannot disagree; a bare `#N` is either on GitHub. The column is
- * right-aligned, so the digits still line up under an issue's.
+ * so the two cannot disagree; a bare `#N` is either on GitHub. An issue in
+ * another repository that this one closes says `owner/repo#3`, and is the one
+ * label that may wrap (`.num.other`), having no bound on its length. The column
+ * is right-aligned, so the digits still line up under an issue's.
  */
 function issueRow(list, closes, label) {
   const kind = list.filter((i) => i.closes === closes);
@@ -1013,7 +1025,7 @@ function issueRow(list, closes, label) {
   return h('div', { className: 'issues' },
     h('span', { className: 'issues-label' }, label),
     ...kind.map((i) => ext(i.url, [
-      h('span', { className: 'num' }, refLabel({ issue: i.number, kind: i.kind })),
+      h('span', { className: i.repo ? 'num other' : 'num' }, refLabel({ issue: i.number, kind: i.kind, repo: i.repo })),
       ...(i.title ? [' ', h('span', { className: 'ttl' }, i.title)] : []),
     ])));
 }
@@ -1131,27 +1143,66 @@ function taskRow({ done, text, index }, onTask, where = links) {
  */
 export const inline = (s, where = links) => {
   const code = [];
-  const a = (href, text) => `<a href="${href}" target="_blank" rel="noopener">${text}</a>`;
-  return escape(s)
+  const held = [];
+  const a = (href, text, attrs = '') => `<a href="${href}"${attrs} target="_blank" rel="noopener">${text}</a>`;
+  const hold = (html) => `\u0001${held.push(html) - 1}\u0001`;
+  return escape(unmarked(s))
     .replace(/`([^`]+)`/g, (_, c) => `\u0000${code.push(c) - 1}\u0000`)
     .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
     .replace(/\*([^*\n]+)\*/g, '<em>$1</em>')
     .replace(/(?<![A-Za-z0-9_])_([^_\n]+)_(?![A-Za-z0-9_])/g, '<em>$1</em>')
     .replace(/(?<![\w/~])(~~?)(?![\s~])([^~\n]*?[^\s~])\1(?![\w~])/g, '<del>$2</del>')
-    .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (m, text, href) => {
+    // Held aside until the mentions are done, so a `#5` in `[see #5](…)` does
+    // not become a link inside the link: the browser closes the outer one
+    // early, and a click on the `#5` opened the pull request. Only a link this
+    // draws: one it will not open stays its source, where the `#5` in its text
+    // is a mention like any other, and mentions() lists it. Its `](href)` is
+    // still held: the `(#5` in `[x](#5)` is an anchor, not pull request 5.
+    .replace(mdLink(), (m, text, href) => {
       const url = target(href, where);
-      return url ? a(url, text) : m;
+      return url ? hold(a(url, text)) : `[${text}${hold(`](${href})`)}`;
     })
-    .replace(/(^|[\s(])(https?:\/\/[^\s)]+)/g, (_, pre, url) => pre + a(url, url))
-    // After the two link rules, so a `#` inside an href this just built is not
-    // a mention: those are preceded by a path character, and a mention has to
-    // start a word. mentions() in tasks.js reads the same pattern over the same
-    // shown text, which is what puts the same numbers in the Mentions row.
-    .replace(mention(), (m, pre, n) =>
-      (where ? `${pre}${a(`${escape(where.repo)}/issues/${n}`, `#${n}`)}` : m))
+    // Held as well: the mention rule took the `(#5` in `https://a.com/(#5/x`
+    // for a mention, in the href this had just built, and the anchor it wrote
+    // there closed the attribute.
+    .replace(bareUrl(), (_, pre, url) => pre + hold(a(url, url)))
+    // mentions() in tasks.js reads the same pattern over the same shown text,
+    // less the same links, which is what puts the same numbers in the Mentions
+    // row.
+    .replace(mention(), (m, pre, n) => (where ? pre + mentionLink(n, where, a) : m))
+    .replace(/\u0001(\d+)\u0001/g, (_, i) => held[i])
     .replace(/\n/g, '<br>')
     .replace(/\u0000(\d+)\u0000/g, (_, i) => `<code>${code[i]}</code>`);
 };
+
+/**
+ * A bare `#N` in the description as a link. What the title lookup found for it
+ * (`where.refs`) gives the URL GitHub has for it -- `/pull/N` for a pull
+ * request, where `/issues/N` is a guess GitHub redirects -- its title on
+ * hover, numbered by refLabel as the rows below are, and refClass's class,
+ * which tints a pull request like the queue's `PR #N` tag (`.md a.ref.pull`;
+ * an issue's is unstyled). The text stays the author's `#N`: it is their
+ * sentence, and `Builds on PR #149` where they wrote `Builds on #149` is the
+ * pane rewriting it.
+ *
+ * A number the lookup did not answer is a plain link, called neither. The title
+ * is what says so: withLinks leaves every number in `pr.issues`, its title and
+ * kind null for a typo, a failed call or one past the cap, and linksFrom keeps
+ * nothing that has no title.
+ *
+ * The title and the URL are GitHub's, so anyone's text, going into attributes
+ * in a string set with innerHTML: both go through escape(), and the URL through
+ * target() as every other link does -- with no `where`, so only an absolute
+ * http(s) one is used and anything else falls back to the guess.
+ */
+function mentionLink(n, where, a) {
+  const found = where.refs?.get(Number(n));
+  const github = target(found?.url ?? '', null);
+  const url = github ? escape(github) : `${escape(where.repo)}/issues/${n}`;
+  if (!found?.title) return a(url, `#${n}`);
+  const title = escape(`${refLabel({ issue: n, kind: found.kind })}: ${found.title}`);
+  return a(url, `#${n}`, ` class="ref ${refClass(found.kind)}" title="${title}"`);
+}
 
 /**
  * Where a link in a description actually points, or null for one this pane will
@@ -1161,12 +1212,13 @@ export const inline = (s, where = links) => {
  * The null is the guard as much as the fallback: this href is interpolated into
  * an `href="..."` and set with innerHTML, so `javascript:` and `data:` targets
  * are a typed turn into the running claude session away (see escape() below).
- * Only http(s) and repository-relative paths get through; a bare `#anchor` is a
- * position on a page prcoder is not, so it is left alone too.
+ * Only http(s) and repository-relative paths get through (opens() in tasks.js,
+ * which mentions() reads too); a bare `#anchor` is a position on a page prcoder
+ * is not, so it is left alone too.
  */
 const target = (href, where) => {
+  if (!opens(href)) return null;
   if (/^https?:\/\//.test(href)) return href;
-  if (/^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith('#')) return null;
   // `href` has been through escape() with the rest of the description, but the
   // ref comes from the pull request: raw, a branch named `a"/style="...` closed
   // the href and added an attribute to the page that holds the /pty socket.

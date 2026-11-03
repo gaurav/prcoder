@@ -253,9 +253,12 @@ in the window that is read rather than operated. Checklists in it are real check
 straight back to the description; only the box ticks, so a line's text selects and copies like
 the prose around it. It ends with the issues the description points at, one line
 each with its title: the ones this pull request closes, then the ones it only mentions, a pull
-request among them numbered `PR #N` as the queue's tags are. A bare
-`#41` in the prose is a link but says nothing about what it is, and the titles are the point of
-the list. What the renderer does and does not draw is in [Design.md](Design.md).
+request among them numbered `PR #N` as the queue's tags are, and an issue it closes in another
+repository named `owner/repo#N`, wrapped when it is long so the titles keep their room. A bare
+`#41` in the prose is a link that shows its title only on hover, tinted like those tags when it is
+a pull request, so the list is still where the titles can be read. A number GitHub did not answer
+for is a plain link, titled and tinted as nothing. What the renderer does and does not draw is in
+[Design.md](Design.md).
 
 *Files* is every changed file grouped as *Config & docs* / *Tests* / *Code*, in that order. Inside
 each group the files read like a tree: the files at the top of the repository come first, and
@@ -454,12 +457,19 @@ the title with the issue's link into the coding agent's prompt, unsent, and tick
 there is no item to tick; the row stays where it is. ↓ copies the title into Local, tagged with
 the issue, as the PR tab's ↓ copies a checklist line.
 
-A row can be dragged onto a milestone's line, or onto **No milestone**, and that sets the issue's
+A row can be dragged by its grip (⠿) onto a milestone's line, or onto **No milestone**, and that sets the issue's
 milestone on GitHub -- the one thing the tab writes, and the only kind of change it makes to an
-issue. The line lights up while a row is over it. The opened row has the same move as a select,
-for the keyboard: every open milestone and none, with the current one chosen. Either way the tab
-reads the listing again once GitHub has it, so the row moves group then and not before, and a
-refusal is a toast. A mention that is not one of the repository's open issues cannot be dragged,
+issue. The line lights up while a row is over it. The opened row has the same move for the
+keyboard: a select of every open milestone and none, with the current one chosen, and **Move**
+beside it. Choosing writes nothing until Move, since an arrow key on a closed select fires its
+change event in some browsers, and after it focus goes back to the select, in the group the row
+landed in, which is opened for it. A closed milestone
+has a group only for the issues still on it, so it can be moved off but not onto: its line takes no
+drop, and it is in the select only of an issue already on it, marked closed. Either way the tab
+reads the listing again once GitHub has it, so the row moves group then and not before. A listing
+that lands during a drag, or with focus in the select or Move, is drawn when that ends. A refusal
+is a toast, and the tab reads the listing again then too, with the row left where GitHub has it. Only the grip drags, so a row's title can still be selected and its #N link
+dragged as a link. A mention that is not one of the repository's open issues has no grip,
 since there is nothing of it here to move. Milestones themselves are not made, renamed or closed
 from prcoder.
 
@@ -519,6 +529,8 @@ the last listing -- the server's, or `.prcoder/pulls.json`, which keeps it betwe
 reads GitHub behind it, unless the listing is under a minute old. The line under the groups says
 when the listing was read and `updating…` while the read is out; ⟳ beside the search reads
 whatever the age. A read that fails leaves the list as it was and says so in a toast.
-A row dragged onto a milestone's line, or the pick in its opened row, sets the pull request's
-milestone on GitHub exactly as an issue's is set, with the same hold: the number and the title
-both come from the listing the tab was shown.
+A row dragged by its grip (⠿) onto a milestone's line, or the pick in its opened row, sets the pull request's
+milestone on GitHub through the same call as an issue's, with the same hold: the number and the
+title both come from the listing the tab was shown. The opened row's select waits for **Move**, focus
+follows the row, a refusal reads the listing again, and a listing landing mid-gesture waits, all as on the Issues tab. Only by milestone is there a grip,
+since one list and by stack have no line to drop a row on.

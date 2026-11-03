@@ -298,6 +298,34 @@ test('the issues the description mentions are listed below it, titled', { skip }
   assert.equal(await row.getAttribute('href'), `${REPO}/issues/7`);
 });
 
+// A closing reference's `owner/repo#N` has no bound on its length, and it sat
+// on one line in a column as wide as its widest label: the titles were pushed
+// out of a narrow pane, those of the short rows beside it too.
+test('a long label in another repository wraps, and leaves the titles room', { skip }, async () => {
+  const repo = 'some-long-organisation/some-long-repository-name';
+  const issues = [
+    { number: 1234, url: `https://github.test/${repo}/issues/1234`, closes: true, repo, title: 'Fix the far side', kind: 'issue' },
+    { number: 7, url: `${REPO}/issues/7`, closes: true, title: 'Per-route locking', kind: 'issue' },
+    { number: 27, url: `${REPO}/pull/27`, closes: true, title: 'Queue tabs', kind: 'pull' }];
+  const fresh = await newPage({ st: { ...status, pr: { ...pr, issues } } });
+  await fresh.locator('#pr').evaluate((p) => { p.style.flex = '0 0 375px'; p.style.width = '375px'; });
+  const { width, overflow, label, short, title } = await fresh.locator('.issues').evaluate((g) => ({
+    width: g.clientWidth,
+    overflow: g.scrollWidth - g.clientWidth,
+    label: g.querySelector('a .num').getBoundingClientRect().width,
+    short: [...g.querySelectorAll('a:not(:first-of-type) .num')].map((n) => n.getBoundingClientRect().height),
+    title: g.querySelector('a .ttl').getBoundingClientRect().width,
+  }));
+  assert.ok(width <= 400, `the pane is narrow here: ${width}px`);
+  assert.equal(overflow, 0);
+  assert.ok(label <= width / 2, `the label takes ${label} of ${width}px`);
+  assert.ok(title >= width / 3, `the title has ${title} of ${width}px`);
+  // The whole label is still there, and a short one stays on its line.
+  assert.equal(await fresh.locator('.issues a .num').first().textContent(), `${repo}#1234`);
+  assert.equal(short[0], short[1]);
+  await fresh.close();
+});
+
 // A bare #N is an issue or a pull request, and the list says which, as the
 // queue's tag does. An unknown kind -- the title lookup failed -- is a number.
 test('a mention that is a pull request is numbered PR #N', { skip }, async () => {
@@ -1794,43 +1822,162 @@ const ISSUE_DRAG = 'application/x-prcoder-issue';
 const PULL_DRAG = 'application/x-prcoder-pull';
 
 // The one write the Issues tab makes: a row dragged onto a group, or its
-// milestone picked in the opened row. The route is mocked; the move is the
-// POST it gets and the listing being read again after.
-test('picking a milestone in an opened row posts the move and reads the listing again', { skip }, async () => {
+// milestone picked in the opened row. The route is mocked; the move is the POST
+// it gets and the listing being read again after.
+test('a milestone picked in an opened row is written by Move, and the keyboard follows the row', { skip }, async () => {
   const { fresh } = await issuesPage();
   const moves = [];
   await fresh.route('**/api/issue/milestone', (r) => { moves.push(r.request().postDataJSON()); return r.fulfill({ json: { ok: true } }); });
   await fresh.locator('[data-group="m:1"] summary .count').click();
   await fresh.locator('[data-group="m:1"] .item .disclose').click();
-  const pick = fresh.locator('[data-group="m:1"] .issue-body select.milestone');
-  assert.deepEqual(await pick.locator('option').allTextContents(), ['No milestone', 'v0.1', 'v1.0', 'Needed soon', 'Not urgent']);
-  assert.equal(await pick.inputValue(), 'v1.0');
-  let again = fresh.waitForResponse('**/api/issues');
-  await pick.selectOption('Needed soon');
-  await again;
+  const opened = (group) => fresh.locator(`[data-group="${group}"] .issue-body select.milestone`);
+  const moveBtn = (group) => fresh.locator(`[data-group="${group}"] .move-to button`);
+  const moved = (milestone) => fresh.route('**/api/issues', (r) => r.fulfill({ json: { ...ISSUES,
+    issues: ISSUES.issues.map((i) => (i.number === 58 ? { ...i, milestone } : i)) } }));
+  assert.deepEqual(await opened('m:1').locator('option').allTextContents(), ['No milestone', 'v0.1', 'v1.0', 'Needed soon', 'Not urgent']);
+  assert.equal(await opened('m:1').inputValue(), 'v1.0');
+  assert.equal(await moveBtn('m:1').isDisabled(), true);
+  // Changing the select writes nothing: an arrow key on a closed one fires
+  // change on Linux and Windows. Stepping back disables Move again.
+  await opened('m:1').selectOption('Not urgent');
+  assert.equal(await moveBtn('m:1').isDisabled(), false);
+  await opened('m:1').selectOption('v1.0');
+  assert.equal(await moveBtn('m:1').isDisabled(), true);
+  await opened('m:1').selectOption('Needed soon');
+  assert.deepEqual(moves, []);
+  // Move writes it once, and focus goes to the select in the group it landed
+  // in, which was folded and is opened for it.
+  await moved(4);
+  await moveBtn('m:1').click();
+  await fresh.waitForFunction(() => document.activeElement?.matches?.('[data-group="m:4"] select.milestone[data-move="58"]'));
   assert.deepEqual(moves, [{ number: 58, milestone: 'Needed soon' }]);
-  // The rows are draggable; the groups' summaries, not the mentions', are where they go.
-  assert.equal(await fresh.locator('[data-group="m:1"] .item').getAttribute('draggable'), 'true');
-  assert.equal(await fresh.locator('[data-group="mentioned"] .item').getAttribute('draggable'), 'false');
-  // The row is still open after the listing came back; off a milestone altogether is null.
-  again = fresh.waitForResponse('**/api/issues');
-  await fresh.locator('[data-group="m:1"] .issue-body select.milestone').selectOption('');
-  await again;
+  assert.equal(await fresh.locator('[data-group="m:4"]').evaluate((d) => d.open), true);
+  assert.equal(await opened('m:4').inputValue(), 'Needed soon');
+  // Off a milestone altogether is null.
+  await moved(null);
+  await opened('m:4').selectOption('');
+  await moveBtn('m:4').click();
+  await fresh.waitForFunction(() => document.activeElement?.matches?.('[data-group="m:none"] select.milestone[data-move="58"]'));
   assert.deepEqual(moves.at(-1), { number: 58, milestone: null });
   // Dropped onto a group's line, the row moves there; a pull request's row is
   // not taken, since it is not an issue (until 2026-10-21 any drop threw).
   // A timeout, so a drop that never reaches the move fails here rather than hanging.
-  again = fresh.waitForResponse('**/api/issues', { timeout: 5000 });
-  assert.equal(await dropRow(fresh, '[data-group="m:none"] summary', ISSUE_DRAG, 58), true);
+  let again = fresh.waitForResponse('**/api/issues', { timeout: 5000 });
+  assert.equal(await dropRow(fresh, '[data-group="m:3"] summary', ISSUE_DRAG, 58), true);
   await again;
-  assert.deepEqual(moves.at(-1), { number: 58, milestone: null });
+  assert.deepEqual(moves.at(-1), { number: 58, milestone: 'Not urgent' });
   assert.equal(moves.length, 3);
-  assert.equal(await dropRow(fresh, '[data-group="m:none"] summary', PULL_DRAG, 12), false, 'a pull request is not dropped here');
+  assert.equal(await dropRow(fresh, '[data-group="m:3"] summary', PULL_DRAG, 12), false, 'a pull request is not dropped here');
   assert.equal(moves.length, 3);
-  // A refusal is a toast, and nothing is read again.
+  // A listed row has a grip to drag it by, and a mention that is not listed has none.
+  assert.equal(await fresh.locator('[data-group="m:none"] .item[data-issue="58"] .grip').getAttribute('draggable'), 'true');
+  assert.equal(await fresh.locator('[data-group="mentioned"] .item .grip').getAttribute('draggable'), null);
+  // A refusal is a toast, the select goes back to where the issue still is, and
+  // the listing is read again, in case that is what the server and page differ on.
   await fresh.route('**/api/issue/milestone', (r) => r.fulfill({ status: 500, json: { error: '"x" is not an open milestone the Issues tab listed' } }));
-  await fresh.locator('[data-group="m:1"] .issue-body select.milestone').selectOption('Not urgent');
+  again = fresh.waitForResponse('**/api/issues');
+  await opened('m:none').selectOption('Not urgent');
+  await moveBtn('m:none').click();
   await fresh.waitForFunction(() => document.getElementById('toast').textContent.includes('not an open milestone'));
+  await again;
+  await fresh.waitForFunction(() => document.activeElement?.matches?.('[data-group="m:none"] select.milestone[data-move="58"]'));
+  assert.equal(await opened('m:none').inputValue(), '');
+  await fresh.close();
+});
+
+// A toast sits over the pane's foot, and takes a mouse aimed at a row under it.
+const noToast = (p) => p.evaluate(() => { document.getElementById('toast').hidden = true; });
+
+// A press on the title selects it, which a draggable row would have made a drag.
+test('an issue row\'s title can be selected with the mouse', { skip }, async () => {
+  const { fresh } = await issuesPage();
+  await noToast(fresh);
+  const box = await fresh.locator('[data-group="m:none"] .item .text').boundingBox();
+  await fresh.mouse.move(box.x + 2, box.y + box.height / 2);
+  await fresh.mouse.down();
+  await fresh.mouse.move(box.x + 60, box.y + box.height / 2, { steps: 5 });
+  await fresh.mouse.up();
+  assert.ok((await fresh.evaluate(() => getSelection().toString())).length > 3);
+  await fresh.close();
+});
+
+// Chromium only: Firefox gets no HTML5 drag events from dragTo (tools/CLAUDE.md).
+// Each target is a folded group's line, on screen before the press.
+test('the grip\'s drag moves an issue, and a link\'s drag, its own group or a closed milestone does not', { skip: skip || (engineName === 'firefox' && 'dragTo sends Firefox no drag events') }, async () => {
+  const { fresh } = await issuesPage({ ...ISSUES,
+    milestones: [...ISSUES.milestones, { number: 7, title: 'v0.0', dueOn: null, description: '', closed: true }] });
+  await noToast(fresh);
+  // Folded, so that every target is on screen before the press.
+  await fresh.locator('[data-group="mentioned"] summary .count').click();
+  const moves = [];
+  await fresh.route('**/api/issue/milestone', (r) => { moves.push(r.request().postDataJSON()); return r.fulfill({ json: { ok: true } }); });
+  const row = fresh.locator('[data-group="m:none"] .item');
+  await row.locator('.tag.issue').dragTo(fresh.locator('[data-group="m:4"] summary'));
+  await row.locator('.grip').dragTo(fresh.locator('[data-group="m:7"] summary'));
+  await row.locator('.grip').dragTo(fresh.locator('[data-group="m:none"] summary'));
+  const again = fresh.waitForResponse('**/api/issues');
+  await row.locator('.grip').dragTo(fresh.locator('[data-group="m:4"] summary'));
+  await again;
+  assert.deepEqual(moves, [{ number: 149, milestone: 'Needed soon' }]);
+  await fresh.close();
+});
+
+// Each visit and each move reads a listing that takes seconds, so one lands in
+// the middle of whatever is being done. It waits until that is over.
+test('a listing landing during a drag or with a row\'s select in use waits for it to end', { skip }, async () => {
+  const { fresh } = await issuesPage();
+  const retitled = { ...ISSUES, issues: ISSUES.issues.map((i) => ({ ...i, title: `${i.title} (new)` })) };
+  await fresh.locator('[data-group="m:none"] .item .disclose').click();
+  const title = fresh.locator('[data-group="m:none"] .item .text');
+  const was = await title.textContent();
+  // A listing is out, and answers only when told to.
+  const land = async () => {
+    let answer;
+    const asked = new Promise((res) => { answer = res; });
+    await fresh.route('**/api/issues', async (r) => { await asked; await r.fulfill({ json: retitled }); });
+    await fresh.locator('#queue-body .tab[data-tab="local"]').click();
+    await fresh.locator('#queue-body .tab[data-tab="issues"]').click();
+    const landed = fresh.waitForResponse('**/api/issues');
+    return async () => { answer(); await landed; await fresh.evaluate(() => new Promise((res) => setTimeout(res))); };
+  };
+
+  // The select, and what is left of the row after it: same element, old listing.
+  let answer = await land();
+  const pick = fresh.locator('[data-group="m:none"] .issue-body select.milestone');
+  await pick.focus();
+  await fresh.evaluate(() => { window.held = document.querySelector('[data-group="m:none"] .issue-body select.milestone'); });
+  await answer();
+  assert.equal(await fresh.evaluate(() => window.held.isConnected), true);
+  assert.equal(await title.textContent(), was);
+  await fresh.evaluate(() => document.activeElement.blur());
+  await fresh.waitForFunction((t) => document.querySelector('[data-group="m:none"] .item .text').textContent !== t, was);
+  assert.equal(await fresh.evaluate(() => window.held.isConnected), false);
+
+  // A poll's repaint leaves it alone too. Clicked from the page: a real click
+  // takes the focus away, which is the end of the hold.
+  await pick.focus();
+  await fresh.evaluate(() => { window.held = document.querySelector('[data-group="m:none"] .issue-body select.milestone'); });
+  await fresh.route('**/api/status', (r) => r.fulfill({ json: { ...status, nameWithOwner: 'gaurav/prcoder', queue: [{ text: 'new', done: false, deleted: false }] } }));
+  const polled = fresh.waitForResponse('**/api/status');
+  await fresh.evaluate(() => document.getElementById('pr-refresh').click());
+  await polled;
+  await fresh.evaluate(() => new Promise((res) => setTimeout(res)));
+  assert.equal(await fresh.evaluate(() => window.held.isConnected), true);
+  await fresh.evaluate(() => document.activeElement.blur());
+
+  // The drag: the row stays until its dragend, whose event needs the row there.
+  answer = await land();
+  const before = await title.textContent();
+  await fresh.evaluate(() => {
+    window.held = document.querySelector('[data-group="m:none"] .item .grip');
+    window.held.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer: new DataTransfer() }));
+  });
+  retitled.issues = retitled.issues.map((i) => ({ ...i, title: `${i.title} again` }));
+  await answer();
+  assert.equal(await fresh.evaluate(() => window.held.isConnected), true);
+  assert.equal(await title.textContent(), before);
+  await fresh.evaluate(() => window.held.dispatchEvent(new DragEvent('dragend', { bubbles: true })));
+  assert.match(await title.textContent(), /again$/);
   await fresh.close();
 });
 
@@ -2141,12 +2288,98 @@ test('a move made while the pull requests are being read is read again after', {
   await fresh.waitForFunction(() => document.querySelector('#queue-body .pull-note')?.textContent.includes('updating'));
   await fresh.locator('.item[data-pull="30"] .disclose').click();
   await fresh.locator('[data-group="p:none"] .issue-body select.milestone').selectOption('Needed soon');
+  await fresh.locator('[data-group="p:none"] .move-to button').click();
   await fresh.waitForTimeout(200);
   assert.deepEqual(reads, [true], 'nothing new while the first is out');
   release();
   await fresh.waitForFunction(() => !document.querySelector('#queue-body .pull-note')?.textContent.includes('updating'));
   await fresh.waitForTimeout(200);
   assert.deepEqual(reads, [true, true], 'and one more after it');
+  await fresh.close();
+});
+
+// A press on the title selects it, and only the grip drags: see the Issues tab's.
+test('a pull request row\'s title can be selected, and it has a grip only by milestone', { skip }, async () => {
+  const { fresh } = await pullsPage(PULLS, { stale: false });
+  await noToast(fresh);
+  const row = fresh.locator('.item[data-pull="30"]');
+  assert.equal(await row.getAttribute('draggable'), null);
+  assert.equal(await row.locator('.grip').getAttribute('draggable'), 'true');
+  await row.scrollIntoViewIfNeeded();
+  const box = await row.locator('.text').boundingBox();
+  await fresh.mouse.move(box.x + 2, box.y + 8);
+  await fresh.mouse.down();
+  await fresh.mouse.move(box.x + 60, box.y + 8, { steps: 5 });
+  await fresh.mouse.up();
+  assert.ok((await fresh.evaluate(() => getSelection().toString())).length > 3);
+  await fresh.locator('.pull-controls .pull-group').selectOption('none');
+  assert.equal(await row.locator('.grip').count(), 0, 'one list has no line to drop it on');
+  await fresh.locator('.pull-controls .pull-group').selectOption('milestone');
+  await fresh.close();
+});
+
+test('a pull request\'s grip moves it, and its link\'s drag does not', { skip: skip || (engineName === 'firefox' && 'dragTo sends Firefox no drag events') }, async () => {
+  // One row open and the pane scrolled to it, so the next group's line is on
+  // screen before the press (tools/CLAUDE.md): a row is three lines tall.
+  const { fresh } = await pullsPage({ ...PULLS, pulls: PULLS.pulls.filter((p) => p.number === 30) }, { stale: false });
+  await noToast(fresh);
+  const moves = [];
+  await fresh.route('**/api/pull/milestone', (r) => { moves.push(r.request().postDataJSON()); return r.fulfill({ json: { ok: true } }); });
+  const row = fresh.locator('.item[data-pull="30"]');
+  const next = fresh.locator('.pull-groups [data-group]').nth(1);
+  const milestone = await next.locator('summary a').first().textContent();
+  const onScreen = () => fresh.evaluate(() => { document.getElementById('queue-body').scrollTop = 100; });
+  await onScreen();
+  await row.locator('.tag.pull').dragTo(next.locator('summary'));
+  await row.locator('.grip').dragTo(fresh.locator('[data-group="p:none"] summary'));
+  const read = fresh.waitForResponse('**/api/pulls');
+  await onScreen();
+  await row.locator('.grip').dragTo(next.locator('summary'));
+  await read;
+  assert.deepEqual(moves, [{ number: 30, milestone }]);
+  await fresh.close();
+});
+
+// As on the Issues tab, but for Switch: focus on it holds nothing, so the row
+// can say `here` once the checkout's poll lands.
+test('a pull request listing landing with a row\'s select or drag in use waits, and focus on Switch does not hold it', { skip }, async () => {
+  const { fresh } = await pullsPage(PULLS, { stale: false });
+  const retitled = (tag) => ({ ...PULLS, read: NOW, pulls: PULLS.pulls.map((p) => ({ ...p, title: `${p.title} ${tag}` })) });
+  await fresh.locator('.item[data-pull="30"] .disclose').click();
+  const title = fresh.locator('.item[data-pull="30"] .text');
+  const land = async (tag) => {
+    await fresh.route('**/api/pulls', (r) => r.fulfill({ json: retitled(tag) }));
+    const landed = fresh.waitForResponse('**/api/pulls');
+    await fresh.evaluate(() => document.querySelector('#queue-body .pull-reload').click());
+    await landed;
+    await fresh.evaluate(() => new Promise((res) => setTimeout(res, 50)));
+  };
+  const held = (sel) => fresh.evaluate((s) => { window.held = document.querySelector(s); }, sel);
+  const select = '[data-group="p:none"] .move-to select';
+
+  // Focus in the select: same element, old title, until it leaves.
+  await fresh.locator(select).focus();
+  await held(select);
+  await land('one');
+  assert.equal(await fresh.evaluate(() => window.held.isConnected), true);
+  assert.ok(!(await title.textContent()).endsWith('one'));
+  await fresh.evaluate(() => document.activeElement.blur());
+  await fresh.waitForFunction(() => document.querySelector('.item[data-pull="30"] .text').textContent.endsWith('one'));
+
+  // Focus on Switch holds nothing.
+  await fresh.locator('[data-group="p:none"] .issue-ways .pr-go').focus();
+  await land('two');
+  assert.ok((await title.textContent()).endsWith('two'));
+  await fresh.evaluate(() => document.activeElement?.blur());
+
+  // A drag: the row stays until its dragend, whose event needs the row there.
+  await held('.item[data-pull="30"] .grip');
+  await fresh.evaluate(() => window.held.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer: new DataTransfer() })));
+  await land('three');
+  assert.equal(await fresh.evaluate(() => window.held.isConnected), true);
+  assert.ok(!(await title.textContent()).endsWith('three'));
+  await fresh.evaluate(() => { window.held.dispatchEvent(new DragEvent('dragend', { bubbles: true })); });
+  assert.ok((await title.textContent()).endsWith('three'));
   await fresh.close();
 });
 
@@ -2250,30 +2483,43 @@ test('searching the pull requests narrows the rows and counts them, and a row op
   await fresh.close();
 });
 
-test('picking a milestone in an opened pull request row posts the move and reads the listing again; Switch is the PR pane\'s', { skip }, async () => {
+test('a milestone picked in an opened pull request row is written by Move, and a refusal reads the listing again; Switch is the PR pane\'s', { skip }, async () => {
   const { fresh, asked } = await pullsPage();
   const moves = [];
   await fresh.route('**/api/pull/milestone', (r) => { moves.push(r.request().postDataJSON()); return r.fulfill({ json: { ok: true } }); });
   await fresh.locator('.item[data-pull="30"] .disclose').click();
   const pick = fresh.locator('[data-group="p:none"] .issue-body select.milestone');
+  const moveBtn = fresh.locator('[data-group="p:none"] .move-to button');
   assert.equal(await pick.inputValue(), '');
+  assert.equal(await moveBtn.isDisabled(), true);
   const before = asked.length;
+  // Choosing writes nothing, as an arrow key on a closed select fires change.
   await pick.selectOption('Needed soon');
-  await fresh.waitForFunction((n) => document.querySelectorAll('#queue-body .item.pull').length && n, before);
-  await fresh.waitForTimeout(200);
+  assert.deepEqual(moves, []);
+  const read = fresh.waitForResponse('**/api/pulls');
+  await moveBtn.click();
+  await read;
+  await fresh.waitForFunction(() => document.activeElement?.matches?.('[data-group="p:none"] select.milestone[data-move="30"]'));
   assert.deepEqual(moves, [{ number: 30, milestone: 'Needed soon' }]);
   assert.deepEqual(asked.slice(before), [true], 'read fresh once GitHub has it');
-  assert.equal(await fresh.locator('.item[data-pull="30"]').getAttribute('draggable'), 'true');
-  // A refusal is a toast, and nothing is read again.
+  // A refusal is a toast, the select goes back to where it still is, and the
+  // listing is read again, in case that is what the server and page differ on.
   await fresh.route('**/api/pull/milestone', (r) => r.fulfill({ status: 500, json: { error: '"x" is not an open milestone the Pull requests tab listed' } }));
-  await fresh.locator('[data-group="p:none"] .issue-body select.milestone').selectOption('Not urgent');
+  await pick.selectOption('Not urgent');
+  const again = fresh.waitForResponse('**/api/pulls');
+  await moveBtn.click();
   await fresh.waitForFunction(() => document.getElementById('toast').textContent.includes('not an open milestone'));
-  assert.equal(asked.length, before + 1);
+  await again;
+  await fresh.waitForFunction(() => document.activeElement?.matches?.('select.milestone[data-move="30"]'));
+  assert.equal(await pick.inputValue(), '');
+  assert.equal(asked.length, before + 2);
   // Dropped onto a group's line, the row moves there; an issue's row is not
-  // taken (until 2026-10-21 the drop never reached movePull at all).
+  // taken (until 2026-10-21 the drop never reached movePull at all), and a row
+  // dropped on the group it is already in sends nothing.
   await fresh.route('**/api/pull/milestone', (r) => { moves.push(r.request().postDataJSON()); return r.fulfill({ json: { ok: true } }); });
   assert.equal(await dropRow(fresh, '[data-group="p:none"] summary', PULL_DRAG, 12), true);
   assert.equal(await dropRow(fresh, '[data-group="p:none"] summary', ISSUE_DRAG, 58), false, 'an issue is not dropped here');
+  assert.equal(await dropRow(fresh, '[data-group="p:none"] summary', PULL_DRAG, 30), true);
   await fresh.waitForTimeout(200);
   assert.deepEqual(moves.slice(1), [{ number: 12, milestone: null }]);
   // Switch goes through the PR pane's own route, and is disabled on a dirty tree.
