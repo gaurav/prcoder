@@ -1158,10 +1158,28 @@ const styled = (s) => strikes(s
  *
  * Both may run across a line: inline() is handed one block at a time, so a pair
  * cannot reach into the next paragraph.
+ *
+ * Neither may cross a tag emphasis wrote: `*~a*~` would give
+ * `<em><del>a</em></del>`, which the parser repairs into a strike over some other
+ * range than the tildes said, so those tildes stay tildes. Everything else is
+ * escaped by now, so the only `<` left is a tag this file wrote.
  */
-const strikes = (s) => s
-  .replace(/(?<!~)~~(?![\s~])((?:[^~]|~(?!~))*?[^\s~])~~(?!~)/g, '<del>$1</del>')
-  .replace(/(?<![\w/~])~(?![\s~/])([^~]*?[^\s~])~(?![\w/~])/g, '<del>$1</del>');
+const strikes = (s) => {
+  const strike = (m, text) => (balanced(text) ? `<del>${text}</del>` : m);
+  return s
+    .replace(/(?<!~)~~(?![\s~])((?:[^~]|~(?!~))*?[^\s~])~~(?!~)/g, strike)
+    .replace(/(?<![\w/~])~(?![\s~/])([^~]*?[^\s~])~(?![\w/~])/g, strike);
+};
+
+/** Whether every tag in `html` closes inside it, and none closes what opened before it. */
+const balanced = (html) => {
+  let open = 0;
+  for (const [, close] of html.matchAll(/<(\/?)\w+>/g)) {
+    open += close ? -1 : 1;
+    if (open < 0) return false;
+  }
+  return open === 0;
+};
 
 /**
  * Code spans are lifted out before anything else runs and put back last, so no

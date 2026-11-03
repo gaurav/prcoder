@@ -203,6 +203,13 @@ test('a strike can run across a line, but not past its block', () => {
   assert.equal(blocks('~~a\n\nb~~').flatMap((b) => inline(b.text)).join('|'), '~~a|b~~');
 });
 
+test('a strike does not overlap emphasis', () => {
+  assert.equal(inline('*~a*~'), '<em>~a</em>~');
+  assert.equal(inline('~*a~*'), '~<em>a~</em>');
+  assert.equal(inline('**~a**~'), '<strong>~a</strong>~');
+  assert.equal(inline('~*a*~ *~b~*'), '<del><em>a</em></del> <em><del>b</del></em>');
+});
+
 test('a tilde that is not strikethrough stays a tilde', () => {
   assert.equal(inline('~/a and ~/b'), '~/a and ~/b');
   assert.equal(inline('~ a ~'), '~ a ~');
