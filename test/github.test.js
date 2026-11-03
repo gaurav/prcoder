@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { rollup, linkedIssues, linksFrom, parsePrUrl, run, issueNumber, lf, setViewed, listPrs, loadPr, prHeads, branchPrs, lookupPrs, ownPrs, SEARCH_EVERY, UNREAD_FOR, pickPr, lookupRef, issueLinks, createIssue, repoIssues } from '../github.js';
+import { rollup, linkedIssues, linksFrom, parsePrUrl, run, issueNumber, lf, setViewed, listPrs, loadPr, prHeads, branchPrs, lookupPrs, ownPrs, SEARCH_EVERY, UNREAD_FOR, pickPr, lookupRef, issueLinks, createIssue, repoIssues, setIssueMilestone } from '../github.js';
 import { taskLines } from '../public/tasks.js';
 import { withGh, ghArgs, ghCalls, unix } from './stub-gh.js';
 
@@ -412,6 +412,38 @@ test('a second page of issues is read with its cursor, and the milestones come f
   // gh failing is a failure here, not an empty tab.
   await withGh(() => `echo 'error connecting to api.github.com' >&2\nexit 1`, () =>
     assert.rejects(repoIssues(os.tmpdir(), 'gaurav', 'prcoder'), { message: 'error connecting to api.github.com' }));
+});
+
+// The opened row's select offers every open milestone, so they are read past
+// the first page, with their own query, asked for once.
+test('open milestones past the first page are read with their cursor', { skip: unix }, async () => {
+  const first = structuredClone(ISSUES_PAGE);
+  first.data.repository.milestones.pageInfo = { hasNextPage: true, endCursor: 'M1' };
+  const more = { data: { repository: { milestones: {
+    pageInfo: { hasNextPage: false, endCursor: 'M2' },
+    nodes: [{ number: 60, title: 'v6', dueOn: null, description: 'later' }],
+  } } } };
+  const script = `case "$*" in\n*after=M1*) cat <<'JSON'\n${JSON.stringify(more)}\nJSON\n;;\n*) cat <<'JSON'\n${JSON.stringify(first)}\nJSON\n;;\nesac`;
+  const { out, calls } = await ghCalls(script, () => repoIssues(os.tmpdir(), 'gaurav', 'prcoder'));
+  assert.equal(out.milestones.length, 6);
+  assert.deepEqual(out.milestones.at(-1), { number: 60, title: 'v6', dueOn: null, description: 'later', closed: false });
+  assert.equal(calls.length, 2);
+  const paged = calls.find((c) => c.includes('after=M1'));
+  assert.equal(paged[paged.indexOf('after=M1') - 1], '-f');
+});
+
+// The one write about an issue, through the endpoint a pull request's goes
+// through too: by number as -F, so it reaches GitHub as an Int or a null, and
+// an answer that does not name that milestone is a failure, since GitHub drops
+// the change without saying so for a caller with no push access.
+test('an issue is put on a milestone by number, and a change GitHub dropped is an error', { skip: unix }, async () => {
+  const issue = { owner: 'o', repo: 'r', number: 58 };
+  const on = await ghCalls(`echo '{"number":58,"milestone":{"number":4,"title":"Needed soon"}}'`, () => setIssueMilestone(os.tmpdir(), issue, 4));
+  assert.deepEqual(on.calls[0], ['api', '-X', 'PATCH', 'repos/o/r/issues/58', '-F', 'milestone=4']);
+  assert.deepEqual(on.out, { number: 4, title: 'Needed soon', dueOn: null });
+  const off = await ghCalls(`echo '{"number":58,"milestone":null}'`, () => setIssueMilestone(os.tmpdir(), issue, null));
+  assert.deepEqual(off.calls[0].slice(-2), ['-F', 'milestone=null']);
+  await assert.rejects(ghCalls(`echo '{"number":58,"milestone":null}'`, () => setIssueMilestone(os.tmpdir(), issue, 4)), /GitHub left #58 on no milestone/);
 });
 
 // A title becomes a queue item that ▶ types into the PTY, where a \r would

@@ -615,6 +615,47 @@ export async function setBody(cwd, prUrl, body) {
 }
 
 /**
+ * A milestone as the PR pane carries one: number, title (rid of control
+ * characters, as every title from GitHub is) and due date, from GraphQL's
+ * `dueOn` or REST's `due_on`; null for none.
+ */
+export const milestoneOf = (m) => (m
+  ? { number: m.number, title: printable(m.title ?? '').trim() || `#${m.number}`, dueOn: m.dueOn ?? m.due_on ?? null }
+  : null);
+
+/**
+ * Puts an issue or a pull request -- the issues endpoint is both's, and
+ * `{ owner, repo, number }` is what parsePrUrl answers -- on milestone
+ * `milestone`, or on none for null, and answers with the milestone GitHub now
+ * has it on (milestoneOf).
+ *
+ * Through the REST endpoint rather than `gh pr edit --milestone`: that takes a
+ * title, and resolves it to a number with a listing of its own. This is the
+ * one call here that wants -F, whose conversion by shape every string argument
+ * is kept from (see the tests on setViewed): `milestone=4` has to reach GitHub
+ * as an Int and `milestone=null` as null, and a string of either is refused.
+ * The caller has already held `milestone` to a positive integer, so nothing
+ * else can be converted. A number the repository has no milestone for is
+ * GitHub's 422, "Validation Failed" (tried on #168, 2026-10-21).
+ *
+ * A caller without push access gets no such refusal: "milestone changes are
+ * silently dropped" (the endpoint's docs, read 2026-11-02), so success is the
+ * answer naming the milestone asked for, not the exit code. Without this the
+ * picker snapped back with nothing said, on the fork-into-parent pull requests
+ * its route is written for. The docs don't say what such a drop answers, and
+ * trying it takes an account with no push access to a repository of ours.
+ */
+export async function setIssueMilestone(cwd, { owner, repo, number }, milestone) {
+  const out = await gh(['api', '-X', 'PATCH', `repos/${owner}/${repo}/issues/${number}`,
+    '-F', `milestone=${milestone ?? 'null'}`], { cwd });
+  const now = milestoneOf(JSON.parse(out).milestone);
+  if ((now?.number ?? null) !== milestone) {
+    throw new Error(`GitHub left #${number} on ${now ? now.title : 'no milestone'}: changing a milestone takes push access to ${owner}/${repo}`);
+  }
+  return now;
+}
+
+/**
  * The issue number out of what `gh issue create` prints. It can emit notices
  * before the URL, so the last line is the one that matters.
  *
@@ -804,10 +845,31 @@ async function repoLinks(cwd, owner, repo, numbers) {
 // there is no priority here, and labels are the nearest thing (#66).
 const ISSUES_QUERY = `query($owner:String!,$repo:String!,$after:String){
   repository(owner:$owner,name:$repo){
-    milestones(first:50,states:OPEN){ nodes{ number title dueOn description } }
+    milestones(first:100,states:OPEN){ pageInfo{ hasNextPage endCursor } nodes{ number title dueOn description } }
     issues(first:100,after:$after,states:OPEN,orderBy:{field:UPDATED_AT,direction:DESC}){
       totalCount pageInfo{ hasNextPage endCursor }
       nodes{ number title url updatedAt body milestone{ number title dueOn state } labels(first:10){ nodes{ name } } } } } }`;
+
+// The rest of the open milestones, for a repository with more than ISSUES_QUERY
+// reads: the opened row's select offers every one, so they cannot stop at a page.
+const MILESTONES_QUERY = `query($owner:String!,$repo:String!,$after:String){
+  repository(owner:$owner,name:$repo){
+    milestones(first:100,after:$after,states:OPEN){ pageInfo{ hasNextPage endCursor } nodes{ number title dueOn description } } } }`;
+
+/** Every open milestone's node, from the first page ISSUES_QUERY brought. */
+async function openMilestones(cwd, owner, repo, first) {
+  const nodes = [...first.nodes];
+  let { pageInfo } = first;
+  // ponytail: five pages, 500 open milestones, past which one can only be
+  // reached by an issue already on it (repoIssues).
+  for (let page = 1; page < 5 && pageInfo?.hasNextPage && pageInfo.endCursor; page++) {
+    const { data } = JSON.parse(await gh(['api', 'graphql', '-f', `query=${MILESTONES_QUERY}`,
+      '-f', `owner=${owner}`, '-f', `repo=${repo}`, '-f', `after=${pageInfo.endCursor}`], { cwd }));
+    nodes.push(...data.repository.milestones.nodes);
+    ({ pageInfo } = data.repository.milestones);
+  }
+  return nodes;
+}
 
 /**
  * The repository's open issues and open milestones, for the queue's Issues
@@ -817,9 +879,9 @@ const ISSUES_QUERY = `query($owner:String!,$repo:String!,$after:String){
  * names only, rid of control characters as the titles are (printable). Most
  * recently updated first, as GitHub orders them. A
  * milestone an open issue is on but that is not among the open ones read --
- * closed with the issue still open, or past the first fifty -- is added from
- * the issue, `closed` if it is, so that every listed issue has a group to be
- * drawn in; it has no description. The body
+ * closed with the issue still open, or past openMilestones' pages -- is added
+ * from the issue, `closed` if it is, so that every listed issue has a group to
+ * be drawn in; it has no description. The body
  * comes too, LF-ended like a description (lf), so the tab can show one and
  * search them; the pane renders it through the same allowlist as a
  * description (docs/Security.md).
@@ -839,9 +901,8 @@ export async function repoIssues(cwd, owner, repo) {
     if (after) args.push('-f', `after=${after}`);
     const { data } = JSON.parse(await gh(args, { cwd }));
     const r = data.repository;
-    milestones ??= r.milestones.nodes.map((m) => ({
-      number: m.number, title: printable(m.title ?? '').trim() || `#${m.number}`,
-      dueOn: m.dueOn ?? null, description: printable(m.description ?? '').trim(), closed: false,
+    milestones ??= (await openMilestones(cwd, owner, repo, r.milestones)).map((m) => ({
+      ...milestoneOf(m), description: printable(m.description ?? '').trim(), closed: false,
     }));
     total = r.issues.totalCount;
     for (const i of r.issues.nodes) {
@@ -853,10 +914,7 @@ export async function repoIssues(cwd, owner, repo) {
       });
       const m = i.milestone;
       if (m && !milestones.some((k) => k.number === m.number)) {
-        milestones.push({
-          number: m.number, title: printable(m.title ?? '').trim() || `#${m.number}`,
-          dueOn: m.dueOn ?? null, description: '', closed: m.state === 'CLOSED',
-        });
+        milestones.push({ ...milestoneOf(m), description: '', closed: m.state === 'CLOSED' });
       }
     }
     const { hasNextPage, endCursor } = r.issues.pageInfo;

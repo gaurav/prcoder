@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { text as readBody } from 'node:stream/consumers';
 import { spawn as ptySpawn } from 'node-pty';
 import { WebSocketServer } from 'ws';
-import { loadPr, prHeads, prUrl, prBody, parsePrUrl, listPrs, branchPrs, lookupPrs, ownPrs, pickPr, issueLinks, lookupRef, setViewed, setBody, createIssue, fetchPatches, runCount, repoIssues } from './github.js';
+import { loadPr, prHeads, prUrl, prBody, parsePrUrl, listPrs, branchPrs, lookupPrs, ownPrs, pickPr, issueLinks, lookupRef, setViewed, setBody, createIssue, fetchPatches, runCount, repoIssues, setIssueMilestone } from './github.js';
 import { notAWorkTree, snapshot, currentBranch, headCommit, commitsKnown, commitMemo, repoInfo, pushRepo, prScope, compareUrl, githubUrl, originOwner, wholePrRepo, checkoutPr, pushBranch, remoteBranchHead, trackingHead, localPatch, branchesBelow } from './git.js';
 import { bucket, fileUrl, fileViews } from './files.js';
 import { readPort, writePort, readPrs, writePrs, pick, useQueueFile, movedQueue, issueUrl } from './store.js';
@@ -338,6 +338,31 @@ const poll = () => (queuedPoll ??= serial(() => {
   return status();
 }));
 
+// What the Issues tab was last shown (GET /api/issues), for a route that acts
+// on one of its rows: numbers and milestones, without the bodies of up to 500
+// issues, which nothing here reads again.
+let listing = null;
+
+/**
+ * What /api/issue/milestone may do, from `listing`: `{ number, milestone, title }`
+ * where `number` is an open issue the tab was shown and `milestone` the number
+ * of one of its open milestones, found by title, or null to take the milestone
+ * off. A closed one is listed only because an issue is still on it (repoIssues),
+ * and is somewhere to move off, not onto.
+ * The page's strings choose; the listing's are what reach gh -- the same hold
+ * /api/pr/choose keeps on a pick. Pure, and exported for test/api.test.js.
+ */
+export function issueMove(listing, { number, milestone } = {}) {
+  const issue = listing?.issues.find((i) => i.number === number);
+  if (!issue) throw new Error(`#${number ?? '?'} is not an open issue the Issues tab listed`);
+  // null exactly, not == null: a body with no `milestone` at all, which is what
+  // JSON.stringify makes of an undefined, has not asked for it to be taken off.
+  if (milestone === null) return { number: issue.number, milestone: null, title: null };
+  const found = listing.milestones.find((m) => m.title === milestone && !m.closed);
+  if (!found) throw new Error(`"${milestone}" is not an open milestone the Issues tab listed`);
+  return { number: issue.number, milestone: found.number, title: found.title };
+}
+
 const routes = {
   // Unlocked only because poll() takes the lock itself.
   'GET /api/status': poll,
@@ -384,6 +409,8 @@ const routes = {
    *
    * Unlocked (UNLOCKED), so a poll can swap `pr` while this waits on GitHub:
    * the mentions are the pull request that was on screen when it was asked.
+   * The listing is kept (`listing`) so a write about an issue can be held to
+   * what the tab was last shown, as /api/pr/choose holds a pick to the poll.
    */
   'GET /api/issues': async () => {
     const { nameWithOwner } = await repoFacts();
@@ -394,7 +421,22 @@ const routes = {
       repoIssues(repo, owner, name),
       numbers.length ? issueLinks(repo, cur.url, numbers.slice(0, 50)) : new Map(),
     ]);
+    listing = { issues: found.issues.map(({ number }) => ({ number })), milestones: found.milestones };
     return { ...found, repo: nameWithOwner, mentions: numbers.map((number) => ({ number, ...links.get(number) })) };
+  },
+
+  /**
+   * An issue dropped on a milestone group in the Issues tab, or one picked in
+   * its row: the milestone is set on GitHub (setIssueMilestone), and the tab reads
+   * the listing again. `milestone` is a title from the listing, or null to
+   * take it off; issueMove holds both to what the tab was shown.
+   */
+  'POST /api/issue/milestone': async (body = {}) => {
+    const { number, milestone, title } = issueMove(listing, body);
+    const [owner, name] = (await repoFacts()).nameWithOwner.split('/');
+    await setIssueMilestone(repo, { owner, repo: name, number }, milestone);
+    term.verbose(`put #${number} on ${title ? `milestone ${quote(title)}` : 'no milestone'}`);
+    return { ok: true };
   },
 
   'POST /api/pr/switch': async ({ url } = {}) => {

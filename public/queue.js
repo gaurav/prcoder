@@ -37,7 +37,8 @@ export function setItems(next, prOnScreen = null) {
   // caret: its text is kept and put back, but the caret and a composition
   // mid-word are not. Safe to hold on by the same argument as the text above
   // -- focus leaves it with the next click anywhere else -- where a tab is not.
-  if (saving || document.activeElement?.closest?.('#queue-body .text[contenteditable], #queue-search')) return;
+  // So is a row's milestone select (groupsInUse), which a repaint would close.
+  if (saving || document.activeElement?.closest?.('#queue-body .text[contenteditable], #queue-search, #queue-body .issue-ways')) return;
   if (document.querySelector('#queue-body .item.dragging')) return;
   // What the PR and Issues tabs draw from: a tick on github.com changes the
   // PR tab without changing the list, so it has to count as news too.
@@ -344,6 +345,8 @@ function loadIssues(again = false) {
 }
 let issuesLoading = null;
 let issuesStale = false;
+// Until no listing is out, including the one a stale one asks for as it lands.
+const listingsIn = async () => { while (issuesLoading) await issuesLoading; };
 // Why the first listing could not be read, so the tab says so after the toast
 // has gone: left reading "Reading…" and `…`, it looked as if it still was.
 // Once there is a listing, a failed refresh keeps it and only the toast says.
@@ -427,10 +430,32 @@ function issueList() {
     query = search.value;
     paintIssues();
   };
-  return h('div', { className: 'issues-pane' }, search, h('div', { className: 'issue-groups' }, ...issueGroups()));
+  const groups = h('div', { className: 'issue-groups' }, ...issueGroups());
+  // On the next task: during focusout the new focus is not settled yet, and may
+  // be another part of the same row.
+  groups.addEventListener('focusout', () => setTimeout(payGroups));
+  return h('div', { className: 'issues-pane' }, search, groups);
 }
 
-const paintGroups = () => document.querySelector('#queue-body .issue-groups')?.replaceChildren(...issueGroups());
+/**
+ * Whether a repaint would take something out from under the user: the row being
+ * dragged, with the group's line it is over and the drag's end event, or a row's
+ * select, which closes when it is replaced. Each visit to the tab and each move
+ * reads a listing that takes seconds, so one landing mid-gesture is ordinary.
+ * Safe to hold on for the reason setItems holds on the search box: both end with
+ * the next click anywhere else. The select's neighbours count for the same
+ * reason, since focus crosses to them on the way to what they act on.
+ */
+const groupsInUse = () => !!(document.querySelector('#queue-body .item.dragging')
+  || document.activeElement?.closest?.('#queue-body .issue-ways'));
+// A repaint held back, drawn once what held it is over.
+let groupsOwed = false;
+const drawGroups = () => {
+  groupsOwed = false;
+  document.querySelector('#queue-body .issue-groups')?.replaceChildren(...issueGroups());
+};
+const paintGroups = () => { if (groupsInUse()) groupsOwed = true; else drawGroups(); };
+const payGroups = () => { if (groupsOwed) paintGroups(); };
 
 /** The groups and the tab's count, leaving the search box, its focus and its caret alone. */
 function paintIssues() {
@@ -482,10 +507,17 @@ function issueGroups() {
   const home = deps.home?.();
   // `list` is the group's issues and `rows` what they draw, which is more
   // than one element per issue once a row is open: the count is the issues'.
-  const group = (key, title, list, rows, extra = []) => fold({
-    className: 'milestone', dataset: { group: key }, title: [title, ...extra.flatMap((e) => [' ', e]), ' ', h('span', { className: 'count' }, String(list.length))],
-    ...state(key),
-  }, list.length ? [h('ul', { className: 'items' }, ...rows)] : [h('p', { className: 'empty' }, 'no open issues')]);
+  // `target` is the milestone the group stands for -- a title, or null for
+  // none -- and makes its summary somewhere an issue row can be dropped; the
+  // mentions and a closed milestone have none.
+  const group = (key, title, list, rows, extra = [], target) => {
+    const d = fold({
+      className: 'milestone', dataset: { group: key }, title: [title, ...extra.flatMap((e) => [' ', e]), ' ', h('span', { className: 'count' }, String(list.length))],
+      ...state(key),
+    }, list.length ? [h('ul', { className: 'items' }, ...rows)] : [h('p', { className: 'empty' }, 'no open issues')]);
+    if (target !== undefined) dropTarget(d.querySelector('summary'), target);
+    return d;
+  };
 
   const out = [];
   // The mentions, searched by what is known of them: one that is a listed
@@ -505,15 +537,33 @@ function issueGroups() {
     ];
     const list = byMilestone.get(m.number) ?? [];
     if (searching && !list.length) continue;
-    out.push(group(`m:${m.number}`, title, list, list.map((i) => issueRow(i)).flat(), extra));
+    // A closed one is on the tab for the issues still on it; nothing moves onto it.
+    out.push(group(`m:${m.number}`, title, list, list.map((i) => issueRow(i)).flat(), extra, m.closed ? undefined : m.title));
   }
   const none = byMilestone.get(NONE) ?? [];
-  if (!searching || none.length) out.push(group(`m:${NONE}`, 'No milestone', none, none.map((i) => issueRow(i)).flat()));
+  if (!searching || none.length) out.push(group(`m:${NONE}`, 'No milestone', none, none.map((i) => issueRow(i)).flat(), [], null));
   if (!out.length) out.push(h('p', { className: 'empty' }, 'No open issues match.'));
   if (listing.listed < listing.total) {
     out.push(h('p', { className: 'pr-note' }, `The ${listing.listed} most recently updated of ${listing.total} open issues.`));
   }
   return out;
+}
+
+/**
+ * A group's summary as somewhere to drop an issue row: lit while one is over
+ * it, and the drop is the move. Only a row's grip's drag counts (ISSUE); a link
+ * or a text selection dragged across the pane is not an issue.
+ */
+function dropTarget(summary, milestone) {
+  const carrying = (e) => e.dataTransfer.types.includes(ISSUE);
+  summary.addEventListener('dragover', (e) => { if (carrying(e)) { e.preventDefault(); summary.classList.add('over'); } });
+  summary.addEventListener('dragleave', () => summary.classList.remove('over'));
+  summary.addEventListener('drop', (e) => {
+    summary.classList.remove('over');
+    if (!carrying(e)) return;
+    e.preventDefault();
+    move(Number(e.dataTransfer.getData(ISSUE)), milestone);
+  });
 }
 
 /**
@@ -569,9 +619,20 @@ function issueRow(i, { repo = null, kind = 'issue', closed = false, text = i.tit
   const can = i.body != null;
   const disclose = can ? btn(open ? '▾' : '▸', () => {
     if (open) expanded.delete(key); else expanded.add(key);
-    paintGroups();
+    // Not held: this is the user's own click, which some browsers answer
+    // without moving focus off another row's select.
+    drawGroups();
   }, { className: 'disclose', title: open ? 'hide the issue' : 'show the issue', ariaExpanded: String(open) }) : h('span', { className: 'disclose' });
+  // A listed issue can be dragged onto a milestone group; a mention that is
+  // not listed cannot, since the move is held to the listing, and gets an empty
+  // grip so the rows still line up. By the grip and not the row: a draggable row
+  // takes a press on its title for a drag, so the title could not be selected
+  // to copy, and every drag starting in it -- the #N link's, a selection's --
+  // would have been tagged ISSUE and moved the issue when dropped on a group.
+  const grip = can ? h('span', { className: 'grip', draggable: true, ariaHidden: 'true', title: 'drag onto a milestone to move it there' }, '⠿')
+    : h('span', { className: 'grip' });
   const row = h('li', { className: `item source${closed ? ' closed' : ''}`, dataset: { issue: String(i.number) } },
+    grip,
     disclose,
     // With the repo when it is another's, as the item ↓ makes is tagged: the
     // link, ▶ and ↓ all go there, and docs/Security.md has ▶'s link match the tag.
@@ -584,12 +645,48 @@ function issueRow(i, { repo = null, kind = 'issue', closed = false, text = i.tit
         if (!deps.sendToClaude(forClaude(item, deps.home?.()), false)) toast('The coding agent is not connected — nothing was typed.', true);
       }, { title: 'type into the coding agent, with the link' }),
       btn('↓', () => pull(text, i.number, kind, repo), { title: 'copy into your queue' })));
+  if (can) {
+    grip.addEventListener('dragstart', (e) => {
+      e.dataTransfer.setData(ISSUE, String(i.number));
+      // The row is what is being moved, so it is what follows the pointer.
+      const at = row.getBoundingClientRect();
+      e.dataTransfer.setDragImage(row, e.clientX - at.left, e.clientY - at.top);
+      row.classList.add('dragging');
+    });
+    grip.addEventListener('dragend', () => { row.classList.remove('dragging'); payGroups(); });
+  }
   if (!open) return [row];
   const home = deps.home?.();
   const where = home ? { repo: `https://github.com/${home}`, ref: 'HEAD' } : null;
+  // The keyboard's way to the drag's move: every open milestone, and none. A
+  // closed one is there only when the issue is on it, to say so: it is the
+  // current value and cannot be chosen again.
+  const pick = h('select', { className: 'milestone', ariaLabel: `milestone of #${i.number}`, dataset: { issue: String(i.number) } },
+    h('option', { value: '' }, 'No milestone'),
+    ...rankMilestones(listing.milestones).filter((m) => !m.closed || m.number === i.milestone).map((m) =>
+      h('option', { value: m.title, selected: m.number === i.milestone, disabled: !!m.closed }, m.closed ? `${m.title} (closed)` : m.title)));
+  // Written by Move, not on change. On Linux and Windows, Chromium and Firefox
+  // fire change for every arrow key on a closed select, so stepping to a
+  // milestone two down wrote the one in between to GitHub on the way. What a
+  // repaint does to a choice not yet moved is put it back: nothing was written.
+  const was = pick.value;
+  const go = btn('Move', async () => {
+    go.disabled = true;
+    const from = pick.closest('[data-group]').dataset.group;
+    await move(i.number, pick.value || null);
+    await listingsIn();
+    // The repaint took the focus with it, and the row may have gone to a folded
+    // group: the keyboard follows it there, unless it has since gone elsewhere.
+    const now = listed.get(i.number);
+    if (tab !== 'issues' || !now || (document.activeElement && document.activeElement !== document.body)) return;
+    const to = from === 'mentioned' ? from : `m:${now.milestone ?? NONE}`;
+    if (!query.trim() && closedGroups.delete(to)) drawGroups();
+    document.querySelector(`#queue-body [data-group="${to}"] select.milestone[data-issue="${i.number}"]`)?.focus();
+  }, { title: 'set this milestone on GitHub', disabled: true });
+  pick.onchange = () => { go.disabled = pick.value === was; };
   const body = h('li', { className: 'issue-body md' },
     ...(i.body ? blocks(i.body).map((b) => blockNode(b, null, where)) : [h('p', { className: 'empty' }, 'No description.')]),
-    ext(i.url, 'Open on GitHub', { className: 'primary open-issue' }));
+    h('div', { className: 'issue-ways' }, pick, go, ext(i.url, 'Open on GitHub', { className: 'primary open-issue' })));
   return [row, body];
 }
 
@@ -615,6 +712,39 @@ function mentionRepo(i) {
  * NaN -- which splice() reads as 0, so the first item moved and was saved.
  */
 const ROW = 'application/x-prcoder-row';
+// And what an issue row's grip's drag carries, its number, for a milestone group to
+// take; the same reason for a type of its own.
+const ISSUE = 'application/x-prcoder-issue';
+
+/**
+ * An issue onto a milestone, or off one with null: the one write the Issues
+ * tab makes, on a drop or Move beside the row's select, which GitHub's own rules
+ * call triage. The tab reads the listing again after, so the row moves group
+ * once GitHub has it and not before -- asking again even when a listing is
+ * already out, since that one was asked for before the write.
+ *
+ * After a refusal too. The listing the server holds the move to can differ from
+ * the one drawn -- it starts empty after a restart, and a milestone can be
+ * renamed on GitHub -- and left alone every move stays refused until the tab is
+ * left and come back to. The repaint is for the row's select, which is still
+ * showing what was refused, and which the listing may take seconds to put back.
+ */
+async function move(number, milestone) {
+  // Off the select, or the repaint this is for would be held back until the
+  // user next clicks somewhere (groupsInUse).
+  if (document.activeElement?.closest?.('#queue-body .issue-ways')) document.activeElement.blur();
+  // Where it already is: a row dropped on its own group, which is easily done
+  // with the group's line just above it, is not worth a write and a re-list.
+  const target = milestone === null ? null : listing?.milestones.find((m) => m.title === milestone)?.number;
+  if ((listed.get(number)?.milestone ?? null) === target) return;
+  try {
+    await api('/api/issue/milestone', { number, milestone });
+  } catch (e) {
+    toast(e.message, true);
+    paintGroups();
+  }
+  loadIssues(true);
+}
 
 const bulk = (label, fn) => btn(label, fn, { className: 'bulk' });
 
