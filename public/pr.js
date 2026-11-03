@@ -1204,14 +1204,19 @@ const styled = (s) => strikes(s
 /**
  * The two spellings of strikethrough, which are not equally likely to be meant.
  *
- * `~~` is hardly ever anything else, so it takes GFM's rule and no more: a single
- * tilde may sit inside it, which is how a dropped item says `~~rm ~/x~~` or
- * `~~see ~1 hr~~`, and nothing is asked of what is outside it. A paired tilde is
- * what prose has by accident: a home directory, a backup file, an approximate
- * figure. So `~x~` also wants no word character or `/` just outside either end
- * and no `/` just inside the first, which leaves `~/a,~/b`, `PATH=~/a:~/b`,
- * `~/foo~` and the `~user` in a path alone. GitHub strikes those and `a~b~c`;
- * the cost is that `~/x~` meant as strikethrough shows its tildes.
+ * `~~` is hardly ever anything else, so it takes GitHub's rule and no more: nothing
+ * is asked of what is outside it, and a single tilde inside it is fine only if it
+ * could not be a delimiter itself, between two word characters or two spaces.
+ * Any other stops the strike, so `~~rm ~/x~~` and `~~see ~1 hr~~` show their
+ * tildes, here as on GitHub (test/pr.test.js has the date that was checked). They
+ * look as if they should strike, and reading GFM's rules says they do. A pair
+ * inside is struck first and nests.
+ *
+ * A paired tilde is what prose has by accident: a home directory, a backup file,
+ * an approximate figure. So `~x~` also wants no word character or `/` just outside
+ * either end and no `/` just inside the first, which leaves `~/a,~/b`,
+ * `PATH=~/a:~/b`, `~/foo~` and the `~user` in a path alone. GitHub strikes those
+ * and `a~b~c`; the cost is that `~/x~` meant as strikethrough shows its tildes.
  *
  * Both may run across a line: inline() is handed one block at a time, so a pair
  * cannot reach into the next paragraph.
@@ -1224,8 +1229,8 @@ const styled = (s) => strikes(s
 const strikes = (s) => {
   const strike = (m, text) => (balanced(text) ? `<del>${text}</del>` : m);
   return s
-    .replace(/(?<!~)~~(?![\s~])((?:[^~]|~(?!~))*?[^\s~])~~(?!~)/g, strike)
-    .replace(/(?<![\w/~])~(?![\s~/])([^~]*?[^\s~])~(?![\w/~])/g, strike);
+    .replace(/(?<![\w/~])~(?![\s~/])([^~]*?[^\s~])~(?![\w/~])/g, strike)
+    .replace(/(?<!~)~~(?![\s~])((?:[^~]|(?<=\w)~(?=\w)|(?<=\s)~(?=\s))*?[^\s~])~~(?!~)/g, strike);
 };
 
 /** Whether every tag in `html` closes inside it, and none closes what opened before it. */

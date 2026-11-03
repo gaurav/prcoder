@@ -187,15 +187,23 @@ for (const path of ['PATH=~/bin:~/.local/bin', '~/a,~/b', '{~/a,~/b}', '(~/a),(~
   });
 }
 
-// What a checklist strikes out is often a line that names a path or a figure.
-test('two tildes may hold a single tilde, or sit against anything', () => {
-  assert.equal(inline('~~rm ~/x~~'), '<del>rm ~/x</del>');
+// Pinned from GitHub's own renderer on 2026-11-03, because the rules read the
+// other way: GFM's prose suggests `~~rm ~/x~~` strikes, and it does not. To
+// re-check: gh api markdown -f mode=gfm -f text='~~rm ~/x~~'
+test('two tildes sit against anything, and hold a tilde only if it cannot be a delimiter', () => {
   assert.equal(inline('~~a~b~~'), '<del>a~b</del>');
-  assert.equal(inline('~~see ~1 hr~~'), '<del>see ~1 hr</del>');
+  assert.equal(inline('~~a ~ b~~'), '<del>a ~ b</del>');
   assert.equal(inline('and/~~x~~'), 'and/<del>x</del>');
   assert.equal(inline('a~~b~~c'), 'a<del>b</del>c');
   assert.equal(inline('~~a~~ and ~~b~~'), '<del>a</del> and <del>b</del>');
+  assert.equal(inline('~~x ~1 y~ z~~'), '<del>x <del>1 y</del> z</del>');
 });
+
+for (const held of ['~~rm ~/x~~', '~~see ~1 hr~~', '~~(~1)~~', '~~a/~b~~', '~~a~ b~~', '~~a~.~~', '~~x ~y z~~', '~~a~/b~~']) {
+  test(`a tilde that could be a delimiter stops two tildes striking, as on GitHub: ${held}`, () => {
+    assert.equal(inline(held), held);
+  });
+}
 
 test('a strike can run across a line, but not past its block', () => {
   assert.equal(inline('~~a\nb~~'), '<del>a<br>b</del>');
