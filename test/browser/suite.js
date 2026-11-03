@@ -278,6 +278,11 @@ test('checkboxes render with their state, and a tick posts through', { skip }, a
   assert.deepEqual(await boxes.evaluateAll((list) => list.map((b) => b.checked)), [false, true, false]);
   assert.equal(await page.locator('.task.done').count(), 1);
 
+  // Named by its line, which the row's <label> used to do for it. The title is
+  // the same on every box, so it can't be what tells them apart.
+  assert.equal(await page.getByRole('checkbox', { name: 'first task', exact: true }).count(), 1);
+  assert.equal(await page.getByRole('checkbox', { name: 'second task', exact: true }).isChecked(), true);
+
   // The text is for reading and copying: a click on it ticks nothing.
   await page.locator('.task > span').first().click();
   assert.equal(await boxes.first().isChecked(), false);
@@ -1779,6 +1784,7 @@ test('an issue row opens to its body through the description renderer, with Open
   assert.equal(await body.locator('img').count(), 0, 'markup in an issue is text');
   assert.equal(await body.locator('a', { hasText: '#5' }).getAttribute('href'), 'https://github.com/gaurav/prcoder/issues/5');
   assert.equal(await body.locator('.task input').isDisabled(), true, 'an issue\'s box is GitHub\'s to tick');
+  assert.equal(await body.locator('.task input').getAttribute('aria-label'), await body.locator('.task > span').textContent(), 'a disabled box is named by its line too');
   assert.equal(await body.locator('.task').getAttribute('title'), 'tick this on GitHub itself', 'said on the row, where a hover shows it');
   const out = body.locator('.open-issue');
   assert.equal(await out.textContent(), 'Open on GitHub');

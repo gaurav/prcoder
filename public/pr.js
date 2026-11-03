@@ -1109,11 +1109,18 @@ function description(parsed, onTask) {
  * The row is a div, not a <label>: in a label a click anywhere on the text
  * ticks the box, so a line could not be selected to copy without writing a
  * tick to GitHub. Only the box ticks, as in the queue's PR tab.
+ *
+ * So the box has to be given the name the label gave it, or a screen reader says
+ * `tick this on GitHub` for every line of a list and each tick is a guess. From
+ * the drawn text rather than `text`, which would read out its tildes and link
+ * targets. aria-label, not aria-labelledby: that wants an id, and more than one
+ * description can be on the page at once, in the queue's Issues tab, with the
+ * same indices.
  */
 function taskRow({ done, text, index }, onTask, where = links) {
-  const box = h('input', { type: 'checkbox', checked: done });
-  const row = h('div', { className: `task${done ? ' done' : ''}` },
-    box, h('span', { innerHTML: inline(text, where) }));
+  const label = h('span', { innerHTML: inline(text, where) });
+  const box = h('input', { type: 'checkbox', checked: done, ariaLabel: label.textContent });
+  const row = h('div', { className: `task${done ? ' done' : ''}` }, box, label);
   if (onTask) {
     box.title = 'tick this on GitHub';
     writeThrough(box, (v) => onTask({ index, done: v, text }));
