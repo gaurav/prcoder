@@ -103,8 +103,9 @@ code, emphasis, strikethrough, links — including the two kinds that mean nothi
 repository behind them, a relative path and a bare `#N` — checklists, lists and quoted sections;
 everything it does not know — tables, nested lists, images, reference-style links, horizontal
 rules — stays escaped and shows as its own source. Strikethrough was added on request (2026-10-19)
-because a checklist strikes out an item dropped rather than done, and it is one inline rule
-wrapping a fixed tag, like emphasis. Quotes were the one block construct added rather than
+because a checklist strikes out an item dropped rather than done, and it only wraps text in a fixed
+tag, like emphasis. It is stricter than GitHub about a single tilde, which prose has by accident
+(`strikes()` in [`public/pr.js`](../public/pr.js) lists what that leaves unstruck). Quotes were the one block construct added rather than
 deferred, and the reason is the test for the next one: `>` was the last block-level marker that
 arrived as its own punctuation down the left margin, which reads as the renderer being broken
 rather than as a construct it does not do. What was added is one block, not a grammar — a quote's content is one prose paragraph, so a
