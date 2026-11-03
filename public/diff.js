@@ -120,13 +120,27 @@ export function outline(rows) {
  * The extension is the basename's, after a dot that is not its first character:
  * a dotless `patch` or `sh` at the repo root is a file, not an extension, and a
  * dotfile like `.gitignore` is all name. Both are plain.
+ *
+ * Snakemake's files are coloured as Python, which Snakemake is a superset of:
+ * comments, strings and the Python in `run:` blocks and helpers are coloured,
+ * and its own words (`rule`, `input:`, `shell:`) stay plain, since Prism has no
+ * Snakemake grammar. `.smk` is the extension Snakemake recommends, and
+ * `.snakefile` the one Babel's rule files use (NCATSTranslator/Babel).
  */
 const LANG = {
   js: 'javascript', mjs: 'javascript', cjs: 'javascript', jsx: 'jsx', ts: 'typescript', tsx: 'tsx',
   json: 'json', yml: 'yaml', yaml: 'yaml', py: 'python', sh: 'bash', bash: 'bash', zsh: 'bash',
   md: 'markdown', html: 'markup', htm: 'markup', xml: 'markup', svg: 'markup', css: 'css',
-  diff: 'diff', patch: 'diff', toml: 'toml',
+  diff: 'diff', patch: 'diff', toml: 'toml', smk: 'python', snakefile: 'python',
 };
+
+/**
+ * Whole basenames that name a language with no extension, matched case-blind.
+ * The rule above still holds for every name not here: a name is looked up as a
+ * name only when it is one of these, never taken for an extension. `Snakefile`
+ * is the name Snakemake looks for, in either case.
+ */
+const NAMES = { snakefile: 'python' };
 
 // What core already carries, and what a grammar needs loaded before it. Prism's
 // components.json is the source for both: `tsx` is the one grammar here that
@@ -140,10 +154,12 @@ const NEEDS = { tsx: ['jsx', 'typescript'] };
  * without its file in the vendor map is a plain file and a console line, and
  * test/api.test.js fetches this list to say so first.
  */
-export const grammars = [...new Set(Object.values(LANG).flatMap((l) => [...(NEEDS[l] ?? []), l]))]
+export const grammars = [...new Set([...Object.values(LANG), ...Object.values(NAMES)].flatMap((l) => [...(NEEDS[l] ?? []), l]))]
   .filter((l) => !CORE.has(l)).sort();
 export const language = (path) => {
   const name = path.slice(path.lastIndexOf('/') + 1);
+  const named = NAMES[name.toLowerCase()];
+  if (named) return named;
   const dot = name.lastIndexOf('.');
   return dot > 0 ? LANG[name.slice(dot + 1).toLowerCase()] ?? null : null;
 };
