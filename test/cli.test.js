@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { execSync } from 'node:child_process';
-import { openRepoArgs, OPEN_REPO_VARS, REPO_ENV, parseCli, usage, AGENTS, VERSION, portFor, portCandidates, PORT_BASE, PORT_SPAN, statusLines, ago, queueSummary, quitRisks } from '../cli.js';
+import { openRepoArgs, OPEN_REPO_VARS, REPO_ENV, parseCli, usage, AGENTS, VERSION, portFor, portCandidates, PORT_BASE, PORT_SPAN, statusLines, ago, queueSummary, quitRisks, ownerColour, OWNER_COLOURS } from '../cli.js';
 import { queueChanges } from '../queue.js';
 import { plain } from '../term.js';
 
@@ -139,8 +139,15 @@ test('the block says where the branch, the PR and the queue stand', () => {
   // `prcoder` in that column was what the eye found first in every window.
   assert.match(out, /^gaurav\/prcoder {3}initial-implementation → main/);
   const [name] = statusLines(STATUS, { local: 'x' })[0];
-  assert.deepEqual(name, { text: 'gaurav/prcoder', style: ['bold', 'cyan'] });
+  assert.deepEqual(name, { text: 'gaurav/prcoder', style: ['bold', ownerColour('gaurav/prcoder')] });
   assert.doesNotMatch(out, /^prcoder/m);
+  // The colour goes by the owner, so related repos share one, and is the
+  // same in every clone; the four are spread over owners, not all one.
+  assert.ok(OWNER_COLOURS.includes(ownerColour('gaurav/prcoder')));
+  assert.equal(ownerColour('gaurav/prcoder'), ownerColour('gaurav/ideas'));
+  assert.equal(ownerColour('gaurav/prcoder'), 'green');
+  assert.ok(new Set(['gaurav', 'NCATSTranslator', 'uc-cdis', 'anthropics', 'nodejs', 'octocat'].map(ownerColour)).size > 1);
+  assert.ok(OWNER_COLOURS.includes(ownerColour(undefined)));
   assert.match(out, /initial-implementation → main/);
   // The same words as the pane's sync light, which is the point of duplicating them.
   assert.match(out, /2 unpushed/);

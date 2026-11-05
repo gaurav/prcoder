@@ -137,6 +137,20 @@ export const ago = (ms) => {
 };
 
 /**
+ * The colour a repository's name is drawn in, by its owner, so every repo of
+ * one organization shares one and the window for a related repo is the same
+ * colour as this one's. Four, each legible on a light and on a dark
+ * background -- yellow is lost on white and plain blue on black -- so two
+ * organizations can share one; the name beside it still tells them apart.
+ * sha1, as portFor hashes, so the colour is the same in every clone.
+ */
+export const OWNER_COLOURS = ['cyan', 'green', 'magenta', 'blueBright'];
+export const ownerColour = (nameWithOwner) => {
+  const owner = String(nameWithOwner ?? '').split('/')[0];
+  return OWNER_COLOURS[createHash('sha1').update(owner).digest()[0] % OWNER_COLOURS.length];
+};
+
+/**
  * The block pinned under the log: everything status() worked out anyway, for
  * the terminal that is otherwise sat idle for the whole session. Pure, so the
  * wording is testable without a tty. Lines as term.js takes them: strings,
@@ -156,14 +170,13 @@ export function statusLines(s, u = {}) {
   const base = s.pr ? sides(s.pr, s.remotes).base : s.defaultBranch;
   const where = s.pr && prRepo(s.pr) !== s.nameWithOwner ? prRepo(s.pr) : '';
   return [
-    // The repository first, bold and in colour, and `prcoder` nowhere on the
-    // row: with several of these windows open, the eye landed on `prcoder` in
-    // the label column of every one, and the name after it had to be read to
-    // find the window for a repo. One name in one colour: a colour per repo
-    // would read badly on one background or the other (yellow, blue), and the
-    // window's title says the repo too (term.title). `prcoder` with no
-    // repository is the poll that has not answered yet.
-    [{ text: s.nameWithOwner ?? 'prcoder', style: ['bold', 'cyan'] }, '   ' + [
+    // The repository first, bold and in its owner's colour (ownerColour), and
+    // `prcoder` nowhere on the row: with several of these windows open, the
+    // eye landed on `prcoder` in the label column of every one, and the name
+    // after it had to be read to find the window for a repo. The window's
+    // title says the repo too (term.title). `prcoder` with no repository is
+    // the poll that has not answered yet.
+    [{ text: s.nameWithOwner ?? 'prcoder', style: ['bold', ownerColour(s.nameWithOwner)] }, '   ' + [
       s.branch ? `${s.branch} → ${base}` : 'detached HEAD',
       [syncPhrase(s), s.dirtyFiles?.length && `${s.dirtyFiles.length} uncommitted`]
         .filter(Boolean).join(' · ')].filter(Boolean).join('   ')],
