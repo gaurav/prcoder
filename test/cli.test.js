@@ -23,6 +23,19 @@ test('a leading positional is our PR target, everything after -- is the agent\'s
 });
 
 // The one that matters: a flag's value must not be mistaken for a PR target.
+// `choose` is the one positional that is not a pull request; the flags around
+// it are parsed as ever, and a second positional is the usual refusal.
+test('prcoder choose is a subcommand, not a pull request target', () => {
+  assert.equal(parseCli(['42']).choose, false);
+  const c = parseCli(['choose', '--port', '4000', '--', '--effort', 'high']);
+  assert.equal(c.choose, true);
+  assert.equal(c.target, undefined);
+  assert.equal(c.port, 4000);
+  assert.deepEqual(c.agentArgs, ['--effort', 'high']);
+  assert.throws(() => parseCli(['choose', '42']), /unexpected argument 42/);
+  assert.ok(usage().includes('choose'));
+});
+
 test('flag values are never read as a PR target', () => {
   const agent = parseCli(['--', '--effort', 'high', '--model', 'opus']);
   assert.equal(agent.target, undefined);

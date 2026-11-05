@@ -33,9 +33,10 @@ const OPTIONS = {
 };
 
 export function usage() {
-  return `usage: prcoder [<pr>] [--port <n>] [--no-open] [--queue <file>] [-v] [--agent <name>] [-- <agent args>]
+  return `usage: prcoder [<pr> | choose] [--port <n>] [--no-open] [--queue <file>] [-v] [--agent <name>] [-- <agent args>]
 
   <pr>             a pull request number, URL or branch (default: the current branch's)
+  choose           list the open pull requests, pick one to check out, and start on it
   --port <n>       listen on this port for this run          env PRCODER_PORT
   --no-open        print the URL, don't open a browser        env PRCODER_NO_OPEN=1
   --queue <file>   keep the queue here, not .prcoder/        env PRCODER_QUEUE
@@ -71,6 +72,9 @@ export function parseCli(argv) {
   if (positionals.length > 1) {
     throw new Error(`unexpected argument ${positionals[1]}; one pull request at most, and flags for the agent go after --`);
   }
+  // The one word that is a subcommand and not a pull request. A branch called
+  // `choose` is still reachable by its pull request's number or URL.
+  const choose = positionals[0] === 'choose';
   if (!AGENTS.includes(values.agent)) throw new Error(`unknown agent ${values.agent}; supported: ${AGENTS.join(', ')}`);
   const port = values.port === undefined ? undefined : Number(values.port);
   if (port !== undefined && !(Number.isInteger(port) && port > 0 && port < 65536)) {
@@ -78,7 +82,8 @@ export function parseCli(argv) {
   }
   if (values.queue === '') throw new Error('--queue wants a file path');
   return {
-    target: positionals[0],
+    target: choose ? undefined : positionals[0],
+    choose,
     agent: values.agent,
     agentArgs,
     port,
