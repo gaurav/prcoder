@@ -18,8 +18,10 @@ scrollback.
 The repository's name opens the block, bold and in colour, and nothing comes before it: with
 several of these windows open, one per repo, the one you want is the one whose name you can see
 from across the room, and the word `prcoder` in that column was what the eye found first in every
-window. The colour is off when stdout is not a terminal, with `NO_COLOR` set, or where `TERM`
-says the terminal has none. The window's title is set to the same name, `gaurav/prcoder ·
+window. The colour goes by the repository's owner, so every repo of one organization is the same
+colour and a related repo's window looks like this one's; there are four, each legible on a light
+and a dark background, so two organizations can share one. It is off when stdout is not a
+terminal, with `NO_COLOR` set, or where `TERM` says the terminal has none. The window's title is set to the same name, `gaurav/prcoder ·
 prcoder`, so the Window menu and Mission Control list each window by its repo; it stays until
 your shell sets a title of its own, which most do at the next prompt.
 
@@ -101,9 +103,9 @@ followed by the ones built on it, a step further in, with roots and siblings mos
 updated first. The columns are the tab's facts that a pick turns on -- the size in the tab's
 bands and colours, green for `XS` to red for `XXL`; the state in the tab's words, `stacked (N)`
 for one that is ready once the N under it merge; and how long since it last moved -- and then
-the title. A root on a branch that is not the default says `on <branch>` after its title; the
-command line does not ask git what is under a bare branch, as the tab does. `›` marks the pull
-request on the checked-out branch. Enter takes the deepest one, since that is usually where the
+the title. A root on a branch that is not the default says what it is built on after its title,
+`on fixture-base › main`, asking git what is under a bare branch as the tab does, and the state
+counts those steps. `›` marks the pull request on the checked-out branch. Enter takes the deepest one, since that is usually where the
 last session was; the most recently updated of them when several are as deep, and the most
 recently updated root when nothing is stacked. `q` or end of input starts nothing.
 

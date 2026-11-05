@@ -37,7 +37,8 @@ test('the list is the tab\'s by-stack order, most recently updated first, and En
   assert.match(text[3], /^› {3}#163 +L +stacked \(1\) +just now +Title of 163$/);
   assert.match(text[4], /^ {6}#170 +XS +stacked \(2\) +4 days ago +Title of 170$/);
   assert.match(text[6], /^ {2}#200 +S +conflicts/);
-  // A root on a bare branch says so; one on the default branch says nothing.
+  // A root on a bare branch says so, as far as it knows without git; one on
+  // the default branch says nothing.
   assert.match(text[7], /^ {2}#87 +XS +draft .*Title of 87 on fixture\/diff-views-base$/);
   assert.doesNotMatch(text[2], / on main/);
   // Every title starts in the same column, whatever the indent before its number.
@@ -54,6 +55,19 @@ test('the marker follows the checked-out branch, and the default is the newest r
   const flat = chooseLines({ ...LISTING, pulls: LISTING.pulls.filter((p) => p.number === 173 || p.number === 87) }, { nameWithOwner: 'o/r', defaultBranch: 'main', now: NOW });
   assert.equal(flat.pick.pr.number, 173);
   assert.equal(flat.pick.depth, 0);
+});
+
+// What git says is under a bare branch is drawn and counted as the tab draws
+// and counts it: `ready` on one is really stacked, on the bare branch.
+test('git\'s word on a bare base is drawn under the root and counted in its state', () => {
+  const below = [{ branch: 'fixture/diff-views-base', names: ['older-base'], toDefault: true }];
+  const ready = { ...LISTING, pulls: LISTING.pulls.map((p) => (p.number === 87 ? { ...p, merge: 'ready' } : p)) };
+  const text = chooseLines(ready, { nameWithOwner: 'o/r', defaultBranch: 'main', now: NOW, below }).lines.map(plain);
+  assert.match(text[7], /^ {2}#87 +XS +stacked \(2\) .*Title of 87 on fixture\/diff-views-base › older-base › main$/);
+  // Without git's answer the count is what the list alone shows.
+  assert.match(chooseLines(ready, { nameWithOwner: 'o/r', defaultBranch: 'main', now: NOW }).lines.map(plain)[7], /stacked \(1\) .* on fixture\/diff-views-base$/);
+  // A stacked pull request is still counted by the list, with nothing to ask git.
+  assert.match(text[4], /stacked \(2\)/);
 });
 
 test('a short listing says so, and an empty one offers nothing', () => {

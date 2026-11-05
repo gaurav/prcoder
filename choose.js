@@ -12,11 +12,11 @@
 // the gh, git and readline around it, run from server.js before term.init().
 
 import readline from 'node:readline/promises';
-import { stackOrder } from './public/pr.js';
+import { stackOrder, stackUnder } from './public/pr.js';
 import { sortPulls, sizeChip, age } from './public/items.js';
 import { repoPulls } from './github.js';
 import { readPulls, writePulls } from './store.js';
-import { currentBranch, checkoutPr, dirtyFiles } from './git.js';
+import { currentBranch, checkoutPr, dirtyFiles, branchesBelow } from './git.js';
 import { styled, clip } from './term.js';
 
 // A listing younger than this is printed as it is, as the Pull requests tab
@@ -34,10 +34,20 @@ const STATE_STYLE = { ready: 'green', conflicts: 'red', 'checks not passing': 'r
 /**
  * The tab's word for a row's state: GitHub's `ready` on a pull request built
  * on others is `stacked (N)`, ready to merge into the one under it and not
- * the default branch (pullWord in public/queue.js). N is the depth here, where
- * the tab counts bare branches too: git is not asked at the command line.
+ * the default branch (pullWord in public/queue.js). N counts what stackUnder
+ * found under it, pull requests and bare branches alike, as the tab counts.
  */
-const stateWord = (p, depth) => (p.merge === 'ready' && depth ? `stacked (${depth})` : p.merge ?? '');
+const stateWord = (p, under) => (p.merge === 'ready' && under.nodes.length ? `stacked (${under.nodes.length})` : p.merge ?? '');
+
+/**
+ * What a root is built on when that is not the default branch, as the tab's
+ * row says it: `on fixture-base › main`, nearest first, down to the default
+ * branch where git has said (`below`), and as far as it goes where it has
+ * not. Nothing at a depth, since the indent says it, and nothing on main.
+ */
+const builtOn = (under, depth) => (!depth && under.nodes.length
+  ? ` on ${[...under.nodes.slice().reverse().map((n) => (n.pr ? `#${n.pr.number}` : n.branch)), ...(under.into ? [under.into] : [])].join(' › ')}`
+  : '');
 
 /**
  * What `prcoder choose` prints and offers, from a listing as readPulls or
@@ -51,11 +61,12 @@ const stateWord = (p, depth) => (p.merge === 'ready' && depth ? `stacked (${dept
  * A row is the number, the size (sizeChip, coloured by band), the state in a
  * word, how long since it last moved, and the title -- last, so a narrow
  * terminal (`width`) cuts the title's tail and nothing else. A root whose
- * base is not the default branch says so after the title, dim, and the title
- * gives way to it: a bare branch, which the tab asks git about and this does
- * not. `›` marks the one on the checked-out branch, as the tab marks it `here`.
+ * base is not the default branch says what it is built on after the title,
+ * dim, and the title gives way to it (builtOn); `below` is git's word on
+ * such bare branches, as branchesBelow gives it and the tab's rows take it.
+ * `›` marks the one on the checked-out branch, as the tab marks it `here`.
  */
-export function chooseLines(listing, { nameWithOwner, branch, defaultBranch, now = Date.now(), width = Infinity } = {}) {
+export function chooseLines(listing, { nameWithOwner, branch, defaultBranch, below = [], now = Date.now(), width = Infinity } = {}) {
   const rows = stackOrder(sortPulls(listing.pulls ?? [], 'updated'));
   const here = (p) => !p.isCrossRepository && p.headRefName === branch;
   const read = listing.read ? `, read ${age(new Date(listing.read).toISOString(), now)}` : '';
@@ -70,13 +81,15 @@ export function chooseLines(listing, { nameWithOwner, branch, defaultBranch, now
   const number = ({ pr, depth }) => `${'  '.repeat(depth)}#${pr.number}`;
   const wide = (f) => Math.max(...rows.map((r) => f(r).length));
   const numbers = wide(number);
-  const states = wide(({ pr, depth }) => stateWord(pr, depth));
+  const unders = new Map(rows.map(({ pr }) => [pr.number, stackUnder({ pr }, listing.pulls, below, defaultBranch)]));
+  const states = wide(({ pr }) => stateWord(pr, unders.get(pr.number)));
   const ages = wide(({ pr }) => age(pr.updatedAt, now));
   for (const r of rows) {
     const { pr: p, depth } = r;
     const size = sizeChip(p.lines);
-    const state = stateWord(p, depth);
-    const base = !depth && p.baseRefName && p.baseRefName !== defaultBranch ? ` on ${p.baseRefName}` : '';
+    const under = unders.get(p.number);
+    const state = stateWord(p, under);
+    const base = builtOn(under, depth);
     const head = [
       here(p) ? { text: '›', style: ['bold', 'cyan'] } : ' ',
       ' ',
@@ -113,6 +126,19 @@ async function listing(repo, nameWithOwner) {
 }
 
 /**
+ * Git's word on every bare branch a root is built on (branchesBelow, as the
+ * tab asks through /api/below), so the row can say what is under it and
+ * count it. One origin does not have -- a clone behind the listing -- is
+ * left unanswered, and the row says as much as it knows.
+ */
+async function bareBases(repo, pulls, defaultBranch) {
+  const bases = new Set(stackOrder(pulls).filter((r) => !r.depth).map((r) => r.pr.baseRefName)
+    .filter((b) => b && b !== defaultBranch));
+  return (await Promise.all([...bases].map((b) => branchesBelow(repo, b, defaultBranch, { prs: pulls })
+    .then((r) => ({ branch: b, ...r }), () => null)))).filter(Boolean);
+}
+
+/**
  * The list, the question, and what the pick means for the start:
  * `{ url, follow }`, or null when nothing was picked (`q`, end of input, or
  * nothing open), which the caller takes as nothing to start. `follow` says the
@@ -132,7 +158,9 @@ export async function choosePr(repo, facts, { input = process.stdin, output = pr
   const { nameWithOwner, defaultBranch } = facts;
   const branch = await currentBranch(repo);
   const width = (output.columns || 80) - 1;
-  const { lines, rows, pick } = chooseLines(await listing(repo, nameWithOwner), { nameWithOwner, branch, defaultBranch, width });
+  const read = await listing(repo, nameWithOwner);
+  const below = await bareBases(repo, read.pulls, defaultBranch);
+  const { lines, rows, pick } = chooseLines(read, { nameWithOwner, branch, defaultBranch, below, width });
   for (const l of lines) console.log(styled(l, width));
   if (!pick) return null;
   const rl = readline.createInterface({ input, output });
