@@ -3,7 +3,7 @@
 The window prcoder was launched in keeps a status block pinned under a scrolling log:
 
 ```
-prcoder  gaurav/prcoder   initial-implementation → main   2 unpushed · 8 uncommitted
+gaurav/prcoder   initial-implementation → main   2 unpushed · 8 uncommitted
 PR #1    A browser workspace around a live Claude Code session
          https://github.com/gaurav/prcoder/pull/1
 queue    4 local · 1 done
@@ -14,6 +14,12 @@ open     o prcoder · g github · t terminal · f folder
 
 The block is redrawn in place and the log scrolls above it, so what happened stays in the
 scrollback.
+
+The repository's name opens the block, bold and in colour, and nothing comes before it: with
+several of these windows open, one per repo, the one you want is the one whose name you can see
+from across the room, and the word `prcoder` in that column was what the eye found first in every
+window. The colour is off when stdout is not a terminal, with `NO_COLOR` set, or where `TERM`
+says the terminal has none.
 
 ## How fresh it is
 

@@ -104,7 +104,7 @@ The window prcoder was launched in keeps a status block pinned under a scrolling
 and its sync state, the pull request, the queue's counts, and the URL.
 
 ```
-prcoder  gaurav/prcoder   initial-implementation → main   2 unpushed · 8 uncommitted
+gaurav/prcoder   initial-implementation → main   2 unpushed · 8 uncommitted
 PR #1    A browser workspace around a live Claude Code session
          https://github.com/gaurav/prcoder/pull/1
 queue    4 local · 1 done

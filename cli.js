@@ -134,7 +134,8 @@ export const ago = (ms) => {
 /**
  * The block pinned under the log: everything status() worked out anyway, for
  * the terminal that is otherwise sat idle for the whole session. Pure, so the
- * wording is testable without a tty.
+ * wording is testable without a tty. Lines as term.js takes them: strings,
+ * or segments where something is styled (plain() there reads the text).
  */
 export function statusLines(s, u = {}) {
   // padEnd, not a slice: a label longer than the column has to push the row out
@@ -150,10 +151,17 @@ export function statusLines(s, u = {}) {
   const base = s.pr ? sides(s.pr, s.remotes).base : s.defaultBranch;
   const where = s.pr && prRepo(s.pr) !== s.nameWithOwner ? prRepo(s.pr) : '';
   return [
-    row('prcoder', s.nameWithOwner,
+    // The repository first, bold and in colour, and `prcoder` nowhere on the
+    // row: with several of these windows open, the eye landed on `prcoder` in
+    // the label column of every one, and the name after it had to be read to
+    // find the window for a repo. One name in one colour: a colour per repo
+    // would read badly on one background or the other (yellow, blue), and the
+    // window's title says the repo too (term.title). `prcoder` with no
+    // repository is the poll that has not answered yet.
+    [{ text: s.nameWithOwner ?? 'prcoder', style: ['bold', 'cyan'] }, '   ' + [
       s.branch ? `${s.branch} → ${base}` : 'detached HEAD',
       [syncPhrase(s), s.dirtyFiles?.length && `${s.dirtyFiles.length} uncommitted`]
-        .filter(Boolean).join(' · ')),
+        .filter(Boolean).join(' · ')].filter(Boolean).join('   ')],
     s.pr ? row(`PR ${where}#${s.pr.number}`, s.pr.title) : row('PR', 'none for this branch'),
     s.pr && row('', s.pr.url),
     row('queue', `${q.local} local · ${q.done} done`),

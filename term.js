@@ -15,7 +15,7 @@
 // next line.
 
 import fs from 'node:fs';
-import { format } from 'node:util';
+import { format, styleText } from 'node:util';
 
 const QUIET = 0, VERBOSE = 1, DEBUG = 2;
 const NAMES = ['quiet', 'verbose', 'debug'];
@@ -47,6 +47,9 @@ export function sink(stream) {
 }
 
 const live = () => Boolean(out.isTTY) && process.env.TERM !== 'dumb';
+// hasColors is the tty's own reading of NO_COLOR, FORCE_COLOR and TERM; a
+// stream without one (the tests' fakes) is coloured when it is live.
+const colour = () => live() && (out.hasColors?.() ?? true);
 const cols = () => (out.columns || 80) - 1;
 const rows = () => out.rows || 24;
 
@@ -89,12 +92,13 @@ const visible = (line, re = ROW) => String(line).replace(re, picture);
  */
 const WIDE = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}\u3000-\u303f\uff01-\uff60\uffe0-\uffe6]|\p{Extended_Pictographic}/u;
 const ZERO = /[\p{Mark}\u200d]/u;   // combining marks, variation selectors, ZWJ
+const columns = (ch) => (ZERO.test(ch) ? 0 : WIDE.test(ch) ? 2 : 1);
 
 export function clip(line, width) {
   let used = 0;
   let out = '';
   for (const ch of line) {
-    const w = ZERO.test(ch) ? 0 : WIDE.test(ch) ? 2 : 1;
+    const w = columns(ch);
     if (used + w > width) break;
     used += w;
     out += ch;
@@ -102,9 +106,41 @@ export function clip(line, width) {
   return out;
 }
 
+/** The terminal columns `line` takes, as clip() counts them. */
+const span = (line) => [...line].reduce((n, ch) => n + columns(ch), 0);
+
+/**
+ * A line is a string, or an array of segments, each a string or
+ * `{ text, style }` with `style` a util.styleText format (`'bold'`,
+ * `['bold', 'cyan']`). Styles are how the block makes one thing stand out --
+ * the repository's name, so the window for a repo can be told from the
+ * others -- and are the only escape sequences a line may carry: everything
+ * in `text` goes through visible() like any other line.
+ */
+export const segments = (line) => (Array.isArray(line) ? line : [line]).map((s) => (typeof s === 'string' ? { text: s } : s));
+
+/** A line's text with its styles dropped: what a non-tty gets, and what a test reads. */
+export const plain = (line) => segments(line).map((s) => String(s.text)).join('');
+
+/**
+ * A line rendered for the terminal: each segment pictured, the whole cut to
+ * `width` columns, and then each styled -- in that order, so clip() stays a
+ * width measure (SGR is zero-width, and cutting through an escape sequence
+ * would print garbage) and so a style never reaches the terminal from text.
+ * No styles at all where colour() says no: a pipe, TERM=dumb, NO_COLOR.
+ */
+export function styled(line, width = cols()) {
+  let left = width;
+  return segments(line).map(({ text, style }) => {
+    const cut = clip(visible(text), left);
+    left -= span(cut);
+    return cut && style && colour() ? styleText(style, cut, { validateStream: false }) : cut;
+  }).join('');
+}
+
 export function paint() {
   if (!live()) return;
-  const fit = (l) => clip(l, cols());
+  const fit = (l) => styled(l, cols());
   const body = footer.map(fit);
   // The question goes last but is cut first from nothing. A terminal short
   // enough that the rule and the status rows already fill it used to drop the
@@ -130,8 +166,9 @@ export function paint() {
  * sequences at an idle terminal every thirty seconds.
  */
 export function status(lines) {
-  const next = lines.map((l) => visible(l));
-  if (next.length === footer.length && next.every((l, i) => l === footer[i])) return;
+  const next = lines.map(segments);
+  const key = (l) => JSON.stringify(l);
+  if (next.length === footer.length && next.every((l, i) => key(l) === key(footer[i]))) return;
   footer = next;
   paint();
 }
