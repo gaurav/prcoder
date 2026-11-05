@@ -80,6 +80,42 @@ who they are, so the line tells you whether the window you are looking for is an
 this repo, another worktree, or nothing to do with prcoder at all.
 [Ports.md](Ports.md) says how the port is chosen.
 
+## Choosing a pull request
+
+`prcoder choose` is for when the next pull request is not the one on the branch you are on. It
+prints the repository's open pull requests and asks which to start on, before the port is taken
+or a browser opens:
+
+```
+Open pull requests in gaurav/prcoder, by stack, most recently updated first, read just now:
+
+  #159      XXL  ready        2 days ago   Add a Pull requests tab to the queue: every open pull…
+›   #163    L    stacked (1)  2 days ago   Let a description's checklist text be selected without…
+  #173      XS   ready        15 days ago  Colour a new Snakefile, .smk or .snakefile in the diff…
+  #87       XS   ready        1 month ago  [fixture] A modified, a deleted and a .tsx file on fixture/diff-views-base
+PR number [163, the deepest], or q:
+```
+
+The order is the Pull requests tab's *by stack* ([Panes.md](Panes.md)): each pull request
+followed by the ones built on it, a step further in, with roots and siblings most recently
+updated first. The columns are the tab's facts that a pick turns on -- the size in the tab's
+bands and colours, green for `XS` to red for `XXL`; the state in the tab's words, `stacked (N)`
+for one that is ready once the N under it merge; and how long since it last moved -- and then
+the title. A root on a branch that is not the default says `on <branch>` after its title; the
+command line does not ask git what is under a bare branch, as the tab does. `›` marks the pull
+request on the checked-out branch. Enter takes the deepest one, since that is usually where the
+last session was; the most recently updated of them when several are as deep, and the most
+recently updated root when nothing is stacked. `q` or end of input starts nothing.
+
+A pick on another branch is checked out, as the tab's Switch checks one out, and prcoder starts
+on it. With uncommitted changes nothing is checked out: the line says so, and prcoder starts
+showing that pull request on the branch you are on instead, as `prcoder <n>` would. A pick on
+the branch you are on is simply started.
+
+The list is the tab's listing, read from GitHub unless `.prcoder/pulls.json` is under a minute
+old, and written there, so the tab opens from the same read. `prcoder choose` takes the other
+flags as ever, and the agent's after `--`.
+
 ## Without a terminal
 
 None of this happens when stdout is not a terminal. Piped or redirected, you get plain lines, with

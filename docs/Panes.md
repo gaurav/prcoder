@@ -475,7 +475,8 @@ since there is nothing of it here to move. Milestones themselves are not made, r
 from prcoder.
 
 **Pull requests** is always there too: the repository's open pull requests, for picking the next
-one to work on, in the same groups as the issues -- **No milestone** first, then one per open milestone in the
+one to work on (`prcoder choose` is the same pick at the command line, before a browser opens:
+[Terminal.md](Terminal.md#choosing-a-pull-request)), in the same groups as the issues -- **No milestone** first, then one per open milestone in the
 owner's order, each line drawn as the Issues tab's, its badge counting pull requests -- or, with the second select over them set to *one list*, as one list, or
 to *by stack*, as one list in the switcher's order, each pull request a step in under the one it
 is built on. A stack can run across milestones, which is why that is a grouping of its own and

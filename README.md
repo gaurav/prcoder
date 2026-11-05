@@ -12,6 +12,7 @@ npm link                   # once, to run it from any repo; edits here go live
 prcoder                    # the PR for the current branch
 prcoder 123                # a specific PR
 prcoder <pr-url>           # any PR, anywhere
+prcoder choose             # pick one of the repo's open PRs to check out and start on
 prcoder -- --model opus    # ...with flags for the Claude session, after --
 prcoder --help             # prcoder's own flags
 ```
@@ -59,7 +60,9 @@ grouping, and what every control does.
 
 ## Arguments and settings
 
-The first argument, if it isn't a flag, is prcoder's: the PR to open. Everything after `--` is
+The first argument, if it isn't a flag, is prcoder's: the PR to open, or `choose`, which lists the
+repository's open pull requests by stack and asks which to check out and start on
+([docs/Terminal.md](docs/Terminal.md#choosing-a-pull-request)). Everything after `--` is
 handed to `claude` untouched, so `prcoder 123 -- --effort high --model opus` opens PR 123 with that
 session. Before `--` a flag is prcoder's, and one it does not know is an error that says where it
 goes, rather than a guess at which of the two it was for. `prcoder --help` lists the flags.

@@ -130,6 +130,9 @@ export function syncState({ head, remoteHead, remoteKnownLocally, remoteIsAncest
 export const userDirt = (status) =>
   status.split('\n').filter(Boolean).map((l) => l.slice(3));
 
+/** The files with uncommitted changes, as the status block counts them: tracked ones only. */
+export const dirtyFiles = async (cwd) => userDirt(await git(['status', '--porcelain', '--untracked-files=no'], cwd));
+
 /**
  * GitHub's "open a PR for this branch" page. `nameWithOwner` is gh's base repo,
  * which in a fork clone is `upstream`'s -- but the branch was pushed to origin,
@@ -277,12 +280,11 @@ export async function repoInfo(cwd) {
  */
 export async function snapshot(cwd, remoteHead, branch, has = (rev) => hasCommit(rev, cwd)) {
   // Independent reads, so they run together rather than one spawn at a time.
-  const [head, status, known] = await Promise.all([
+  const [head, dirty, known] = await Promise.all([
     headCommit(cwd),
-    git(['status', '--porcelain', '--untracked-files=no'], cwd),
+    dirtyFiles(cwd),
     remoteHead && has(remoteHead),
   ]);
-  const dirty = userDirt(status);
 
   let sync = 'unpushed';
   let ahead = 0;
