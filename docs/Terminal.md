@@ -19,7 +19,9 @@ The repository's name opens the block, bold and in colour, and nothing comes bef
 several of these windows open, one per repo, the one you want is the one whose name you can see
 from across the room, and the word `prcoder` in that column was what the eye found first in every
 window. The colour is off when stdout is not a terminal, with `NO_COLOR` set, or where `TERM`
-says the terminal has none.
+says the terminal has none. The window's title is set to the same name, `gaurav/prcoder ·
+prcoder`, so the Window menu and Mission Control list each window by its repo; it stays until
+your shell sets a title of its own, which most do at the next prompt.
 
 ## How fresh it is
 

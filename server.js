@@ -979,6 +979,9 @@ async function ready() {
   // A full status rather than a PR load followed by a poll: the poll would only
   // ask GitHub again whether the PR it just loaded had changed.
   await serial(() => status({ full: true })).catch((e) => console.error('status:', e.message));
+  // The repository and nothing that changes: the title is for finding the
+  // window for a repo, and the block has the branch and the pull request.
+  term.title(`${info?.nameWithOwner ?? path.basename(repo)} · prcoder`);
   console.log(`prcoder: ${repo}`);
   console.log(pr ? `PR #${pr.number}: ${pr.title}` : 'no pull request for this branch');
   if (pr) console.log(pr.url);

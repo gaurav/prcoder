@@ -197,6 +197,21 @@ export function cycleVerbosity() {
 }
 
 /**
+ * The terminal's window and tab title (OSC 0, which Terminal.app and iTerm2
+ * both show), so the window for a repo can be found from the Window menu or
+ * Mission Control without reading its block. The text is pictured first: a
+ * BEL or an ESC in a repository's name would end the title early or run.
+ *
+ * ponytail: not put back on exit. No terminal lets a program read the title
+ * it had (xterm's push and pop, OSC 22 and 23, are not Terminal.app's), and
+ * a shell sets one at its next prompt anyway. A restore if a shell that does
+ * not turns up.
+ */
+export function title(text) {
+  if (live()) out.write(`\x1b]0;${visible(text)}\x07`);
+}
+
+/**
  * A yes/no question, asked as two more lines of the status block rather than as
  * a write of its own. That is what makes it safe: a poll landing mid-question
  * repaints the question along with everything else, instead of scribbling over

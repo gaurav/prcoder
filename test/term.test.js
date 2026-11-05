@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { sink, status, log, paint, verbose, debug, cycleVerbosity, setVerbosity, confirm, clip, styled, plain } from '../term.js';
+import { sink, status, log, paint, verbose, debug, cycleVerbosity, setVerbosity, confirm, clip, styled, plain, title } from '../term.js';
 
 /** A stand-in for process.stdout, so the tty path can be exercised anywhere. */
 function fake(isTTY, columns = 40, rows = 24) {
@@ -170,6 +170,19 @@ test('a styled segment is coloured on a tty, cut as text, and plain elsewhere', 
   assert.equal(styled(line), 'gaurav/prcoder   main');
   fake(false);
   assert.equal(styled(line), 'gaurav/prcoder   main');
+});
+
+// The window title is the one sequence written on purpose, and only to a tty.
+test('the title is set on a tty, with its text pictured, and not on a pipe', () => {
+  const out = fake(true);
+  title('gaurav/prcoder · prcoder');
+  assert.equal(out.text, '\x1b]0;gaurav/prcoder · prcoder\x07');
+  out.text = '';
+  title('owned\x07\x1b]0;x');
+  assert.equal(out.text, '\x1b]0;owned␇␛]0;x\x07');
+  const pipe = fake(false);
+  title('gaurav/prcoder');
+  assert.equal(pipe.text, '');
 });
 
 // A queue item is typed into any tab, so its text reaches this terminal from
