@@ -1095,25 +1095,29 @@ function pullGroups() {
       const focus = keys.find((k) => byMilestone.has(k)) ?? NONE;
       for (const key of keys) if (key !== focus) closedGroups.add(`p:${key}`);
     }
-    const state = (key, list) => (searching ? { open: list.length > 0, onToggle: () => {} } : kept(closedGroups, key, 'closed'));
+    // While searching, as on the Issues tab: only the groups with a match, open.
+    const state = (key) => (searching ? { open: true, onToggle: () => {} } : kept(closedGroups, key, 'closed'));
     const home = deps.home?.();
     const group = (key, title, list, extra, target) => {
       const d = fold({
         className: target === null && list.length ? 'milestone untriaged' : 'milestone', dataset: { group: key },
         title: [title, ' ', countBadge(list.length, 'pull requests', searching), ...extra.flatMap((e) => [' ', e])],
-        ...state(key, list),
+        ...state(key),
       }, list.length ? [h('ul', { className: 'items' }, ...list.map((p) => pullRow(p)).flat())] : [h('p', { className: 'empty' }, 'no open pull requests')]);
       if (target !== undefined) dropTarget(d.querySelector('summary'), target, PULL, movePull);
       return d;
     };
     const none = byMilestone.get(NONE) ?? [];
-    out.push(group(`p:${NONE}`, 'No milestone', none, triage(none), null));
+    if (!searching || none.length) out.push(group(`p:${NONE}`, 'No milestone', none, triage(none), null));
     for (const m of ranked) {
+      const list = byMilestone.get(m.number) ?? [];
+      if (searching && !list.length) continue;
       const title = home ? ext(`https://github.com/${home}/milestone/${m.number}`, m.title, { title: m.description || undefined }) : m.title;
       // A closed one is listed only because an open pull request is still on it (repoPulls).
       const extra = milestoneExtra(m, 'pull requests');
-      out.push(group(`p:${m.number}`, title, byMilestone.get(m.number) ?? [], extra, m.closed ? undefined : m.title));
+      out.push(group(`p:${m.number}`, title, list, extra, m.closed ? undefined : m.title));
     }
+    if (!out.length) out.push(h('p', { className: 'empty' }, 'No matching pull requests.'));
   }
   const { read, listed, total } = pullsListing;
   out.push(h('p', { className: 'pull-note' },

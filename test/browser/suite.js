@@ -2447,9 +2447,11 @@ test('searching the pull requests narrows the rows and counts them, and a row op
   const { fresh, typed } = await pullsPage();
   const search = fresh.locator('#queue-pull-search');
   await search.fill('copilot');
-  assert.deepEqual(await pullGroupsOf(fresh), ['p:none|No milestone (0)|closed|', 'p:1|v1.0 (1) 9 issues 1 merged due 5 days ago|open|20', 'p:4|Needed soon (0)|closed|', 'p:3|Not urgent (0)|closed|']);
-  // With nothing in it, No milestone has nothing to triage, and is not marked.
-  assert.equal(await fresh.locator('[data-group="p:none"].untriaged, [data-group="p:none"] .triage').count(), 0);
+  // Only the groups with a match, as the issue search draws them.
+  assert.deepEqual(await pullGroupsOf(fresh), ['p:1|v1.0 (1) 9 issues 1 merged due 5 days ago|open|20']);
+  await search.fill('nothing is called this');
+  assert.equal(await fresh.locator('#queue-body .pull-groups').textContent(), 'No matching pull requests.' + await fresh.locator('#queue-body .pull-note').textContent());
+  await search.fill('copilot');
   assert.equal(await fresh.locator('#queue-body .tab[data-tab="pulls"]').textContent(), 'Pull requests (1)');
   assert.equal(await fresh.evaluate(() => document.activeElement.id), 'queue-pull-search', 'the box keeps its focus');
   await search.fill('');
