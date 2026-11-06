@@ -853,17 +853,38 @@ const MILESTONE_COUNTS = 'openPulls: pullRequests(states:OPEN){ totalCount } mer
  * { open, closed } }`, or null for a node without all five -- a pulls.json
  * written before they were read.
  */
-const milestoneRow = (m, description = '') => {
-  const n = (alias) => m[alias]?.totalCount;
+const milestoneRow = (m, description = '') => ({ ...milestoneOf(m), description, closed: m.state === 'CLOSED', counts: countsOf(m) });
+
+const countsOf = (m) => {
+  const n = (alias) => m?.[alias]?.totalCount;
   const counts = {
     pulls: { open: n('openPulls'), merged: n('mergedPulls'), closed: n('closedPulls') },
     issues: { open: n('openIssues'), closed: n('closedIssues') },
   };
-  return {
-    ...milestoneOf(m), description, closed: m.state === 'CLOSED',
-    counts: [...Object.values(counts.pulls), ...Object.values(counts.issues)].every(Number.isInteger) ? counts : null,
-  };
+  return [...Object.values(counts.pulls), ...Object.values(counts.issues)].every(Number.isInteger) ? counts : null;
 };
+
+/**
+ * The listing's milestones with MILESTONE_COUNTS read for the ones a row
+ * brought along -- closed, or past openMilestones' pages -- in one call after
+ * the listing. The listings' queries do not ask for them on each row's
+ * milestone: that was five count connections on every issue and pull request,
+ * up to 2,500 a listing, for the few milestones not among the open ones.
+ * Numbers only are interpolated. The pie is the only thing the counts draw,
+ * so a call that fails leaves those milestones without one rather than
+ * failing the listing.
+ */
+async function strayCounts(cwd, owner, repo, milestones) {
+  const missing = milestones.filter((m) => !m.counts && Number.isInteger(m.number));
+  if (!missing.length) return milestones;
+  const query = `query($owner:String!,$repo:String!){ repository(owner:$owner,name:$repo){ ${
+    missing.map((m) => `m${m.number}: milestone(number:${m.number}){ ${MILESTONE_COUNTS} }`).join(' ')} } }`;
+  let got;
+  try {
+    got = JSON.parse(await gh(['api', 'graphql', '-f', `query=${query}`, '-f', `owner=${owner}`, '-f', `repo=${repo}`], { cwd })).data?.repository;
+  } catch { return milestones; }
+  return milestones.map((m) => (m.counts ? m : { ...m, counts: countsOf(got?.[`m${m.number}`]) }));
+}
 
 // Milestones come on every page, since the query is one text; repoIssues keeps
 // the first page's. `issueFieldValues` -- GitHub's per-issue custom fields,
@@ -875,7 +896,7 @@ const ISSUES_QUERY = `query($owner:String!,$repo:String!,$after:String){
     milestones(first:100,states:OPEN){ pageInfo{ hasNextPage endCursor } nodes{ number title dueOn description ${MILESTONE_COUNTS} } }
     issues(first:100,after:$after,states:OPEN,orderBy:{field:UPDATED_AT,direction:DESC}){
       totalCount pageInfo{ hasNextPage endCursor }
-      nodes{ number title url updatedAt body milestone{ number title dueOn state ${MILESTONE_COUNTS} } labels(first:10){ nodes{ name } } } } } }`;
+      nodes{ number title url updatedAt body milestone{ number title dueOn state } labels(first:10){ nodes{ name } } } } } }`;
 
 // The rest of the open milestones, for a repository with more than ISSUES_QUERY
 // or PULLS_QUERY read: the opened row's select offers every one, so they cannot
@@ -909,7 +930,8 @@ async function openMilestones(cwd, owner, repo, first) {
  * milestone an open issue is on but that is not among the open ones read --
  * closed with the issue still open, or past openMilestones' pages -- is added
  * from the issue, `closed` if it is, so that every listed issue has a group to
- * be drawn in; it has no description. The body
+ * be drawn in; it has no description, and its counts are read after the
+ * listing (strayCounts). The body
  * comes too, LF-ended like a description (lf), so the tab can show one and
  * search them; the pane renders it through the same allowlist as a
  * description (docs/Security.md).
@@ -946,7 +968,7 @@ export async function repoIssues(cwd, owner, repo) {
     after = hasNextPage ? endCursor : null;
     if (!after) break;
   }
-  return { milestones, issues, total, listed: issues.length };
+  return { milestones: await strayCounts(cwd, owner, repo, milestones), issues, total, listed: issues.length };
 }
 
 const PULLS_QUERY = `query($owner:String!,$repo:String!,$after:String){
@@ -956,7 +978,7 @@ const PULLS_QUERY = `query($owner:String!,$repo:String!,$after:String){
       totalCount pageInfo{ hasNextPage endCursor }
       nodes{ number title url isDraft isCrossRepository headRefName baseRefName createdAt updatedAt
         author{ login } additions deletions changedFiles mergeStateStatus reviewDecision body
-        milestone{ number title dueOn state ${MILESTONE_COUNTS} } labels(first:10){ nodes{ name } }
+        milestone{ number title dueOn state } labels(first:10){ nodes{ name } }
         closingIssuesReferences(first:10){ nodes{ number title url milestone{ title } } }
         files(first:100){ nodes{ additions deletions viewerViewedState } } } } } }`;
 
@@ -1067,7 +1089,7 @@ export async function repoPulls(cwd, owner, repo) {
     after = hasNextPage ? endCursor : null;
     if (!after) break;
   }
-  return { milestones, pulls, total, listed: pulls.length };
+  return { milestones: await strayCounts(cwd, owner, repo, milestones), pulls, total, listed: pulls.length };
 }
 
 /**
