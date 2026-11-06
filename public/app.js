@@ -5,7 +5,7 @@ import { renderPr, renderNoPr, renderHeader, pageTitle, prRepo } from './pr.js';
 import { fileFrom, nextUnviewed, revealFile } from './filelist.js';
 import { h, api, toast, pref, setPref, debug } from './ui.js';
 import { openDiff, closeDiff, selectedPath, setViewed, showViewed, canTickViewed, toggleViewed, toggleWrap, canWrap, openMention } from './diff.js';
-import { initQueue, addItem, setItems } from './queue.js';
+import { initQueue, addItem, setItems, paintPulls } from './queue.js';
 import { bindKeys, keyLabel, isTyping } from './keys.js';
 import { printable } from './tasks.js';
 import { fold, folded, canFold } from './folds.js';
@@ -573,7 +573,7 @@ const loadBelow = (branch) => {
   const pairs = (prs ?? []).filter((p) => !p.isCrossRepository)
     .map(({ headRefName, baseRefName }) => ({ headRefName, baseRefName }));
   api('/api/below', { branch, prs: pairs })
-    .then((b) => { below.set(branch, b); if (last) paint(last); }, () => {});
+    .then((b) => { below.set(branch, b); if (last) paint(last); paintPulls(); }, () => {});
 };
 // Asked for as the pointer or the keyboard reaches the switcher, not on
 // mousedown: by the time a fetch from there landed the dropdown was open, too
@@ -942,5 +942,14 @@ input.addEventListener('input', grow);
 // lands, and loadPrs repaints the header itself when it does.
 loadPrs('page load');
 // `home` for ▶, which reads a bare #N in an item's text as this repo's.
-await initQueue({ sendToClaude, onTask: toggleTask, home: () => last?.nameWithOwner });
+// `onSwitch` and `blocked` are the PR pane's own Switch and its guard, for the
+// Pull requests tab's: a checkout is a checkout wherever it is asked for.
+// `defaultBranch` is where the tab's stack lines bottom out (stackUnder), and
+// `below` and `onBelow` are git's answers about bare branches in them and the
+// way to ask, the PR pane's own.
+await initQueue({
+  sendToClaude, onTask: toggleTask, home: () => last?.nameWithOwner,
+  onSwitch: switchPr, blocked: () => (last?.dirtyFiles?.length ?? 0) > 0,
+  defaultBranch: () => last?.defaultBranch, below: () => [...below.values()], onBelow: loadBelow,
+});
 loadStatus();
