@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { text as readBody } from 'node:stream/consumers';
 import { spawn as ptySpawn } from 'node-pty';
 import { WebSocketServer } from 'ws';
-import { loadPr, prHeads, prUrl, prBody, parsePrUrl, listPrs, branchPrs, lookupPrs, ownPrs, pickPr, issueLinks, lookupRef, setViewed, setBody, createIssue, fetchPatches, runCount, repoPulls, repoIssues, setIssueMilestone } from './github.js';
+import { loadPr, prHeads, prUrl, pullRequestFor, prBody, parsePrUrl, listPrs, branchPrs, lookupPrs, ownPrs, pickPr, issueLinks, lookupRef, setViewed, setBody, createIssue, fetchPatches, runCount, repoPulls, repoIssues, setIssueMilestone } from './github.js';
 import { notAWorkTree, snapshot, currentBranch, headCommit, commitsKnown, commitMemo, repoInfo, pushRepo, prScope, compareUrl, githubUrl, originOwner, wholePrRepo, checkoutPr, pushBranch, remoteBranchHead, trackingHead, localPatch, branchesBelow } from './git.js';
 import { bucket, fileUrl, fileViews } from './files.js';
 import { readPort, writePort, readPrs, writePrs, pick, useQueueFile, movedQueue, issueUrl, readPulls, writePulls } from './store.js';
@@ -1237,6 +1237,16 @@ if (import.meta.main) {
     if (!pick) process.exit(0);
     if (pick.follow) chosen = { branch: await currentBranch(repo), url: pick.url };
     else target = pick.url;
+  }
+  // `prcoder <pr>`: refused here, before the block and the port, when it names
+  // no pull request (pullRequestFor), and pinned to the URL it names when it
+  // does -- so a branch given by name stays on that pull request, rather than
+  // on whichever one gh would find for the name on a later poll.
+  else if (target) {
+    try { target = await pullRequestFor(repo, target); } catch (e) {
+      console.error(`prcoder: ${e.message}`);
+      process.exit(2);
+    }
   }
 
   // Before anything can print: init() is what routes console through the log,

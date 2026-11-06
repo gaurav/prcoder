@@ -114,6 +114,33 @@ async function viewPr(cwd, target, fields) {
 export const prUrl = async (cwd, target) => (await viewPr(cwd, target, 'url'))?.url;
 
 /**
+ * The URL of the pull request the command line's `<pr>` names, or an Error
+ * saying why there isn't one. gh already takes a number (`42` or `#42`), a URL
+ * or a head branch (`gh pr view <branch>`), so recognising one is gh's job;
+ * this is what makes an argument that is none of them a refusal at startup.
+ * Unchecked, a branch with no pull request -- a typo, a branch not pushed yet,
+ * an issue's URL, which gh reads as a branch name -- started a session saying
+ * `none for this branch` about a branch nobody was on, and a number past the
+ * last pull request started one whose every poll failed.
+ *
+ * gh's two noes, verbatim from gh 2.x on 2026-11-06: `no pull requests found
+ * for branch "x"` (viewPr's null), and `GraphQL: Could not resolve to a
+ * PullRequest with the number of 99999. (repository.pullRequest)`, for a number
+ * or a URL. Anything else -- offline, signed out -- is gh's own words.
+ */
+export async function pullRequestFor(cwd, target) {
+  let url;
+  try {
+    url = await prUrl(cwd, target);
+  } catch (e) {
+    if (/could not resolve to a pullrequest/i.test(e.stderr ?? '')) throw new Error(`there is no pull request ${target}`);
+    throw new Error(`could not look up ${target}: ${e.message}`);
+  }
+  if (!url) throw new Error(`${target} is not a pull request's number or URL, or the branch of one`);
+  return url;
+}
+
+/**
  * Just enough to know whether the PR moved, without the file list loadPr pages
  * through (prFiles), which also carries the head, base and line counts.
  *

@@ -125,7 +125,8 @@ actually observed, is an id per item and a union by id.
 **prcoder's flags end at `--`.** Everything before it is prcoder's and parsed strictly (`parseCli`
 in [`cli.js`](../cli.js)); everything after it goes to the agent verbatim. So there is no list of
 Claude's flags to keep in step, and an agent flag written before `--` is an error that says where it
-goes, not a session started with the wrong pull request. The one positional is the pull request,
+goes, not a session started with the wrong pull request. The one positional is the pull request
+(its number, URL or branch, which gh tells apart, looked up once and refused if it names none),
 and `choose` is the one subcommand. [#99](https://github.com/gaurav/prcoder/pull/99) tried `prcoder open`,
 `new` and `gh`, and they were dropped. The running prcoder's keys (`o`, `g`) do the same job in
 fewer keystrokes, and a command word in front of the target clashes with a branch of that name, so
