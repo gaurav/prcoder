@@ -2360,6 +2360,21 @@ test('a pull request listing landing with a row\'s select or drag in use waits, 
   await fresh.evaluate(() => document.activeElement.blur());
   await fresh.waitForFunction(() => document.querySelector('.item[data-pull="30"] .text').textContent.endsWith('one'));
 
+  // Nor does a poll that brings news repaint the tab under its order or
+  // grouping select, which would close the select mid-choice.
+  for (const control of ['.pull-sort', '.pull-group']) {
+    await fresh.locator(`#queue-body ${control}`).focus();
+    await held(`#queue-body ${control}`);
+    await fresh.route('**/api/status', (r) => r.fulfill({ json: { ...status, nameWithOwner: 'gaurav/prcoder',
+      queue: [{ text: `news ${control}`, done: false, issue: null, deleted: false }] } }));
+    const polled = fresh.waitForResponse('**/api/status');
+    await fresh.evaluate(() => document.getElementById('pr-refresh').click());
+    await polled;
+    await fresh.waitForTimeout(200);
+    assert.equal(await fresh.evaluate(() => window.held.isConnected), true, control);
+    await fresh.evaluate(() => document.activeElement.blur());
+  }
+
   // Focus on Switch holds nothing.
   await fresh.locator('[data-group="p:none"] .issue-ways .pr-go').focus();
   await land('two');
