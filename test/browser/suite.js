@@ -64,14 +64,14 @@ const skip = !engine ? 'playwright is not installed (npm ci without --omit=dev)'
 // Each run's names carry its engine, so a CI log says which one broke.
 const test = (name, ...rest) => nodeTest(`${name} [${engineName}]`, ...rest);
 
-// Each line here is a regression: `_for_` showed its underscores, HTML
-// comments showed as text, `##` rendered literally, and a
+// Each line here is a regression: `_for_` showed its underscores, `~struck~`
+// its tildes, HTML comments showed as text, `##` rendered literally, and a
 // <details> left a stray `</details>` behind. The quote is here because neither
 // of this repo's own descriptions has one, so no driver run ever showed it. The
 // tasks are in the lead, above the first `##`, because sections render folded
 // and a click needs a visible box.
 const BODY = [
-  'Prose with _for_ in it, and a mention of #7.',
+  'Prose with _for_ in it, ~struck~ out, and a mention of #7.',
   '',
   '> A quoted line',
   '> that continues.',
@@ -248,10 +248,11 @@ test('raw markup does not reach the page as text', { skip }, async () => {
   // textContent, not innerText: the folded sections are hidden, and a stray
   // `</details>` inside one is exactly what this is for.
   const text = await page.$eval('#pr-body .md', (el) => el.textContent);
-  for (const raw of ['<!--', '-->', '##', '</details>', '<summary>', '_for_', '> ']) {
+  for (const raw of ['<!--', '-->', '##', '</details>', '<summary>', '_for_', '~', '> ']) {
     assert.ok(!text.includes(raw), `${JSON.stringify(raw)} rendered as text in: ${text}`);
   }
-  assert.ok(text.includes('Prose with for in it'), text);
+  assert.ok(text.includes('Prose with for in it, struck out'), text);
+  assert.equal(await page.locator('#pr-body .md del').textContent(), 'struck');
 });
 
 test('a > run is one quote, its lines kept as lines', { skip }, async () => {
@@ -277,12 +278,60 @@ test('checkboxes render with their state, and a tick posts through', { skip }, a
   assert.deepEqual(await boxes.evaluateAll((list) => list.map((b) => b.checked)), [false, true, false]);
   assert.equal(await page.locator('.task.done').count(), 1);
 
+  // Named by its line, which the row's <label> used to do for it. The title is
+  // the same on every box, so it can't be what tells them apart.
+  assert.equal(await page.getByRole('checkbox', { name: 'first task', exact: true }).count(), 1);
+  assert.equal(await page.getByRole('checkbox', { name: 'second task', exact: true }).isChecked(), true);
+
+  // The text is for reading and copying: a click on it ticks nothing.
+  await page.locator('.task > span').first().click();
+  assert.equal(await boxes.first().isChecked(), false);
+  assert.deepEqual(posted, []);
+
   await boxes.first().click();
   await page.waitForFunction(() => document.querySelectorAll('.task.done').length === 2);
   assert.deepEqual(posted, [{ index: 0, done: true, text: 'first task' }]);
   // The count moves with the box, from the body the route answered, rather
   // than a poll up to a minute later.
   assert.ok((await page.locator('#pr-head .tab').allTextContents()).includes('Detail (2/3)'));
+});
+
+test('the queue\'s PR tab names each box by its line', { skip }, async () => {
+  const fresh = await newPage();
+  await fresh.locator('#queue-body .tab[data-tab="pr"]').click();
+  const box = fresh.locator('#queue-body').getByRole('checkbox', { name: 'first task', exact: true });
+  assert.equal(await box.count(), 1);
+  assert.equal(await box.isChecked(), false);
+  await fresh.close();
+});
+
+// The poll repaints the whole description whenever anything on the pull request
+// moved, and the text of a line is there to be copied.
+test('a selection in the description survives a repaint, unless its text moved', { skip }, async () => {
+  const fresh = await newPage();
+  const select = () => fresh.evaluate(() => {
+    const [from, to] = [...document.querySelectorAll('#pr-body .md > p, #pr-body .md blockquote')].map((n) => n.firstChild);
+    getSelection().setBaseAndExtent(from, 3, to, 2);
+    return getSelection().toString();
+  });
+  const repaint = async (next) => {
+    await fresh.evaluate(() => { document.querySelector('#pr-body .md').dataset.old = '1'; });
+    await fresh.unroute('**/api/status');
+    await fresh.route('**/api/status', (r) => r.fulfill({ json: next }));
+    await fresh.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+    await fresh.waitForSelector('#pr-body .md:not([data-old])', { timeout: 15000 });
+  };
+  const selected = await select();
+  assert.ok(selected.length > 5, selected);
+  await repaint({ ...status, pr: { ...pr, updatedAt: '2026-09-20T00:00:00Z' } });
+  assert.equal(await fresh.evaluate(() => getSelection().toString()), selected);
+  assert.equal(await fresh.evaluate(() => document.querySelector('#pr-body').contains(getSelection().anchorNode)), true);
+
+  // Text put in above it: the same offset is now other words, and selecting
+  // those would be worse than selecting nothing.
+  await repaint({ ...status, pr: { ...pr, updatedAt: '2026-09-21T00:00:00Z', body: `Something new first.\n\n${pr.body}` } });
+  assert.equal(await fresh.evaluate(() => getSelection().toString()), '');
+  await fresh.close();
 });
 
 test('the issues the description mentions are listed below it, titled', { skip }, async () => {
@@ -1366,6 +1415,39 @@ test('Completed lists the most recently finished first, and cannot be reordered'
 // used to leave the change on screen as if it had landed, and the next save
 // that did succeed sent it along with its own -- persisting what the toast had
 // just said was not saved.
+test('a queue item\'s box is named by its text, through an edit and a refused one', { skip }, async () => {
+  const fresh = await newPage();
+  const queue = [{ text: 'first name', done: false, issue: null, deleted: false }];
+  let refuse = false;
+  await fresh.route('**/api/status', (r) => r.fulfill({ json: { ...status, queue } }));
+  await fresh.route('**/api/queue', (r) => {
+    if (r.request().method() !== 'PUT') return r.fulfill({ json: queue });
+    if (refuse) return r.fulfill({ status: 500, json: { error: 'disk full' } });
+    queue.splice(0, 1, ...r.request().postDataJSON().items);
+    return r.fulfill({ json: queue });
+  });
+  await fresh.reload();
+  await fresh.waitForSelector('#queue-body .item');
+  const named = (name) => fresh.locator('#queue-body').getByRole('checkbox', { name, exact: true });
+  assert.equal(await named('first name').count(), 1);
+
+  const rename = async (to) => {
+    const text = fresh.locator('#queue-body .item .text');
+    await text.fill(to);
+    await text.blur();
+  };
+  await rename('second name');
+  await named('second name').waitFor();
+  assert.equal(await named('first name').count(), 0);
+
+  refuse = true;
+  await rename('refused name');
+  await fresh.waitForFunction(() => document.getElementById('toast').textContent === 'disk full');
+  await named('second name').waitFor();
+  assert.equal(await named('refused name').count(), 0);
+  await fresh.close();
+});
+
 test('a queue change the server refuses is taken back off the screen', { skip }, async () => {
   const fresh = await newPage();
   const queue = [{ text: 'refused tick', done: false, issue: null, deleted: false }];
@@ -1773,6 +1855,7 @@ test('an issue row opens to its body through the description renderer, with Open
   assert.equal(await body.locator('img').count(), 0, 'markup in an issue is text');
   assert.equal(await body.locator('a', { hasText: '#5' }).getAttribute('href'), 'https://github.com/gaurav/prcoder/issues/5');
   assert.equal(await body.locator('.task input').isDisabled(), true, 'an issue\'s box is GitHub\'s to tick');
+  assert.equal(await body.locator('.task input').getAttribute('aria-label'), await body.locator('.task > span').textContent(), 'a disabled box is named by its line too');
   assert.equal(await body.locator('.task').getAttribute('title'), 'tick this on GitHub itself', 'said on the row, where a hover shows it');
   const out = body.locator('.open-issue');
   assert.equal(await out.textContent(), 'Open on GitHub');
@@ -2081,7 +2164,7 @@ const PULLS = {
     // what that is built on (BELOW answers), as the PR pane's Stack tab would.
     pullOf({ number: 30, title: 'An old draft', url: `${REPO}/pull/30`, headRefName: 'old', baseRefName: 'gone', createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-02-01T00:00:00Z',
       additions: 1500, deletions: 10, changedFiles: 40, lines: 1510, merge: 'draft', isDraft: true, milestone: null,
-      closes: [{ number: 5, url: `${REPO}/issues/5`, title: 'The old thing', milestone: 'Not urgent' }], lead: 'Still **being** written, in `old.js`, for #5.' }),
+      closes: [{ number: 5, url: `${REPO}/issues/5`, title: 'The old thing', milestone: 'Not urgent' }], lead: 'Still **being** written, in `old.js`, for #5. ~Soon.~' }),
   ],
   total: 3, listed: 3, read: NOW - 3_600_000,
 };
@@ -2220,7 +2303,10 @@ test('the Pull requests tab groups the open pull requests by milestone, smallest
   assert.equal(await twelve.locator('.pull-closes').count(), 0, 'nothing closed, no line');
   // Its lead is drawn as the opened description is, not as its markdown.
   assert.equal(await thirty.locator('.pr-lead').innerHTML(),
-    `Still <strong>being</strong> written, in <code>old.js</code>, for <a href="https://github.com/gaurav/prcoder/issues/5" target="_blank" rel="noopener">#5</a>.`);
+    `Still <strong>being</strong> written, in <code>old.js</code>, for <a href="https://github.com/gaurav/prcoder/issues/5" target="_blank" rel="noopener">#5</a>. <del>Soon.</del>`);
+  // Dim, as it is in the opened description. Outside .md only this tab's own rule says so.
+  const colourOf = (l) => l.evaluate((n) => getComputedStyle(n).color);
+  assert.notEqual(await colourOf(thirty.locator('.pr-lead del')), await colourOf(thirty.locator('.pr-lead')));
   // The order and the grouping are the two selects, remembered across a reload.
   await fresh.locator('#queue-body select.pull-sort').selectOption('largest');
   assert.deepEqual((await pullGroupsOf(fresh))[1], 'p:1|v1.0 (2) 9 issues 1 merged due 5 days ago|open|12,20');

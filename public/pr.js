@@ -945,6 +945,7 @@ function renderPrTab(pr, parsed, handlers) {
   // not to freeze a whole pane over focus and that still holds -- this restores
   // it instead.
   const focused = document.activeElement?.closest?.('.md-section')?.dataset.key;
+  const selected = selectionIn(host);
 
   const stack = tab === 'stack' ? stackOn(pr, handlers.prs) : null;
   // Only an open tab asks git: most pull requests are on the default branch,
@@ -986,6 +987,55 @@ function renderPrTab(pr, parsed, handlers) {
   // late would move every line under a scroll position already restored.
   host.scrollTop = scrolled[tab];
   if (focused) host.querySelector(`.md-section[data-key="${CSS.escape(focused)}"] > summary`)?.focus();
+  // After the focus, which can take a selection with it.
+  if (selected) selectAgain(host, selected);
+}
+
+/**
+ * The selection inside `host`, as what a repaint can't invalidate: how far into
+ * the text it starts, and what it says. A repaint replaces every node, and a
+ * poll repaints when anything on the pull request moved, so a line selected to
+ * copy could vanish before the copy.
+ *
+ * Put back rather than holding the repaint until the selection ends, as the
+ * Pull requests tab holds its own during a drag: that is over in a moment, and a
+ * selection can sit there for as long as nobody clicks, with the description and
+ * a line just ticked left stale behind it.
+ */
+function selectionIn(host) {
+  const selection = getSelection();
+  if (!selection.rangeCount || selection.isCollapsed) return null;
+  const range = selection.getRangeAt(0);
+  if (!host.contains(range.commonAncestorContainer)) return null;
+  const before = document.createRange();
+  before.selectNodeContents(host);
+  before.setEnd(range.startContainer, range.startOffset);
+  return { start: before.toString().length, text: range.toString() };
+}
+
+/**
+ * Selects it again if the same words are still at the same place. If not -- text
+ * added above it, or another tab showing -- it stays gone, since the same offset
+ * is now somebody else's words. Forwards always: a selection dragged backwards
+ * comes back the other way round, which only shift-arrow would notice.
+ */
+function selectAgain(host, { start, text }) {
+  const end = start + text.length;
+  const range = document.createRange();
+  const nodes = document.createTreeWalker(host, NodeFilter.SHOW_TEXT);
+  let opened = false;
+  for (let at = 0, n = nodes.nextNode(); n; at += n.length, n = nodes.nextNode()) {
+    if (!opened && start < at + n.length) { range.setStart(n, start - at); opened = true; }
+    if (opened && end <= at + n.length) {
+      range.setEnd(n, end - at);
+      if (range.toString() !== text) return;
+      // Emptied first: Chromium keeps a collapsed range where the old nodes were,
+      // and addRange does nothing while there is a range.
+      getSelection().removeAllRanges();
+      getSelection().addRange(range);
+      return;
+    }
+  }
 }
 
 const badge = (text, kind) => h('span', { className: `badge ${kind}` }, text);
@@ -1103,11 +1153,24 @@ function description(parsed, onTask) {
   ];
 }
 
-/** A checkbox in the description, ticked through to GitHub. */
+/**
+ * A checkbox in the description, ticked through to GitHub.
+ *
+ * The row is a div, not a <label>: in a label a click anywhere on the text
+ * ticks the box, so a line could not be selected to copy without writing a
+ * tick to GitHub. Only the box ticks, as in the queue's PR tab.
+ *
+ * So the box has to be given the name the label gave it, or a screen reader says
+ * `tick this on GitHub` for every line of a list and each tick is a guess. From
+ * the drawn text rather than `text`, which would read out its tildes and link
+ * targets. aria-label, not aria-labelledby: that wants an id, and more than one
+ * description can be on the page at once, in the queue's Issues tab, with the
+ * same indices.
+ */
 function taskRow({ done, text, index }, onTask, where = links) {
-  const box = h('input', { type: 'checkbox', checked: done });
-  const row = h('label', { className: `task${done ? ' done' : ''}` },
-    box, h('span', { innerHTML: inline(text, where) }));
+  const label = h('span', { innerHTML: inline(text, where) });
+  const box = h('input', { type: 'checkbox', checked: done, ariaLabel: label.textContent });
+  const row = h('div', { className: `task${done ? ' done' : ''}` }, box, label);
   if (onTask) {
     box.title = 'tick this on GitHub';
     writeThrough(box, (v) => onTask({ index, done: v, text }));
@@ -1121,26 +1184,84 @@ function taskRow({ done, text, index }, onTask, where = links) {
 }
 
 /**
- * Code spans are lifted out before anything else runs and put back last, so no
- * other rule can reach inside one. Without that `PRCODER_NO_OPEN` italicises
- * its own middle, and a URL in backticks becomes a link inside a <code>.
+ * The rules that wrap text in a tag and add nothing else, which inline() runs
+ * once everything with an href is out of their reach.
  *
  * Emphasis comes after bold, so `**x**` is already <strong> by the time the
  * single-asterisk rule looks. The underscore form needs a non-word character
  * either side or it eats snake_case; the asterisk form needs no such guard,
  * because a bare `*` mid-word is vanishingly rare in prose and common only in
  * globs, which live in code spans and are already out of reach.
+ *
+ * Strikethrough takes GitHub's `~x~` as well as `~~x~~`, with no space just
+ * inside either end, as GFM has it. See strikes() for the rest of it.
+ */
+const styled = (s) => strikes(s
+  .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+  .replace(/\*([^*\n]+)\*/g, '<em>$1</em>')
+  .replace(/(?<![A-Za-z0-9_])_([^_\n]+)_(?![A-Za-z0-9_])/g, '<em>$1</em>'));
+
+/**
+ * The two spellings of strikethrough, which are not equally likely to be meant.
+ *
+ * `~~` is hardly ever anything else, so it takes GitHub's rule and no more: nothing
+ * is asked of what is outside it, and a single tilde inside it is fine only if it
+ * could not be a delimiter itself, between two word characters or two spaces.
+ * Any other stops the strike, so `~~rm ~/x~~` and `~~see ~1 hr~~` show their
+ * tildes, here as on GitHub (test/pr.test.js has the date that was checked). They
+ * look as if they should strike, and reading GFM's rules says they do. A pair
+ * inside is struck first and nests.
+ *
+ * A paired tilde is what prose has by accident: a home directory, a backup file,
+ * an approximate figure. So `~x~` also wants no word character or `/` just outside
+ * either end and no `/` just inside the first, which leaves `~/a,~/b`,
+ * `PATH=~/a:~/b`, `~/foo~` and the `~user` in a path alone. GitHub strikes those
+ * and `a~b~c`; the cost is that `~/x~` meant as strikethrough shows its tildes.
+ *
+ * Both may run across a line: inline() is handed one block at a time, so a pair
+ * cannot reach into the next paragraph.
+ *
+ * Neither may cross a tag emphasis wrote: `*~a*~` would give
+ * `<em><del>a</em></del>`, which the parser repairs into a strike over some other
+ * range than the tildes said, so those tildes stay tildes. Everything else is
+ * escaped by now, so the only `<` left is a tag this file wrote.
+ */
+const strikes = (s) => {
+  const strike = (m, text) => (balanced(text) ? `<del>${text}</del>` : m);
+  return s
+    .replace(/(?<![\w/~])~(?![\s~/])([^~]*?[^\s~])~(?![\w/~])/g, strike)
+    .replace(/(?<!~)~~(?![\s~])((?:[^~]|(?<=\w)~(?=\w)|(?<=\s)~(?=\s))*?[^\s~])~~(?!~)/g, strike);
+};
+
+/** Whether every tag in `html` closes inside it, and none closes what opened before it. */
+const balanced = (html) => {
+  let open = 0;
+  for (const [, close] of html.matchAll(/<(\/?)\w+>/g)) {
+    open += close ? -1 : 1;
+    if (open < 0) return false;
+  }
+  return open === 0;
+};
+
+/**
+ * Code spans are lifted out before anything else runs and put back last, so no
+ * other rule can reach inside one. Without that `PRCODER_NO_OPEN` italicises
+ * its own middle, and a URL in backticks becomes a link inside a <code>.
+ *
+ * Everything with an href is held aside next, and styled() runs only then, over
+ * what is left and over a link's own text. In the other order a `~`, `*` or `_`
+ * in a URL was markup: `https://y.test/?v=~1~` went out with a <del> in its
+ * href, and a pair could span a link's delimiters, with one half in its text and
+ * the other in its href. A pair around a whole link still works, because to
+ * styled() the held link is one character.
  */
 export const inline = (s, where = links) => {
   const code = [];
   const held = [];
   const a = (href, text, attrs = '') => `<a href="${href}"${attrs} target="_blank" rel="noopener">${text}</a>`;
   const hold = (html) => `\u0001${held.push(html) - 1}\u0001`;
-  return escape(unmarked(s))
+  const lifted = escape(unmarked(s))
     .replace(/`([^`]+)`/g, (_, c) => `\u0000${code.push(c) - 1}\u0000`)
-    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*([^*\n]+)\*/g, '<em>$1</em>')
-    .replace(/(?<![A-Za-z0-9_])_([^_\n]+)_(?![A-Za-z0-9_])/g, '<em>$1</em>')
     // Held aside until the mentions are done, so a `#5` in `[see #5](…)` does
     // not become a link inside the link: the browser closes the outer one
     // early, and a click on the `#5` opened the pull request. Only a link this
@@ -1149,7 +1270,7 @@ export const inline = (s, where = links) => {
     // still held: the `(#5` in `[x](#5)` is an anchor, not pull request 5.
     .replace(mdLink(), (m, text, href) => {
       const url = target(href, where);
-      return url ? hold(a(url, text)) : `[${text}${hold(`](${href})`)}`;
+      return url ? hold(a(url, styled(text))) : `[${text}${hold(`](${href})`)}`;
     })
     // Held as well: the mention rule took the `(#5` in `https://a.com/(#5/x`
     // for a mention, in the href this had just built, and the anchor it wrote
@@ -1157,8 +1278,9 @@ export const inline = (s, where = links) => {
     .replace(bareUrl(), (_, pre, url) => pre + hold(a(url, url)))
     // mentions() in tasks.js reads the same pattern over the same shown text,
     // less the same links, which is what puts the same numbers in the Mentions
-    // row.
-    .replace(mention(), (m, pre, n) => (where ? pre + mentionLink(n, where, a) : m))
+    // row. Held because its title is a pull request's, which can hold a `~x~`.
+    .replace(mention(), (m, pre, n) => (where ? pre + hold(mentionLink(n, where, a)) : m));
+  return styled(lifted)
     .replace(/\u0001(\d+)\u0001/g, (_, i) => held[i])
     .replace(/\n/g, '<br>')
     .replace(/\u0000(\d+)\u0000/g, (_, i) => `<code>${code[i]}</code>`);

@@ -59,9 +59,10 @@ attribute and opens an event handler, which `innerHTML` does fire. `target()` le
 `http(s)` and repository-relative links, so `javascript:` and `data:` hrefs stay as their own source.
 A bare `#N` takes its URL and title from GitHub's answer about that number, which is no safer than
 the description, so `mentionLink()` sends the URL through `target()` and both through `escape()`.
-And `inline()` builds a link out of finished HTML: it holds code spans, markdown links and bare URLs
-aside as `\u0000N\u0000` and `\u0001N\u0001` placeholders while the later rules run, and puts them
-back after, so no rule can write into an href another has built. A placeholder that ends up inside
+And `inline()` builds a link out of finished HTML: it holds code spans, markdown links, bare URLs and
+mentions aside as `\u0000N\u0000` and `\u0001N\u0001` placeholders while the later rules run, emphasis
+and strikethrough among them, and puts them back after, so no rule can write into an href another
+has built. A placeholder that ends up inside
 an attribute brings the held link's quotes with it, so the bare-URL rule may not run across one, and
 a description's own placeholder characters are dropped before anything else.
 A check's link is held to the same rule by `rollup()` in [`github.js`](../github.js): a status

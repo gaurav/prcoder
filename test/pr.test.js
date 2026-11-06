@@ -125,6 +125,107 @@ test('emphasis renders in both spellings, bold before italic', () => {
   assert.equal(inline('review _for_ you'), 'review <em>for</em> you');
 });
 
+// GitHub strikes through `~x~` as well as `~~x~~`, and a checklist uses it for
+// an item dropped rather than done.
+test('strikethrough renders with one tilde or two', () => {
+  assert.equal(inline('~dropped~ and ~~also dropped~~'),
+    '<del>dropped</del> and <del>also dropped</del>');
+  assert.equal(inline('**~x~**'), '<strong><del>x</del></strong>');
+  assert.equal(inline('`~x~`'), '<code>~x~</code>');
+});
+
+// Each of these wrote markup into an href, when emphasis and strikethrough ran
+// before the links were held.
+test('no markup rule reaches inside a link\'s href', () => {
+  const url = 'https://y.test/-~a~';
+  assert.equal(href(inline(`[x](${url})`)), url);
+  assert.equal(href(inline('[x](https://y.test/*a*)')), 'https://y.test/*a*');
+  assert.equal(href(inline('https://y.test/_a_/b')), 'https://y.test/_a_/b');
+  const bare = inline('https://y.test/?v=~1~');
+  assert.equal(href(bare), 'https://y.test/?v=~1');
+  assert.doesNotMatch(bare, /<del>/);
+});
+
+test('a pair of tildes does not span a link\'s delimiters', () => {
+  assert.doesNotMatch(inline('~[a](https://y.test/~)'), /<del>/);
+  assert.doesNotMatch(inline('[~a](https://y.test/-~)'), /<del>/);
+  assert.doesNotMatch(inline('~a [b~](https://y.test/)'), /<del>/);
+});
+
+test('a link is styled inside and out', () => {
+  assert.equal(inline('[~a~ *b*](https://y.test/)').replace(/ target.*?>/, '>'),
+    '<a href="https://y.test/"><del>a</del> <em>b</em></a>');
+  assert.equal(inline('~[a](https://y.test/)~').replace(/ target.*?>/, '>'),
+    '<del><a href="https://y.test/">a</a></del>');
+  assert.equal(inline('**see https://y.test/**').replace(/ target.*?>/, '>'),
+    '<strong>see <a href="https://y.test/">https://y.test/</a></strong>');
+});
+
+// A struck #N or URL used to stay plain text, because the rule that links one
+// looked for its boundary after <del> had already been written in front of it.
+test('a struck mention or URL is still a link', () => {
+  const out = inline('~#5 dropped~ and ~~#6~~', where);
+  assert.match(out, /<del><a href="[^"]*\/issues\/5"[^>]*>#5<\/a> dropped<\/del>/);
+  assert.match(out, /<del><a href="[^"]*\/issues\/6"[^>]*>#6<\/a><\/del>/);
+  assert.equal(inline('~https://y.test/x~').replace(/ target.*?>/, '>'),
+    '<del><a href="https://y.test/x">https://y.test/x</a></del>');
+  assert.equal(inline('**https://y.test/x**').replace(/ target.*?>/, '>'),
+    '<strong><a href="https://y.test/x">https://y.test/x</a></strong>');
+});
+
+test('a mention\'s title is not read as markup', () => {
+  const refs = new Map([[5, { title: 'a ~b~ *c*', kind: 'issue' }]]);
+  assert.match(inline('see #5', { ...where, refs }), /title="#5: a ~b~ \*c\*"/);
+});
+
+// The space in `~/a and ~/b` hid these: the second tilde could not close, for a
+// reason the same path after a comma or a colon does not have.
+for (const path of ['PATH=~/bin:~/.local/bin', '~/a,~/b', '{~/a,~/b}', '(~/a),(~/b)',
+  '~/foo~', '~/a and foo.txt~', '~a,~/b', 'a/~b/~c']) {
+  test(`a home path or a backup file is not struck: ${path}`, () => {
+    assert.doesNotMatch(inline(path), /<del>/);
+  });
+}
+
+// Pinned from GitHub's own renderer on 2026-11-03, because the rules read the
+// other way: GFM's prose suggests `~~rm ~/x~~` strikes, and it does not. To
+// re-check: gh api markdown -f mode=gfm -f text='~~rm ~/x~~'
+test('two tildes sit against anything, and hold a tilde only if it cannot be a delimiter', () => {
+  assert.equal(inline('~~a~b~~'), '<del>a~b</del>');
+  assert.equal(inline('~~a ~ b~~'), '<del>a ~ b</del>');
+  assert.equal(inline('and/~~x~~'), 'and/<del>x</del>');
+  assert.equal(inline('a~~b~~c'), 'a<del>b</del>c');
+  assert.equal(inline('~~a~~ and ~~b~~'), '<del>a</del> and <del>b</del>');
+  assert.equal(inline('~~x ~1 y~ z~~'), '<del>x <del>1 y</del> z</del>');
+});
+
+for (const held of ['~~rm ~/x~~', '~~see ~1 hr~~', '~~(~1)~~', '~~a/~b~~', '~~a~ b~~', '~~a~.~~', '~~x ~y z~~', '~~a~/b~~']) {
+  test(`a tilde that could be a delimiter stops two tildes striking, as on GitHub: ${held}`, () => {
+    assert.equal(inline(held), held);
+  });
+}
+
+test('a strike can run across a line, but not past its block', () => {
+  assert.equal(inline('~~a\nb~~'), '<del>a<br>b</del>');
+  assert.equal(inline('~a\nb~'), '<del>a<br>b</del>');
+  assert.equal(blocks('~~a\n\nb~~').flatMap((b) => inline(b.text)).join('|'), '~~a|b~~');
+});
+
+test('a strike does not overlap emphasis', () => {
+  assert.equal(inline('*~a*~'), '<em>~a</em>~');
+  assert.equal(inline('~*a~*'), '~<em>a~</em>');
+  assert.equal(inline('**~a**~'), '<strong>~a</strong>~');
+  assert.equal(inline('~*a*~ *~b~*'), '<del><em>a</em></del> <em><del>b</del></em>');
+});
+
+test('a tilde that is not strikethrough stays a tilde', () => {
+  assert.equal(inline('~/a and ~/b'), '~/a and ~/b');
+  assert.equal(inline('~ a ~'), '~ a ~');
+  assert.equal(inline('~~a~'), '~~a~');
+  assert.equal(inline('~~~a~~~'), '~~~a~~~');
+  assert.match(inline('https://x.test/~u/a~b'), /href="https:\/\/x\.test\/~u\/a~b"/);
+});
+
 test('an underscore inside a word is not emphasis', () => {
   assert.equal(inline('some_var_name stays whole'), 'some_var_name stays whole');
   assert.equal(inline('PRCODER_NO_OPEN=1'), 'PRCODER_NO_OPEN=1');
@@ -241,6 +342,9 @@ for (const [why, body, numbers] of [
   ['a bare URL ends at a space or a )', '(https://a.com) #5 https://b.com #6', [5, 6]],
   ['an anchor a link will not open is not a mention', '[x](#5) and #6', [6]],
   ['nor is one written against that link, but its text still counts', '[see #12](#5)#7', [12]],
+  ['a struck one, wherever it falls in the strike', '~#5 dropped~ ~see #6~ ~~#7~~', [5, 6, 7]],
+  ['a tilde that strikes nothing is a boundary all the same', '~#5 and ~#6', [5, 6]],
+  ['a #N in a struck URL is part of the URL', '~https://a.com/(#5/x~ and #6', [6]],
 ]) {
   test(`the Mentions row and the pane's links agree: ${why}`, () => {
     assert.deepEqual(mentions(body), numbers);
