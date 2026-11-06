@@ -227,6 +227,10 @@ test('a milestone is due some time ago or in some time, with its date in full on
   assert.equal(dueLabel('2026-11-18T00:00:00Z', now).textContent, 'due in 1 month', 'months from 30 days, and never `next month`');
   assert.equal(dueLabel('2027-01-01T00:00:00Z', now).textContent, 'due in 2 months');
   assert.equal(dueLabel('2025-09-01T00:00:00Z', now).textContent, 'due 1 year ago');
+  // The start of the 27th where it was set, east of UTC as west: never the 26th.
+  for (const due of ['2026-10-26T22:00:00Z', '2026-10-26T11:00:00Z', '2026-10-27T00:00:00Z', '2026-10-27T07:00:00Z', '2026-10-27T10:00:00Z']) {
+    assert.equal(dueLabel(due, now).title, 'Tuesday, October 27, 2026', due);
+  }
   // GitHub sends a date as the start of that day: due today is not overdue
   // until the day is over, however many hours past its dueOn. Today is this
   // clock's, so the checks are at local times, true in any time zone.

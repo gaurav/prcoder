@@ -132,15 +132,22 @@ export const age = (iso, now = Date.now()) => when(iso, Math.max(now, Date.parse
  * A milestone's due date as its line says it, `due 3 days ago`, with the date
  * in full on hover (`Tuesday, October 27, 2026`) and a class saying how near
  * it is: `overdue`, `soon`, or neither. GitHub's dueOn is a date sent as the
- * start of that day (`T07:00:00Z` for a date set in California), so it is
- * compared as a date with today's on this clock: due today is `due today` and
- * soon, and overdue only once the day is over -- compared as a time, a
+ * start of that day where it was set: `T07:00:00Z` for one set in California,
+ * `T00:00:00Z` for most set lately, and `T22:00:00Z` of the day before for one
+ * set at UTC+2 (pandas-dev/pandas' 0.18.2, read on 2026-11-06). So the day is
+ * the UTC date 13 hours on, which is the date as written from UTC-10 (Hawaii)
+ * to UTC+13 (New Zealand's summer): slicing the UTC date read UTC+2's a day
+ * early, `overdue` on the day itself. ponytail: one set at UTC-11, UTC-12 or
+ * UTC+14 reads a day off, since the setter's zone is not in the answer and
+ * those midnights fall on others'. The day is compared as a date with
+ * today's on this clock: due today is `due today` and soon, and overdue only once the day is over -- compared as a time, a
  * milestone was overdue for most of its own day. The distance is in whole
  * days for the same reason: when() on the time said `due in 19 hours` of
  * tomorrow's, and `5 hours ago` of yesterday's.
  */
 export function dueLabel(dueOn, now = Date.now()) {
-  const day = dueOn.slice(0, 10);
+  const t = Date.parse(dueOn);
+  const day = Number.isFinite(t) ? new Date(t + 13 * 3600_000).toISOString().slice(0, 10) : String(dueOn).slice(0, 10);
   const d = new Date(now);
   const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   // The day as written, in UTC so no time zone moves it to the one before.
