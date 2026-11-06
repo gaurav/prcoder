@@ -357,15 +357,20 @@ let pulls = null;
  * then gets one of its own -- whatever it came to read may have changed since
  * the running one started. At most one runs, which keeps a slow read from
  * being repeated by every tab that asks, and two writes of its file apart.
+ * `pending()` is the run under way, or else the one waiting, or null: for a
+ * caller that wants any fresh answer, not one started after it arrived.
  * Exported for test/api.test.js.
  */
 export const queuedRun = (fn) => {
   let tail = Promise.resolve();
   let waiting = null;
-  return () => (waiting ??= (tail = tail.catch(() => {}).then(() => {
+  let running = null;
+  const run = () => (waiting ??= (tail = tail.catch(() => {}).then(() => {
     waiting = null;
-    return fn();
+    return (running = fn()).finally(() => { running = null; });
   })));
+  run.pending = () => running ?? waiting;
+  return run;
 };
 
 /**
@@ -493,14 +498,16 @@ const routes = {
    * `.prcoder/pulls.json` holds from an earlier run -- so the tab opens at
    * once; GitHub is read only when there is none. With `fresh` it is read now
    * and the file replaced, which is what the tab asks for behind the first
-   * answer, and on its ⟳. Either answer is kept (`pulls`) so a write about a
-   * pull request can be held to what the tab was last shown, as the Issues
-   * tab's is. A read that fails throws: the tab keeps what it was showing.
+   * answer, and on its ⟳. With nothing on hand or on disk, a read already
+   * under way is shared rather than queued behind: any listing will do. A
+   * read that fails throws: the tab keeps what it was showing.
    */
   'POST /api/pulls': async ({ fresh = false } = {}) => {
     if (!fresh) {
       const held = pulls ?? await readPulls(repo, (await repoFacts()).nameWithOwner);
-      if (held) return (pulls = held);
+      // ??=: a fresh read that landed while the file was read is newer.
+      if (held) return (pulls ??= held);
+      return freshPulls.pending() ?? freshPulls();
     }
     return freshPulls();
   },

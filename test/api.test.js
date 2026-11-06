@@ -343,8 +343,20 @@ test('a queued run is shared while it waits, and run again for a call that arriv
   await assert.rejects(first, { message: 'gh failed' });
   await tick();
   assert.equal(runs.length, 2, 'a failure does not stop the next');
+  // pending() is any read out, for a caller that does not need a new one.
+  const shared = queued.pending();
+  await tick();
+  assert.equal(runs.length, 2, 'it starts nothing');
   runs[1].resolve('listing');
+  assert.equal(await shared, 'listing', 'it is the run under way');
   assert.equal(await second, 'listing');
+  await tick();
+  assert.equal(queued.pending(), null, 'nothing out');
+  const waitingOne = queued();
+  assert.equal(queued.pending(), waitingOne, 'or the one waiting to start');
+  await tick();
+  runs[2].resolve('again');
+  assert.equal(await waitingOne, 'again');
 });
 
 // The Pull requests tab's one write is held the same way, to the listing that
