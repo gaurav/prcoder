@@ -112,7 +112,9 @@ recently updated root when nothing is stacked. `q` or end of input starts nothin
 A pick on another branch is checked out, as the tab's Switch checks one out, and prcoder starts
 on it. With uncommitted changes nothing is checked out: the line says so, and prcoder starts
 showing that pull request on the branch you are on instead, as `prcoder <n>` would. A pick on
-the branch you are on is simply started.
+the branch you are on is simply started. A local copy of the branch with commits the pull request
+lacks is checked out but not fast-forwarded: the line says it has diverged, prcoder starts on it,
+and the sync light reads `diverged`, for you or the agent to merge or rebase.
 
 The list is the tab's listing, read from GitHub unless `.prcoder/pulls.json` is under a minute
 old, and written there, so the tab opens from the same read. `prcoder choose` takes the other

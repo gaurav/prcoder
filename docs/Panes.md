@@ -181,7 +181,8 @@ It also lists the open pull requests that merge *into* the branch you are on, wh
 the question that branch is interesting for, with each one's stack nested under it. A row's `#N`
 opens that pull request on GitHub, so you can compare a few in other tabs; its **Switch** checks it
 out, the same way the switcher does. Uncommitted work disables Switch for the same reason it hides
-the switcher, and leaves the links alone.
+the switcher, and leaves the links alone. A local branch that has diverged from the pull request's
+head is still switched to, just not fast-forwarded, and the sync light says `diverged`.
 
 On any other branch it also shows what the branch is built on, since that is where its pull
 request will go. A branch with no pull request has no base on GitHub, so prcoder asks git: the
