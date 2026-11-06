@@ -526,8 +526,9 @@ const routes = {
     // replaced could not reach any other, and this one should not either.
     const where = wholePrRepo(url);
     if (!(await repoFacts()).repos.includes(where)) throw new Error(`${where} is not one of this clone's repositories`);
-    await checkoutPr(repo, url);
-    term.verbose(`checked out ${url}`);
+    const { diverged } = await checkoutPr(repo, url);
+    if (diverged) console.log(`checked out ${url}, but its branch has diverged from the pull request's head, so it was not fast-forwarded`);
+    else term.verbose(`checked out ${url}`);
     // Clear rather than pin: the checkout put us on the branch, so following it
     // gives the same answer and self-heals when Claude switches branches later.
     // The choice made on the old branch goes with it, and the one asked for here
