@@ -164,11 +164,12 @@ A modified file's diff is not highlighted at all, and
   from the page and hands gh neither: `issueMove` in `server.js` looks both up in the listing the
   tab was last shown, and the listing's own numbers go to `gh api -F` (`setIssueMilestone` in
   `github.js`). `test/api.test.js` pins the refusals. The Pull requests tab's `/api/pull/milestone`
-  is the same hold (`pullMove`) on the listing that tab was last shown, which may have come from
-  `.prcoder/pulls.json` rather than GitHub -- so `readPulls` in `store.js` keeps a row only with an
-  integer number and the whole of a pull request link in this repository, and a milestone only with
-  an integer number and a string title, before anything from the file can be held to
-  (`test/store.test.js`). A row's other href, each issue it closes, is kept only as the whole of a
+  is the same hold (`pullMove`), on the last listing the server read from GitHub -- never on
+  `.prcoder/pulls.json`, which the tab may be showing, and where a pull request merged since the file
+  was written is still open; a move made before that read waits for it. The file is still held
+  before it is drawn: `readPulls` in `store.js` keeps a row only with an integer number and the
+  whole of a pull request link in this repository, and a milestone only with an integer number and
+  a string title (`test/store.test.js`). A row's other href, each issue it closes, is kept only as the whole of a
   GitHub issue link (`closesOf`), so a hand-edit cannot put a `javascript:` link in the tab.
 - **Text from GitHub** — descriptions, titles, issue bodies, file names — is built into the page with
   `h()` and text nodes. `innerHTML` only through `inline()`, and a new kind of link only through

@@ -348,8 +348,11 @@ const poll = () => (queuedPoll ??= serial(() => {
 let listing = null;
 
 // What the Pull requests tab was last shown (POST /api/pulls, from the cache
-// or GitHub), for the route that acts on one of its rows.
+// or GitHub), and the last listing this process read from GitHub, which is
+// what the route that acts on a row holds a move to: pulls.json can be days
+// old, and a pull request merged since is still a row in it.
 let pulls = null;
+let pullsFromGitHub = null;
 
 /**
  * `fn` on a chain of its own, with poll()'s sharing: a call that arrives while
@@ -387,7 +390,7 @@ const freshPulls = queuedRun(async () => {
   const now = Date.now();
   // A cache: a write that fails costs a read on the next start, not now.
   await writePulls(repo, nameWithOwner, got, now).catch((e) => term.debug(`pulls.json not written: ${e.message}`));
-  return (pulls = { ...got, read: now });
+  return (pulls = pullsFromGitHub = { ...got, read: now });
 });
 
 /**
@@ -516,10 +519,16 @@ const routes = {
    * A pull request dropped on a milestone group in the Pull requests tab, or
    * one picked in its opened row: the milestone is set on GitHub
    * (setIssueMilestone, as an issue's is), and the tab reads the listing again.
-   * pullMove holds the number and the title to what the tab was shown.
+   * pullMove holds the number and the title to the last listing read from
+   * GitHub, not pulls.json's, where a pull request merged since the file was
+   * written is still open -- the Issues tab's hold is always to a fresh read.
+   * A move made while the tab shows only the file waits for the read the tab
+   * asked for behind it.
    */
   'POST /api/pull/milestone': async (body = {}) => {
-    const { number, milestone, title } = pullMove(pulls, body);
+    const shown = pullsFromGitHub ?? await freshPulls.pending();
+    if (!shown) throw new Error('The Pull requests tab has not read GitHub yet: press ⟳, then move it again');
+    const { number, milestone, title } = pullMove(shown, body);
     const [owner, name] = (await repoFacts()).nameWithOwner.split('/');
     await setIssueMilestone(repo, { owner, repo: name, number }, milestone);
     term.verbose(`put pull request #${number} on ${title ? `milestone ${quote(title)}` : 'no milestone'}`);

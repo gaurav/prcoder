@@ -367,7 +367,8 @@ test('/api/pull/milestone refuses a pull request or a milestone the tab was not 
     body: JSON.stringify({ number: 151, milestone: 'Needed soon' }),
   });
   assert.equal(res.status, 500);
-  assert.deepEqual(await res.json(), { error: '#151 is not an open pull request the Pull requests tab listed' });
+  // Held to a listing read from GitHub, never pulls.json's, and here there is none.
+  assert.deepEqual(await res.json(), { error: 'The Pull requests tab has not read GitHub yet: press ⟳, then move it again' });
 
   const listing = { pulls: [{ number: 151 }, { number: 153 }], milestones: [{ number: 4, title: 'Needed soon' }] };
   assert.deepEqual(pullMove(listing, { number: 151, milestone: 'Needed soon' }), { number: 151, milestone: 4, title: 'Needed soon' });
