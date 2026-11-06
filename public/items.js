@@ -205,6 +205,22 @@ export const PULL_SORTS = {
 export const sortPulls = (list, how) => [...list].sort((a, b) => (PULL_SORTS[how] ?? PULL_SORTS.smallest).by(a, b) || a.number - b.number);
 
 /**
+ * A stack walk (stackOrder in pr.js, `[{ pr, depth }]`) with its stacks put in
+ * `sorted`'s order of their roots, each stack kept whole. stackOrder lists the
+ * roots base by base, as the switcher wants them -- so a sort of `smallest
+ * first` put a 30-line pull request on main before a 20-line one on another
+ * base -- while the Pull requests tab's by-stack view is in the chosen order.
+ */
+export function rootsInOrder(walk, sorted) {
+  const at = new Map(sorted.map((p, i) => [p.number, i]));
+  const stacks = [];
+  for (const row of walk) {
+    if (row.depth && stacks.length) stacks.at(-1).push(row); else stacks.push([row]);
+  }
+  return stacks.sort((a, b) => (at.get(a[0].pr.number) ?? Infinity) - (at.get(b[0].pr.number) ?? Infinity)).flat();
+}
+
+/**
  * Whether the Pull requests tab's search matches a pull request: case-blind,
  * over `#N`, the title, the author, the head and base branches, the labels,
  * the body, the issues it closes by `#N` and title, and `word`, the state the

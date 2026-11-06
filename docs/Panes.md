@@ -475,8 +475,8 @@ from prcoder.
 **Pull requests** is always there too: the repository's open pull requests, for picking the next
 one to work on, in the same groups as the issues -- **No milestone** first, then one per open milestone in the
 owner's order, each line drawn as the Issues tab's, its badge counting pull requests -- or, with the second select over them set to *one list*, as one list, or
-to *by stack*, as one list in the switcher's order, each pull request a step in under the one it
-is built on. A stack can run across milestones, which is why that is a grouping of its own and
+to *by stack*, as one list with each pull request a step in under the one it is built on, each
+stack placed in the chosen order by its bottom pull request -- not the switcher's order, which goes base by base. A stack can run across milestones, which is why that is a grouping of its own and
 not a way of nesting the milestone groups.
 Within a group they are smallest first, since the next one to take on is usually the one that is
 nearly done; the first select over them changes that to largest first, newest, oldest, most or

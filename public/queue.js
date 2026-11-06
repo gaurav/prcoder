@@ -1,5 +1,5 @@
 import { h, btn, ext, api, toast, pref, setPref, tabBtn, writeThrough, fold, kept, mark, fraction } from './ui.js';
-import { TABS, refLabel, refClass, forClaude, rankMilestones, issueMatches, pullMatches, sortPulls, sizeChip, age, dueLabel, isNew, PULL_SORTS } from './items.js';
+import { TABS, refLabel, refClass, forClaude, rankMilestones, issueMatches, pullMatches, sortPulls, rootsInOrder, sizeChip, age, dueLabel, isNew, PULL_SORTS } from './items.js';
 import { refs, resolveRef, blocks } from './tasks.js';
 import { blockNode, inline, stackUnder, stackOrder } from './pr.js';
 
@@ -1069,14 +1069,16 @@ function pullGroups() {
   const rows = sortPulls(matchingPulls(), pullSort);
   const out = [];
   if (pullGroup !== 'milestone') {
-    // By stack: the switcher's order (stackOrder), each pull request followed
+    // By stack: the switcher's walk (stackOrder), each pull request followed
     // by the ones built on it, indented a step deeper. The rows are sorted
-    // first, and the walk keeps that order among siblings, so the roots and
-    // each stack's branches both come in the chosen order. A parent the
+    // first, and the walk keeps that order among siblings; the stacks are
+    // then put in their roots' order (rootsInOrder), since the walk lists
+    // roots base by base. So the roots and each stack's branches both come in
+    // the chosen order. A parent the
     // search hides leaves its children roots of their own, which is what a
     // narrowed list should show. A stack cannot nest across milestone groups,
     // so this is a grouping of its own and not a mode of the other.
-    const list = pullGroup === 'stack' ? stackOrder(rows) : rows.map((pr) => ({ pr, depth: 0 }));
+    const list = pullGroup === 'stack' ? rootsInOrder(stackOrder(rows), rows) : rows.map((pr) => ({ pr, depth: 0 }));
     out.push(list.length ? h('ul', { className: 'items' }, ...list.flatMap(({ pr: p, depth }) => pullRow(p, depth)))
       : h('p', { className: 'empty' }, searching ? 'No matching pull requests.' : 'No open pull requests.'));
   } else {

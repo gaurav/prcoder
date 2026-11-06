@@ -3,7 +3,8 @@
 // and the status block share.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { TABS, counts, forClaude, refLabel, rankMilestones, issueMatches, sizeChip, sortPulls, pullMatches, age, dueLabel, isNew, PULL_SORTS } from '../public/items.js';
+import { stackOrder } from '../public/pr.js';
+import { TABS, counts, forClaude, refLabel, rankMilestones, issueMatches, sizeChip, sortPulls, rootsInOrder, pullMatches, age, dueLabel, isNew, PULL_SORTS } from '../public/items.js';
 import { stripFor } from '../public/queue.js';
 
 const item = (over = {}) => ({ text: 't', done: false, issue: null, deleted: false, ...over });
@@ -242,4 +243,14 @@ test('a milestone is due some time ago or in some time, with its date in full on
   assert.equal(dueLabel('2026-10-20T07:00:00Z', new Date(2026, 9, 19, 23).getTime()).textContent, 'due tomorrow');
   assert.equal(dueLabel('2026-10-18T07:00:00Z', new Date(2026, 9, 19, 1).getTime()).textContent, 'due yesterday');
   assert.equal(dueLabel('2026-10-21T07:00:00Z', noon).textContent, 'due in 2 days');
+});
+
+// The review's case: A (10 lines) and C (30) on main, B (20) on a bare branch,
+// and D built on A. stackOrder walks main's tree, then feat's: A, D, C, B.
+test('the by-stack view puts its stacks in the chosen order of their roots', () => {
+  const pr = (number, lines, headRefName, baseRefName) => ({ number, lines, headRefName, baseRefName });
+  const rows = sortPulls([pr(3, 30, 'c', 'main'), pr(2, 20, 'b', 'feat'), pr(1, 10, 'a', 'main'), pr(4, 40, 'd', 'a')], 'smallest');
+  const walk = stackOrder(rows);
+  assert.deepEqual(walk.map(({ pr: p, depth }) => `${'-'.repeat(depth)}${p.number}`), ['1', '-4', '3', '2'], 'the walk, base by base');
+  assert.deepEqual(rootsInOrder(walk, rows).map(({ pr: p, depth }) => `${'-'.repeat(depth)}${p.number}`), ['1', '-4', '2', '3']);
 });
