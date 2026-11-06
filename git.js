@@ -130,6 +130,9 @@ export function syncState({ head, remoteHead, remoteKnownLocally, remoteIsAncest
 export const userDirt = (status) =>
   status.split('\n').filter(Boolean).map((l) => l.slice(3));
 
+/** The files with uncommitted changes, as the status block counts them: tracked ones only. */
+export const dirtyFiles = async (cwd) => userDirt(await git(['status', '--porcelain', '--untracked-files=no'], cwd));
+
 /**
  * GitHub's "open a PR for this branch" page. `nameWithOwner` is gh's base repo,
  * which in a fork clone is `upstream`'s -- but the branch was pushed to origin,
@@ -277,12 +280,11 @@ export async function repoInfo(cwd) {
  */
 export async function snapshot(cwd, remoteHead, branch, has = (rev) => hasCommit(rev, cwd)) {
   // Independent reads, so they run together rather than one spawn at a time.
-  const [head, status, known] = await Promise.all([
+  const [head, dirty, known] = await Promise.all([
     headCommit(cwd),
-    git(['status', '--porcelain', '--untracked-files=no'], cwd),
+    dirtyFiles(cwd),
     remoteHead && has(remoteHead),
   ]);
-  const dirty = userDirt(status);
 
   let sync = 'unpushed';
   let ahead = 0;
@@ -516,10 +518,27 @@ export function wholePrRepo(url) {
  * number names a stranger there. wholePrRepo is the check that `url` is one
  * before it reaches gh's argv; which repositories it may be in is the
  * route's to say (server.js).
+ *
+ * Resolves `{ diverged }` -- gh's complaint -- when gh switched branches and
+ * then failed: on a local branch that already exists, gh checks it out and
+ * then `git merge --ff-only`s it onto the pull request's head, which a branch
+ * with commits of its own refuses ("Not possible to fast-forward"). The merge
+ * aborts cleanly, so the branch is checked out and the pane's sync light says
+ * `diverged`; reconciling is for you or the agent, not a reason to start
+ * nothing. Told by the branch changing, not by git's words, which a
+ * translated git prints otherwise. Not `--force`: that resets the local
+ * branch to the head and drops its own commits.
  */
-export const checkoutPr = (cwd, url) => {
+export async function checkoutPr(cwd, url) {
   wholePrRepo(url);
-  return run('gh', ['pr', 'checkout', url], { cwd, timeout: 120_000 });
-};
+  const before = await currentBranch(cwd);
+  try {
+    await run('gh', ['pr', 'checkout', url], { cwd, timeout: 120_000 });
+    return {};
+  } catch (e) {
+    if (await currentBranch(cwd) === before) throw e;
+    return { diverged: e.message };
+  }
+}
 
 export const pushBranch = (cwd) => git(['push', '-u', 'origin', 'HEAD'], cwd);

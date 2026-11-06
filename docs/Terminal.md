@@ -3,7 +3,7 @@
 The window prcoder was launched in keeps a status block pinned under a scrolling log:
 
 ```
-prcoder  gaurav/prcoder   initial-implementation → main   2 unpushed · 8 uncommitted
+gaurav/prcoder   initial-implementation → main   2 unpushed · 8 uncommitted
 PR #1    A browser workspace around a live Claude Code session
          https://github.com/gaurav/prcoder/pull/1
 queue    4 local · 1 done
@@ -14,6 +14,16 @@ open     o prcoder · g github · t terminal · f folder
 
 The block is redrawn in place and the log scrolls above it, so what happened stays in the
 scrollback.
+
+The repository's name opens the block, bold and in colour, and nothing comes before it: with
+several of these windows open, one per repo, the one you want is the one whose name you can see
+from across the room, and the word `prcoder` in that column was what the eye found first in every
+window. The colour goes by the repository's owner, so every repo of one organization is the same
+colour and a related repo's window looks like this one's; there are four, each legible on a light
+and a dark background, so two organizations can share one. It is off when stdout is not a
+terminal, with `NO_COLOR` set, or where `TERM` says the terminal has none. The window's title is set to the same name, `gaurav/prcoder ·
+prcoder`, so the Window menu and Mission Control list each window by its repo; it stays until
+your shell sets a title of its own, which most do at the next prompt.
 
 ## How fresh it is
 
@@ -71,6 +81,44 @@ the one you named with `--port` or `PRCODER_PORT`, which the line tells apart. I
 who they are, so the line tells you whether the window you are looking for is another prcoder on
 this repo, another worktree, or nothing to do with prcoder at all.
 [Ports.md](Ports.md) says how the port is chosen.
+
+## Choosing a pull request
+
+`prcoder choose` is for when the next pull request is not the one on the branch you are on. It
+prints the repository's open pull requests and asks which to start on, before the port is taken
+or a browser opens:
+
+```
+Open pull requests in gaurav/prcoder, by stack, most recently updated first, read just now:
+
+  #159      XXL  ready        2 days ago   Add a Pull requests tab to the queue: every open pull…
+›   #163    L    stacked (1)  2 days ago   Let a description's checklist text be selected without…
+  #173      XS   ready        15 days ago  Colour a new Snakefile, .smk or .snakefile in the diff…
+  #87       XS   ready        1 month ago  [fixture] A modified, a deleted and a .tsx file on fixture/diff-views-base
+PR number [163, the deepest], or q:
+```
+
+The order is the Pull requests tab's *by stack* ([Panes.md](Panes.md)): each pull request
+followed by the ones built on it, a step further in, with roots and siblings most recently
+updated first. The columns are the tab's facts that a pick turns on -- the size in the tab's
+bands and colours, green for `XS` to red for `XXL`; the state in the tab's words, `stacked (N)`
+for one that is ready once the N under it merge; and how long since it last moved -- and then
+the title. A root on a branch that is not the default says what it is built on after its title,
+`on fixture-base › main`, asking git what is under a bare branch as the tab does, and the state
+counts those steps. `›` marks the pull request on the checked-out branch. Enter takes the deepest one, since that is usually where the
+last session was; the most recently updated of them when several are as deep, and the most
+recently updated root when nothing is stacked. `q` or end of input starts nothing.
+
+A pick on another branch is checked out, as the tab's Switch checks one out, and prcoder starts
+on it. With uncommitted changes nothing is checked out: the line says so, and prcoder starts
+showing that pull request on the branch you are on instead, as `prcoder <n>` would. A pick on
+the branch you are on is simply started. A local copy of the branch with commits the pull request
+lacks is checked out but not fast-forwarded: the line says it has diverged, prcoder starts on it,
+and the sync light reads `diverged`, for you or the agent to merge or rebase.
+
+The list is the tab's listing, read from GitHub unless `.prcoder/pulls.json` is under a minute
+old, and written there, so the tab opens from the same read. `prcoder choose` takes the other
+flags as ever, and the agent's after `--`.
 
 ## Without a terminal
 

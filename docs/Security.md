@@ -106,8 +106,10 @@ character as its Unicode picture instead (ESC as `‚êõ`), and the C1 range as `Ôø
 is a log line's newline and tab, which `log()` keeps so a multi-line item still reads as lines; a
 status row and the quit question keep neither, so a new caller that needs one row gets it from
 `status()` or `confirm()`, not from `log()`. It runs inside
-`log()`, `status()` and `confirm()`, which are the only ways out: `init()` routes `console` through
-`log()`. `test/term.test.js` pins it.
+`log()`, `status()`, `confirm()` and `title()`, which are the only ways out: `init()` routes `console` through
+`log()`. The two sequences prcoder does write on purpose -- a style on a segment of a status
+row, and the window's title -- are applied after the text has been pictured, so neither can be
+made from text. `test/term.test.js` pins it.
 
 ## Static files
 

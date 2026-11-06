@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { rollup, linkedIssues, linksFrom, parsePrUrl, run, issueNumber, lf, setViewed, listPrs, loadPr, prHeads, branchPrs, lookupPrs, ownPrs, SEARCH_EVERY, UNREAD_FOR, pickPr, lookupRef, issueLinks, createIssue, repoIssues, setIssueMilestone, repoPulls, pullRow, MERGE_WORD } from '../github.js';
+import { rollup, linkedIssues, linksFrom, parsePrUrl, run, issueNumber, lf, setViewed, listPrs, loadPr, prHeads, branchPrs, lookupPrs, ownPrs, SEARCH_EVERY, UNREAD_FOR, pickPr, lookupRef, issueLinks, createIssue, repoIssues, setIssueMilestone, pullRequestFor, repoPulls, pullRow, MERGE_WORD } from '../github.js';
 import { taskLines } from '../public/tasks.js';
 import { withGh, ghArgs, ghCalls, unix } from './stub-gh.js';
 
@@ -298,6 +298,24 @@ test('a detached HEAD is no pull request, not an error', { skip: unix }, async (
     assert.equal(await loadPr(os.tmpdir(), undefined, { pause: 0 }), null);
     assert.equal(await prHeads(os.tmpdir()), null);
   });
+});
+
+// gh's answers to `gh pr view <x> --json url`, verbatim from gh 2.x on
+// 2026-11-06. A branch is gh's to recognise, as a number and a URL are; what
+// prcoder adds is refusing an argument that names none.
+test('the command line\'s <pr> is pinned to its URL, and refused when it names no pull request', { skip: unix }, async () => {
+  const url = 'https://github.com/gaurav/prcoder/pull/177';
+  await withGh(() => `echo '{"url":"${url}"}'`, async () => {
+    for (const t of ['177', '#177', url, 'cli-improvements']) assert.equal(await pullRequestFor(os.tmpdir(), t), url);
+  });
+  await withGh(() => `echo 'no pull requests found for branch "no-such-branch"' >&2\nexit 1`, () =>
+    assert.rejects(pullRequestFor(os.tmpdir(), 'no-such-branch'),
+      { message: "no-such-branch is not a pull request's number or URL, or the branch of one" }));
+  await withGh(() => `echo 'GraphQL: Could not resolve to a PullRequest with the number of 99999. (repository.pullRequest)' >&2\nexit 1`, () =>
+    assert.rejects(pullRequestFor(os.tmpdir(), '99999'), { message: 'there is no pull request 99999' }));
+  // gh failing for its own reasons is still a refusal, in gh's words.
+  await withGh(() => `echo 'error connecting to api.github.com' >&2\nexit 1`, () =>
+    assert.rejects(pullRequestFor(os.tmpdir(), '177'), { message: 'could not look up 177: error connecting to api.github.com' }));
 });
 
 // What gh printed for each: a found PR exits 0, and a missing number or repo

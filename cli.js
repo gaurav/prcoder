@@ -33,9 +33,10 @@ const OPTIONS = {
 };
 
 export function usage() {
-  return `usage: prcoder [<pr>] [--port <n>] [--no-open] [--queue <file>] [-v] [--agent <name>] [-- <agent args>]
+  return `usage: prcoder [<pr> | choose] [--port <n>] [--no-open] [--queue <file>] [-v] [--agent <name>] [-- <agent args>]
 
   <pr>             a pull request number, URL or branch (default: the current branch's)
+  choose           list the open pull requests, pick one to check out, and start on it
   --port <n>       listen on this port for this run          env PRCODER_PORT
   --no-open        print the URL, don't open a browser        env PRCODER_NO_OPEN=1
   --queue <file>   keep the queue here, not .prcoder/        env PRCODER_QUEUE
@@ -71,6 +72,9 @@ export function parseCli(argv) {
   if (positionals.length > 1) {
     throw new Error(`unexpected argument ${positionals[1]}; one pull request at most, and flags for the agent go after --`);
   }
+  // The one word that is a subcommand and not a pull request. A branch called
+  // `choose` is still reachable by its pull request's number or URL.
+  const choose = positionals[0] === 'choose';
   if (!AGENTS.includes(values.agent)) throw new Error(`unknown agent ${values.agent}; supported: ${AGENTS.join(', ')}`);
   const port = values.port === undefined ? undefined : Number(values.port);
   if (port !== undefined && !(Number.isInteger(port) && port > 0 && port < 65536)) {
@@ -78,7 +82,8 @@ export function parseCli(argv) {
   }
   if (values.queue === '') throw new Error('--queue wants a file path');
   return {
-    target: positionals[0],
+    target: choose ? undefined : positionals[0],
+    choose,
     agent: values.agent,
     agentArgs,
     port,
@@ -132,9 +137,24 @@ export const ago = (ms) => {
 };
 
 /**
+ * The colour a repository's name is drawn in, by its owner, so every repo of
+ * one organization shares one and the window for a related repo is the same
+ * colour as this one's. Four, each legible on a light and on a dark
+ * background -- yellow is lost on white and plain blue on black -- so two
+ * organizations can share one; the name beside it still tells them apart.
+ * sha1, as portFor hashes, so the colour is the same in every clone.
+ */
+export const OWNER_COLOURS = ['cyan', 'green', 'magenta', 'blueBright'];
+export const ownerColour = (nameWithOwner) => {
+  const owner = String(nameWithOwner ?? '').split('/')[0];
+  return OWNER_COLOURS[createHash('sha1').update(owner).digest()[0] % OWNER_COLOURS.length];
+};
+
+/**
  * The block pinned under the log: everything status() worked out anyway, for
  * the terminal that is otherwise sat idle for the whole session. Pure, so the
- * wording is testable without a tty.
+ * wording is testable without a tty. Lines as term.js takes them: strings,
+ * or segments where something is styled (plain() there reads the text).
  */
 export function statusLines(s, u = {}) {
   // padEnd, not a slice: a label longer than the column has to push the row out
@@ -150,10 +170,16 @@ export function statusLines(s, u = {}) {
   const base = s.pr ? sides(s.pr, s.remotes).base : s.defaultBranch;
   const where = s.pr && prRepo(s.pr) !== s.nameWithOwner ? prRepo(s.pr) : '';
   return [
-    row('prcoder', s.nameWithOwner,
+    // The repository first, bold and in its owner's colour (ownerColour), and
+    // `prcoder` nowhere on the row: with several of these windows open, the
+    // eye landed on `prcoder` in the label column of every one, and the name
+    // after it had to be read to find the window for a repo. The window's
+    // title says the repo too (term.title). `prcoder` with no repository is
+    // the poll that has not answered yet.
+    [{ text: s.nameWithOwner ?? 'prcoder', style: ['bold', ownerColour(s.nameWithOwner)] }, '   ' + [
       s.branch ? `${s.branch} → ${base}` : 'detached HEAD',
       [syncPhrase(s), s.dirtyFiles?.length && `${s.dirtyFiles.length} uncommitted`]
-        .filter(Boolean).join(' · ')),
+        .filter(Boolean).join(' · ')].filter(Boolean).join('   ')],
     s.pr ? row(`PR ${where}#${s.pr.number}`, s.pr.title) : row('PR', 'none for this branch'),
     s.pr && row('', s.pr.url),
     row('queue', `${q.local} local · ${q.done} done`),

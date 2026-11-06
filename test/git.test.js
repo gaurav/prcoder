@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { notAWorkTree, syncState, compareUrl, githubUrl, originOwner, remoteRepo, remoteRepos, repoInfo, pushRepo, commitsKnown, commitMemo, prScope, wholePrRepo, userDirt, remoteBranchHead, trackingHead, snapshot, localPatch, branchesBelow } from '../git.js';
+import { notAWorkTree, syncState, compareUrl, githubUrl, originOwner, remoteRepo, remoteRepos, repoInfo, pushRepo, commitsKnown, commitMemo, prScope, wholePrRepo, checkoutPr, userDirt, remoteBranchHead, trackingHead, snapshot, localPatch, branchesBelow } from '../git.js';
 
 // git finds the repository through GIT_DIR and GIT_WORK_TREE before it looks
 // at cwd, and a git hook exports them. Under a hook, `npm test` ran every
@@ -491,6 +491,34 @@ test('repoInfo lists gh\'s base repository, its parent, then the remotes, once e
     const plain = () => `cat <<'JSON'\n{"defaultBranchRef":{"name":"main"},"nameWithOwner":"me/repo","parent":null}\nJSON`;
     await git('git', ['remote', 'remove', 'upstream'], { cwd: dir });
     assert.deepEqual((await withGh(plain, () => repoInfo(dir))).repos, ['me/repo']);
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
+
+// gh on a local branch that has commits the pull request's head lacks: it
+// checks the branch out, then its `merge --ff-only` fails -- "Switched to
+// branch" and then "Not possible to fast-forward", exit 1, as gh 2.x did on
+// 2026-11-06 for TranslatorSRI/babel-validation#76. The branch is checked out,
+// so that is a start with a diverged branch, not a failure. A gh that fails
+// without switching is still one.
+test('a checkout that switched branches and then could not fast-forward is still a checkout', { skip: unix }, async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'prcoder-checkout-'));
+  const run = (...args) => testGit(dir, ...args);
+  const url = 'https://github.com/o/r/pull/76';
+  try {
+    await git('git', ['init', '-q', '-b', 'main', dir]);
+    await run('commit', '-q', '--allow-empty', '-m', 'x');
+    await run('branch', 'topic');
+    const fails = 'echo "fatal: Not possible to fast-forward, aborting." >&2\nexit 1';
+    await withGh(() => `git checkout -q topic\n${fails}`, async () => {
+      assert.match((await checkoutPr(dir, url)).diverged, /fast-forward/);
+    });
+    assert.equal((await git('git', ['symbolic-ref', '--short', 'HEAD'], { cwd: dir })).stdout.trim(), 'topic');
+    await withGh(() => fails, async () => {
+      await assert.rejects(checkoutPr(dir, url), /fast-forward/);
+    });
+    await withGh(() => 'true', async () => assert.deepEqual(await checkoutPr(dir, url), {}));
   } finally {
     await fs.rm(dir, { recursive: true, force: true });
   }

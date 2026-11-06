@@ -11,12 +11,13 @@ import { fileURLToPath } from 'node:url';
 import { text as readBody } from 'node:stream/consumers';
 import { spawn as ptySpawn } from 'node-pty';
 import { WebSocketServer } from 'ws';
-import { loadPr, prHeads, prUrl, prBody, parsePrUrl, listPrs, branchPrs, lookupPrs, ownPrs, pickPr, issueLinks, lookupRef, setViewed, setBody, createIssue, fetchPatches, runCount, repoPulls, repoIssues, setIssueMilestone } from './github.js';
+import { loadPr, prHeads, prUrl, pullRequestFor, prBody, parsePrUrl, listPrs, branchPrs, lookupPrs, ownPrs, pickPr, issueLinks, lookupRef, setViewed, setBody, createIssue, fetchPatches, runCount, repoPulls, repoIssues, setIssueMilestone } from './github.js';
 import { notAWorkTree, snapshot, currentBranch, headCommit, commitsKnown, commitMemo, repoInfo, pushRepo, prScope, compareUrl, githubUrl, originOwner, wholePrRepo, checkoutPr, pushBranch, remoteBranchHead, trackingHead, localPatch, branchesBelow } from './git.js';
 import { bucket, fileUrl, fileViews } from './files.js';
 import { readPort, writePort, readPrs, writePrs, pick, useQueueFile, movedQueue, issueUrl, readPulls, writePulls } from './store.js';
 import { readQueue, writeQueue, quote } from './queue.js';
 import { parseCli, usage, VERSION, portCandidates, statusLines, openRepoArgs, OPEN_REPO_VARS, REPO_ENV, queueSummary, quitRisks } from './cli.js';
+import { choosePr } from './choose.js';
 import * as term from './term.js';
 import { toggleTask, refs, wholeRef, resolveRef } from './public/tasks.js';
 import { grammars } from './public/diff.js';
@@ -525,8 +526,9 @@ const routes = {
     // replaced could not reach any other, and this one should not either.
     const where = wholePrRepo(url);
     if (!(await repoFacts()).repos.includes(where)) throw new Error(`${where} is not one of this clone's repositories`);
-    await checkoutPr(repo, url);
-    term.verbose(`checked out ${url}`);
+    const { diverged } = await checkoutPr(repo, url);
+    if (diverged) console.log(`checked out ${url}, but its branch has diverged from the pull request's head, so it was not fast-forwarded`);
+    else term.verbose(`checked out ${url}`);
     // Clear rather than pin: the checkout put us on the branch, so following it
     // gives the same answer and self-heals when Claude switches branches later.
     // The choice made on the old branch goes with it, and the one asked for here
@@ -979,6 +981,9 @@ async function ready() {
   // A full status rather than a PR load followed by a poll: the poll would only
   // ask GitHub again whether the PR it just loaded had changed.
   await serial(() => status({ full: true })).catch((e) => console.error('status:', e.message));
+  // The repository and nothing that changes: the title is for finding the
+  // window for a repo, and the block has the branch and the pull request.
+  term.title(`${info?.nameWithOwner ?? path.basename(repo)} · prcoder`);
   console.log(`prcoder: ${repo}`);
   console.log(pr ? `PR #${pr.number}: ${pr.title}` : 'no pull request for this branch');
   if (pr) console.log(pr.url);
@@ -1217,6 +1222,32 @@ if (import.meta.main) {
   // Into the store, not the env, for the same reason: see useQueueFile.
   useQueueFile(cli.queue ?? process.env.PRCODER_QUEUE);
   if (cli.verbose) term.setVerbosity(cli.verbose);
+
+  // `prcoder choose`: the list and the question come before the block exists,
+  // so they are plain lines in the scrollback, and before the port, so a pick
+  // of nothing starts nothing. A pick on the checked-out branch, by choice or
+  // by checkout, is held as that branch's choice the way the pane's Switch
+  // holds one; one shown without a checkout is the start's target.
+  if (cli.choose) {
+    let pick;
+    try { pick = await choosePr(repo, await repoFacts()); } catch (e) {
+      console.error(`prcoder: ${e.message}`);
+      process.exit(2);
+    }
+    if (!pick) process.exit(0);
+    if (pick.follow) chosen = { branch: await currentBranch(repo), url: pick.url };
+    else target = pick.url;
+  }
+  // `prcoder <pr>`: refused here, before the block and the port, when it names
+  // no pull request (pullRequestFor), and pinned to the URL it names when it
+  // does -- so a branch given by name stays on that pull request, rather than
+  // on whichever one gh would find for the name on a later poll.
+  else if (target) {
+    try { target = await pullRequestFor(repo, target); } catch (e) {
+      console.error(`prcoder: ${e.message}`);
+      process.exit(2);
+    }
+  }
 
   // Before anything can print: init() is what routes console through the log,
   // and a line written ahead of it would sit above the block and stay there.
