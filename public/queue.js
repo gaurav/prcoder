@@ -88,7 +88,7 @@ const expanded = new Set();
 const seen = new Set();
 // The Pull requests tab's: its listing (/api/pulls' answer -- milestones,
 // pulls, and `read`, when it was read, in ms), whether a read is out, its
-// search, and whether its first listing has chosen what starts closed; its
+// search, and which groups a listing has had (`seen`'s for this tab); its
 // groups and opened rows share the two sets above under keys of their own.
 let pullsListing = null;
 let pullsReading = false;
@@ -97,7 +97,7 @@ let pullsLoading = null;
 // A forced read was asked for while one was out (loadPulls).
 let pullsStale = false;
 let pullQuery = '';
-let pullsSeeded = false;
+const pullsSeen = new Set();
 // Its order and grouping, remembered as the add-to arrow is (below).
 const PULL_SORT_KEY = 'prcoder:pull-sort';
 const PULL_GROUP_KEY = 'prcoder:pull-group';
@@ -1087,14 +1087,18 @@ function pullGroups() {
       byMilestone.get(key).push(p);
     }
     const ranked = rankMilestones(pullsListing.milestones);
-    // What starts closed, chosen once per page as the Issues tab chooses:
-    // everything but the first group drawn with a pull request in it -- No
-    // milestone when it has one, or else the first milestone in rank.
-    if (!pullsSeeded) {
-      pullsSeeded = true;
-      const keys = [NONE, ...ranked.map((m) => m.number)];
-      const focus = keys.find((k) => byMilestone.has(k)) ?? NONE;
-      for (const key of keys) if (key !== focus) closedGroups.add(`p:${key}`);
+    // What starts closed, as seedGroups chooses on the Issues tab: on the
+    // first listing, everything but the first group with a pull request in it
+    // -- No milestone when it has one, or else the first milestone in rank --
+    // chosen from every pull request, not the ones a search lets through; on a
+    // later one, a milestone not had before joins the rest folded.
+    const keys = [NONE, ...ranked.map((m) => m.number)];
+    const focus = pullsSeen.size ? null
+      : keys.find((k) => pullsListing.pulls.some((p) => (p.milestone ?? NONE) === k)) ?? NONE;
+    for (const key of keys) {
+      if (pullsSeen.has(key)) continue;
+      pullsSeen.add(key);
+      if (key !== focus) closedGroups.add(`p:${key}`);
     }
     // While searching, as on the Issues tab: only the groups with a match, open.
     const state = (key) => (searching ? { open: true, onToggle: () => {} } : kept(closedGroups, key, 'closed'));

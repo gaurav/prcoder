@@ -2392,6 +2392,23 @@ test('a pull request listing landing with a row\'s select or drag in use waits, 
   await fresh.close();
 });
 
+// As on the Issues tab: what starts folded is chosen on the first listing, and
+// a milestone a later one brings -- made on GitHub since -- joins the rest
+// folded rather than drawn open among them.
+test('a milestone a later pull request listing brings starts folded', { skip }, async () => {
+  const { fresh } = await pullsPage(PULLS, { stale: false });
+  const later = { ...PULLS, read: NOW, milestones: [...PULLS.milestones, { number: 7, title: 'Made since', dueOn: null, description: '', closed: false }],
+    pulls: PULLS.pulls.map((p) => (p.number === 20 ? { ...p, milestone: 7 } : p)) };
+  await fresh.route('**/api/pulls', (r) => r.fulfill({ json: later }));
+  const landed = fresh.waitForResponse('**/api/pulls');
+  await fresh.locator('#queue-body .pull-reload').click();
+  await landed;
+  await fresh.waitForFunction(() => document.querySelector('[data-group="p:7"]'));
+  assert.deepEqual((await pullGroupsOf(fresh)).map((g) => g.split('|').filter((_, i) => i !== 1).join('|')),
+    ['p:none|open|30', 'p:1|closed|12', 'p:7|closed|20', 'p:4|closed|', 'p:3|closed|']);
+  await fresh.close();
+});
+
 test('a fresh listing is not read again within a minute, and ⟳ reads one whatever its age', { skip }, async () => {
   const { fresh, asked } = await pullsPage(PULLS, { stale: false });
   await fresh.waitForTimeout(200);
