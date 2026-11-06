@@ -1012,7 +1012,7 @@ const LEAD_MAX = 300;
  * (filesProgress, the Files tab's own pie, over the first hundred files and
  * counted against changedFiles as that tab counts), whether it can merge
  * (MERGE_WORD), whether it was reviewed, its milestone by number as an issue's
- * is, its labels by name, its first paragraph for the row and its whole body
+ * is, its labels by name (rid of control characters, as repoIssues has them), its first paragraph for the row and its whole body
  * for the opened row and the search, and the issues it closes with each one's
  * milestone -- the hint for a pull request on none.
  */
@@ -1034,7 +1034,7 @@ export function pullRow(node) {
     merge: MERGE_WORD[mergeStateStatus] ?? MERGE_WORD.UNKNOWN,
     reviewDecision: pr.reviewDecision ?? null,
     milestone: milestone?.number ?? null,
-    labels: (labels?.nodes ?? []).map((l) => l.name),
+    labels: (labels?.nodes ?? []).map((l) => printable(l.name ?? '').trim()).filter(Boolean),
     lead: printable(lead.replace(/\s+/g, ' ')).trim().slice(0, LEAD_MAX),
     body: text,
     closes: (closingIssuesReferences?.nodes ?? []).map((i) => ({

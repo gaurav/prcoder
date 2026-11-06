@@ -544,6 +544,8 @@ test('the pull request listing reaches GitHub as variables, and becomes mileston
   assert.deepEqual(Object.keys(MERGE_WORD).sort(), ['BEHIND', 'BLOCKED', 'CLEAN', 'DIRTY', 'DRAFT', 'HAS_HOOKS', 'UNKNOWN', 'UNSTABLE']);
   assert.equal(pullRow({ number: 1, mergeStateStatus: 'NEW_ONE' }).merge, 'checking…');
   assert.equal(pullRow({ number: 1, title: '\x1b\r' }).title, '#1', 'a title of control characters is the number');
+  assert.deepEqual(pullRow({ number: 1, labels: { nodes: [{ name: 'needs\x1b[2Jreview' }, { name: '\r' }, {}] } }).labels, ['needs [2Jreview'],
+    'a label is cleaned as the Issues tab cleans one');
   assert.deepEqual(pullRow({ number: 1 }).viewed.count, { done: 0, total: 0 });
 });
 
