@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { notAWorkTree, syncState, compareUrl, githubUrl, originOwner, remoteRepo, remoteRepos, repoInfo, pushRepo, commitsKnown, commitMemo, prScope, wholePrRepo, checkoutPr, userDirt, remoteBranchHead, trackingHead, snapshot, localPatch, branchesBelow } from '../git.js';
+import { notAWorkTree, syncState, compareUrl, githubUrl, originOwner, remoteRepo, remoteRepos, repoInfo, pushRepo, commitsKnown, commitMemo, prScope, wholePrRepo, checkoutPr, startOnPr, userDirt, remoteBranchHead, trackingHead, snapshot, localPatch, branchesBelow } from '../git.js';
 
 // git finds the repository through GIT_DIR and GIT_WORK_TREE before it looks
 // at cwd, and a git hook exports them. Under a hook, `npm test` ran every
@@ -519,6 +519,38 @@ test('a checkout that switched branches and then could not fast-forward is still
       await assert.rejects(checkoutPr(dir, url), /fast-forward/);
     });
     await withGh(() => 'true', async () => assert.deepEqual(await checkoutPr(dir, url), {}));
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
+
+// The start's one way onto a pull request (`prcoder <pr>`, a `choose` pick):
+// nothing to do on its branch, a refusal over uncommitted work, since the pane
+// shows only the checked-out branch's pull request, and a checkout otherwise.
+test('a start is on the pull request\'s branch, or refused over uncommitted work', { skip: unix }, async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'prcoder-start-'));
+  const run = (...args) => testGit(dir, ...args);
+  const branch = async () => (await git('git', ['symbolic-ref', '--short', 'HEAD'], { cwd: dir })).stdout.trim();
+  const p = { url: 'https://github.com/o/r/pull/76', number: 76, headRefName: 'topic', isCrossRepository: false };
+  try {
+    await git('git', ['init', '-q', '-b', 'main', dir]);
+    await fs.writeFile(path.join(dir, 'a.txt'), 'a\n');
+    await run('add', 'a.txt');
+    await run('commit', '-q', '-m', 'x');
+    await run('branch', 'topic');
+    // gh would fail the test if it were asked anything here.
+    await withGh(() => 'exit 9', async () => {
+      assert.deepEqual(await startOnPr(dir, { ...p, headRefName: 'main' }), { branch: 'main', said: null });
+      await fs.writeFile(path.join(dir, 'a.txt'), 'changed\n');
+      await assert.rejects(startOnPr(dir, p),
+        { message: '#76 is on topic, and 1 uncommitted file on main is in the way; commit or stash it first' });
+    });
+    assert.equal(await branch(), 'main');
+    await run('checkout', '-q', '--', 'a.txt');
+    await withGh(() => 'git checkout -q topic', async () => {
+      assert.deepEqual(await startOnPr(dir, p), { branch: 'topic', said: 'checked out topic for #76' });
+    });
+    assert.equal(await branch(), 'topic');
   } finally {
     await fs.rm(dir, { recursive: true, force: true });
   }

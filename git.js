@@ -541,4 +541,33 @@ export async function checkoutPr(cwd, url) {
   }
 }
 
+/**
+ * Puts the working copy on pull request `p` (`url`, `number`, `headRefName`,
+ * `isCrossRepository`) for a start: `prcoder <pr>` and a `prcoder choose`
+ * pick. Resolves the branch it is then on, and the line to say about the
+ * checkout, or null when the branch was already the pull request's.
+ *
+ * The pane shows only the checked-out branch's pull request (docs/Design.md,
+ * "The pane shows what is checked out"), so a start that cannot check one out
+ * is refused rather than shown beside another branch. Uncommitted work is that
+ * refusal, as it is for the pane's Switch: a checkout over it is git's to
+ * refuse, or worse, to carry.
+ */
+export async function startOnPr(cwd, p) {
+  const branch = await currentBranch(cwd);
+  if (!p.isCrossRepository && p.headRefName === branch) return { branch, said: null };
+  const dirty = await dirtyFiles(cwd);
+  if (dirty.length) {
+    const many = dirty.length > 1;
+    throw new Error(`#${p.number} is on ${p.headRefName}, and ${dirty.length} uncommitted file${many ? 's' : ''}` +
+      ` on ${branch ?? 'a detached HEAD'} ${many ? 'are' : 'is'} in the way; commit or stash ${many ? 'them' : 'it'} first`);
+  }
+  const { diverged } = await checkoutPr(cwd, p.url);
+  return {
+    branch: await currentBranch(cwd),
+    said: `checked out ${p.headRefName} for #${p.number}` +
+      (diverged ? `, but it has diverged from the pull request's head, so it was not fast-forwarded` : ''),
+  };
+}
+
 export const pushBranch = (cwd) => git(['push', '-u', 'origin', 'HEAD'], cwd);
