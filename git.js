@@ -220,25 +220,6 @@ export async function pushRepo(cwd, branch, byName) {
 }
 
 /**
- * How the PR on screen relates to the checkout. A boolean would collapse these:
- * a PR in another repo can never be in sync, so its light has to be hidden
- * rather than shown red forever.
- *
- * `found` is what the branch lookup turned up (branchPrs in github.js), so
- * `current` is "this is the branch's pull request" whichever of the
- * repositories in `repos` it is in -- a fork's pull request into its parent
- * is current on the branch it was opened from. A pull request in one of those
- * repositories that is not the branch's is a checkout away; one in any other
- * repository (`prcoder <url>`) is not.
- */
-export function prScope(pr, { repos, found }) {
-  if (!pr) return 'none';
-  if (found.includes(pr.url)) return 'current';
-  const { owner, repo } = parsePrUrl(pr.url);
-  return repos.includes(`${owner}/${repo}`) ? 'other-branch' : 'other-repo';
-}
-
-/**
  * Constant for the life of the process, so worth asking once. `prefix` is
  * where in the repo prcoder -- and so the agent's PTY -- was started: '' at
  * the root, 'public/' below it. The diff header's @ names a file from there.

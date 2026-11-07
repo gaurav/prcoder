@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { notAWorkTree, syncState, compareUrl, githubUrl, originOwner, remoteRepo, remoteRepos, repoInfo, pushRepo, commitsKnown, commitMemo, prScope, wholePrRepo, checkoutPr, startOnPr, userDirt, remoteBranchHead, trackingHead, snapshot, localPatch, branchesBelow } from '../git.js';
+import { notAWorkTree, syncState, compareUrl, githubUrl, originOwner, remoteRepo, remoteRepos, repoInfo, pushRepo, commitsKnown, commitMemo, wholePrRepo, checkoutPr, startOnPr, userDirt, remoteBranchHead, trackingHead, snapshot, localPatch, branchesBelow } from '../git.js';
 
 // git finds the repository through GIT_DIR and GIT_WORK_TREE before it looks
 // at cwd, and a git hook exports them. Under a hook, `npm test` ran every
@@ -138,39 +138,6 @@ test("origin's owner comes off every shape of GitHub remote URL", async () => {
   } finally {
     await fs.rm(dir, { recursive: true, force: true });
   }
-});
-
-// A clone of a fork: gh's base repository is the parent, and the branch's own
-// pull request (`found`, from branchPrs) is in it, opened from the fork.
-const here = {
-  repos: ['upstream/prcoder', 'gaurav/prcoder'],
-  found: ['https://github.com/upstream/prcoder/pull/1'],
-};
-const pr = (url, headRefName) => ({ url, headRefName });
-
-test('no PR at all is its own scope, not a mismatch', () => {
-  assert.equal(prScope(null, here), 'none');
-});
-
-test('the branch\'s pull request is current, in whichever of the repositories it is', () => {
-  assert.equal(prScope(pr('https://github.com/upstream/prcoder/pull/1', 'feature'), here), 'current');
-  // In the fork itself, from the same branch.
-  const inFork = { ...here, found: ['https://github.com/gaurav/prcoder/pull/4'] };
-  assert.equal(prScope(pr('https://github.com/gaurav/prcoder/pull/4', 'feature'), inFork), 'current');
-});
-
-test('same repositories, another branch — checking it out would fix it', () => {
-  assert.equal(prScope(pr('https://github.com/upstream/prcoder/pull/2', 'other'), here), 'other-branch');
-  assert.equal(prScope(pr('https://github.com/gaurav/prcoder/pull/2', 'other'), here), 'other-branch');
-  // Found nowhere for this branch, so not current, whatever the branch name says.
-  assert.equal(prScope(pr('https://github.com/gaurav/prcoder/pull/3', 'feature'), here), 'other-branch');
-});
-
-// `prcoder <url>` can open a PR that has nothing to do with this checkout, and
-// its head commit will never be in our object store — so the sync light has to
-// be suppressed rather than left reporting a permanent "behind".
-test('a PR in a different repo is other-repo even when the branch name matches', () => {
-  assert.equal(prScope(pr('https://github.com/someone/else/pull/9', 'feature'), here), 'other-repo');
 });
 
 test('a remote URL on GitHub names its repository, and one elsewhere names nothing', () => {

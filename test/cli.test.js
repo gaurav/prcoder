@@ -125,7 +125,7 @@ test('the candidates are the whole range, starting at the seed', () => {
 // The block under the log. Pure, so the wording is checked without a terminal.
 const STATUS = {
   nameWithOwner: 'gaurav/prcoder', remotes: { 'gaurav/prcoder': 'origin' }, defaultBranch: 'main', branch: 'initial-implementation',
-  sync: 'ahead', ahead: 2, dirtyFiles: ['a.js', 'b.js'], scope: 'current',
+  sync: 'ahead', ahead: 2, dirtyFiles: ['a.js', 'b.js'],
   pr: { number: 1, title: 'Drag the panes', url: 'https://github.com/gaurav/prcoder/pull/1', baseRefName: 'main' },
   queue: [{ text: 'a', issue: 4 }, { text: 'b', done: true }, { text: 'c', deleted: true },
     { text: 'd' }],
@@ -210,7 +210,7 @@ test('sh hands an override the repo path whole, whatever is in it', () => {
 });
 
 test('with no PR there is no PR line to print', () => {
-  const out = block({ pr: null, scope: 'none', queue: [] });
+  const out = block({ pr: null, queue: [] });
   assert.match(out, /none for this branch/);
   assert.doesNotMatch(out, /github\.com/);
 });

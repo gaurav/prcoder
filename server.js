@@ -12,7 +12,7 @@ import { text as readBody } from 'node:stream/consumers';
 import { spawn as ptySpawn } from 'node-pty';
 import { WebSocketServer } from 'ws';
 import { loadPr, pullRequestFor, prBody, parsePrUrl, listPrs, branchPrs, lookupPrs, ownPrs, pickPr, issueLinks, lookupRef, setViewed, setBody, createIssue, fetchPatches, runCount, repoPulls, repoIssues, setIssueMilestone } from './github.js';
-import { notAWorkTree, snapshot, currentBranch, headCommit, commitsKnown, commitMemo, repoInfo, pushRepo, prScope, compareUrl, githubUrl, originOwner, wholePrRepo, checkoutPr, startOnPr, pushBranch, remoteBranchHead, trackingHead, localPatch, branchesBelow } from './git.js';
+import { notAWorkTree, snapshot, currentBranch, headCommit, commitsKnown, commitMemo, repoInfo, pushRepo, compareUrl, githubUrl, originOwner, wholePrRepo, checkoutPr, startOnPr, pushBranch, remoteBranchHead, trackingHead, localPatch, branchesBelow } from './git.js';
 import { bucket, fileUrl, fileViews } from './files.js';
 import { readPort, writePort, readPrs, writePrs, pick, useQueueFile, movedQueue, issueUrl, readPulls, writePulls } from './store.js';
 import { readQueue, writeQueue, quote } from './queue.js';
@@ -263,23 +263,13 @@ async function status({ full = false, search = false } = {}) {
   // because it pushes on the answer.
   const oid = pr?.headRefOid ?? heads?.headRefOid ?? await trackingHead(repo, branch);
   const snap = await snapshot(repo, oid, branch, commits.one);
-  const scope = prScope(pr, { repos: facts.repos, found: found.map((p) => p.url) });
-  const tracked = scope === 'current' || scope === 'none';
-
+  // The sync light and `ahead` are always the working copy's: the pull request
+  // on screen is only ever the checked-out branch's (docs/Design.md, "The pane
+  // shows what is checked out"), so its head is this branch's to compare with.
   last = {
     ...snap,
     ...facts,
-    scope,
     branchPrs: found.map(forPage),
-    // A PR we have not checked out can never be in sync with this working
-    // tree, so its verdict is meaningless. With no PR at all the branch still
-    // has one, and "not pushed yet" is what the create button needs to know.
-    sync: tracked ? snap.sync : null,
-    // `ahead` is derived from the same remote head, so it is meaningless in
-    // exactly the same cases -- and it outlives the pane: askToQuit reads it to
-    // say "N unpushed commits", which for a pinned PR on another branch was a
-    // count against a branch you are not on.
-    ahead: tracked ? snap.ahead : null,
     pr,
     queue: await readQueue(repo, info?.nameWithOwner),
   };
