@@ -79,6 +79,7 @@ are given.
 | --- | --- | --- |
 | `--port <n>` | `PRCODER_PORT` | Use this port for one run, instead of the repo's own ([docs/Ports.md](docs/Ports.md)). |
 | `--no-open` | `PRCODER_NO_OPEN` | Don't open a browser; just print the URL. |
+| `--no-history` | `PRCODER_NO_HISTORY` | Don't read the coding agent's prompt history: no History tab, no last-prompt notice. |
 | `--queue <file>` | `PRCODER_QUEUE` | Keep the queue in this file instead of `.prcoder/queue.json`; said at startup. |
 | `-v`, `-vv` | `PRCODER_VERBOSE` | Start the log at verbose (`1`) or debug (`2`) rather than quiet. |
 | `--agent <name>` | | The coding agent; only `claude` today. |
@@ -105,6 +106,18 @@ machine. `queue.json` is safe for something else to edit, but while prcoder is r
 is the better way in: `GET /api/queue`, then `PUT /api/queue` with `{items}`.
 Quitting prints what is still on Local, since nothing but this machine has it.
 [docs/Design.md](docs/Design.md#the-queue-is-yours) has the reasons for all of this.
+
+## What it reads
+
+One thing outside the repository, and only to show it: Claude Code's own record of the prompts you
+have typed, `~/.claude/history.jsonl` (or under `$CLAUDE_CONFIG_DIR`), which is what its up-arrow
+and Ctrl+R read. The queue pane's **History** tab shows the ones sent from this working copy, by
+day and session with the time of each, and the Claude Code pane says the last one when it connects,
+so that coming back after a break starts with what you were doing. It is read, never written, and
+never sent anywhere; the text a paste put in a prompt is not read at all. `--no-history` (or
+`PRCODER_NO_HISTORY`) turns it off, and `CLAUDE_CODE_SKIP_PROMPT_HISTORY`, Claude Code's own switch,
+turns it off too. [docs/Security.md](docs/Security.md#what-prcoder-reads-outside-the-repository)
+has the checks.
 
 ## The terminal you started it from
 

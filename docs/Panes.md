@@ -351,6 +351,15 @@ is covered. Only Chrome says for certain that it unloaded a tab. Elsewhere, goin
 duplicating it looks the same, so the toast names those too rather than blaming the browser. A
 deliberate reload gets a shorter toast without the link.
 
+When the agent connects -- the page opened, or **Start coding agent** pressed in the bar below --
+a sticky toast says the last prompt sent from this working copy and when, `Last prompt, 2 hours
+ago (Today 21:14): …`, the first 140 characters of it, with a ▶ that types it into the agent's
+prompt again, typed and not sent as the queue's ▶ types, for the session that died mid-task. The
+next Enter in the terminal takes it down, since by then it has been read. It is drawn from the
+same record as the queue's History tab, which has the rest, and only when nothing else is in the
+toast's one slot: after a reload the reload's own notice is already there, and
+[#180](https://github.com/gaurav/prcoder/issues/180) is the list of notices that would hold both.
+
 When Claude exits, a bar under its last output offers to start it again, optionally with a
 different model or effort, or to quit prcoder. Left to right: **Quit prcoder**, outlined in red
 and standing alone, so it is found without reading the bar; the Model and Effort fields; **Start
@@ -537,3 +546,27 @@ milestone on GitHub through the same call as an issue's, with the same hold: the
 title both come from the listing the tab was shown. The opened row's select waits for **Move**, focus
 follows the row, a refusal reads the listing again, and a listing landing mid-gesture waits, all as on the Issues tab. Only by milestone is there a grip,
 since one list and by stack have no line to drop a row on.
+
+**History** is what you have sent the coding agent from this working copy, with when, for coming
+back after a break: what was I doing, are the tests written, did I run `/code-review` yet. It is
+read from Claude Code's own record of typed prompts (`~/.claude/history.jsonl`, the file its
+up-arrow and Ctrl+R read; [Security.md](Security.md#what-prcoder-reads-outside-the-repository) says
+what is and is not read), never written, and the tab is there only while there is one to read:
+`--no-history` or `PRCODER_NO_HISTORY` hides it, and so does `CLAUDE_CODE_SKIP_PROMPT_HISTORY`,
+Claude Code's own switch, under which the file would stop at the day it was set. One fold per day
+-- *Today*, *Yesterday*, the weekday within the week, then the date -- newest first, with the day's
+count in a badge; the first two days start open and the rest folded, and a fold you change stays
+so until the page is reloaded. Under a day, one block per session, headed by the title Claude
+Code gave the session, or by the time its first prompt of the day was sent when it has none (a
+transcript pruned by `cleanupPeriodDays` has none; the history file is not pruned), and by the
+worktree it ran in when that was one under `data/` rather than the working copy itself. A session
+that ran past midnight is under both days. Each row is the time, on a 24-hour clock, with the date
+in full on hover, then the prompt as typed, its lines kept, clamped to three until clicked (a
+click that selected text is a selection), with a paste shown as the `[Pasted text #1 +12 lines]`
+placeholder Claude Code records and nothing of its contents; a prompt that starts with a slash
+command has the command in the accent colour; and ⧉ at the end copies the prompt to the clipboard,
+turning to ✓ for a moment. Nothing on a row sends: ▶ is the queue's. The box above searches the
+prompts' text, leaving out a day without a match, and the tab's count is the prompts sent today,
+or the matches while searching. ⟳ reads the file again, and so does a prompt sent from this page
+while the tab is showing, a second later, so the list keeps up with the terminal beside it. A read
+that fails says so, with a way to try again, and leaves the list as it was.
