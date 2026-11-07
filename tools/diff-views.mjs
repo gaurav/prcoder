@@ -15,14 +15,15 @@
 // here has -- #74), and two files are renamed, one untouched and one with a
 // line changed.
 //
-// The server is this working tree's, pinned to the fixture by number. Nothing
+// The server is this working tree's, run in a worktree on the fixture's branch
+// (onPullRequest in driver.mjs), so nothing is checked out here. Nothing
 // here writes to GitHub: it opens files and toggles the outline, and the only
 // preferences it changes it puts back.
 
 import { spawn, spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { openShots, pruneShots } from './shots.mjs';
-import { repo, free, serverEnv, killOnExit, openPage, launchBrowser } from './driver.mjs';
+import { repo, free, serverEnv, killOnExit, openPage, launchBrowser, onPullRequest } from './driver.mjs';
 
 const FIXTURE = 87;
 const shotsRoot = path.join(repo, 'data', 'shots');
@@ -44,9 +45,10 @@ if (state?.state !== 'OPEN') {
 
 await free(port);
 const out = await openShots(shotsRoot, label);
-const server = spawn('node', ['server.js', String(FIXTURE)], { cwd: repo, env: serverEnv(port), stdio: 'ignore' });
+const cwd = onPullRequest(FIXTURE);
+const server = spawn('node', [path.join(repo, 'server.js')], { cwd, env: serverEnv(port), stdio: 'ignore' });
 killOnExit(server);
-console.log('pr:     ', `pinned to the fixture, #${FIXTURE}`);
+console.log('pr:     ', `the fixture, #${FIXTURE}, in ${path.relative(repo, cwd) || 'this tree'}`);
 
 const browser = await launchBrowser();
 const page = await openPage(browser, port);

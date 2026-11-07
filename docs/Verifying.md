@@ -56,8 +56,8 @@ measures, with a comment at each check saying which regression the check catches
   not start.
 - **Written against this repo's PR #1**: its sections, file groups and issue chips. The server
   follows the branch, so a run from a feature branch fails on the section count; `PRCODER_PR=1`
-  pins it. Leave it unset on `initial-implementation`, since that run is the only one that covers
-  branch-following.
+  runs it in a worktree under `data/` on PR #1's branch instead (`onPullRequest` in
+  `tools/driver.mjs`), since prcoder checks out what it is started on and this tree must not move.
 - **What it cannot reach.** Every file in PR #1 is one the pull request adds, so the diff pane's
   DIFF and DELETED views, the hunk outline and a `.tsx` file are `tools/diff-views.mjs`'s, below.
   The queue pane is driven against a queue of its own, `data/browser-queue.json` through

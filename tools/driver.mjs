@@ -6,6 +6,7 @@
 // firefoxEnv from here too.
 
 import { createServer } from 'node:net';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -56,7 +57,9 @@ export const serverEnv = (port, extra = {}) => ({
  * handler. Same three as term.js.
  */
 export function killOnExit(child) {
-  process.on('exit', () => child.kill());
+  // Ahead of every other exit handler: onPullRequest's removes the worktree
+  // the server is running in, and the server must be gone first.
+  process.prependListener('exit', () => child.kill());
   for (const sig of ['SIGTERM', 'SIGHUP', 'SIGINT']) process.on(sig, () => process.exit(130));
 }
 
@@ -140,4 +143,47 @@ export function firefoxEnv() {
   const env = { MOZ_APP_DATA: path.join(appData, 'roaming'), MOZ_LOCAL_APP_DATA: path.join(appData, 'local') };
   for (const dir of Object.values(env)) mkdirSync(dir, { recursive: true });
   return env;
+}
+
+/**
+ * Where to run the server to drive this repository's pull request `number`:
+ * this tree when it is already on the pull request's branch, and otherwise a
+ * worktree on that branch under data/, removed again on exit with any local
+ * branch made for it. Spawn `server.js` from this tree with `cwd` set to the
+ * answer, and pass it no pull request.
+ *
+ * Never `server.js <n>` in this tree: prcoder checks out the pull request it
+ * is started on (startOnPr in git.js), and this tree is often the owner's own
+ * working copy (tools/CLAUDE.md).
+ */
+export function onPullRequest(number) {
+  const git = (...args) => execFileSync('git', args, { cwd: repo, encoding: 'utf8' }).trim();
+  const { headRefName: branch, isCrossRepository } = JSON.parse(execFileSync('gh',
+    ['pr', 'view', String(number), '--json', 'headRefName,isCrossRepository'], { cwd: repo, encoding: 'utf8' }));
+  if (isCrossRepository) throw new Error(`#${number} is from another repository's branch; drive one of this repository's own`);
+  if (git('branch', '--show-current') === branch) return repo;
+  const dir = path.join(repo, 'data', `wt-${number}`);
+  let made = false;
+  // A worktree a killed run left behind is used as it is, and removed this time.
+  if (!existsSync(dir)) {
+    if (spawnSync('git', ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`], { cwd: repo }).status !== 0) {
+      // From origin's branch where it still has one, so the sync light has
+      // something to compare against. A merged pull request's branch is
+      // usually deleted -- PR #1's, which browser.mjs is written against, is
+      // -- and GitHub's refs/pull/<n>/head outlives it.
+      const fetched = spawnSync('git', ['fetch', '-q', 'origin', `+refs/heads/${branch}:refs/remotes/origin/${branch}`], { cwd: repo }).status === 0;
+      if (fetched) git('branch', '-q', '--track', branch, `origin/${branch}`);
+      else {
+        git('fetch', '-q', 'origin', `refs/pull/${number}/head`);
+        git('branch', '-q', branch, 'FETCH_HEAD');
+      }
+      made = true;
+    }
+    git('worktree', 'add', '-q', dir, branch);
+  }
+  process.on('exit', () => {
+    spawnSync('git', ['worktree', 'remove', '--force', dir], { cwd: repo });
+    if (made) spawnSync('git', ['branch', '-q', '-D', branch], { cwd: repo });
+  });
+  return dir;
 }
