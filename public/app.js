@@ -585,11 +585,6 @@ const switcher = document.getElementById('pr-switch');
 switcher.addEventListener('pointerenter', () => reachSwitcher('pointer reached the switcher'));
 switcher.addEventListener('focus', () => reachSwitcher('switcher focused'));
 
-const NOTES = {
-  'other-branch': 'Not checked out — this pull request is on another branch.',
-  'other-repo': 'This pull request is in another repository.',
-};
-
 /**
  * A checkbox in the description, ticked through to GitHub -- the one edit to a
  * description prcoder makes, on your click. The route answers with the body
@@ -741,19 +736,18 @@ function paint(status) {
     // The Stack tab reads `prs`, which is this repository's list: against a pull
     // request in another one it would name strangers. Null rather than empty,
     // so the tab says it has no list instead of saying the list is empty, and
-    // `otherRepo` says which of the two reasons for having none it is. By the
-    // pull request's own repository, not by `scope`: a fork's pull request into
-    // its parent is `current` on the branch it was opened from, and still not
-    // one the list knows.
+    // `otherRepo` says which of the two reasons for having none it is: a fork's
+    // pull request into its parent is the branch's own, and still not one the
+    // list knows.
     const otherRepo = prRepo(status.pr) !== status.nameWithOwner;
     const stack = otherRepo ? null : prs;
     const blocked = status.dirtyFiles.length > 0;
     // Everything the pane is drawn from, the Stack tab's inputs included: a
     // fresh PR list, or a tree going dirty, is a redraw even when the PR is not.
-    const key = JSON.stringify([status.pr, status.scope, stack, blocked, [...below.values()], status.remotes]);
+    const key = JSON.stringify([status.pr, stack, blocked, [...below.values()], status.remotes]);
     if (key !== drawn) {
       drawn = key;
-      renderPr({ ...status.pr, note: NOTES[status.scope] }, {
+      renderPr(status.pr, {
         ...fileHandlers,
         selected: selectedPath,
         prs: stack,

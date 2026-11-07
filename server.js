@@ -11,8 +11,8 @@ import { fileURLToPath } from 'node:url';
 import { text as readBody } from 'node:stream/consumers';
 import { spawn as ptySpawn } from 'node-pty';
 import { WebSocketServer } from 'ws';
-import { loadPr, prHeads, prUrl, pullRequestFor, prBody, parsePrUrl, listPrs, branchPrs, lookupPrs, ownPrs, pickPr, issueLinks, lookupRef, setViewed, setBody, createIssue, fetchPatches, runCount, repoPulls, repoIssues, setIssueMilestone } from './github.js';
-import { notAWorkTree, snapshot, currentBranch, headCommit, commitsKnown, commitMemo, repoInfo, pushRepo, prScope, compareUrl, githubUrl, originOwner, wholePrRepo, checkoutPr, pushBranch, remoteBranchHead, trackingHead, localPatch, branchesBelow } from './git.js';
+import { loadPr, pullRequestFor, prBody, parsePrUrl, listPrs, branchPrs, lookupPrs, ownPrs, pickPr, issueLinks, lookupRef, setViewed, setBody, createIssue, fetchPatches, runCount, repoPulls, repoIssues, setIssueMilestone } from './github.js';
+import { notAWorkTree, snapshot, currentBranch, headCommit, commitsKnown, commitMemo, repoInfo, pushRepo, compareUrl, githubUrl, originOwner, wholePrRepo, checkoutPr, startOnPr, pushBranch, remoteBranchHead, trackingHead, localPatch, branchesBelow } from './git.js';
 import { bucket, fileUrl, fileViews } from './files.js';
 import { readPort, writePort, readPrs, writePrs, pick, useQueueFile, movedQueue, issueUrl, readPulls, writePulls } from './store.js';
 import { readQueue, writeQueue, quote } from './queue.js';
@@ -24,16 +24,14 @@ import { grammars } from './public/diff.js';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const repo = process.cwd();
-// The PR to open (a number, URL or branch) and the agent's argv, both from the
-// command line -- see cli.js. Parsed in main, not here: a test importing this
-// module must not parse the runner's argv, and the spawn needs `agentArgs` to
-// be an array either way.
-let target;
+// The agent's argv, from the command line -- see cli.js. Parsed in main, not
+// here: a test importing this module must not parse the runner's argv, and the
+// spawn needs `agentArgs` to be an array either way.
 let agentArgs = [];
-// Which of the branch's pull requests to show, `{ branch, url }`, picked in the
-// switcher's "On this branch" group. Its own variable and not `target`: a
-// target outlives a checkout on purpose, and this must not -- it is a choice
-// about one branch, dropped as soon as the poll finds another checked out.
+// Which of the branch's pull requests to show, `{ branch, url }`: picked in the
+// switcher, or named on the command line and checked out there (main). Only
+// ever one of the checked-out branch's (docs/Design.md, "The pane shows what is
+// checked out"), and dropped as soon as the poll finds another checked out.
 let chosen = null;
 // The PR is fetched once and reused, with its files already grouped and linked
 // (decorateFiles); the PR routes need its body, node id and head.
@@ -93,7 +91,7 @@ const requirePr = () => {
 };
 
 /**
- * `what` is the URL the branch lookup picked, or the command line's target;
+ * `what` is the URL the branch lookup picked;
  * nothing means no pull request, and is not handed to gh, whose own lookup by
  * branch is what branchPrs replaces.
  */
@@ -238,37 +236,24 @@ async function status({ full = false, search = false } = {}) {
   const [branch, head] = await Promise.all([currentBranch(repo), headCommit(repo)]);
   if (chosen && chosen.branch !== branch) chosen = null;
 
-  // Reloaded when the cheap check says it changed. A full refresh reloads
-  // regardless, so it has no use for the cheap check.
-  const refresh = async (heads) => {
-    if (full || !keepPr(pr, heads)) {
-      if (!full && pr) term.debug(`PR #${pr.number} changed upstream — reloading into the UI`);
-      await refreshPr(target ?? heads?.url);
-    }
-  };
-  // A target from the command line is checked the old way, and before the
-  // repository lookup, so a startup whose lookup fails still has the pull
-  // request to report: the PR routes and the terminal's block read `pr`.
-  let heads = target && !full ? await prHeads(repo, target) : null;
-  if (target) await refresh(heads);
-
   // The branch's pull requests are looked for in the repositories this names;
   // a lookup that fails fails the poll, as it should -- gh that cannot say
   // which repository this is cannot list its pull requests either.
   const facts = await repoFacts();
   // The branch's pull requests, wherever they are: the poll's cheap check,
-  // whose checks keepPr takes. With a target the list is still read, since
-  // the switcher offers it, but without the checks: prHeads has the target's,
-  // and the list's would be fetched for nothing on every poll.
+  // whose checks keepPr takes.
   // One answer per commit for the whole poll (commitMemo). A change of branch
   // since the last poll searches, as `r` does; a restart starts from what the
   // file remembers.
   const commits = commitMemo(repo);
   const fresh = search || (last != null && last.branch !== branch);
-  const found = await findPrs(branch, facts, { has: commits.many, checks: !target, fresh });
-  if (!target) {
-    heads = pickPr(found, { head, chosen: chosen?.url, shown: pr?.url, repos: facts.repos });
-    await refresh(heads);
+  const found = await findPrs(branch, facts, { has: commits.many, checks: true, fresh });
+  const heads = pickPr(found, { head, chosen: chosen?.url, shown: pr?.url, repos: facts.repos });
+  // Reloaded when the cheap check says it changed. A full refresh reloads
+  // regardless, so it has no use for the cheap check.
+  if (full || !keepPr(pr, heads)) {
+    if (!full && pr) term.debug(`PR #${pr.number} changed upstream — reloading into the UI`);
+    await refreshPr(heads?.url);
   }
 
   // With no PR there is no headRefOid to compare against, so read git's own
@@ -278,23 +263,13 @@ async function status({ full = false, search = false } = {}) {
   // because it pushes on the answer.
   const oid = pr?.headRefOid ?? heads?.headRefOid ?? await trackingHead(repo, branch);
   const snap = await snapshot(repo, oid, branch, commits.one);
-  const scope = prScope(pr, { repos: facts.repos, found: found.map((p) => p.url) });
-  const tracked = scope === 'current' || scope === 'none';
-
+  // The sync light and `ahead` are always the working copy's: the pull request
+  // on screen is only ever the checked-out branch's (docs/Design.md, "The pane
+  // shows what is checked out"), so its head is this branch's to compare with.
   last = {
     ...snap,
     ...facts,
-    scope,
     branchPrs: found.map(forPage),
-    // A PR we have not checked out can never be in sync with this working
-    // tree, so its verdict is meaningless. With no PR at all the branch still
-    // has one, and "not pushed yet" is what the create button needs to know.
-    sync: tracked ? snap.sync : null,
-    // `ahead` is derived from the same remote head, so it is meaningless in
-    // exactly the same cases -- and it outlives the pane: askToQuit reads it to
-    // say "N unpushed commits", which for a pinned PR on another branch was a
-    // count against a branch you are not on.
-    ahead: tracked ? snap.ahead : null,
     pr,
     queue: await readQueue(repo, info?.nameWithOwner),
   };
@@ -529,13 +504,10 @@ const routes = {
     const { diverged } = await checkoutPr(repo, url);
     if (diverged) console.log(`checked out ${url}, but its branch has diverged from the pull request's head, so it was not fast-forwarded`);
     else term.verbose(`checked out ${url}`);
-    // Clear rather than pin: the checkout put us on the branch, so following it
-    // gives the same answer and self-heals when Claude switches branches later.
     // The choice made on the old branch goes with it, and the one asked for here
     // is the new branch's: of two pull requests on it into different bases,
     // pickPr has nothing to tell them apart by but age, and the one clicked
     // must be the one shown. Like any choice, it goes when the branch does.
-    target = undefined;
     chosen = { branch: await currentBranch(repo), url };
     return status({ full: true });
   },
@@ -549,9 +521,6 @@ const routes = {
   'POST /api/pr/choose': async ({ url } = {}) => {
     const found = last?.branchPrs?.find((p) => p.url === url);
     if (!found) throw new Error(`${url ?? '(nothing)'} is not a pull request for this branch`);
-    // A pull request named on the command line outranks any choice (status),
-    // so the pick would succeed and change nothing. Dropped, as a switch drops it.
-    target = undefined;
     chosen = { branch: last.branch, url };
     term.verbose(`showing ${url} for ${last.branch}`);
     return status({ full: true });
@@ -1041,7 +1010,7 @@ async function openGithub() {
   const [branch, head] = await Promise.all([currentBranch(repo), headCommit(repo)]);
   const facts = await repoFacts();
   const { nameWithOwner, defaultBranch, repos } = facts;
-  const url = target ? await prUrl(repo, target) : pickPr(
+  const url = pickPr(
     await serial(() => findPrs(branch, facts, { has: (oids) => commitsKnown(oids, repo), checks: false, fresh: true })),
     { head, chosen: chosen?.branch === branch ? chosen.url : null, shown: pr?.url, repos })?.url;
   openBrowser(githubUrl({
@@ -1215,7 +1184,7 @@ if (import.meta.main) {
     console.error(`prcoder: ${repo} is not inside a git checkout\n  ${why}\nrun prcoder from inside a repository's working tree`);
     process.exit(2);
   }
-  ({ target, agentArgs } = cli);
+  ({ agentArgs } = cli);
   // Into the variables, never the env: see pinnedPort.
   if (cli.port) pinnedPort = cli.port;
   if (cli.noOpen) noOpen = true;
@@ -1223,27 +1192,23 @@ if (import.meta.main) {
   useQueueFile(cli.queue ?? process.env.PRCODER_QUEUE);
   if (cli.verbose) term.setVerbosity(cli.verbose);
 
-  // `prcoder choose`: the list and the question come before the block exists,
-  // so they are plain lines in the scrollback, and before the port, so a pick
-  // of nothing starts nothing. A pick on the checked-out branch, by choice or
-  // by checkout, is held as that branch's choice the way the pane's Switch
-  // holds one; one shown without a checkout is the start's target.
-  if (cli.choose) {
-    let pick;
-    try { pick = await choosePr(repo, await repoFacts()); } catch (e) {
-      console.error(`prcoder: ${e.message}`);
-      process.exit(2);
-    }
-    if (!pick) process.exit(0);
-    if (pick.follow) chosen = { branch: await currentBranch(repo), url: pick.url };
-    else target = pick.url;
-  }
-  // `prcoder <pr>`: refused here, before the block and the port, when it names
-  // no pull request (pullRequestFor), and pinned to the URL it names when it
-  // does -- so a branch given by name stays on that pull request, rather than
-  // on whichever one gh would find for the name on a later poll.
-  else if (target) {
-    try { target = await pullRequestFor(repo, target); } catch (e) {
+  // `prcoder choose` and `prcoder <pr>`: the list, the question and the
+  // checkout come before the block exists, so they are plain lines in the
+  // scrollback, and before the port, so a pick of nothing or a refusal starts
+  // nothing. Either way the pull request is checked out (startOnPr), since the
+  // pane shows only the checked-out branch's, and held as that branch's choice
+  // the way the pane's Switch holds one: of two pull requests on one branch,
+  // the one asked for is the one shown.
+  if (cli.choose || cli.target) {
+    try {
+      const pick = cli.choose
+        ? await choosePr(repo, await repoFacts())
+        : await pullRequestFor(repo, cli.target, (await repoFacts()).repos);
+      if (!pick) process.exit(0);
+      const { branch, said } = await startOnPr(repo, pick);
+      if (said) console.log(said);
+      chosen = { branch, url: pick.url };
+    } catch (e) {
       console.error(`prcoder: ${e.message}`);
       process.exit(2);
     }

@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { notAWorkTree, syncState, compareUrl, githubUrl, originOwner, remoteRepo, remoteRepos, repoInfo, pushRepo, commitsKnown, commitMemo, prScope, wholePrRepo, checkoutPr, userDirt, remoteBranchHead, trackingHead, snapshot, localPatch, branchesBelow } from '../git.js';
+import { notAWorkTree, syncState, compareUrl, githubUrl, originOwner, remoteRepo, remoteRepos, repoInfo, pushRepo, commitsKnown, commitMemo, wholePrRepo, checkoutPr, startOnPr, userDirt, remoteBranchHead, trackingHead, snapshot, localPatch, branchesBelow } from '../git.js';
 
 // git finds the repository through GIT_DIR and GIT_WORK_TREE before it looks
 // at cwd, and a git hook exports them. Under a hook, `npm test` ran every
@@ -138,39 +138,6 @@ test("origin's owner comes off every shape of GitHub remote URL", async () => {
   } finally {
     await fs.rm(dir, { recursive: true, force: true });
   }
-});
-
-// A clone of a fork: gh's base repository is the parent, and the branch's own
-// pull request (`found`, from branchPrs) is in it, opened from the fork.
-const here = {
-  repos: ['upstream/prcoder', 'gaurav/prcoder'],
-  found: ['https://github.com/upstream/prcoder/pull/1'],
-};
-const pr = (url, headRefName) => ({ url, headRefName });
-
-test('no PR at all is its own scope, not a mismatch', () => {
-  assert.equal(prScope(null, here), 'none');
-});
-
-test('the branch\'s pull request is current, in whichever of the repositories it is', () => {
-  assert.equal(prScope(pr('https://github.com/upstream/prcoder/pull/1', 'feature'), here), 'current');
-  // In the fork itself, from the same branch.
-  const inFork = { ...here, found: ['https://github.com/gaurav/prcoder/pull/4'] };
-  assert.equal(prScope(pr('https://github.com/gaurav/prcoder/pull/4', 'feature'), inFork), 'current');
-});
-
-test('same repositories, another branch — checking it out would fix it', () => {
-  assert.equal(prScope(pr('https://github.com/upstream/prcoder/pull/2', 'other'), here), 'other-branch');
-  assert.equal(prScope(pr('https://github.com/gaurav/prcoder/pull/2', 'other'), here), 'other-branch');
-  // Found nowhere for this branch, so not current, whatever the branch name says.
-  assert.equal(prScope(pr('https://github.com/gaurav/prcoder/pull/3', 'feature'), here), 'other-branch');
-});
-
-// `prcoder <url>` can open a PR that has nothing to do with this checkout, and
-// its head commit will never be in our object store — so the sync light has to
-// be suppressed rather than left reporting a permanent "behind".
-test('a PR in a different repo is other-repo even when the branch name matches', () => {
-  assert.equal(prScope(pr('https://github.com/someone/else/pull/9', 'feature'), here), 'other-repo');
 });
 
 test('a remote URL on GitHub names its repository, and one elsewhere names nothing', () => {
@@ -519,6 +486,38 @@ test('a checkout that switched branches and then could not fast-forward is still
       await assert.rejects(checkoutPr(dir, url), /fast-forward/);
     });
     await withGh(() => 'true', async () => assert.deepEqual(await checkoutPr(dir, url), {}));
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
+
+// The start's one way onto a pull request (`prcoder <pr>`, a `choose` pick):
+// nothing to do on its branch, a refusal over uncommitted work, since the pane
+// shows only the checked-out branch's pull request, and a checkout otherwise.
+test('a start is on the pull request\'s branch, or refused over uncommitted work', { skip: unix }, async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'prcoder-start-'));
+  const run = (...args) => testGit(dir, ...args);
+  const branch = async () => (await git('git', ['symbolic-ref', '--short', 'HEAD'], { cwd: dir })).stdout.trim();
+  const p = { url: 'https://github.com/o/r/pull/76', number: 76, headRefName: 'topic', isCrossRepository: false };
+  try {
+    await git('git', ['init', '-q', '-b', 'main', dir]);
+    await fs.writeFile(path.join(dir, 'a.txt'), 'a\n');
+    await run('add', 'a.txt');
+    await run('commit', '-q', '-m', 'x');
+    await run('branch', 'topic');
+    // gh would fail the test if it were asked anything here.
+    await withGh(() => 'exit 9', async () => {
+      assert.deepEqual(await startOnPr(dir, { ...p, headRefName: 'main' }), { branch: 'main', said: null });
+      await fs.writeFile(path.join(dir, 'a.txt'), 'changed\n');
+      await assert.rejects(startOnPr(dir, p),
+        { message: '#76 is on topic, and 1 uncommitted file on main is in the way; commit or stash it first' });
+    });
+    assert.equal(await branch(), 'main');
+    await run('checkout', '-q', '--', 'a.txt');
+    await withGh(() => 'git checkout -q topic', async () => {
+      assert.deepEqual(await startOnPr(dir, p), { branch: 'topic', said: 'checked out topic for #76' });
+    });
+    assert.equal(await branch(), 'topic');
   } finally {
     await fs.rm(dir, { recursive: true, force: true });
   }

@@ -16,7 +16,7 @@ import { stackOrder, stackUnder } from './public/pr.js';
 import { sortPulls, sizeChip, age } from './public/items.js';
 import { repoPulls } from './github.js';
 import { readPulls, writePulls } from './store.js';
-import { currentBranch, checkoutPr, dirtyFiles, branchesBelow } from './git.js';
+import { currentBranch, branchesBelow } from './git.js';
 import { styled, clip } from './term.js';
 
 // A listing younger than this is printed as it is, as the Pull requests tab
@@ -139,18 +139,11 @@ async function bareBases(repo, pulls, defaultBranch) {
 }
 
 /**
- * The list, the question, and what the pick means for the start:
- * `{ url, follow }`, or null when nothing was picked (`q`, end of input, or
- * nothing open), which the caller takes as nothing to start. `follow` says the
- * checked-out branch is the pull request's, so the start follows the branch
- * and holds this pull request as the branch's choice, as the pane's Switch
- * does (POST /api/pr/switch); otherwise the URL is the start's target, shown
- * on whatever branch this is.
- *
- * A pick on another branch is checked out (checkoutPr, gh's checkout) unless
- * the tree has uncommitted changes, which the pane's Switch refuses for the
- * same reason: a checkout over them is git's to refuse, or worse, to carry.
- * Then it is said, and the pull request is shown instead.
+ * The list and the question: the pull request picked, as the listing has it
+ * (`url`, `number`, `headRefName`, `isCrossRepository` are what the start
+ * reads), or null when nothing was picked (`q`, end of input, or nothing
+ * open), which the caller takes as nothing to start. The checkout is the
+ * caller's (startOnPr in git.js), the same one `prcoder <pr>` makes.
  *
  * `facts` is repoInfo's answer, which server.js has already paid for.
  */
@@ -174,23 +167,10 @@ export async function choosePr(repo, facts, { input = process.stdin, output = pr
       if (answer === null || /^q$/i.test(answer.trim())) return null;
       const n = answer.trim() === '' ? pick.pr.number : Number(answer.trim().replace(/^#/, ''));
       const row = rows.find((r) => r.pr.number === n);
-      if (row) return start(repo, row.pr, branch);
+      if (row) return row.pr;
       console.log(`${answer.trim()} is not one of the open pull requests listed`);
     }
   } finally {
     rl.close();
   }
-}
-
-async function start(repo, p, branch) {
-  if (!p.isCrossRepository && p.headRefName === branch) return { url: p.url, follow: true };
-  const dirty = await dirtyFiles(repo);
-  if (dirty.length) {
-    console.log(`not checked out: ${dirty.length} uncommitted file${dirty.length > 1 ? 's' : ''} on ${branch ?? 'a detached HEAD'}; showing #${p.number} here instead`);
-    return { url: p.url, follow: false };
-  }
-  const { diverged } = await checkoutPr(repo, p.url);
-  console.log(`checked out ${p.headRefName} for #${p.number}` +
-    (diverged ? `, but it has diverged from the pull request's head, so it was not fast-forwarded` : ''));
-  return { url: p.url, follow: true };
 }

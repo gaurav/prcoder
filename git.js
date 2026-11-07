@@ -220,25 +220,6 @@ export async function pushRepo(cwd, branch, byName) {
 }
 
 /**
- * How the PR on screen relates to the checkout. A boolean would collapse these:
- * a PR in another repo can never be in sync, so its light has to be hidden
- * rather than shown red forever.
- *
- * `found` is what the branch lookup turned up (branchPrs in github.js), so
- * `current` is "this is the branch's pull request" whichever of the
- * repositories in `repos` it is in -- a fork's pull request into its parent
- * is current on the branch it was opened from. A pull request in one of those
- * repositories that is not the branch's is a checkout away; one in any other
- * repository (`prcoder <url>`) is not.
- */
-export function prScope(pr, { repos, found }) {
-  if (!pr) return 'none';
-  if (found.includes(pr.url)) return 'current';
-  const { owner, repo } = parsePrUrl(pr.url);
-  return repos.includes(`${owner}/${repo}`) ? 'other-branch' : 'other-repo';
-}
-
-/**
  * Constant for the life of the process, so worth asking once. `prefix` is
  * where in the repo prcoder -- and so the agent's PTY -- was started: '' at
  * the root, 'public/' below it. The diff header's @ names a file from there.
@@ -539,6 +520,35 @@ export async function checkoutPr(cwd, url) {
     if (await currentBranch(cwd) === before) throw e;
     return { diverged: e.message };
   }
+}
+
+/**
+ * Puts the working copy on pull request `p` (`url`, `number`, `headRefName`,
+ * `isCrossRepository`) for a start: `prcoder <pr>` and a `prcoder choose`
+ * pick. Resolves the branch it is then on, and the line to say about the
+ * checkout, or null when the branch was already the pull request's.
+ *
+ * The pane shows only the checked-out branch's pull request (docs/Design.md,
+ * "The pane shows what is checked out"), so a start that cannot check one out
+ * is refused rather than shown beside another branch. Uncommitted work is that
+ * refusal, as it is for the pane's Switch: a checkout over it is git's to
+ * refuse, or worse, to carry.
+ */
+export async function startOnPr(cwd, p) {
+  const branch = await currentBranch(cwd);
+  if (!p.isCrossRepository && p.headRefName === branch) return { branch, said: null };
+  const dirty = await dirtyFiles(cwd);
+  if (dirty.length) {
+    const many = dirty.length > 1;
+    throw new Error(`#${p.number} is on ${p.headRefName}, and ${dirty.length} uncommitted file${many ? 's' : ''}` +
+      ` on ${branch ?? 'a detached HEAD'} ${many ? 'are' : 'is'} in the way; commit or stash ${many ? 'them' : 'it'} first`);
+  }
+  const { diverged } = await checkoutPr(cwd, p.url);
+  return {
+    branch: await currentBranch(cwd),
+    said: `checked out ${p.headRefName} for #${p.number}` +
+      (diverged ? `, but it has diverged from the pull request's head, so it was not fast-forwarded` : ''),
+  };
 }
 
 export const pushBranch = (cwd) => git(['push', '-u', 'origin', 'HEAD'], cwd);
