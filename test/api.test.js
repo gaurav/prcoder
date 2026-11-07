@@ -11,6 +11,9 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import { WebSocket } from 'ws';
 import { server, sessionArgs, startedWith, missingVendor, keepPr, issueMove, pullMove, queuedRun } from '../server.js';
 import { grammars } from '../public/diff.js';
@@ -33,8 +36,44 @@ test('/api/whoami answers from cache, before any poll has run', async () => {
   assert.equal(res.headers.get('content-type'), 'application/json');
   assert.deepEqual(await res.json(), {
     prcoder: true, version: VERSION, repo: process.cwd(), branch: null, nameWithOwner: null,
-    started: { model: '', effort: '' },
+    started: { model: '', effort: '' }, history: true,
   });
+});
+
+// The one route that reads outside the repo: Claude Code's own history file,
+// under the directory it honours, filtered to this working copy. With the tab
+// off it says so rather than answering nothing, and whoami says so with it.
+test('/api/history reads Claude Code\'s file for this working copy, and says when the tab is off', async () => {
+  const cfg = await fs.mkdtemp(path.join(os.tmpdir(), 'prcoder-api-history-'));
+  const line = (display, timestamp, project = process.cwd()) =>
+    JSON.stringify({ display, pastedContents: {}, timestamp, project, sessionId: '6f1a2b3c-4d5e-4f60-8a9b-0c1d2e3f4a5b' });
+  await fs.writeFile(path.join(cfg, 'history.jsonl'), [line('one', 1), line('elsewhere', 2, '/elsewhere'), line('two', 3)].join('\n') + '\n');
+  const post = async (body) => (await fetch(`${base}/api/history`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+  })).json();
+  const env = { ...process.env };
+  process.env.CLAUDE_CONFIG_DIR = cfg;
+  delete process.env.CLAUDE_CODE_SKIP_PROMPT_HISTORY;
+  try {
+    const h = await post({});
+    assert.equal(h.enabled, true);
+    assert.deepEqual(h.prompts.map((p) => p.text), ['two', 'one']);
+    assert.deepEqual(h.prompts[0], { at: 3, text: 'two', session: '6f1a2b3c-4d5e-4f60-8a9b-0c1d2e3f4a5b', where: '' });
+    assert.deepEqual(h.sessions, {});
+    assert.deepEqual((await post({ limit: 1 })).prompts.map((p) => p.text), ['two']);
+    // A limit that is not a count is the default, not an error.
+    assert.equal((await post({ limit: 'all' })).prompts.length, 2);
+    assert.equal((await post({ limit: -4 })).prompts.length, 2);
+    // Claude Code's own switch off: the child writes nothing, so the tab is hidden.
+    process.env.CLAUDE_CODE_SKIP_PROMPT_HISTORY = '1';
+    assert.deepEqual(await post({}), { enabled: false });
+    assert.equal((await (await fetch(`${base}/api/whoami`)).json()).history, false);
+  } finally {
+    process.env.CLAUDE_CONFIG_DIR = env.CLAUDE_CONFIG_DIR;
+    if (env.CLAUDE_CONFIG_DIR === undefined) delete process.env.CLAUDE_CONFIG_DIR;
+    delete process.env.CLAUDE_CODE_SKIP_PROMPT_HISTORY;
+    if (env.CLAUDE_CODE_SKIP_PROMPT_HISTORY !== undefined) process.env.CLAUDE_CODE_SKIP_PROMPT_HISTORY = env.CLAUDE_CODE_SKIP_PROMPT_HISTORY;
+  }
 });
 
 test('a handler that throws is a 500 with the message, not a dead process', async () => {

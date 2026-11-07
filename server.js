@@ -16,6 +16,7 @@ import { notAWorkTree, snapshot, currentBranch, headCommit, commitsKnown, commit
 import { bucket, fileUrl, fileViews } from './files.js';
 import { readPort, writePort, readPrs, writePrs, pick, useQueueFile, movedQueue, issueUrl, readPulls, writePulls } from './store.js';
 import { readQueue, writeQueue, quote } from './queue.js';
+import { readHistory } from './history.js';
 import { parseCli, usage, VERSION, portCandidates, statusLines, openRepoArgs, OPEN_REPO_VARS, REPO_ENV, queueSummary, quitRisks } from './cli.js';
 import { choosePr } from './choose.js';
 import * as term from './term.js';
@@ -49,6 +50,16 @@ const repoFacts = async () => (info ??= await repoInfo(repo));
 // opened a browser or fell off a --port pin it was never given.
 let pinnedPort = Number(process.env.PRCODER_PORT) || 0;
 let noOpen = !!process.env.PRCODER_NO_OPEN;
+// --no-history, or PRCODER_NO_HISTORY: the History tab off. The agent's name
+// is held with it (cli.js, AGENTS): the history prcoder reads is Claude
+// Code's own file (history.js), so another agent has none to show.
+let noHistory = !!process.env.PRCODER_NO_HISTORY;
+let agent = 'claude';
+// Whether the History tab is on. CLAUDE_CODE_SKIP_PROMPT_HISTORY is Claude
+// Code's own switch: set in the environment the `claude` child inherits, it
+// writes no history, so the tab would show the prompts from before it was set
+// and nothing after -- better hidden than half there.
+const historyOn = () => !noHistory && agent === 'claude' && !process.env.CLAUDE_CODE_SKIP_PROMPT_HISTORY;
 
 // ponytail: patches fetched lazily on the first diff click, keyed by head oid
 // so a push or PR switch invalidates for free. Eager prefetch in refreshPr if
@@ -301,9 +312,10 @@ const repaint = () => term.status(last
  * requests tab's listing is seconds long on a repository with many open;
  * what it writes, `.prcoder/pulls.json`, is its own file, replaced whole by
  * a rename (writePulls), and its fresh reads queue among themselves
- * (freshPulls) rather than behind everything else.
+ * (freshPulls) rather than behind everything else. The History tab's read
+ * touches neither git nor `.prcoder/`: Claude Code's own files, read only.
  */
-const UNLOCKED = new Set(['GET /api/whoami', 'GET /api/status', 'POST /api/queue/ref', 'GET /api/issues', 'POST /api/pulls']);
+const UNLOCKED = new Set(['GET /api/whoami', 'GET /api/status', 'POST /api/queue/ref', 'GET /api/issues', 'POST /api/pulls', 'POST /api/history']);
 
 /**
  * Status polls that arrive while one is still waiting for the lock share it:
@@ -397,8 +409,23 @@ const routes = {
   // `started` is what the exit bar fills its fields with: the model and effort
   // given after -- on prcoder's command line, so starting the agent again offers
   // what it was started with rather than a blank nobody remembers the meaning of.
+  // `history` is whether the History tab is there to draw (historyOn).
   'GET /api/whoami': () => ({ prcoder: true, version: VERSION, repo, branch: last?.branch ?? null,
-    nameWithOwner: info?.nameWithOwner ?? null, started: startedWith(agentArgs) }),
+    nameWithOwner: info?.nameWithOwner ?? null, started: startedWith(agentArgs), history: historyOn() }),
+
+  /**
+   * The History tab: what was sent to the coding agent from this working copy,
+   * read from Claude Code's own history file (readHistory) -- never written,
+   * and nothing of the pastes. `limit` is how many of the newest, for the one
+   * line the Claude pane shows on connecting; the tab takes the default.
+   * `{ enabled: false }` with the tab off, so the page can tell "nothing yet"
+   * from "not read".
+   */
+  'POST /api/history': async ({ limit } = {}) => {
+    if (!historyOn()) return { enabled: false };
+    const n = Number.isInteger(limit) && limit > 0 ? Math.min(limit, 1000) : 1000;
+    return { enabled: true, ...await readHistory(repo, { limit: n }) };
+  },
 
   'GET /api/prs': () => listPrs(repo),
 
@@ -1184,10 +1211,11 @@ if (import.meta.main) {
     console.error(`prcoder: ${repo} is not inside a git checkout\n  ${why}\nrun prcoder from inside a repository's working tree`);
     process.exit(2);
   }
-  ({ agentArgs } = cli);
+  ({ agentArgs, agent } = cli);
   // Into the variables, never the env: see pinnedPort.
   if (cli.port) pinnedPort = cli.port;
   if (cli.noOpen) noOpen = true;
+  if (cli.noHistory) noHistory = true;
   // Into the store, not the env, for the same reason: see useQueueFile.
   useQueueFile(cli.queue ?? process.env.PRCODER_QUEUE);
   if (cli.verbose) term.setVerbosity(cli.verbose);
