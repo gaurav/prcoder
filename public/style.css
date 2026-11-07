@@ -923,7 +923,7 @@ li.issue-body select.milestone {
    queue's rows wear it; the size chip is a size label in a plain outline; the
    merge word takes the file list's colours. */
 .pull-controls { display: flex; gap: 6px; align-items: center; margin: 0 0 6px; }
-.pull-controls #queue-pull-search { flex: 1; margin: 0; }
+.pull-controls #queue-pull-search, .pull-controls #queue-history-search { flex: 1; margin: 0; }
 .pull-controls select {
   font: inherit; font-size: 12px; padding: 2px 4px; color: var(--fg); background: var(--bg);
   border: 1px solid var(--line); border-radius: 4px;
