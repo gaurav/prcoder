@@ -2,6 +2,7 @@ import { h, btn, ext, api, toast, pref, setPref, tabBtn, writeThrough, fold, kep
 import { TABS, refLabel, refClass, forClaude, rankMilestones, issueMatches, pullMatches, sortPulls, sizeChip, age, dueLabel, isNew, PULL_SORTS } from './items.js';
 import { refs, resolveRef, blocks } from './tasks.js';
 import { blockNode, inline, stackUnder, stackOrder } from './pr.js';
+import { LABEL as HISTORY_LABEL, historyList, historyCount, loadHistory } from './history.js';
 
 // The client owns the list; every change persists the whole array. Single user,
 // single repo — no ids, no diffing.
@@ -104,6 +105,10 @@ let pullSort = 'smallest';
 let pullGroup = 'milestone';
 // A listing younger than this is not read again on a visit to the tab; ⟳ always reads.
 const PULLS_FRESH_FOR = 60_000;
+// Whether the History tab is drawn: /api/whoami's `history`, which app.js
+// hands over when it lands (setHistoryOn). Off until then, and off for good
+// under --no-history, so the tab is never drawn and then taken away.
+let historyOn = false;
 
 // Which end the input adds to. The queue is two things at once -- a backlog in
 // the order you mean to work through it, and somewhere to put the thing you
@@ -118,6 +123,13 @@ const PULLS_FRESH_FOR = 60_000;
 const ADD_TO_KEY = 'prcoder:add-to';
 let addTo = 'bottom';
 const readAddTo = () => (pref(ADD_TO_KEY) === 'top' ? 'top' : 'bottom');
+
+/** The History tab switched on, once whoami has said it is there to read. */
+export function setHistoryOn(on) {
+  if (historyOn === !!on) return;
+  historyOn = !!on;
+  render();
+}
 
 export async function initQueue(d) {
   deps = d;
@@ -166,7 +178,7 @@ const save = async (url = '/api/queue', method = 'PUT', body = { items }) => {
   return true;
 };
 
-const LABELS = { local: 'Local', pr: 'PR', issues: 'Issues', pulls: 'Pull requests', done: 'Completed', deleted: 'Deleted' };
+const LABELS = { local: 'Local', pr: 'PR', issues: 'Issues', pulls: 'Pull requests', history: HISTORY_LABEL, done: 'Completed', deleted: 'Deleted' };
 
 // Local is always there because an *empty* Local is the thing worth seeing --
 // it is how a tidy session ends. Completed is always there because it is where
@@ -234,13 +246,14 @@ function render() {
   const host = document.getElementById('queue-body');
   // Issues and Pull requests are always there -- a repository has both
   // whatever is checked out -- and PR only with a pull request on screen.
-  const { strip, tab: active } = stripFor(items, tab, pr ? ['pr', 'issues', 'pulls'] : ['issues', 'pulls']);
+  const { strip, tab: active } = stripFor(items, tab, [...(pr ? ['pr', 'issues', 'pulls'] : ['issues', 'pulls']), ...(historyOn ? ['history'] : [])]);
   tab = active;
   // A source's count is what it still holds open; the list's own are its tabs.
   const count = (name) => (name === 'pr' ? prTasks().filter((t) => !t.done).length
     : name === 'issues' ? issueCount()
       : name === 'pulls' ? pullCount()
-        : items.filter(TABS[name]).length);
+        : name === 'history' ? historyCount()
+          : items.filter(TABS[name]).length);
   const label = (n) => `${LABELS[n]} (${count(n)})`;
   const shown = TABS[tab] ? items.filter(TABS[tab]) : [];
   // Most recent first on Completed and Deleted, so the item you just ticked or
@@ -259,7 +272,8 @@ function render() {
     tab === 'pr' ? prList()
       : tab === 'issues' ? issueList()
         : tab === 'pulls' ? pullList()
-          : h('ul', { className: 'items' }, ...shown.map((i, n) => row(i, shown[n - 1], shown[n + 1]))),
+          : tab === 'history' ? historyList()
+            : h('ul', { className: 'items' }, ...shown.map((i, n) => row(i, shown[n - 1], shown[n + 1]))),
   );
   staleBreakdown();
 }
@@ -332,6 +346,7 @@ const queueTab = (name, label) => tabBtn(label, tab === name, () => {
   render();
   if (name === 'issues') loadIssues();
   if (name === 'pulls') loadPulls();
+  if (name === 'history') loadHistory();
 }, '', { dataset: { tab: name } });
 
 /**
