@@ -205,7 +205,9 @@ off with it.
   `app.js` turns control characters into spaces (`printable` in `tasks.js`) whatever the text's
   source, and the link ▶ adds is built from the repo name and number the row's tag shows. New text
   from GitHub or a file goes to the agent through `sendToClaude`, not straight to `typeIntoAgent`.
-  `linksFrom` in `github.js` cleans titles too, so they are stored and shown without them.
+  `linksFrom` in `github.js` cleans titles too, so they are stored and shown without them. The
+  other direction, the queue's ⤓ taking text *out* of the terminal, is a click or key too, on a
+  selection the user drew, and it sends the agent nothing.
 - **A route that reads outside the repository** reads only, keeps only what is this working copy's
   before answering, holds what it reads to a shape, and has a switch that turns it off; and the
   drivers point it at a fixture (`claudeConfig` in `tools/driver.mjs`), so no screenshot carries
