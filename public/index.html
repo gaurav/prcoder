@@ -161,6 +161,12 @@
              placeholder names it: from Issues or Completed it is not obvious. -->
         <textarea id="queue-input" rows="1" placeholder="Add to Local…" autocomplete="off"></textarea>
         <button id="queue-where" class="where" title="new items go to the bottom — click for the top">↓</button>
+        <!-- Text selected in the coding agent pane, onto Local: the way to park
+             a half-written prompt. Enabled only while the terminal has a
+             selection (app.js); it reads nothing the user did not select. -->
+        <button id="queue-selection" class="where" disabled
+                title="add the text selected in the coding agent pane to Local (Alt+Q)"
+                aria-label="add the text selected in the coding agent pane to Local (Alt+Q)">⤓</button>
       </header>
       <div id="queue-body" class="scroll"></div>
     </section>
