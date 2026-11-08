@@ -284,3 +284,18 @@ export const historyMatches = (p, query) => {
   const q = (query ?? '').trim().toLowerCase();
   return !q || String(p.text ?? '').toLowerCase().includes(q);
 };
+
+/**
+ * The queue text for a selection made in the coding agent's terminal, from
+ * xterm's `getSelection()`: the one thing prcoder reads back out of that pane,
+ * and only because the user drew it (Design.md, "nothing parses the terminal").
+ * xterm has already cut each row's trailing blanks and joined the rows with
+ * newlines, gluing back the ones it wrapped itself. Claude Code's TUI breaks
+ * its long lines on its own, so a wrapped prompt arrives as several lines;
+ * they stay, since an item may be several lines, and ▶ types a newline as a
+ * space (`printable`), which is what an Ink-wrapped line wants. The one shape
+ * assumed of the TUI is its prompt marker, `> ` at the start of the input box,
+ * which a triple-click (xterm's whole-row select) takes along: it is dropped
+ * from the first line only. Empty once trimmed is ''.
+ */
+export const fromTerminal = (text) => String(text ?? '').replace(/^> /, '').trim();
