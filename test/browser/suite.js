@@ -3011,6 +3011,57 @@ test('Alt+R says in one toast which half failed', { skip }, async () => {
   await fresh.close();
 });
 
+// ⤓ on the queue header and Alt+Q: the text selected in the terminal becomes
+// a Local item, through addItem like a typed one, with the prompt's own `> `
+// dropped. The button is dimmed until there is a selection and again once it
+// is taken, the focus comes back to the terminal, and nothing goes to the
+// agent -- except that with nothing selected the key is the agent's, as ESC q.
+// The text comes in as PTY output, since a real session echoes what is typed.
+test('⤓ and Alt+Q add the terminal\'s selection to the queue, and the agent gets the key with none', { skip }, async () => {
+  const frames = [];
+  let sock;
+  const fresh = await newPage({ init: onLinux, pty: (ws) => { sock = ws; ws.onMessage((m) => frames.push(JSON.parse(m))); } });
+  const typed = () => frames.filter((f) => f.type === 'input');
+  let queue = [];
+  // Both routes, as the other queue tests: the status poll replaces the list.
+  await fresh.route('**/api/status', (r) => r.fulfill({ json: { ...status, queue } }));
+  await fresh.route('**/api/queue', (r) => {
+    if (r.request().method() === 'PUT') queue = r.request().postDataJSON().items;
+    return r.fulfill({ json: queue });
+  });
+  assert.equal(await fresh.locator('#queue-selection').isDisabled(), true, 'nothing selected yet');
+  assert.match(await fresh.getAttribute('#queue-selection', 'title'), /\(Alt\+Q\)$/, 'the button says its key');
+  sock.send('> fix the clamp');
+  await fresh.waitForFunction(() => document.getElementById('term-host').textContent.includes('fix the clamp'));
+  const select = async () => {
+    const box = await fresh.locator('#term-host .xterm-rows > div').first().boundingBox();
+    await fresh.mouse.move(box.x + 1, box.y + box.height / 2);
+    await fresh.mouse.down();
+    await fresh.mouse.move(box.x + box.width - 1, box.y + box.height / 2, { steps: 5 });
+    await fresh.mouse.up();
+    await fresh.waitForFunction(() => !document.getElementById('queue-selection').disabled);
+  };
+  await select();
+  await fresh.click('#queue-selection');
+  await fresh.waitForFunction(() => document.querySelectorAll('#queue-body .item').length === 1);
+  assert.deepEqual(queue.map((i) => i.text), ['fix the clamp'], 'the prompt marker dropped, the text kept');
+  assert.equal(await fresh.locator('#queue-selection').isDisabled(), true, 'taken: the selection is cleared');
+  assert.ok(await fresh.evaluate(() => !!document.activeElement?.closest('#term-host')), 'focus back in the terminal');
+  // The same by the key, pressed in the terminal.
+  await select();
+  await fresh.keyboard.press('Alt+KeyQ');
+  await fresh.waitForFunction(() => document.querySelectorAll('#queue-body .item').length === 2);
+  assert.deepEqual(queue.map((i) => i.text), ['fix the clamp', 'fix the clamp']);
+  await settle(fresh);
+  assert.equal(typed().length, 0, 'the agent saw neither the click nor the key');
+  // Nothing selected: the agent's key, as if it were not bound.
+  await fresh.keyboard.press('Alt+KeyQ');
+  for (let i = 0; !typed().length && i < 100; i++) await fresh.waitForTimeout(50);
+  assert.deepEqual(typed(), [{ type: 'input', data: '\x1bq' }]);
+  assert.equal(queue.length, 2, 'and nothing added');
+  await fresh.close();
+});
+
 // Alt+V is the diff pane's box pressed, so everything the box moves follows:
 // the row, the tab's count, and the box itself -- both ways. From the
 // terminal too, where the agent does not get it while a file is open and does

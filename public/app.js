@@ -7,7 +7,7 @@ import { h, api, toast, pref, setPref, debug } from './ui.js';
 import { openDiff, closeDiff, selectedPath, setViewed, showViewed, canTickViewed, toggleViewed, toggleWrap, canWrap, openMention } from './diff.js';
 import { initQueue, addItem, setItems, paintPulls, setHistoryOn } from './queue.js';
 import { historyStale } from './history.js';
-import { age, dayLabel, timeLabel } from './items.js';
+import { age, dayLabel, timeLabel, fromTerminal } from './items.js';
 import { bindKeys, keyLabel, isTyping } from './keys.js';
 import { printable } from './tasks.js';
 import { fold, folded, canFold } from './folds.js';
@@ -58,7 +58,11 @@ term.open(document.getElementById('term-host'));
 // Ω and Polish ż. G over R for "go to the agent", which unfolding does. R
 // types the pull request's URL and copies it: the owner asked for P, Claude
 // Code's model switch, then U, a dead key, and took R, whose ® nobody types
-// into a prompt either.
+// into a prompt either. Q adds the terminal's selection to the queue: Q for
+// queue, free in every browser and in Claude Code, no dead key. Option+Q types
+// œ on a Mac, which French does type, but the key is the page's only while the
+// terminal has a selection, and typing into xterm clears one, so a prompt
+// being typed never loses it.
 //
 // Each binding's `label` is its row on the shortcut sheet (Alt+/ below), which
 // is built from this table and so can only list keys the page has. The
@@ -71,6 +75,7 @@ const KEYS = {
   'Alt+KeyM': { fn: mentionOpenFile, terminal: () => openMention('') != null, label: 'mention the open file to the coding agent' },
   'Alt+KeyW': { fn: toggleWrap, terminal: canWrap, label: 'wrap long lines in the diff' },
   'Alt+KeyR': { fn: mentionPr, terminal: () => last?.pr?.url != null, label: 'type the pull request\'s URL into the coding agent and copy it' },
+  'Alt+KeyQ': { fn: stashSelection, terminal: () => term.hasSelection(), label: 'add the text selected in the coding agent pane to the queue' },
   'Alt+KeyG': { fn: toggleTerm, terminal: () => canFold('term'), label: 'fold or unfold the coding agent pane' },
   'Alt+Slash': { fn: toggleKeys, terminal: () => true, modal: true, label: 'show these shortcuts' },
 };
@@ -522,6 +527,40 @@ async function mentionPr() {
     : !typed ? 'The coding agent is not connected — nothing was typed, but the URL is on the clipboard.'
     : 'The browser refused the clipboard — the URL was not copied.', true);
 }
+
+// The queue header's ⤓ and Alt+Q: the text selected in the terminal, onto
+// Local, which is how a half-written prompt is parked while something else is
+// done in the session (another prompt, a /model). Claude Code writes its
+// history only on submit, so a draft is nowhere else prcoder could read it;
+// this reads the selection the user drew, through xterm's own API, and nothing
+// more of the screen (Design.md, "nothing parses the terminal"). addItem does
+// the rest as for a typed item: the ↓/↑ end, the reference tag, the refusal
+// toast, the flash of Local from another tab. Nothing is sent to the agent, so
+// the prompt is still in its box afterwards, to be cleared there by hand:
+// which key does that is Claude Code's to decide. Clearing the selection is
+// the sign it was taken, and it disables the button again; the focus goes
+// back to the terminal, where the next thing to do is that clearing.
+async function stashSelection() {
+  const text = fromTerminal(term.getSelection());
+  if (!text) return;
+  if (await addItem(text)) {
+    term.clearSelection();
+    term.focus();
+  }
+}
+const stashButton = document.getElementById('queue-selection');
+stashButton.onclick = stashSelection;
+const syncStash = () => { stashButton.disabled = !term.hasSelection(); };
+term.onSelectionChange(syncStash);
+// onSelectionChange alone is not enough. xterm's clearSelection() fires it
+// without recording that the selection is gone (its SelectionService keeps the
+// last range only in _fireOnSelectionChange, which clearSelection skips), so
+// the next selection of the *same* range -- ⤓, then another drag over the same
+// prompt -- compares equal to the last one and fires nothing, and the button
+// stayed dimmed over a live selection. Seen in @xterm/xterm 6.0.0. The mouse is
+// the only way to select in xterm, so its release is the other moment to look,
+// after xterm's own mouseup handler, which runs on the window.
+document.getElementById('term-host').addEventListener('mouseup', () => setTimeout(syncStash));
 
 // The diff header's ⧉: the open file's path from the repository root, the way
 // the bar and GitHub name it, onto the clipboard, with a ✓ for a moment to say

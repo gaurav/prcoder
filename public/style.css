@@ -1111,6 +1111,9 @@ li.issue-body select.milestone {
 }
 .pane > header button.where:hover { color: var(--accent); border-color: var(--accent); }
 .pane > header button.where.top { color: var(--accent); border-color: var(--accent); }
+/* The selection button sits dimmed until the terminal has a selection, so
+   "nothing to add" reads at a glance; disabled, it takes no hover colour. */
+.pane > header button.where:disabled { color: var(--dim); border-color: var(--line); cursor: default; }
 
 /* The dot carries the state; the text next to it says what to do about it.
    The PR pane's is about the branch and the remote. */
