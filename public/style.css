@@ -834,9 +834,9 @@ main.diff-off #diff-wrap { display: none; }
    and a group of five PR mentions would be five of them beside each row's
    buttons. */
 .item .tag.pull { border-color: var(--pull-line); background: var(--pull-bg); }
-/* A mention on the Issues tab that is no longer open: a closed issue, or a
-   merged or closed PR. */
-.item.source.closed .text { color: var(--dim); }
+/* A mention that is no longer open -- a closed issue, or a merged or closed
+   PR -- and, on the PR #N tab, an issue this pull request closes. */
+.item.source:is(.closed, .closes) .text { color: var(--dim); }
 /* The Issues tab: the search, the milestone groups (the file list's folds,
    in the directory fold's face), a label as a dashed chip with no colour of
    its own (#66), and an opened row's body in the description's face. */

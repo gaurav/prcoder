@@ -324,6 +324,53 @@ test('the queue\'s PR #N tab names each box by its line, and its ▶ types the l
   await fresh.close();
 });
 
+// The PR #N tab is everything the description points at, in three folds: the
+// checklist, the mentions as the Issues tab draws them, and the issues it
+// closes, dimmed and with nothing to drag. Its count is the unticked boxes
+// plus the mentions not known to be closed -- every mention until the
+// listing lands, then the open ones.
+test('the PR #N tab holds the checklist, the mentions and what it closes, and counts what is open', { skip }, async () => {
+  const fresh = await newPage();
+  const issues = [
+    { number: 7, url: `${REPO}/issues/7`, closes: false, title: 'Per-route locking' },
+    { number: 9, url: `${REPO}/issues/9`, closes: false, title: 'An old one' },
+    { number: 8, url: `${REPO}/issues/8`, closes: true, title: 'Lock per route' },
+  ];
+  let answer;
+  const asked = new Promise((res) => { answer = res; });
+  await fresh.route('**/api/status', (r) => r.fulfill({ json: { ...status, pr: { ...pr, issues } } }));
+  await fresh.route('**/api/issues', async (r) => {
+    await asked;
+    return r.fulfill({ json: { ...EMPTY_ISSUES, mentions: [
+      { number: 7, title: 'Per-route locking', state: 'OPEN', kind: 'issue', url: `${REPO}/issues/7`, updatedAt: '2026-10-02T00:00:00Z' },
+      { number: 9, title: 'An old one', state: 'CLOSED', kind: 'issue', url: `${REPO}/issues/9`, updatedAt: '2026-10-01T00:00:00Z' },
+    ] } });
+  });
+  await fresh.reload();
+  await fresh.waitForSelector('#queue-body .tab[data-tab="pr"]');
+  const label = () => fresh.locator('#queue-body .tab[data-tab="pr"]').textContent();
+  assert.equal(await label(), 'PR #12 (4)', 'two boxes to tick and two mentions, before the listing says which are open');
+  await fresh.locator('#queue-body .tab[data-tab="pr"]').click();
+  const parts = () => fresh.$$eval('#queue-body .pr-parts .fold.part', (gs) => gs.map((g) =>
+    `${g.dataset.group}|${g.querySelector('h3').textContent.replace(/\s+/g, ' ').trim()}|${g.open ? 'open' : 'closed'}|${g.querySelectorAll('.item').length}`));
+  assert.deepEqual((await parts()).map((p) => p.split('|')[0]), ['tasks', 'mentioned', 'closes']);
+  assert.equal(await fresh.locator('[data-group="mentioned"] .item .text').first().textContent(), '…', 'a mention not looked up yet');
+  answer();
+  await fresh.waitForSelector('[data-group="mentioned"] .item.closed');
+  assert.equal(await label(), 'PR #12 (3)', 'the closed mention drops out');
+  assert.deepEqual(await parts(), ['tasks|Checklist 2|open|3', 'mentioned|Mentions 2|open|2', 'closes|Closes 1|open|1']);
+  const closes = fresh.locator('[data-group="closes"] .item');
+  assert.deepEqual(await closes.evaluateAll((ls) => ls.map((l) => [l.classList.contains('closes'), l.querySelector('.text').textContent, l.querySelector('.grip')?.getAttribute('draggable') ?? null, l.querySelector('.tag').textContent])),
+    [[true, 'Lock per route', null, '#8']]);
+  assert.equal(await fresh.locator('[data-group="mentioned"] .item.closed .text').textContent(), 'An old one · closed');
+  // A fold closed stays closed across the poll's repaint.
+  await fresh.locator('[data-group="closes"] summary').click();
+  await fresh.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+  await fresh.waitForTimeout(200);
+  assert.equal((await parts())[2].split('|')[2], 'closed');
+  await fresh.close();
+});
+
 // The poll repaints the whole description whenever anything on the pull request
 // moved, and the text of a line is there to be copied.
 test('a selection in the description survives a repaint, unless its text moved', { skip }, async () => {

@@ -227,13 +227,15 @@ await page.locator('#queue-body .tab', { hasText: 'Local' }).click();
 await page.waitForTimeout(150);
 console.log('unticked:', await local(), ' (want Local (3) again)');
 
-// The source tabs, which read GitHub rather than the queue. The PR #N tab is this
-// PR's own checklist: one box ticked from here and unticked again is two real
-// edits to the description, checked to leave the body as it was -- read back
-// through /api/status, whose copy is the one editBody replaced after each
-// write. Issues is the issues the description mentions without closing them;
-// ↓ copies one into Local without touching the issue -- into the driver's own
-// queue, where the next run's seed replaces it.
+// The source tabs, which read GitHub rather than the queue. The PR #N tab is
+// what this PR's description points at, in three folds: its checklist, where
+// one box ticked from here and unticked again is two real edits to the
+// description, checked to leave the body as it was -- read back through
+// /api/status, whose copy is the one editBody replaced after each write; the
+// issues it mentions without closing; and the issues it closes. Issues is the
+// repository's open issues by milestone; ↓ copies one into Local without
+// touching the issue -- into the driver's own queue, where the next run's
+// seed replaces it.
 const prBody = () => page.evaluate(() => fetch('/api/status').then((r) => r.json()).then((st) => st.pr?.body));
 const bodyBefore = await prBody();
 // `/^PR #/`, not `/^PR/`: that matches the PRs tab too, and two matches is a
@@ -242,7 +244,10 @@ await page.locator('#queue-body .tab', { hasText: /^PR #/ }).click();
 await page.waitForTimeout(150);
 await page.locator('#queue').screenshot({ path: path.join(out, 'queue-pr.png') });
 const prRows = page.locator('#queue-body .item.source');
-console.log('pr tab: ', await page.locator('#queue-body .tab', { hasText: /^PR #/ }).innerText(), `${await prRows.count()} rows`);
+console.log('pr tab: ', await page.locator('#queue-body .tab', { hasText: /^PR #/ }).innerText(), `${await prRows.count()} rows`, '|',
+  (await page.$$eval('#queue-body .fold.part', (gs) => gs.map((g) =>
+    `${g.querySelector('h3').textContent.replace(/\s+/g, ' ').trim()}${g.open ? ' (open)' : ''}: ${g.querySelectorAll('.item').length} rows`))).join(' | '),
+  '\n  (want Checklist, Mentions and Closes, each only when the description has any, and the count = unticked boxes + open mentions)');
 const firstBox = () => page.locator('#queue-body .item.source input[type=checkbox]').first();
 // A description can have no checkboxes at all -- this repo's PR #27 has none --
 // and then there is nothing to tick, which is a skip rather than a hang.

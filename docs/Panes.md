@@ -423,9 +423,22 @@ a slip. **Deleted** holds tombstones, the latest on top, until you empty it, and
 nothing. Every item is on exactly one of those.
 
 Two more tabs read GitHub rather than your queue, and ↓ on either copies an item into Local and
-leaves it where it was. **PR #N** is there with a pull request on screen: the description's own
-checklist, ticked through to GitHub like the boxes in the PR pane; ▶ on a line types it into the
-coding agent and ticks nothing, since the box is GitHub's.
+leaves it where it was. **PR #N**, named by the pull request on screen and there only with one,
+is everything its description points at, in three folds. *Checklist* is the description's own
+boxes, ticked through to GitHub like the boxes in the PR pane, with a pie of how many are done;
+▶ on a line types it into the coding agent and ticks nothing, since the box is GitHub's. *Mentions*
+is the issues and pull requests the description mentions without closing, the most recently
+updated on GitHub first, each drawn as the Issues tab draws a row -- a pull request's tag says `PR`,
+one in another repository is tagged with that repository's name, and one no longer open is dimmed
+and followed by its state, `· closed` or `· merged`; one that is one of this repository's open
+issues is the listing's own row, body, labels and all. *Closes* is the issues the pull request
+closes, dimmed, since they are what it answers. A fold with nothing in it is left out, and one you
+close stays closed until the page is reloaded. The tab's count is what the pull request still
+points at that is open: its unticked boxes and the mentions not known to be closed -- every mention
+until GitHub has been asked, so the count never reads `…`. The mentions' titles and states come
+with the Issues listing, which the tab asks for only when it has none, or has one asked about
+another pull request; until they land a mention reads `…`. A poll that brings another pull request,
+or a description that mentions something new, while the tab is open has the listing read again.
 
 **Issues** is always there, since a repository has issues whatever is checked out: its open
 issues, read when the tab is opened and again on every visit, in groups you fold. With a pull
