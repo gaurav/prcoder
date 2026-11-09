@@ -480,8 +480,10 @@ The box above the groups searches the number, title, labels and body of every is
 group with a match opens and one without is left out, and the tab's count becomes how many matched.
 Cleared, the groups go back to how you left them. The count is otherwise the repository's open
 issues, and `…` until the first listing lands; if that one cannot be read, the count is `?` and
-the tab says why, with a way to try again. The listing stops at 500, the most recently
-updated, and says so under the groups when a repository has more.
+the tab says why, with a way to try again. ⟳ beside the search reads the listing again, and the
+line under the groups says when it was read and `updating…` while a read is out, as the PRs and
+History tabs say it. The listing stops at 500, the most recently
+updated, and says so on the same line when a repository has more.
 
 Each row is the issue's number, as a link, its title, and its labels as plain chips -- names only,
 with none of GitHub's colours, which would fight the pane. ▸ at the row's start opens the issue's

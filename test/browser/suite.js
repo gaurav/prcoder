@@ -2040,6 +2040,26 @@ test('the listing landing keeps the search box\'s focus and what is typed in it'
   await fresh.close();
 });
 
+// The Issues tab has the row the PRs and History tabs have: the search, ⟳,
+// and under the groups when the listing was read, `updating…` while a read is out.
+test('the Issues tab says when it was read, and ⟳ reads again', { skip }, async () => {
+  const { fresh } = await issuesPage();
+  const note = fresh.locator('#queue-body .issue-groups .pull-note');
+  assert.equal(await note.textContent(), 'Read just now');
+  let release;
+  const held = new Promise((r) => { release = r; });
+  const asked = [];
+  await fresh.route('**/api/issues', async (r) => { asked.push(1); await held; return r.fulfill({ json: ISSUES }); });
+  await fresh.locator('#queue-body .pull-controls .issue-reload').click();
+  await fresh.waitForFunction(() => document.querySelector('#queue-body .issue-groups .pull-note')?.textContent.includes('updating'));
+  assert.equal(await fresh.locator('#queue-search').count(), 1, 'the search box is still there');
+  release();
+  await fresh.waitForFunction(() => !document.querySelector('#queue-body .issue-groups .pull-note')?.textContent.includes('updating'));
+  assert.deepEqual(asked, [1]);
+  assert.equal(await note.textContent(), 'Read just now');
+  await fresh.close();
+});
+
 // The issues are read once, three seconds after the first status, so the
 // count is on the tab before a visit; a visit then reads again, as every
 // visit does. A read that fails behind another tab leaves `?` and no toast,

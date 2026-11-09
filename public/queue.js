@@ -456,10 +456,26 @@ function loadIssues(again = false) {
   }
   issuesLoading = fetchIssues().finally(() => {
     issuesLoading = null;
+    // Painted here, once the read is no longer out, so the line under the
+    // groups does not say `updating…` of a listing that has just landed.
+    paintAfterRead();
     if (!issuesStale) return;
     issuesStale = false;
     if (tab === 'issues') loadIssues();
   });
+  // And now, so the line says `updating…` while it is.
+  if (listing && (tab === 'issues' || tab === 'pr')) paintGroups();
+}
+
+/**
+ * After a read lands or fails: the counts whatever tab shows, and the groups
+ * on a tab that draws them -- in place when they are up, since the search
+ * box is there before the listing and a render() would take it out from
+ * under a query being typed; drawn whole otherwise.
+ */
+function paintAfterRead() {
+  if (tab !== 'issues' && tab !== 'pr') return paintCounts();
+  if (document.querySelector('#queue-body :is(.issue-groups, .pr-parts)')) paintIssues(); else render();
 }
 let issuesLoading = null;
 let issuesStale = false;
@@ -504,9 +520,6 @@ async function fetchIssues() {
     if (tab === 'issues' || tab === 'pr') toast(e.message, true);
     if (!listing) issuesFailed = e.message;
   }
-  // The counts whatever tab shows; the groups only on a tab that draws them.
-  if (tab !== 'issues' && tab !== 'pr') return paintCounts();
-  if (document.querySelector('#queue-body :is(.issue-groups, .pr-parts)')) paintIssues(); else render();
 }
 
 /**
@@ -635,7 +648,10 @@ function issueList() {
     query = search.value;
     paintIssues();
   };
-  return h('div', { className: 'issues-pane' }, h('div', { className: 'pull-controls' }, search), groupsList('issue-groups', issueGroups()));
+  // ⟳ as the PRs and History tabs have it, `again` so that one pressed while
+  // a read is out still causes a read after it.
+  const reload = btn('⟳', () => loadIssues(true), { className: 'issue-reload', title: 'read the issues again from GitHub', ariaLabel: 'read the issues again from GitHub' });
+  return h('div', { className: 'issues-pane' }, h('div', { className: 'pull-controls' }, search, reload), groupsList('issue-groups', issueGroups()));
 }
 
 /**
@@ -894,9 +910,11 @@ function issueGroups() {
     out.push(group(`m:${m.number}`, title, list, list.map((i) => issueRow(i)).flat(), extra, m.closed ? undefined : m.title));
   }
   if (!out.length) out.push(h('p', { className: 'empty' }, 'No open issues match.'));
-  if (listing.listed < listing.total) {
-    out.push(h('p', { className: 'pr-note' }, `The ${listing.listed} most recently updated of ${listing.total} open issues.`));
-  }
+  // When the listing was read, and that a read is out, as the PRs and
+  // History tabs say it under their groups.
+  out.push(h('p', { className: 'pull-note' },
+    `Read ${age(new Date(issuesRead).toISOString())}${issuesLoading ? ' · updating…' : ''}`
+    + (listing.listed < listing.total ? `. The ${listing.listed} most recently updated of ${listing.total} open issues.` : '')));
   return out;
 }
 
