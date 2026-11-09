@@ -12,6 +12,13 @@ import { byDay, dayKey, timeLabel, commandOf, historyMatches } from './items.js'
 
 export const LABEL = 'History';
 
+// The queue's two ways out of a row, handed over by initQueue (queue.js): `type`
+// puts text into the coding agent's prompt, unsent, and says whether it went;
+// `pull` copies text into Local. Through a hook rather than an import, since
+// queue.js imports this file and the reverse would be a cycle.
+let ways = {};
+export function initHistory(w) { ways = w; }
+
 // /api/history's answer -- prompts newest first, the sessions' titles, and
 // `read`, when, in ms -- or null before the first; `failed` is why the last
 // read did not land, shown in place of the groups.
@@ -86,9 +93,9 @@ export function paintHistory() {
 
 /**
  * The tab: a search over the prompts' text, ⟳, and the days, each a fold of
- * its sessions, each session its prompts. Nothing here types into the agent:
- * a row is copied, not sent (docs/Security.md, "Nothing sends to Claude
- * without a click" -- the queue's ▶ is that click).
+ * its sessions, each session its prompts. A row's ▶ types its prompt back into
+ * the agent, unsent, as every queue row's ▶ types (docs/Security.md, "Nothing
+ * sends to Claude without a click"): the prompt is one the user already sent.
  */
 export function historyList() {
   const search = h('input', {
@@ -153,7 +160,11 @@ function session(s) {
 /**
  * A prompt: when, then its text as typed, clamped to three lines until
  * clicked (a click that selected something is a selection, not a toggle),
- * and ⧉ to put it on the clipboard. A slash command is marked by its word.
+ * then the row's ways out in the order every queue row keeps them: ▶ types
+ * the prompt into the agent again, unsent, to edit and send -- the way back
+ * into the task a session died on; ↓ copies it into Local, untagged, for a
+ * prompt worth sending again later; ⧉ puts it on the clipboard. A slash
+ * command is marked by its word.
  */
 function row(p) {
   const key = `${p.session}:${p.at}`;
@@ -164,7 +175,10 @@ function row(p) {
   const li = h('li', { className: `item history${command ? ' command' : ''}${opened.has(key) ? ' open' : ''}` },
     h('span', { className: 'when', title: new Date(p.at).toLocaleString('en', { dateStyle: 'full', timeStyle: 'short' }) }, timeLabel(p.at)),
     text,
-    copyButton(p.text));
+    h('span', { className: 'actions' },
+      btn('▶', () => ways.type?.(p.text), { title: 'type this prompt into the coding agent again, to edit and send', ariaLabel: 'type this prompt into the coding agent again, to edit and send' }),
+      btn('↓', () => ways.pull?.(p.text), { title: 'copy into your queue', ariaLabel: 'copy this prompt into your queue' }),
+      copyButton(p.text)));
   text.onclick = () => {
     if (!getSelection()?.isCollapsed) return;
     if (opened.has(key)) opened.delete(key); else opened.add(key);

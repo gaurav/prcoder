@@ -1346,7 +1346,17 @@ test('the History tab lists what was sent by day and session, and the last promp
     sessions: { [S]: { title: 'A titled session' } },
     read: at, skipped: 0,
   };
-  const p = await newPage({ history: listing });
+  // What the agent is typed, and what Local is saved, for the rows' ▶ and ↓.
+  const typed = [];
+  let queue = [];
+  const p = await newPage({ history: listing, pty: (ws) => ws.onMessage((m) => {
+    const msg = JSON.parse(m);
+    if (msg.type === 'input') typed.push(msg.data);
+  }) });
+  await p.route('**/api/queue', (r) => {
+    if (r.request().method() === 'PUT') queue = r.request().postDataJSON().items;
+    return r.fulfill({ json: queue });
+  });
   await p.waitForSelector('#toast:not([hidden])');
   const notice = await p.$eval('#toast', (el) => ({
     text: el.textContent, sticky: el.classList.contains('sticky'), kind: el.dataset.kind,
@@ -1373,13 +1383,26 @@ test('the History tab lists what was sent by day and session, and the last promp
   const rows = await p.$$eval('#queue-body .item.history', (ls) => ls.map((l) => ({
     when: l.querySelector('.when').textContent, command: l.classList.contains('command'),
     cmd: l.querySelector('.cmd')?.textContent ?? null, text: l.querySelector('.text').textContent,
-    copy: l.querySelector('button.copy').getAttribute('aria-label'),
+    ways: [...l.querySelectorAll('.actions button')].map((b) => `${b.textContent} ${b.getAttribute('aria-label')}`),
   })));
+  const ways = ['▶ type this prompt into the coding agent again, to edit and send', '↓ copy this prompt into your queue', '⧉ copy this prompt'];
   assert.deepEqual(rows, [
-    { when: '00:05', command: true, cmd: '/code-review', text: '/code-review high', copy: 'copy this prompt' },
-    { when: '23:50', command: false, cmd: null, text: 'fix the thing\nsecond line of the same prompt', copy: 'copy this prompt' },
-    { when: '23:49', command: false, cmd: null, text: 'check the milestone line', copy: 'copy this prompt' },
+    { when: '00:05', command: true, cmd: '/code-review', text: '/code-review high', ways },
+    { when: '23:50', command: false, cmd: null, text: 'fix the thing\nsecond line of the same prompt', ways },
+    { when: '23:49', command: false, cmd: null, text: 'check the milestone line', ways },
   ]);
+  // ▶ types the prompt back in with nothing after it -- the turn is left to
+  // edit and send, as every ▶ leaves it -- and its newline as a space, since
+  // sendToClaude types no control character (docs/Security.md). The Enter
+  // above is the one line typed so far.
+  await p.locator('#queue-body .item.history .actions button').nth(3).click();
+  for (let i = 0; typed.length < 2 && i < 100; i++) await new Promise((r) => setTimeout(r, 50));
+  assert.deepEqual(typed, ['\r', 'fix the thing second line of the same prompt']);
+  // ↓ copies it into Local, untagged, and says so; the tab stays.
+  await p.locator('#queue-body .item.history .actions button').nth(7).click();
+  await p.waitForFunction(() => document.querySelector('#toast')?.textContent.startsWith('added to your queue'));
+  assert.deepEqual(queue.map((i) => [i.text, i.issue]), [['check the milestone line', null]]);
+  assert.ok(await p.locator('#queue-body .fold.day').count(), 'still on the History tab');
   await p.locator('#queue-history-search').fill('milestone');
   await p.waitForFunction(() => document.querySelectorAll('#queue-body .item.history').length === 1);
   assert.equal(await p.locator('#queue-body .tab', { hasText: /^History/ }).innerText(), 'History (1)', 'the count is the matches');

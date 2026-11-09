@@ -2,7 +2,7 @@ import { h, btn, ext, api, toast, pref, setPref, tabBtn, writeThrough, fold, kep
 import { TABS, refLabel, refClass, forClaude, rankMilestones, issueMatches, pullMatches, sortPulls, sizeChip, age, dueLabel, isNew, PULL_SORTS } from './items.js';
 import { refs, resolveRef, blocks } from './tasks.js';
 import { blockNode, inline, stackUnder, stackOrder } from './pr.js';
-import { LABEL as HISTORY_LABEL, historyList, historyCount, loadHistory } from './history.js';
+import { LABEL as HISTORY_LABEL, historyList, historyCount, loadHistory, initHistory } from './history.js';
 
 // The client owns the list; every change persists the whole array. Single user,
 // single repo — no ids, no diffing.
@@ -133,6 +133,7 @@ export function setHistoryOn(on) {
 
 export async function initQueue(d) {
   deps = d;
+  initHistory({ type: typeInto, pull: (text) => pull(text) });
   // Read here rather than at module scope: initQueue only ever runs in a
   // browser, so the module stays importable by a node test that has no
   // localStorage to touch.
@@ -411,6 +412,19 @@ async function fetchIssues() {
   }
   if (tab !== 'issues') return;
   if (document.getElementById('queue-search')) paintIssues(); else render();
+}
+
+/**
+ * Text into the coding agent's prompt, typed and not sent -- the turn is left
+ * for you to edit and submit, which is the whole of what prcoder puts into a
+ * session (docs/Design.md). Whether it went: `sendToClaude` answers false on a
+ * closed socket, and the one toast for that lives here rather than beside
+ * every ▶.
+ */
+function typeInto(text) {
+  const went = deps.sendToClaude(text, false);
+  if (!went) toast('The coding agent is not connected — nothing was typed.', true);
+  return went;
 }
 
 /**

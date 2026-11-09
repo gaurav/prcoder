@@ -564,8 +564,10 @@ that ran past midnight is under both days. Each row is the time, on a 24-hour cl
 in full on hover, then the prompt as typed, its lines kept, clamped to three until clicked (a
 click that selected text is a selection), with a paste shown as the `[Pasted text #1 +12 lines]`
 placeholder Claude Code records and nothing of its contents; a prompt that starts with a slash
-command has the command in the accent colour; and ⧉ at the end copies the prompt to the clipboard,
-turning to ✓ for a moment. Nothing on a row sends: ▶ is the queue's. The box above searches the
+command has the command in the accent colour; and at the end, on hover as on every row, ▶ types
+the prompt into the coding agent again, unsent, to edit and send -- the way back into the task a
+session died on -- ↓ copies it into Local, untagged, and ⧉ copies it to the clipboard, turning to
+✓ for a moment. The box above searches the
 prompts' text, leaving out a day without a match, and the tab's count is the prompts sent today,
 or the matches while searching. ⟳ reads the file again, and so does a prompt sent from this page
 while the tab is showing, a second later, so the list keeps up with the terminal beside it. A read

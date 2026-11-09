@@ -84,7 +84,9 @@ item's ▶ sends its text verbatim, and an item can arrive by ↓ from the PR ta
 checklist line of the description, or from the Issues tab, which copies an issue's title (`pull` in
 [`public/queue.js`](../public/queue.js)); the Issues tab's own ▶ types an issue's title and link
 straight in, unsent — so whoever can edit that description or that issue can
-write the words. Commit sends a message built from the names of the working tree's uncommitted files.
+write the words. The History tab's ▶ types a prompt back in, unsent, and its ↓ copies one into
+Local: text the user already sent once, read from Claude Code's own record (below). Commit sends a
+message built from the names of the working tree's uncommitted files.
 
 The Issues tab also draws an issue's body, which is anyone's text, into the page with `innerHTML`,
 and the Pull requests tab the first paragraph of a pull request's under its row:
