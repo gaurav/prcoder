@@ -252,7 +252,7 @@ const prCount = () => prTasks().filter((t) => !t.done).length
 /**
  * The issues the description mentions and does not close. The ones it closes
  * are what the PR already answers; a bare `#N` elsewhere is work it points at.
- * The Issues tab's first group, ahead of the repository's own.
+ * The PR #N tab's Mentions fold, looked up with the Issues listing.
  */
 const mentioned = (p = pr) => (p?.issues ?? []).filter((i) => !i.closes);
 
@@ -581,9 +581,10 @@ export function newestFirst(list, found) {
 
 /**
  * The Issues tab: a search over the repository's open issues, and the issues
- * in groups -- what the description mentions without closing first, then the
- * issues on no milestone, which are the ones to triage, then one group per
- * milestone in the owner's order (rankMilestones). Each row can open to show the issue's body and a way to it
+ * in groups -- the issues on no milestone first, which are the ones to
+ * triage, then one group per milestone in the owner's order (rankMilestones);
+ * what the pull request on screen mentions is the PR #N tab's (prParts), read
+ * with this listing. Each row can open to show the issue's body and a way to it
  * on GitHub, be typed to the coding agent with its link (▶), or be copied
  * into Local (↓). The groups are repainted on their own as the search and the
  * rows change, so the search box keeps its focus.
@@ -817,16 +818,16 @@ function issueGroups() {
   const ranked = rankMilestones(listing.milestones);
   // While searching every group drawn has a match and is open, without
   // touching what was chosen: fold() reports its initial state too. One
-  // without a match is left out, as the mentions are -- drawn, it said "no
-  // open issues" of a milestone that has them.
+  // without a match is left out -- drawn, it said "no open issues" of a
+  // milestone that has them.
   const state = (key) => (searching ? { open: true, onToggle: () => {} } : kept(closedGroups, key, 'closed'));
   const home = deps.home?.();
   // `list` is the group's issues and `rows` what they draw, which is more
   // than one element per issue once a row is open: the count is the issues'.
   // `target` is the milestone the group stands for -- a title, or null for
-  // none -- and makes its summary somewhere an issue row can be dropped; the
-  // mentions and a closed milestone have none. No milestone with anything on
-  // it is marked as the pile to triage (untriaged in style.css).
+  // none -- and makes its summary somewhere an issue row can be dropped; a
+  // closed milestone has none. No milestone with anything on it is marked as
+  // the pile to triage (untriaged in style.css).
   const group = (key, title, list, rows, extra = [], target) => {
     const d = fold({
       className: target === null && list.length ? 'milestone untriaged' : 'milestone', dataset: { group: key }, title: [title, ' ', countBadge(list.length, 'issues', searching), ...extra.flatMap((e) => [' ', e])],
@@ -837,14 +838,6 @@ function issueGroups() {
   };
 
   const out = [];
-  // The mentions, searched by what is known of them: one that is a listed
-  // issue as that issue is, labels and body too, so the two rows match alike;
-  // any other by its looked-up title.
-  const ment = mentioned().filter((i) => issueMatches(listedAs(i)
-    ?? { number: i.number, title: mentions?.get(i.number)?.title }, query));
-  if (pr && ment.length) {
-    out.push(group('mentioned', `Mentioned by PR #${pr.number}`, ment, newestFirst(ment, mentions).map((i) => mentionRow(i)).flat()));
-  }
   // No milestone before the milestones: an issue on none is untriaged, and
   // could belong at any level, Critical included.
   const none = byMilestone.get(NONE) ?? [];
@@ -1081,8 +1074,9 @@ const MOVES = {
     draw: () => drawGroups(),
     read: () => loadIssues(true),
     settled: async () => { while (issuesLoading) await issuesLoading; },
-    // The mentions are drawn wherever a row's milestone says, so a row moved
-    // from there is still in that group; from a milestone's, it has gone.
+    // The PR #N tab's mentions are drawn wherever a row's milestone says, so
+    // a row moved from there is still in that group; from a milestone's
+    // group on the Issues tab, it has gone.
     group: (milestone, from) => (from === 'mentioned' ? from : `m:${milestone ?? NONE}`),
     searching: () => query.trim(),
   },

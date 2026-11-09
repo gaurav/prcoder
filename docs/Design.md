@@ -51,15 +51,17 @@ same for a pull request, which is triage and not an edit: nothing in prcoder cha
 or a pull request says, and no milestone is ever made, renamed or closed from here. None
 of them writes a description.
 
-**Each permanent source is a tab, read straight from it.** PR is the description's checklist,
-Issues is the repository's open issues, and PRs its open pull requests; pulling from any
+**Each permanent source is a tab, read straight from it.** PR #N is what the description of
+the pull request on screen points at -- its checklist, what it mentions, what it closes -- Issues
+is the repository's open issues, and PRs its open pull requests; pulling from any
 of them copies the item
 into Local and leaves the source alone, since a checkbox is the PR's record and an issue is the
 project's. Issues began as only the issues the description mentions, and grew on 2026-10-15
 ([#58](https://github.com/gaurav/prcoder/issues/58)) into the whole repository's, grouped by
 milestone in the order the owner's milestones mean, searchable, with each issue's body readable
 in place -- so that the next thing to do is picked with the issue read, and handed to the agent
-with its link, rather than built from memory. What it still is not is a tracker: nothing here
+with its link, rather than built from memory. On 2026-11-08 the mentions moved to the PR #N tab,
+so that each tab is about one thing: the repository, or the pull request on screen. What it still is not is a tracker: nothing here
 changes what an issue says, and the groups are GitHub's milestones, not a list of prcoder's own.
 Nothing asks which milestone to look at, because the ranking already says which group to open first. Pull requests
 (2026-10-19) is the same shape for the other thing a repository holds, built for the repository

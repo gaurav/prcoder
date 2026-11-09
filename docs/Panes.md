@@ -441,14 +441,9 @@ another pull request; until they land a mention reads `…`. A poll that brings 
 or a description that mentions something new, while the tab is open has the listing read again.
 
 **Issues** is always there, since a repository has issues whatever is checked out: its open
-issues, read when the tab is opened and again on every visit, in groups you fold. With a pull
-request on screen the first group is what its description mentions without closing, the most
-recently updated on GitHub first; a pull request's tag says `PR`, one in another repository -- upstream's, in a
-fork-headed checkout -- is tagged with that repository's name as a queue item is, and a mention that is no longer open -- a closed
-issue, or a merged or closed pull request -- is dimmed and followed by its state, `· closed` or `· merged`.
-A poll that brings another pull request, or a description that mentions something new, while the
-tab is open has the listing read again, and a mention reads `…` until it is looked up. Then the
-issues on no milestone, ahead of every milestone: they are the untriaged, and one could belong at
+issues, read when the tab is opened and again on every visit, in groups you fold -- the
+repository's issues alone, since what the pull request on screen mentions is the PR #N tab's.
+First the issues on no milestone, ahead of every milestone: they are the untriaged, and one could belong at
 any level, `Critical` included, so they are the ones to sort first. While it holds any, its
 line is in the text's own colour rather than the dim of a milestone's, with a yellow *to triage*
 badge. Then one group per open milestone, in the order the owner's
@@ -475,8 +470,8 @@ count are left out at 0);
 and when it is due, in calendar days, as `due 5 days ago`, `due yesterday`, `due today`, `due tomorrow` or `due in 2
 months` (months from 30 days), with the date in full on hover, `Tuesday, October 27, 2026` -- a round red badge once
 the day is past, yellow within a week, so a milestone to reschedule stands out; an empty one is
-still drawn, folded. Only the mentions and the first
-group with an issue start open, which is the one to focus on -- **No milestone** whenever it has any -- and a milestone that appears
+still drawn, folded. Only the first
+group with an issue starts open, which is the one to focus on -- **No milestone** whenever it has any -- and a milestone that appears
 later, made on GitHub since, starts folded; a group you open or close stays so until the page is
 reloaded, through every poll.
 
@@ -508,9 +503,7 @@ drop, and it is in the select only of an issue already on it, marked closed. Eit
 reads the listing again once GitHub has it, so the row moves group then and not before. A listing
 that lands during a drag, or with focus in the select or Move, is drawn when that ends. A refusal
 is a toast, and the tab reads the listing again then too, with the row left where GitHub has it. Only the grip drags, so a row's title can still be selected and its #N link
-dragged as a link. A mention that is not one of the repository's open issues has no grip,
-since there is nothing of it here to move. Milestones themselves are not made, renamed or closed
-from prcoder.
+dragged as a link. Milestones themselves are not made, renamed or closed from prcoder.
 
 **PRs** is always there too: the repository's open pull requests, for picking the next
 one to work on (`prcoder choose` is the same pick at the command line, before a browser opens:

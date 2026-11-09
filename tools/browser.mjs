@@ -285,8 +285,8 @@ if (await prRows.count()) {
   }
 } else console.log('  no checkboxes in this description to tick');
 
-// Issues is the repository's open issues by milestone, the mentions first;
-// the tab's count says `…` until the listing lands. The groups' summaries are
+// Issues is the repository's open issues by milestone; the tab's count says
+// `…` until the listing lands. The groups' summaries are
 // what the screenshot is for -- the folds, the chips and an opened body in a
 // 15px row are nothing a selector can judge.
 await page.locator('#queue-body .tab', { hasText: /^Issues/ }).click();
@@ -296,15 +296,13 @@ await page.waitForSelector('#queue-body .fold.milestone');
 console.log('issues: ', await page.locator('#queue-body .tab', { hasText: /^Issues/ }).innerText(), '|',
   (await page.$$eval('#queue-body .fold.milestone', (gs) => gs.map((g) =>
     `${g.querySelector('h3').textContent.replace(/\s+/g, ' ').trim()}${g.open ? ' (open)' : ''}`))).join(' | '),
-'  (want the open-issue count, then the mentions, No milestone marked "to triage" if it has any, and every open milestone in rank order with its count, the first with issues open)');
+'  (want the open-issue count, No milestone marked "to triage" if it has any, and every open milestone in rank order with its count, the first with issues open)');
 // The first row that can open: its body through the description renderer,
 // and Open on GitHub under it.
 const openable = page.locator('#queue-body .fold.milestone[open] .item button.disclose').first();
 if (await openable.count()) {
   await openable.click();
   await page.waitForSelector('#queue-body .issue-body');
-  // `.first()`: a mention that is also listed under its milestone is one row
-  // drawn twice, and opening either opens both.
   console.log('  opened:', JSON.stringify((await page.locator('#queue-body .issue-body').first().innerText()).slice(0, 80)),
     '(want the body as rendered text, ending in Open on GitHub)');
 }
