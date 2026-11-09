@@ -43,7 +43,10 @@ in/out, errors as 500 `{error}`. Every handler but the few in `UNLOCKED` --
 whoami, the `GET` status poll, the queue's reference lookup, the Issues tab's
 listing -- is serialised, so one slow call delays the rest. `POST /api/status`
 is the page's ⟳: a poll that also searches for the branch's pull requests,
-where `GET` reads the ones `.prcoder/prs.json` remembers by URL.
+where `GET` reads the ones `.prcoder/prs.json` remembers by URL. A page load
+also reads, with no tab clicked, `/api/history` and the last `/api/pulls`
+listing at once and `/api/issues` about three seconds after the first status,
+for the tabs' counts; a `PRCODER_VERBOSE=2` log shows all three.
 
 ## Verifying a change
 

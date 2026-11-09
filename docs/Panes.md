@@ -441,7 +441,8 @@ another pull request; until they land a mention reads `…`. A poll that brings 
 or a description that mentions something new, while the tab is open has the listing read again.
 
 **Issues** is always there, since a repository has issues whatever is checked out: its open
-issues, read when the tab is opened and again on every visit, in groups you fold -- the
+issues, read once a few seconds after the page's first status, so the count is on the tab before a
+visit, and again on every visit, in groups you fold -- the
 repository's issues alone, since what the pull request on screen mentions is the PR #N tab's.
 First the issues on no milestone, ahead of every milestone: they are the untriaged, and one could belong at
 any level, `Critical` included, so they are the ones to sort first. While it holds any, its

@@ -2040,6 +2040,62 @@ test('the listing landing keeps the search box\'s focus and what is typed in it'
   await fresh.close();
 });
 
+// The issues are read once, three seconds after the first status, so the
+// count is on the tab before a visit; a visit then reads again, as every
+// visit does. A read that fails behind another tab leaves `?` and no toast,
+// and is not tried again until a visit asks.
+test('the Issues count is read once a few seconds after the first status, and a visit reads again', { skip }, async () => {
+  const fresh = await newPage({ clock: true });
+  const asked = [];
+  await fresh.route('**/api/issues', (r) => { asked.push(1); return r.fulfill({ json: ISSUES }); });
+  await fresh.reload();
+  await fresh.waitForSelector('#queue-body .tab[data-tab="local"]');
+  // Paused a moment ahead of the real clock (pauseAt cannot go back), so the
+  // page-open timer runs only when the test says.
+  await fresh.clock.pauseAt(Date.now() + 500);
+  const label = () => fresh.locator('#queue-body .tab[data-tab="issues"]').textContent();
+  assert.equal(await label(), 'Issues (…)', 'nothing read yet');
+  const read = fresh.waitForResponse('**/api/issues');
+  await fresh.clock.runFor(3000);
+  await read;
+  await fresh.waitForFunction(() => document.querySelector('#queue-body .tab[data-tab="issues"]')?.textContent === 'Issues (4)');
+  assert.deepEqual(asked, [1]);
+  assert.equal(await fresh.locator('#queue-body .issues-pane').count(), 0, 'with the tab not showing');
+  await fresh.clock.runFor(60_000);
+  assert.deepEqual(asked, [1], 'once');
+  const again = fresh.waitForResponse('**/api/issues');
+  await fresh.locator('#queue-body .tab[data-tab="issues"]').click();
+  await again;
+  assert.deepEqual(asked, [1, 1], 'the visit reads again');
+  assert.equal((await groupsOf(fresh))[0], 'm:none|No milestone (1) to triage|open|1', 'the folds were seeded from the real listing');
+  await fresh.close();
+});
+
+test('an Issues read that fails behind another tab leaves ? and says nothing until a visit asks', { skip }, async () => {
+  const fresh = await newPage({ clock: true });
+  const asked = [];
+  await fresh.route('**/api/issues', (r) => { asked.push(1); return r.fulfill({ status: 500, json: { error: 'gh: API rate limit exceeded' } }); });
+  await fresh.reload();
+  await fresh.waitForSelector('#queue-body .tab[data-tab="local"]');
+  // Paused a moment ahead of the real clock (pauseAt cannot go back), so the
+  // page-open timer runs only when the test says.
+  await fresh.clock.pauseAt(Date.now() + 500);
+  const read = fresh.waitForResponse('**/api/issues');
+  await fresh.clock.runFor(3000);
+  await read;
+  await fresh.waitForFunction(() => document.querySelector('#queue-body .tab[data-tab="issues"]')?.textContent === 'Issues (?)');
+  // The reload's own notice may be up; the failure is not.
+  assert.doesNotMatch(await fresh.evaluate(() => document.getElementById('toast').hidden ? '' : document.getElementById('toast').textContent), /rate limit/, 'nobody asked, so no toast');
+  await fresh.clock.runFor(60_000);
+  assert.deepEqual(asked, [1], 'not tried again on its own');
+  const again = fresh.waitForResponse('**/api/issues');
+  await fresh.locator('#queue-body .tab[data-tab="issues"]').click();
+  await again;
+  await fresh.waitForFunction(() => !document.getElementById('toast').hidden);
+  assert.match(await fresh.locator('#toast').textContent(), /rate limit/, 'the visit\'s own read says why');
+  await fresh.close();
+});
+
 // A first listing that fails says so on the tab once the toast has gone,
 // rather than reading as if it were still loading, and can be asked for again.
 test('a first listing that fails says so on the tab, and tries again', { skip }, async () => {

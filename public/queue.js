@@ -115,6 +115,11 @@ let pullSort = 'smallest';
 let pullGroup = 'milestone';
 // A listing younger than this is not read again on a visit to the tab; ⟳ always reads.
 const PULLS_FRESH_FOR = 60_000;
+// How long after the page's first status the issues are read for the Issues
+// tab's count (primeIssues): past the page-load `gh pr list` and a clone's
+// first pull request read, so the one GitHub call that is up to five pages
+// does not land on top of them.
+const ISSUES_AFTER_POLL = 3000;
 // Whether the History tab is drawn: /api/whoami's `history`, which app.js
 // hands over when it lands (setHistoryOn). Off until then, and off for good
 // under --no-history, so the tab is never drawn and then taken away.
@@ -402,7 +407,10 @@ export function reorder(list, from, to) {
 const queueTab = (name, label) => tabBtn(label, tab === name, () => {
   tab = name;
   render();
-  if (name === 'issues') loadIssues();
+  if (name === 'issues') {
+    issuesVisited = true;
+    loadIssues();
+  }
   // The mentions come with the Issues listing, read once in the background
   // (primeIssues) and usually on hand: asked for only when it is not, or was
   // asked about another pull request.
@@ -455,6 +463,27 @@ function loadIssues(again = false) {
 }
 let issuesLoading = null;
 let issuesStale = false;
+// The tab has been visited, so a visit's read is out or in and the page-open
+// read (primeIssues) has nothing to add.
+let issuesVisited = false;
+// When the listing on hand was read, in ms, for the line under the groups.
+let issuesRead = 0;
+
+/**
+ * One read of the issues a few seconds after the page's first status lands
+ * (paint in app.js), so the Issues tab's count is on the strip before a
+ * visit -- unless a visit has already asked, a read is out, or the first
+ * read failed, which the tab says and a visit tries again; a failure here
+ * leaves `?` and says nothing, since nobody asked. After the first status,
+ * not before: GET /api/issues looks the mentions up for the pull request
+ * the server has, which the first poll is what gives it.
+ */
+export function primeIssues() {
+  setTimeout(() => {
+    if (listing || issuesLoading || issuesFailed || issuesVisited) return;
+    loadIssues();
+  }, ISSUES_AFTER_POLL);
+}
 // Why the first listing could not be read, so the tab says so after the toast
 // has gone: left reading "Reading…" and `…`, it looked as if it still was.
 // Once there is a listing, a failed refresh keeps it and only the toast says.
@@ -467,12 +496,16 @@ async function fetchIssues() {
     listing = got;
     mentions = new Map(got.mentions.map((i) => [i.number, i]));
     listed = new Map(got.issues.map((i) => [i.number, i]));
+    issuesRead = Date.now();
     seedGroups();
   } catch (e) {
-    toast(e.message, true);
+    // The toast is for a read someone is waiting on; a read behind another
+    // tab (primeIssues) leaves `?` on the strip and keeps quiet.
+    if (tab === 'issues' || tab === 'pr') toast(e.message, true);
     if (!listing) issuesFailed = e.message;
   }
-  if (tab !== 'issues' && tab !== 'pr') return;
+  // The counts whatever tab shows; the groups only on a tab that draws them.
+  if (tab !== 'issues' && tab !== 'pr') return paintCounts();
   if (document.querySelector('#queue-body :is(.issue-groups, .pr-parts)')) paintIssues(); else render();
 }
 
@@ -649,6 +682,11 @@ const payGroups = () => {
  */
 function paintIssues() {
   paintGroups();
+  paintCounts();
+}
+
+/** The two tabs' counts drawn from the Issues listing, whatever tab shows. */
+function paintCounts() {
   const t = document.querySelector('#queue-body .tab[data-tab="issues"]');
   if (t) t.textContent = `${LABELS.issues} (${issueCount()})`;
   const p = document.querySelector('#queue-body .tab[data-tab="pr"]');

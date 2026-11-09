@@ -106,6 +106,12 @@ const page = await openPage(browser, port);
 // `.file` only exists once the Files tab has been clicked.
 await page.waitForSelector('#pr-head .pr-title', { timeout: 30_000 });
 await page.waitForTimeout(500);
+// Every source tab's count is on the strip before any tab is clicked: History
+// and the last pull request listing as the page opens, the issues a few
+// seconds after the first status.
+await page.waitForFunction(() => ['issues', 'pulls', 'history'].every((n) =>
+  /\(\d+\)$/.test(document.querySelector(`#queue-body .tab[data-tab="${n}"]`)?.textContent ?? '')), null, { timeout: 30_000 });
+console.log('counts: ', (await page.locator('#queue-body .tab').allTextContents()).join(' | '), '\n  (want a number on every tab before any click)');
 
 await page.screenshot({ path: path.join(out, 'full.png') });
 for (const pane of ['pr', 'queue']) {
@@ -285,8 +291,8 @@ if (await prRows.count()) {
   }
 } else console.log('  no checkboxes in this description to tick');
 
-// Issues is the repository's open issues by milestone; the tab's count says
-// `…` until the listing lands. The groups' summaries are
+// Issues is the repository's open issues by milestone; its count was read in
+// the background above, and the visit reads again. The groups' summaries are
 // what the screenshot is for -- the folds, the chips and an opened body in a
 // 15px row are nothing a selector can judge.
 await page.locator('#queue-body .tab', { hasText: /^Issues/ }).click();

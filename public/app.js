@@ -5,7 +5,7 @@ import { renderPr, renderNoPr, renderHeader, pageTitle, prRepo } from './pr.js';
 import { fileFrom, nextUnviewed, revealFile } from './filelist.js';
 import { h, api, toast, pref, setPref, debug } from './ui.js';
 import { openDiff, closeDiff, selectedPath, setViewed, showViewed, canTickViewed, toggleViewed, toggleWrap, canWrap, openMention } from './diff.js';
-import { initQueue, addItem, setItems, paintPulls, setHistoryOn } from './queue.js';
+import { initQueue, addItem, setItems, paintPulls, setHistoryOn, primeIssues } from './queue.js';
 import { historyStale, lastPrompt } from './history.js';
 import { age, dayLabel, timeLabel } from './items.js';
 import { bindKeys, keyLabel, isTyping } from './keys.js';
@@ -766,6 +766,7 @@ function paint(status) {
   // new number, and a PR opened on a bare branch is a new entry in the list.
   const replaced = last && (last.pr?.url !== status.pr?.url
     || last.pr?.state !== status.pr?.state);
+  const first = !last;
   last = status;
   // Named for the tab strip, not the page: which PR, in which repo. A poll
   // that fails leaves the last good name up rather than reverting to
@@ -816,6 +817,10 @@ function paint(status) {
   }
   // Reading its checklist into the PR #N tab needs only a PR on screen.
   if (status.queue) setItems(status.queue, status.pr);
+  // The issues, once, a few seconds on, for the Issues tab's count: after the
+  // first status and not in loadStatus's catch, since a failed first poll has
+  // given the server no pull request to look the mentions up for.
+  if (first) primeIssues();
 
   // Keep an open diff honest: close it if its file left the PR (or the PR
   // switched away), refresh it if the branch moved — the server cache is
