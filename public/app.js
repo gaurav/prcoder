@@ -3,7 +3,7 @@ import { FitAddon } from '/vendor/addon-fit.mjs';
 import { WebLinksAddon } from '/vendor/addon-web-links.mjs';
 import { renderPr, renderNoPr, renderHeader, pageTitle, prRepo } from './pr.js';
 import { fileFrom, nextUnviewed, revealFile } from './filelist.js';
-import { h, api, toast, notice, dismissNotice, pref, setPref, debug } from './ui.js';
+import { h, api, toast, notice, dismissNotice, pref, setPref, debug, QUIT_CODE } from './ui.js';
 import { openDiff, closeDiff, selectedPath, setViewed, showViewed, canTickViewed, toggleViewed, toggleWrap, canWrap, openMention } from './diff.js';
 import { initQueue, addItem, setAddTo, setItems, paintPulls, setHistoryOn, primeIssues } from './queue.js';
 import { historyStale, lastPrompt } from './history.js';
@@ -251,9 +251,20 @@ function connect(query = '') {
     turn(false);
     const why = e.code === 1008 ? `refused: ${e.reason}` : 'coding agent exited';
     term.write(`\r\n\x1b[31m[${why}]\x1b[0m\r\n`);
-    // The PTY a quit killed closes the socket after quitPrcoder has put up the
-    // bar with its own line and no Start, so there is nothing left to do here.
-    if (quit) return;
+    // The PTY a quit killed closes the socket after quitPrcoder has said so
+    // over the whole window, so there is nothing left to do here.
+    if (dead) return;
+    // A socket also closes because prcoder itself is quitting -- q or Ctrl-C
+    // in its terminal, a Quit in another tab -- and then the bar below would
+    // offer a Start that reaches nothing. quit() in server.js says so with
+    // QUIT_CODE on every tab's socket before it kills anything. Until then
+    // (2026-11-09) the page fetched /api/whoami a moment after any close and
+    // called a refused fetch a dead server: a guess at the timing, fooled by
+    // anything else on the port and hung by a server too stuck to answer.
+    // A prcoder that exits any other way -- a signal, the second Ctrl-C, a
+    // crash -- sends it too, from an 'exit' handler; only one killed outright
+    // (SIGKILL) sends none, and gets the bar.
+    if (e.code === QUIT_CODE) return gone();
     // The bar's note repeats the terminal's line, not the reason: that is
     // already there in red, a line up.
     exitForm.querySelector('span').textContent = e.code === 1008 ? 'Start refused.' : 'Coding agent has exited.';
@@ -317,14 +328,43 @@ async function lastPromptNotice() {
   notice(`Last prompt, ${when}: ${cut}`, { kind: 'last-prompt' });
 }
 const dismissLastPrompt = () => dismissNotice('last-prompt');
-// Quit, from the exit bar or the menu. The exit bar goes up here, filled with
-// the fact rather than with a Start that would reach nothing; `quit` tells
-// ws.onclose, when the killed PTY's socket closes, to leave it so. From the
-// menu, where the bar may be out of sight, a notice says the same. The
-// menu's Quit goes grey with it: picked again, it would reach no server and
-// only raise a network error.
-let quit = false;
-async function quitPrcoder(fromMenu = false) {
+// prcoder is gone, and with it everything on the page: the pull request pane,
+// the queue and the terminal all talk to the server, so none of it works and
+// none of it should look as if it might. One modal over the window says so,
+// and the panes behind it are dimmed. Until 2026-11-09 a quit filled the exit
+// bar with a line and left the rest looking alive, and a prcoder quit from its
+// own terminal showed as the coding agent having exited.
+//
+// ✕ or Escape closes the box, so the terminal's last screen can be selected
+// and copied; the panes stay dimmed (main.dead in style.css, opacity rather
+// than `inert`, which would stop the selecting) and the title stays, so the
+// page still reads as switched off. It had a Reload button, dropped: with
+// prcoder gone there is nothing to reload from, and once it is started again
+// the coding agent's session is /resume away in the new tab.
+//
+// `dead` stops the poll, which is the one thing here that fetches without
+// being asked. A click on something left on the page after the box is closed
+// fails as any request to a server that is not there does, with a toast.
+let dead = false;
+function gone() {
+  if (dead) return;
+  dead = true;
+  turn(false);
+  document.title = 'prcoder (not running)';
+  const box = document.getElementById('dead');
+  // The shortcut sheet may be up, listing keys that no longer do anything,
+  // and the box would sit over it.
+  document.getElementById('keys').close();
+  // The exit bar is up if its own Quit got us here, and its Start would reach
+  // nothing; the terminal takes the room back, as on a Start.
+  exitForm.hidden = true;
+  sync();
+  document.getElementById('dead-close').onclick = () => box.close();
+  document.querySelector('main').classList.add('dead');
+  box.showModal();
+}
+// Quit, from the exit bar or the menu.
+async function quitPrcoder() {
   try {
     let r = await api('/api/quit', {});
     // The same question the terminal's q asks, put where you are.
@@ -332,13 +372,7 @@ async function quitPrcoder(fromMenu = false) {
       if (!confirm(`Quit prcoder? ${r.risk.join('; ')}.`)) return;
       r = await api('/api/quit', { force: true });
     }
-    const gone = 'prcoder has quit — this tab can be closed.';
-    quit = true;
-    exitForm.replaceChildren(gone);
-    exitForm.hidden = false;
-    sync();   // as ws.onclose does, and for the same reason
-    document.getElementById('menu-quit').disabled = true;
-    if (fromMenu) notice(gone, { kind: 'quit' });
+    gone();
   } catch (e) {
     toast(e.message, true);
   }
@@ -366,7 +400,7 @@ document.addEventListener('keydown', (e) => {
   menu.open = false;
   if (menu.contains(document.activeElement)) menu.querySelector('summary').focus();
 });
-document.getElementById('menu-quit').onclick = () => quitPrcoder(true);
+document.getElementById('menu-quit').onclick = () => quitPrcoder();
 // The dialog gives the focus back to the pick it was opened from, which the
 // pick has just hidden in the closed menu, so the focus would fall out of the
 // page. The menu itself is where it was before the pick; the close event comes
@@ -832,6 +866,7 @@ function paint(status) {
  */
 let polledAt = 0;
 async function loadStatus({ search = false } = {}) {
+  if (dead) return;   // gone(): nothing is there to ask
   polledAt = Date.now();
   try {
     paint(await api('/api/status', undefined, search ? 'POST' : 'GET'));

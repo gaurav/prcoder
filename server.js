@@ -22,6 +22,7 @@ import { choosePr } from './choose.js';
 import * as term from './term.js';
 import { toggleTask, refs, wholeRef, resolveRef } from './public/tasks.js';
 import { grammars } from './public/diff.js';
+import { QUIT_CODE } from './public/ui.js';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const repo = process.cwd();
@@ -1167,10 +1168,16 @@ function listQueue() {
 // -- the Local list askToQuit printed a moment ago, on a reader that is behind.
 // An empty write calls back once everything ahead of it is out; the timer is
 // for a reader that never catches up, which must not keep prcoder alive.
+//
+// Every tab is told first, with a close code of its own (QUIT_CODE), so the
+// page locks itself rather than offering to start an agent on a server that
+// is about to be gone. The PTY's own close, when kill() lands, then finds the
+// socket already closing and adds nothing.
 let quitting = false;
 function quit() {
   if (quitting) return;
   quitting = true;
+  for (const ws of wss.clients) ws.close(QUIT_CODE, 'prcoder quit');
   for (const pty of ptys) pty.kill();
   wss.close();
   server.close();
@@ -1247,6 +1254,14 @@ if (import.meta.main) {
   // Before anything can print: init() is what routes console through the log,
   // and a line written ahead of it would sit above the block and stay there.
   term.init();
+  // Every way out that skips quit() -- SIGHUP from closing the terminal this
+  // runs in, SIGTERM, the second Ctrl-C that exits at once, an uncaught
+  // exception -- still tells the tabs, or they would offer to start an agent
+  // on a server that is gone. Best effort: an 'exit' handler runs only
+  // synchronous code, and a close frame is small enough that the socket writes
+  // it at once. quit() does the same earlier, before the PTYs' own closes, and
+  // a socket already closing ignores this. Only a SIGKILL gets past it.
+  process.on('exit', () => { for (const ws of wss.clients) ws.close(QUIT_CODE, 'prcoder quit'); });
   term.keys({
     quit: askToQuit,
     key: (ch) => {

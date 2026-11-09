@@ -1137,10 +1137,25 @@ li.issue-body select.milestone {
   box-shadow: 0 6px 30px #000a;
 }
 #keys::backdrop { background: #0008; }
-#keys > header { display: flex; align-items: center; margin-bottom: 8px; }
+/* prcoder has gone (gone() in app.js). The sheet's box, under a backdrop
+   heavy enough that the panes behind read as switched off and light enough
+   that the last of the terminal and the queue can still be made out. */
+#dead {
+  max-width: min(44ch, 90vw); padding: 18px 22px;
+  background: var(--panel); color: var(--fg); border: 1px solid var(--fail); border-radius: 8px;
+  box-shadow: 0 6px 30px #000a;
+}
+#dead::backdrop { background: #000c; }
+#dead h2 { margin: 0; font-size: 18px; font-weight: 600; }
+#dead p { margin: 0; color: var(--dim); }
+#dead code { white-space: nowrap; }
+/* Closed, the box leaves the panes looking switched off but readable:
+   opacity and a filter, not `inert`, so the terminal can still be selected. */
+main.dead { opacity: .45; filter: grayscale(1); }
+#keys > header, #dead > header { display: flex; align-items: center; margin-bottom: 8px; }
 #keys h2 { margin: 0; font-size: 14px; font-weight: 600; }
-#keys-close { margin-left: auto; background: none; border: 0; color: var(--dim); font: inherit; cursor: pointer; }
-#keys-close:hover { color: var(--fg); }
+#keys-close, #dead-close { margin-left: auto; background: none; border: 0; color: var(--dim); font: inherit; cursor: pointer; }
+#keys-close:hover, #dead-close:hover { color: var(--fg); }
 #keys table { border-collapse: collapse; }
 #keys td { padding: 3px 0; font-size: 13px; vertical-align: baseline; }
 #keys td:first-child { padding-right: 14px; white-space: nowrap; }

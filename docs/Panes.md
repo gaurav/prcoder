@@ -109,7 +109,7 @@ busy or idle as the tab is, and the name, as a menu. The pane needs no label the
 says which pull request it is. The menu holds the keyboard shortcuts (the sheet Alt+/ opens, built
 from the same table the keys are bound from, so it can only list keys the page has), the
 documentation, an issue to report and the repository on GitHub, **Quit prcoder…**, which asks what
-the exit bar's Quit asks ([Claude Code](#claude-code)) and is greyed out once prcoder has quit, and
+the exit bar's Quit asks ([Claude Code](#claude-code)), and
 the version on its last line. It closes on a pick, a click anywhere else, or Escape -- outside a
 text field, so not in the terminal, where Escape is the agent's, nor in the queue's input or the
 pull request switcher. Nothing done in the shortcut sheet closes it, so with the sheet opened over
@@ -360,7 +360,7 @@ deliberate reload gets a shorter toast without the link.
 A toast and a notice are two things. A toast reports something that has happened: it sits over the
 foot of the window and goes after four seconds, eight for an error, or on a click. A notice is
 something that stays true until you have dealt with it -- the session is new, the branch was
-switched under the agent, a popup was blocked, prcoder has quit -- and it is a line in a list
+switched under the agent, a popup was blocked -- and it is a line in a list
 across the top of the right-hand panes, which is not there while it is empty. Each line has a box
 on its left and a ✕ on its right, and either takes it away. Any number can be up at once, and
 a second notice about the same thing replaces the first. The list pushes the panes down rather
@@ -390,6 +390,17 @@ a deliberate switch of model than a slip. A setting the server will not take is 
 anything starts, and the terminal says so -- except the command line's own, which is kept as it
 was given even when the bar would refuse it typed in. Quit asks what the terminal's quit asks
 ([Terminal.md](Terminal.md)).
+
+Once prcoder itself has gone, nothing on the page works -- the pull request pane, the queue and
+the terminal all talk to it -- so the whole window says so: a box over the panes, which are dimmed
+behind it and take no click or key, and a tab titled `prcoder (not running)`. It comes up after a
+Quit from the page, and also however else prcoder stopped -- quit from its own terminal or another
+tab, its terminal closed, a crash: on the way out it closes every tab's connection with a code of
+its own. Only a prcoder killed outright (`kill -9`) sends none, and then the page cannot tell it
+from the agent exiting and shows the exit bar.
+The box's ✕, or Escape, closes it so the terminal's last screen can be selected and copied; the
+panes stay dimmed and the title stays. The way on is to close the tab, or start prcoder again, where
+`/resume` or `-- --continue` picks the coding agent's session back up.
 
 ## Queue
 
