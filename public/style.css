@@ -362,11 +362,16 @@ a { color: var(--accent); }
 
    The chip's colour is where it leaves the tag. A `--line` border on the
    panel is about 1.2:1, which is enough to notice once you know it is there and
-   not enough to make you look (2026-09-25). So the border and a faint fill are
-   the chip's own `--accent`, mixed toward transparent: the chip stands out from
-   the prose while being the same blue as its text, and it stops well short of
-   the solid fills and uppercase text the `.badge`s use for status. A brighter
-   grey ring was the other candidate, and it read as one more `.tab`.
+   not enough to make you look (2026-09-25). So the border and the fill are the
+   chip's own `--accent`, mixed toward transparent. The fill was 8% until
+   2026-11-09, and that was still a thing you had to look for: with several
+   prcoder windows open, which repository this one is in is the first question,
+   and a faint outline did not answer it at a glance. So the fill is now strong
+   enough to be a filled shape, and the name -- the half that says which
+   checkout -- is bold and `--fg` on it, with the owner left `--accent`. It
+   still stops short of `.primary`'s solid accent with dark text, so the pull
+   request stays the one button in the row, and of the `.badge`s' uppercase. A
+   brighter grey ring was the other candidate, and it read as one more `.tab`.
 
    Two things deliberately not done. A logo or an emoji ahead of the slug, the
    other way to mark it: no other glyph in this window earns its place that way
@@ -450,15 +455,15 @@ a { color: var(--accent); }
 .pr-repo {
   display: inline-flex; min-width: 0;
   text-decoration: none; padding: 1px 7px;
-  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent); border-radius: 9px;
-  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent); border-radius: 9px;
+  background: color-mix(in srgb, var(--accent) 24%, transparent);
 }
 .pr-repo:hover {
-  border-color: color-mix(in srgb, var(--accent) 60%, transparent);
-  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 34%, transparent);
 }
 .pr-repo .owner { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pr-repo .name { flex: none; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pr-repo .name { color: var(--fg); font-weight: 600; flex: none; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* Serif, like the description under it: the title is the first sentence of the
    argument, not a label on the pane. Everything else in this header -- the
