@@ -48,6 +48,7 @@ import { server } from '../../server.js';
 import { bucket } from '../../files.js';
 import { rollup } from '../../github.js';
 import { firefoxEnv } from '../../tools/driver.mjs';
+import { QUIT_CODE } from '../../public/ui.js';
 
 // If a socket ever gets past the mock, the in-process server spawns this (read
 // at connect time) rather than a real `claude` in this repo -- which is what the
@@ -972,27 +973,29 @@ test('Quit in the menu asks what the exit bar asks, and then the whole window sa
   await fresh.close();
 });
 
-// A prcoder quit from its own terminal, or one that died, is seen here only as
-// a socket closing -- which is also all an agent's exit is. The page asks: a
-// server that does not answer is gone, and gets the modal and no more polls;
-// one that answers has only lost its agent, and gets the exit bar.
-test('a socket that closes with the server gone gets the modal, and with it still there the exit bar', { skip }, async () => {
+// A prcoder quit from its own terminal, or from another tab, closes this
+// tab's socket with QUIT_CODE, and the page locks itself on that alone. Any
+// other close is the agent exiting, and gets the exit bar. Locked, the page
+// asks nothing more of the server: the clock runs past both the ten-second
+// poll on coming back to the tab and the minute's poll, and neither goes out.
+test('a socket closed with prcoder\'s quit code gets the modal, and any other close the exit bar', { skip }, async () => {
   let sock;
   const fresh = await newPage({ pty: (ws) => { sock = ws; } });
   await sock.close();
   await fresh.locator('#term-exit').waitFor({ state: 'visible' });
-  await fresh.waitForTimeout(600);
-  assert.equal(await fresh.locator('#dead:modal').count(), 0, 'the server answered, so only the agent went');
+  assert.equal(await fresh.locator('#dead:modal').count(), 0, 'only the agent went');
   await fresh.close();
 
-  const gone = await newPage({ pty: (ws) => { sock = ws; } });
-  await gone.route('**/api/whoami', (r) => r.abort());
+  const gone = await newPage({ clock: true, pty: (ws) => { sock = ws; } });
   let polls = 0;
-  await gone.route('**/api/status', (r) => { polls += 1; return r.abort(); });
-  await sock.close();
+  gone.on('request', (q) => { if (q.url().endsWith('/api/status')) polls++; });
+  await sock.close({ code: QUIT_CODE, reason: 'prcoder quit' });
   await gone.waitForSelector('#dead:modal');
-  assert.equal(await gone.textContent('#dead-title'), 'prcoder is no longer running');
+  assert.equal(await gone.textContent('#dead-title'), 'prcoder has quit');
+  assert.equal(await gone.isHidden('#term-exit'), true, 'no Start for a prcoder that is not there');
+  polls = 0;
   await gone.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+  await gone.clock.fastForward(61_000);
   await gone.waitForTimeout(200);
   assert.equal(polls, 0, 'nothing is asked of a server that is gone');
   await gone.close();

@@ -3,7 +3,7 @@ import { FitAddon } from '/vendor/addon-fit.mjs';
 import { WebLinksAddon } from '/vendor/addon-web-links.mjs';
 import { renderPr, renderNoPr, renderHeader, pageTitle, prRepo } from './pr.js';
 import { fileFrom, nextUnviewed, revealFile } from './filelist.js';
-import { h, api, toast, pref, setPref, debug } from './ui.js';
+import { h, api, toast, pref, setPref, debug, QUIT_CODE } from './ui.js';
 import { openDiff, closeDiff, selectedPath, setViewed, showViewed, canTickViewed, toggleViewed, toggleWrap, canWrap, openMention } from './diff.js';
 import { initQueue, addItem, setItems } from './queue.js';
 import { bindKeys, keyLabel, isTyping } from './keys.js';
@@ -245,16 +245,15 @@ function connect(query = '') {
     // The PTY a quit killed closes the socket after quitPrcoder has said so
     // over the whole window, so there is nothing left to do here.
     if (dead) return;
-    // A socket also closes because prcoder itself went -- q or Ctrl-C in its
-    // terminal, a crash, a Quit in another tab -- and then the bar below would
-    // offer a Start that reaches nothing. Only asking tells the two apart: a
-    // fetch that is refused outright is a server that is not there. A moment
-    // later, because a quitting server answers for as long as it takes its
-    // last replies to get out. The bar goes up meanwhile, since nearly always
-    // it is only the agent that has gone.
-    if (e.code !== 1008) {
-      setTimeout(() => fetch('/api/whoami').catch(() => gone('prcoder is no longer running')), 300);
-    }
+    // A socket also closes because prcoder itself is quitting -- q or Ctrl-C
+    // in its terminal, a Quit in another tab -- and then the bar below would
+    // offer a Start that reaches nothing. quit() in server.js says so with
+    // QUIT_CODE on every tab's socket before it kills anything. Until then
+    // (2026-11-09) the page fetched /api/whoami a moment after any close and
+    // called a refused fetch a dead server: a guess at the timing, fooled by
+    // anything else on the port and hung by a server too stuck to answer.
+    // A prcoder that crashes sends no code, and gets the bar, as before.
+    if (e.code === QUIT_CODE) return gone('prcoder has quit');
     // The bar's note repeats the terminal's line, not the reason: that is
     // already there in red, a line up.
     exitForm.querySelector('span').textContent = e.code === 1008 ? 'Start refused.' : 'Coding agent has exited.';

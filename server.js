@@ -20,6 +20,7 @@ import { parseCli, usage, VERSION, portCandidates, statusLines, openRepoArgs, OP
 import * as term from './term.js';
 import { toggleTask, refs, wholeRef, resolveRef } from './public/tasks.js';
 import { grammars } from './public/diff.js';
+import { QUIT_CODE } from './public/ui.js';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const repo = process.cwd();
@@ -1084,10 +1085,16 @@ function listQueue() {
 // -- the Local list askToQuit printed a moment ago, on a reader that is behind.
 // An empty write calls back once everything ahead of it is out; the timer is
 // for a reader that never catches up, which must not keep prcoder alive.
+//
+// Every tab is told first, with a close code of its own (QUIT_CODE), so the
+// page locks itself rather than offering to start an agent on a server that
+// is about to be gone. The PTY's own close, when kill() lands, then finds the
+// socket already closing and adds nothing.
 let quitting = false;
 function quit() {
   if (quitting) return;
   quitting = true;
+  for (const ws of wss.clients) ws.close(QUIT_CODE, 'prcoder quit');
   for (const pty of ptys) pty.kill();
   wss.close();
   server.close();
