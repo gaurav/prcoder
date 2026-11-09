@@ -570,6 +570,7 @@ the prompt into the coding agent again, unsent, to edit and send -- the way back
 session died on -- ↓ copies it into Local, untagged, and ⧉ copies it to the clipboard, turning to
 ✓ for a moment. The box above searches the
 prompts' text, leaving out a day without a match, and the tab's count is the prompts sent today,
-or the matches while searching. ⟳ reads the file again, and so does a prompt sent from this page
-while the tab is showing, a second later, so the list keeps up with the terminal beside it. A read
-that fails says so, with a way to try again, and leaves the list as it was.
+or the matches while searching. The file is read when the page opens, so the count is on the tab
+before a visit, and again a second after a prompt is sent from this page, whichever tab is
+showing, so the count and the list keep up with the terminal beside them; ⟳ reads it again by
+hand. A read that fails says so, with a way to try again, and leaves the list as it was.

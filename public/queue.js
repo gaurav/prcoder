@@ -124,11 +124,17 @@ const ADD_TO_KEY = 'prcoder:add-to';
 let addTo = 'bottom';
 const readAddTo = () => (pref(ADD_TO_KEY) === 'top' ? 'top' : 'bottom');
 
-/** The History tab switched on, once whoami has said it is there to read. */
+/**
+ * The History tab switched on, once whoami has said it is there to read --
+ * and read at once, so its count is on the tab before a visit: the file is
+ * local and cheap, and the count is today's prompts, which is the question
+ * on coming back.
+ */
 export function setHistoryOn(on) {
   if (historyOn === !!on) return;
   historyOn = !!on;
   render();
+  if (historyOn) loadHistory();
 }
 
 export async function initQueue(d) {

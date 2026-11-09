@@ -172,7 +172,8 @@ const posted = [];
 // its `data-folds`, which is how a pane's fold is switched on, and `init` runs
 // in the page before its own scripts, for a stub of a browser API. `clock`
 // installs Playwright's, for a test that moves time on with `p.clock`.
-// `history` is /api/history's answer for a page with the History tab, and
+// `history` is /api/history's answer for a page with the History tab -- or
+// a function answering the route, for a test that counts the reads -- and
 // null for one without: whoami then says there is none to read, so no tab
 // is drawn and no last-prompt notice put up, which is what every other test
 // here expects of a first open.
@@ -193,7 +194,8 @@ async function newPage({ prs = [], st = status, ready = '#pr-head .pr-title', be
   await p.routeWebSocket(/\/pty(\?|$)/, pty);
   await p.route('**/api/whoami', (r) => (typeof whoami === 'function'
     ? whoami(r) : r.fulfill({ json: { started: whoami, version: '0.0.0-test', history: !!history } })));
-  await p.route('**/api/history', (r) => r.fulfill({ json: history ? { enabled: true, ...history } : { enabled: false } }));
+  await p.route('**/api/history', (r) => (typeof history === 'function'
+    ? history(r) : r.fulfill({ json: history ? { enabled: true, ...history } : { enabled: false } })));
   await p.route('**/api/status', (r) => r.fulfill({ json: st }));
   await p.route('**/api/prs', (r) => (prs ? r.fulfill({ json: prs }) : r.abort()));
   await p.route('**/api/below', (r) => {
@@ -1346,13 +1348,18 @@ test('the History tab lists what was sent by day and session, and the last promp
     sessions: { [S]: { title: 'A titled session' } },
     read: at, skipped: 0,
   };
-  // What the agent is typed, and what Local is saved, for the rows' ▶ and ↓.
+  // What the agent is typed, and what Local is saved, for the rows' ▶ and ↓;
+  // and every read of the file, with its body.
   const typed = [];
   let queue = [];
-  const p = await newPage({ history: listing, pty: (ws) => ws.onMessage((m) => {
-    const msg = JSON.parse(m);
-    if (msg.type === 'input') typed.push(msg.data);
-  }) });
+  const reads = [];
+  const p = await newPage({
+    history: (r) => { reads.push(r.request().postDataJSON()); return r.fulfill({ json: { enabled: true, ...listing } }); },
+    pty: (ws) => ws.onMessage((m) => {
+      const msg = JSON.parse(m);
+      if (msg.type === 'input') typed.push(msg.data);
+    }),
+  });
   await p.route('**/api/queue', (r) => {
     if (r.request().method() === 'PUT') queue = r.request().postDataJSON().items;
     return r.fulfill({ json: queue });
@@ -1364,12 +1371,23 @@ test('the History tab lists what was sent by day and session, and the last promp
   }));
   assert.match(notice.text, /^Last prompt, .+ \(Today 00:05\): \/code-review high$/);
   assert.deepEqual([notice.sticky, notice.kind, notice.button], [true, 'last-prompt', null]);
-  // Enter in the terminal is the next prompt: the notice has done its job.
+  // The file is read when the page opens, so the count is on the tab before
+  // a visit; Enter in the terminal is the next prompt, which takes the notice
+  // down and, a second later, has the file read again with the tab not
+  // showing, so the count keeps up.
+  await p.waitForFunction(() => document.querySelector('#queue-body .tab[data-tab="history"]')?.textContent === 'History (1)');
+  const before = reads.length;
+  const again = p.waitForResponse('**/api/history');
   await p.locator('#term-host textarea').press('Enter');
   await p.waitForFunction(() => document.getElementById('toast').hidden);
+  await again;
+  assert.equal(reads.length, before + 1, 'one read for the prompt sent');
+  assert.equal(await p.locator('#queue-body .history-pane').count(), 0, 'read with the tab not showing');
 
+  // A visit draws the listing already read.
   await p.locator('#queue-body .tab', { hasText: /^History/ }).click();
   await p.waitForSelector('#queue-body .fold.day');
+  assert.equal(reads.length, before + 1, 'the visit reads nothing');
   assert.equal(await p.locator('#queue-body .tab', { hasText: /^History/ }).innerText(), 'History (1)', 'the count is today\'s prompts');
   const days = await p.$$eval('#queue-body .fold.day', (gs) => gs.map((g) => ({
     label: g.querySelector('h3').firstChild.textContent, count: g.querySelector('.count').textContent, open: g.open,

@@ -369,9 +369,10 @@ await page.locator('#queue').screenshot({ path: path.join(out, 'queue-pulls.png'
 // from the fixture: three days, the first two open, a titled session, a
 // worktree's, a slash command marked, and ▶ ↓ ⧉ on every row -- ▶ types the
 // prompt back into the stub, which echoes it.
+console.log('history:', await page.locator('#queue-body .tab', { hasText: /^History/ }).innerText(), '(want History (3) before any click: the file is read when the page opens)');
 await page.locator('#queue-body .tab', { hasText: /^History/ }).click();
 await page.waitForSelector('#queue-body .fold.day');
-console.log('history:', await page.locator('#queue-body .tab', { hasText: /^History/ }).innerText(), '|',
+console.log('  days:  ', await page.locator('#queue-body .tab', { hasText: /^History/ }).innerText(), '|',
   (await page.$$eval('#queue-body .fold.day', (gs) => gs.map((g) =>
     `${g.querySelector('h3').textContent.replace(/\s+/g, ' ').trim()}${g.open ? ' (open)' : ''}: ${[...g.querySelectorAll('.session h4')].map((h) => h.textContent).join(', ')}`))).join(' | '),
   '\n  (want History (3), Today and Yesterday open with the titled session and a "Session from" one in a worktree, a third day folded)');

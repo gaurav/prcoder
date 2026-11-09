@@ -74,21 +74,25 @@ export function loadHistory(force = false) {
 
 /**
  * A prompt was just sent from this page: once Claude Code has written it,
- * a tab that is showing reads again, so the list does not lag behind the
- * terminal beside it. A second, since the file is written as the turn starts.
+ * the file is read again, so the tab's count and, when it is showing, its
+ * list do not lag behind the terminal beside them. A second, since the file
+ * is written as the turn starts. Nothing when nothing has ever been read:
+ * the tab is off, and there is no count to keep.
  */
 export function historyStale() {
-  if (!document.querySelector('#queue-body .history-pane')) return;
-  setTimeout(() => { if (document.querySelector('#queue-body .history-pane')) loadHistory(true); }, 1000);
+  if (!listing && !failed && !loading) return;
+  setTimeout(() => loadHistory(true), 1000);
 }
 
-/** The groups and the tab's count repainted on their own, so the search box keeps its focus. */
+/**
+ * The tab's count, and the groups when the tab is showing, repainted on
+ * their own, so the search box keeps its focus. The count whatever tab
+ * shows: the file is read before a visit (setHistoryOn in queue.js).
+ */
 export function paintHistory() {
-  const pane = document.querySelector('#queue-body .history-pane');
-  if (!pane) return;
-  pane.querySelector('.history-groups')?.replaceChildren(...historyGroups());
-  const t = document.querySelector(`#queue-body .tab[data-tab="history"]`);
+  const t = document.querySelector('#queue-body .tab[data-tab="history"]');
   if (t) t.textContent = `${LABEL} (${historyCount()})`;
+  document.querySelector('#queue-body .history-pane .history-groups')?.replaceChildren(...historyGroups());
 }
 
 /**
