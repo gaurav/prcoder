@@ -1387,19 +1387,18 @@ function row(item, above, below) {
       // box the way finishing it would: the row leaves Local for Completed, and
       // the Local tab stays a list of what has not been handed over yet. Not a
       // delete -- Completed is where you go to see what you handed over, and its
-      // own checkbox puts an item back if Claude turned out not to do it.
+      // own checkbox puts an item back if the agent turned out not to do it.
       //
-      // Only if it went. `sendToClaude` answers false on a closed socket, and
-      // an item ticked off after a refused send is work nobody has done and
-      // nothing will remind you of.
+      // Only if it went (typeInto): an item ticked off after a refused send
+      // is work nobody has done and nothing will remind you of.
       //
       // With the link to the issue or PR it is about, where the text does not
       // already say which (forClaude in items.js).
       btn('▶', () => {
-        if (!deps.sendToClaude(forClaude(item, deps.home?.()), false)) return toast('Claude is not connected — nothing was typed.', true);
+        if (!typeInto(forClaude(item, deps.home?.()))) return;
         item.done = true;
         return save();
-      }, { title: 'type into Claude, and check it off' }),
+      }, { title: 'type into the coding agent, and check it off' }),
       // A move, not a flag: the issue is filed and the item leaves the queue.
       // Nothing moves into the PR description -- prcoder does not write one,
       // bar a box you tick on the PR #N tab. Disabled while the issue is filed: a

@@ -1707,7 +1707,7 @@ test('a reference on its own is added as the issue\'s title, tagged, and ▶ car
   await fresh.waitForFunction(() => document.getElementById('toast').textContent.includes('PR #91 is already in your queue'));
   assert.equal(await rows().count(), 1);
   assert.equal(await fresh.locator('#queue-input').inputValue(), '#91');
-  await rows().locator('button[title^="type into Claude"]').click();
+  await rows().locator('button[title^="type into the coding agent"]').click();
   await fresh.waitForFunction(() => document.querySelector('#queue-body .tab.on')?.textContent.startsWith('Local (0)'));
   assert.deepEqual(typed, ['Make the queue read references (https://github.com/gaurav/prcoder/pull/91)']);
   await fresh.close();
@@ -1723,7 +1723,7 @@ test('a reference inside other text keeps the text, and the tag is another repo\
   // Another repo's issue can still be filed here, as a new one.
   assert.equal(await rows().locator('button[title="move into a new issue"]').count(), 1);
   // The text already says which issue, so ▶ adds nothing to it.
-  await rows().locator('button[title^="type into Claude"]').click();
+  await rows().locator('button[title^="type into the coding agent"]').click();
   await fresh.waitForFunction(() => document.querySelector('#queue-body .tab.on')?.textContent.startsWith('Local (0)'));
   assert.deepEqual(typed, ['Work around cli/cli#123']);
   await fresh.close();
@@ -2805,7 +2805,7 @@ test('▶ types an item\'s control characters as spaces', { skip }, async () => 
   const { fresh, typed, rows } = await refPage(() => ({ json: { ref: null } }),
     [{ text: 'do this\rand\u001b[2Jthat', done: false, issue: null, deleted: false }]);
   await fresh.waitForSelector('#queue-body .item');
-  await rows().locator('button[title^="type into Claude"]').click();
+  await rows().locator('button[title^="type into the coding agent"]').click();
   await fresh.waitForFunction(() => document.querySelector('#queue-body .tab.on')?.textContent.startsWith('Local (0)'));
   assert.deepEqual(typed, ['do this and [2Jthat']);
   await fresh.close();
@@ -2838,7 +2838,7 @@ test('▶ with Claude disconnected types nothing and leaves the item active', { 
   await fresh.reload();
   await fresh.waitForSelector('#queue-body .item');
   await fresh.waitForFunction(() => document.getElementById('term-host').textContent.includes('coding agent exited'));
-  await fresh.locator('#queue-body .item button[title^="type into Claude"]').click();
+  await fresh.locator('#queue-body .item button[title^="type into the coding agent"]').click();
   await fresh.waitForFunction(() => document.getElementById('toast').textContent.includes('not connected'));
   assert.deepEqual(puts, []);
   assert.deepEqual(await fresh.locator('#queue-body .item .text').allTextContents(), ['send me']);
