@@ -1148,6 +1148,14 @@ if (import.meta.main) {
   // Before anything can print: init() is what routes console through the log,
   // and a line written ahead of it would sit above the block and stay there.
   term.init();
+  // Every way out that skips quit() -- SIGHUP from closing the terminal this
+  // runs in, SIGTERM, the second Ctrl-C that exits at once, an uncaught
+  // exception -- still tells the tabs, or they would offer to start an agent
+  // on a server that is gone. Best effort: an 'exit' handler runs only
+  // synchronous code, and a close frame is small enough that the socket writes
+  // it at once. quit() does the same earlier, before the PTYs' own closes, and
+  // a socket already closing ignores this. Only a SIGKILL gets past it.
+  process.on('exit', () => { for (const ws of wss.clients) ws.close(QUIT_CODE, 'prcoder quit'); });
   term.keys({
     quit: askToQuit,
     key: (ch) => {

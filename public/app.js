@@ -252,7 +252,9 @@ function connect(query = '') {
     // (2026-11-09) the page fetched /api/whoami a moment after any close and
     // called a refused fetch a dead server: a guess at the timing, fooled by
     // anything else on the port and hung by a server too stuck to answer.
-    // A prcoder that crashes sends no code, and gets the bar, as before.
+    // A prcoder that exits any other way -- a signal, the second Ctrl-C, a
+    // crash -- sends it too, from an 'exit' handler; only one killed outright
+    // (SIGKILL) sends none, and gets the bar.
     if (e.code === QUIT_CODE) return gone();
     // The bar's note repeats the terminal's line, not the reason: that is
     // already there in red, a line up.
