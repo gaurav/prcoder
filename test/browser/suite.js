@@ -3453,6 +3453,7 @@ test('when the agent exits, starting it again reconnects with the chosen setting
   p.once('dialog', (d) => { asked.push(d.message()); d.accept(); });
   await p.click('#term-quit');
   await p.waitForSelector('#dead:modal');
+  assert.equal(await bar.isHidden(), true, 'the bar its Quit was in goes with it');
   assert.deepEqual(asked, [{}, 'Quit prcoder? 2 uncommitted files.', { force: true }]);
   await p.close();
 });

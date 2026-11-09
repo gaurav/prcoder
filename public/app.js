@@ -321,6 +321,10 @@ function gone(how) {
   // The shortcut sheet may be up, and a second modal would sit over it with
   // the focus handed back to the sheet when this one could never close.
   document.getElementById('keys').close();
+  // The exit bar is up if its own Quit got us here, and its Start would reach
+  // nothing; the terminal takes the room back, as on a Start.
+  exitForm.hidden = true;
+  sync();
   box.addEventListener('cancel', (e) => e.preventDefault());
   document.getElementById('dead-reload').onclick = () => location.reload();
   box.showModal();
