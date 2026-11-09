@@ -2521,8 +2521,16 @@ async function pullsPage(listing = PULLS, { stale = true } = {}) {
   });
   await fresh.reload();
   await fresh.waitForSelector('#queue-body .tab[data-tab="local"]');
+  // The rows ask git what a bare base is built on (/api/below) as they are
+  // first drawn, and the answer repaints them. With the listing on hand as
+  // the page opens, the rows are drawn by the click itself, so a test that
+  // took hold of a row right after this returned found it replaced under it
+  // (2026-11-08); wait for that answer, and the tick that paints it.
+  const below = fresh.waitForResponse('**/api/below', { timeout: 2000 }).catch(() => null);
   await fresh.locator('#queue-body .tab[data-tab="pulls"]').click();
   await fresh.waitForSelector('#queue-body .pull-note');
+  await below;
+  await fresh.waitForTimeout(100);
   return { fresh, typed, asked };
 }
 
