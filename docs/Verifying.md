@@ -152,7 +152,8 @@ either. Filing an item with ◎ is the one queue route that does, on purpose, an
 `test/api.test.js` is also the one test that opens a real `/pty`: with settings `sessionArgs`
 refuses, so the claim is that it closes with 1008 before the spawn. The exit bar's "Start coding
 agent" and Quit are `test/browser/suite.js`'s, against a mock socket that closes the way an
-exiting agent does.
+exiting agent does, or with `QUIT_CODE` the way a quitting prcoder does. That a quit really sends
+`QUIT_CODE` to every tab is `test/cli.test.js`'s, against a real server in a throwaway repo.
 
 Some things were checked against the real thing rather than a stub, and the evidence sits next to
 the code:
