@@ -955,6 +955,10 @@ test('Quit in the menu asks what the exit bar asks, and then the whole window sa
   await fresh.keyboard.press('Escape');
   await fresh.keyboard.press('Escape');
   assert.equal(await fresh.locator('#dead:modal').count(), 1, 'Escape does not close it');
+  // Alt+/ is the one binding that fires over a modal, and the sheet it opens
+  // would sit over this box.
+  await fresh.keyboard.press('Alt+Slash');
+  assert.equal(await fresh.locator('#keys').isVisible(), false, 'Alt+/ opens no sheet over it');
   // What is at a pane's own middle is the modal's backdrop, not the pane.
   const hit = await fresh.evaluate(() => {
     const r = document.getElementById('pr-refresh').getBoundingClientRect();

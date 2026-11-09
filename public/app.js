@@ -402,6 +402,7 @@ keysDialog.addEventListener('click', (e) => {
   if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) keysDialog.close();
 });
 function toggleKeys() {
+  if (dead) return;   // its binding fires over modals, and gone()'s is up for good
   if (keysDialog.open) keysDialog.close();
   else keysDialog.showModal();
 }
