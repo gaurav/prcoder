@@ -293,23 +293,21 @@ exitForm.onsubmit = (e) => {
 };
 // prcoder is gone, and with it everything on the page: the pull request pane,
 // the queue and the terminal all talk to the server, so none of it works and
-// none of it should look as if it might. One modal over the window says so --
-// a <dialog>, so the page behind it is inert and no shortcut fires (keys.js;
-// Alt+/, the one that fires over a modal, refuses in toggleKeys) -- and it
-// does not close: it has no ✕, and closedby="none" in index.html keeps Escape
-// off it. Refusing the 'cancel' event alone is not enough: Chrome lets a page
-// refuse one Escape per user activation, and Escape is not one, so a second
-// press closed it. The 'cancel' refusal stays for a browser without closedby.
-// The panes stay
-// behind it, dimmed, as the record of what was on screen. Until 2026-11-09 a
-// quit filled the exit bar with a line and left the rest looking alive, and a
-// prcoder quit from its own terminal showed as the coding agent having exited.
+// none of it should look as if it might. One modal over the window says so,
+// and the panes behind it are dimmed. Until 2026-11-09 a quit filled the exit
+// bar with a line and left the rest looking alive, and a prcoder quit from its
+// own terminal showed as the coding agent having exited.
+//
+// ✕ or Escape closes the box, so the terminal's last screen can be selected
+// and copied; the panes stay dimmed (main.dead in style.css, opacity rather
+// than `inert`, which would stop the selecting) and the title stays, so the
+// page still reads as switched off. It had a Reload button, dropped: with
+// prcoder gone there is nothing to reload from, and once it is started again
+// the coding agent's session is /resume away in the new tab.
 //
 // `dead` stops the poll, which is the one thing here that fetches without
-// being asked; everything else is started by a click or a key the modal has
-// taken away. The title is for the tab strip, where a dead tab otherwise
-// looks like a live one. Reload is the way back once prcoder has been started
-// again, and until then the browser's own "can't connect" page is the answer.
+// being asked. A click on something left on the page after the box is closed
+// fails as any request to a server that is not there does, with a toast.
 let dead = false;
 function gone() {
   if (dead) return;
@@ -317,15 +315,15 @@ function gone() {
   turn(false);
   document.title = 'prcoder (not running)';
   const box = document.getElementById('dead');
-  // The shortcut sheet may be up, and a second modal would sit over it with
-  // the focus handed back to the sheet when this one could never close.
+  // The shortcut sheet may be up, listing keys that no longer do anything,
+  // and the box would sit over it.
   document.getElementById('keys').close();
   // The exit bar is up if its own Quit got us here, and its Start would reach
   // nothing; the terminal takes the room back, as on a Start.
   exitForm.hidden = true;
   sync();
-  box.addEventListener('cancel', (e) => e.preventDefault());
-  document.getElementById('dead-reload').onclick = () => location.reload();
+  document.getElementById('dead-close').onclick = () => box.close();
+  document.querySelector('main').classList.add('dead');
   box.showModal();
 }
 // Quit, from the exit bar or the menu.
@@ -404,7 +402,6 @@ keysDialog.addEventListener('click', (e) => {
   if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) keysDialog.close();
 });
 function toggleKeys() {
-  if (dead) return;   // its binding fires over modals, and gone()'s is up for good
   if (keysDialog.open) keysDialog.close();
   else keysDialog.showModal();
 }

@@ -928,9 +928,10 @@ test('Alt+/ shows every shortcut, from the terminal too, and Escape puts the foc
 
 // Quit from the menu is the exit bar's quit: the same question, and afterwards
 // the same modal over the whole window, since nothing on the page works once
-// prcoder has gone. It does not close, the page behind it takes no click, and
-// the tab's title says so. The PTY dies with prcoder, so its socket closes
-// after the modal is up: that close must change nothing, and not throw.
+// prcoder has gone. While it is up the page behind takes no click. Its ✕
+// closes it so the page can be copied from, and the panes stay dimmed and the
+// tab's title says so. The PTY dies with prcoder, so its socket closes after
+// the modal is up: that close must change nothing, and not throw.
 test('Quit in the menu asks what the exit bar asks, and then the whole window says prcoder has quit', { skip }, async () => {
   let sock;
   const fresh = await newPage({ pty: (ws) => { sock = ws; } });
@@ -949,17 +950,6 @@ test('Quit in the menu asks what the exit bar asks, and then the whole window sa
   assert.equal(await fresh.textContent('#dead-title'), 'prcoder has quit');
   assert.deepEqual(asked, [{}, 'Quit prcoder? 2 uncommitted files.', { force: true }]);
   assert.equal(await fresh.title(), 'prcoder (not running)');
-  assert.equal(await fresh.evaluate(() => document.activeElement.id), 'dead-reload');
-  // Twice: Chrome lets a page refuse only one Escape per click or key that
-  // counts as using the page, and Escape does not count, so a second one
-  // closed it until it had closedby="none".
-  await fresh.keyboard.press('Escape');
-  await fresh.keyboard.press('Escape');
-  assert.equal(await fresh.locator('#dead:modal').count(), 1, 'Escape does not close it');
-  // Alt+/ is the one binding that fires over a modal, and the sheet it opens
-  // would sit over this box.
-  await fresh.keyboard.press('Alt+Slash');
-  assert.equal(await fresh.locator('#keys').isVisible(), false, 'Alt+/ opens no sheet over it');
   // What is at a pane's own middle is the modal's backdrop, not the pane.
   const hit = await fresh.evaluate(() => {
     const r = document.getElementById('pr-refresh').getBoundingClientRect();
@@ -970,6 +960,10 @@ test('Quit in the menu asks what the exit bar asks, and then the whole window sa
   await settle(fresh);
   assert.deepEqual(errors, []);
   assert.equal(await fresh.isHidden('#term-exit'), true, 'no Start for a prcoder that is not there');
+  await fresh.click('#dead-close');
+  assert.equal(await fresh.locator('#dead:modal').count(), 0, 'the ✕ closes it');
+  assert.equal(await fresh.$eval('main', (m) => m.classList.contains('dead')), true, 'the panes stay dimmed');
+  assert.equal(await fresh.title(), 'prcoder (not running)');
   await fresh.close();
 });
 
@@ -993,6 +987,8 @@ test('a socket closed with prcoder\'s quit code gets the modal, and any other cl
   await gone.waitForSelector('#dead:modal');
   assert.equal(await gone.textContent('#dead-title'), 'prcoder has quit');
   assert.equal(await gone.isHidden('#term-exit'), true, 'no Start for a prcoder that is not there');
+  await gone.keyboard.press('Escape');
+  assert.equal(await gone.locator('#dead:modal').count(), 0, 'Escape closes it, as the ✕ does');
   polls = 0;
   await gone.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
   await gone.clock.fastForward(61_000);

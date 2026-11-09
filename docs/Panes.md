@@ -366,13 +366,14 @@ was given even when the bar would refuse it typed in. Quit asks what the termina
 ([Terminal.md](Terminal.md)).
 
 Once prcoder itself has gone, nothing on the page works -- the pull request pane, the queue and
-the terminal all talk to it -- so the whole window says so: a box over the panes, which stay
-behind it dimmed and take no click or key, and a tab titled `prcoder (not running)`. It does not
-close, and neither Escape nor Alt+/ puts anything over it. It comes up after a Quit from the
-page, and also when prcoder was quit from its own terminal or from another tab: a quitting
-prcoder closes every tab's connection with a code of its own before it stops. A prcoder that
-crashes sends none, so the page cannot tell it from the agent exiting and shows the exit bar.
-**Reload** is the way back after starting prcoder again in the same repository.
+the terminal all talk to it -- so the whole window says so: a box over the panes, which are dimmed
+behind it and take no click or key, and a tab titled `prcoder (not running)`. It comes up after a
+Quit from the page, and also when prcoder was quit from its own terminal or from another tab: a
+quitting prcoder closes every tab's connection with a code of its own before it stops. A prcoder
+that crashes sends none, so the page cannot tell it from the agent exiting and shows the exit bar.
+The box's ✕, or Escape, closes it so the terminal's last screen can be selected and copied; the
+panes stay dimmed and the title stays. The way on is to close the tab, or start prcoder again, where
+`/resume` or `-- --continue` picks the coding agent's session back up.
 
 ## Queue
 
