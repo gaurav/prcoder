@@ -177,8 +177,8 @@
     <p id="keys-note"></p>
   </dialog>
   <!-- prcoder is no longer running (gone() in app.js): the one thing left on
-       the page that does anything. No ✕, and Escape is refused. -->
-  <dialog id="dead" aria-labelledby="dead-title">
+       the page that does anything. No ✕, and closedby="none" so Escape does nothing. -->
+  <dialog id="dead" aria-labelledby="dead-title" closedby="none">
     <h2 id="dead-title">prcoder has quit</h2>
     <p>Nothing on this page works any more. Close this tab, or start prcoder
        again in this repository and reload.</p>

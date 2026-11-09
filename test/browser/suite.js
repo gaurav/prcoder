@@ -949,6 +949,10 @@ test('Quit in the menu asks what the exit bar asks, and then the whole window sa
   assert.deepEqual(asked, [{}, 'Quit prcoder? 2 uncommitted files.', { force: true }]);
   assert.equal(await fresh.title(), 'prcoder (not running)');
   assert.equal(await fresh.evaluate(() => document.activeElement.id), 'dead-reload');
+  // Twice: Chrome lets a page refuse only one Escape per click or key that
+  // counts as using the page, and Escape does not count, so a second one
+  // closed it until it had closedby="none".
+  await fresh.keyboard.press('Escape');
   await fresh.keyboard.press('Escape');
   assert.equal(await fresh.locator('#dead:modal').count(), 1, 'Escape does not close it');
   // What is at a pane's own middle is the modal's backdrop, not the pane.

@@ -295,8 +295,13 @@ exitForm.onsubmit = (e) => {
 // prcoder is gone, and with it everything on the page: the pull request pane,
 // the queue and the terminal all talk to the server, so none of it works and
 // none of it should look as if it might. One modal over the window says so --
-// a <dialog>, so the page behind it is inert and no shortcut fires (keys.js) --
-// and it does not close: Escape is refused and it has no ✕. The panes stay
+// a <dialog>, so the page behind it is inert and no shortcut fires (keys.js;
+// Alt+/, the one that fires over a modal, refuses in toggleKeys) -- and it
+// does not close: it has no ✕, and closedby="none" in index.html keeps Escape
+// off it. Refusing the 'cancel' event alone is not enough: Chrome lets a page
+// refuse one Escape per user activation, and Escape is not one, so a second
+// press closed it. The 'cancel' refusal stays for a browser without closedby.
+// The panes stay
 // behind it, dimmed, as the record of what was on screen. Until 2026-11-09 a
 // quit filled the exit bar with a line and left the rest looking alive, and a
 // prcoder quit from its own terminal showed as the coding agent having exited.
