@@ -42,7 +42,7 @@ to be discarded -- the only signals that extension reads off a page are playing 
 half-typed form input, and faking either is a hack -- so tell the extension instead: add
 `localhost` to Auto Tab Discard's exceptions (right-click its toolbar button, or its options
 page). It matches on hostname alone, so that one entry covers every prcoder whatever its port.
-A tab brought back after a discard says so in a toast that links here.
+A tab brought back after a discard says so in a notice that links here.
 
 **A window per repo.** `PRCODER_BROWSER` replaces the platform opener with your own command, with the
 URL appended. Firefox hands the arguments to the running copy, so

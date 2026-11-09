@@ -3,7 +3,7 @@ import { FitAddon } from '/vendor/addon-fit.mjs';
 import { WebLinksAddon } from '/vendor/addon-web-links.mjs';
 import { renderPr, renderNoPr, renderHeader, pageTitle, prRepo } from './pr.js';
 import { fileFrom, nextUnviewed, revealFile } from './filelist.js';
-import { h, api, toast, pref, setPref, debug } from './ui.js';
+import { h, api, toast, notice, dismissNotice, pref, setPref, debug } from './ui.js';
 import { openDiff, closeDiff, selectedPath, setViewed, showViewed, canTickViewed, toggleViewed, toggleWrap, canWrap, openMention } from './diff.js';
 import { initQueue, addItem, setAddTo, setItems, paintPulls, setHistoryOn, primeIssues } from './queue.js';
 import { historyStale, lastPrompt } from './history.js';
@@ -215,26 +215,26 @@ function connect(query = '') {
         // Not the error style: the session did end, but on a deliberate reload
         // that is the answer to what you just did, not something that went wrong.
         // A tab the browser unloaded is different: nobody asked, and the fix is
-        // in the browser, not here (Ports.md, "Tab unloaders"). Sticky, since a
-        // link needs longer than 4s to click.
+        // in the browser, not here (Ports.md, "Tab unloaders"). A notice, since
+        // a link needs longer than 4s to click.
         //
         // Only document.wasDiscarded, Chrome's, says so for certain. Elsewhere a
         // restored tab is just a load that was not a reload, and so are Back to
         // a tab you navigated away from and a duplicated tab, which copies
         // sessionStorage (and whose original is still running). Firefox's
         // restore can't be driven to see which type it reports, so none of them
-        // is ruled out: they share a toast that names the other causes rather
+        // is ruled out: they share a notice that names the other causes rather
         // than claiming the browser did it.
         const nav = performance.getEntriesByType('navigation')[0]?.type;
         const unloaders = { href: PORTS_DOC, text: 'Keep tab unloaders off prcoder' };
         if (document.wasDiscarded) {
-          toast('The browser unloaded this tab, and the coding agent\'s session went with it. '
-            + '/resume picks it back up, or start prcoder with -- --continue.', false, true, unloaders);
+          notice('The browser unloaded this tab, and the coding agent\'s session went with it. '
+            + '/resume picks it back up, or start prcoder with -- --continue.', { link: unloaders, kind: 'reloaded' });
         } else if (nav && nav !== 'reload') {
-          toast('This page was loaded again, so the coding agent started a new session here. If you '
+          notice('This page was loaded again, so the coding agent started a new session here. If you '
             + 'didn\'t come back to it or duplicate it yourself, the browser unloaded the tab. '
             + '/resume picks the old session back up, or start prcoder with -- --continue.',
-          false, true, unloaders);
+          { link: unloaders, kind: 'reloaded' });
         } else {
           toast('Claude was restarted — this tab\'s previous session ended when it disconnected. '
             + '/resume picks it back up, or start prcoder with -- --continue.');
@@ -300,35 +300,29 @@ exitForm.onsubmit = (e) => {
 // opening the page after a break, what you were doing; after Start in the
 // exit bar, the prompt the session died on. Text only: the History tab's
 // rows have ▶ to type one back in, and a button here was the one thing on
-// the page that typed text the user could not see whole. Sticky, since it
+// the page that typed text the user could not see whole. A notice, since it
 // waits to be read; the next Enter in the terminal takes it down
 // (dismissLastPrompt), since by then it has been. From the History tab's own
-// listing (lastPrompt), not a read of its own. Only onto an empty slot:
-// a reload's notice, which is up by now, has the one slot there is, and this
-// one is not worth taking it over (#180 is the toast area that would hold
-// both).
+// listing (lastPrompt), not a read of its own. It goes up beside a reload's
+// notice, which it used to give way to when the two shared the toast's slot.
 async function lastPromptNotice() {
   let on;
   try { ({ history: on } = await whoami); } catch { return; }
   if (!on) return;
   const p = await lastPrompt();
-  if (!p || !document.getElementById('toast').hidden) return;
+  if (!p) return;
   const text = p.text.replace(/\s+/g, ' ').trim();
   const cut = text.length > 140 ? `${text.slice(0, 139)}…` : text;
   const when = `${age(new Date(p.at).toISOString())} (${dayLabel(p.at)} ${timeLabel(p.at)})`;
-  toast(`Last prompt, ${when}: ${cut}`, false, true).dataset.kind = 'last-prompt';
+  notice(`Last prompt, ${when}: ${cut}`, { kind: 'last-prompt' });
 }
-const dismissLastPrompt = () => {
-  const el = document.getElementById('toast');
-  if (el.dataset.kind === 'last-prompt') el.hidden = true;
-};
+const dismissLastPrompt = () => dismissNotice('last-prompt');
 // Quit, from the exit bar or the menu. The exit bar goes up here, filled with
 // the fact rather than with a Start that would reach nothing; `quit` tells
 // ws.onclose, when the killed PTY's socket closes, to leave it so. From the
-// menu, where the bar may be out of sight, a sticky toast says the same. The
+// menu, where the bar may be out of sight, a notice says the same. The
 // menu's Quit goes grey with it: picked again, it would reach no server and
-// put a network error in the toast's one slot, over the line saying the quit
-// worked.
+// only raise a network error.
 let quit = false;
 async function quitPrcoder(fromMenu = false) {
   try {
@@ -344,7 +338,7 @@ async function quitPrcoder(fromMenu = false) {
     exitForm.hidden = false;
     sync();   // as ws.onclose does, and for the same reason
     document.getElementById('menu-quit').disabled = true;
-    if (fromMenu) toast(gone, false, true);
+    if (fromMenu) notice(gone, { kind: 'quit' });
   } catch (e) {
     toast(e.message, true);
   }
@@ -857,10 +851,9 @@ async function switchPr(url) {
     // Claude's cwd survives a checkout, but its idea of the files does not, and
     // nothing tells it: prcoder has no channel into the session that isn't a
     // typed user turn (issue #21). So this is addressed to you, not to Claude,
-    // and it is sticky because it stays true until you have said something.
-    toast(`Switched to ${status.branch}${status.pr ? ` (#${status.pr.number})` : ''}. Claude still has the old`
-      + " branch's files in mind — tell it to re-read anything it had open.",
-    false, true);
+    // and it is a notice because it stays true until you have said something.
+    notice(`Switched to ${status.branch}${status.pr ? ` (#${status.pr.number})` : ''}. Claude still has the old`
+      + " branch's files in mind — tell it to re-read anything it had open.", { kind: 'switched' });
   } catch (e) {
     debug('switch failed:', e.message);
     toast(e.message, true);
@@ -886,7 +879,7 @@ async function createPr(btn) {
   try {
     const { url, pushed } = await api('/api/pr/create');
     if (win) win.location = url;
-    else toast(`Popup blocked — the compare page is at ${url}`, true, true);
+    else notice('Popup blocked — the compare page is at', { bad: true, link: { href: url, text: url }, kind: 'popup' });
     if (pushed) toast('Pushed this branch to origin first.');
   } catch (e) {
     win?.close();
