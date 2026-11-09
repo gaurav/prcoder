@@ -255,9 +255,10 @@ console.log('pr tab: ', await page.locator('#queue-body .tab', { hasText: /^PR #
     `${g.querySelector('h3').textContent.replace(/\s+/g, ' ').trim()}${g.open ? ' (open)' : ''}: ${g.querySelectorAll('.item').length} rows`))).join(' | '),
   '\n  (want Checklist, Mentions and Closes, each only when the description has any, and the count = unticked boxes + open mentions)');
 const firstBox = () => page.locator('#queue-body .item.source input[type=checkbox]').first();
-// A description can have no checkboxes at all -- this repo's PR #27 has none --
-// and then there is nothing to tick, which is a skip rather than a hang.
-if (await prRows.count()) {
+// A description can have no checkboxes at all -- this repo's PR #1 has none --
+// and then there is nothing to tick, which is a skip rather than a hang. The
+// boxes, not the rows: the tab's rows are the mentions and closes too.
+if (await firstBox().count()) {
   // The untick is the undo, so a run that fails between the two clicks -- a
   // timeout, a refused write, the browser going away -- would leave the box
   // ticked on GitHub. The description is snapshotted first, byte for byte from
