@@ -133,7 +133,8 @@ bound. A short one fits beside the four links; a long one drops whole onto the n
 four stay where they are either way. On a line of its own it truncates rather than wraps: a long
 owner is clipped and the repository's own name kept, since that is the half that says which
 checkout you are in. It is drawn as a chip rather than a fifth link: the links are places to go,
-and the chip is the one thing in the head that answers which checkout this is.
+and the chip is the one thing in the head that answers which checkout this is, so it is filled
+and its name is bold: with several windows open it is what you look for first.
 
 ### Moving between pull requests
 
@@ -400,7 +401,10 @@ row leaves out what it lacks.
 
 New items go to the bottom, so typing them in builds a list in the order you mean to work through
 it. The arrow next to the input flips that to the top, for the other way of using a queue -- the
-thing you must not forget to do next -- and stays flipped. They always go on Local, whichever tab
+thing you must not forget to do next -- and stays flipped. From the input itself, Alt+Shift+↑ sets
+it to the top and Alt+Shift+↓ to the bottom, so the end can be chosen for the item being typed
+without reaching for the arrow; the two are the input's own and are not on the shortcut sheet,
+whose keys are the ones that work everywhere but there. They always go on Local, whichever tab
 is showing -- the input's placeholder says so -- and adding one from another tab leaves you there
 and flashes the Local tab instead.
 

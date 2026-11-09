@@ -1751,6 +1751,27 @@ async function refPage(answer, queue = []) {
   return { fresh, add, typed, rows: () => fresh.locator('#queue-body .item') };
 }
 
+// The arrow button's choice from the keyboard, for the item being typed: the
+// input is the one place bindKeys never fires, so this is the input's own key.
+test('Alt+Shift+↑ and ↓ in the input choose which end the next item goes to', { skip }, async () => {
+  const { fresh, add, rows } = await refPage(() => ({ json: { ref: null } }));
+  const input = fresh.locator('#queue-input');
+  const texts = () => rows().locator('.text').allTextContents();
+  await add('first');
+  await fresh.waitForFunction(() => document.querySelectorAll('#queue-body .item').length === 1);
+  await input.press('Alt+Shift+ArrowUp');
+  assert.equal(await fresh.locator('#queue-where').textContent(), '↑');
+  await add('on top');
+  await fresh.waitForFunction(() => document.querySelectorAll('#queue-body .item').length === 2);
+  assert.deepEqual(await texts(), ['on top', 'first']);
+  await input.press('Alt+Shift+ArrowDown');
+  assert.equal(await fresh.locator('#queue-where').textContent(), '↓');
+  await add('at the end');
+  await fresh.waitForFunction(() => document.querySelectorAll('#queue-body .item').length === 3);
+  assert.deepEqual(await texts(), ['on top', 'first', 'at the end']);
+  await fresh.close();
+});
+
 test('a reference on its own is added as the issue\'s title, tagged, and ▶ carries the link', { skip }, async () => {
   const { fresh, add, typed, rows } = await refPage(() => ({ json: { ref: {
     whole: true, issue: 91, repo: null, kind: 'pull', title: 'Make the queue read references' } } }));

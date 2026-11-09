@@ -5,7 +5,7 @@ import { renderPr, renderNoPr, renderHeader, pageTitle, prRepo } from './pr.js';
 import { fileFrom, nextUnviewed, revealFile } from './filelist.js';
 import { h, api, toast, pref, setPref, debug } from './ui.js';
 import { openDiff, closeDiff, selectedPath, setViewed, showViewed, canTickViewed, toggleViewed, toggleWrap, canWrap, openMention } from './diff.js';
-import { initQueue, addItem, setItems, paintPulls, setHistoryOn, primeIssues } from './queue.js';
+import { initQueue, addItem, setAddTo, setItems, paintPulls, setHistoryOn, primeIssues } from './queue.js';
 import { historyStale, lastPrompt } from './history.js';
 import { age, dayLabel, timeLabel } from './items.js';
 import { bindKeys, keyLabel, isTyping } from './keys.js';
@@ -948,6 +948,17 @@ document.addEventListener('visibilitychange', () => {
 
 const input = document.getElementById('queue-input');
 input.addEventListener('keydown', async (e) => {
+  // Which end the next item goes to, without leaving the input for the arrow
+  // button: the key's arrow is the button's. Here and not in bindKeys, whose
+  // bindings never fire while the input is being typed into -- and this one
+  // only means anything there. It takes the textarea's own
+  // extend-the-selection-by-a-paragraph on a Mac, which a queue item rarely
+  // has enough of to miss.
+  if (e.altKey && e.shiftKey && !e.ctrlKey && !e.metaKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+    e.preventDefault();
+    setAddTo(e.key === 'ArrowUp' ? 'top' : 'bottom');
+    return;
+  }
   // Shift-Enter is the newline; plain Enter still saves, which is the whole
   // reason this is a textarea with a key handler rather than a form.
   if (e.key !== 'Enter' || e.shiftKey) return;
