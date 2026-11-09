@@ -841,7 +841,7 @@ main.diff-off #diff-wrap { display: none; }
    in the directory fold's face), a label as a dashed chip with no colour of
    its own (#66), and an opened row's body in the description's face. */
 #queue-search {
-  display: block; width: 100%; box-sizing: border-box; margin: 0 0 6px; padding: 3px 6px;
+  box-sizing: border-box; padding: 3px 6px;
   font: inherit; font-size: 12px; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 4px;
 }
 #queue-search:focus { outline: 1px solid var(--accent); }
@@ -932,8 +932,20 @@ li.issue-body select.milestone {
    pull request's tag is the tinted `PR #N` chip (`.tag.pull` above), as the
    queue's rows wear it; the size chip is a size label in a plain outline; the
    merge word takes the file list's colours. */
-.pull-controls { display: flex; gap: 6px; align-items: center; margin: 0 0 6px; }
-.pull-controls #queue-pull-search, .pull-controls #queue-history-search { flex: 1; margin: 0; }
+/* The row of controls at the top of each tab that reads something -- Issues,
+   PRs and History: the search, and on two of them the selects and ⟳. It
+   stays in sight while the groups scroll under it: sticky inside the list
+   rather than in the strip's head, since it belongs to one tab, and the head
+   keeps one height whichever tab shows. Stuck, it sits 10px down -- both
+   engines keep it inside the scroller's padding (2026-11-08) -- so ::before
+   paints that band in the panel's colour and takes the clicks in it; the gap
+   under it is padding, not margin, so no row shows through there either. */
+.pull-controls {
+  display: flex; gap: 6px; align-items: center; position: sticky; top: 0; z-index: 1;
+  margin: 0; padding: 0 0 6px; background: var(--panel);
+}
+.pull-controls::before { content: ''; position: absolute; left: 0; right: 0; top: -10px; height: 10px; background: var(--panel); }
+.pull-controls #queue-search, .pull-controls #queue-pull-search, .pull-controls #queue-history-search { flex: 1; margin: 0; }
 .pull-controls select {
   font: inherit; font-size: 12px; padding: 2px 4px; color: var(--fg); background: var(--bg);
   border: 1px solid var(--line); border-radius: 4px;

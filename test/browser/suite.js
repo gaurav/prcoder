@@ -1525,6 +1525,31 @@ test('the queue\'s tabs stay above a list that scrolls, each tab at its own offs
   await fresh.close();
 });
 
+// A tab's controls stay at the top of the list as the groups scroll under
+// them: the Issues tab's search here, which is in the same row the PRs and
+// History tabs have. The box is the row's first control, so a search typed
+// after a scroll lands in a box that is on screen.
+test('the Issues tab\'s search stays in sight as its groups scroll', { skip }, async () => {
+  const { fresh } = await issuesPage();
+  // Where the row is, and what a click just above it would land on: the row
+  // itself (its ::before covers the scroller's padding band), never a group.
+  const at = () => fresh.evaluate(() => {
+    const list = document.getElementById('queue-list').getBoundingClientRect();
+    const row = document.querySelector('#queue-list .pull-controls').getBoundingClientRect();
+    const above = document.elementFromPoint(row.left + row.width / 2, row.top - 5);
+    return { top: Math.round(row.top - list.top), scrolled: document.getElementById('queue-list').scrollTop, above: above?.closest('.pull-controls, [data-group]')?.className ?? above?.id };
+  });
+  assert.deepEqual(await at(), { top: 10, scrolled: 0, above: 'pull-controls' }, 'under the list\'s padding, unscrolled');
+  await fresh.evaluate(() => { document.getElementById('queue-list').scrollTop = 80; });
+  await fresh.waitForFunction(() => document.getElementById('queue-list').scrollTop === 80);
+  assert.deepEqual(await at(), { top: 10, scrolled: 80, above: 'pull-controls' }, 'stuck under the list\'s padding, and covering it');
+  // And a group really is under it: the first group's line has scrolled past.
+  assert.ok(await fresh.evaluate(() => document.querySelector('.issue-groups [data-group] summary').getBoundingClientRect().top
+    < document.querySelector('#queue-list .pull-controls').getBoundingClientRect().bottom), 'the first group is under the row');
+  assert.ok(await fresh.locator('#queue-list .pull-controls #queue-search').isVisible());
+  await fresh.close();
+});
+
 // Completed is sorted by when each item was finished, so the one just ticked by
 // mistake is on top to be unticked -- whatever order the queue holds them in.
 // One the store has not stamped yet goes last. With the order not the user's to

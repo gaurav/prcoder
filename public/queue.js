@@ -514,7 +514,7 @@ function issueList() {
     query = search.value;
     paintIssues();
   };
-  return h('div', { className: 'issues-pane' }, search, groupsList('issue-groups', issueGroups()));
+  return h('div', { className: 'issues-pane' }, h('div', { className: 'pull-controls' }, search), groupsList('issue-groups', issueGroups()));
 }
 
 /**
