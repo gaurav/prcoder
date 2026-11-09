@@ -557,9 +557,11 @@ and the copied item is tagged `PR #N`.
 
 The list is read from GitHub only for this tab, never for the switcher: the one call that carries
 the size, the merge state and the viewed files takes seconds on a repository with many open
-([Verifying.md](Verifying.md#figures-worth-re-measuring) has the figure), so the tab opens from
-the last listing -- the server's, or `.prcoder/pulls.json`, which keeps it between runs -- and
-reads GitHub behind it, unless the listing is under a minute old. The line under the groups says
+([Verifying.md](Verifying.md#figures-worth-re-measuring) has the figure), so the page reads the
+last listing as it opens -- the server's, or `.prcoder/pulls.json`, which keeps it between runs; a
+clone with neither reads GitHub once and keeps that -- and the tab's count is on the strip before a
+visit. A visit opens the tab from that listing and reads GitHub behind it, unless the listing is
+under a minute old. The line under the groups says
 when the listing was read and `updating…` while the read is out; ⟳ beside the search reads
 whatever the age. A read that fails leaves the list as it was and says so in a toast.
 A row dragged by its grip (⠿) onto a milestone's line, or the pick in its opened row, sets the pull request's

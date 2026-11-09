@@ -104,6 +104,8 @@ let pullsReading = false;
 let pullsLoading = null;
 // A forced read was asked for while one was out (loadPulls).
 let pullsStale = false;
+// A visit to the tab arrived while a read was out, and is owed its age check.
+let pullsVisit = false;
 let pullQuery = '';
 let pullsSeeded = false;
 // Its order and grouping, remembered as the add-to arrow is (below).
@@ -162,6 +164,8 @@ export async function initQueue(d) {
   // Before the fetch, so a remembered ↑ is not shown as the markup's ↓ for as
   // long as /api/queue takes to answer.
   paintWhere();
+  // The last pull request listing, for the PRs tab's count before a visit.
+  loadPulls(false, { visit: false });
   // api(), not a bare fetch: a 500 answers `{error}` with a 200-shaped body, and
   // assigning that object to `items` made the very next render() throw on
   // items.filter -- a server-side error taking the whole pane down rather than
@@ -1134,25 +1138,37 @@ const movePull = (number, milestone) => moveRow('pulls', number, milestone);
  * unless the listing is under a minute old. `force` is the tab's ⟳, which
  * reads whatever the age. The listing on screen stays until the new one
  * lands, and stays if it does not; the note under the groups says which.
+ *
+ * Not a `visit` when the page opens (initQueue): the last listing is read
+ * then too, so the tab's count is there before a visit -- a millisecond from
+ * the file, or GitHub once in a clone that has none, which the file then
+ * keeps -- but the fresh read behind it waits for a visit, since nobody is
+ * looking yet.
  */
-function loadPulls(force = false) {
+function loadPulls(force = false, { visit = true } = {}) {
   // A forced read asked for during another -- a move, whose write that read
-  // was sent before -- runs once that one is in, as loadIssues's `again` does.
+  // was sent before -- runs once that one is in, as loadIssues's `again` does;
+  // and a visit during the page-open read gets its age check once that is in.
   if (pullsLoading) {
     pullsStale ||= force;
+    pullsVisit ||= visit;
     return pullsLoading;
   }
-  pullsLoading = readPulls(force).finally(() => {
+  pullsLoading = readPulls(force, visit).finally(() => {
     pullsLoading = null;
     paintPulls();
-    if (!pullsStale) return;
-    pullsStale = false;
-    loadPulls(true);
+    if (pullsStale) {
+      pullsStale = false;
+      loadPulls(true);
+    } else if (pullsVisit) {
+      pullsVisit = false;
+      loadPulls();
+    }
   });
   return pullsLoading;
 }
 
-async function readPulls(force) {
+async function readPulls(force, visit) {
   pullsReading = true;
   try {
     if (!pullsListing) {
@@ -1161,7 +1177,7 @@ async function readPulls(force) {
       try { pullsListing = await api('/api/pulls', { fresh: false }); } catch (e) { return toast(e.message, true); }
       paintPulls();
     }
-    if (force || Date.now() - pullsListing.read >= PULLS_FRESH_FOR) {
+    if (force || (visit && Date.now() - pullsListing.read >= PULLS_FRESH_FOR)) {
       paintPulls();
       try { pullsListing = await api('/api/pulls', { fresh: true }); } catch (e) { toast(e.message, true); }
     }
@@ -1182,10 +1198,12 @@ const drawPulls = () => {
 };
 
 export function paintPulls() {
-  if (tab !== 'pulls') return;
-  if (groupsInUse()) groupsOwed = true; else drawPulls();
+  // The count whatever tab shows -- the listing is read before a visit -- and
+  // the groups only on this one.
   const t = document.querySelector('#queue-body .tab[data-tab="pulls"]');
   if (t) t.textContent = `${LABELS.pulls} (${pullCount()})`;
+  if (tab !== 'pulls') return;
+  if (groupsInUse()) groupsOwed = true; else drawPulls();
 }
 
 /**

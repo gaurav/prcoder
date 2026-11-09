@@ -149,8 +149,9 @@ const withLong = (st) => ({ ...st, pr: { ...st.pr, files: [...files, fileRow('lo
 // What /api/issues answers for a repository with nothing: the Issues tab is
 // always there, so every page gets this unless a test routes its own.
 const EMPTY_ISSUES = { milestones: [], issues: [], total: 0, listed: 0, repo: 'heal-data-stewards/heal-vlmd-AI-pipeline', mentions: [] };
-// And /api/pulls, which the PRs tab asks twice on opening: once for
-// the last listing, once for a fresh one. `read` is when, in ms.
+// And /api/pulls, which the page asks for the last listing as it opens, for
+// the PRs tab's count, and the tab asks for a fresh one on a visit. `read` is
+// when, in ms.
 const EMPTY_PULLS = { milestones: [], pulls: [], total: 0, listed: 0, read: 0 };
 
 let browser;
@@ -2418,7 +2419,11 @@ const pullGroupsOf = (p) => p.$$eval('#queue-body .fold.milestone', (gs) => gs.m
   return `${g.dataset.group}|${line.textContent.replace(/\s+/g, ' ').trim()}|${g.open ? 'open' : 'closed'}|${[...g.querySelectorAll('.item')].map((i) => i.dataset.pull).join(',')}`;
 }));
 
-/** A page on the PRs tab with `listing` answered, counting what the route was asked. */
+/**
+ * A page on the PRs tab with `listing` answered, counting what the route was
+ * asked: the page's own `false` as it opens, then the visit's `true` when the
+ * listing is stale.
+ */
 async function pullsPage(listing = PULLS, { stale = true } = {}) {
   const fresh = await newPage({ clock: true, below: BELOW });
   await fresh.clock.setFixedTime(NOW);
@@ -2445,9 +2450,29 @@ async function pullsPage(listing = PULLS, { stale = true } = {}) {
   return { fresh, typed, asked };
 }
 
+// The count is on the tab as the page opens, from the last listing, with no
+// fresh read until someone visits; the visit then reads behind it.
+test('the PRs count is on the tab before a visit, from the last listing alone', { skip }, async () => {
+  const fresh = await newPage({ clock: true, below: BELOW });
+  await fresh.clock.setFixedTime(NOW);
+  const asked = [];
+  await fresh.route('**/api/pulls', (r) => { asked.push(r.request().postDataJSON().fresh); return r.fulfill({ json: PULLS }); });
+  await fresh.reload();
+  await fresh.waitForFunction(() => document.querySelector('#queue-body .tab[data-tab="pulls"]')?.textContent === 'PRs (3)');
+  await fresh.waitForTimeout(200);
+  assert.deepEqual(asked, [false], 'the last listing, and nothing fresh for a tab nobody is looking at');
+  assert.equal(await fresh.locator('#queue-body .pulls-pane').count(), 0);
+  await fresh.locator('#queue-body .tab[data-tab="pulls"]').click();
+  await fresh.waitForSelector('#queue-body .pull-note');
+  await fresh.waitForFunction(() => document.querySelectorAll('#queue-body .item.pull').length === 3);
+  assert.deepEqual(asked, [false, true], 'the visit reads behind the hour-old listing');
+  await fresh.close();
+});
+
 test('the PRs tab groups the open pull requests by milestone, smallest first, with the facts a choice turns on', { skip }, async () => {
   const { fresh, asked } = await pullsPage();
-  // The last listing, then a fresh one behind it, since the last was an hour old.
+  // The last listing as the page opened, then a fresh one behind the visit,
+  // since the last was an hour old.
   await fresh.waitForFunction(() => document.querySelector('#queue-body .pull-note')?.textContent === 'Read 1 hour ago');
   assert.deepEqual(asked, [false, true]);
   assert.equal(await fresh.locator('#queue-body .tab[data-tab="pulls"]').textContent(), 'PRs (3)');

@@ -151,8 +151,10 @@ already up with `PRCODER_VERBOSE=2`, or a `browser.mjs` run is already printing 
   2026-10-19 before the tab was built; this repository's six take under a second). Through the
   route in a shallow clone of Babel, `POST /api/pulls` took 5441ms cold and 4758ms with `fresh`,
   and 1ms from the file (on `297714f`, 2026-10-19). That is why the switcher keeps `gh pr list`
-  and the tab opens from `.prcoder/pulls.json`. Time it with `PRCODER_VERBOSE=2`, which prints
-  the route's milliseconds, on a visit to the tab with ⟳.
+  and the tab opens from `.prcoder/pulls.json`, which the page reads as it opens, for the tab's
+  count: the 1ms call on every load, and the cold one only in a clone with no `pulls.json` yet.
+  Time it with `PRCODER_VERBOSE=2`, which prints the route's milliseconds, on a page load and on
+  a visit to the tab with ⟳.
 - **The description's prose is 568px wide in Firefox and 567px in Chromium**, in an 864px pane
   (re-measured on `a96dc21`, 2026-10-14). `browser.mjs` prints it every run; a line-length cap is not something the
   stylesheet can be read for.
