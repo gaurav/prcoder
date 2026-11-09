@@ -41,10 +41,19 @@ body {
    drag from squeezing a pane to nothing, so the maxima must leave #term room
    even when both row gutters are pushed as far as they go.
 
+   The queue's maximum is whatever leaves the terminal 120px -- the floor the
+   queue has itself -- once the diff has taken its share (--queue-max). It was
+   40% of the window until 2026-11-09, from when the queue was a short list of
+   your own lines; the PRs and Issues tabs are listings that want the height,
+   and folding the terminal already handed the queue the whole column, so the
+   cap only stopped a drag from doing what a fold did. In a window too short
+   for both floors clamp() lets the queue's minimum win, as it always has. The
+   diff keeps its 50%: that is what bounds the sum.
+
    The defaults for the PR and queue panes are pixels, not percentages. The PR
    pane holds prose set to a fixed measure and the queue holds rows of a fixed
    height, so a percentage only pads them out on a big screen and leaves the
-   terminal less room. The % maxima still stop a pixel default from starving
+   terminal less room. The maxima still stop a pixel default from starving
    #term in a small window. The values are the ones the owner had dragged to
    and kept (2026-09-15).
 
@@ -58,9 +67,13 @@ main {
   /* One length per row of the right-hand column, and the folds below only
      rewrite these: a template per combination of folds was four already and
      grew with every pane that learned to fold. */
-  --r-diff: clamp(140px, var(--h-diff, 40%), 50%);
+  /* The diff's dragged size apart from its row, because --queue-max subtracts
+     it and the folds rewrite the row to `auto` and `1fr`, which calc() cannot. */
+  --diff-size: clamp(140px, var(--h-diff, 40%), 50%);
+  --r-diff: var(--diff-size);
   --r-term: 1fr;
-  --r-queue: clamp(120px, var(--h-queue, 227px), 40%);
+  --queue-max: calc(100% - 121px);   /* the floor, and the 1px line over the queue */
+  --r-queue: clamp(120px, var(--h-queue, 227px), var(--queue-max));
   grid-template-rows: var(--r-term) 1px var(--r-queue) var(--r-rest, 0);
   grid-template-areas:
     "pr gpr term"
@@ -78,6 +91,9 @@ main.diff-open {
     "pr gpr gqueue"
     "pr gpr queue";
 }
+main.diff-open { --queue-max: calc(100% - 122px - var(--diff-size)); }   /* two lines now */
+/* Folded, the diff is its bar: 40px is that and the line under it, rounded up. */
+main.diff-open.diff-off { --queue-max: calc(100% - 160px); }
 #diff { grid-area: diff; }
 #diff[hidden] { display: none; }
 /* A pane folded to its header row (folds.js): its body goes, `auto` is then
