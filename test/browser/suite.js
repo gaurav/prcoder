@@ -1496,6 +1496,35 @@ test('Deleted lists the most recently deleted first', { skip }, async () => {
   await fresh.close();
 });
 
+// The strip stays put while the list scrolls under it, and each tab keeps its
+// own offset: forty Local rows scrolled, a visit to Completed starts at its
+// top, and Local is where it was on the way back. A poll landing meanwhile
+// (the queue's own repaint) keeps the offset too.
+test('the queue\'s tabs stay above a list that scrolls, each tab at its own offset', { skip }, async () => {
+  const fresh = await newPage();
+  const queue = Array.from({ length: 40 }, (_, n) => ({ text: `item ${n}`, done: n % 2 === 1, issue: null, deleted: false }));
+  await fresh.route('**/api/queue', (r) => r.fulfill({ json: queue }));
+  await fresh.route('**/api/status', (r) => r.fulfill({ json: { ...status, queue } }));
+  await fresh.reload();
+  await fresh.waitForSelector('#queue-body .item');
+  const where = () => fresh.evaluate(() => {
+    const list = document.getElementById('queue-list');
+    return { top: list.scrollTop, scrolls: list.scrollHeight > list.clientHeight, strip: !!document.querySelector('#queue-head .tabs'), inList: !!list.querySelector('.tabs') };
+  });
+  assert.deepEqual(await where(), { top: 0, scrolls: true, strip: true, inList: false }, 'the strip is in the head, the rows in the list');
+  await fresh.evaluate(() => { document.getElementById('queue-list').scrollTop = 150; });
+  await fresh.waitForFunction(() => document.getElementById('queue-list').scrollTop === 150);
+  await fresh.locator('#queue-body .tab', { hasText: 'Completed' }).click();
+  assert.equal((await where()).top, 0, 'Completed opens at its top');
+  await fresh.evaluate(() => { document.getElementById('queue-list').scrollTop = 60; });
+  await fresh.waitForFunction(() => document.getElementById('queue-list').scrollTop === 60);
+  await fresh.locator('#queue-body .tab', { hasText: 'Local' }).click();
+  assert.equal((await where()).top, 150, 'Local is where it was');
+  await fresh.locator('#queue-body .tab', { hasText: 'Completed' }).click();
+  assert.equal((await where()).top, 60, 'and so is Completed');
+  await fresh.close();
+});
+
 // Completed is sorted by when each item was finished, so the one just ticked by
 // mistake is on top to be unticked -- whatever order the queue holds them in.
 // One the store has not stamped yet goes last. With the order not the user's to
@@ -2090,12 +2119,24 @@ test('an issue row\'s title can be selected with the mouse', { skip }, async () 
   await fresh.close();
 });
 
+/**
+ * A queue pane tall enough for a drag's every target to be on screen before
+ * the press (tools/CLAUDE.md: Chromium's emulated drag starts on whatever has
+ * scrolled under the pointer). At the pane's default height the list under
+ * the strip is 143px, and a listing's lower groups are below it.
+ */
+async function tallQueue(p) {
+  await p.setViewportSize({ width: 1280, height: 1000 });
+  await p.evaluate(() => document.querySelector('main').style.setProperty('--h-queue', '400px'));
+}
+
 // Chromium only: Firefox gets no HTML5 drag events from dragTo (tools/CLAUDE.md).
 // Each target is a folded group's line, on screen before the press.
 test('the grip\'s drag moves an issue, and a link\'s drag, its own group or a closed milestone does not', { skip: skip || (engineName === 'firefox' && 'dragTo sends Firefox no drag events') }, async () => {
   const { fresh } = await issuesPage({ ...ISSUES,
     milestones: [...ISSUES.milestones, { number: 7, title: 'v0.0', dueOn: null, description: '', closed: true }] });
   await noToast(fresh);
+  await tallQueue(fresh);
   // Folded, so that every target is on screen before the press.
   await fresh.locator('[data-group="mentioned"] summary .count').click();
   const moves = [];
@@ -2511,21 +2552,22 @@ test('a pull request row\'s title can be selected, and it has a grip only by mil
 });
 
 test('a pull request\'s grip moves it, and its link\'s drag does not', { skip: skip || (engineName === 'firefox' && 'dragTo sends Firefox no drag events') }, async () => {
-  // One row open and the pane scrolled to it, so the next group's line is on
-  // screen before the press (tools/CLAUDE.md): a row is three lines tall.
+  // One row, in a pane tall enough that its group's line and the next are
+  // both on screen before the press (tallQueue): a row is three lines tall.
+  // Until 2026-11-08 the test scrolled the list by a fixed 100px instead,
+  // which was right while the strip scrolled with the rows and put both out
+  // of view once it stayed put.
   const { fresh } = await pullsPage({ ...PULLS, pulls: PULLS.pulls.filter((p) => p.number === 30) }, { stale: false });
   await noToast(fresh);
+  await tallQueue(fresh);
   const moves = [];
   await fresh.route('**/api/pull/milestone', (r) => { moves.push(r.request().postDataJSON()); return r.fulfill({ json: { ok: true } }); });
   const row = fresh.locator('.item[data-pull="30"]');
   const next = fresh.locator('.pull-groups [data-group]').nth(1);
   const milestone = await next.locator('summary a').first().textContent();
-  const onScreen = () => fresh.evaluate(() => { document.getElementById('queue-body').scrollTop = 100; });
-  await onScreen();
   await row.locator('.tag.pull').dragTo(next.locator('summary'));
   await row.locator('.grip').dragTo(fresh.locator('[data-group="p:none"] summary'));
   const read = fresh.waitForResponse('**/api/pulls');
-  await onScreen();
   await row.locator('.grip').dragTo(next.locator('summary'));
   await read;
   assert.deepEqual(moves, [{ number: 30, milestone }]);

@@ -151,18 +151,19 @@ for (const name of ['Local', 'Completed', 'Deleted']) {
 // 1440px is the only width the strip had been looked at -- where the tabs and
 // the bulk button fit easily. The pane the queue
 // actually lives in is whatever is left after the PR column, so drag that wide
-// and ask the tabs themselves whether they are still on one row: same offsetTop
-// for the first and the last is the only version of "does not wrap" that does
-// not depend on reading a screenshot.
+// and ask the tabs themselves how many rows they take (distinct offsetTops) and
+// whether every one is inside the pane: the strip wraps whole tabs rather than
+// overflowing, so two rows are fine and a tab past the pane's edge is not.
 await drag('#gut-pr', 980, 450);
 await page.waitForTimeout(300);
 const strip = await page.evaluate(() => {
   const t = [...document.querySelectorAll('#queue-body .tab')];
-  const pane = document.getElementById('queue').getBoundingClientRect().width;
-  return { rows: new Set(t.map((b) => b.offsetTop)).size, n: t.length, pane: Math.round(pane) };
+  const pane = document.getElementById('queue').getBoundingClientRect();
+  const out = t.filter((b) => b.getBoundingClientRect().right > pane.right + 1).length;
+  return { rows: new Set(t.map((b) => b.offsetTop)).size, n: t.length, out, pane: Math.round(pane.width) };
 });
-console.log('narrow: ', `${strip.n} tabs on ${strip.rows} row(s) in a ${strip.pane}px pane`,
-  strip.rows === 1 ? '' : '  <-- the strip wrapped');
+console.log('narrow: ', `${strip.n} tabs on ${strip.rows} row(s) in a ${strip.pane}px pane, ${strip.out} past its edge`,
+  '(want 0 past the edge; two rows is the strip wrapping, as it should)');
 await page.locator('#queue').screenshot({ path: path.join(out, 'queue-narrow.png') });
 await drag('#gut-pr', 375, 450);
 await page.waitForTimeout(300);

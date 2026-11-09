@@ -54,6 +54,8 @@ export function setItems(next, prOnScreen = null) {
   // land a mention not looked up reads `…` (mentionRow).
   const asks = (p) => JSON.stringify([p?.url ?? null, mentioned(p).map((i) => i.number)]);
   if (tab === 'issues' && asks(prOnScreen) !== asks(pr)) loadIssues(true);
+  // A different pull request is a different checklist: its tab starts at the top.
+  if (prOnScreen?.url !== pr?.url) scrolled.pr = 0;
   pr = prOnScreen;
   // Most polls bring the list already on screen, and a rebuild for nothing
   // costs every row and listener. `items` is kept, not swapped for the equal
@@ -249,8 +251,19 @@ const pullCount = () => (!pullsListing ? '…' : pullQuery.trim() ? matchingPull
 /** The listed pull requests the tab's search lets through, by the state word each row shows. */
 const matchingPulls = () => (pullsListing?.pulls ?? []).filter((p) => pullMatches(p, pullQuery, pullWord(p, underOf(p)).word));
 
+// Each tab's scroll offset, put back when it is drawn again: the list is one
+// scroller under a strip that stays put, and a Local row ticked should not
+// land you at the top of Local, nor a switch to Issues at the offset you had
+// on the PRs tab. As the pull request pane's (renderPrTab in pr.js).
+const scrolled = {};
+
 function render() {
-  const host = document.getElementById('queue-body');
+  const head = document.getElementById('queue-head');
+  const list = document.getElementById('queue-list');
+  // Recorded as it happens, not read before the replace: queueTab sets `tab`
+  // to the tab being switched to before this runs, so a read here would file
+  // the outgoing tab's offset under the incoming one (pr.js has the same note).
+  list.onscroll = () => { scrolled[tab] = list.scrollTop; };
   // Issues and Pull requests are always there -- a repository has both
   // whatever is checked out -- and PR only with a pull request on screen.
   const { strip, tab: active } = stripFor(items, tab, [...(pr ? ['pr', 'issues', 'pulls'] : ['issues', 'pulls']), ...(historyOn ? ['history'] : [])]);
@@ -270,18 +283,22 @@ function render() {
   const at = { done: 'doneAt', deleted: 'deletedAt' }[tab];
   if (at) shown.sort((a, b) => (b[at] ?? -Infinity) - (a[at] ?? -Infinity));
 
-  host.replaceChildren(
+  head.replaceChildren(
     h('div', { className: 'tabs' },
       ...strip.map((n) => queueTab(n, label(n))),
       h('span', { className: 'spacer' }),
       ...bulks(),
     ),
+  );
+  list.replaceChildren(
     tab === 'pr' ? prList()
       : tab === 'issues' ? issueList()
         : tab === 'pulls' ? pullList()
           : tab === 'history' ? historyList()
             : h('ul', { className: 'items' }, ...shown.map((i, n) => row(i, shown[n - 1], shown[n + 1]))),
   );
+  // Assigning forces layout, so this lands against the new content.
+  list.scrollTop = scrolled[tab] ?? 0;
   staleBreakdown();
 }
 
@@ -1462,7 +1479,7 @@ export async function addItem(text) {
   // longer exists as a row -- but the end it went to is known, and that is all
   // this needs. It stays out of save() itself, which every checkbox and drag
   // also calls; the viewport should not jump for those.
-  const host = document.getElementById('queue-body');
+  const host = document.getElementById('queue-list');
   host.scrollTop = addTo === 'top' ? 0 : host.scrollHeight;
   return true;
 }

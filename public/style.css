@@ -801,6 +801,16 @@ main.diff-off #diff-wrap { display: none; }
 
 /* --- Queue pane --- */
 
+/* The strip above the list, which scrolls under it: the pull request pane's
+   #pr-head and #pr-body (above, with the argument against a sticky strip in
+   one scroller -- two views sharing one scrollTop). The strip wraps whole
+   tabs rather than overflowing: seven tabs with counts do not fit a narrow
+   pane on one row, and a tab off the edge is one that cannot be clicked. */
+#queue-body { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+#queue-head { flex: none; padding: 10px 10px 8px; border-bottom: 1px solid var(--line); }
+#queue-head .tabs { margin-bottom: 0; flex-wrap: wrap; row-gap: 4px; }
+#queue-head .tab { white-space: nowrap; }
+
 .items { list-style: none; margin: 0; padding: 0; }
 /* 15px, the description's size (.md): a row at the terminal's 14px read a step
    smaller than it, since sans at a size is smaller to the eye than mono at it.

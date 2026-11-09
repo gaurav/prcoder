@@ -385,6 +385,12 @@ its grip (or focus the grip and use ↑ ↓) to reorder, tick it off. ▶ types 
 and ticks it off in the same click; ◎ files it as a new GitHub issue and takes it off the queue, so
 the issue is where it lives from then on.
 
+The tabs sit in a strip of their own above the list, which scrolls under it, so a tab is always a
+click away however long the listing below it runs; a strip that does not fit the pane's width wraps
+whole tabs onto a second row rather than running off the edge. Each tab keeps its own scroll
+offset while the page is open: back from Issues, Local is where you left it, as the pull request
+pane's tabs are.
+
 New items go to the bottom, so typing them in builds a list in the order you mean to work through
 it. The arrow next to the input flips that to the top, for the other way of using a queue -- the
 thing you must not forget to do next -- and stays flipped. They always go on Local, whichever tab
