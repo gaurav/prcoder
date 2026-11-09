@@ -91,14 +91,14 @@ or a browser opens:
 ```
 Open pull requests in gaurav/prcoder, by stack, most recently updated first, read just now:
 
-  #159      XXL  ready        2 days ago   Add a Pull requests tab to the queue: every open pull…
+  #159      XXL  ready        2 days ago   Add a PRs tab to the queue: every open pull…
 ›   #163    L    stacked (1)  2 days ago   Let a description's checklist text be selected without…
   #173      XS   ready        15 days ago  Colour a new Snakefile, .smk or .snakefile in the diff…
   #87       XS   ready        1 month ago  [fixture] A modified, a deleted and a .tsx file on fixture/diff-views-base
 PR number [163, the deepest], or q:
 ```
 
-The order is the Pull requests tab's *by stack* ([Panes.md](Panes.md)): each pull request
+The order is the PRs tab's *by stack* ([Panes.md](Panes.md)): each pull request
 followed by the ones built on it, a step further in, with roots and siblings most recently
 updated first. The columns are the tab's facts that a pick turns on -- the size in the tab's
 bands and colours, green for `XS` to red for `XXL`; the state in the tab's words, `stacked (N)`

@@ -417,7 +417,7 @@ a slip. **Deleted** holds tombstones, the latest on top, until you empty it, and
 nothing. Every item is on exactly one of those.
 
 Two more tabs read GitHub rather than your queue, and ↓ on either copies an item into Local and
-leaves it where it was. **PR** is there with a pull request on screen: the description's own
+leaves it where it was. **PR #N** is there with a pull request on screen: the description's own
 checklist, ticked through to GitHub like the boxes in the PR pane.
 
 **Issues** is always there, since a repository has issues whatever is checked out: its open
@@ -439,7 +439,7 @@ ranked the same way and marked *closed*, so that no listed issue goes undrawn; n
 onto it, by a drop or in a row's select, where it shows only on a row already on it. A milestone's line
 is its title, linking to it on GitHub; how many issues it holds, in a grey badge right after the
 title, not at the line's end where it was too far off to read as the milestone's; how many of the
-other kind are open on it, `2 PRs` here and `9 issues` on the Pull requests tab, so the line says
+other kind are open on it, `2 PRs` here and `9 issues` on the PRs tab, so the line says
 what the milestone holds beyond the rows listed; a pie of how
 much of the whole milestone is done on GitHub, its pull requests and its issues together, so it is
 the same on either tab: merged pull requests and closed issues of all of them, with a pull request
@@ -474,7 +474,7 @@ body under it, drawn by the same renderer as a description and under the same ru
 **Open on GitHub** under it, filled, for the comments and everything else the body is not. ▶ types
 the title with the issue's link into the coding agent's prompt, unsent, and ticks nothing, since
 there is no item to tick; the row stays where it is. ↓ copies the title into Local, tagged with
-the issue, as the PR tab's ↓ copies a checklist line.
+the issue, as the PR #N tab's ↓ copies a checklist line.
 
 A row can be dragged by its grip (⠿) onto a milestone's line, or onto **No milestone**, and that sets the issue's
 milestone on GitHub -- the one thing the tab writes, and the only kind of change it makes to an
@@ -492,7 +492,7 @@ dragged as a link. A mention that is not one of the repository's open issues has
 since there is nothing of it here to move. Milestones themselves are not made, renamed or closed
 from prcoder.
 
-**Pull requests** is always there too: the repository's open pull requests, for picking the next
+**PRs** is always there too: the repository's open pull requests, for picking the next
 one to work on (`prcoder choose` is the same pick at the command line, before a browser opens:
 [Terminal.md](Terminal.md#choosing-a-pull-request)), in the same groups as the issues -- **No milestone** first, then one per open milestone in the
 owner's order, each line drawn as the Issues tab's, its badge counting pull requests -- or, with the second select over them set to *one list*, as one list, or
@@ -580,5 +580,5 @@ prompts' text, leaving out a day without a match, and the tab's count is the pro
 or the matches while searching. The file is read when the page opens, so the count is on the tab
 before a visit, and again a second after a prompt is sent from this page, whichever tab is
 showing, so the count and the list keep up with the terminal beside them; ⟳ reads it again by
-hand, and the line under the days says when it was last read, as the Pull requests tab's does. A read that
+hand, and the line under the days says when it was last read, as the PRs tab's does. A read that
 fails says so, with a way to try again, and leaves the list as it was.

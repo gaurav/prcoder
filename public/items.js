@@ -181,7 +181,7 @@ export const isNew = (p, now = Date.now()) => now - Date.parse(p.createdAt ?? ''
 export const DUE_SOON = 7 * 86400_000;
 
 /**
- * The Pull requests tab's orders, each a comparator over pullRow's fields; the
+ * The PRs tab's orders, each a comparator over pullRow's fields; the
  * ISO dates compare as they read. `smallest` is the default, since the next
  * one to take on is usually the one that is nearly done.
  */
@@ -198,7 +198,7 @@ export const PULL_SORTS = {
 export const sortPulls = (list, how) => [...list].sort((a, b) => (PULL_SORTS[how] ?? PULL_SORTS.smallest).by(a, b) || a.number - b.number);
 
 /**
- * Whether the Pull requests tab's search matches a pull request: case-blind,
+ * Whether the PRs tab's search matches a pull request: case-blind,
  * over `#N`, the title, the author, the head and base branches, the labels,
  * the body, the issues it closes by `#N` and title, and `word`, the state the
  * row shows -- so a base branch finds the stack on it, an issue finds the pull

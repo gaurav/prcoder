@@ -149,7 +149,7 @@ const withLong = (st) => ({ ...st, pr: { ...st.pr, files: [...files, fileRow('lo
 // What /api/issues answers for a repository with nothing: the Issues tab is
 // always there, so every page gets this unless a test routes its own.
 const EMPTY_ISSUES = { milestones: [], issues: [], total: 0, listed: 0, repo: 'heal-data-stewards/heal-vlmd-AI-pipeline', mentions: [] };
-// And /api/pulls, which the Pull requests tab asks twice on opening: once for
+// And /api/pulls, which the PRs tab asks twice on opening: once for
 // the last listing, once for a fresh one. `read` is when, in ms.
 const EMPTY_PULLS = { milestones: [], pulls: [], total: 0, listed: 0, read: 0 };
 
@@ -303,7 +303,7 @@ test('checkboxes render with their state, and a tick posts through', { skip }, a
   assert.ok((await page.locator('#pr-head .tab').allTextContents()).includes('Detail (2/3)'));
 });
 
-test('the queue\'s PR tab names each box by its line', { skip }, async () => {
+test('the queue\'s PR #N tab names each box by its line', { skip }, async () => {
   const fresh = await newPage();
   await fresh.locator('#queue-body .tab[data-tab="pr"]').click();
   const box = fresh.locator('#queue-body').getByRole('checkbox', { name: 'first task', exact: true });
@@ -2314,7 +2314,7 @@ test('a mention from another repository is not drawn as the listed issue of the 
   await fresh.close();
 });
 
-// The Pull requests tab: the repository's open pull requests, grouped by
+// The PRs tab: the repository's open pull requests, grouped by
 // milestone as the issues are, each row carrying what picking the next one
 // turns on. The listing is the fixture repository's, with the pull request on
 // screen (#12) among them; dates are read against the page's clock, which
@@ -2354,7 +2354,7 @@ const pullGroupsOf = (p) => p.$$eval('#queue-body .fold.milestone', (gs) => gs.m
   return `${g.dataset.group}|${line.textContent.replace(/\s+/g, ' ').trim()}|${g.open ? 'open' : 'closed'}|${[...g.querySelectorAll('.item')].map((i) => i.dataset.pull).join(',')}`;
 }));
 
-/** A page on the Pull requests tab with `listing` answered, counting what the route was asked. */
+/** A page on the PRs tab with `listing` answered, counting what the route was asked. */
 async function pullsPage(listing = PULLS, { stale = true } = {}) {
   const fresh = await newPage({ clock: true, below: BELOW });
   await fresh.clock.setFixedTime(NOW);
@@ -2381,12 +2381,12 @@ async function pullsPage(listing = PULLS, { stale = true } = {}) {
   return { fresh, typed, asked };
 }
 
-test('the Pull requests tab groups the open pull requests by milestone, smallest first, with the facts a choice turns on', { skip }, async () => {
+test('the PRs tab groups the open pull requests by milestone, smallest first, with the facts a choice turns on', { skip }, async () => {
   const { fresh, asked } = await pullsPage();
   // The last listing, then a fresh one behind it, since the last was an hour old.
   await fresh.waitForFunction(() => document.querySelector('#queue-body .pull-note')?.textContent === 'Read 1 hour ago');
   assert.deepEqual(asked, [false, true]);
-  assert.equal(await fresh.locator('#queue-body .tab[data-tab="pulls"]').textContent(), 'Pull requests (3)');
+  assert.equal(await fresh.locator('#queue-body .tab[data-tab="pulls"]').textContent(), 'PRs (3)');
   // None first, to triage, then releases, then the buckets; only the first
   // with a pull request starts open; smallest first within a group; an empty
   // one is drawn.
@@ -2521,7 +2521,7 @@ test('a ready pull request built on another reads `stacked (N)`, and the search 
   assert.equal(await word(12).textContent(), 'ready', 'one on the default branch is still ready');
   const search = fresh.locator('#queue-pull-search');
   await search.fill('stacked');
-  assert.equal(await fresh.locator('#queue-body .tab[data-tab="pulls"]').textContent(), 'Pull requests (1)');
+  assert.equal(await fresh.locator('#queue-body .tab[data-tab="pulls"]').textContent(), 'PRs (1)');
   assert.deepEqual(await fresh.locator('#queue-body .item.pull').evaluateAll((ls) => ls.map((l) => l.dataset.pull)), ['20']);
   await search.fill('ready');
   assert.deepEqual(await fresh.locator('#queue-body .item.pull').evaluateAll((ls) => ls.map((l) => l.dataset.pull)), ['12'], 'and `ready` only the one that is');
@@ -2715,10 +2715,10 @@ test('searching the pull requests narrows the rows and counts them, and a row op
   assert.deepEqual(await pullGroupsOf(fresh), ['p:none|No milestone (0)|closed|', 'p:1|v1.0 (1) 9 issues 1 merged due 5 days ago|open|20', 'p:4|Needed soon (0)|closed|', 'p:3|Not urgent (0)|closed|']);
   // With nothing in it, No milestone has nothing to triage, and is not marked.
   assert.equal(await fresh.locator('[data-group="p:none"].untriaged, [data-group="p:none"] .triage').count(), 0);
-  assert.equal(await fresh.locator('#queue-body .tab[data-tab="pulls"]').textContent(), 'Pull requests (1)');
+  assert.equal(await fresh.locator('#queue-body .tab[data-tab="pulls"]').textContent(), 'PRs (1)');
   assert.equal(await fresh.evaluate(() => document.activeElement.id), 'queue-pull-search', 'the box keeps its focus');
   await search.fill('');
-  assert.equal(await fresh.locator('#queue-body .tab[data-tab="pulls"]').textContent(), 'Pull requests (3)');
+  assert.equal(await fresh.locator('#queue-body .tab[data-tab="pulls"]').textContent(), 'PRs (3)');
   // ▸ opens the milestone select, Switch and Open on GitHub, and not the
   // description: that is read on GitHub. Nor the issues it closes, which the
   // row itself carries.
@@ -2763,7 +2763,7 @@ test('a milestone picked in an opened pull request row is written by Move, and a
   assert.deepEqual(asked.slice(before), [true], 'read fresh once GitHub has it');
   // A refusal is a toast, the select goes back to where it still is, and the
   // listing is read again, in case that is what the server and page differ on.
-  await fresh.route('**/api/pull/milestone', (r) => r.fulfill({ status: 500, json: { error: '"x" is not an open milestone the Pull requests tab listed' } }));
+  await fresh.route('**/api/pull/milestone', (r) => r.fulfill({ status: 500, json: { error: '"x" is not an open milestone the PRs tab listed' } }));
   await pick.selectOption('Not urgent');
   const again = fresh.waitForResponse('**/api/pulls');
   await moveBtn.click();

@@ -629,7 +629,7 @@ switcher.addEventListener('focus', () => reachSwitcher('switcher focused'));
  * A checkbox in the description, ticked through to GitHub -- the one edit to a
  * description prcoder makes, on your click. The route answers with the body
  * GitHub now has, which becomes the pane's, so the Detail count, the section's
- * pie and the queue's PR tab move with the box rather than a poll later.
+ * pie and the queue's PR #N tab move with the box rather than a poll later.
  * Rethrown so the box snaps back, and the status reload is for the one error
  * that matters: the description moved under us, and the pane is now showing a
  * stale copy of it.
@@ -814,7 +814,7 @@ function paint(status) {
     loadPrs(status.pr ? `#${status.pr.number} is now ${status.pr.state}` : 'no PR on this branch now',
       { fresh: true });
   }
-  // Reading its checklist into the PR tab needs only a PR on screen.
+  // Reading its checklist into the PR #N tab needs only a PR on screen.
   if (status.queue) setItems(status.queue, status.pr);
 
   // Keep an open diff honest: close it if its file left the PR (or the PR
@@ -977,7 +977,7 @@ input.addEventListener('input', grow);
 loadPrs('page load');
 // `home` for ▶, which reads a bare #N in an item's text as this repo's.
 // `onSwitch` and `blocked` are the PR pane's own Switch and its guard, for the
-// Pull requests tab's: a checkout is a checkout wherever it is asked for.
+// PRs tab's: a checkout is a checkout wherever it is asked for.
 // `defaultBranch` is where the tab's stack lines bottom out (stackUnder), and
 // `below` and `onBelow` are git's answers about bare branches in them and the
 // way to ask, the PR pane's own.

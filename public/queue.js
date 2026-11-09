@@ -44,7 +44,7 @@ export function setItems(next, prOnScreen = null) {
   if (saving || document.activeElement?.closest?.('#queue-body .text[contenteditable], #queue-search, #queue-pull-search, #queue-body .move-to')) return;
   if (document.querySelector('#queue-body .item.dragging')) return;
   // What the PR and Issues tabs draw from: a tick on github.com changes the
-  // PR tab without changing the list, so it has to count as news too.
+  // PR #N tab without changing the list, so it has to count as news too.
   const source = (p) => (p ? JSON.stringify([p.number, p.body, p.issues]) : '');
   const samePr = source(prOnScreen) === source(pr);
   // The mentions' titles and states come with the listing, looked up for the
@@ -71,7 +71,7 @@ export function setItems(next, prOnScreen = null) {
 
 // The sources, read straight from where they live rather than kept in the
 // queue: the PR on screen, from the poll, whose description's checkboxes are
-// the PR tab; and the repository's open issues, fetched when the Issues tab is
+// the PR #N tab; and the repository's open issues, fetched when the Issues tab is
 // opened, since nothing else needs them. `listing` is /api/issues' answer --
 // milestones, issues, and the mentions the description makes without closing,
 // which `mentions` indexes by number as it always did; `listed` indexes the
@@ -88,7 +88,7 @@ let query = '';
 const closedGroups = new Set();
 const expanded = new Set();
 const seen = new Set();
-// The Pull requests tab's: its listing (/api/pulls' answer -- milestones,
+// The PRs tab's: its listing (/api/pulls' answer -- milestones,
 // pulls, and `read`, when it was read, in ms), whether a read is out, its
 // search, and whether its first listing has chosen what starts closed; its
 // groups and opened rows share the two sets above under keys of their own.
@@ -187,7 +187,20 @@ const save = async (url = '/api/queue', method = 'PUT', body = { items }) => {
   return true;
 };
 
-const LABELS = { local: 'Local', pr: 'PR', issues: 'Issues', pulls: 'Pull requests', history: HISTORY_LABEL, done: 'Completed', deleted: 'Deleted' };
+// `PRs` and `Issues`, the repository's, then `PR #N`, the one on screen: the
+// short word for the listing and the number for the one, so the two tabs
+// about pull requests are never confused (they were `Pull requests` and
+// `PR` until 2026-11-08). tabName() puts the number in.
+const LABELS = { local: 'Local', pr: 'PR', issues: 'Issues', pulls: 'PRs', history: HISTORY_LABEL, done: 'Completed', deleted: 'Deleted' };
+const tabName = (n) => (n === 'pr' && pr ? `PR #${pr.number}` : LABELS[n]);
+
+/**
+ * The source tabs, in the strip's order: the repository's pull requests
+ * first, since picking the next one is what the queue is most often opened
+ * for, then its issues, then the pull request on screen when there is one,
+ * then the History tab when there is a file to read. Pure, for the test.
+ */
+export const sourcesFor = (prOnScreen, history) => ['pulls', 'issues', ...(prOnScreen ? ['pr'] : []), ...(history ? ['history'] : [])];
 
 // Local is always there because an *empty* Local is the thing worth seeing --
 // it is how a tidy session ends. Completed is always there because it is where
@@ -196,8 +209,8 @@ const ALWAYS = ['local', 'done'];
 
 /**
  * Which tabs the strip draws, and which of them is active: your own list's tabs,
- * with the `sources` that are available -- PR and Issues, when there is a PR on
- * screen -- between Local and the rest. Pure, and exported only so it can
+ * with the `sources` that are available (sourcesFor) between Local and the
+ * rest. Pure, and exported only so it can
  * be checked without a DOM -- render() is the sole caller and decides neither
  * for itself.
  *
@@ -245,7 +258,7 @@ const matching = () => {
 };
 let matched = { listing: null, query: null, issues: [] };
 
-/** The Pull requests tab's count, on the same rule as the Issues tab's. */
+/** The PRs tab's count, on the same rule as the Issues tab's. */
 const pullCount = () => (!pullsListing ? '…' : pullQuery.trim() ? matchingPulls().length : pullsListing.total);
 
 /** The listed pull requests the tab's search lets through, by the state word each row shows. */
@@ -264,9 +277,9 @@ function render() {
   // to the tab being switched to before this runs, so a read here would file
   // the outgoing tab's offset under the incoming one (pr.js has the same note).
   list.onscroll = () => { scrolled[tab] = list.scrollTop; };
-  // Issues and Pull requests are always there -- a repository has both
-  // whatever is checked out -- and PR only with a pull request on screen.
-  const { strip, tab: active } = stripFor(items, tab, [...(pr ? ['pr', 'issues', 'pulls'] : ['issues', 'pulls']), ...(historyOn ? ['history'] : [])]);
+  // PRs and Issues are always there -- a repository has both whatever is
+  // checked out -- and PR #N only with a pull request on screen (sourcesFor).
+  const { strip, tab: active } = stripFor(items, tab, sourcesFor(pr, historyOn));
   tab = active;
   // A source's count is what it still holds open; the list's own are its tabs.
   const count = (name) => (name === 'pr' ? prTasks().filter((t) => !t.done).length
@@ -274,7 +287,7 @@ function render() {
       : name === 'pulls' ? pullCount()
         : name === 'history' ? historyCount()
           : items.filter(TABS[name]).length);
-  const label = (n) => `${LABELS[n]} (${count(n)})`;
+  const label = (n) => `${tabName(n)} (${count(n)})`;
   const shown = TABS[tab] ? items.filter(TABS[tab]) : [];
   // Most recent first on Completed and Deleted, so the item you just ticked or
   // deleted by mistake is on top to be taken back. The store stamps the times;
@@ -468,7 +481,7 @@ async function pull(text, issue = null, kind = null, repo = null) {
   flashLocal();
 }
 
-/** The PR tab: the description's own checkboxes, ticked through to GitHub. */
+/** The PR #N tab: the description's own checkboxes, ticked through to GitHub. */
 function prList() {
   const tasks = prTasks();
   if (!tasks.length) return h('p', { className: 'empty' }, `No checkboxes in PR #${pr.number}'s description.`);
@@ -596,7 +609,7 @@ function tally(counts) {
 
 /**
  * What follows a milestone's count on its line, from its tally: how many of
- * the other kind are open on it -- `9 issues` on the Pull requests tab, `2 PRs`
+ * the other kind are open on it -- `9 issues` on the PRs tab, `2 PRs`
  * on the Issues tab, `noun` being the tab's own rows -- so the line says what
  * the milestone holds beyond the rows listed; the pie of how much of it is
  * done; how many pull requests have merged into it, which is what says whether
@@ -817,7 +830,7 @@ function moveControl(name, number, current, ariaLabel) {
     await kind.settled();
     // The repaint took the focus with it, and the row may have gone to a folded
     // group: the keyboard follows it there, unless it has since gone elsewhere.
-    // A list with no groups (one of the Pull requests tab's) has only the row.
+    // A list with no groups (one of the PRs tab's) has only the row.
     const now = kind.row(number);
     if (tab !== name || !now || (document.activeElement && document.activeElement !== document.body)) return;
     const to = from && kind.group(now.milestone, from);
@@ -993,7 +1006,7 @@ const MOVES = {
 
 /**
  * A row onto a milestone, or off one with null, on a drop or Move: the one write
- * each of the Issues and Pull requests tabs makes, which GitHub's own rules call
+ * each of the Issues and PRs tabs makes, which GitHub's own rules call
  * triage. The tab reads the listing again after, so the row moves group once
  * GitHub has it and not before -- asking again even when a listing is already
  * out, since that one was asked for before the write.
@@ -1087,7 +1100,7 @@ export function paintPulls() {
 }
 
 /**
- * The Pull requests tab: a search, the order within a group and whether to
+ * The PRs tab: a search, the order within a group and whether to
  * group at all, ⟳, and the pull requests -- the ones on no milestone, to
  * triage, and then one group per open milestone in the owner's order
  * (rankMilestones), as the Issues tab groups, or one list. Each row carries what picking the next one turns
@@ -1389,7 +1402,7 @@ function row(item, above, below) {
       }, { title: 'type into Claude, and check it off' }),
       // A move, not a flag: the issue is filed and the item leaves the queue.
       // Nothing moves into the PR description -- prcoder does not write one,
-      // bar a box you tick on the PR tab. Disabled while the issue is filed: a
+      // bar a box you tick on the PR #N tab. Disabled while the issue is filed: a
       // second click filed a second issue for the same item.
       //
       // Not for an item about an issue or PR in this repo, which already has a

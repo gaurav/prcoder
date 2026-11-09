@@ -143,7 +143,7 @@ already up with `PRCODER_VERBOSE=2`, or a `browser.mjs` run is already printing 
   `gh pr list --head <branch> --state open --json number,headRefOid,updatedAt,statusCheckRollup`
   with `--limit 5` on a branch name many forks share, since that
   first page carries up to five strangers' rollups before prcoder drops them.
-- **The Pull requests tab's listing takes seconds on a repository with many open.** On
+- **The PRs tab's listing takes seconds on a repository with many open.** On
   NCATSTranslator/Babel's 60 open pull requests, `repoPulls`'s one GraphQL call took 5.5–6.0s and
   answered 315KB; the same call without `additions deletions changedFiles` took 3.0–3.6s, without
   `mergeStateStatus` 1.6–4.2s, and with neither 0.5–1.3s, the bodies and the hundred files per pull

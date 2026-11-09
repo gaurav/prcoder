@@ -115,7 +115,7 @@ Two rules for them, and for any script after them:
   gitignored scratch directory. A script of your own that writes the queue
   should do the same -- `--queue` makes no `.gitignore`, so a path outside
   `data/` or `.prcoder/` would show up in `git status`. The PR is not — ticking a
-  description checkbox — in the PR pane or the queue's PR tab — edits the
+  description checkbox — in the PR pane or the queue's PR #N tab — edits the
   description on GitHub. Filing a queue item with ◎
   writes to GitHub too, and one-way: putting the queue back does not close the
   issue. Dropping an Issues or Pull requests row on a milestone line, or Move in

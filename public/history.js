@@ -153,7 +153,7 @@ function historyGroups() {
       ...state(d.key),
     }, d.sessions.map((s) => session(s)));
   });
-  // When the file was read, and that a read is out, as the Pull requests tab
+  // When the file was read, and that a read is out, as the PRs tab
   // says under its groups: the three tabs that read something answer "how
   // old is this?" the same way.
   out.push(h('p', { className: 'pull-note' }, `Read ${age(new Date(listing.read).toISOString())}${loading ? ' · updating…' : ''}`));

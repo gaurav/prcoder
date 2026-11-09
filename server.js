@@ -335,7 +335,7 @@ const poll = () => (queuedPoll ??= serial(() => {
 // issues, which nothing here reads again.
 let listing = null;
 
-// What the Pull requests tab was last shown (POST /api/pulls, from the cache
+// What the PRs tab was last shown (POST /api/pulls, from the cache
 // or GitHub), for the route that acts on one of its rows.
 let pulls = null;
 
@@ -357,7 +357,7 @@ export const queuedRun = (fn) => {
 };
 
 /**
- * The Pull requests tab's fresh read: GitHub's listing, written to
+ * The PRs tab's fresh read: GitHub's listing, written to
  * `.prcoder/pulls.json` and kept as `pulls`. Queued (queuedRun), not under the
  * server's lock: two at once each paid for the seconds-long read and wrote
  * the same temp file (writeJson's name is per process), which could leave it
@@ -384,7 +384,7 @@ const freshPulls = queuedRun(async () => {
  * pullMove is the same hold for /api/pull/milestone, on the pulls listing.
  */
 export const issueMove = (listing, body) => heldMove(listing?.issues, listing?.milestones, 'issue', 'Issues', body);
-export const pullMove = (listing, body) => heldMove(listing?.pulls, listing?.milestones, 'pull request', 'Pull requests', body);
+export const pullMove = (listing, body) => heldMove(listing?.pulls, listing?.milestones, 'pull request', 'PRs', body);
 
 function heldMove(rows, milestones, what, tab, { number, milestone } = {}) {
   const row = rows?.find((r) => r.number === number);
@@ -511,7 +511,7 @@ const routes = {
   },
 
   /**
-   * A pull request dropped on a milestone group in the Pull requests tab, or
+   * A pull request dropped on a milestone group in the PRs tab, or
    * one picked in its opened row: the milestone is set on GitHub
    * (setIssueMilestone, as an issue's is), and the tab reads the listing again.
    * pullMove holds the number and the title to what the tab was shown.

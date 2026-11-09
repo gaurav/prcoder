@@ -339,7 +339,7 @@ test('a remembered pull request that is not one is left out, and a file we canno
   assert.equal((await readPrs(dir, 'topic')).prs.length, 1);
 });
 
-// .prcoder/pulls.json: the Pull requests tab's listing as last read, so the
+// .prcoder/pulls.json: the PRs tab's listing as last read, so the
 // tab opens from it. A cache, read as none when it is not this repository's
 // or cannot be used, and held to the rows the move's hold can trust.
 const PULL = { number: 7, url: 'https://github.com/o/r/pull/7', title: 'seven', milestone: 4, lines: 12 };

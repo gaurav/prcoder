@@ -924,7 +924,7 @@ li.issue-body select.milestone {
   font: inherit; font-size: 13px; padding: 1px 4px; color: var(--fg); background: var(--bg);
   border: 1px solid var(--line); border-radius: 4px;
 }
-/* The Pull requests tab: the Issues tab's face, with a control row over the
+/* The PRs tab: the Issues tab's face, with a control row over the
    groups -- the search, the order, the grouping and ⟳ -- and a row of three
    or four lines: the title with Switch, the facts under it, the description's
    first paragraph under those, clamped to two lines, in the serif the
