@@ -253,7 +253,7 @@ function connect(query = '') {
     // called a refused fetch a dead server: a guess at the timing, fooled by
     // anything else on the port and hung by a server too stuck to answer.
     // A prcoder that crashes sends no code, and gets the bar, as before.
-    if (e.code === QUIT_CODE) return gone('prcoder has quit');
+    if (e.code === QUIT_CODE) return gone();
     // The bar's note repeats the terminal's line, not the reason: that is
     // already there in red, a line up.
     exitForm.querySelector('span').textContent = e.code === 1008 ? 'Start refused.' : 'Coding agent has exited.';
@@ -311,13 +311,12 @@ exitForm.onsubmit = (e) => {
 // looks like a live one. Reload is the way back once prcoder has been started
 // again, and until then the browser's own "can't connect" page is the answer.
 let dead = false;
-function gone(how) {
+function gone() {
   if (dead) return;
   dead = true;
   turn(false);
   document.title = 'prcoder (not running)';
   const box = document.getElementById('dead');
-  document.getElementById('dead-title').textContent = how;
   // The shortcut sheet may be up, and a second modal would sit over it with
   // the focus handed back to the sheet when this one could never close.
   document.getElementById('keys').close();
@@ -338,7 +337,7 @@ async function quitPrcoder() {
       if (!confirm(`Quit prcoder? ${r.risk.join('; ')}.`)) return;
       r = await api('/api/quit', { force: true });
     }
-    gone('prcoder has quit');
+    gone();
   } catch (e) {
     toast(e.message, true);
   }
