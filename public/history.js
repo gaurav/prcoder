@@ -7,7 +7,7 @@
 // Imported by queue.js, which test/queue-pane.test.js loads in Node, so
 // nothing at module scope touches the DOM (public/CLAUDE.md).
 
-import { h, btn, api, toast, kept, fold } from './ui.js';
+import { h, btn, api, toast, kept, fold, actions } from './ui.js';
 import { byDay, dayKey, timeLabel, commandOf, historyMatches, age } from './items.js';
 
 export const LABEL = 'History';
@@ -195,7 +195,7 @@ function row(p) {
   const li = h('li', { className: `item history${command ? ' command' : ''}${opened.has(key) ? ' open' : ''}` },
     h('span', { className: 'when', title: new Date(p.at).toLocaleString('en', { dateStyle: 'full', timeStyle: 'short' }) }, timeLabel(p.at)),
     text,
-    h('span', { className: 'actions' },
+    actions(
       btn('▶', () => ways.type?.(p.text), { title: 'type this prompt into the coding agent again, to edit and send', ariaLabel: 'type this prompt into the coding agent again, to edit and send' }),
       btn('↓', () => ways.pull?.(p.text), { title: 'copy into your queue', ariaLabel: 'copy this prompt into your queue' }),
       copyButton(p.text)));

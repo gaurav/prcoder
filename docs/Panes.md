@@ -392,6 +392,12 @@ offset while the page is open: back from Issues, Local is where you left it, as 
 pane's tabs are. A tab's own row of controls -- the search box, and the selects and ⟳ where it has
 them -- stays in sight at the top of the list as the groups scroll under it.
 
+Every row on every tab is laid out the same way: its handle and state first (a grip, a checkbox, a
+▸), then its tag, its text and any chips, then at its end, on hover, its ways out in one order --
+▶ types into the coding agent, ↓ copies into Local, ⧉ copies to the clipboard -- and after those
+whatever is the row's own, ◎ and ✕ on a queue item. A button means one thing wherever it sits; a
+row leaves out what it lacks.
+
 New items go to the bottom, so typing them in builds a list in the order you mean to work through
 it. The arrow next to the input flips that to the top, for the other way of using a queue -- the
 thing you must not forget to do next -- and stays flipped. They always go on Local, whichever tab
@@ -418,7 +424,8 @@ nothing. Every item is on exactly one of those.
 
 Two more tabs read GitHub rather than your queue, and ↓ on either copies an item into Local and
 leaves it where it was. **PR #N** is there with a pull request on screen: the description's own
-checklist, ticked through to GitHub like the boxes in the PR pane.
+checklist, ticked through to GitHub like the boxes in the PR pane; ▶ on a line types it into the
+coding agent and ticks nothing, since the box is GitHub's.
 
 **Issues** is always there, since a repository has issues whatever is checked out: its open
 issues, read when the tab is opened and again on every visit, in groups you fold. With a pull

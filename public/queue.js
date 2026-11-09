@@ -1,4 +1,4 @@
-import { h, btn, ext, api, toast, pref, setPref, tabBtn, writeThrough, fold, kept, mark, fraction } from './ui.js';
+import { h, btn, ext, api, toast, pref, setPref, tabBtn, writeThrough, fold, kept, mark, fraction, actions } from './ui.js';
 import { TABS, refLabel, refClass, forClaude, rankMilestones, issueMatches, pullMatches, sortPulls, sizeChip, age, dueLabel, isNew, PULL_SORTS } from './items.js';
 import { refs, resolveRef, blocks } from './tasks.js';
 import { blockNode, inline, stackUnder, stackOrder } from './pr.js';
@@ -464,6 +464,18 @@ function typeInto(text) {
 }
 
 /**
+ * The two buttons every source row has, and a Local row too, built here so
+ * they say and do the same thing on every tab (actions in ui.js has the
+ * order). ▶ types `text` -- or what the function gives, for a row whose text
+ * can change under an edit before the click -- and runs `then` only if it
+ * went; ↓ copies `text` into Local, tagged with the issue when there is one.
+ */
+const typeBtn = (text, { title = 'type into the coding agent, with the link', then } = {}) => btn('▶', () => {
+  if (typeInto(typeof text === 'function' ? text() : text)) then?.();
+}, { title });
+const pullBtn = (text, issue = null, kind = null, repo = null) => btn('↓', () => pull(text, issue, kind, repo), { title: 'copy into your queue' });
+
+/**
  * Copied into your queue, and left where it was: a checkbox in the description
  * is the PR's record and an issue is the project's, so pulling an item is taking
  * it on, not taking it away. Something already on Local is not added twice.
@@ -489,11 +501,12 @@ function prList() {
     // Named by its line, or every box in the list is called by the one title.
     const box = h('input', { type: 'checkbox', checked: t.done, title: 'tick this on GitHub', ariaLabel: t.text });
     writeThrough(box, (v) => deps.onTask({ index: t.index, done: v, text: t.text }));
+    // ▶ types the line and ticks nothing: the box is GitHub's, and typing a
+    // task to the agent is not doing it.
     return h('li', { className: 'item source' },
       box,
       h('span', { className: 'text', textContent: t.text }),
-      h('span', { className: 'actions' },
-        btn('↓', () => pull(t.text), { title: 'copy into your queue' })));
+      actions(typeBtn(t.text, { title: 'type into the coding agent' }), pullBtn(t.text)));
   }));
 }
 
@@ -928,12 +941,7 @@ function issueRow(i, { repo = null, kind = 'issue', closed = false, text = i.tit
     ext(i.url, refLabel({ issue: i.number, kind, repo }), { className: tagClass(kind) }),
     h('span', { className: 'text', textContent: i.title }),
     ...(i.labels ?? []).map((l) => h('span', { className: 'tag label' }, l)),
-    h('span', { className: 'actions' },
-      btn('▶', () => {
-        const item = { text, issue: i.number, repo, kind, issueUrl: i.url };
-        if (!deps.sendToClaude(forClaude(item, deps.home?.()), false)) toast('The coding agent is not connected — nothing was typed.', true);
-      }, { title: 'type into the coding agent, with the link' }),
-      btn('↓', () => pull(text, i.number, kind, repo), { title: 'copy into your queue' })));
+    actions(typeBtn(() => forClaude({ text, issue: i.number, repo, kind, issueUrl: i.url }, deps.home?.())), pullBtn(text, i.number, kind, repo)));
   if (can) carries(grip, row, ISSUE, i.number);
   if (!open) return [row];
   const home = deps.home?.();
@@ -1324,12 +1332,7 @@ function pullRow(p, depth = 0) {
     // and Switch follows its last word; apart, the title took a line of its own.
     h('span', { className: 'pull-title' }, h('span', { className: 'text', textContent: p.title }), ' ', stack, stack ? ' ' : null,
       here ? h('span', { className: 'tag here', title: 'the pull request on screen' }, 'here') : go()),
-    h('span', { className: 'actions' },
-      btn('▶', () => {
-        const item = { text: p.title, issue: p.number, repo: null, kind: 'pull', issueUrl: p.url };
-        if (!deps.sendToClaude(forClaude(item, home), false)) toast('The coding agent is not connected — nothing was typed.', true);
-      }, { title: 'type into the coding agent, with the link' }),
-      btn('↓', () => pull(p.title, p.number, 'pull', null), { title: 'copy into your queue' })),
+    actions(typeBtn(() => forClaude({ text: p.title, issue: p.number, repo: null, kind: 'pull', issueUrl: p.url }, home)), pullBtn(p.title, p.number, 'pull', null)),
     h('div', { className: 'pr-facts' }, ...facts.flatMap(([node, plain], i) => [i && plain && facts[i - 1][1] ? h('span', { className: 'sep' }, '·') : null, node])),
     p.lead ? h('p', { className: 'pr-lead', innerHTML: inline(p.lead, where) }) : null,
     closes);
@@ -1375,12 +1378,15 @@ function row(item, above, below) {
   text.onblur = () => { if (text.textContent.trim() !== item.text) { item.text = text.textContent.trim(); save(); } };
   text.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); text.blur(); } };
 
+  // The tag before the text, as every source row and the PR pane's Closes list
+  // draw it: after a text that takes the row's width it sat at the far right,
+  // beside the buttons, away from the words it labels.
   const li = h('li', { className: 'item', draggable: ordered },
     ordered ? grip : null,
     box,
-    text,
     item.issue ? ext(item.issueUrl ?? '#', refLabel(item), { className: tagClass(item.kind) }) : null,
-    h('span', { className: 'actions' },
+    text,
+    actions(
       // Typed, not sent: the turn is left in the prompt for you to edit, which
       // is the whole of what prcoder puts into a session (docs/Design.md).
       // Handing it over is what doing an item looks like here, so it ticks the
@@ -1389,16 +1395,16 @@ function row(item, above, below) {
       // delete -- Completed is where you go to see what you handed over, and its
       // own checkbox puts an item back if the agent turned out not to do it.
       //
-      // Only if it went (typeInto): an item ticked off after a refused send
-      // is work nobody has done and nothing will remind you of.
+      // Only if it went (typeBtn): an item ticked off after a refused send is
+      // work nobody has done and nothing will remind you of. The text is read
+      // at the click, since an edit can change it after the row is drawn.
       //
       // With the link to the issue or PR it is about, where the text does not
       // already say which (forClaude in items.js).
-      btn('▶', () => {
-        if (!typeInto(forClaude(item, deps.home?.()))) return;
-        item.done = true;
-        return save();
-      }, { title: 'type into the coding agent, and check it off' }),
+      typeBtn(() => forClaude(item, deps.home?.()), {
+        title: 'type into the coding agent, and check it off',
+        then: () => { item.done = true; save(); },
+      }),
       // A move, not a flag: the issue is filed and the item leaves the queue.
       // Nothing moves into the PR description -- prcoder does not write one,
       // bar a box you tick on the PR #N tab. Disabled while the issue is filed: a

@@ -303,11 +303,23 @@ test('checkboxes render with their state, and a tick posts through', { skip }, a
   assert.ok((await page.locator('#pr-head .tab').allTextContents()).includes('Detail (2/3)'));
 });
 
-test('the queue\'s PR #N tab names each box by its line', { skip }, async () => {
-  const fresh = await newPage();
+test('the queue\'s PR #N tab names each box by its line, and its ▶ types the line without ticking it', { skip }, async () => {
+  const typed = [];
+  const fresh = await newPage({ pty: (ws) => ws.onMessage((m) => {
+    const msg = JSON.parse(m);
+    if (msg.type === 'input') typed.push(msg.data);
+  }) });
   await fresh.locator('#queue-body .tab[data-tab="pr"]').click();
   const box = fresh.locator('#queue-body').getByRole('checkbox', { name: 'first task', exact: true });
   assert.equal(await box.count(), 1);
+  assert.equal(await box.isChecked(), false);
+  // The row's ways, in every row's order; ▶ types the bare line, unsent, and
+  // the box is still GitHub's to tick.
+  const row = fresh.locator('#queue-body .item.source').first();
+  assert.deepEqual(await row.locator('.actions button').allTextContents(), ['▶', '↓']);
+  await row.locator('.actions button').first().click();
+  for (let i = 0; !typed.length && i < 100; i++) await new Promise((r) => setTimeout(r, 50));
+  assert.deepEqual(typed, ['first task']);
   assert.equal(await box.isChecked(), false);
   await fresh.close();
 });

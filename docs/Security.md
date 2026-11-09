@@ -83,8 +83,8 @@ Some text reaches Claude as a turn without any script involved, because a person
 item's ▶ sends its text verbatim, and an item can arrive by ↓ from the PR #N tab, which copies a
 checklist line of the description, or from the Issues tab, which copies an issue's title (`pull` in
 [`public/queue.js`](../public/queue.js)); the Issues tab's own ▶ types an issue's title and link
-straight in, unsent — so whoever can edit that description or that issue can
-write the words. The History tab's ▶ types a prompt back in, unsent, and its ↓ copies one into
+straight in, unsent, and the PR #N tab's ▶ a checklist line — so whoever can edit that
+description or that issue can write the words. The History tab's ▶ types a prompt back in, unsent, and its ↓ copies one into
 Local: text the user already sent once, read from Claude Code's own record (below). Commit sends a
 message built from the names of the working tree's uncommitted files.
 
