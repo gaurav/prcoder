@@ -218,12 +218,16 @@ test('an age is a word or two, and new is a week', () => {
 });
 
 test('a milestone is due some time ago or in some time, with its date in full on hover', () => {
-  const now = Date.parse('2026-10-19T12:00:00Z');
+  // Noon on the 19th on this clock, since today is this clock's: noon UTC is
+  // already the 20th in Auckland.
+  const now = new Date(2026, 9, 19, 12).getTime();
   assert.deepEqual(dueLabel('2026-10-14T00:00:00Z', now), { className: 'due overdue', textContent: 'due 5 days ago', title: 'Wednesday, October 14, 2026' });
   assert.deepEqual(dueLabel('2026-11-03T00:00:00Z', now), { className: 'due', textContent: 'due in 15 days', title: 'Tuesday, November 3, 2026' });
   assert.equal(dueLabel('2026-10-22T00:00:00Z', now).className, 'due soon');
-  assert.equal(dueLabel('2026-10-26T11:59:00Z', now).className, 'due soon', 'a minute inside the week');
-  assert.equal(dueLabel('2026-10-26T12:00:00Z', now).className, 'due', 'a week off is not soon');
+  // Soon is by the day, like the rest: six days off is, seven is not, and a
+  // day is soon or not whatever hour of it the zone it was set in sends.
+  for (const due of ['2026-10-25T00:00:00Z', '2026-10-25T07:00:00Z', '2026-10-24T22:00:00Z']) assert.equal(dueLabel(due, now).className, 'due soon', due);
+  for (const due of ['2026-10-26T00:00:00Z', '2026-10-26T07:00:00Z', '2026-10-25T22:00:00Z']) assert.equal(dueLabel(due, now).className, 'due', due);
   assert.equal(dueLabel('2026-11-17T00:00:00Z', now).textContent, 'due in 29 days');
   assert.equal(dueLabel('2026-11-18T00:00:00Z', now).textContent, 'due in 1 month', 'months from 30 days, and never `next month`');
   assert.equal(dueLabel('2027-01-01T00:00:00Z', now).textContent, 'due in 2 months');
