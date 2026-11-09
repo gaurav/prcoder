@@ -382,6 +382,7 @@ test('a listing we cannot use reads as none, and a row the hold cannot trust is 
   // The number and the URL have to agree, and both have to be this repository's.
   await write({ version: 1, nameWithOwner: 'o/r', read: '2026-10-19T12:00:00Z', total: 9, milestones: [
     { number: 4, title: 'Needed soon' }, { number: '5', title: 'x' }, { number: 6, title: '' }, { number: 7 }, null,
+    { number: 8, title: 'Soon', dueOn: 'next week' }, { number: 9, title: 'Later', dueOn: '2026-10-27T07:00:00Z' },
   ], pulls: [
     PULL, { ...PULL, number: '7' }, { ...PULL, number: 8 }, { ...PULL, url: 'https://github.com/o/r/issues/7' },
     { ...PULL, url: 'https://github.com/o/other/pull/7' }, { ...PULL, url: '--repo=x https://github.com/o/r/pull/7' }, { number: 9 },
@@ -389,7 +390,8 @@ test('a listing we cannot use reads as none, and a row the hold cannot trust is 
   ] });
   const got = await readPulls(dir, 'o/r');
   assert.deepEqual(got.pulls, [PULL], 'a null or a string among the rows is left out, not thrown on');
-  assert.deepEqual(got.milestones, [{ number: 4, title: 'Needed soon' }]);
+  assert.deepEqual(got.milestones, [{ number: 4, title: 'Needed soon', dueOn: null }, { number: 8, title: 'Soon', dueOn: null },
+    { number: 9, title: 'Later', dueOn: '2026-10-27T07:00:00Z' }], 'a due date that is not one is none');
   assert.deepEqual([got.total, got.listed, got.read], [9, 1, now]);
 });
 

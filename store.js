@@ -394,7 +394,9 @@ function pullsEntry(parsed, nameWithOwner) {
     const l = link(p?.url);
     return p && Number.isInteger(p.number) && l?.kind === 'pull' && l.issue === p.number && sameRepo(l.repo, nameWithOwner);
   }).map(pullOf);
-  const milestones = parsed.milestones.filter((m) => m && Number.isInteger(m.number) && typeof m.title === 'string' && m.title);
+  // A due date that is not one is none: dueDay (public/items.js) throws on it.
+  const milestones = parsed.milestones.filter((m) => m && Number.isInteger(m.number) && typeof m.title === 'string' && m.title)
+    .map((m) => ({ ...m, dueOn: typeof m.dueOn === 'string' && Number.isFinite(Date.parse(m.dueOn)) ? m.dueOn : null }));
   const total = Number.isInteger(parsed.total) ? parsed.total : pulls.length;
   return { read, milestones, pulls, total, listed: pulls.length };
 }
