@@ -8,7 +8,12 @@ rule keeps its reason beside it, so a change can see what it is trading away.
 ## Layout
 
 Every line between the panes is a splitter, and so is the diff outline's left edge: drag it to
-resize, double-click it to go back to the default. Sizes are remembered per repo and per browser, so
+resize, double-click it to go back to the default. The two lines across the right-hand column --
+under the diff and over the queue -- carry a small grip at their middle so they can be found, and
+any splitter's line lights up under the pointer, while it is dragged, and when it has the keyboard's
+focus (← → or ↑ ↓ then move it, Shift for bigger steps, Home for the default). Each pane has a
+floor rather than a share: the queue can be dragged up until the coding agent is down to 120px, so
+a long listing can have most of the column without folding the terminal. Sizes are remembered per repo and per browser, so
 the next `prcoder` in that repo opens with the layout you settled on. They live in the browser's
 `localStorage`, which is kept per origin, and the origin includes the port from
 `.prcoder/port.json`. So each repo, each worktree, and each browser or profile has a layout of its

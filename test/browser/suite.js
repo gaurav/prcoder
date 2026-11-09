@@ -3628,6 +3628,39 @@ test('@ with the agent disconnected types nothing and says so', { skip }, async 
   await fresh.close();
 });
 
+// The queue's ceiling used to be 40% of the window, which a listing outgrew.
+// It is now whatever leaves the terminal its floor, with a diff open or not.
+test('the queue drags up until the terminal is at its 120px floor, with or without a diff', { skip }, async () => {
+  const fresh = await newPage();
+  await fresh.setViewportSize({ width: 1280, height: 1000 });
+  await fresh.evaluate(() => document.querySelector('main').style.setProperty('--h-queue', '2000px'));
+  const height = (sel) => fresh.$eval(sel, (el) => Math.round(el.getBoundingClientRect().height));
+  assert.equal(await height('#term'), 120);
+  assert.ok(await height('#queue') > 800, `the queue is ${await height('#queue')}px of 1000`);
+  await openFile(fresh);
+  assert.equal(await height('#term'), 120, 'the diff\'s share comes out of the queue, not the terminal');
+  assert.ok(await height('#diff') >= 140);
+  await fresh.close();
+});
+
+// The line between two panes is a pixel of one grey between two of another,
+// so it says where it is: a grip at rest on the two across the right-hand
+// column, and its own colour under the pointer.
+test('a row gutter carries a grip, and its line lights up under the pointer', { skip }, async () => {
+  const fresh = await newPage();
+  const style = (pseudo) => fresh.$eval('#gut-queue', (g, p) => {
+    const s = getComputedStyle(g, p);
+    return { image: s.backgroundImage, color: s.backgroundColor, width: s.width };
+  }, pseudo);
+  assert.equal((await style('::before')).width, '36px');
+  assert.notEqual((await style('::before')).color, 'rgba(0, 0, 0, 0)');
+  assert.equal((await fresh.$eval('#gut-pr', (g) => getComputedStyle(g, '::before').content)), 'none', 'the pull request pane\'s edge has no grip');
+  assert.equal((await style('::after')).image, 'none');
+  await fresh.locator('#gut-queue').hover();
+  assert.match((await style('::after')).image, /gradient/);
+  await fresh.close();
+});
+
 // A separator moves on one axis, and says which with aria-orientation. Up and
 // Down used to resize the vertical ones too.
 test('a separator moves only on the arrows along its own axis', { skip }, async () => {
