@@ -176,6 +176,14 @@
     <table><tbody id="keys-list"></tbody></table>
     <p id="keys-note"></p>
   </dialog>
+  <!-- prcoder is no longer running (gone() in app.js): the one thing left on
+       the page that does anything. No ✕, and Escape is refused. -->
+  <dialog id="dead" aria-labelledby="dead-title">
+    <h2 id="dead-title">prcoder has quit</h2>
+    <p>Nothing on this page works any more. Close this tab, or start prcoder
+       again in this repository and reload.</p>
+    <button type="button" id="dead-reload" class="primary" autofocus>Reload</button>
+  </dialog>
   <script type="module" src="/app.js"></script>
 </body>
 </html>
