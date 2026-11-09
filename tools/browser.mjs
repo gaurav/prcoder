@@ -112,11 +112,11 @@ for (const pane of ['pr', 'queue']) {
   await page.locator(`#${pane}`).screenshot({ path: path.join(out, `${pane}.png`) });
 }
 // The last prompt sent, as the Claude pane says it on connecting -- from the
-// fixture claudeConfig wrote, not the owner's history -- with ▶ to type it back
-// in. Sticky, so dismissed here rather than left over the queue for the run.
+// fixture claudeConfig wrote, not the owner's history. Sticky, so dismissed
+// here rather than left over the queue for the run.
 const lastPrompt = page.locator('#toast:not([hidden])');
 console.log('last:   ', (await lastPrompt.count()) ? await lastPrompt.innerText() : '(no toast)',
-  '\n  (want "Last prompt, 50 minutes ago (Today hh:mm): Check that the pull request\'s milestone line…" with a ▶)');
+  '\n  (want "Last prompt, 50 minutes ago (Today hh:mm): Check that the pull request\'s milestone line…", no button)');
 if (await lastPrompt.count()) {
   await lastPrompt.screenshot({ path: path.join(out, 'toast-last-prompt.png') });
   await lastPrompt.click();

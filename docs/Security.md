@@ -155,8 +155,8 @@ is where a secret lands, and the `[Pasted text #1 +N lines]` placeholder in the 
 shows. The session id names the transcript to open, so only a UUID is taken as one. Both files are
 read and never written, and nothing read from them goes anywhere but this page, over the same
 origin as everything else: the route is `POST /api/history`, under `handleApi` like the rest.
-The prompts are drawn with `h()` and text nodes, and the one thing that acts on one -- the Claude
-pane's ▶ on the last prompt -- goes through `sendToClaude`, typed and not submitted. The file's
+The prompts are drawn with `h()` and text nodes, and the one thing that acts on one -- the History
+tab's ▶ on a row -- goes through `sendToClaude`, typed and not submitted. The file's
 format is Claude Code's and undocumented, so each line is held to the shape observed before it
 counts, and a line that does not fit is skipped. `--no-history` or `PRCODER_NO_HISTORY` turns the
 read off, and `CLAUDE_CODE_SKIP_PROMPT_HISTORY`, which stops Claude Code writing the file, turns it

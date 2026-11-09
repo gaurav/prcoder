@@ -298,13 +298,14 @@ exitForm.onsubmit = (e) => {
 
 // The last prompt sent from this working copy, when the agent connects: on
 // opening the page after a break, what you were doing; after Start in the
-// exit bar, the prompt the session died on, with ▶ to type it back in -- typed
-// and not sent, as the queue's ▶ types, so it is yours to edit and submit.
-// Sticky, since it waits to be read; the next Enter in the terminal takes it
-// down (dismissLastPrompt), since by then it has been. The History tab has
-// the rest. Only onto an empty slot: a reload's notice, which is up by now,
-// has the one slot there is, and this one is not worth taking it over
-// (#180 is the toast area that would hold both).
+// exit bar, the prompt the session died on. Text only: the History tab's
+// rows have ▶ to type one back in, and a button here was the one thing on
+// the page that typed text the user could not see whole. Sticky, since it
+// waits to be read; the next Enter in the terminal takes it down
+// (dismissLastPrompt), since by then it has been. Only onto an empty slot:
+// a reload's notice, which is up by now, has the one slot there is, and this
+// one is not worth taking it over (#180 is the toast area that would hold
+// both).
 async function lastPromptNotice() {
   let on;
   try { ({ history: on } = await whoami); } catch { return; }
@@ -316,10 +317,7 @@ async function lastPromptNotice() {
   const text = p.text.replace(/\s+/g, ' ').trim();
   const cut = text.length > 140 ? `${text.slice(0, 139)}…` : text;
   const when = `${age(new Date(p.at).toISOString())} (${dayLabel(p.at)} ${timeLabel(p.at)})`;
-  toast(`Last prompt, ${when}: ${cut}`, false, true, {
-    text: '▶', label: 'type this prompt into the coding agent again, to edit and send',
-    onclick: () => { if (!sendToClaude(p.text, false)) toast('The coding agent is not connected — nothing was typed.', true); },
-  }).dataset.kind = 'last-prompt';
+  toast(`Last prompt, ${when}: ${cut}`, false, true).dataset.kind = 'last-prompt';
 }
 const dismissLastPrompt = () => {
   const el = document.getElementById('toast');

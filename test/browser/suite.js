@@ -1325,11 +1325,11 @@ test('a page loaded again says why the session is new, and links to the fix unle
 
 // The History tab and the last-prompt notice, from a listing the route
 // answers: the notice first, since it is up as soon as the agent connects,
-// sticky and with a ▶ named by words; Enter in the terminal takes it down.
+// sticky and text only; Enter in the terminal takes it down.
 // Then the tab: the days by the local calendar, the titled session and the
 // worktree's, the slash command marked, every row with its time and a copy
 // button named by words, and the search narrowing the rows and the count.
-test('the History tab lists what was sent by day and session, and the last prompt is a notice with ▶', { skip }, async () => {
+test('the History tab lists what was sent by day and session, and the last prompt is a notice', { skip }, async () => {
   const S = '6f1a2b3c-4d5e-4f60-8a9b-0c1d2e3f4a5b';
   const T = 'a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d';
   // Fixed local times, so the day labels and the clock are the same at any
@@ -1360,11 +1360,10 @@ test('the History tab lists what was sent by day and session, and the last promp
   await p.waitForSelector('#toast:not([hidden])');
   const notice = await p.$eval('#toast', (el) => ({
     text: el.textContent, sticky: el.classList.contains('sticky'), kind: el.dataset.kind,
-    button: el.querySelector('button')?.getAttribute('aria-label') ?? null,
+    button: el.querySelector('button'),
   }));
-  assert.match(notice.text, /^Last prompt, .+ \(Today 00:05\): \/code-review high ▶$/);
-  assert.deepEqual([notice.sticky, notice.kind], [true, 'last-prompt']);
-  assert.match(notice.button, /type this prompt into the coding agent again/);
+  assert.match(notice.text, /^Last prompt, .+ \(Today 00:05\): \/code-review high$/);
+  assert.deepEqual([notice.sticky, notice.kind, notice.button], [true, 'last-prompt', null]);
   // Enter in the terminal is the next prompt: the notice has done its job.
   await p.locator('#term-host textarea').press('Enter');
   await p.waitForFunction(() => document.getElementById('toast').hidden);

@@ -353,12 +353,13 @@ deliberate reload gets a shorter toast without the link.
 
 When the agent connects -- the page opened, or **Start coding agent** pressed in the bar below --
 a sticky toast says the last prompt sent from this working copy and when, `Last prompt, 2 hours
-ago (Today 21:14): …`, the first 140 characters of it, with a ▶ that types it into the agent's
-prompt again, typed and not sent as the queue's ▶ types, for the session that died mid-task. The
+ago (Today 21:14): …`, the first 140 characters of it, for the session that died mid-task. The
 next Enter in the terminal takes it down, since by then it has been read. It is drawn from the
-same record as the queue's History tab, which has the rest, and only when nothing else is in the
-toast's one slot: after a reload the reload's own notice is already there, and
-[#180](https://github.com/gaurav/prcoder/issues/180) is the list of notices that would hold both.
+same record as the queue's History tab, which has the rest and, on each row, the ▶ that types a
+prompt back in; the notice itself has no button, since the text it shows is cut. It is put up only
+when nothing else is in the toast's one slot: after a reload the reload's own notice is already
+there, and [#180](https://github.com/gaurav/prcoder/issues/180) is the list of notices that would
+hold both.
 
 When Claude exits, a bar under its last output offers to start it again, optionally with a
 different model or effort, or to quit prcoder. Left to right: **Quit prcoder**, outlined in red

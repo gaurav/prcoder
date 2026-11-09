@@ -1217,6 +1217,3 @@ code.branch { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-
 /* Its ▶ ↓ ⧉ are the row's .actions, styled with every other row's; only
    the top edge is set, since this row's text can run to three lines. */
 .item.history .actions { flex: none; padding-top: 2px; }
-/* The toast's one button (toast() in ui.js): the last-prompt notice's ▶. */
-#toast button { margin-left: 6px; font-size: 12px; padding: 1px 7px; color: var(--fg); background: var(--bg); border: 1px solid var(--dim); border-radius: 4px; cursor: pointer; }
-#toast button:hover { border-color: var(--accent); color: var(--accent); }
