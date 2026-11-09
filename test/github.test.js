@@ -539,6 +539,14 @@ test('the pull request listing reaches GitHub as variables, and becomes mileston
   }).then(({ calls }) => ({ calls: calls.filter((c) => c.some((a) => a.includes('m9: milestone(number:9)'))) }));
   assert.ok(countCall, 'one call for the closed milestone\'s counts');
   assert.equal(countCall[countCall.indexOf('owner=gaurav') - 1], '-f');
+  // The counts only draw a pie, so a call for them that fails costs the pie
+  // and not the listing.
+  const failing = `case "$*" in\n*m9:*) echo 'error connecting to api.github.com' >&2; exit 1;;\n*) cat <<'JSON'\n${JSON.stringify(PULLS_PAGE)}\nJSON\n;;\nesac`;
+  await withGh(() => failing, async () => {
+    const got = await repoPulls(os.tmpdir(), 'gaurav', 'prcoder');
+    assert.equal(got.pulls.length, 2);
+    assert.deepEqual(got.milestones.map((m) => [m.number, !!m.counts]), [[1, true], [2, true], [3, true], [4, true], [5, true], [9, false]]);
+  });
 
   // Every merge state GitHub documents has a word, and one it does not is `checking…`.
   assert.deepEqual(Object.keys(MERGE_WORD).sort(), ['BEHIND', 'BLOCKED', 'CLEAN', 'DIRTY', 'DRAFT', 'HAS_HOOKS', 'UNKNOWN', 'UNSTABLE']);
