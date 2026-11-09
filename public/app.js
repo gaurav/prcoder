@@ -6,7 +6,7 @@ import { fileFrom, nextUnviewed, revealFile } from './filelist.js';
 import { h, api, toast, pref, setPref, debug } from './ui.js';
 import { openDiff, closeDiff, selectedPath, setViewed, showViewed, canTickViewed, toggleViewed, toggleWrap, canWrap, openMention } from './diff.js';
 import { initQueue, addItem, setItems, paintPulls, setHistoryOn } from './queue.js';
-import { historyStale } from './history.js';
+import { historyStale, lastPrompt } from './history.js';
 import { age, dayLabel, timeLabel } from './items.js';
 import { bindKeys, keyLabel, isTyping } from './keys.js';
 import { printable } from './tasks.js';
@@ -302,7 +302,8 @@ exitForm.onsubmit = (e) => {
 // rows have ▶ to type one back in, and a button here was the one thing on
 // the page that typed text the user could not see whole. Sticky, since it
 // waits to be read; the next Enter in the terminal takes it down
-// (dismissLastPrompt), since by then it has been. Only onto an empty slot:
+// (dismissLastPrompt), since by then it has been. From the History tab's own
+// listing (lastPrompt), not a read of its own. Only onto an empty slot:
 // a reload's notice, which is up by now, has the one slot there is, and this
 // one is not worth taking it over (#180 is the toast area that would hold
 // both).
@@ -310,9 +311,7 @@ async function lastPromptNotice() {
   let on;
   try { ({ history: on } = await whoami); } catch { return; }
   if (!on) return;
-  let h;
-  try { h = await api('/api/history', { limit: 1 }); } catch { return; }
-  const p = h.prompts?.[0];
+  const p = await lastPrompt();
   if (!p || !document.getElementById('toast').hidden) return;
   const text = p.text.replace(/\s+/g, ' ').trim();
   const cut = text.length > 140 ? `${text.slice(0, 139)}…` : text;

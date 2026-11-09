@@ -416,8 +416,10 @@ const routes = {
   /**
    * The History tab: what was sent to the coding agent from this working copy,
    * read from Claude Code's own history file (readHistory) -- never written,
-   * and nothing of the pastes. `limit` is how many of the newest, for the one
-   * line the Claude pane shows on connecting; the tab takes the default.
+   * and nothing of the pastes. `limit` is how many of the newest, for a
+   * caller that wants only those; the page reads the whole listing once, on
+   * opening, and draws both the tab and the Claude pane's last-prompt notice
+   * from it.
    * `{ enabled: false }` with the tab off, so the page can tell "nothing yet"
    * from "not read".
    */

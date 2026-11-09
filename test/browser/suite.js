@@ -1372,10 +1372,12 @@ test('the History tab lists what was sent by day and session, and the last promp
   assert.match(notice.text, /^Last prompt, .+ \(Today 00:05\): \/code-review high$/);
   assert.deepEqual([notice.sticky, notice.kind, notice.button], [true, 'last-prompt', null]);
   // The file is read when the page opens, so the count is on the tab before
-  // a visit; Enter in the terminal is the next prompt, which takes the notice
-  // down and, a second later, has the file read again with the tab not
-  // showing, so the count keeps up.
+  // a visit, and the notice is drawn from the same read -- one, whole, with
+  // no `limit` of its own. Enter in the terminal is the next prompt, which
+  // takes the notice down and, a second later, has the file read again with
+  // the tab not showing, so the count keeps up.
   await p.waitForFunction(() => document.querySelector('#queue-body .tab[data-tab="history"]')?.textContent === 'History (1)');
+  assert.deepEqual(reads, [null], 'one read on opening, for the tab and the notice both');
   const before = reads.length;
   const again = p.waitForResponse('**/api/history');
   await p.locator('#term-host textarea').press('Enter');

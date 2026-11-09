@@ -73,6 +73,18 @@ export function loadHistory(force = false) {
 }
 
 /**
+ * The newest prompt, for the notice the Claude pane puts up when the agent
+ * connects (lastPromptNotice in app.js): after a read, forced, since after
+ * Start in the exit bar it is the prompt the session died on that is wanted,
+ * and loadHistory(true) joins a read already out -- on opening the page,
+ * setHistoryOn's. Null with nothing sent, or nothing readable.
+ */
+export async function lastPrompt() {
+  await loadHistory(true);
+  return listing?.prompts?.[0] ?? null;
+}
+
+/**
  * A prompt was just sent from this page: once Claude Code has written it,
  * the file is read again, so the tab's count and, when it is showing, its
  * list do not lag behind the terminal beside them. A second, since the file
