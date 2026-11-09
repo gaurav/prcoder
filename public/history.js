@@ -8,7 +8,7 @@
 // nothing at module scope touches the DOM (public/CLAUDE.md).
 
 import { h, btn, api, toast, kept, fold } from './ui.js';
-import { byDay, dayKey, timeLabel, commandOf, historyMatches } from './items.js';
+import { byDay, dayKey, timeLabel, commandOf, historyMatches, age } from './items.js';
 
 export const LABEL = 'History';
 
@@ -153,6 +153,10 @@ function historyGroups() {
       ...state(d.key),
     }, d.sessions.map((s) => session(s)));
   });
+  // When the file was read, and that a read is out, as the Pull requests tab
+  // says under its groups: the three tabs that read something answer "how
+  // old is this?" the same way.
+  out.push(h('p', { className: 'pull-note' }, `Read ${age(new Date(listing.read).toISOString())}${loading ? ' · updating…' : ''}`));
   if (listing.skipped) {
     out.push(h('p', { className: 'pr-note' }, `${listing.skipped} line${listing.skipped === 1 ? '' : 's'} of the history file could not be read as a prompt.`));
   }

@@ -1391,6 +1391,7 @@ test('the History tab lists what was sent by day and session, and the last promp
   await p.waitForSelector('#queue-body .fold.day');
   assert.equal(reads.length, before + 1, 'the visit reads nothing');
   assert.equal(await p.locator('#queue-body .tab', { hasText: /^History/ }).innerText(), 'History (1)', 'the count is today\'s prompts');
+  assert.match(await p.locator('#queue-body .history-pane .pull-note').innerText(), /^Read /, 'when the file was read, under the days');
   const days = await p.$$eval('#queue-body .fold.day', (gs) => gs.map((g) => ({
     label: g.querySelector('h3').firstChild.textContent, count: g.querySelector('.count').textContent, open: g.open,
     sessions: [...g.querySelectorAll('.session h4')].map((h) => h.textContent),

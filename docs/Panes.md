@@ -573,4 +573,5 @@ prompts' text, leaving out a day without a match, and the tab's count is the pro
 or the matches while searching. The file is read when the page opens, so the count is on the tab
 before a visit, and again a second after a prompt is sent from this page, whichever tab is
 showing, so the count and the list keep up with the terminal beside them; ⟳ reads it again by
-hand. A read that fails says so, with a way to try again, and leaves the list as it was.
+hand, and the line under the days says when it was last read, as the Pull requests tab's does. A read that
+fails says so, with a way to try again, and leaves the list as it was.
