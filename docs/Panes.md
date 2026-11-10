@@ -147,9 +147,10 @@ picker changes nothing, since a change there is a write to GitHub; to pick by ke
 the dropdown first. The word *milestone*
 in front links to the milestone on GitHub while there is one, and a dated milestone says when it is
 due after the picker, as the queue's milestone lines do: *due in 3 days*, yellow within a week, a
-red badge once past, with the date on hover. The list is read when the pull request's repository
-changes and again as the pointer or the focus reaches the picker, so a milestone made on GitHub
-since is there to pick. A poll that lands while the picker has the focus redraws the rest of the
+red badge once past, with the date on hover. The list is every open milestone, as the queue's tabs
+have, and is read when the pull request's repository changes -- from the server's last read of it,
+while that is a few minutes old -- and from GitHub again as the pointer or the focus reaches the
+picker, so a milestone made on GitHub since is there to pick. A poll that lands while the picker has the focus redraws the rest of the
 head around it and brings the picker's options up to date in place, so an open dropdown is not
 redrawn shut and the head is still current; only a move to another pull request replaces the picker. It was a chip after the repository's to begin with, which
 said nothing on a pull request with no milestone and had nowhere to put a picker.

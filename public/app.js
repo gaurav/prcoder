@@ -648,22 +648,26 @@ switcher.addEventListener('focus', () => reachSwitcher('switcher focused'));
 
 // The open milestones of the repository the pull request on screen is in, for
 // the head's milestone picker: `{ repo, list }`, or null before one lands. Read
-// when that repository changes (`milestonesFor`), and again as the pointer or
-// the focus reaches the picker, not within ten seconds of the last one that
-// landed -- the switcher's rule, for the same reason: a milestone made on GitHub
-// since is there to pick. A failed read keeps what we had, and the picker still
-// has the pull request's own milestone and none; reaching for it tries again.
-// There is one read at a time, so the pane moving to another repository during
-// one waits for it to end, whatever its answer, and then asks about that one.
+// when that repository changes (`milestonesFor`), which the server answers from
+// its last read of it while that is a few minutes old, so a reload or a move
+// back is not a gh call; and read from GitHub as the pointer or the focus
+// reaches the picker, not within ten seconds of the last one that landed -- the
+// switcher's rule, for the same reason: a milestone made on GitHub since is
+// there to pick. Not only on reach: a dropdown opened faster than that read
+// would offer nothing but none and the pull request's own. A failed read keeps
+// what we had, and the picker still has the pull request's own milestone and
+// none; reaching for it tries again. There is one read at a time, so the pane
+// moving to another repository during one waits for it to end, whatever its
+// answer, and then asks about that one.
 let milestones = null;
 let milestonesFor = null;
 let milestonesAsking = null;
 let milestonesAt = 0;
-const loadMilestones = (why) => {
+const loadMilestones = (why, fresh = false) => {
   if (milestonesAsking) return milestonesAsking;
   const asked = milestonesFor;
-  debug('fetching the milestones:', why);
-  milestonesAsking = api('/api/milestones', undefined, 'GET').then((m) => {
+  debug('fetching the milestones:', why, fresh ? 'from GitHub' : '');
+  milestonesAsking = api('/api/milestones', { fresh }).then((m) => {
     if (m.repo !== milestonesFor) return debug('milestones dropped: the pane has moved to', milestonesFor);
     milestonesAt = Date.now();
     milestones = { repo: m.repo, list: m.milestones };
@@ -675,7 +679,7 @@ const loadMilestones = (why) => {
     });
   return milestonesAsking;
 };
-const reachMilestones = () => { if (Date.now() - milestonesAt > 10_000) loadMilestones('picker reached'); };
+const reachMilestones = () => { if (Date.now() - milestonesAt > 10_000) loadMilestones('picker reached', true); };
 
 /**
  * The pull request moved to another milestone, or off them, from the head's
