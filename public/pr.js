@@ -846,7 +846,10 @@ const milestoneRow = (pr, { milestones = null, picking = null, onMilestone, onMi
   const m = pr.milestone;
   const on = (picking ? picking.number : m?.number) ?? '';
   const sel = h('select', {
-    ariaLabel: 'milestone', disabled: !onMilestone || !!picking, dataset: { pr: pr.url, on: String(on) },
+    // `listed` once the repository's list is in, for a driver to wait on: the
+    // options alone cannot say, as a repository with none open has none.
+    ariaLabel: 'milestone', disabled: !onMilestone || !!picking,
+    dataset: { pr: pr.url, on: String(on), ...(milestones ? { listed: '' } : {}) },
     title: m ? 'move this pull request to another milestone' : 'not on a milestone: pick one to triage it',
   }, ...milestoneChoices(m, milestones).map((c) => h('option', { value: c.value, ...(c.title ? { title: c.title } : {}) }, c.text)));
   sel.value = sel.dataset.on;
@@ -937,6 +940,7 @@ const around = (parent, kept, list, stand) => {
 const updatePicker = (live, fresh) => {
   live.title = fresh.title;
   live.disabled = fresh.disabled;
+  live.toggleAttribute('data-listed', 'listed' in fresh.dataset);
   const have = new Map([...live.options].map((o) => [o.value, o]));
   [...fresh.options].forEach((want, i) => {
     const o = have.get(want.value) ?? want;

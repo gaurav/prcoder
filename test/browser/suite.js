@@ -532,6 +532,18 @@ test('a dated milestone says when it is due after the picker, which takes the re
   await p.close();
 });
 
+// A repository with no open milestones has a picker of none alone, so the
+// options cannot say the list has landed; `data-listed` does, for tools/browser.mjs,
+// whose wait for a second option ran its full thirty seconds there.
+test('the picker says when its list has landed, even an empty one', { skip }, async () => {
+  const p = await newPage();
+  await p.route('**/api/milestones', (r) => r.fulfill({ json: { ...MILESTONES, milestones: [] } }));
+  await p.reload();
+  await p.waitForSelector('#pr-head .pr-milestone select[data-listed]', { state: 'attached', timeout: 5_000 });
+  assert.deepEqual(await p.locator('#pr-head .pr-milestone option').allTextContents(), ['no milestone — needs triage']);
+  await p.close();
+});
+
 // The head is redrawn only when what it is drawn from changes, and the due
 // date counts from the day: a pane left open overnight said "due today" past
 // the day, until something else redrew it.
