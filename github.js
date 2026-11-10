@@ -1098,22 +1098,36 @@ export async function repoPulls(cwd, owner, repo) {
   return { milestones: await strayCounts(cwd, owner, repo, milestones), pulls, total, listed: pulls.length };
 }
 
-// Not MILESTONES_QUERY, which pages on from a listing and asks for each
-// milestone's counts: the picker shows neither.
-const PICKER_MILESTONES_QUERY = `query($owner:String!,$repo:String!){
-  repository(owner:$owner,name:$repo){ milestones(first:50,states:OPEN){ nodes{ number title dueOn } } } }`;
+// Not MILESTONES_QUERY, which asks for each milestone's counts: the picker
+// shows none. By due date, so that past the last page what is missing is the
+// milestones due furthest off. GitHub puts the undated ones first on this order
+// (gaurav/prcoder's own, 2026-11-10), so a bucket like Critical is never cut.
+const PICKER_MILESTONES_QUERY = `query($owner:String!,$repo:String!,$after:String){
+  repository(owner:$owner,name:$repo){
+    milestones(first:100,after:$after,states:OPEN,orderBy:{field:DUE_DATE,direction:ASC}){
+      pageInfo{ hasNextPage endCursor } nodes{ number title dueOn } } } }`;
 
 /**
  * The repository's open milestones, for the PR pane's milestone picker:
- * `[{ number, title, dueOn }]` (milestoneOf), in GitHub's order -- the page
- * ranks them. The first fifty, unpaged, though the queue's listings page on
- * to every one (openMilestones); a repository with more has the pull
- * request's own added by the pane whatever this says.
+ * `[{ number, title, dueOn }]` (milestoneOf), undated then soonest due -- the
+ * page ranks them again. Every one, to openMilestones' five pages of a hundred, as
+ * the queue's listings do: it took the first fifty in GitHub's own order at
+ * first, which could leave out the one due soonest on a repository with more,
+ * and the pane could not offer what the Issues and Pull requests tabs did. A
+ * repository with more still has the pull request's own added by the pane.
  */
 export async function repoMilestones(cwd, owner, repo) {
-  const { data } = JSON.parse(await gh(['api', 'graphql', '-f', `query=${PICKER_MILESTONES_QUERY}`,
-    '-f', `owner=${owner}`, '-f', `repo=${repo}`], { cwd }));
-  return data.repository.milestones.nodes.map(milestoneOf);
+  const nodes = [];
+  let after = null;
+  for (let page = 0; page < 5; page++) {
+    const { data } = JSON.parse(await gh(['api', 'graphql', '-f', `query=${PICKER_MILESTONES_QUERY}`,
+      '-f', `owner=${owner}`, '-f', `repo=${repo}`, ...(after ? ['-f', `after=${after}`] : [])], { cwd }));
+    const { nodes: got, pageInfo } = data.repository.milestones;
+    nodes.push(...got);
+    if (!pageInfo?.hasNextPage || !pageInfo.endCursor) break;
+    after = pageInfo.endCursor;
+  }
+  return nodes.map(milestoneOf);
 }
 
 /**

@@ -723,11 +723,27 @@ test('a milestone GitHub did not change is an error, not an answer', { skip: uni
 });
 
 test('a repository\'s open milestones are their numbers, titles and due dates', { skip: unix }, async () => {
-  const answer = { data: { repository: { milestones: { nodes: [
+  const answer = { data: { repository: { milestones: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [
     { number: 1, title: 'v1.0', dueOn: '2026-10-14T00:00:00Z' }, { number: 4, title: 'Needed\u001bsoon', dueOn: null }] } } } };
   const { out, calls } = await ghCalls(`cat <<'JSON'\n${JSON.stringify(answer)}\nJSON`, () => repoMilestones(os.tmpdir(), '123', 'r'));
   assert.deepEqual(out, [{ number: 1, title: 'v1.0', dueOn: '2026-10-14T00:00:00Z' }, { number: 4, title: 'Needed soon', dueOn: null }]);
   assert.equal(calls[0][calls[0].indexOf('owner=123') - 1], '-f', 'an all-digit owner is a string');
+  assert.match(calls[0].join('\n'), /orderBy:\{field:DUE_DATE,direction:ASC\}/, 'undated, then soonest due');
+});
+
+// The picker took the first fifty in GitHub's order, unpaged, and could leave
+// out the one due soonest; it reads on as the queue's listings do.
+test('the picker\'s milestones past the first page are read with their cursor', { skip: unix }, async () => {
+  const page = (nodes, endCursor) => ({ data: { repository: { milestones: {
+    pageInfo: { hasNextPage: endCursor != null, endCursor }, nodes } } } });
+  const first = page([{ number: 1, title: 'v1.0', dueOn: null }], 'M1');
+  const more = page([{ number: 60, title: 'v6', dueOn: null }], null);
+  const script = `case "$*" in\n*after=M1*) cat <<'JSON'\n${JSON.stringify(more)}\nJSON\n;;\n*) cat <<'JSON'\n${JSON.stringify(first)}\nJSON\n;;\nesac`;
+  const { out, calls } = await ghCalls(script, () => repoMilestones(os.tmpdir(), 'o', 'r'));
+  assert.deepEqual(out.map((m) => m.number), [1, 60]);
+  assert.equal(calls.length, 2);
+  const paged = calls.find((c) => c.includes('after=M1'));
+  assert.equal(paged[paged.indexOf('after=M1') - 1], '-f');
 });
 
 // The linked issues are read alongside the files, on GraphQL as well: a
