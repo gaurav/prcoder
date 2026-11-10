@@ -708,11 +708,13 @@ test('a letter that finds an option in a closed picker changes nothing and write
 // reach, and sends no change at all for Alt+Down, Space, Enter or F4 then an
 // arrow and Enter (tried 2026-11-02). So these say what the picker does with a
 // key and a change, not that the browser sends them.
-const keyThenChange = (p, key, { value = '4', wait = false, up = false } = {}) => p.evaluate(async ({ key, value, wait, up }) => {
+// `wait` is ms between the key and the change; a key reaches only a focused select.
+const keyThenChange = (p, key, { value = '4', wait = 0, up = false } = {}) => p.evaluate(async ({ key, value, wait, up }) => {
   const sel = document.querySelector('#pr-head .pr-milestone select');
+  sel.focus();
   sel.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
   if (up) sel.dispatchEvent(new KeyboardEvent('keyup', { key, bubbles: true }));
-  if (wait) await new Promise((r) => { setTimeout(r, 50); });
+  if (wait) await new Promise((r) => { setTimeout(r, wait); });
   sel.value = value;
   sel.dispatchEvent(new Event('change', { bubbles: true }));
 }, { key, value, wait, up });
@@ -738,9 +740,48 @@ test('a change during a browsing key is put back, and one on a choosing key is w
 test('a pick after a browsing key whose keyup never came is written', { skip }, async () => {
   const p = await newPage();
   await p.waitForFunction(() => document.querySelectorAll('#pr-head .pr-milestone option').length > 1);
-  await keyThenChange(p, 'ArrowDown', { wait: true });
+  await keyThenChange(p, 'ArrowDown', { wait: 400 });
   await p.waitForSelector('#pr-head .pr-milestone:not(.untriaged) a');
   assert.deepEqual(p.milestonePicks, [{ url: pr.url, number: 4 }]);
+  await p.close();
+});
+
+// The guard was a flag a zero-delay timer cleared, which held only while the
+// browser sent the change before that timer ran; nothing promises the order.
+test('a change that comes a little after a browsing key is put back too', { skip }, async () => {
+  const p = await newPage();
+  await p.waitForFunction(() => document.querySelectorAll('#pr-head .pr-milestone option').length > 1);
+  for (const key of ['ArrowDown', 'n']) {
+    await keyThenChange(p, key, { wait: 50 });
+    assert.equal(await p.locator('#pr-head .pr-milestone select').inputValue(), '', key);
+  }
+  await p.waitForTimeout(100);
+  assert.equal(p.milestonePicks, undefined, 'nothing went to GitHub');
+  await p.close();
+});
+
+// Some browsers have sent the change for a key only as the select loses the
+// focus: before the blur event, with the focus already elsewhere, or after it.
+test('a key\'s change sent as the focus leaves is put back, in either order', { skip }, async () => {
+  const p = await newPage();
+  await p.waitForFunction(() => document.querySelectorAll('#pr-head .pr-milestone option').length > 1);
+  const leave = (before) => p.evaluate(async (before) => {
+    const sel = document.querySelector('#pr-head .pr-milestone select');
+    sel.focus();
+    sel.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+    sel.value = '4';
+    await new Promise((r) => { setTimeout(r, 400); });
+    const send = () => { if (sel.value !== '4') sel.value = '4'; sel.dispatchEvent(new Event('change', { bubbles: true })); };
+    // A capturing listener on the window runs before the select's own onblur.
+    if (before) window.addEventListener('blur', (e) => { if (e.target === sel) send(); }, { capture: true, once: true });
+    document.getElementById('queue-input').focus();
+    if (!before) sel.dispatchEvent(new Event('change', { bubbles: true }));
+    return sel.value;
+  }, before);
+  assert.equal(await leave(true), '', 'sent before the blur event');
+  assert.equal(await leave(false), '', 'sent after it');
+  await p.waitForTimeout(100);
+  assert.equal(p.milestonePicks, undefined, 'nothing went to GitHub');
   await p.close();
 });
 

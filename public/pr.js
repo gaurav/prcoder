@@ -837,6 +837,10 @@ export const milestoneChoices = (current, list) => {
 // What moves a closed select's value: an arrow, a page or end key, or a letter to
 // find by. Space is not one: it opens the dropdown.
 const BROWSING_KEY = /^(Arrow.*|Page.*|Home|End|[^ ])$/;
+// How long after a browsing key a change is still that key's. Long enough for a
+// browser that sends the change after the key rather than while handling it,
+// and short beside the time a person takes to pick from a menu the key opened.
+const BROWSE_MS = 300;
 
 const milestoneRow = (pr, { milestones = null, picking = null, onMilestone, onMilestoneReach } = {}) => {
   const m = pr.milestone;
@@ -849,23 +853,45 @@ const milestoneRow = (pr, { milestones = null, picking = null, onMilestone, onMi
   // A closed select changes on a bare key, and a change here is a write to
   // GitHub: a letter on its way to the terminal moved the pull request, and an
   // arrow did on Windows and Linux. A page cannot ask whether a dropdown is
-  // open, but a key that browses changes the value while it is being handled,
-  // and a choice from an open dropdown comes on Enter or a click. So a change
-  // during a browsing key is put back, and to pick by keyboard is to open the
-  // dropdown first. keypress too, as that is where type-ahead happens. Cleared
-  // by a timer, not keyup: on a Mac an arrow opens a native menu that keeps the
-  // keyup, and the mouse pick from that menu would then be put back. All this
-  // goes when #174's picker of our own replaces the select.
-  let browsing = false;
+  // open, but a choice from an open dropdown comes on Enter or a click, and a
+  // key that browses changes the value as it is handled. So a change within
+  // BROWSE_MS of a browsing key is put back, unless an Enter came between, and
+  // to pick by keyboard is to open the dropdown first. keypress too, as that is
+  // where type-ahead happens.
+  //
+  // A time from the key rather than a flag a zero-delay timer clears, as this
+  // was at first: that held only while the change came before the timer, and
+  // browsers do not promise the order -- one that sends the change a task later
+  // let the key write. Not cleared on keyup either: on a Mac an arrow opens a
+  // native menu that keeps the keyup, and the mouse pick from that menu, a
+  // person's time later, would then be put back. And some browsers have sent
+  // the change for a key only as the select loses the focus: a browsing key
+  // means the select had the focus, so a change after one that comes with the
+  // focus already elsewhere is put back, and a value a key moved is put back at
+  // the blur, before a change sent after it. All this goes when #174's picker
+  // of our own replaces the select.
+  let browsedAt = -Infinity;
+  let keyed = false;
   const browse = (e) => {
+    if (e.key === 'Enter') {
+      browsedAt = -Infinity;
+      keyed = false;
+      return;
+    }
     if (e.ctrlKey || e.metaKey || e.altKey || !BROWSING_KEY.test(e.key)) return;
-    browsing = true;
-    setTimeout(() => { browsing = false; });
+    browsedAt = performance.now();
+    keyed = true;
   };
   sel.onkeydown = browse;
   sel.onkeypress = browse;
+  sel.onblur = () => {
+    if (keyed && sel.value !== sel.dataset.on) sel.value = sel.dataset.on;
+    keyed = false;
+  };
   sel.onchange = () => {
-    if (browsing) {
+    const left = keyed && document.activeElement !== sel;
+    keyed = false;
+    if (left || performance.now() - browsedAt < BROWSE_MS || sel.value === sel.dataset.on) {
       sel.value = sel.dataset.on;
       return;
     }
