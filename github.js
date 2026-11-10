@@ -83,6 +83,9 @@ const PR_FIELDS = [
   // headRefOid is asked for all the same, as the commit the checks above are
   // for, and loadPr keeps it apart from the one the files are at.
   'headRefOid',
+  // The milestone the pull request is on, for the head's milestone line:
+  // { number, title, description, dueOn }, or null.
+  'milestone',
 ].join(',');
 
 /** The head repository as the page reads it: its slug, or null, and its owner. */
@@ -465,7 +468,10 @@ export async function loadPr(cwd, target, { pause } = {}) {
   ]);
   // The raw lists are summarised here and not sent on: every poll carries this
   // object to every tab, and nothing reads them past this point.
-  const { closingIssuesReferences, comments, reviews, ...rest } = withChecks(headSide(pr));
+  const { closingIssuesReferences, comments, reviews, milestone, ...rest } = withChecks(headSide(pr));
+  // Its number, title and due date only: the description can be long, and this
+  // goes to every tab on every poll.
+  rest.milestone = milestoneOf(milestone);
   // A push between `gh pr view` and the file pages leaves the checks the old
   // head's, beside the new head's files and sync light. They are read again at
   // the files' head; past one more push the next poll has it, since updatedAt
@@ -1090,6 +1096,38 @@ export async function repoPulls(cwd, owner, repo) {
     if (!after) break;
   }
   return { milestones: await strayCounts(cwd, owner, repo, milestones), pulls, total, listed: pulls.length };
+}
+
+// Not MILESTONES_QUERY, which asks for each milestone's counts: the picker
+// shows none. By due date, so that past the last page what is missing is the
+// milestones due furthest off. GitHub puts the undated ones first on this order
+// (gaurav/prcoder's own, 2026-11-10), so a bucket like Critical is never cut.
+const PICKER_MILESTONES_QUERY = `query($owner:String!,$repo:String!,$after:String){
+  repository(owner:$owner,name:$repo){
+    milestones(first:100,after:$after,states:OPEN,orderBy:{field:DUE_DATE,direction:ASC}){
+      pageInfo{ hasNextPage endCursor } nodes{ number title dueOn } } } }`;
+
+/**
+ * The repository's open milestones, for the PR pane's milestone picker:
+ * `[{ number, title, dueOn }]` (milestoneOf), undated then soonest due -- the
+ * page ranks them again. Every one, to openMilestones' five pages of a hundred, as
+ * the queue's listings do: it took the first fifty in GitHub's own order at
+ * first, which could leave out the one due soonest on a repository with more,
+ * and the pane could not offer what the Issues and Pull requests tabs did. A
+ * repository with more still has the pull request's own added by the pane.
+ */
+export async function repoMilestones(cwd, owner, repo) {
+  const nodes = [];
+  let after = null;
+  for (let page = 0; page < 5; page++) {
+    const { data } = JSON.parse(await gh(['api', 'graphql', '-f', `query=${PICKER_MILESTONES_QUERY}`,
+      '-f', `owner=${owner}`, '-f', `repo=${repo}`, ...(after ? ['-f', `after=${after}`] : [])], { cwd }));
+    const { nodes: got, pageInfo } = data.repository.milestones;
+    nodes.push(...got);
+    if (!pageInfo?.hasNextPage || !pageInfo.endCursor) break;
+    after = pageInfo.endCursor;
+  }
+  return nodes.map(milestoneOf);
 }
 
 /**

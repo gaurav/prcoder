@@ -12,7 +12,7 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import { WebSocket } from 'ws';
-import { server, sessionArgs, startedWith, missingVendor, keepPr, issueMove, pullMove, queuedRun } from '../server.js';
+import { server, sessionArgs, startedWith, missingVendor, keepPr, issueMove, pullMove, pickerMove, queuedRun } from '../server.js';
 import { grammars } from '../public/diff.js';
 import { VERSION } from '../cli.js';
 
@@ -288,6 +288,34 @@ test('a switch is refused before gh unless it names a pull request', async () =>
     });
     assert.deepEqual(await r.json(), { error: `not a pull request URL: ${url}` });
   }
+});
+
+// The milestone goes to gh's -F, which reads `null`, `true` and a number as
+// JSON rather than text, so anything but a positive integer or null is
+// refused before the pull request is looked at.
+test('a milestone is refused before gh unless it is a number or none', async () => {
+  for (const number of ['4', 0, -1, 1.5, 'null', true, undefined]) {
+    const res = await fetch(`${base}/api/pr/milestone`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ url: 'x', number }),
+    });
+    assert.equal(res.status, 500);
+    assert.deepEqual(await res.json(), { error: `not a milestone number: ${JSON.stringify(number)}` });
+  }
+});
+
+// The two tabs' moves are held to what the tab listed; the picker's are held
+// to what it was offered, so a closed milestone, or a number a stale tab or a
+// script sends, never reaches GitHub. The pull request's own is allowed, as
+// a pick of where it already is, and so is none.
+test('a picker pick is refused unless it is none, the pull request\'s own, or one the picker listed', () => {
+  const listed = [{ number: 4, title: 'Needed soon', dueOn: null }, { number: 1, title: 'v1.0', dueOn: null }];
+  const pr = { milestone: { number: 9, title: 'v0.1', dueOn: null } };
+  assert.equal(pickerMove(listed, pr, 4), 4);
+  assert.equal(pickerMove(listed, pr, null), null);
+  assert.equal(pickerMove(listed, pr, 9), 9, 'where it is, closed or past the list');
+  assert.throws(() => pickerMove(listed, pr, 7), { message: '#7 is not an open milestone the picker listed' });
+  assert.throws(() => pickerMove(listed, { milestone: null }, 9), { message: '#9 is not an open milestone the picker listed' });
+  assert.throws(() => pickerMove(null, { milestone: null }, 4), { message: '#4 is not an open milestone the picker listed' });
 });
 
 test('a choice is refused unless the last poll listed it for the branch', async () => {

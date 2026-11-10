@@ -4,7 +4,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { stackOrder } from '../public/pr.js';
-import { TABS, counts, forClaude, refLabel, rankMilestones, issueMatches, sizeChip, sortPulls, rootsInOrder, pullMatches, age, dueLabel, isNew, PULL_SORTS } from '../public/items.js';
+import { TABS, counts, forClaude, refLabel, rankMilestones, issueMatches, sizeChip, sortPulls, rootsInOrder, pullMatches, age, dueLabel, dueDay, isNew, PULL_SORTS } from '../public/items.js';
 import { stripFor } from '../public/queue.js';
 
 const item = (over = {}) => ({ text: 't', done: false, issue: null, deleted: false, ...over });
@@ -257,4 +257,34 @@ test('the by-stack view puts its stacks in the chosen order of their roots', () 
   const walk = stackOrder(rows);
   assert.deepEqual(walk.map(({ pr: p, depth }) => `${'-'.repeat(depth)}${p.number}`), ['1', '-4', '3', '2'], 'the walk, base by base');
   assert.deepEqual(rootsInOrder(walk, rows).map(({ pr: p, depth }) => `${'-'.repeat(depth)}${p.number}`), ['1', '-4', '2', '3']);
+});
+
+// Every hour here is one read off a real repository's milestones on 2026-11-02
+// (nodejs/node, rust-lang/rust, flutter/flutter): midnight wherever the date
+// was set, so the UTC date is a day early for anyone east of Greenwich.
+test('a due date is the day it was set for, west or east of Greenwich', () => {
+  for (const hour of ['00', '04', '05', '07', '08']) assert.equal(dueDay(`2026-10-20T${hour}:00:00Z`), '2026-10-20', hour);
+  // Sydney's and Moscow's midnight, on the 20th there.
+  for (const hour of ['13', '21']) assert.equal(dueDay(`2026-10-19T${hour}:00:00Z`), '2026-10-20', hour);
+});
+
+// The viewer's time zone is the other half: "today" is theirs. Each of these
+// gave a wrong answer when the due day was the UTC date and nearness a time.
+// noon() is called after TZ is set, so it is noon on the 19th in that zone.
+const noon = () => new Date(2026, 9, 19, 12).getTime();
+test('a due date reads the same way in the viewer\'s time zone', () => {
+  const tz = process.env.TZ;
+  try {
+    process.env.TZ = 'Asia/Tokyo';
+    assert.deepEqual(dueLabel('2026-10-19T15:00:00Z', noon()),
+      { className: 'due soon', textContent: 'due tomorrow', title: 'Tuesday, October 20, 2026' }, 'set in Tokyo for the 20th, seen there on the 19th');
+    assert.equal(dueLabel('2026-10-19T15:00:00Z', new Date(2026, 9, 20, 12).getTime()).textContent, 'due today', 'and on its own day');
+    assert.equal(dueLabel('2026-10-19T15:00:00Z', new Date(2026, 9, 20, 12).getTime()).className, 'due soon', 'not overdue');
+    process.env.TZ = 'America/Los_Angeles';
+    const evening = new Date(2026, 9, 19, 20).getTime();
+    assert.deepEqual(dueLabel('2026-10-20T00:00:00Z', evening), { className: 'due soon', textContent: 'due tomorrow', title: 'Tuesday, October 20, 2026' }, 'not "3 hours ago"');
+    assert.equal(dueLabel('2026-10-20T03:00:30Z', new Date('2026-10-20T03:00:00Z').getTime()).textContent, 'due tomorrow', 'not "just now"');
+  } finally {
+    if (tz === undefined) delete process.env.TZ; else process.env.TZ = tz;
+  }
 });

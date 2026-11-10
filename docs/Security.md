@@ -148,6 +148,12 @@ A modified file's diff is not highlighted at all, and
   value -- a model has to be a name, so `--model --dangerously-skip-permissions` never becomes two
   flags. The one exception is a value equal to what prcoder's command line already gave, which is
   dropped as a repeat rather than checked: it came from whoever started prcoder, not the page.
+  The milestone picker's number goes to `gh api -F`, which reads a value by its shape
+  (`null`, `true`, a number, a leading `@` as a file to read), so `/api/pr/milestone` takes only a
+  positive integer or null, before it looks at anything else. Then the number has to be one the
+  picker was offered -- the server keeps the last list it read for each repository (`pickerMove`) --
+  or the milestone the pull request is already on, as the Issues and Pull requests tabs' moves are
+  held to their listings, so a closed milestone or one a stale tab sends never reaches GitHub.
   The switcher's `/api/pr/switch` hands a URL to `gh pr checkout`, so `wholePrRepo` in `git.js`
   takes only the whole of a `https://github.com/owner/repo/pull/N` -- anchored, so a flag in front
   of one or another host with that path behind it is refused -- and the route takes it only in one

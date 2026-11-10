@@ -56,6 +56,14 @@ this tree's code against that branch's PR. A switch the driver makes then
 happens in the worktree. Remove the worktree when done, and any local branch
 `gh pr checkout` made there.
 
+A worktree you *work* in -- a branch off `main` edited and tested there -- has
+no `node_modules`, and `npm test` in it fails a couple of hundred browser and
+vendor tests with nothing in common. Its imports resolve anyway, from this
+tree's `node_modules` two directories up, but the server serves xterm and
+Prism from `node_modules` beside its own `server.js` (`vendor` in server.js),
+which is the worktree's. `ln -s ../../node_modules node_modules` in the
+worktree fixes it; `.gitignore`'s `node_modules` covers the link (2026-10-21).
+
 ## A stub that only echoes is not a session
 
 A real Claude session asks the terminal for the cursor position every ~200ms,
@@ -87,6 +95,12 @@ timing has to be driven against that stub, not cat. cat is fine for
   30s for a box that is gone. It failed only on CI, where the stubbed save
   answers before Playwright's re-read (2026-10-02). This goes for
   `test/browser/suite.js` too.
+- **A key can't drive a native `<select>`'s open dropdown here.** On this Mac, headless, Alt+Down,
+  Space, Enter or F4 then an arrow and Enter send no `change` in either engine, so a script waiting
+  on one sees nothing, which looks like the page ignoring the pick (2026-11-02). A letter on the
+  closed select does change it. `selectOption()` is the way to make a pick, and it is a change with
+  no key behind it. For the keys, send the sequence yourself, as `keyThenChange` in
+  `test/browser/suite.js` does.
 - **Install `MutationObserver`s after `goto`, not in `addInitScript`.** At
   init time there is no `document.head` to observe, and the throw takes the
   rest of the init script with it.

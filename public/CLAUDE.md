@@ -32,7 +32,9 @@ importing the server. A new import in any of the seven adds to the list.
 
 `h`, `btn`, `ext`, `api`, `toast`, `debug`, `pref`, the mark and the fold:
 every pane builds from these, so they live in `ui.js` and a pane imports them
-from there. `pr.js` used to hold them, and the other panes imported the PR
+from there. So does `replaceKeeping`, for a redraw that must not shut a focused
+select's dropdown: mark the control `data-keep` and give it a `refresh`,
+rather than teaching the pane's painter about it. `pr.js` used to hold them, and the other panes imported the PR
 pane to get a button.
 
 ## Keyboard shortcuts go through `keys.js`
