@@ -177,12 +177,13 @@ const posted = [];
 // that answers it late. `folds` serves index.html with that list in place of
 // its `data-folds`, which is how a pane's fold is switched on, and `init` runs
 // in the page before its own scripts, for a stub of a browser API. `clock`
-// installs Playwright's, for a test that moves time on with `p.clock`.
+// installs Playwright's, for a test that moves time on with `p.clock`: `true`
+// starts it now, and a time in ms starts it then.
 async function newPage({ prs = [], st = status, ready = '#pr-head .pr-title', below = null, pty = () => {},
   whoami = { model: '', effort: '' }, folds = null, init = null, clock = false } = {}) {
   const p = await browser.newPage();
   if (init) await p.addInitScript(init);
-  if (clock) await p.clock.install();
+  if (clock) await p.clock.install(clock === true ? undefined : { time: clock });
   if (folds) {
     await p.route((u) => u.pathname === '/', async (r) => {
       const res = await r.fetch();
@@ -528,6 +529,23 @@ test('a dated milestone says when it is due after the picker, which takes the re
     return [l.clientWidth, [...l.children].reduce((w, k) => w + k.getBoundingClientRect().width, 0) + gap * (l.children.length - 1)];
   });
   assert.ok(Math.abs(line - used) < 2, `the picker fills the line: ${used} of ${line}px`);
+  await p.close();
+});
+
+// The head is redrawn only when what it is drawn from changes, and the due
+// date counts from the day: a pane left open overnight said "due today" past
+// the day, until something else redrew it.
+test('a milestone due today says it is overdue once the day has passed', { skip }, async () => {
+  // Two minutes to midnight, local time; the date is the 10th wherever the
+  // milestone was set, as dueDay reads an hour from 00 to 08 UTC.
+  const p = await newPage({ clock: new Date(2026, 10, 10, 23, 58).getTime(),
+    st: { ...status, pr: { ...pr, milestone: { number: 2, title: 'v0.1', dueOn: '2026-11-10T08:00:00Z' } } } });
+  const due = p.locator('#pr-head .pr-milestone > .due');
+  assert.equal(await due.textContent(), 'due today');
+  const polled = p.waitForResponse('**/api/status');
+  await p.clock.fastForward(3 * 60_000);
+  await polled;
+  await p.waitForSelector('#pr-head .pr-milestone > .due.overdue');
   await p.close();
 });
 

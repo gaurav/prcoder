@@ -879,12 +879,15 @@ function paint(status) {
     const blocked = status.dirtyFiles.length > 0;
     // Everything the pane is drawn from, the Stack tab's inputs included: a
     // fresh PR list, or a tree going dirty, is a redraw even when the PR is not.
+    // The day is one of them, as the milestone's due date counts from it: without
+    // it a pane left open overnight said "due today" past the day, in yellow
+    // rather than overdue's red, until something else redrew the head.
     if (milestonesFor !== prRepo(status.pr)) {
       milestonesFor = prRepo(status.pr);
       milestones = null;
       loadMilestones(`now on ${milestonesFor}`);
     }
-    const key = JSON.stringify([status.pr, status.scope, stack, blocked, [...below.values()], status.remotes, milestones, picking]);
+    const key = JSON.stringify([status.pr, status.scope, stack, blocked, [...below.values()], status.remotes, milestones, picking, new Date().toDateString()]);
     if (key !== drawn) {
       drawn = key;
       renderPr({ ...status.pr, note: NOTES[status.scope] }, {
