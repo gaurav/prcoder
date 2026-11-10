@@ -1,5 +1,5 @@
 import { withoutHtml, mention, unmarked, mdLink, bareUrl, opens, repoUrl, urlPath, blocks, sectionize } from './tasks.js';
-import { kids, h, btn, ext, debug, tabBtn, writeThrough, fraction, mark, kept, fold } from './ui.js';
+import { kids, h, btn, ext, debug, tabBtn, writeThrough, fraction, mark, kept, fold, replaceKeeping } from './ui.js';
 import { fileTree, fileGroup, filesProgress, unlisted } from './filelist.js';
 import { refLabel, refClass, rankMilestones, dueLabel, dueDay } from './items.js';
 
@@ -811,6 +811,34 @@ export const milestoneChoices = (current, list) => {
 };
 
 /**
+ * A kept picker brought up to what `fresh` says, in place. An option already
+ * there stays the same node, and only what differs is touched, so an open
+ * dropdown gets a new milestone rather than closing or losing its highlight.
+ * The value is set only when the pull request's own milestone has moved, since
+ * the select's may be what a keyboard is browsing in an open dropdown.
+ */
+const updatePicker = (live, fresh) => {
+  live.title = fresh.title;
+  live.disabled = fresh.disabled;
+  live.toggleAttribute('data-listed', 'listed' in fresh.dataset);
+  const have = new Map([...live.options].map((o) => [o.value, o]));
+  [...fresh.options].forEach((want, i) => {
+    const o = have.get(want.value) ?? want;
+    have.delete(want.value);
+    if (o !== want) {
+      if (o.textContent !== want.textContent) o.textContent = want.textContent;
+      o.title = want.title;
+    }
+    if (live.options[i] !== o) live.insertBefore(o, live.options[i] ?? null);
+  });
+  have.forEach((o) => o.remove());
+  if (live.dataset.on !== fresh.dataset.on) {
+    live.dataset.on = fresh.dataset.on;
+    live.value = fresh.dataset.on;
+  }
+};
+
+/**
  * The milestone line, between the links and the state: which milestone the
  * pull request is on, as a picker that moves it to another or off them.
  *
@@ -849,10 +877,13 @@ const milestoneRow = (pr, { milestones = null, picking = null, onMilestone, onMi
     // `listed` once the repository's list is in, for a driver to wait on: the
     // options alone cannot say, as a repository with none open has none.
     ariaLabel: 'milestone', disabled: !onMilestone || !!picking,
-    dataset: { pr: pr.url, on: String(on), ...(milestones ? { listed: '' } : {}) },
+    dataset: { pr: pr.url, keep: `milestone ${pr.url}`, on: String(on), ...(milestones ? { listed: '' } : {}) },
     title: m ? 'move this pull request to another milestone' : 'not on a milestone: pick one to triage it',
   }, ...milestoneChoices(m, milestones).map((c) => h('option', { value: c.value, ...(c.title ? { title: c.title } : {}) }, c.text)));
   sel.value = sel.dataset.on;
+  // Held through a redraw while it has the focus (paintHead), and brought up to
+  // the picker that redraw drew.
+  sel.refresh = (fresh) => updatePicker(sel, fresh);
   // A closed select changes on a bare key, and a change here is a write to
   // GitHub: a letter on its way to the terminal moved the pull request, and an
   // arrow did on Windows and Linux. A page cannot ask whether a dropdown is
@@ -922,73 +953,14 @@ const milestoneRow = (pr, { milestones = null, picking = null, onMilestone, onMi
  */
 const HEAD_ORDER = ['title', 'note', 'links', 'milestone', 'state', 'tabs'];
 
-/** Everything in `parent` but `kept` replaced by `list`, with `kept` where `stand` is in it. */
-const around = (parent, kept, list, stand) => {
-  const at = list.indexOf(stand);
-  [...parent.children].forEach((k) => { if (k !== kept) k.remove(); });
-  kept.before(...list.slice(0, at));
-  kept.after(...list.slice(at + 1));
-};
-
 /**
- * A kept picker brought up to what `fresh` says, in place. An option already
- * there stays the same node, and only what differs is touched, so an open
- * dropdown gets a new milestone rather than closing or losing its highlight.
- * The value is set only when the pull request's own milestone has moved, since
- * the select's may be what a keyboard is browsing in an open dropdown.
+ * The head, redrawn whole but for a milestone picker that has the focus, whose
+ * open dropdown a redraw would shut (replaceKeeping). The picker names its pull
+ * request in `data-keep`, so a move to another one replaces it: a pick there is
+ * about one no longer on screen, which the server would refuse.
  */
-const updatePicker = (live, fresh) => {
-  live.title = fresh.title;
-  live.disabled = fresh.disabled;
-  live.toggleAttribute('data-listed', 'listed' in fresh.dataset);
-  const have = new Map([...live.options].map((o) => [o.value, o]));
-  [...fresh.options].forEach((want, i) => {
-    const o = have.get(want.value) ?? want;
-    have.delete(want.value);
-    if (o !== want) {
-      if (o.textContent !== want.textContent) o.textContent = want.textContent;
-      o.title = want.title;
-    }
-    if (live.options[i] !== o) live.insertBefore(o, live.options[i] ?? null);
-  });
-  have.forEach((o) => o.remove());
-  if (live.dataset.on !== fresh.dataset.on) {
-    live.dataset.on = fresh.dataset.on;
-    live.value = fresh.dataset.on;
-  }
-};
-
-/**
- * The focus is the one sign a page gets that the milestone picker's dropdown
- * may be open, and replacing the picker then closes it. So while it has the
- * focus, and is still about the pull request drawn, that one node stays and the
- * rest of the head is redrawn around it.
- *
- * Only that node, because a select keeps the focus after its dropdown closes:
- * holding the whole head until a blur (as this did at first) left the title,
- * state and tabs stale for as long as nobody clicked elsewhere, and the first
- * click after that landed on a node the blur had just replaced. Around it rather
- * than moving it into the new row, because removing a node takes the focus away
- * and closes the dropdown, even to put it straight back.
- *
- * A pull request other than the picker's does replace it: a pick there is about
- * one no longer on screen, which the server would refuse.
- */
-const paintHead = (rows) => {
-  const head = document.getElementById('pr-head');
-  const next = kids(HEAD_ORDER.map((k) => rows[k]));
-  const held = head.querySelector('.pr-milestone select');
-  const fresh = rows.milestone?.querySelector('select');
-  if (!fresh || !held || held !== document.activeElement || held.dataset.pr !== fresh.dataset.pr) {
-    head.replaceChildren(...next);
-    return;
-  }
-  const line = held.parentElement;
-  line.className = rows.milestone.className;
-  around(line, held, [...rows.milestone.children], fresh);
-  around(head, line, next, rows.milestone);
-  updatePicker(held, fresh);
-};
+const paintHead = (rows) =>
+  replaceKeeping(document.getElementById('pr-head'), kids(HEAD_ORDER.map((k) => rows[k])));
 
 /**
  * The count each tab carries is what it can tell you while you are on the other
