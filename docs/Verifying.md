@@ -154,7 +154,8 @@ that it closes with 1008 before the spawn. The exit bar's "Start coding agent" a
 `test/browser/suite.js`'s, against a mock socket that closes the way an exiting agent does, or
 with `QUIT_CODE` the way a quitting prcoder does. That a quit, and a SIGHUP, really send
 `QUIT_CODE` to every tab is `test/cli.test.js`'s, against a real server in a throwaway repo, with
-real sockets.
+real sockets -- and that the code still arrives at a tab megabytes behind on the agent's output,
+which a server that exits as soon as it has sent the close loses.
 
 Some things were checked against the real thing rather than a stub, and the evidence sits next to
 the code:

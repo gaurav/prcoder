@@ -377,6 +377,74 @@ test('a quit, or a signal, closes every tab\'s socket with QUIT_CODE', async () 
   assert.deepEqual(await withServer(tabsAfter((server) => server.kill('SIGHUP'))), { result: told, code: 130 });
 });
 
+// The close frame queues behind whatever the socket has not yet written, so a
+// server that exits as soon as it has sent it loses it under a burst of the
+// agent's output, and the page sees a bare 1006 and offers a Start that
+// reaches nothing. Here the agent floods the terminal while the tab reads
+// nothing, so megabytes are queued when the quit comes; the tab reads on a
+// moment later, and the last frame must still be QUIT_CODE. Until 2026-11-10 quit()
+// exited once stdout had drained, and this tab got no close frame at all.
+// A raw socket, not a WebSocket: that reads as fast as it can, and the backlog
+// is the point.
+test('a quit\'s close frame reaches a tab that is behind on the agent\'s output', async () => {
+  const fs = await import('node:fs/promises');
+  const net = await import('node:net');
+  const os = await import('node:os');
+  const path = await import('node:path');
+  const { randomBytes } = await import('node:crypto');
+  const { QUIT_CODE } = await import('../public/ui.js');
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const stubDir = await fs.mkdtemp(path.join(os.tmpdir(), 'prcoder-flood-'));
+  const flood = path.join(stubDir, 'agent');
+  await fs.writeFile(flood, '#!/bin/sh\nhead -c 16000000 /dev/zero | tr \'\\000\' x\nexec sleep 600\n', { mode: 0o755 });
+  try {
+    const { result } = await withServer(async (_, base) => {
+      const [host, port] = base.split(':');
+      const sock = net.connect(Number(port), host);
+      // One listener for the whole run: a 'data' event with nobody listening
+      // is lost.
+      const chunks = [];
+      sock.on('data', (b) => chunks.push(b));
+      const ended = new Promise((r) => sock.on('close', r));
+      sock.write(`GET /pty HTTP/1.1\r\nHost: ${base}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n`
+        + `Sec-WebSocket-Key: ${randomBytes(16).toString('base64')}\r\nSec-WebSocket-Version: 13\r\n\r\n`);
+      for (let i = 0; i < 100 && !Buffer.concat(chunks).includes('\r\n\r\n'); i++) await sleep(20);
+      sock.pause();
+      await sleep(1500);   // the flood, queueing in the server
+      const r = await fetch(`http://${base}/api/quit`, {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"force":true}',
+      });
+      assert.deepEqual(await r.json(), { quit: true });
+      // A tab can be slow to read -- busy, or in the background -- and the
+      // server has to wait for it. Half a second is well past the moment the
+      // old quit() was gone, and well inside the 2s it now waits at most.
+      await sleep(500);
+      sock.resume();
+      await ended;
+      // The server's frames, unmasked, after the handshake's reply.
+      const all = Buffer.concat(chunks);
+      let at = all.indexOf('\r\n\r\n') + 4;
+      let read = 0;
+      let close = null;
+      while (at + 2 <= all.length) {
+        const op = all[at] & 0x0f;
+        let len = all[at + 1] & 0x7f;
+        let head = 2;
+        if (len === 126) { len = all.readUInt16BE(at + 2); head = 4; }
+        else if (len === 127) { len = Number(all.readBigUInt64BE(at + 2)); head = 10; }
+        if (at + head + len > all.length) break;   // cut off mid-frame
+        if (op === 8) close = all.readUInt16BE(at + head);
+        else read += len;
+        at += head + len;
+      }
+      return { close, behind: read > 4_000_000 };
+    }, { agent: flood });
+    assert.deepEqual(result, { close: QUIT_CODE, behind: true });
+  } finally {
+    await fs.rm(stubDir, { recursive: true, force: true });
+  }
+});
+
 // Quitting prints Local rather than asking about it: the queue is on disk, so
 // nothing is lost, and the list is what you would want to copy from.
 test('quitting lists what is on Local, with links, and nothing when it is empty', () => {
