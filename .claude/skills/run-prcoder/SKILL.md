@@ -111,7 +111,9 @@ Two rules for them, and for any script after them:
   description checkbox — in the PR pane or the queue's PR tab — edits the
   description on GitHub, and picking in the PR pane's milestone line moves the
   pull request to that milestone (pick the old one back, or none, to undo; the
-  pull request's timeline keeps both events). Filing a queue item with ◎
+  pull request's timeline keeps both events). To check `/api/pr/milestone`
+  without a write, send a number the picker never listed: it is refused
+  before gh. Filing a queue item with ◎
   writes to GitHub too, and one-way: putting the queue back does not close the
   issue. Dropping an Issues or Pull requests row on a milestone line, or Move in
   its opened row, sets that milestone on GitHub, so route `/api/issue/milestone`
