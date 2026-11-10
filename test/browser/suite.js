@@ -991,6 +991,9 @@ test('a socket closed with prcoder\'s quit code gets the modal, and any other cl
   await gone.waitForSelector('#dead:modal');
   assert.equal(await gone.textContent('#dead-title'), 'prcoder has quit');
   assert.equal(await gone.isHidden('#term-exit'), true, 'no Start for a prcoder that is not there');
+  // What is left to copy names what went.
+  await gone.locator('#term-host .xterm-rows', { hasText: '[prcoder quit]' }).waitFor();
+  assert.equal(await gone.locator('#term-host .xterm-rows', { hasText: 'coding agent exited' }).count(), 0);
   // Alt+/ is the one key that fires over a modal, and here it has nothing to list.
   await gone.keyboard.press('Alt+Slash');
   await settle(gone);

@@ -240,21 +240,23 @@ function connect(query = '') {
   // not take, the reason is the only clue that the setting was the problem.
   ws.onclose = (e) => {
     turn(false);
-    const why = e.code === 1008 ? `refused: ${e.reason}` : 'coding agent exited';
+    // The terminal's last line, and what is left to copy once the box over a
+    // gone prcoder is closed, so it names prcoder when prcoder is what went.
+    const why = e.code === 1008 ? `refused: ${e.reason}`
+      : e.code === QUIT_CODE || dead ? 'prcoder quit' : 'coding agent exited';
     term.write(`\r\n\x1b[31m[${why}]\x1b[0m\r\n`);
     // The PTY a quit killed closes the socket after quitPrcoder has said so
     // over the whole window, so there is nothing left to do here.
     if (dead) return;
     // A socket also closes because prcoder itself is quitting -- q or Ctrl-C
-    // in its terminal, a Quit in another tab -- and then the bar below would
-    // offer a Start that reaches nothing. quit() in server.js says so with
-    // QUIT_CODE on every tab's socket before it kills anything. Until then
-    // (2026-11-09) the page fetched /api/whoami a moment after any close and
-    // called a refused fetch a dead server: a guess at the timing, fooled by
-    // anything else on the port and hung by a server too stuck to answer.
-    // A prcoder that exits any other way -- a signal, the second Ctrl-C, a
-    // crash -- sends it too, from an 'exit' handler; only one killed outright
-    // (SIGKILL) sends none, and gets the bar.
+    // in its terminal, a Quit in another tab, a signal -- and then the bar
+    // below would offer a Start that reaches nothing. quit() in server.js says
+    // so with QUIT_CODE on every tab's socket, and waits for each to close,
+    // before it exits. A /api/whoami fetch a moment after any close, calling a
+    // refused fetch a dead server, was tried on this branch first and dropped:
+    // a guess at the timing, fooled by anything else on the port and hung by a
+    // server too stuck to answer. A crash may get no code out, and a prcoder
+    // killed outright sends none: either way the bar goes up.
     if (e.code === QUIT_CODE) return gone();
     // The bar's note repeats the terminal's line, not the reason: that is
     // already there in red, a line up.

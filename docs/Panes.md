@@ -372,6 +372,7 @@ Quit from the page, and also however else prcoder stopped -- quit from its own t
 tab, its terminal closed, a crash: on the way out it closes every tab's connection with a code of
 its own. Only a prcoder killed outright (`kill -9`) sends none, and then the page cannot tell it
 from the agent exiting and shows the exit bar.
+The terminal's last line says `[prcoder quit]` rather than `[coding agent exited]`.
 The box's ✕, or Escape, closes it so the terminal's last screen can be selected and copied; the
 panes stay dimmed and the title stays. The way on is to close the tab, or start prcoder again, where
 `/resume` or `-- --continue` picks the coding agent's session back up.
