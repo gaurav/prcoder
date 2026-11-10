@@ -303,14 +303,11 @@ test('prcoder refuses to start outside a git checkout', async () => {
   }
 });
 
-// A quit tells every tab before it kills anything, with a close code of its
-// own, and that code is all a page has to tell prcoder quitting from its agent
-// exiting (ws.onclose in public/app.js). So does an exit that skips quit():
-// closing the terminal prcoder runs in (SIGHUP), or the second Ctrl-C that
-// exits at once. The browser suite fakes the socket, so this is the one place
-// the server's half is checked: a real server, in a throwaway repo, with two
-// tabs' sockets.
-test('a quit, or a signal, closes every tab\'s socket with QUIT_CODE', async () => {
+// A real server, in a throwaway repo, for the tests below of what it tells
+// the tabs as it goes: the browser suite fakes the socket, so these are the one
+// place the server's half is checked. `run` gets the server and its `host:port`
+// once it answers, and this returns what `run` returned and the exit code.
+async function withServer(run, { agent = '/bin/cat' } = {}) {
   const { spawn } = await import('node:child_process');
   const { once } = await import('node:events');
   const fs = await import('node:fs/promises');
@@ -318,53 +315,66 @@ test('a quit, or a signal, closes every tab\'s socket with QUIT_CODE', async () 
   const os = await import('node:os');
   const path = await import('node:path');
   const { fileURLToPath } = await import('node:url');
-  const { QUIT_CODE } = await import('../public/ui.js');
   // Without git's own variables, as above: under a hook, `git init` would
   // land in whatever GIT_DIR names (test/CLAUDE.md).
   const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith('GIT_')));
-  // The two tabs' close codes, and the exit code, after `end` is done to a
-  // server with both open.
-  const run = async (end) => {
-    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'prcoder-quit-'));
-    execSync('git init -q', { cwd: dir, env });
-    const probe = net.createServer().listen(0, '127.0.0.1');
-    await once(probe, 'listening');
-    const { port } = probe.address();
-    await new Promise((r) => probe.close(r));
-    const server = spawn('node', [fileURLToPath(new URL('../server.js', import.meta.url)), '--no-open'],
-      { cwd: dir, env: { ...env, PRCODER_PORT: String(port), PRCODER_AGENT_BIN: '/bin/cat' }, stdio: 'ignore' });
-    const exited = once(server, 'exit');
-    try {
-      const base = `localhost:${port}`;
-      for (let i = 0; i < 50; i++) {
-        if (await fetch(`http://${base}/api/whoami`).then(() => true, () => false)) break;
-        await new Promise((r) => setTimeout(r, 100));
-      }
-      // In an object: resolved with the promise itself, tab() would wait for
-      // the close rather than the open, and nothing here closes it.
-      const tab = () => new Promise((resolve, reject) => {
-        const ws = new WebSocket(`ws://${base}/pty`);
-        const closed = new Promise((r) => { ws.onclose = (e) => r([e.code, e.reason]); });
-        ws.onopen = () => resolve({ closed });
-        ws.onerror = reject;
-      });
-      const tabs = [(await tab()).closed, (await tab()).closed];
-      await end(server, base);
-      return { tabs: await Promise.all(tabs), code: (await exited)[0] };
-    } finally {
-      server.kill();
-      await fs.rm(dir, { recursive: true, force: true });
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'prcoder-quit-'));
+  execSync('git init -q', { cwd: dir, env });
+  const probe = net.createServer().listen(0, '127.0.0.1');
+  await once(probe, 'listening');
+  const { port } = probe.address();
+  await new Promise((r) => probe.close(r));
+  const server = spawn('node', [fileURLToPath(new URL('../server.js', import.meta.url)), '--no-open'],
+    { cwd: dir, env: { ...env, PRCODER_PORT: String(port), PRCODER_AGENT_BIN: agent }, stdio: 'ignore' });
+  const exited = once(server, 'exit');
+  try {
+    const base = `localhost:${port}`;
+    let up = false;
+    for (let i = 0; i < 50 && !up; i++) {
+      up = await fetch(`http://${base}/api/whoami`).then((r) => r.json()).then((w) => w?.prcoder === true, () => false);
+      if (!up) await new Promise((r) => setTimeout(r, 100));
     }
+    // A pinned port that is taken falls back to any free one (bind() in
+    // server.js), and a slow start outlasts the loop. Either way this says so,
+    // rather than leaving it to an opaque WebSocket error further on.
+    assert.ok(up, `no prcoder answered on port ${port} within 5s: taken since the probe, or a slow start`);
+    const result = await run(server, base);
+    return { result, code: (await exited)[0] };
+  } finally {
+    server.kill();
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+}
+
+// A quit tells every tab before it kills anything, with a close code of its
+// own, and that code is all a page has to tell prcoder quitting from its agent
+// exiting (ws.onclose in public/app.js). So does an exit that skips quit():
+// closing the terminal prcoder runs in (SIGHUP). Two tabs' sockets each time.
+test('a quit, or a signal, closes every tab\'s socket with QUIT_CODE', async () => {
+  const { QUIT_CODE } = await import('../public/ui.js');
+  // In an object: resolved with the promise itself, tab() would wait for the
+  // close rather than the open, and nothing here closes it.
+  const tab = (base) => new Promise((resolve, reject) => {
+    const ws = new WebSocket(`ws://${base}/pty`);
+    const closed = new Promise((r) => { ws.onclose = (e) => r([e.code, e.reason]); });
+    ws.onopen = () => resolve({ closed });
+    ws.onerror = reject;
+  });
+  // The two tabs' close codes, after `end` is done to a server with both open.
+  const tabsAfter = (end) => async (server, base) => {
+    const tabs = [(await tab(base)).closed, (await tab(base)).closed];
+    await end(server, base);
+    return Promise.all(tabs);
   };
   const told = [[QUIT_CODE, 'prcoder quit'], [QUIT_CODE, 'prcoder quit']];
 
-  assert.deepEqual(await run(async (_, base) => {
+  assert.deepEqual(await withServer(tabsAfter(async (_, base) => {
     const r = await fetch(`http://${base}/api/quit`, {
       method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"force":true}',
     });
     assert.deepEqual(await r.json(), { quit: true });
-  }), { tabs: told, code: 0 });
-  assert.deepEqual(await run((server) => server.kill('SIGHUP')), { tabs: told, code: 130 });
+  })), { result: told, code: 0 });
+  assert.deepEqual(await withServer(tabsAfter((server) => server.kill('SIGHUP'))), { result: told, code: 130 });
 });
 
 // Quitting prints Local rather than asking about it: the queue is on disk, so
