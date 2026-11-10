@@ -1012,6 +1012,56 @@ test('a socket closed with prcoder\'s quit code gets the modal, and any other cl
   await gone.close();
 });
 
+// QUIT_CODE goes down a socket, so a tab whose agent had already exited when
+// prcoder went -- exit bar up, socket closed -- was never told, and went on
+// offering a Start that reached nothing. Its poll finds out instead: a fetch
+// that gets no answer, with the socket closed, is prcoder gone. With the
+// socket open a failed poll is only that, since the socket would say.
+test('a tab whose agent had already exited finds prcoder gone from its next poll', { skip }, async () => {
+  let sock;
+  const p = await newPage({ clock: true, pty: (ws) => { sock = ws; } });
+  await p.route('**/api/status', (r) => r.abort('connectionrefused'));
+  // Coming back to the tab polls, ten seconds after the last poll at most.
+  const poll = async () => {
+    await p.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+    await p.clock.fastForward(11_000);
+    await settle(p);
+  };
+  await poll();
+  assert.equal(await p.locator('#dead:modal').count(), 0, 'with the socket open, a failed poll is only that');
+  await sock.close();
+  await p.locator('#term-exit').waitFor({ state: 'visible' });
+  await poll();
+  await p.waitForSelector('#dead:modal');
+  assert.equal(await p.isHidden('#term-exit'), true, 'no Start for a prcoder that is not there');
+  await p.close();
+});
+
+// A Start from the exit bar that cannot connect reached no agent, so the
+// terminal does not say one exited, and it asks at once whether prcoder is
+// still there: if it answers, the bar is back; if not, the box. The mock
+// closes the Start's socket as a browser reports a server that is not there:
+// never opened, 1006. Not a socket aimed at a closed port: under
+// routeWebSocket, Playwright's wrapper reports that one as code 0.
+test('a Start that cannot connect asks after prcoder at once', { skip }, async () => {
+  let sockets = 0;
+  const p = await newPage({ pty: (ws) => (++sockets === 1 ? ws.close() : ws.close({ code: 1006 })) });
+  const bar = p.locator('#term-exit');
+  await bar.waitFor({ state: 'visible' });
+  assert.equal(await p.textContent('#term-exit span'), 'Coding agent has exited.');
+  await p.click('#term-start');
+  await p.locator('#term-host .xterm-rows', { hasText: '[could not reach prcoder]' }).waitFor();
+  await bar.waitFor({ state: 'visible' });
+  assert.equal(await p.textContent('#term-exit span'), 'Could not reach prcoder.');
+  await settle(p);
+  assert.equal(await p.locator('#dead:modal').count(), 0, 'prcoder answered, so it is still there');
+  await p.route('**/api/status', (r) => r.abort('connectionrefused'));
+  await p.click('#term-start');
+  await p.waitForSelector('#dead:modal');
+  assert.equal(sockets, 3);
+  await p.close();
+});
+
 // A button drawn as a glyph -- ✕, ⟳, ▼ -- is read out by a screen reader as
 // that glyph, which names no action. Every button on the page, as it first
 // renders, has words to be read by: its text, or an aria-label.

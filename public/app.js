@@ -185,6 +185,9 @@ let sockets = 0;
 function connect(query = '') {
   sockets++;
   ws = new WebSocket(`ws://${location.host}/pty${query && `?${query}`}`);
+  // Whether this socket ever reached a server, for ws.onclose: one that closes
+  // without opening reached no agent, and maybe no prcoder.
+  let opened = false;
   ws.onmessage = (e) => {
     term.write(e.data);
     if (PROBE.test(e.data)) return;
@@ -198,6 +201,7 @@ function connect(query = '') {
   // Starting the agent again from the exit panel does not: you asked for that
   // one, and chose whether to continue.
   ws.onopen = () => {
+    opened = true;
     sent = '';   // a new PTY starts at 80x24, whatever the last one was told
     sync();
     term.focus();
@@ -240,10 +244,16 @@ function connect(query = '') {
   // not take, the reason is the only clue that the setting was the problem.
   ws.onclose = (e) => {
     turn(false);
+    // 1006 is the browser's own code for a socket that got no close frame. With
+    // any other code a server answered, open or not: Playwright's mock socket
+    // closed in its handler never fires onopen, but a real prcoder always does.
+    const reached = opened || e.code !== 1006;
     // The terminal's last line, and what is left to copy once the box over a
     // gone prcoder is closed, so it names prcoder when prcoder is what went.
+    // A socket that never opened reached no agent to exit.
     const why = e.code === 1008 ? `refused: ${e.reason}`
-      : e.code === QUIT_CODE || dead ? 'prcoder quit' : 'coding agent exited';
+      : e.code === QUIT_CODE || dead ? 'prcoder quit'
+        : reached ? 'coding agent exited' : 'could not reach prcoder';
     term.write(`\r\n\x1b[31m[${why}]\x1b[0m\r\n`);
     // The PTY a quit killed closes the socket after quitPrcoder has said so
     // over the whole window, so there is nothing left to do here.
@@ -256,11 +266,13 @@ function connect(query = '') {
     // refused fetch a dead server, was tried on this branch first and dropped:
     // a guess at the timing, fooled by anything else on the port and hung by a
     // server too stuck to answer. A crash may get no code out, and a prcoder
-    // killed outright sends none: either way the bar goes up.
+    // killed outright sends none: either way the bar goes up, until loadStatus
+    // finds prcoder gone.
     if (e.code === QUIT_CODE) return gone();
     // The bar's note repeats the terminal's line, not the reason: that is
     // already there in red, a line up.
-    exitForm.querySelector('span').textContent = e.code === 1008 ? 'Start refused.' : 'Coding agent has exited.';
+    exitForm.querySelector('span').textContent = e.code === 1008 ? 'Start refused.'
+      : reached ? 'Coding agent has exited.' : 'Could not reach prcoder.';
     exitForm.hidden = false;
     // Refit now rather than waiting on the ResizeObserver: in a page that isn't
     // in front it never delivered the shrink, and the terminal went on
@@ -269,6 +281,11 @@ function connect(query = '') {
     // Start, not the first button: Quit is first in the bar, and Enter after
     // an exit should start again rather than ask about quitting.
     document.getElementById('term-start').focus();
+    // Closed, this tab is out of reach of the next quit's QUIT_CODE, so it is
+    // the poll that finds prcoder gone (loadStatus). A Start that never
+    // connected asks at once: a prcoder that quit while the bar was up is the
+    // usual reason.
+    if (!reached) loadStatus();
   };
 }
 
@@ -848,6 +865,12 @@ async function loadStatus({ search = false } = {}) {
   try {
     paint(await api('/api/status', undefined, search ? 'POST' : 'GET'));
   } catch (e) {
+    // No answer at all -- fetch's TypeError, not an error the server sent --
+    // with the agent's socket closed. QUIT_CODE goes down a socket, so a tab
+    // whose agent had already exited when prcoder went was never told; this is
+    // how it finds out. With the socket open, the socket says it, so a poll
+    // that fails then is left to read as one.
+    if (e instanceof TypeError && ws.readyState === WebSocket.CLOSED) return gone();
     const failed = { error: e.message, dirtyFiles: [], pr: null };
     renderHeader(failed, prs, handlers);
   }

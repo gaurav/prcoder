@@ -369,10 +369,13 @@ Once prcoder itself has gone, nothing on the page works -- the pull request pane
 the terminal all talk to it -- so the whole window says so: a box over the panes, which are dimmed
 behind it and take no click or key, and a tab titled `prcoder (not running)`. It comes up after a
 Quit from the page, and also however else prcoder stopped -- quit from its own terminal or another
-tab, its terminal closed, a crash: on the way out it closes every tab's connection with a code of
-its own. Only a prcoder killed outright (`kill -9`) sends none, and then the page cannot tell it
-from the agent exiting and shows the exit bar.
-The terminal's last line says `[prcoder quit]` rather than `[coding agent exited]`.
+tab, its terminal closed: on the way out it closes every tab's connection with a code of its own,
+and waits for each tab to have it. A tab whose agent had already exited has no connection to be
+told on. A prcoder that crashes may not get the code out, and one killed outright (`kill -9`)
+sends none, so its tabs show the exit bar as if only the agent had gone. All of these find out from
+the page's next poll of prcoder, which gets no answer: at once on a Start that cannot connect,
+otherwise within the minute or on coming back to the tab. The terminal's last line says `[prcoder quit]` rather than
+`[coding agent exited]`.
 The box's ✕, or Escape, closes it so the terminal's last screen can be selected and copied; the
 panes stay dimmed and the title stays. The way on is to close the tab, or start prcoder again, where
 `/resume` or `-- --continue` picks the coding agent's session back up.
