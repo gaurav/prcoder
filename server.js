@@ -11,15 +11,16 @@ import { fileURLToPath } from 'node:url';
 import { text as readBody } from 'node:stream/consumers';
 import { spawn as ptySpawn } from 'node-pty';
 import { WebSocketServer } from 'ws';
-import { loadPr, prHeads, prUrl, prBody, parsePrUrl, listPrs, branchPrs, lookupPrs, ownPrs, pickPr, issueLinks, lookupRef, setViewed, setBody, createIssue, fetchPatches, runCount, repoIssues, repoMilestones, setIssueMilestone } from './github.js';
+import { loadPr, prHeads, prUrl, prBody, parsePrUrl, listPrs, branchPrs, lookupPrs, ownPrs, pickPr, issueLinks, lookupRef, setViewed, setBody, createIssue, fetchPatches, runCount, repoPulls, repoIssues, repoMilestones, setIssueMilestone } from './github.js';
 import { notAWorkTree, snapshot, currentBranch, headCommit, commitsKnown, commitMemo, repoInfo, pushRepo, prScope, compareUrl, githubUrl, originOwner, wholePrRepo, checkoutPr, pushBranch, remoteBranchHead, trackingHead, localPatch, branchesBelow } from './git.js';
 import { bucket, fileUrl, fileViews } from './files.js';
-import { readPort, writePort, readPrs, writePrs, pick, useQueueFile, movedQueue, issueUrl } from './store.js';
+import { readPort, writePort, readPrs, writePrs, pick, useQueueFile, movedQueue, issueUrl, readPulls, writePulls } from './store.js';
 import { readQueue, writeQueue, quote } from './queue.js';
 import { parseCli, usage, VERSION, portCandidates, statusLines, openRepoArgs, OPEN_REPO_VARS, REPO_ENV, queueSummary, quitRisks } from './cli.js';
 import * as term from './term.js';
 import { toggleTask, refs, wholeRef, resolveRef } from './public/tasks.js';
 import { grammars } from './public/diff.js';
+import { QUIT_CODE } from './public/ui.js';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const repo = process.cwd();
@@ -322,9 +323,13 @@ const repaint = () => term.status(last
  * the lock -- so it does not hold up the poll, saves and ticks behind it. The
  * Issues tab's listing is the same and much longer: up to five pages of a
  * hundred issues with their bodies, on every visit to the tab. The PR pane's
- * list of milestones to pick from is the same and short.
+ * list of milestones to pick from is the same and short. The Pull
+ * requests tab's listing is seconds long on a repository with many open;
+ * what it writes, `.prcoder/pulls.json`, is its own file, replaced whole by
+ * a rename (writePulls), and its fresh reads queue among themselves
+ * (freshPulls) rather than behind everything else.
  */
-const UNLOCKED = new Set(['GET /api/whoami', 'GET /api/status', 'POST /api/queue/ref', 'GET /api/issues', 'GET /api/milestones']);
+const UNLOCKED = new Set(['GET /api/whoami', 'GET /api/status', 'POST /api/queue/ref', 'GET /api/issues', 'GET /api/milestones', 'POST /api/pulls']);
 
 /**
  * Status polls that arrive while one is still waiting for the lock share it:
@@ -338,6 +343,82 @@ const poll = () => (queuedPoll ??= serial(() => {
   queuedPoll = null;
   return status();
 }));
+
+// What the Issues tab was last shown (GET /api/issues), for a route that acts
+// on one of its rows: numbers and milestones, without the bodies of up to 500
+// issues, which nothing here reads again.
+let listing = null;
+
+// What the Pull requests tab was last shown (POST /api/pulls, from the cache
+// or GitHub), and the last listing this process read from GitHub, which is
+// what the route that acts on a row holds a move to: pulls.json can be days
+// old, and a pull request merged since is still a row in it.
+let pulls = null;
+let pullsFromGitHub = null;
+
+/**
+ * `fn` on a chain of its own, with poll()'s sharing: a call that arrives while
+ * one is waiting shares it, and one arriving mid-run waits for that run and
+ * then gets one of its own -- whatever it came to read may have changed since
+ * the running one started. At most one runs, which keeps a slow read from
+ * being repeated by every tab that asks, and two writes of its file apart.
+ * `pending()` is the run under way, or else the one waiting, or null: for a
+ * caller that wants any fresh answer, not one started after it arrived.
+ * Exported for test/api.test.js.
+ */
+export const queuedRun = (fn) => {
+  let tail = Promise.resolve();
+  let waiting = null;
+  let running = null;
+  const run = () => (waiting ??= (tail = tail.catch(() => {}).then(() => {
+    waiting = null;
+    return (running = fn()).finally(() => { running = null; });
+  })));
+  run.pending = () => running ?? waiting;
+  return run;
+};
+
+/**
+ * The Pull requests tab's fresh read: GitHub's listing, written to
+ * `.prcoder/pulls.json` and kept as `pulls`. Queued (queuedRun), not under the
+ * server's lock: two at once each paid for the seconds-long read and wrote
+ * the same temp file (writeJson's name is per process), which could leave it
+ * interleaved or fail the second rename.
+ */
+const freshPulls = queuedRun(async () => {
+  const { nameWithOwner } = await repoFacts();
+  const [owner, name] = nameWithOwner.split('/');
+  const got = await repoPulls(repo, owner, name);
+  const now = Date.now();
+  // A cache: a write that fails costs a read on the next start, not now.
+  await writePulls(repo, nameWithOwner, got, now).catch((e) => term.debug(`pulls.json not written: ${e.message}`));
+  return (pulls = pullsFromGitHub = { ...got, read: now });
+});
+
+/**
+ * What /api/issue/milestone may do, from `listing`: `{ number, milestone, title }`
+ * where `number` is an open issue the tab was shown and `milestone` the number
+ * of one of its open milestones, found by title, or null to take the milestone
+ * off. A closed one is listed only because an issue is still on it (repoIssues),
+ * and is somewhere to move off, not onto.
+ * The page's strings choose; the listing's are what reach gh -- the same hold
+ * /api/pr/choose keeps on a pick. Pure, and exported for test/api.test.js.
+ * pullMove is the same hold for /api/pull/milestone, on the pulls listing.
+ */
+export const issueMove = (listing, body) => heldMove(listing?.issues, listing?.milestones, 'issue', 'Issues', body);
+export const pullMove = (listing, body) => heldMove(listing?.pulls, listing?.milestones, 'pull request', 'Pull requests', body);
+
+function heldMove(rows, milestones, what, tab, { number, milestone } = {}) {
+  const row = rows?.find((r) => r.number === number);
+  if (!row) throw new Error(`#${number ?? '?'} is not an open ${what} the ${tab} tab listed`);
+  // null exactly, not == null: a body with no `milestone` at all, which is what
+  // JSON.stringify makes of an undefined, has not asked for it to be taken off.
+  if (milestone === null) return { number: row.number, milestone: null, title: null };
+  // A closed milestone is listed for the rows still on it, not as somewhere to move one.
+  const found = milestones?.find((m) => m.title === milestone && !m.closed);
+  if (!found) throw new Error(`"${milestone}" is not an open milestone the ${tab} tab listed`);
+  return { number: row.number, milestone: found.number, title: found.title };
+}
 
 const routes = {
   // Unlocked only because poll() takes the lock itself.
@@ -385,6 +466,8 @@ const routes = {
    *
    * Unlocked (UNLOCKED), so a poll can swap `pr` while this waits on GitHub:
    * the mentions are the pull request that was on screen when it was asked.
+   * The listing is kept (`listing`) so a write about an issue can be held to
+   * what the tab was last shown, as /api/pr/choose holds a pick to the poll.
    */
   'GET /api/issues': async () => {
     const { nameWithOwner } = await repoFacts();
@@ -395,7 +478,63 @@ const routes = {
       repoIssues(repo, owner, name),
       numbers.length ? issueLinks(repo, cur.url, numbers.slice(0, 50)) : new Map(),
     ]);
+    listing = { issues: found.issues.map(({ number }) => ({ number })), milestones: found.milestones };
     return { ...found, repo: nameWithOwner, mentions: numbers.map((number) => ({ number, ...links.get(number) })) };
+  },
+
+  /**
+   * An issue dropped on a milestone group in the Issues tab, or one picked in
+   * its row: the milestone is set on GitHub (setIssueMilestone), and the tab reads
+   * the listing again. `milestone` is a title from the listing, or null to
+   * take it off; issueMove holds both to what the tab was shown.
+   */
+  'POST /api/issue/milestone': async (body = {}) => {
+    const { number, milestone, title } = issueMove(listing, body);
+    const [owner, name] = (await repoFacts()).nameWithOwner.split('/');
+    await setIssueMilestone(repo, { owner, repo: name, number }, milestone);
+    term.verbose(`put #${number} on ${title ? `milestone ${quote(title)}` : 'no milestone'}`);
+    return { ok: true };
+  },
+
+  /**
+   * The repository's open pull requests and milestones for the queue's Pull
+   * requests tab (repoPulls), with `read`, when the listing was read, in ms.
+   * Without `fresh` it is the last listing -- the one on hand, or the one
+   * `.prcoder/pulls.json` holds from an earlier run -- so the tab opens at
+   * once; GitHub is read only when there is none. With `fresh` it is read now
+   * and the file replaced, which is what the tab asks for behind the first
+   * answer, and on its ⟳. With nothing on hand or on disk, a read already
+   * under way is shared rather than queued behind: any listing will do. A
+   * read that fails throws: the tab keeps what it was showing.
+   */
+  'POST /api/pulls': async ({ fresh = false } = {}) => {
+    if (!fresh) {
+      const held = pulls ?? await readPulls(repo, (await repoFacts()).nameWithOwner);
+      // ??=: a fresh read that landed while the file was read is newer.
+      if (held) return (pulls ??= held);
+      return freshPulls.pending() ?? freshPulls();
+    }
+    return freshPulls();
+  },
+
+  /**
+   * A pull request dropped on a milestone group in the Pull requests tab, or
+   * one picked in its opened row: the milestone is set on GitHub
+   * (setIssueMilestone, as an issue's is), and the tab reads the listing again.
+   * pullMove holds the number and the title to the last listing read from
+   * GitHub, not pulls.json's, where a pull request merged since the file was
+   * written is still open -- the Issues tab's hold is always to a fresh read.
+   * A move made while the tab shows only the file waits for the read the tab
+   * asked for behind it.
+   */
+  'POST /api/pull/milestone': async (body = {}) => {
+    const shown = pullsFromGitHub ?? await freshPulls.pending();
+    if (!shown) throw new Error('The Pull requests tab has not read GitHub yet: press ⟳, then move it again');
+    const { number, milestone, title } = pullMove(shown, body);
+    const [owner, name] = (await repoFacts()).nameWithOwner.split('/');
+    await setIssueMilestone(repo, { owner, repo: name, number }, milestone);
+    term.verbose(`put pull request #${number} on ${title ? `milestone ${quote(title)}` : 'no milestone'}`);
+    return { ok: true };
   },
 
   'POST /api/pr/switch': async ({ url } = {}) => {
@@ -1067,24 +1206,42 @@ function listQueue() {
   listed = now;
 }
 
+// Every tab is told, with a close code of its own (QUIT_CODE), so the page
+// locks itself rather than offering to start an agent on a server that is
+// about to be gone. Resolves once every tab's socket has closed, or after `ms`
+// for a tab that never answers. Waited on, not just sent: a close frame queues
+// behind whatever the socket has not yet written -- a burst of the agent's
+// output -- and a process that exits with it still queued leaves the page a
+// bare 1006, the exit bar and a Start that reaches nothing. A socket already
+// closing (the PTY's own close, when kill() lands) ignores the second close
+// and still fires 'close'. wss.clients drops a socket on its 'close', so none
+// here has fired it already.
+function tellTabs(ms) {
+  const closed = [...wss.clients].map((ws) => new Promise((r) => ws.once('close', r)));
+  for (const ws of wss.clients) ws.close(QUIT_CODE, 'prcoder quit');
+  return Promise.race([Promise.all(closed), new Promise((r) => setTimeout(r, ms).unref())]);
+}
+
 // Kills the PTYs itself rather than leaving that to the close handlers:
 // process.exit doesn't wait for them, and an orphaned `claude` outlives the
 // terminal it was started from.
 //
-// Exits once stdout has caught up, not straight away. Piped (`prcoder | tee`),
-// stdout is asynchronous on macOS and process.exit drops what is still queued
-// -- the Local list askToQuit printed a moment ago, on a reader that is behind.
-// An empty write calls back once everything ahead of it is out; the timer is
-// for a reader that never catches up, which must not keep prcoder alive.
+// Exits once the tabs have been told and stdout has caught up, not straight
+// away. Piped (`prcoder | tee`), stdout is asynchronous on macOS and
+// process.exit drops what is still queued -- the Local list askToQuit printed
+// a moment ago, on a reader that is behind. An empty write calls back once
+// everything ahead of it is out; the timer is for a reader that never catches
+// up, which must not keep prcoder alive.
 let quitting = false;
 function quit() {
   if (quitting) return;
   quitting = true;
+  const told = tellTabs(2000);
   for (const pty of ptys) pty.kill();
   wss.close();
   server.close();
   setTimeout(() => process.exit(0), 2000);
-  process.stdout.write('', () => process.exit(0));
+  Promise.all([told, new Promise((r) => process.stdout.write('', r))]).then(() => process.exit(0));
 }
 
 function askToQuit() {
@@ -1132,7 +1289,24 @@ if (import.meta.main) {
 
   // Before anything can print: init() is what routes console through the log,
   // and a line written ahead of it would sit above the block and stay there.
-  term.init();
+  // A signal -- SIGHUP from closing the terminal this runs in, SIGTERM, a
+  // SIGINT with no tty -- tells the tabs too and waits a moment for them, as
+  // quit() does, or they would offer to start an agent on a server that is
+  // gone. A second signal goes at once.
+  let leaving = false;
+  term.init({
+    leave: (code) => {
+      if (leaving) process.exit(code);
+      leaving = true;
+      tellTabs(1000).then(() => process.exit(code));
+    },
+  });
+  // The ways out that cannot wait -- the second Ctrl-C at the question, which
+  // must exit at once, and an uncaught exception -- still try. Best effort: an
+  // 'exit' handler runs only synchronous code, so the close frame goes only if
+  // the socket can write it there and then, with nothing queued ahead of it.
+  // Only a SIGKILL gets past this altogether.
+  process.on('exit', () => { for (const ws of wss.clients) ws.close(QUIT_CODE, 'prcoder quit'); });
   term.keys({
     quit: askToQuit,
     key: (ch) => {

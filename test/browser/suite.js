@@ -48,6 +48,7 @@ import { server } from '../../server.js';
 import { bucket } from '../../files.js';
 import { rollup } from '../../github.js';
 import { firefoxEnv } from '../../tools/driver.mjs';
+import { QUIT_CODE } from '../../public/ui.js';
 
 // If a socket ever gets past the mock, the in-process server spawns this (read
 // at connect time) rather than a real `claude` in this repo -- which is what the
@@ -154,6 +155,9 @@ const EMPTY_ISSUES = { milestones: [], issues: [], total: 0, listed: 0, repo: 'h
 const MILESTONES = { repo: 'heal-data-stewards/heal-vlmd-AI-pipeline', milestones: [
   { number: 3, title: 'Not urgent', dueOn: null }, { number: 4, title: 'Needed soon', dueOn: null },
   { number: 1, title: 'v1.0', dueOn: '2026-11-01T00:00:00Z' }] };
+// And /api/pulls, which the Pull requests tab asks twice on opening: once for
+// the last listing, once for a fresh one. `read` is when, in ms.
+const EMPTY_PULLS = { milestones: [], pulls: [], total: 0, listed: 0, read: 0 };
 
 let browser;
 let page;
@@ -207,6 +211,7 @@ async function newPage({ prs = [], st = status, ready = '#pr-head .pr-title', be
     (p.milestonePicks ??= []).push(asked);
     return r.fulfill({ json: { milestone: MILESTONES.milestones.find((m) => m.number === asked.number) ?? null } });
   });
+  await p.route('**/api/pulls', (r) => r.fulfill({ json: EMPTY_PULLS }));
   await p.route('**/api/pr/viewed', (r) => r.fulfill({ json: { ok: true } }));
   await p.route('**/api/diff', (r) => {
     const { path } = r.request().postDataJSON();
@@ -299,6 +304,34 @@ test('the issues the description mentions are listed below it, titled', { skip }
   const row = page.locator('.issues a').first();
   assert.equal(await row.textContent(), '#7 Per-route locking');
   assert.equal(await row.getAttribute('href'), `${REPO}/issues/7`);
+});
+
+// A closing reference's `owner/repo#N` has no bound on its length, and it sat
+// on one line in a column as wide as its widest label: the titles were pushed
+// out of a narrow pane, those of the short rows beside it too.
+test('a long label in another repository wraps, and leaves the titles room', { skip }, async () => {
+  const repo = 'some-long-organisation/some-long-repository-name';
+  const issues = [
+    { number: 1234, url: `https://github.test/${repo}/issues/1234`, closes: true, repo, title: 'Fix the far side', kind: 'issue' },
+    { number: 7, url: `${REPO}/issues/7`, closes: true, title: 'Per-route locking', kind: 'issue' },
+    { number: 27, url: `${REPO}/pull/27`, closes: true, title: 'Queue tabs', kind: 'pull' }];
+  const fresh = await newPage({ st: { ...status, pr: { ...pr, issues } } });
+  await fresh.locator('#pr').evaluate((p) => { p.style.flex = '0 0 375px'; p.style.width = '375px'; });
+  const { width, overflow, label, short, title } = await fresh.locator('.issues').evaluate((g) => ({
+    width: g.clientWidth,
+    overflow: g.scrollWidth - g.clientWidth,
+    label: g.querySelector('a .num').getBoundingClientRect().width,
+    short: [...g.querySelectorAll('a:not(:first-of-type) .num')].map((n) => n.getBoundingClientRect().height),
+    title: g.querySelector('a .ttl').getBoundingClientRect().width,
+  }));
+  assert.ok(width <= 400, `the pane is narrow here: ${width}px`);
+  assert.equal(overflow, 0);
+  assert.ok(label <= width / 2, `the label takes ${label} of ${width}px`);
+  assert.ok(title >= width / 3, `the title has ${title} of ${width}px`);
+  // The whole label is still there, and a short one stays on its line.
+  assert.equal(await fresh.locator('.issues a .num').first().textContent(), `${repo}#1234`);
+  assert.equal(short[0], short[1]);
+  await fresh.close();
 });
 
 // A bare #N is an issue or a pull request, and the list says which, as the
@@ -488,7 +521,7 @@ test('a dated milestone says when it is due after the picker, which takes the re
   const due = p.locator('#pr-head .pr-milestone > .due');
   assert.equal(await due.getAttribute('class'), 'due overdue');
   assert.match(await due.textContent(), /^due \d+ years ago$/);
-  assert.equal(await due.getAttribute('title'), 'due 2020-01-01');
+  assert.equal(await due.getAttribute('title'), 'Wednesday, January 1, 2020', 'in full, as the queue\'s milestone lines have it');
   assert.equal(await p.locator('#pr-head .pr-milestone > :last-child').getAttribute('class'), 'due overdue', 'after the picker');
   const [line, used] = await p.$eval('#pr-head .pr-milestone', (l) => {
     const gap = parseFloat(getComputedStyle(l).columnGap);
@@ -1237,11 +1270,13 @@ test('Alt+/ shows every shortcut, from the terminal too, and Escape puts the foc
   await fresh.close();
 });
 
-// Quit from the menu is the exit bar's quit: the same question, and the same
-// line in the bar afterwards -- plus a toast, since the bar may be off screen.
-// The PTY dies with prcoder, so its socket closes after the bar is filled:
-// that close must leave the bar saying so, and not throw on the way.
-test('Quit in the menu asks what the exit bar asks, and says when it has quit', { skip }, async () => {
+// Quit from the menu is the exit bar's quit: the same question, and afterwards
+// the same modal over the whole window, since nothing on the page works once
+// prcoder has gone. While it is up the page behind takes no click. Its ✕
+// closes it so the page can be copied from, and the panes stay dimmed and the
+// tab's title says so. The PTY dies with prcoder, so its socket closes after
+// the modal is up: that close must change nothing, and not throw.
+test('Quit in the menu asks what the exit bar asks, and then the whole window says prcoder has quit', { skip }, async () => {
   let sock;
   const fresh = await newPage({ pty: (ws) => { sock = ws; } });
   const errors = [];
@@ -1255,19 +1290,120 @@ test('Quit in the menu asks what the exit bar asks, and says when it has quit', 
   fresh.once('dialog', (d) => { asked.push(d.message()); d.accept(); });
   await fresh.click('#menu > summary');
   await fresh.click('#menu-quit');
-  await fresh.waitForSelector('#toast:not([hidden])');
-  assert.match(await fresh.textContent('#toast'), /prcoder has quit/);
-  assert.equal(await fresh.$eval('#toast', (el) => el.classList.contains('sticky')), true);
-  await fresh.locator('#term-exit').getByText('prcoder has quit').waitFor();
+  await fresh.waitForSelector('#dead:modal');
+  assert.equal(await fresh.textContent('#dead-title'), 'prcoder has quit');
   assert.deepEqual(asked, [{}, 'Quit prcoder? 2 uncommitted files.', { force: true }]);
+  assert.equal(await fresh.title(), 'prcoder (not running)');
+  // What is at a pane's own middle is the modal's backdrop, not the pane.
+  const hit = await fresh.evaluate(() => {
+    const r = document.getElementById('pr-refresh').getBoundingClientRect();
+    return document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2).id;
+  });
+  assert.equal(hit, 'dead', 'the page behind takes no click');
   await sock.close();
   await settle(fresh);
   assert.deepEqual(errors, []);
-  assert.match(await fresh.textContent('#term-exit'), /prcoder has quit/);
-  // Nothing is left to quit, so the menu's Quit can't be picked again and
-  // put a network error over the toast that says the quit worked.
-  assert.equal(await fresh.$eval('#menu-quit', (b) => b.disabled), true, 'the menu\'s Quit is off');
+  assert.equal(await fresh.isHidden('#term-exit'), true, 'no Start for a prcoder that is not there');
+  await fresh.click('#dead-close');
+  assert.equal(await fresh.locator('#dead:modal').count(), 0, 'the ✕ closes it');
+  // Not handed back to the menu's Quit, hidden in the closed menu, from where
+  // it would fall to <body>. Waited on: the dialog's close event, which moves
+  // it, is a task of its own.
+  await fresh.waitForFunction(() => !!document.activeElement?.closest('#term-host'));
+  assert.equal(await fresh.$eval('main', (m) => m.classList.contains('dead')), true, 'the panes stay dimmed');
+  assert.equal(await fresh.title(), 'prcoder (not running)');
   await fresh.close();
+});
+
+// A prcoder quit from its own terminal, or from another tab, closes this
+// tab's socket with QUIT_CODE, and the page locks itself on that alone. Any
+// other close is the agent exiting, and gets the exit bar. Locked, the page
+// asks nothing more of the server: the clock runs past both the ten-second
+// poll on coming back to the tab and the minute's poll, and neither goes out.
+test('a socket closed with prcoder\'s quit code gets the modal, and any other close the exit bar', { skip }, async () => {
+  let sock;
+  const fresh = await newPage({ pty: (ws) => { sock = ws; } });
+  await sock.close();
+  await fresh.locator('#term-exit').waitFor({ state: 'visible' });
+  assert.equal(await fresh.locator('#dead:modal').count(), 0, 'only the agent went');
+  await fresh.close();
+
+  const gone = await newPage({ clock: true, pty: (ws) => { sock = ws; } });
+  let polls = 0;
+  gone.on('request', (q) => { if (q.url().endsWith('/api/status')) polls++; });
+  await sock.close({ code: QUIT_CODE, reason: 'prcoder quit' });
+  await gone.waitForSelector('#dead:modal');
+  assert.equal(await gone.textContent('#dead-title'), 'prcoder has quit');
+  assert.equal(await gone.isHidden('#term-exit'), true, 'no Start for a prcoder that is not there');
+  // What is left to copy names what went.
+  await gone.locator('#term-host .xterm-rows', { hasText: '[prcoder quit]' }).waitFor();
+  assert.equal(await gone.locator('#term-host .xterm-rows', { hasText: 'coding agent exited' }).count(), 0);
+  // Alt+/ is the one key that fires over a modal, and here it has nothing to list.
+  await gone.keyboard.press('Alt+Slash');
+  await settle(gone);
+  assert.equal(await gone.$eval('#keys', (d) => d.open), false, 'no shortcut sheet over the box');
+  await gone.keyboard.press('Escape');
+  assert.equal(await gone.locator('#dead:modal').count(), 0, 'Escape closes it, as the ✕ does');
+  await gone.waitForFunction(() => !!document.activeElement?.closest('#term-host'));
+  await gone.keyboard.press('Alt+Slash');
+  await settle(gone);
+  assert.equal(await gone.$eval('#keys', (d) => d.open), false, 'nor once it is closed');
+  polls = 0;
+  await gone.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+  await gone.clock.fastForward(61_000);
+  await gone.waitForTimeout(200);
+  assert.equal(polls, 0, 'nothing is asked of a server that is gone');
+  await gone.close();
+});
+
+// QUIT_CODE goes down a socket, so a tab whose agent had already exited when
+// prcoder went -- exit bar up, socket closed -- was never told, and went on
+// offering a Start that reached nothing. Its poll finds out instead: a fetch
+// that gets no answer, with the socket closed, is prcoder gone. With the
+// socket open a failed poll is only that, since the socket would say.
+test('a tab whose agent had already exited finds prcoder gone from its next poll', { skip }, async () => {
+  let sock;
+  const p = await newPage({ clock: true, pty: (ws) => { sock = ws; } });
+  await p.route('**/api/status', (r) => r.abort('connectionrefused'));
+  // Coming back to the tab polls, ten seconds after the last poll at most.
+  const poll = async () => {
+    await p.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+    await p.clock.fastForward(11_000);
+    await settle(p);
+  };
+  await poll();
+  assert.equal(await p.locator('#dead:modal').count(), 0, 'with the socket open, a failed poll is only that');
+  await sock.close();
+  await p.locator('#term-exit').waitFor({ state: 'visible' });
+  await poll();
+  await p.waitForSelector('#dead:modal');
+  assert.equal(await p.isHidden('#term-exit'), true, 'no Start for a prcoder that is not there');
+  await p.close();
+});
+
+// A Start from the exit bar that cannot connect reached no agent, so the
+// terminal does not say one exited, and it asks at once whether prcoder is
+// still there: if it answers, the bar is back; if not, the box. The mock
+// closes the Start's socket as a browser reports a server that is not there:
+// never opened, 1006. Not a socket aimed at a closed port: under
+// routeWebSocket, Playwright's wrapper reports that one as code 0.
+test('a Start that cannot connect asks after prcoder at once', { skip }, async () => {
+  let sockets = 0;
+  const p = await newPage({ pty: (ws) => (++sockets === 1 ? ws.close() : ws.close({ code: 1006 })) });
+  const bar = p.locator('#term-exit');
+  await bar.waitFor({ state: 'visible' });
+  assert.equal(await p.textContent('#term-exit span'), 'Coding agent has exited.');
+  await p.click('#term-start');
+  await p.locator('#term-host .xterm-rows', { hasText: '[could not reach prcoder]' }).waitFor();
+  await bar.waitFor({ state: 'visible' });
+  assert.equal(await p.textContent('#term-exit span'), 'Could not reach prcoder.');
+  await settle(p);
+  assert.equal(await p.locator('#dead:modal').count(), 0, 'prcoder answered, so it is still there');
+  await p.route('**/api/status', (r) => r.abort('connectionrefused'));
+  await p.click('#term-start');
+  await p.waitForSelector('#dead:modal');
+  assert.equal(sockets, 3);
+  await p.close();
 });
 
 // A button drawn as a glyph -- ✕, ⟳, ▼ -- is read out by a screen reader as
@@ -1837,9 +1973,11 @@ test('↓ on the Issues tab keeps the repo the mention is in', { skip }, async (
 const ISSUES = {
   milestones: [
     { number: 3, title: 'Not urgent', dueOn: null, description: 'Worth doing eventually.' },
-    { number: 1, title: 'v1.0', dueOn: '2026-10-14T00:00:00Z', description: '' },
-    { number: 4, title: 'Needed soon', dueOn: null, description: '' },
-    { number: 2, title: 'v0.1', dueOn: '2026-10-02T00:00:00Z', description: '' },
+    // Five pull requests closed without merging, which the pie leaves out.
+    { number: 1, title: 'v1.0', dueOn: '2026-10-14T00:00:00Z', description: '',
+      counts: { pulls: { open: 2, merged: 1, closed: 5 }, issues: { open: 1, closed: 2 } } },
+    { number: 4, title: 'Needed soon', dueOn: null, description: '', counts: { pulls: { open: 0, merged: 0, closed: 0 }, issues: { open: 0, closed: 0 } } },
+    { number: 2, title: 'v0.1', dueOn: '2026-10-02T00:00:00Z', description: '', counts: { pulls: { open: 1, merged: 0, closed: 0 }, issues: { open: 'x', closed: 2 } } },
   ],
   issues: [
     { number: 58, title: 'Decide what the Issues tab shows', url: 'https://github.com/gaurav/prcoder/issues/58', updatedAt: '2026-10-10T00:00:00Z',
@@ -1855,8 +1993,13 @@ const ISSUES = {
   // its number alone when GitHub did not know it.
   total: 4, listed: 4, repo: 'gaurav/prcoder', mentions: [{ number: 7 }],
 };
-const groupsOf = (p) => p.$$eval('#queue-body .fold.milestone', (gs) => gs.map((g) =>
-  `${g.dataset.group}|${g.querySelector('h3').textContent.replace(/\s+/g, ' ').trim()}|${g.open ? 'open' : 'closed'}|${g.querySelectorAll('.item').length}`));
+// A group's line as text, its count badge written `(N)` so a count reads
+// apart from a title that ends in a number; the badge itself is plain digits.
+const groupsOf = (p) => p.$$eval('#queue-body .fold.milestone', (gs) => gs.map((g) => {
+  const line = g.querySelector('h3').cloneNode(true);
+  for (const c of line.querySelectorAll('.count')) c.textContent = `(${c.textContent})`;
+  return `${g.dataset.group}|${line.textContent.replace(/\s+/g, ' ').trim()}|${g.open ? 'open' : 'closed'}|${g.querySelectorAll('.item').length}`;
+}));
 
 // The fixture pull request mentions #7 without closing it, so every page has
 // a Mentioned group ahead of the milestones; `prIssues` replaces that list.
@@ -1868,6 +2011,8 @@ async function issuesPage(listing = ISSUES, prIssues = null, nameWithOwner = 'ga
     await fresh.click('#pr-refresh');
     await polled;
   }
+  // A milestone's line says how long until it is due, against NOW.
+  await fresh.clock.setFixedTime(NOW);
   await fresh.route('**/api/issues', (r) => r.fulfill({ json: listing }));
   const landed = fresh.waitForResponse('**/api/issues');
   await fresh.locator('#queue-body .tab[data-tab="issues"]').click();
@@ -1879,17 +2024,48 @@ async function issuesPage(listing = ISSUES, prIssues = null, nameWithOwner = 'ga
 test('the Issues tab groups the repository\'s open issues by milestone in rank order, the first with issues open', { skip }, async () => {
   const { fresh } = await issuesPage();
   assert.equal(await fresh.locator('#queue-body .tab[data-tab="issues"]').textContent(), 'Issues (4)');
-  // Releases soonest first, then the buckets in order, then no milestone;
-  // only the first with an issue starts open, and an empty bucket is drawn.
+  // No milestone first, since those are the issues to triage, then releases
+  // soonest first, then the buckets in order; only the first with an issue
+  // starts open, and an empty bucket is drawn.
   assert.deepEqual(await groupsOf(fresh), [
-    'mentioned|Mentioned by PR #12 1|open|1',
-    'm:2|v0.1 2026-10-02 1|open|1', 'm:1|v1.0 2026-10-14 1|closed|1', 'm:4|Needed soon 0|closed|0',
-    'm:3|Not urgent 1|closed|1', 'm:none|No milestone 1|closed|1']);
+    'mentioned|Mentioned by PR #12 (1)|open|1', 'm:none|No milestone (1) to triage|open|1',
+    'm:2|v0.1 (1) due 17 days ago|closed|1', 'm:1|v1.0 (1) 2 PRs 1 merged due 5 days ago|closed|1', 'm:4|Needed soon (0)|closed|0',
+    'm:3|Not urgent (1)|closed|1']);
+  // No milestone is marked as the pile to triage: its line in the text's own
+  // colour, not the dim of a milestone's, with a badge.
+  assert.equal(await fresh.locator('[data-group="m:none"].untriaged summary .triage').textContent(), 'to triage');
+  const tint = (sel) => fresh.locator(sel).evaluate((e) => getComputedStyle(e).color);
+  assert.notEqual(await tint('[data-group="m:none"] summary'), await tint('[data-group="m:3"] summary'), 'brighter than a milestone line');
+  assert.equal(await fresh.locator('#queue-body .fold.untriaged').count(), 1, 'and nothing else is');
+  // The count is a badge right after the title, then the pull requests open
+  // on the milestone, the pie of what GitHub has merged or closed of all of
+  // it, the pull requests merged, and the due date, in full on hover.
+  const v1 = fresh.locator('[data-group="m:1"] summary h3');
+  assert.deepEqual(await v1.evaluate((e) => [...e.children].map((c) => c.className)), ['', 'count', 'other-kind', 'breakdown', 'merged', 'due overdue']);
+  assert.equal(await v1.locator('.count').textContent(), '1');
+  assert.equal(await v1.locator('.count').getAttribute('title'), '1 open issue listed');
+  // The pie is a button to the breakdown, its figure the tooltip.
+  assert.equal(await v1.locator('.breakdown').getAttribute('title'), '3 of 6 done: 1 pull request merged, 2 issues closed');
+  assert.equal(await v1.locator('.breakdown .mark').evaluate((m) => m.style.getPropertyValue('--p')), '0.5');
+  assert.equal(await v1.locator('.other-kind').textContent(), '2 PRs');
+  assert.equal(await v1.locator('.other-kind').getAttribute('title'), '2 open pull requests on this milestone on GitHub');
+  assert.equal(await v1.locator('.merged').textContent(), '1 merged');
+  assert.equal(await v1.locator('.merged').getAttribute('title'), '1 pull request merged into this milestone');
+  assert.equal(await v1.locator('.due').getAttribute('title'), 'Wednesday, October 14, 2026');
+  assert.equal(await fresh.locator('[data-group="m:4"] summary .count.none').textContent(), '0', 'an empty one\'s badge is fainter');
+  assert.equal(await fresh.locator('[data-group="m:4"] summary .mark').count(), 0, 'and a milestone that never held anything has no pie');
+  assert.equal(await fresh.locator('[data-group="m:2"] summary .mark').count(), 0, 'nor one whose counts are not numbers');
+  assert.equal(await fresh.locator('[data-group="m:2"] summary :is(.other-kind, .merged)').count(), 0, 'nor any of its figures');
+  assert.equal(await fresh.locator('[data-group="m:4"] summary :is(.other-kind, .merged)').count(), 0, 'and a figure of 0 is left out');
+  assert.equal(await fresh.locator('[data-group="m:3"] summary .mark').count(), 0, 'nor one without counts');
   // GitHub did not know the mention, so it says so, dimmed.
   assert.equal(await fresh.locator('[data-group="mentioned"] .item.closed .text').textContent(), 'not found on GitHub');
   assert.equal(await fresh.locator('[data-group="m:4"] .empty').textContent(), 'no open issues');
   assert.equal(await fresh.locator('[data-group="m:3"] summary a').getAttribute('href'), 'https://github.com/gaurav/prcoder/milestone/3');
   assert.equal(await fresh.locator('[data-group="m:3"] summary a').getAttribute('title'), 'Worth doing eventually.');
+  // In the line's own colour the link was one nobody found.
+  const colour = (sel) => fresh.locator(sel).evaluate((e) => getComputedStyle(e).color);
+  assert.notEqual(await colour('[data-group="m:3"] summary a'), await colour('[data-group="m:3"] summary'), 'the title looks like a link');
   // A row: the number as a link, the title, the labels as plain chips.
   const row = fresh.locator('[data-group="m:3"] .item');
   assert.equal(await row.locator('.tag.issue').getAttribute('href'), 'https://github.com/gaurav/prcoder/issues/90');
@@ -1898,7 +2074,7 @@ test('the Issues tab groups the repository\'s open issues by milestone in rank o
   // A group closed or opened by hand stays so through a repaint: leaving the
   // tab and coming back rebuilds it from a fresh listing. A milestone that
   // listing has and the first did not (m:10) starts closed with the rest.
-  await fresh.locator('[data-group="m:2"] summary .count').click();
+  await fresh.locator('[data-group="m:none"] summary .count').click();
   await fresh.locator('[data-group="m:1"] summary .count').click();
   await fresh.locator('#queue-body .tab[data-tab="local"]').click();
   await fresh.route('**/api/issues', (r) => r.fulfill({ json: { ...ISSUES,
@@ -1908,8 +2084,8 @@ test('the Issues tab groups the repository\'s open issues by milestone in rank o
   await again;
   await fresh.waitForSelector('[data-group="m:10"]');
   assert.deepEqual((await groupsOf(fresh)).map((g) => g.split('|').slice(0, 3).join(' ')), [
-    'mentioned Mentioned by PR #12 1 open', 'm:2 v0.1 2026-10-02 1 closed', 'm:1 v1.0 2026-10-14 1 open',
-    'm:10 v2.0 2026-12-01 0 closed', 'm:4 Needed soon 0 closed', 'm:3 Not urgent 1 closed', 'm:none No milestone 1 closed']);
+    'mentioned Mentioned by PR #12 (1) open', 'm:none No milestone (1) to triage closed', 'm:2 v0.1 (1) due 17 days ago closed',
+    'm:1 v1.0 (1) 2 PRs 1 merged due 5 days ago open', 'm:10 v2.0 (0) due in 1 month closed', 'm:4 Needed soon (0) closed', 'm:3 Not urgent (1) closed']);
   await fresh.close();
 });
 
@@ -1921,8 +2097,19 @@ test('an open issue on a closed milestone has a group of its own, marked closed'
     issues: [...ISSUES.issues, { number: 30, title: 'Left over', url: 'https://github.com/gaurav/prcoder/issues/30', updatedAt: '2026-10-01T00:00:00Z',
       body: '', milestone: 9, labels: [] }],
     total: 5, listed: 5 });
-  assert.equal((await groupsOf(fresh))[1], 'm:9|v0.0 2026-09-01 closed 1|open|1');
+  assert.equal((await groupsOf(fresh))[2], 'm:9|v0.0 (1) due 1 month ago closed|closed|1');
+  await fresh.locator('[data-group="m:9"] summary .count').click();
   assert.equal(await fresh.locator('[data-group="m:9"] .item .text').textContent(), 'Left over');
+  // Nothing is moved onto it: its line takes no drop, and in an opened row it
+  // is listed only for the row on it, and cannot be picked.
+  assert.equal(await dropRow(fresh, '[data-group="m:9"] summary', ISSUE_DRAG, 58), false, 'a closed milestone takes no drop');
+  await fresh.locator('[data-group="m:9"] .item .disclose').click();
+  const pick = fresh.locator('[data-group="m:9"] .issue-body select.milestone');
+  assert.equal(await pick.inputValue(), 'v0.0');
+  assert.equal(await pick.locator('option[value="v0.0"]').textContent(), 'v0.0 (closed)');
+  assert.equal(await pick.locator('option[value="v0.0"]').isDisabled(), true);
+  await fresh.locator('[data-group="m:none"] .item .disclose').click();
+  assert.equal(await fresh.locator('[data-group="m:none"] .issue-body select.milestone option[value="v0.0"]').count(), 0, 'and not offered to a row on another');
   await fresh.close();
 });
 
@@ -1932,13 +2119,13 @@ test('searching the issues narrows the rows, opens the groups with a match, and 
   await search.fill('row is read');
   // A group with nothing matching, the mentions or a milestone, drops out of
   // the tab altogether, rather than saying it has no open issues.
-  assert.deepEqual(await groupsOf(fresh), ['m:2|v0.1 2026-10-02 1|open|1']);
+  assert.deepEqual(await groupsOf(fresh), ['m:2|v0.1 (1) due 17 days ago|open|1']);
   assert.equal(await fresh.locator('#queue-body .tab[data-tab="issues"]').textContent(), 'Issues (1)');
   await search.fill('zzz');
   assert.deepEqual(await groupsOf(fresh), []);
   assert.equal(await fresh.locator('#queue-body .issue-groups .empty').textContent(), 'No open issues match.');
   await search.fill('#149');
-  assert.deepEqual(await groupsOf(fresh), ['m:none|No milestone 1|open|1']);
+  assert.deepEqual(await groupsOf(fresh), ['m:none|No milestone (1) to triage|open|1']);
   // A poll that brings news holds off while the search box has focus, so
   // its text and caret survive; the news lands with the next repaint.
   assert.equal(await fresh.evaluate(() => document.activeElement.id), 'queue-search');
@@ -1999,8 +2186,8 @@ test('a first listing that fails says so on the tab, and tries again', { skip },
 });
 
 // What starts open is chosen from every issue, not from what a query typed
-// before the listing came lets through: #90 is on Not urgent, but v0.1 is
-// still the milestone to focus on once the search is cleared.
+// before the listing came lets through: #90 is on Not urgent, but No
+// milestone is still the group to focus on once the search is cleared.
 test('a query typed before the listing lands does not choose which group starts open', { skip }, async () => {
   const { fresh } = await refPage(() => ({ json: { ref: null } }));
   let release;
@@ -2014,7 +2201,7 @@ test('a query typed before the listing lands does not choose which group starts 
   await fresh.waitForSelector('#queue-body .fold.milestone');
   await fresh.locator('#queue-search').fill('');
   assert.deepEqual((await groupsOf(fresh)).map((g) => `${g.split('|')[0]} ${g.split('|')[2]}`), [
-    'mentioned open', 'm:2 open', 'm:1 closed', 'm:4 closed', 'm:3 closed', 'm:none closed']);
+    'mentioned open', 'm:none open', 'm:2 closed', 'm:1 closed', 'm:4 closed', 'm:3 closed']);
   await fresh.close();
 });
 
@@ -2054,6 +2241,184 @@ test('an issue row opens to its body through the description renderer, with Open
   await fresh.close();
 });
 
+/**
+ * A row's drag dropped onto `sel`, as the row's dragstart would carry it:
+ * Playwright cannot start a native drag, but a DragEvent with a DataTransfer
+ * reaches the same dragover and drop handlers. True when dragover took it,
+ * which is what lets a real drop happen at all.
+ */
+const dropRow = (page, sel, type, number) => page.evaluate(([sel, type, number]) => {
+  const dataTransfer = new DataTransfer();
+  dataTransfer.setData(type, String(number));
+  const at = document.querySelector(sel);
+  const over = new DragEvent('dragover', { dataTransfer, bubbles: true, cancelable: true });
+  at.dispatchEvent(over);
+  at.dispatchEvent(new DragEvent('drop', { dataTransfer, bubbles: true, cancelable: true }));
+  return over.defaultPrevented;
+}, [sel, type, number]);
+const ISSUE_DRAG = 'application/x-prcoder-issue';
+const PULL_DRAG = 'application/x-prcoder-pull';
+
+// The one write the Issues tab makes: a row dragged onto a group, or its
+// milestone picked in the opened row. The route is mocked; the move is the POST
+// it gets and the listing being read again after.
+test('a milestone picked in an opened row is written by Move, and the keyboard follows the row', { skip }, async () => {
+  const { fresh } = await issuesPage();
+  const moves = [];
+  await fresh.route('**/api/issue/milestone', (r) => { moves.push(r.request().postDataJSON()); return r.fulfill({ json: { ok: true } }); });
+  await fresh.locator('[data-group="m:1"] summary .count').click();
+  await fresh.locator('[data-group="m:1"] .item .disclose').click();
+  const opened = (group) => fresh.locator(`[data-group="${group}"] .issue-body select.milestone`);
+  const moveBtn = (group) => fresh.locator(`[data-group="${group}"] .move-to button`);
+  const moved = (milestone) => fresh.route('**/api/issues', (r) => r.fulfill({ json: { ...ISSUES,
+    issues: ISSUES.issues.map((i) => (i.number === 58 ? { ...i, milestone } : i)) } }));
+  assert.deepEqual(await opened('m:1').locator('option').allTextContents(), ['No milestone', 'v0.1', 'v1.0', 'Needed soon', 'Not urgent']);
+  assert.equal(await opened('m:1').inputValue(), 'v1.0');
+  assert.equal(await moveBtn('m:1').isDisabled(), true);
+  // Changing the select writes nothing: an arrow key on a closed one fires
+  // change on Linux and Windows. Stepping back disables Move again.
+  await opened('m:1').selectOption('Not urgent');
+  assert.equal(await moveBtn('m:1').isDisabled(), false);
+  await opened('m:1').selectOption('v1.0');
+  assert.equal(await moveBtn('m:1').isDisabled(), true);
+  await opened('m:1').selectOption('Needed soon');
+  assert.deepEqual(moves, []);
+  // Move writes it once, and focus goes to the select in the group it landed
+  // in, which was folded and is opened for it.
+  await moved(4);
+  await moveBtn('m:1').click();
+  await fresh.waitForFunction(() => document.activeElement?.matches?.('[data-group="m:4"] select.milestone[data-move="58"]'));
+  assert.deepEqual(moves, [{ number: 58, milestone: 'Needed soon' }]);
+  assert.equal(await fresh.locator('[data-group="m:4"]').evaluate((d) => d.open), true);
+  assert.equal(await opened('m:4').inputValue(), 'Needed soon');
+  // Off a milestone altogether is null.
+  await moved(null);
+  await opened('m:4').selectOption('');
+  await moveBtn('m:4').click();
+  await fresh.waitForFunction(() => document.activeElement?.matches?.('[data-group="m:none"] select.milestone[data-move="58"]'));
+  assert.deepEqual(moves.at(-1), { number: 58, milestone: null });
+  // Dropped onto a group's line, the row moves there; a pull request's row is
+  // not taken, since it is not an issue (until 2026-10-21 any drop threw).
+  // A timeout, so a drop that never reaches the move fails here rather than hanging.
+  let again = fresh.waitForResponse('**/api/issues', { timeout: 5000 });
+  assert.equal(await dropRow(fresh, '[data-group="m:3"] summary', ISSUE_DRAG, 58), true);
+  await again;
+  assert.deepEqual(moves.at(-1), { number: 58, milestone: 'Not urgent' });
+  assert.equal(moves.length, 3);
+  assert.equal(await dropRow(fresh, '[data-group="m:3"] summary', PULL_DRAG, 12), false, 'a pull request is not dropped here');
+  assert.equal(moves.length, 3);
+  // A listed row has a grip to drag it by, and a mention that is not listed has none.
+  assert.equal(await fresh.locator('[data-group="m:none"] .item[data-issue="58"] .grip').getAttribute('draggable'), 'true');
+  assert.equal(await fresh.locator('[data-group="mentioned"] .item .grip').getAttribute('draggable'), null);
+  // A refusal is a toast, the select goes back to where the issue still is, and
+  // the listing is read again, in case that is what the server and page differ on.
+  await fresh.route('**/api/issue/milestone', (r) => r.fulfill({ status: 500, json: { error: '"x" is not an open milestone the Issues tab listed' } }));
+  again = fresh.waitForResponse('**/api/issues');
+  await opened('m:none').selectOption('Not urgent');
+  await moveBtn('m:none').click();
+  await fresh.waitForFunction(() => document.getElementById('toast').textContent.includes('not an open milestone'));
+  await again;
+  await fresh.waitForFunction(() => document.activeElement?.matches?.('[data-group="m:none"] select.milestone[data-move="58"]'));
+  assert.equal(await opened('m:none').inputValue(), '');
+  await fresh.close();
+});
+
+// A toast sits over the pane's foot, and takes a mouse aimed at a row under it.
+const noToast = (p) => p.evaluate(() => { document.getElementById('toast').hidden = true; });
+
+// A press on the title selects it, which a draggable row would have made a drag.
+test('an issue row\'s title can be selected with the mouse', { skip }, async () => {
+  const { fresh } = await issuesPage();
+  await noToast(fresh);
+  const box = await fresh.locator('[data-group="m:none"] .item .text').boundingBox();
+  await fresh.mouse.move(box.x + 2, box.y + box.height / 2);
+  await fresh.mouse.down();
+  await fresh.mouse.move(box.x + 60, box.y + box.height / 2, { steps: 5 });
+  await fresh.mouse.up();
+  assert.ok((await fresh.evaluate(() => getSelection().toString())).length > 3);
+  await fresh.close();
+});
+
+// Chromium only: Firefox gets no HTML5 drag events from dragTo (tools/CLAUDE.md).
+// Each target is a folded group's line, on screen before the press.
+test('the grip\'s drag moves an issue, and a link\'s drag, its own group or a closed milestone does not', { skip: skip || (engineName === 'firefox' && 'dragTo sends Firefox no drag events') }, async () => {
+  const { fresh } = await issuesPage({ ...ISSUES,
+    milestones: [...ISSUES.milestones, { number: 7, title: 'v0.0', dueOn: null, description: '', closed: true }] });
+  await noToast(fresh);
+  // Folded, so that every target is on screen before the press.
+  await fresh.locator('[data-group="mentioned"] summary .count').click();
+  const moves = [];
+  await fresh.route('**/api/issue/milestone', (r) => { moves.push(r.request().postDataJSON()); return r.fulfill({ json: { ok: true } }); });
+  const row = fresh.locator('[data-group="m:none"] .item');
+  await row.locator('.tag.issue').dragTo(fresh.locator('[data-group="m:4"] summary'));
+  await row.locator('.grip').dragTo(fresh.locator('[data-group="m:7"] summary'));
+  await row.locator('.grip').dragTo(fresh.locator('[data-group="m:none"] summary'));
+  const again = fresh.waitForResponse('**/api/issues');
+  await row.locator('.grip').dragTo(fresh.locator('[data-group="m:4"] summary'));
+  await again;
+  assert.deepEqual(moves, [{ number: 149, milestone: 'Needed soon' }]);
+  await fresh.close();
+});
+
+// Each visit and each move reads a listing that takes seconds, so one lands in
+// the middle of whatever is being done. It waits until that is over.
+test('a listing landing during a drag or with a row\'s select in use waits for it to end', { skip }, async () => {
+  const { fresh } = await issuesPage();
+  const retitled = { ...ISSUES, issues: ISSUES.issues.map((i) => ({ ...i, title: `${i.title} (new)` })) };
+  await fresh.locator('[data-group="m:none"] .item .disclose').click();
+  const title = fresh.locator('[data-group="m:none"] .item .text');
+  const was = await title.textContent();
+  // A listing is out, and answers only when told to.
+  const land = async () => {
+    let answer;
+    const asked = new Promise((res) => { answer = res; });
+    await fresh.route('**/api/issues', async (r) => { await asked; await r.fulfill({ json: retitled }); });
+    await fresh.locator('#queue-body .tab[data-tab="local"]').click();
+    await fresh.locator('#queue-body .tab[data-tab="issues"]').click();
+    const landed = fresh.waitForResponse('**/api/issues');
+    return async () => { answer(); await landed; await fresh.evaluate(() => new Promise((res) => setTimeout(res))); };
+  };
+
+  // The select, and what is left of the row after it: same element, old listing.
+  let answer = await land();
+  const pick = fresh.locator('[data-group="m:none"] .issue-body select.milestone');
+  await pick.focus();
+  await fresh.evaluate(() => { window.held = document.querySelector('[data-group="m:none"] .issue-body select.milestone'); });
+  await answer();
+  assert.equal(await fresh.evaluate(() => window.held.isConnected), true);
+  assert.equal(await title.textContent(), was);
+  await fresh.evaluate(() => document.activeElement.blur());
+  await fresh.waitForFunction((t) => document.querySelector('[data-group="m:none"] .item .text').textContent !== t, was);
+  assert.equal(await fresh.evaluate(() => window.held.isConnected), false);
+
+  // A poll's repaint leaves it alone too. Clicked from the page: a real click
+  // takes the focus away, which is the end of the hold.
+  await pick.focus();
+  await fresh.evaluate(() => { window.held = document.querySelector('[data-group="m:none"] .issue-body select.milestone'); });
+  await fresh.route('**/api/status', (r) => r.fulfill({ json: { ...status, nameWithOwner: 'gaurav/prcoder', queue: [{ text: 'new', done: false, deleted: false }] } }));
+  const polled = fresh.waitForResponse('**/api/status');
+  await fresh.evaluate(() => document.getElementById('pr-refresh').click());
+  await polled;
+  await fresh.evaluate(() => new Promise((res) => setTimeout(res)));
+  assert.equal(await fresh.evaluate(() => window.held.isConnected), true);
+  await fresh.evaluate(() => document.activeElement.blur());
+
+  // The drag: the row stays until its dragend, whose event needs the row there.
+  answer = await land();
+  const before = await title.textContent();
+  await fresh.evaluate(() => {
+    window.held = document.querySelector('[data-group="m:none"] .item .grip');
+    window.held.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer: new DataTransfer() }));
+  });
+  retitled.issues = retitled.issues.map((i) => ({ ...i, title: `${i.title} again` }));
+  await answer();
+  assert.equal(await fresh.evaluate(() => window.held.isConnected), true);
+  assert.equal(await title.textContent(), before);
+  await fresh.evaluate(() => window.held.dispatchEvent(new DragEvent('dragend', { bubbles: true })));
+  assert.match(await title.textContent(), /again$/);
+  await fresh.close();
+});
+
 // With a pull request on screen its mentions lead the tab, and one that is an
 // open issue here is the listing's own row, body and all.
 test('the Issues tab leads with what the PR mentions, and a mention that is listed opens like any row', { skip }, async () => {
@@ -2065,7 +2430,7 @@ test('the Issues tab leads with what the PR mentions, and a mention that is list
     { number: 8, url: `${REPO}/pull/8`, closes: false, title: 'Still in review' },
     { number: 66, url: 'https://github.com/gaurav/prcoder/issues/66', closes: false, title: 'Show whether each linked issue is still open' }]);
   const [first] = await groupsOf(fresh);
-  assert.equal(first, 'mentioned|Mentioned by PR #12 3|open|3');
+  assert.equal(first, 'mentioned|Mentioned by PR #12 (3)|open|3');
   const rows = fresh.locator('[data-group="mentioned"] .item');
   // The tag says which is a pull request, so the text needs only its state --
   // and an open one, like an open issue, is not dimmed and needs none.
@@ -2129,6 +2494,521 @@ test('a mention from another repository is not drawn as the listed issue of the 
   assert.equal(await row.locator('.text').textContent(), 'Upstream\'s sixty-six');
   assert.equal(await row.locator('.tag.issue').getAttribute('href'), url);
   assert.equal(await row.locator('button.disclose').count(), 0, 'no body: it is not the listed #66');
+  await fresh.close();
+});
+
+// The Pull requests tab: the repository's open pull requests, grouped by
+// milestone as the issues are, each row carrying what picking the next one
+// turns on. The listing is the fixture repository's, with the pull request on
+// screen (#12) among them; dates are read against the page's clock, which
+// `clock` holds at a fixed day so the ages and `new` are what the test says.
+const NOW = Date.parse('2026-10-19T12:00:00Z');
+const pullOf = (over) => ({
+  isDraft: false, isCrossRepository: false, baseRefName: 'main', author: 'gaurav', labels: [], reviewDecision: null,
+  viewed: { p: 0, full: false, label: '0 of 2 files, 0 of 20 changed lines viewed' }, closes: [], lead: '', body: '', ...over,
+});
+const PULLS = {
+  milestones: [
+    { number: 1, title: 'v1.0', dueOn: '2026-10-14T00:00:00Z', description: '', closed: false,
+      counts: { pulls: { open: 2, merged: 1, closed: 1 }, issues: { open: 9, closed: 3 } } },
+    { number: 4, title: 'Needed soon', dueOn: null, description: 'Work that should land soon.', closed: false },
+    { number: 3, title: 'Not urgent', dueOn: null, description: '', closed: false },
+  ],
+  pulls: [
+    pullOf({ number: 12, title: pr.title, url: pr.url, headRefName: 'topic', createdAt: '2026-10-01T00:00:00Z', updatedAt: '2026-10-18T12:00:00Z',
+      additions: 300, deletions: 20, changedFiles: 6, lines: 320, merge: 'ready', milestone: 1, labels: ['enhancement'],
+      viewed: { p: 0.5, full: false, label: '3 of 6 files, 160 of 320 changed lines viewed' }, lead: 'The first paragraph of twelve.', body: 'The first paragraph of twelve.\n\n- [ ] a box' }),
+    // Built on #12, so its stack line names #12 and the by-stack list nests it.
+    pullOf({ number: 20, title: 'A small fix', url: `${REPO}/pull/20`, headRefName: 'fix', baseRefName: 'topic', createdAt: '2026-10-17T00:00:00Z', updatedAt: '2026-10-17T00:00:00Z',
+      additions: 4, deletions: 1, changedFiles: 1, lines: 5, merge: 'conflicts', reviewDecision: 'APPROVED', milestone: 1, author: 'copilot' }),
+    // Built on a branch with no open pull request, so its stack line asks git
+    // what that is built on (BELOW answers), as the PR pane's Stack tab would.
+    pullOf({ number: 30, title: 'An old draft', url: `${REPO}/pull/30`, headRefName: 'old', baseRefName: 'gone', createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-02-01T00:00:00Z',
+      additions: 1500, deletions: 10, changedFiles: 40, lines: 1510, merge: 'draft', isDraft: true, milestone: null,
+      closes: [{ number: 5, url: `${REPO}/issues/5`, title: 'The old thing', milestone: 'Not urgent' }], lead: 'Still **being** written, in `old.js`, for #5.' }),
+  ],
+  total: 3, listed: 3, read: NOW - 3_600_000,
+};
+const BELOW = { branch: 'gone', names: ['older'], toDefault: true };
+// The count badge written `(N)`, as groupsOf has it.
+const pullGroupsOf = (p) => p.$$eval('#queue-body .fold.milestone', (gs) => gs.map((g) => {
+  const line = g.querySelector('h3').cloneNode(true);
+  for (const c of line.querySelectorAll('.count')) c.textContent = `(${c.textContent})`;
+  return `${g.dataset.group}|${line.textContent.replace(/\s+/g, ' ').trim()}|${g.open ? 'open' : 'closed'}|${[...g.querySelectorAll('.item')].map((i) => i.dataset.pull).join(',')}`;
+}));
+
+/** A page on the Pull requests tab with `listing` answered, counting what the route was asked. */
+async function pullsPage(listing = PULLS, { stale = true } = {}) {
+  const fresh = await newPage({ clock: true, below: BELOW });
+  await fresh.clock.setFixedTime(NOW);
+  const typed = [];
+  await fresh.routeWebSocket('**/pty', (ws) => ws.onMessage((m) => {
+    const msg = JSON.parse(m);
+    if (msg.type === 'input') typed.push(msg.data);
+  }));
+  await fresh.route('**/api/status', (r) => r.fulfill({ json: { ...status, nameWithOwner: 'gaurav/prcoder', queue: [] } }));
+  let queue = [];
+  await fresh.route('**/api/queue', (r) => {
+    if (r.request().method() === 'PUT') queue = r.request().postDataJSON().items.map((i) => ({ ...i, issueUrl: i.issue ? `https://github.com/gaurav/prcoder/pull/${i.issue}` : null }));
+    return r.fulfill({ json: queue });
+  });
+  const asked = [];
+  await fresh.route('**/api/pulls', (r) => {
+    asked.push(r.request().postDataJSON().fresh);
+    return r.fulfill({ json: stale ? listing : { ...listing, read: NOW } });
+  });
+  await fresh.reload();
+  await fresh.waitForSelector('#queue-body .tab[data-tab="local"]');
+  await fresh.locator('#queue-body .tab[data-tab="pulls"]').click();
+  await fresh.waitForSelector('#queue-body .pull-note');
+  return { fresh, typed, asked };
+}
+
+test('the Pull requests tab groups the open pull requests by milestone, smallest first, with the facts a choice turns on', { skip }, async () => {
+  const { fresh, asked } = await pullsPage();
+  // The last listing, then a fresh one behind it, since the last was an hour old.
+  await fresh.waitForFunction(() => document.querySelector('#queue-body .pull-note')?.textContent === 'Read 1 hour ago');
+  assert.deepEqual(asked, [false, true]);
+  assert.equal(await fresh.locator('#queue-body .tab[data-tab="pulls"]').textContent(), 'Pull requests (3)');
+  // None first, to triage, then releases, then the buckets; only the first
+  // with a pull request starts open; smallest first within a group; an empty
+  // one is drawn.
+  assert.deepEqual(await pullGroupsOf(fresh), [
+    'p:none|No milestone (1) to triage|open|30', 'p:1|v1.0 (2) 9 issues 1 merged due 5 days ago|closed|20,12', 'p:4|Needed soon (0)|closed|', 'p:3|Not urgent (0)|closed|']);
+  assert.equal(await fresh.locator('[data-group="p:none"].untriaged summary .triage').textContent(), 'to triage');
+  assert.equal(await fresh.locator('[data-group="p:4"] summary a').getAttribute('title'), 'Work that should land soon.');
+  // The Issues tab's line: the count's badge in pull requests, then the pie of
+  // the whole milestone, issues too, with the one closed unmerged left out.
+  assert.equal(await fresh.locator('[data-group="p:1"] summary .count').getAttribute('title'), '2 open pull requests listed');
+  assert.equal(await fresh.locator('[data-group="p:1"] summary .breakdown').getAttribute('title'), '4 of 15 done: 1 pull request merged, 3 issues closed');
+  assert.equal(await fresh.locator('[data-group="p:1"] summary .other-kind').textContent(), '9 issues', 'the other kind, here issues');
+  assert.equal(await fresh.locator('[data-group="p:1"] summary .merged').textContent(), '1 merged');
+  // A row: the tinted PR chip, the title, the size as GitHub bands it with
+  // the counts on hover, the merge word, the review, the author, labels,
+  // the pie, and the two ages; the one on screen is marked and has no Switch.
+  const twelve = fresh.locator('.item[data-pull="12"]');
+  const twenty = fresh.locator('.item[data-pull="20"]');
+  assert.equal(await twelve.locator('.tag.pull').textContent(), 'PR #12');
+  assert.equal(await twelve.locator('.tag.pull').getAttribute('href'), pr.url);
+  assert.equal(await twelve.locator('.text').textContent(), pr.title);
+  assert.equal(await twelve.locator('a.text').count(), 0, 'the chip is the one link to GitHub');
+  assert.equal(await twelve.locator('.size').textContent(), 'L');
+  assert.equal(await twelve.locator('.size').getAttribute('title'), '+300 −20 · 6 files');
+  assert.equal(await twelve.locator('.pr-merge').textContent(), 'ready');
+  assert.equal(await twelve.locator('.who').textContent(), 'gaurav');
+  assert.deepEqual(await twelve.locator('.tag.label').allTextContents(), ['enhancement']);
+  assert.equal(await twelve.locator('.mark').getAttribute('aria-label'), '3 of 6 files, 160 of 320 changed lines viewed');
+  assert.deepEqual(await twelve.locator('.age').allTextContents(), ['opened 18 days ago', 'updated 1 day ago']);
+  // Dots between plain words only: none beside the size chip, the label or the pie.
+  assert.equal(await twelve.locator('.pr-facts').evaluate((f) => [...f.children].map((c) => c.textContent).join(' ')),
+    'ready L  enhancement gaurav · opened 18 days ago · updated 1 day ago');   // the pie is the blank
+  assert.equal(await twelve.locator('.pr-lead').textContent(), 'The first paragraph of twelve.');
+  // What it is built on, after the title: the default branch, or the pull
+  // requests under it nearest first and then the branch, each #N a link.
+  assert.equal(await twelve.locator('.pr-stack').textContent(), 'on main');
+  assert.equal(await twenty.locator('.pr-stack').textContent(), 'on #12 › main');
+  assert.equal(await twenty.locator('.pr-stack a').getAttribute('href'), pr.url);
+  assert.equal(await twenty.locator('.pr-stack a').getAttribute('title'), pr.title);
+  // A stack stands out where `on main` stays quiet: its #N is the row's tinted chip.
+  assert.equal(await twenty.locator('.pr-stack.stacked a.tag.pull').count(), 1, 'a stacked line has its #N as a chip');
+  assert.equal(await twelve.locator('.pr-stack.stacked, .pr-stack .tag').count(), 0, '`on main` stays plain');
+  // A bare base: the row asks git what it is built on, and draws the answer.
+  await fresh.waitForFunction(() => document.querySelector('.item[data-pull="30"] .pr-stack')?.textContent === 'on gone › older › main');
+  // v1.0 starts folded behind No milestone. git's answers about bare branches
+  // repaint the tab as they land, the last one after the PR list does, and in
+  // Chromium a fold clicked just before such a repaint is drawn shut again; so
+  // the click is made until it holds. A single click again once #171 is fixed.
+  for (let i = 0; i < 10; i++) {
+    if (!await fresh.evaluate(() => document.querySelector('[data-group="p:1"]').open)) await fresh.locator('[data-group="p:1"] summary .count').click();
+    await fresh.waitForTimeout(100);
+  }
+  assert.equal(fresh.belowAsked.branch, 'gone');
+  assert.equal(await twelve.locator('.tag.here').count(), 1);
+  assert.equal(await twelve.locator('.pr-go').count(), 0, 'the one on screen is not offered a Switch');
+  assert.equal(await twelve.getAttribute('aria-current'), 'true');
+  assert.deepEqual(await twenty.locator('.size, .pr-merge, .pr-review, .who, .tag.new').allTextContents(), ['conflicts', 'approved', 'XS', 'new', 'copilot']);
+  assert.equal(await twenty.locator('.pr-merge').evaluate((m) => getComputedStyle(m).backgroundColor), 'rgba(0, 0, 0, 0)', 'conflicts is coloured text, not a badge');
+  const due = await fresh.locator('[data-group="p:1"] .due').evaluate((d) => { const s = getComputedStyle(d); return { backgroundColor: s.backgroundColor, borderTopLeftRadius: s.borderTopLeftRadius }; });
+  assert.notEqual(due.backgroundColor, 'rgba(0, 0, 0, 0)', 'an overdue milestone is a badge');
+  assert.ok(parseFloat(due.borderTopLeftRadius) >= 9, `and a round one, ${due.borderTopLeftRadius}`);
+  assert.equal(await twenty.locator('.size').getAttribute('class'), 'size xs', 'the band is its class, for the colour');
+  assert.equal(await twenty.locator('.pr-go').textContent(), 'Switch');
+  assert.equal(await twenty.locator('.pr-go').isDisabled(), false);
+  // Switch sits after the title and its stack line, in sight; only ▶ and ↓ wait on hover.
+  assert.equal(await twenty.locator('.text + .pr-stack + .pr-go').count(), 1, 'Switch follows the title and the stack line');
+  assert.equal(await twenty.locator('.actions .pr-go').count(), 0);
+  assert.equal(await twenty.locator('.pr-go').evaluate((b) => getComputedStyle(b).opacity), '1');
+  assert.equal(await twenty.locator('.actions').evaluate((a) => getComputedStyle(a).opacity), '0', '▶ and ↓ still wait on hover');
+  // The facts on a line of their own under the title, with ▶ ↓ on the title's
+  // line: put after the facts in the row they wrapped onto a line of their own.
+  // Measured against the PR #N chip, which always starts the row: the title
+  // is inline text, whose box rises above the chips on its line.
+  const box = async (sel) => twenty.locator(sel).boundingBox();
+  const chip = await box(':scope > .tag.pull');
+  assert.ok((await box('.pr-facts')).y > chip.y + 10, 'the facts sit under the title');
+  assert.ok(Math.abs((await box('.actions')).y - chip.y) < 8, '▶ and ↓ share the title line');
+  // A title too long for the line wraps beside the chip, with Switch after its
+  // last word; as a flex item of its own it took a line under the chip.
+  await twenty.locator('.text').evaluate((t) => { t.textContent = 'A long title '.repeat(20); });
+  assert.ok((await box('.text')).y < chip.y + 10, 'the long title starts beside the chip');
+  assert.ok(Math.abs((await box('.actions')).y - chip.y) < 8, '▶ and ↓ stay on the first line');
+  assert.ok((await box('.pr-go')).y > chip.y + 10, 'Switch follows the wrapped title');
+  // An old draft on no milestone: not dimmed. The issues it closes are under
+  // its lead, each linked, with the issue's milestone since it is not the
+  // pull request's own.
+  const thirty = fresh.locator('.item[data-pull="30"]');
+  assert.equal(await thirty.locator('.text').evaluate((t) => getComputedStyle(t).opacity), '1');
+  assert.deepEqual(await thirty.locator('.size, .pr-merge').allTextContents(), ['draft', 'XXL']);
+  assert.equal(await thirty.locator('.pull-closes').textContent(), 'Closes #5 The old thing (Not urgent)');
+  assert.equal(await thirty.locator('.pull-closes a').getAttribute('href'), `${REPO}/issues/5`);
+  assert.equal(await twelve.locator('.pull-closes').count(), 0, 'nothing closed, no line');
+  // Its lead is drawn as the opened description is, not as its markdown.
+  assert.equal(await thirty.locator('.pr-lead').innerHTML(),
+    `Still <strong>being</strong> written, in <code>old.js</code>, for <a href="https://github.com/gaurav/prcoder/issues/5" target="_blank" rel="noopener">#5</a>.`);
+  // The order and the grouping are the two selects, remembered across a reload.
+  await fresh.locator('#queue-body select.pull-sort').selectOption('largest');
+  assert.deepEqual((await pullGroupsOf(fresh))[1], 'p:1|v1.0 (2) 9 issues 1 merged due 5 days ago|open|12,20');
+  await fresh.locator('#queue-body select.pull-group').selectOption('none');
+  assert.equal(await fresh.locator('#queue-body .fold.milestone').count(), 0);
+  const listed = () => fresh.locator('#queue-body .item.pull').evaluateAll((ls) => ls.map((l) => `${l.dataset.pull}:${l.style.getPropertyValue('--depth')}`));
+  assert.deepEqual(await listed(), ['30:0', '12:0', '20:0']);
+  // By stack: one list in the switcher's order, #20 a step in under #12, the
+  // one it is built on, without a stack line (the indent says it), and its
+  // opened body stepped in with it.
+  await fresh.locator('#queue-body select.pull-group').selectOption('stack');
+  assert.deepEqual(await listed(), ['30:0', '12:0', '20:1']);
+  assert.equal(await fresh.locator('.item[data-pull="20"] .pr-stack').count(), 0, 'no stack line at a depth');
+  assert.equal(await fresh.locator('.item[data-pull="12"] .pr-stack').count(), 1, 'a root keeps its line');
+  assert.equal(await fresh.locator('.item[data-pull="20"]').evaluate((l) => getComputedStyle(l).marginLeft), '16px');
+  await fresh.locator('.item[data-pull="20"] .disclose').click();
+  assert.equal(await fresh.locator('.item[data-pull="20"] + .issue-body').evaluate((l) => getComputedStyle(l).marginLeft), '16px');
+  await fresh.reload();
+  await fresh.waitForSelector('#queue-body .tab[data-tab="local"]');
+  await fresh.locator('#queue-body .tab[data-tab="pulls"]').click();
+  await fresh.waitForSelector('#queue-body .item.pull');
+  assert.equal(await fresh.locator('#queue-body select.pull-sort').inputValue(), 'largest');
+  assert.equal(await fresh.locator('#queue-body select.pull-group').inputValue(), 'stack');
+  await fresh.close();
+});
+
+// GitHub's `ready` is ready to merge into the base, which for #20 is #12's
+// branch: the row says `stacked (1)` instead, and the search finds it by that.
+test('a ready pull request built on another reads `stacked (N)`, and the search finds it by its word', { skip }, async () => {
+  const { fresh } = await pullsPage({ ...PULLS, pulls: PULLS.pulls.map((p) => (p.number === 20 ? { ...p, merge: 'ready' } : p)) });
+  const word = (n) => fresh.locator(`.item[data-pull="${n}"] .pr-merge`);
+  assert.equal(await word(20).textContent(), 'stacked (1)');
+  assert.equal(await word(20).getAttribute('class'), 'pr-merge stacked');
+  assert.equal(await word(12).textContent(), 'ready', 'one on the default branch is still ready');
+  const search = fresh.locator('#queue-pull-search');
+  await search.fill('stacked');
+  assert.equal(await fresh.locator('#queue-body .tab[data-tab="pulls"]').textContent(), 'Pull requests (1)');
+  assert.deepEqual(await fresh.locator('#queue-body .item.pull').evaluateAll((ls) => ls.map((l) => l.dataset.pull)), ['20']);
+  await search.fill('ready');
+  assert.deepEqual(await fresh.locator('#queue-body .item.pull').evaluateAll((ls) => ls.map((l) => l.dataset.pull)), ['12'], 'and `ready` only the one that is');
+  await fresh.close();
+});
+
+// A move made while a read is out: that read was sent before the write, so
+// another follows it rather than the move being dropped (until 2026-10-21 the
+// row sat in its old group until the next ⟳).
+test('a move made while the pull requests are being read is read again after', { skip }, async () => {
+  const { fresh } = await pullsPage(PULLS, { stale: false });
+  let release;
+  const held = new Promise((r) => { release = r; });
+  const reads = [];
+  await fresh.route('**/api/pulls', async (r) => {
+    reads.push(r.request().postDataJSON().fresh);
+    if (reads.length === 1) await held;
+    return r.fulfill({ json: { ...PULLS, read: NOW } });
+  });
+  await fresh.route('**/api/pull/milestone', (r) => r.fulfill({ json: { ok: true } }));
+  await fresh.locator('#queue-body .pull-reload').click();
+  await fresh.waitForFunction(() => document.querySelector('#queue-body .pull-note')?.textContent.includes('updating'));
+  await fresh.locator('.item[data-pull="30"] .disclose').click();
+  await fresh.locator('[data-group="p:none"] .issue-body select.milestone').selectOption('Needed soon');
+  await fresh.locator('[data-group="p:none"] .move-to button').click();
+  await fresh.waitForTimeout(200);
+  assert.deepEqual(reads, [true], 'nothing new while the first is out');
+  release();
+  await fresh.waitForFunction(() => !document.querySelector('#queue-body .pull-note')?.textContent.includes('updating'));
+  await fresh.waitForTimeout(200);
+  assert.deepEqual(reads, [true, true], 'and one more after it');
+  await fresh.close();
+});
+
+// A press on the title selects it, and only the grip drags: see the Issues tab's.
+test('a pull request row\'s title can be selected, and it has a grip only by milestone', { skip }, async () => {
+  const { fresh } = await pullsPage(PULLS, { stale: false });
+  await noToast(fresh);
+  const row = fresh.locator('.item[data-pull="30"]');
+  assert.equal(await row.getAttribute('draggable'), null);
+  assert.equal(await row.locator('.grip').getAttribute('draggable'), 'true');
+  await row.scrollIntoViewIfNeeded();
+  const box = await row.locator('.text').boundingBox();
+  await fresh.mouse.move(box.x + 2, box.y + 8);
+  await fresh.mouse.down();
+  await fresh.mouse.move(box.x + 60, box.y + 8, { steps: 5 });
+  await fresh.mouse.up();
+  assert.ok((await fresh.evaluate(() => getSelection().toString())).length > 3);
+  await fresh.locator('.pull-controls .pull-group').selectOption('none');
+  assert.equal(await row.locator('.grip').count(), 0, 'one list has no line to drop it on');
+  await fresh.locator('.pull-controls .pull-group').selectOption('milestone');
+  await fresh.close();
+});
+
+test('a pull request\'s grip moves it, and its link\'s drag does not', { skip: skip || (engineName === 'firefox' && 'dragTo sends Firefox no drag events') }, async () => {
+  // One row open and the pane scrolled to it, so the next group's line is on
+  // screen before the press (tools/CLAUDE.md): a row is three lines tall.
+  const { fresh } = await pullsPage({ ...PULLS, pulls: PULLS.pulls.filter((p) => p.number === 30) }, { stale: false });
+  await noToast(fresh);
+  const moves = [];
+  await fresh.route('**/api/pull/milestone', (r) => { moves.push(r.request().postDataJSON()); return r.fulfill({ json: { ok: true } }); });
+  const row = fresh.locator('.item[data-pull="30"]');
+  const next = fresh.locator('.pull-groups [data-group]').nth(1);
+  const milestone = await next.locator('summary a').first().textContent();
+  const onScreen = () => fresh.evaluate(() => { document.getElementById('queue-body').scrollTop = 100; });
+  await onScreen();
+  await row.locator('.tag.pull').dragTo(next.locator('summary'));
+  await row.locator('.grip').dragTo(fresh.locator('[data-group="p:none"] summary'));
+  const read = fresh.waitForResponse('**/api/pulls');
+  await onScreen();
+  await row.locator('.grip').dragTo(next.locator('summary'));
+  await read;
+  assert.deepEqual(moves, [{ number: 30, milestone }]);
+  await fresh.close();
+});
+
+// As on the Issues tab, but for Switch: focus on it holds nothing, so the row
+// can say `here` once the checkout's poll lands.
+test('a pull request listing landing with a row\'s select or drag in use waits, and focus on Switch does not hold it', { skip }, async () => {
+  const { fresh } = await pullsPage(PULLS, { stale: false });
+  const retitled = (tag) => ({ ...PULLS, read: NOW, pulls: PULLS.pulls.map((p) => ({ ...p, title: `${p.title} ${tag}` })) });
+  await fresh.locator('.item[data-pull="30"] .disclose').click();
+  const title = fresh.locator('.item[data-pull="30"] .text');
+  const land = async (tag) => {
+    await fresh.route('**/api/pulls', (r) => r.fulfill({ json: retitled(tag) }));
+    const landed = fresh.waitForResponse('**/api/pulls');
+    await fresh.evaluate(() => document.querySelector('#queue-body .pull-reload').click());
+    await landed;
+    await fresh.evaluate(() => new Promise((res) => setTimeout(res, 50)));
+  };
+  const held = (sel) => fresh.evaluate((s) => { window.held = document.querySelector(s); }, sel);
+  const select = '[data-group="p:none"] .move-to select';
+
+  // Focus in the select: same element, old title, until it leaves.
+  await fresh.locator(select).focus();
+  await held(select);
+  await land('one');
+  assert.equal(await fresh.evaluate(() => window.held.isConnected), true);
+  assert.ok(!(await title.textContent()).endsWith('one'));
+  await fresh.evaluate(() => document.activeElement.blur());
+  await fresh.waitForFunction(() => document.querySelector('.item[data-pull="30"] .text').textContent.endsWith('one'));
+
+  // Nor does a poll that brings news repaint the tab under its order or
+  // grouping select, which would close the select mid-choice.
+  for (const control of ['.pull-sort', '.pull-group']) {
+    await fresh.locator(`#queue-body ${control}`).focus();
+    await held(`#queue-body ${control}`);
+    await fresh.route('**/api/status', (r) => r.fulfill({ json: { ...status, nameWithOwner: 'gaurav/prcoder',
+      queue: [{ text: `news ${control}`, done: false, issue: null, deleted: false }] } }));
+    const polled = fresh.waitForResponse('**/api/status');
+    await fresh.evaluate(() => document.getElementById('pr-refresh').click());
+    await polled;
+    await fresh.waitForTimeout(200);
+    assert.equal(await fresh.evaluate(() => window.held.isConnected), true, control);
+    await fresh.evaluate(() => document.activeElement.blur());
+  }
+
+  // Focus on Switch holds nothing.
+  await fresh.locator('[data-group="p:none"] .issue-ways .pr-go').focus();
+  await land('two');
+  assert.ok((await title.textContent()).endsWith('two'));
+  await fresh.evaluate(() => document.activeElement?.blur());
+
+  // A drag: the row stays until its dragend, whose event needs the row there.
+  await held('.item[data-pull="30"] .grip');
+  await fresh.evaluate(() => window.held.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer: new DataTransfer() })));
+  await land('three');
+  assert.equal(await fresh.evaluate(() => window.held.isConnected), true);
+  assert.ok(!(await title.textContent()).endsWith('three'));
+  await fresh.evaluate(() => { window.held.dispatchEvent(new DragEvent('dragend', { bubbles: true })); });
+  assert.ok((await title.textContent()).endsWith('three'));
+  await fresh.close();
+});
+
+// As on the Issues tab: what starts folded is chosen on the first listing, and
+// a milestone a later one brings -- made on GitHub since -- joins the rest
+// folded rather than drawn open among them.
+test('a milestone a later pull request listing brings starts folded', { skip }, async () => {
+  const { fresh } = await pullsPage(PULLS, { stale: false });
+  const later = { ...PULLS, read: NOW, milestones: [...PULLS.milestones, { number: 7, title: 'Made since', dueOn: null, description: '', closed: false }],
+    pulls: PULLS.pulls.map((p) => (p.number === 20 ? { ...p, milestone: 7 } : p)) };
+  await fresh.route('**/api/pulls', (r) => r.fulfill({ json: later }));
+  const landed = fresh.waitForResponse('**/api/pulls');
+  await fresh.locator('#queue-body .pull-reload').click();
+  await landed;
+  await fresh.waitForFunction(() => document.querySelector('[data-group="p:7"]'));
+  assert.deepEqual((await pullGroupsOf(fresh)).map((g) => g.split('|').filter((_, i) => i !== 1).join('|')),
+    ['p:none|open|30', 'p:1|closed|12', 'p:7|closed|20', 'p:4|closed|', 'p:3|closed|']);
+  await fresh.close();
+});
+
+test('a fresh listing is not read again within a minute, and ⟳ reads one whatever its age', { skip }, async () => {
+  const { fresh, asked } = await pullsPage(PULLS, { stale: false });
+  await fresh.waitForTimeout(200);
+  assert.deepEqual(asked, [false], 'read just now: nothing to ask again');
+  assert.equal(await fresh.locator('#queue-body .pull-note').textContent(), 'Read just now');
+  await fresh.locator('#queue-body .tab[data-tab="local"]').click();
+  await fresh.locator('#queue-body .tab[data-tab="pulls"]').click();
+  await fresh.waitForSelector('#queue-body .pull-note');
+  assert.deepEqual(asked, [false], 'and not on a second visit either');
+  const again = fresh.waitForResponse('**/api/pulls');
+  await fresh.locator('#queue-body .pull-reload').click();
+  await again;
+  assert.deepEqual(asked, [false, true]);
+  await fresh.close();
+});
+
+// The pie opens a breakdown of the milestone: every count the line draws a
+// part of, as a table, without folding or unfolding the group under it.
+test('a milestone\'s pie opens a breakdown of its counts, which Escape and a second press close', { skip }, async () => {
+  const { fresh } = await pullsPage();
+  const fold = fresh.locator('[data-group="p:1"]');
+  const pie = fold.locator('summary .breakdown');
+  const pop = fresh.locator('.milestone-pop');
+  const isOpen = () => fold.evaluate((d) => d.open);
+  const before = await isOpen();
+  assert.equal(await pie.getAttribute('aria-label'), '4 of 15 done: 1 pull request merged, 3 issues closed; show the breakdown');
+  await pie.click();
+  await pop.waitFor();
+  assert.equal(await isOpen(), before, 'the press is the pie\'s, not the fold\'s');
+  assert.equal(await pop.locator('.head').textContent(), 'v1.0 · due Wednesday, October 14, 2026');
+  assert.deepEqual(await pop.locator('tr').evaluateAll((rs) => rs.map((r) => [...r.children].map((c) => c.textContent))), [
+    ['', 'open', 'merged', 'closed'], ['pull requests', '2', '1', '1'], ['issues', '9', '–', '3']]);
+  assert.equal(await pop.locator('p').last().textContent(), '4 of 15 done, leaving out the 1 pull request closed without merging');
+  assert.equal(await pop.getAttribute('aria-label'), 'v1.0: what it holds');
+  // At the pie, by its anchor: under it, or over it where the foot would cut it off.
+  const [p, b] = await Promise.all([pop.boundingBox(), pie.boundingBox()]);
+  const gap = Math.min(Math.abs(p.y - (b.y + b.height)), Math.abs(b.y - (p.y + p.height)));
+  assert.ok(gap < 8 && Math.abs(p.x - b.x) < 2, JSON.stringify({ p, b }));
+  // Escape closes it, and so does a second press of the same pie.
+  await fresh.keyboard.press('Escape');
+  await pop.waitFor({ state: 'hidden' });
+  await pie.click();
+  await pop.waitFor();
+  await pie.click();
+  await pop.waitFor({ state: 'hidden' });
+  // From the keyboard, Enter on the pie opens it and does not fold the group either.
+  await pie.focus();
+  await fresh.keyboard.press('Enter');
+  await pop.waitFor();
+  assert.equal(await isOpen(), before);
+  await fresh.keyboard.press('Enter');
+  await pop.waitFor({ state: 'hidden' });
+  // A repaint takes the pie away, and the breakdown with it, rather than
+  // leaving it anchored to nothing.
+  await pie.click();
+  await pop.waitFor();
+  // Searched from the page, not typed: a click in the box would be the
+  // popover's light dismiss, and close it whatever the repaint did.
+  await fresh.locator('#queue-pull-search').evaluate((el) => {
+    el.value = 'fix';
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await pop.waitFor({ state: 'hidden' });
+  await fresh.close();
+});
+
+test('searching the pull requests narrows the rows and counts them, and a row opens to its description with Switch and the milestone', { skip }, async () => {
+  const { fresh, typed } = await pullsPage();
+  const search = fresh.locator('#queue-pull-search');
+  await search.fill('copilot');
+  // Only the groups with a match, as the issue search draws them.
+  assert.deepEqual(await pullGroupsOf(fresh), ['p:1|v1.0 (1) 9 issues 1 merged due 5 days ago|open|20']);
+  await search.fill('nothing is called this');
+  assert.equal(await fresh.locator('#queue-body .pull-groups').textContent(), 'No matching pull requests.' + await fresh.locator('#queue-body .pull-note').textContent());
+  await search.fill('copilot');
+  assert.equal(await fresh.locator('#queue-body .tab[data-tab="pulls"]').textContent(), 'Pull requests (1)');
+  assert.equal(await fresh.evaluate(() => document.activeElement.id), 'queue-pull-search', 'the box keeps its focus');
+  await search.fill('');
+  assert.equal(await fresh.locator('#queue-body .tab[data-tab="pulls"]').textContent(), 'Pull requests (3)');
+  // ▸ opens the milestone select, Switch and Open on GitHub, and not the
+  // description: that is read on GitHub. Nor the issues it closes, which the
+  // row itself carries.
+  const twelve = fresh.locator('.item[data-pull="12"]');
+  await fresh.locator('[data-group="p:1"] summary .count').click();
+  await twelve.locator('.disclose').click();
+  const body = fresh.locator('[data-group="p:1"] .issue-body');
+  assert.equal(await body.locator('.task, .empty, .pull-closes').count(), 0);
+  assert.equal((await body.textContent()).includes('The first paragraph of twelve.'), false);
+  assert.deepEqual(await body.locator('select.milestone option').allTextContents(), ['No milestone', 'v1.0', 'Needed soon', 'Not urgent']);
+  assert.equal(await body.locator('select.milestone').inputValue(), 'v1.0');
+  assert.equal(await body.locator('.pr-go').count(), 0, 'on screen: no Switch here either');
+  assert.equal(await body.locator('.open-issue').getAttribute('href'), pr.url);
+  // ▶ types the title with its link, unsent; ↓ copies it into Local as a pull request.
+  await twelve.locator('button[title^="type into the coding agent"]').click();
+  assert.deepEqual(typed, [`${pr.title} (${pr.url})`]);
+  await twelve.locator('button[title="copy into your queue"]').click();
+  await fresh.waitForFunction(() => document.querySelector('#queue-body .tab[data-tab="local"]')?.textContent === 'Local (1)');
+  await fresh.locator('#queue-body .tab[data-tab="local"]').click();
+  assert.equal(await fresh.locator('#queue-body .item .tag.pull').textContent(), 'PR #12');
+  await fresh.close();
+});
+
+test('a milestone picked in an opened pull request row is written by Move, and a refusal reads the listing again; Switch is the PR pane\'s', { skip }, async () => {
+  const { fresh, asked } = await pullsPage();
+  const moves = [];
+  await fresh.route('**/api/pull/milestone', (r) => { moves.push(r.request().postDataJSON()); return r.fulfill({ json: { ok: true } }); });
+  await fresh.locator('.item[data-pull="30"] .disclose').click();
+  const pick = fresh.locator('[data-group="p:none"] .issue-body select.milestone');
+  const moveBtn = fresh.locator('[data-group="p:none"] .move-to button');
+  assert.equal(await pick.inputValue(), '');
+  assert.equal(await moveBtn.isDisabled(), true);
+  const before = asked.length;
+  // Choosing writes nothing, as an arrow key on a closed select fires change.
+  await pick.selectOption('Needed soon');
+  assert.deepEqual(moves, []);
+  const read = fresh.waitForResponse('**/api/pulls');
+  await moveBtn.click();
+  await read;
+  await fresh.waitForFunction(() => document.activeElement?.matches?.('[data-group="p:none"] select.milestone[data-move="30"]'));
+  assert.deepEqual(moves, [{ number: 30, milestone: 'Needed soon' }]);
+  assert.deepEqual(asked.slice(before), [true], 'read fresh once GitHub has it');
+  // A refusal is a toast, the select goes back to where it still is, and the
+  // listing is read again, in case that is what the server and page differ on.
+  await fresh.route('**/api/pull/milestone', (r) => r.fulfill({ status: 500, json: { error: '"x" is not an open milestone the Pull requests tab listed' } }));
+  await pick.selectOption('Not urgent');
+  const again = fresh.waitForResponse('**/api/pulls');
+  await moveBtn.click();
+  await fresh.waitForFunction(() => document.getElementById('toast').textContent.includes('not an open milestone'));
+  await again;
+  await fresh.waitForFunction(() => document.activeElement?.matches?.('select.milestone[data-move="30"]'));
+  assert.equal(await pick.inputValue(), '');
+  assert.equal(asked.length, before + 2);
+  // Dropped onto a group's line, the row moves there; an issue's row is not
+  // taken (until 2026-10-21 the drop never reached movePull at all), and a row
+  // dropped on the group it is already in sends nothing.
+  await fresh.route('**/api/pull/milestone', (r) => { moves.push(r.request().postDataJSON()); return r.fulfill({ json: { ok: true } }); });
+  assert.equal(await dropRow(fresh, '[data-group="p:none"] summary', PULL_DRAG, 12), true);
+  assert.equal(await dropRow(fresh, '[data-group="p:none"] summary', ISSUE_DRAG, 58), false, 'an issue is not dropped here');
+  assert.equal(await dropRow(fresh, '[data-group="p:none"] summary', PULL_DRAG, 30), true);
+  await fresh.waitForTimeout(200);
+  assert.deepEqual(moves.slice(1), [{ number: 12, milestone: null }]);
+  // Switch goes through the PR pane's own route, and is disabled on a dirty tree.
+  const switched = [];
+  await fresh.route('**/api/pr/switch', (r) => { switched.push(r.request().postDataJSON()); return r.fulfill({ json: { ...status, nameWithOwner: 'gaurav/prcoder', queue: [] } }); });
+  await fresh.locator('.item[data-pull="30"] .pr-go').click();
+  await fresh.waitForFunction(() => document.getElementById('toast').textContent.includes('Switched to'));
+  assert.deepEqual(switched, [{ url: `${REPO}/pull/30` }]);
+  await fresh.route('**/api/status', (r) => r.fulfill({ json: { ...status, nameWithOwner: 'gaurav/prcoder', queue: [], dirtyFiles: ['a.js'] } }));
+  const polled = fresh.waitForResponse('**/api/status');
+  await fresh.evaluate(() => document.getElementById('pr-refresh').click());
+  await polled;
+  await fresh.locator('#queue-body .tab[data-tab="local"]').click();
+  await fresh.locator('#queue-body .tab[data-tab="pulls"]').click();
+  await fresh.waitForSelector('.item[data-pull="30"] .pr-go');
+  assert.equal(await fresh.locator('.item[data-pull="30"] .pr-go').isDisabled(), true);
+  assert.equal(await fresh.locator('.item[data-pull="30"] .pr-go').getAttribute('title'), 'Commit or stash your changes first');
   await fresh.close();
 });
 
@@ -3555,7 +4435,8 @@ test('when the agent exits, starting it again reconnects with the chosen setting
   });
   p.once('dialog', (d) => { asked.push(d.message()); d.accept(); });
   await p.click('#term-quit');
-  await bar.getByText('prcoder has quit').waitFor();
+  await p.waitForSelector('#dead:modal');
+  assert.equal(await bar.isHidden(), true, 'the bar its Quit was in goes with it');
   assert.deepEqual(asked, [{}, 'Quit prcoder? 2 uncommitted files.', { force: true }]);
   await p.close();
 });

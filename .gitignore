@@ -1,3 +1,5 @@
 node_modules
+# JetBrains. .idea/.gitignore lists only its per-user files, leaving the rest to be shared.
+.idea/
 # Scratch space. data/.gitkeep is tracked anyway (git add -f); CLAUDE.md says why.
 data/

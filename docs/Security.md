@@ -57,6 +57,13 @@ Two functions in [`public/pr.js`](../public/pr.js) keep it out. `escape()` escap
 angle brackets, because a link's URL is interpolated into `href="..."` and a raw `"` closes the
 attribute and opens an event handler, which `innerHTML` does fire. `target()` lets through only
 `http(s)` and repository-relative links, so `javascript:` and `data:` hrefs stay as their own source.
+A bare `#N` takes its URL and title from GitHub's answer about that number, which is no safer than
+the description, so `mentionLink()` sends the URL through `target()` and both through `escape()`.
+And `inline()` builds a link out of finished HTML: it holds code spans, markdown links and bare URLs
+aside as `\u0000N\u0000` and `\u0001N\u0001` placeholders while the later rules run, and puts them
+back after, so no rule can write into an href another has built. A placeholder that ends up inside
+an attribute brings the held link's quotes with it, so the bare-URL rule may not run across one, and
+a description's own placeholder characters are dropped before anything else.
 A check's link is held to the same rule by `rollup()` in [`github.js`](../github.js): a status
 context's `targetUrl` is whatever its poster said, so anything not `http(s)` is dropped and the
 check's name stays plain text. `test/pr.test.js` pins both functions, `test/github.test.js` the
@@ -78,7 +85,8 @@ checklist line of the description, or from the Issues tab, which copies an issue
 straight in, unsent — so whoever can edit that description or that issue can
 write the words. Commit sends a message built from the names of the working tree's uncommitted files.
 
-The Issues tab also draws an issue's body, which is anyone's text, into the page with `innerHTML`:
+The Issues tab also draws an issue's body, which is anyone's text, into the page with `innerHTML`,
+and the Pull requests tab the first paragraph of a pull request's under its row:
 through `blockNode` and `inline()` in [`public/pr.js`](../public/pr.js), the description's own
 renderer, with the repository as what a relative link is written against — the same allowlist,
 and no second path.
@@ -155,6 +163,17 @@ A modified file's diff is not highlighted at all, and
   in `repos` -- the URL, not only that `repo`, since the URL is what gh is given. Both compare the
   repository case-blind, as GitHub does, since a remote may spell it in another case than the link
   (`test/store.test.js`, `test/github.test.js`).
+  The Issues tab's one write, `/api/issue/milestone`, takes an issue number and a milestone title
+  from the page and hands gh neither: `issueMove` in `server.js` looks both up in the listing the
+  tab was last shown, and the listing's own numbers go to `gh api -F` (`setIssueMilestone` in
+  `github.js`). `test/api.test.js` pins the refusals. The Pull requests tab's `/api/pull/milestone`
+  is the same hold (`pullMove`), on the last listing the server read from GitHub -- never on
+  `.prcoder/pulls.json`, which the tab may be showing, and where a pull request merged since the file
+  was written is still open; a move made before that read waits for it. The file is still held
+  before it is drawn: `readPulls` in `store.js` keeps a row only with an integer number and the
+  whole of a pull request link in this repository, and a milestone only with an integer number and
+  a string title (`test/store.test.js`). A row's other href, each issue it closes, is kept only as the whole of a
+  GitHub issue link (`closesOf`), so a hand-edit cannot put a `javascript:` link in the tab.
 - **Text from GitHub** — descriptions, titles, issue bodies, file names — is built into the page with
   `h()` and text nodes. `innerHTML` only through `inline()`, and a new kind of link only through
   `target()`.

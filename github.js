@@ -2,7 +2,8 @@
 
 import { execFile } from 'node:child_process';
 import { debug } from './term.js';
-import { mentions, repoUrl, printable } from './public/tasks.js';
+import { mentions, repoUrl, resolveRef, printable, blocks } from './public/tasks.js';
+import { filesProgress } from './public/filelist.js';
 
 // Every gh call and every git call comes through run(), so this is the whole
 // count. What it is for: two browser tabs each poll on their own timer against
@@ -605,6 +606,11 @@ export async function fetchPatches(cwd, prUrl) {
     [f.filename, { patch: f.patch ?? null, from: f.previous_filename, deleted: f.status === 'removed' }]));
 }
 
+/**
+ * github.com only, as the `gh api` calls this feeds are: they name no host, so
+ * widening this alone would read the same owner/repo from github.com instead of
+ * refusing. Enterprise is #53.
+ */
 export function parsePrUrl(url) {
   const m = url.match(/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/);
   if (!m) throw new Error(`not a pull request URL: ${url}`);
@@ -725,13 +731,34 @@ export function rollup(checks) {
   return { ...counts, list };
 }
 
-/** Issues the PR closes, plus any bare #N mentioned in the body. */
+/**
+ * Issues the PR closes, plus any bare #N mentioned in the body.
+ *
+ * A closing reference can be in another repository (`Fixes other/repo#3`). That
+ * one carries its `repo`, as `owner/name`, and is kept apart from this
+ * repository's #3: by number alone, a bare `#3` in the body was folded into it,
+ * and the pane linked that `#3` to the other repository.
+ *
+ * Which repository is GitHub's `repository` on the reference, set against the
+ * last two segments of the PR's repository URL by resolveRef, as the queue
+ * compares them. Not by URL prefix: a remote spelled `www.github.com`, which
+ * GitHub's issue URL does not match, made this repository's own issue another's.
+ * A reference with no `repository` is taken as this one's.
+ */
 export function linkedIssues(pr) {
   const seen = new Map();
-  for (const i of pr.closingIssuesReferences ?? []) {
-    seen.set(i.number, { number: i.number, url: i.url, closes: true });
-  }
   const repo = repoUrl(pr.url);
+  const home = repo.split('/').slice(-2).join('/');
+  for (const i of pr.closingIssuesReferences ?? []) {
+    const { owner, name } = i.repository ?? {};
+    const other = owner?.login && name
+      ? resolveRef({ owner: owner.login, name, number: i.number }, home).repo : null;
+    if (other) {
+      seen.set(`${other}#${i.number}`, { number: i.number, url: i.url, closes: true, repo: other });
+    } else {
+      seen.set(i.number, { number: i.number, url: i.url, closes: true });
+    }
+  }
   for (const number of mentions(pr.body ?? '')) {
     if (!seen.has(number)) seen.set(number, { number, url: `${repo}/issues/${number}`, closes: false });
   }
@@ -746,29 +773,38 @@ export function linkedIssues(pr) {
  * `closingIssuesReferences` gives number, url and repository and nothing else
  * (checked 2026-09-18), and a bare `#N` out of the body is only ever a number.
  * It rides on loadPr, which status() runs on a reload rather than on every
- * poll, so the poll's call count is unchanged and a reload costs one more.
+ * poll, so the poll's call count is unchanged and a reload costs one more, and
+ * one for each other repository a closing reference is in.
  *
  * `issueOrPullRequest`, not `issue`: a `#N` in a description is as often a pull
  * request as an issue -- #27 in this repo's own -- and `issue(number:)` on one
  * resolves to nothing.
  */
 async function withLinks(cwd, prUrl, issues) {
-  // ponytail: 50 aliases is plenty for a description; if a body ever needs more,
-  // chunk the numbers rather than growing one query.
-  const numbers = issues.map((i) => i.number).slice(0, 50);
-  const links = numbers.length ? await issueLinks(cwd, prUrl, numbers) : new Map();
-  for (const i of issues) {
-    const found = links.get(i.number);
-    i.title = found?.title ?? null;
-    // Which a bare #N is, for the pane's `PR #N`: closingIssuesReferences is
-    // only ever issues, but a mention is as often a pull request.
-    i.kind = found?.kind ?? null;
-    // linkedIssues can only guess `/issues/N` from the repository URL, and half
-    // the numbers in a description like this one are pull requests. GitHub
-    // redirects, so the guess works -- but it is a guess, and the answer is
-    // already in the response the title came out of.
-    if (found?.url) i.url = found.url;
-  }
+  const { owner, repo } = parsePrUrl(prUrl);
+  // One query per repository, since the query asks one: asked of this one,
+  // another's #3 came back titled and linked as this one's. Another is only
+  // ever a closing reference's (`Fixes other/repo#3`), and a description names
+  // few, so a reload costs a call for each and they run together.
+  const byRepo = Map.groupBy(issues, (i) => i.repo ?? `${owner}/${repo}`);
+  await Promise.all([...byRepo].map(async ([where, list]) => {
+    const [o, r] = where.split('/');
+    // ponytail: 50 aliases is plenty for a description; if a body ever needs
+    // more, chunk the numbers rather than growing one query.
+    const links = await repoLinks(cwd, o, r, list.map((i) => i.number).slice(0, 50));
+    for (const i of list) {
+      const found = links.get(i.number);
+      i.title = found?.title ?? null;
+      // Which a bare #N is, for the pane's `PR #N`: closingIssuesReferences is
+      // only ever issues, but a mention is as often a pull request.
+      i.kind = found?.kind ?? null;
+      // linkedIssues can only guess `/issues/N` from the repository URL, and half
+      // the numbers in a description like this one are pull requests. GitHub
+      // redirects, so the guess works -- but it is a guess, and the answer is
+      // already in the response the title came out of.
+      if (found?.url) i.url = found.url;
+    }
+  }));
   return issues;
 }
 
@@ -788,11 +824,72 @@ async function withLinks(cwd, prUrl, issues) {
  */
 export async function issueLinks(cwd, prUrl, numbers) {
   const { owner, repo } = parsePrUrl(prUrl);
+  return repoLinks(cwd, owner, repo, numbers);
+}
+
+/**
+ * issueLinks, in any repository gh can read: another's closing references.
+ *
+ * Safe integers only. From 1e21 a number prints as `1e+21`, which is no alias,
+ * and a query that does not parse has no data for any number. Below that GitHub
+ * takes any digits and answers NOT_FOUND (checked 2026-11-02), but past 2^53 the
+ * number has already been rounded, so its answer would be another number's.
+ */
+async function repoLinks(cwd, owner, repo, numbers) {
+  const asked = numbers.filter((n) => Number.isSafeInteger(n));
+  if (!asked.length) return new Map();
   try {
-    return linksFrom(await gh(linksArgs(owner, repo, numbers), { cwd }));
+    return linksFrom(await gh(linksArgs(owner, repo, asked), { cwd }));
   } catch (e) {
     return linksFrom(e.stdout);
   }
+}
+
+// What a milestone holds, for its line: pull requests open, merged and
+// closed without merging, and issues open and closed. Both tabs read all five,
+// so a milestone's pie is the whole milestone and the same on either tab.
+// Milestone.issues is issues only, and pullRequests(states:CLOSED) leaves out
+// the merged ones -- both checked against this repository on 2026-10-24.
+const MILESTONE_COUNTS = 'openPulls: pullRequests(states:OPEN){ totalCount } mergedPulls: pullRequests(states:MERGED){ totalCount } '
+  + 'closedPulls: pullRequests(states:CLOSED){ totalCount } openIssues: issues(states:OPEN){ totalCount } closedIssues: issues(states:CLOSED){ totalCount }';
+
+/**
+ * A milestone node in the listings' shape, `closed` when GitHub says so, and
+ * `counts` its MILESTONE_COUNTS as `{ pulls: { open, merged, closed }, issues:
+ * { open, closed } }`, or null for a node without all five -- a pulls.json
+ * written before they were read.
+ */
+const milestoneRow = (m, description = '') => ({ ...milestoneOf(m), description, closed: m.state === 'CLOSED', counts: countsOf(m) });
+
+const countsOf = (m) => {
+  const n = (alias) => m?.[alias]?.totalCount;
+  const counts = {
+    pulls: { open: n('openPulls'), merged: n('mergedPulls'), closed: n('closedPulls') },
+    issues: { open: n('openIssues'), closed: n('closedIssues') },
+  };
+  return [...Object.values(counts.pulls), ...Object.values(counts.issues)].every(Number.isInteger) ? counts : null;
+};
+
+/**
+ * The listing's milestones with MILESTONE_COUNTS read for the ones a row
+ * brought along -- closed, or past openMilestones' pages -- in one call after
+ * the listing. The listings' queries do not ask for them on each row's
+ * milestone: that was five count connections on every issue and pull request,
+ * up to 2,500 a listing, for the few milestones not among the open ones.
+ * Numbers only are interpolated. The pie is the only thing the counts draw,
+ * so a call that fails leaves those milestones without one rather than
+ * failing the listing.
+ */
+async function strayCounts(cwd, owner, repo, milestones) {
+  const missing = milestones.filter((m) => !m.counts && Number.isInteger(m.number));
+  if (!missing.length) return milestones;
+  const query = `query($owner:String!,$repo:String!){ repository(owner:$owner,name:$repo){ ${
+    missing.map((m) => `m${m.number}: milestone(number:${m.number}){ ${MILESTONE_COUNTS} }`).join(' ')} } }`;
+  let got;
+  try {
+    got = JSON.parse(await gh(['api', 'graphql', '-f', `query=${query}`, '-f', `owner=${owner}`, '-f', `repo=${repo}`], { cwd })).data?.repository;
+  } catch { return milestones; }
+  return milestones.map((m) => (m.counts ? m : { ...m, counts: countsOf(got?.[`m${m.number}`]) }));
 }
 
 // Milestones come on every page, since the query is one text; repoIssues keeps
@@ -802,22 +899,45 @@ export async function issueLinks(cwd, prUrl, numbers) {
 // there is no priority here, and labels are the nearest thing (#66).
 const ISSUES_QUERY = `query($owner:String!,$repo:String!,$after:String){
   repository(owner:$owner,name:$repo){
-    milestones(first:50,states:OPEN){ nodes{ number title dueOn description } }
+    milestones(first:100,states:OPEN){ pageInfo{ hasNextPage endCursor } nodes{ number title dueOn description ${MILESTONE_COUNTS} } }
     issues(first:100,after:$after,states:OPEN,orderBy:{field:UPDATED_AT,direction:DESC}){
       totalCount pageInfo{ hasNextPage endCursor }
       nodes{ number title url updatedAt body milestone{ number title dueOn state } labels(first:10){ nodes{ name } } } } } }`;
 
+// The rest of the open milestones, for a repository with more than ISSUES_QUERY
+// or PULLS_QUERY read: the opened row's select offers every one, so they cannot
+// stop at a page.
+const MILESTONES_QUERY = `query($owner:String!,$repo:String!,$after:String){
+  repository(owner:$owner,name:$repo){
+    milestones(first:100,after:$after,states:OPEN){ pageInfo{ hasNextPage endCursor } nodes{ number title dueOn description ${MILESTONE_COUNTS} } } } }`;
+
+/** Every open milestone's node, from the first page the listing's query brought. */
+async function openMilestones(cwd, owner, repo, first) {
+  const nodes = [...first.nodes];
+  let { pageInfo } = first;
+  // ponytail: five pages, 500 open milestones, past which one can only be
+  // reached by an issue already on it (repoIssues).
+  for (let page = 1; page < 5 && pageInfo?.hasNextPage && pageInfo.endCursor; page++) {
+    const { data } = JSON.parse(await gh(['api', 'graphql', '-f', `query=${MILESTONES_QUERY}`,
+      '-f', `owner=${owner}`, '-f', `repo=${repo}`, '-f', `after=${pageInfo.endCursor}`], { cwd }));
+    nodes.push(...data.repository.milestones.nodes);
+    ({ pageInfo } = data.repository.milestones);
+  }
+  return nodes;
+}
+
 /**
  * The repository's open issues and open milestones, for the queue's Issues
- * tab: `{ milestones: [{ number, title, dueOn, description, closed }], issues:
+ * tab: `{ milestones: [{ number, title, dueOn, description, closed, counts }], issues:
  * [{ number, title, url, updatedAt, body, milestone, labels }], total, listed }`.
  * An issue's `milestone` is the milestone's number or null, and `labels` is
  * names only, rid of control characters as the titles are (printable). Most
  * recently updated first, as GitHub orders them. A
  * milestone an open issue is on but that is not among the open ones read --
- * closed with the issue still open, or past the first fifty -- is added from
- * the issue, `closed` if it is, so that every listed issue has a group to be
- * drawn in; it has no description. The body
+ * closed with the issue still open, or past openMilestones' pages -- is added
+ * from the issue, `closed` if it is, so that every listed issue has a group to
+ * be drawn in; it has no description, and its counts are read after the
+ * listing (strayCounts). The body
  * comes too, LF-ended like a description (lf), so the tab can show one and
  * search them; the pane renders it through the same allowlist as a
  * description (docs/Security.md).
@@ -837,10 +957,7 @@ export async function repoIssues(cwd, owner, repo) {
     if (after) args.push('-f', `after=${after}`);
     const { data } = JSON.parse(await gh(args, { cwd }));
     const r = data.repository;
-    milestones ??= r.milestones.nodes.map((m) => ({
-      number: m.number, title: printable(m.title ?? '').trim() || `#${m.number}`,
-      dueOn: m.dueOn ?? null, description: printable(m.description ?? '').trim(), closed: false,
-    }));
+    milestones ??= (await openMilestones(cwd, owner, repo, r.milestones)).map((m) => milestoneRow(m, printable(m.description ?? '').trim()));
     total = r.issues.totalCount;
     for (const i of r.issues.nodes) {
       issues.push({
@@ -850,32 +967,151 @@ export async function repoIssues(cwd, owner, repo) {
         labels: (i.labels?.nodes ?? []).map((l) => printable(l.name ?? '').trim()).filter(Boolean),
       });
       const m = i.milestone;
-      if (m && !milestones.some((k) => k.number === m.number)) {
-        milestones.push({
-          number: m.number, title: printable(m.title ?? '').trim() || `#${m.number}`,
-          dueOn: m.dueOn ?? null, description: '', closed: m.state === 'CLOSED',
-        });
-      }
+      if (m && !milestones.some((k) => k.number === m.number)) milestones.push(milestoneRow(m));
     }
     const { hasNextPage, endCursor } = r.issues.pageInfo;
     if (hasNextPage && !endCursor) throw new Error(`GitHub said ${owner}/${repo} has more issues, but gave no cursor to them`);
     after = hasNextPage ? endCursor : null;
     if (!after) break;
   }
-  return { milestones, issues, total, listed: issues.length };
+  return { milestones: await strayCounts(cwd, owner, repo, milestones), issues, total, listed: issues.length };
 }
 
-const MILESTONES_QUERY = `query($owner:String!,$repo:String!){
+const PULLS_QUERY = `query($owner:String!,$repo:String!,$after:String){
+  repository(owner:$owner,name:$repo){
+    milestones(first:100,states:OPEN){ pageInfo{ hasNextPage endCursor } nodes{ number title dueOn description ${MILESTONE_COUNTS} } }
+    pullRequests(first:100,after:$after,states:OPEN,orderBy:{field:UPDATED_AT,direction:DESC}){
+      totalCount pageInfo{ hasNextPage endCursor }
+      nodes{ number title url isDraft isCrossRepository headRefName baseRefName createdAt updatedAt
+        author{ login } additions deletions changedFiles mergeStateStatus reviewDecision body
+        milestone{ number title dueOn state } labels(first:10){ nodes{ name } }
+        closingIssuesReferences(first:10){ nodes{ number title url milestone{ title } } }
+        files(first:100){ nodes{ additions deletions viewerViewedState } } } } } }`;
+
+/**
+ * GitHub's mergeStateStatus as the one word the Pull requests tab shows.
+ * `mergeable` is not asked for: DIRTY already says conflicts. HAS_HOOKS is a
+ * CLEAN that waits on a pre-receive hook, which reads as ready here. UNKNOWN
+ * is GitHub still working it out, which a fresh read a minute later settles.
+ * UNSTABLE is "mergeable with non-passing commit status", which a check still
+ * running is as much as one that failed -- this branch's own pull request
+ * read `checks failing` while CI was starting (2026-10-19) -- so the word is
+ * `checks not passing`, which is true of both.
+ */
+export const MERGE_WORD = {
+  CLEAN: 'ready', HAS_HOOKS: 'ready', DIRTY: 'conflicts', BEHIND: 'behind base', BLOCKED: 'blocked',
+  UNSTABLE: 'checks not passing', DRAFT: 'draft', UNKNOWN: 'checking…',
+};
+
+// ponytail: a lead longer than this is cut; the row shows two lines of it.
+// The cut can split a `**` pair, and the tab's inline() then shows the half
+// left over as written -- past the two lines, so cut at a word if it shows.
+const LEAD_MAX = 300;
+
+/**
+ * One node of PULLS_QUERY as the row the Pull requests tab draws. The first
+ * seven fields are the ones `gh pr list` gives the switcher, under the same
+ * names, so a row here can stand in for one there. The rest is what picking
+ * the next pull request turns on: when it was opened and last moved, whose it
+ * is, its size (`lines`, additions and deletions together, which the tab sorts
+ * by and chips as GitHub's size labels do), how much of it is viewed
+ * (filesProgress, the Files tab's own pie, over the first hundred files and
+ * counted against changedFiles as that tab counts), whether it can merge
+ * (MERGE_WORD), whether it was reviewed, its milestone by number as an issue's
+ * is, its labels by name (rid of control characters, as repoIssues has them), its first paragraph for the row and its whole body
+ * for the opened row and the search, and the issues it closes with each one's
+ * milestone -- the hint for a pull request on none.
+ */
+export function pullRow(node) {
+  const { body, files, closingIssuesReferences, mergeStateStatus, milestone, labels, author, ...pr } = node;
+  const listed = (files?.nodes ?? []).map(({ viewerViewedState, ...f }) => ({ ...f, viewed: viewerViewedState === 'VIEWED' }));
+  const additions = pr.additions ?? 0;
+  const deletions = pr.deletions ?? 0;
+  const text = lf(body);
+  // The whole body, not sectionize()'s lead: a description that opens with a
+  // heading still has a first paragraph, and the row wants it.
+  const lead = blocks(text).find((b) => b.kind === 'p')?.text ?? '';
+  return {
+    ...pr,
+    title: printable(pr.title ?? '').trim() || `#${pr.number}`,
+    author: author?.login ?? null,
+    additions, deletions, changedFiles: pr.changedFiles ?? 0, lines: additions + deletions,
+    viewed: filesProgress(listed, { additions, deletions, changedFiles: pr.changedFiles ?? 0 }),
+    merge: MERGE_WORD[mergeStateStatus] ?? MERGE_WORD.UNKNOWN,
+    reviewDecision: pr.reviewDecision ?? null,
+    milestone: milestone?.number ?? null,
+    labels: (labels?.nodes ?? []).map((l) => printable(l.name ?? '').trim()).filter(Boolean),
+    lead: printable(lead.replace(/\s+/g, ' ')).trim().slice(0, LEAD_MAX),
+    body: text,
+    closes: (closingIssuesReferences?.nodes ?? []).map((i) => ({
+      number: i.number, url: i.url ?? null,
+      title: printable(i.title ?? '').trim() || `#${i.number}`,
+      milestone: i.milestone?.title ? printable(i.milestone.title).trim() : null,
+    })),
+  };
+}
+
+/**
+ * The repository's open pull requests and open milestones, for the queue's
+ * Pull requests tab: `{ milestones, pulls, total, listed }`, the milestones as
+ * repoIssues has them and each pull request as pullRow has it, most recently
+ * updated first. A milestone a pull request is on that is not among the open
+ * ones read is added from it, `closed` if it is, as repoIssues adds one.
+ *
+ * One GraphQL call rather than `gh pr list --json`, because the viewed pie is
+ * per-file state only GraphQL carries. The call is slow where the list is
+ * long, and the slow fields are the computed ones -- additions, deletions and
+ * changedFiles, and mergeStateStatus -- not the bodies or the files
+ * (docs/Verifying.md has the figures). So the switcher keeps its own cheap
+ * list (listPrs), this is read only for the tab, and the server caches the
+ * answer in `.prcoder/pulls.json` (store.js) so the tab opens from the last
+ * read while this runs behind it. Nothing here costs a connection per pull
+ * request: `reviewThreads` would.
+ *
+ * Owner and repo go as variables (-f, the prFiles note), and the pages by
+ * cursor as repoIssues pages. Throws when gh does: a read that failed is a
+ * toast, and the tab keeps what it was showing.
+ */
+export async function repoPulls(cwd, owner, repo) {
+  const pulls = [];
+  let milestones = null;
+  let total = 0;
+  let after = null;
+  // ponytail: five pages, 500 open pull requests; `listed` under `total` says so.
+  for (let page = 0; page < 5; page++) {
+    const args = ['api', 'graphql', '-f', `query=${PULLS_QUERY}`, '-f', `owner=${owner}`, '-f', `repo=${repo}`];
+    if (after) args.push('-f', `after=${after}`);
+    const { data } = JSON.parse(await gh(args, { cwd }));
+    const r = data.repository;
+    milestones ??= (await openMilestones(cwd, owner, repo, r.milestones)).map((m) => milestoneRow(m, printable(m.description ?? '').trim()));
+    total = r.pullRequests.totalCount;
+    for (const node of r.pullRequests.nodes) {
+      pulls.push(pullRow(node));
+      const m = node.milestone;
+      if (m && !milestones.some((k) => k.number === m.number)) milestones.push(milestoneRow(m));
+    }
+    const { hasNextPage, endCursor } = r.pullRequests.pageInfo;
+    if (hasNextPage && !endCursor) throw new Error(`GitHub said ${owner}/${repo} has more pull requests, but gave no cursor to them`);
+    after = hasNextPage ? endCursor : null;
+    if (!after) break;
+  }
+  return { milestones: await strayCounts(cwd, owner, repo, milestones), pulls, total, listed: pulls.length };
+}
+
+// Not MILESTONES_QUERY, which pages on from a listing and asks for each
+// milestone's counts: the picker shows neither.
+const PICKER_MILESTONES_QUERY = `query($owner:String!,$repo:String!){
   repository(owner:$owner,name:$repo){ milestones(first:50,states:OPEN){ nodes{ number title dueOn } } } }`;
 
 /**
  * The repository's open milestones, for the PR pane's milestone picker:
  * `[{ number, title, dueOn }]` (milestoneOf), in GitHub's order -- the page
- * ranks them. The first fifty, as repoIssues reads; a repository with more
- * has the pull request's own added by the pane whatever this says.
+ * ranks them. The first fifty, unpaged, though the queue's listings page on
+ * to every one (openMilestones); a repository with more has the pull
+ * request's own added by the pane whatever this says.
  */
 export async function repoMilestones(cwd, owner, repo) {
-  const { data } = JSON.parse(await gh(['api', 'graphql', '-f', `query=${MILESTONES_QUERY}`,
+  const { data } = JSON.parse(await gh(['api', 'graphql', '-f', `query=${PICKER_MILESTONES_QUERY}`,
     '-f', `owner=${owner}`, '-f', `repo=${repo}`], { cwd }));
   return data.repository.milestones.nodes.map(milestoneOf);
 }

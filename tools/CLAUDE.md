@@ -104,3 +104,20 @@ timing has to be driven against that stub, not cat. cat is fine for
 - **Install `MutationObserver`s after `goto`, not in `addInitScript`.** At
   init time there is no `document.head` to observe, and the throw takes the
   rest of the init script with it.
+- **`dragTo` a target that is on screen without scrolling.** Playwright presses
+  the mouse on the source first and scrolls to the target after, and Chromium's
+  emulated drag then starts on whatever row has scrolled under the pointer -- a
+  real drag has started before anything scrolls. Dragging an issue row onto a
+  milestone group below an open 40-row group carried a different issue's number
+  (2026-10-15). Close the other groups, or shrink the list, so the target is
+  visible before the press; and log the drag's source from the page
+  (`dragstart` on `document`, capturing) rather than trusting the locator.
+  Firefox does not get HTML5 drag events from `dragTo` at all.
+
+## `browser.mjs` needs a description with `##` sections
+
+The driver's sections step clicks the second `.md-section > summary`, so a
+pull request whose body has no `##` headings -- a placeholder written before
+`/pr-update` has run -- makes it time out there with a bare `TimeoutError`
+after everything before it has printed (2026-10-19). Write the body first,
+or read the steps above the timeout as the run's result.

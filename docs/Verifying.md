@@ -138,6 +138,16 @@ already up with `PRCODER_VERBOSE=2`, or a `browser.mjs` run is already printing 
   `gh pr list --head <branch> --state open --json number,headRefOid,updatedAt,statusCheckRollup`
   with `--limit 5` on a branch name many forks share, since that
   first page carries up to five strangers' rollups before prcoder drops them.
+- **The Pull requests tab's listing takes seconds on a repository with many open.** On
+  NCATSTranslator/Babel's 60 open pull requests, `repoPulls`'s one GraphQL call took 5.5–6.0s and
+  answered 315KB; the same call without `additions deletions changedFiles` took 3.0–3.6s, without
+  `mergeStateStatus` 1.6–4.2s, and with neither 0.5–1.3s, the bodies and the hundred files per pull
+  request costing nothing to speak of (measured by hand with `gh api graphql`, two runs each, on
+  2026-10-19 before the tab was built; this repository's six take under a second). Through the
+  route in a shallow clone of Babel, `POST /api/pulls` took 5441ms cold and 4758ms with `fresh`,
+  and 1ms from the file (on `297714f`, 2026-10-19). That is why the switcher keeps `gh pr list`
+  and the tab opens from `.prcoder/pulls.json`. Time it with `PRCODER_VERBOSE=2`, which prints
+  the route's milliseconds, on a visit to the tab with ⟳.
 - **The description's prose is 568px wide in Firefox and 567px in Chromium**, in an 864px pane
   (re-measured on `a96dc21`, 2026-10-14). `browser.mjs` prints it every run; a line-length cap is not something the
   stylesheet can be read for.
@@ -149,10 +159,13 @@ Each unit test file says at its top what it pins. Two run the server itself:
 ([Security.md](Security.md)), and `test/queue-local.test.js` in a scratch directory with `gh` and
 `git` stubbed to fail, asserting that the routes which only read or rewrite the queue never reach
 either. Filing an item with ◎ is the one queue route that does, on purpose, and is not driven.
-`test/api.test.js` is also the one test that opens a real `/pty`: with settings `sessionArgs`
-refuses, so the claim is that it closes with 1008 before the spawn. The exit bar's "Start coding
-agent" and Quit are `test/browser/suite.js`'s, against a mock socket that closes the way an
-exiting agent does.
+`test/api.test.js` also opens a real `/pty`, with settings `sessionArgs` refuses, so the claim is
+that it closes with 1008 before the spawn. The exit bar's "Start coding agent" and Quit are
+`test/browser/suite.js`'s, against a mock socket that closes the way an exiting agent does, or
+with `QUIT_CODE` the way a quitting prcoder does. That a quit, and a SIGHUP, really send
+`QUIT_CODE` to every tab is `test/cli.test.js`'s, against a real server in a throwaway repo, with
+real sockets -- and that the code still arrives at a tab megabytes behind on the agent's output,
+which a server that exits as soon as it has sent the close loses.
 
 Some things were checked against the real thing rather than a stub, and the evidence sits next to
 the code:

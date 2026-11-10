@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { rollup, linkedIssues, linksFrom, parsePrUrl, run, issueNumber, lf, setViewed, listPrs, loadPr, prHeads, branchPrs, lookupPrs, ownPrs, SEARCH_EVERY, UNREAD_FOR, pickPr, lookupRef, createIssue, repoIssues, setIssueMilestone, repoMilestones } from '../github.js';
+import { rollup, linkedIssues, linksFrom, parsePrUrl, run, issueNumber, lf, setViewed, listPrs, loadPr, prHeads, branchPrs, lookupPrs, ownPrs, SEARCH_EVERY, UNREAD_FOR, pickPr, lookupRef, issueLinks, createIssue, repoIssues, setIssueMilestone, repoMilestones, repoPulls, pullRow, MERGE_WORD } from '../github.js';
 import { taskLines } from '../public/tasks.js';
 import { withGh, ghArgs, ghCalls, unix } from './stub-gh.js';
 
@@ -76,6 +76,36 @@ test('an issue both closed and mentioned is listed once, as closing', () => {
   assert.equal(issues[0].closes, true);
 });
 
+// `Fixes other/repo#3` and a bare `#3` are two issues. Keyed by number, the #3
+// took other/repo's URL, and the pane linked the prose `#3` there.
+// The repository is GitHub's `repository` field, in the shape gh gives it.
+const closing = (owner, name, number) => ({
+  number, url: `https://github.com/${owner}/${name}/issues/${number}`,
+  repository: { name, owner: { login: owner } },
+});
+
+test("another repository's closing reference is kept apart from this one's #N", () => {
+  assert.deepEqual(
+    linkedIssues(pr('Fixes other/repo#3; see #3.', [closing('other', 'repo', 3)])),
+    [
+      { number: 3, url: 'https://github.com/other/repo/issues/3', closes: true, repo: 'other/repo' },
+      { number: 3, url: 'https://github.com/o/r/issues/3', closes: false },
+    ],
+  );
+  // This repository's, in GitHub's spelling rather than the remote's, is still this one's.
+  assert.deepEqual(linkedIssues(pr('', [closing('O', 'R', 4)])),
+    [{ number: 4, url: 'https://github.com/O/R/issues/4', closes: true }]);
+});
+
+// Compared by URL prefix, a PR URL on `www.github.com` made this repository's
+// own #4 another's: labelled `o/r#4`, and a bare `#4` listed a second time.
+test("this repository's closing reference is its own on www.github.com too", () => {
+  const issues = linkedIssues({
+    url: 'https://www.github.com/o/r/pull/7', body: 'see #4', closingIssuesReferences: [closing('o', 'r', 4)],
+  });
+  assert.deepEqual(issues, [{ number: 4, url: 'https://github.com/o/r/issues/4', closes: true }]);
+});
+
 test('#N attached to a word is not a linked issue, but a parenthesised one is', () => {
   assert.deepEqual(linkedIssues(pr('abc#5 and colour#5')), []);
   assert.deepEqual(linkedIssues(pr('see (#5) and #6')).map((i) => i.number), [5, 6]);
@@ -87,6 +117,17 @@ test('#N attached to a word is not a linked issue, but a parenthesised one is', 
 test('#N in a comment, a fence or a code span is not a mention', () => {
   const body = '<!-- e.g. Fixes #1 -->\n```\n#2\n```\nsee `#3` and #4';
   assert.deepEqual(linkedIssues(pr(body)).map((i) => i.number), [4]);
+});
+
+// The pane leaves a #N in a link's text to the link (inline() in pr.js), so the
+// Mentions row does too.
+test('#N inside a markdown link is not a mention', () => {
+  assert.deepEqual(linkedIssues(pr('[see #5](https://x.test/a) and #6')).map((i) => i.number), [6]);
+  // Nor is one written against a link or a code span: the pane does not link
+  // it, since what is before it is not a space.
+  assert.deepEqual(linkedIssues(pr('[x](https://y)#5\n`z`#7 and #6')).map((i) => i.number), [6]);
+  // A link the pane will not open is left as its source, and its #N is linked.
+  assert.deepEqual(linkedIssues(pr('[details in #12](#notes), [see #5](javascript:x)')).map((i) => i.number), [5, 12]);
 });
 
 test('an empty body links nothing', () => {
@@ -126,6 +167,20 @@ test('what resolved survives a NOT_FOUND on what did not, pull request URL and a
     title: 'Drive the diff pane', url: 'https://github.com/gaurav/prcoder/issues/86',
     state: 'CLOSED', kind: 'issue', updatedAt: null,
   }]]));
+});
+
+// `#1000000000000000000000` went into the query as `i1e+21`, and one alias that
+// does not parse is an answer with no data for any number. Digits are fine: on
+// 2026-11-02 GitHub gave 3000000000 and 100000000000000000000 the same NOT_FOUND
+// as a typo, beside the data for the rest.
+test('a number too long to write as digits is not asked about', { skip: unix }, async () => {
+  const url = 'https://github.com/o/r/pull/7';
+  const args = await ghArgs(() => issueLinks(os.tmpdir(), url, [27, 3000000000, 1e21, Infinity, 2 ** 53]));
+  const query = args.find((a) => a.startsWith('query='));
+  assert.deepEqual([...query.matchAll(/\bi(\S+): issueOrPullRequest/g)].map(([, n]) => n), ['27', '3000000000']);
+  // With nothing left to ask, gh is not called.
+  const { out, calls } = await ghCalls("echo '{}'", () => issueLinks(os.tmpdir(), url, [1e21]));
+  assert.deepEqual([out, calls], [new Map(), []]);
 });
 
 test('a response that is not a response is nothing, never a throw', () => {
@@ -288,7 +343,8 @@ test('a typed reference reaches GitHub as variables, not inside the query', { sk
 // The repository's open issues and milestones, as GitHub answered for
 // gaurav/prcoder on 2026-10-15, two issues to a page (the query asks a hundred;
 // the fixture's cursor is turned off, and the paging test below turns it on).
-const ISSUES_PAGE = {"data": {"repository": {"milestones": {"nodes": [{"number": 1, "title": "PRCoder v1.0", "dueOn": "2026-10-14T00:00:00Z", "description": ""}, {"number": 2, "title": "PRCoder v0.1", "dueOn": "2026-10-02T00:00:00Z", "description": "The prototype as it stands: the four panes, the queue, and the things found while using it. Smaller than v1.0 and ahead of it — items here are fixes and finishes to what has already shipped, not new capability."}, {"number": 3, "title": "Not urgent", "dueOn": null, "description": "Worth doing eventually; nothing waiting on it."}, {"number": 4, "title": "Needed soon", "dueOn": null, "description": "Work that should land before this is used against repositories other people write in."}, {"number": 5, "title": "Needed later", "dueOn": null, "description": null}]}, "issues": {"totalCount": 78, "pageInfo": {"hasNextPage": false, "endCursor": null}, "nodes": [{"number": 149, "title": "Add a PRs pane", "url": "https://github.com/gaurav/prcoder/issues/149", "updatedAt": "2026-10-15T19:15:43Z", "body": "", "milestone": null, "labels": {"nodes": []}}, {"number": 79, "title": "Browser-test the switcher on a clean tree and the Commit button on a dirty one", "url": "https://github.com/gaurav/prcoder/issues/79", "updatedAt": "2026-10-14T20:55:57Z", "body": "Split out of #6, which asked for assertions on the pane states that have no natural fixture. The description renderer half of that is covered by `test/browser.test.js`; this is the piece nothing asserts yet.\n\nThe pull request pane shows the PR switcher when the working tree is clean and a Commit button when it is dirty. Commit asks Claude to commit the listed files (`askClaudeToCommit` in `public/app.js`), so it is both a rendering state and a write into the session. Neither state has a test: every driver run sees whatever the checkout happened to be, and `npm test` never loads either.\n\n`test/browser.test.js` already has what this needs. It serves the real page with every route mocked and the `/pty` socket stubbed, so the two states are two `/api/status` fixtures (`dirtyFiles: []` and a non-empty list), and nothing reaches GitHub or a real Claude session. Worth asserting:\n\n- A clean tree shows the switcher and no Commit button, and a dirty one the reverse.\n- The switch happens on the next status poll, without a reload: a tree that becomes dirty mid-session is the case that matters.\n- Commit sends exactly one `{type:'input'}` naming the dirty files. Read it off the mocked socket rather than wrapping `window.WebSocket` (CLAUDE.md has why).\n- A branch with two or more pull requests of its own (#144's **On this branch** group) keeps the switcher on a dirty tree, beside Commit, with every option but the group's own disabled, since a pick there checks nothing out. `test/browser/suite.js` asserts the options' `disabled` state and the pick; the question left is whether the two controls side by side read right at the pane's 375px default, which only a screenshot answers.\n\nThe sync light and the Deleted tab were also on #6's list. The light goes away in #27, and the Deleted tab is part of driving the queue pane, which is #65.\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\n", "milestone": {"number": 1}, "labels": {"nodes": [{"name": "enhancement"}]}}]}}}};
+// The milestones' open and done counts are its answer of 2026-10-24.
+const ISSUES_PAGE = {"data": {"repository": {"milestones": {"nodes": [{"number": 1, "title": "PRCoder v1.0", "dueOn": "2026-10-14T00:00:00Z", "description": "", "openPulls": {"totalCount": 0}, "mergedPulls": {"totalCount": 2}, "closedPulls": {"totalCount": 0}, "openIssues": {"totalCount": 23}, "closedIssues": {"totalCount": 14}}, {"number": 2, "title": "PRCoder v0.1", "dueOn": "2026-10-02T00:00:00Z", "description": "The prototype as it stands: the four panes, the queue, and the things found while using it. Smaller than v1.0 and ahead of it — items here are fixes and finishes to what has already shipped, not new capability.", "openPulls": {"totalCount": 1}, "mergedPulls": {"totalCount": 2}, "closedPulls": {"totalCount": 0}, "openIssues": {"totalCount": 9}, "closedIssues": {"totalCount": 3}}, {"number": 3, "title": "Not urgent", "dueOn": null, "description": "Worth doing eventually; nothing waiting on it.", "openPulls": {"totalCount": 0}, "mergedPulls": {"totalCount": 0}, "closedPulls": {"totalCount": 0}, "openIssues": {"totalCount": 2}, "closedIssues": {"totalCount": 2}}, {"number": 4, "title": "Needed soon", "dueOn": null, "description": "Work that should land before this is used against repositories other people write in.", "openPulls": {"totalCount": 0}, "mergedPulls": {"totalCount": 1}, "closedPulls": {"totalCount": 0}, "openIssues": {"totalCount": 3}, "closedIssues": {"totalCount": 0}}, {"number": 5, "title": "Needed later", "dueOn": null, "description": null, "openPulls": {"totalCount": 0}, "mergedPulls": {"totalCount": 0}, "closedPulls": {"totalCount": 0}, "openIssues": {"totalCount": 1}, "closedIssues": {"totalCount": 0}}]}, "issues": {"totalCount": 78, "pageInfo": {"hasNextPage": false, "endCursor": null}, "nodes": [{"number": 149, "title": "Add a PRs pane", "url": "https://github.com/gaurav/prcoder/issues/149", "updatedAt": "2026-10-15T19:15:43Z", "body": "", "milestone": null, "labels": {"nodes": []}}, {"number": 79, "title": "Browser-test the switcher on a clean tree and the Commit button on a dirty one", "url": "https://github.com/gaurav/prcoder/issues/79", "updatedAt": "2026-10-14T20:55:57Z", "body": "Split out of #6, which asked for assertions on the pane states that have no natural fixture. The description renderer half of that is covered by `test/browser.test.js`; this is the piece nothing asserts yet.\n\nThe pull request pane shows the PR switcher when the working tree is clean and a Commit button when it is dirty. Commit asks Claude to commit the listed files (`askClaudeToCommit` in `public/app.js`), so it is both a rendering state and a write into the session. Neither state has a test: every driver run sees whatever the checkout happened to be, and `npm test` never loads either.\n\n`test/browser.test.js` already has what this needs. It serves the real page with every route mocked and the `/pty` socket stubbed, so the two states are two `/api/status` fixtures (`dirtyFiles: []` and a non-empty list), and nothing reaches GitHub or a real Claude session. Worth asserting:\n\n- A clean tree shows the switcher and no Commit button, and a dirty one the reverse.\n- The switch happens on the next status poll, without a reload: a tree that becomes dirty mid-session is the case that matters.\n- Commit sends exactly one `{type:'input'}` naming the dirty files. Read it off the mocked socket rather than wrapping `window.WebSocket` (CLAUDE.md has why).\n- A branch with two or more pull requests of its own (#144's **On this branch** group) keeps the switcher on a dirty tree, beside Commit, with every option but the group's own disabled, since a pick there checks nothing out. `test/browser/suite.js` asserts the options' `disabled` state and the pick; the question left is whether the two controls side by side read right at the pane's 375px default, which only a screenshot answers.\n\nThe sync light and the Deleted tab were also on #6's list. The light goes away in #27, and the Deleted tab is part of driving the queue pane, which is #65.\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\n", "milestone": {"number": 1}, "labels": {"nodes": [{"name": "enhancement"}]}}]}}}};
 
 test('the issue listing reaches GitHub as variables, and becomes milestones and issues the tab can draw', { skip: unix }, async () => {
   const args = await ghArgs(() => repoIssues(os.tmpdir(), '12345', 'x"){ viewer').catch(() => {}));
@@ -298,6 +354,12 @@ test('the issue listing reaches GitHub as variables, and becomes milestones and 
   const query = args.slice(at, args.indexOf('-f', at)).join('\n');
   assert.ok(!query.includes('12345') && !query.includes('x"){ viewer'), query);
   assert.ok(query.includes('milestones(') && query.includes('labels('), query);
+  // Both tabs read the whole milestone: merged and closed pull requests apart,
+  // since a closed one is neither done nor still to do.
+  for (const alias of ['openPulls: pullRequests(states:OPEN)', 'mergedPulls: pullRequests(states:MERGED)', 'closedPulls: pullRequests(states:CLOSED)',
+    'openIssues: issues(states:OPEN)', 'closedIssues: issues(states:CLOSED)']) {
+    assert.ok(query.includes(alias), alias);
+  }
 
   await withGh(() => `cat <<'JSON'\n${JSON.stringify(ISSUES_PAGE)}\nJSON`, async () => {
     const got = await repoIssues(os.tmpdir(), 'gaurav', 'prcoder');
@@ -307,6 +369,9 @@ test('the issue listing reaches GitHub as variables, and becomes milestones and 
       [1, 'PRCoder v1.0', '2026-10-14T00:00:00Z'], [2, 'PRCoder v0.1', '2026-10-02T00:00:00Z'],
       [3, 'Not urgent', null], [4, 'Needed soon', null], [5, 'Needed later', null]]);
     assert.equal(got.milestones[4].description, '', 'a null description is nothing');
+    // The whole milestone's counts, pull requests' as well as issues'.
+    assert.deepEqual(got.milestones[0].counts, { pulls: { open: 0, merged: 2, closed: 0 }, issues: { open: 23, closed: 14 } });
+    assert.deepEqual(got.milestones[4].counts, { pulls: { open: 0, merged: 0, closed: 0 }, issues: { open: 1, closed: 0 } });
     assert.deepEqual(got.issues[0], { number: 149, title: 'Add a PRs pane', url: 'https://github.com/gaurav/prcoder/issues/149',
       updatedAt: '2026-10-15T19:15:43Z', body: '', milestone: null, labels: [] });
     assert.equal(got.issues[1].milestone, 1);
@@ -320,10 +385,14 @@ test('the issue listing reaches GitHub as variables, and becomes milestones and 
   const stray = structuredClone(ISSUES_PAGE);
   stray.data.repository.issues.nodes[0].milestone = { number: 7, title: 'v0.0', dueOn: '2026-09-01T00:00:00Z', state: 'CLOSED' };
   stray.data.repository.issues.nodes[1].milestone = { number: 1, title: 'PRCoder v1.0', dueOn: '2026-10-14T00:00:00Z', state: 'OPEN' };
-  await withGh(() => `cat <<'JSON'\n${JSON.stringify(stray)}\nJSON`, async () => {
+  // Its counts are asked for after the listing; four of the five are as good
+  // as none, since a pie needs them all.
+  const four = { data: { repository: { m7: { openPulls: { totalCount: 0 }, mergedPulls: { totalCount: 1 }, openIssues: { totalCount: 1 }, closedIssues: { totalCount: 4 } } } } };
+  await withGh(() => `case "$*" in\n*m7:*) cat <<'JSON'\n${JSON.stringify(four)}\nJSON\n;;\n*) cat <<'JSON'\n${JSON.stringify(stray)}\nJSON\n;;\nesac`, async () => {
     const got = await repoIssues(os.tmpdir(), 'gaurav', 'prcoder');
     assert.deepEqual(got.milestones.map((m) => [m.number, m.closed]), [[1, false], [2, false], [3, false], [4, false], [5, false], [7, true]]);
-    assert.deepEqual(got.milestones[5], { number: 7, title: 'v0.0', dueOn: '2026-09-01T00:00:00Z', description: '', closed: true });
+    assert.deepEqual(got.milestones[5], { number: 7, title: 'v0.0', dueOn: '2026-09-01T00:00:00Z', description: '', closed: true, counts: null },
+      'a node without all its counts has none');
     assert.equal(got.issues[0].milestone, 7);
   });
 
@@ -357,6 +426,153 @@ test('a second page of issues is read with its cursor, and the milestones come f
   // gh failing is a failure here, not an empty tab.
   await withGh(() => `echo 'error connecting to api.github.com' >&2\nexit 1`, () =>
     assert.rejects(repoIssues(os.tmpdir(), 'gaurav', 'prcoder'), { message: 'error connecting to api.github.com' }));
+});
+
+// The opened row's select offers every open milestone, so they are read past
+// the first page, with their own query, asked for once.
+test('open milestones past the first page are read with their cursor', { skip: unix }, async () => {
+  const first = structuredClone(ISSUES_PAGE);
+  first.data.repository.milestones.pageInfo = { hasNextPage: true, endCursor: 'M1' };
+  const more = { data: { repository: { milestones: {
+    pageInfo: { hasNextPage: false, endCursor: 'M2' },
+    nodes: [{ number: 60, title: 'v6', dueOn: null, description: 'later', openPulls: { totalCount: 0 }, mergedPulls: { totalCount: 0 }, closedPulls: { totalCount: 0 }, openIssues: { totalCount: 1 }, closedIssues: { totalCount: 0 } }],
+  } } } };
+  const script = `case "$*" in\n*after=M1*) cat <<'JSON'\n${JSON.stringify(more)}\nJSON\n;;\n*) cat <<'JSON'\n${JSON.stringify(first)}\nJSON\n;;\nesac`;
+  const { out, calls } = await ghCalls(script, () => repoIssues(os.tmpdir(), 'gaurav', 'prcoder'));
+  assert.equal(out.milestones.length, 6);
+  assert.deepEqual(out.milestones.at(-1), { number: 60, title: 'v6', dueOn: null, description: 'later', closed: false,
+    counts: { pulls: { open: 0, merged: 0, closed: 0 }, issues: { open: 1, closed: 0 } } });
+  assert.equal(calls.length, 2);
+  const paged = calls.find((c) => c.includes('after=M1'));
+  assert.equal(paged[paged.indexOf('after=M1') - 1], '-f');
+});
+
+test('open milestones past the first page of pull requests\' are read too', { skip: unix }, async () => {
+  const first = structuredClone(PULLS_PAGE);
+  first.data.repository.milestones.pageInfo = { hasNextPage: true, endCursor: 'M1' };
+  const more = { data: { repository: { milestones: {
+    pageInfo: { hasNextPage: false, endCursor: 'M2' },
+    nodes: [{ number: 60, title: 'v6', dueOn: null, description: '', openPulls: { totalCount: 0 }, mergedPulls: { totalCount: 0 }, closedPulls: { totalCount: 0 }, openIssues: { totalCount: 1 }, closedIssues: { totalCount: 0 } }],
+  } } } };
+  const script = `case "$*" in\n*after=M1*) cat <<'JSON'\n${JSON.stringify(more)}\nJSON\n;;\n*) cat <<'JSON'\n${JSON.stringify(first)}\nJSON\n;;\nesac`;
+  const { out, calls } = await ghCalls(script, () => repoPulls(os.tmpdir(), 'gaurav', 'prcoder'));
+  assert.ok(out.milestones.some((m) => m.number === 60));
+  assert.equal(calls.length, 3, 'the listing, the milestones past it, and the closed milestone\'s counts');
+});
+
+// The one write about an issue, through the endpoint a pull request's goes
+// through too: by number as -F, so it reaches GitHub as an Int or a null, and
+// an answer that does not name that milestone is a failure, since GitHub drops
+// the change without saying so for a caller with no push access.
+test('an issue is put on a milestone by number, and a change GitHub dropped is an error', { skip: unix }, async () => {
+  const issue = { owner: 'o', repo: 'r', number: 58 };
+  const on = await ghCalls(`echo '{"number":58,"milestone":{"number":4,"title":"Needed soon"}}'`, () => setIssueMilestone(os.tmpdir(), issue, 4));
+  assert.deepEqual(on.calls[0], ['api', '-X', 'PATCH', 'repos/o/r/issues/58', '-F', 'milestone=4']);
+  assert.deepEqual(on.out, { number: 4, title: 'Needed soon', dueOn: null });
+  const off = await ghCalls(`echo '{"number":58,"milestone":null}'`, () => setIssueMilestone(os.tmpdir(), issue, null));
+  assert.deepEqual(off.calls[0].slice(-2), ['-F', 'milestone=null']);
+  await assert.rejects(ghCalls(`echo '{"number":58,"milestone":null}'`, () => setIssueMilestone(os.tmpdir(), issue, 4)), /GitHub left #58 on no milestone/);
+});
+
+// The repository's open pull requests and milestones, as GitHub answered for
+// gaurav/prcoder on 2026-10-19, cut to two of the six and three files each,
+// with a milestone, a label, a viewed file, a closed milestone, a review
+// decision, a conflict and CRLF bodies put on them for the mapping to show.
+// The milestones' open and done counts are its answer of 2026-10-24; a row's
+// milestone carries none, as the query no longer asks.
+const PULLS_PAGE = {"data": {"repository": {"milestones": {"nodes": [{"number": 1, "title": "PRCoder v1.0", "dueOn": "2026-10-14T00:00:00Z", "description": "", "openPulls": {"totalCount": 0}, "mergedPulls": {"totalCount": 2}, "closedPulls": {"totalCount": 0}, "openIssues": {"totalCount": 23}, "closedIssues": {"totalCount": 14}}, {"number": 2, "title": "PRCoder v0.1", "dueOn": "2026-10-02T00:00:00Z", "description": "The prototype as it stands: the four panes, the queue, and the things found while using it. Smaller than v1.0 and ahead of it \u2014 items here are fixes and finishes to what has already shipped, not new capability.", "openPulls": {"totalCount": 1}, "mergedPulls": {"totalCount": 2}, "closedPulls": {"totalCount": 0}, "openIssues": {"totalCount": 9}, "closedIssues": {"totalCount": 3}}, {"number": 3, "title": "Not urgent", "dueOn": null, "description": "Worth doing eventually; nothing waiting on it.", "openPulls": {"totalCount": 0}, "mergedPulls": {"totalCount": 0}, "closedPulls": {"totalCount": 0}, "openIssues": {"totalCount": 2}, "closedIssues": {"totalCount": 2}}, {"number": 4, "title": "Needed soon", "dueOn": null, "description": "Work that should land before this is used against repositories other people write in.", "openPulls": {"totalCount": 0}, "mergedPulls": {"totalCount": 1}, "closedPulls": {"totalCount": 0}, "openIssues": {"totalCount": 3}, "closedIssues": {"totalCount": 0}}, {"number": 5, "title": "Needed later", "dueOn": null, "description": null, "openPulls": {"totalCount": 0}, "mergedPulls": {"totalCount": 0}, "closedPulls": {"totalCount": 0}, "openIssues": {"totalCount": 1}, "closedIssues": {"totalCount": 0}}]}, "pullRequests": {"totalCount": 6, "pageInfo": {"hasNextPage": false, "endCursor": null}, "nodes": [{"number": 156, "title": "Mark a pull request's #N in the description, and show every mention's title on hover", "url": "https://github.com/gaurav/prcoder/pull/156", "isDraft": true, "isCrossRepository": false, "headRefName": "pr-refs-inline", "baseRefName": "issues-tab", "createdAt": "2026-10-17T08:38:19Z", "updatedAt": "2026-10-17T08:49:05Z", "author": {"login": "gaurav"}, "additions": 58, "deletions": 5, "changedFiles": 4, "mergeStateStatus": "CLEAN", "reviewDecision": null, "body": "A bare `#N` in a pull request's description links to `/issues/N` whatever it is.\r\n\r\n## Why\r\n\r\nGitHub redirects a pull request's number.", "milestone": {"number": 4, "title": "Needed soon", "dueOn": null, "state": "OPEN"}, "labels": {"nodes": [{"name": "enhancement"}]}, "closingIssuesReferences": {"nodes": []}, "files": {"nodes": [{"additions": 2, "deletions": 2, "viewerViewedState": "UNVIEWED"}, {"additions": 27, "deletions": 3, "viewerViewedState": "VIEWED"}, {"additions": 8, "deletions": 0, "viewerViewedState": "UNVIEWED"}]}}, {"number": 152, "title": "Make the queue's Issues tab the repository's open issues, grouped by milestone and searchable, and tag pull requests PR #N", "url": "https://github.com/gaurav/prcoder/pull/152", "isDraft": true, "isCrossRepository": false, "headRefName": "issues-tab", "baseRefName": "main", "createdAt": "2026-10-15T22:59:24Z", "updatedAt": "2026-10-17T08:44:42Z", "author": {"login": "gaurav"}, "additions": 942, "deletions": 109, "changedFiles": 15, "mergeStateStatus": "DIRTY", "reviewDecision": "APPROVED", "body": "## Heading first\r\n\r\nThe queue's Issues tab showed only the issues the description mentions without closing.", "milestone": {"number": 9, "title": "PRCoder v0.9", "dueOn": "2026-09-01T00:00:00Z", "state": "CLOSED"}, "labels": {"nodes": []}, "closingIssuesReferences": {"nodes": [{"number": 58, "title": "Decide what the queue's Issues tab shows beyond the description's mentions", "url": "https://github.com/gaurav/prcoder/issues/58", "milestone": {"title": "PRCoder v1.0"}}]}, "files": {"nodes": [{"additions": 4, "deletions": 4, "viewerViewedState": "UNVIEWED"}, {"additions": 3, "deletions": 2, "viewerViewedState": "UNVIEWED"}, {"additions": 8, "deletions": 3, "viewerViewedState": "UNVIEWED"}]}}]}}}};
+
+test('the pull request listing reaches GitHub as variables, and becomes milestones and rows the tab can draw', { skip: unix }, async () => {
+  const args = await ghArgs(() => repoPulls(os.tmpdir(), '12345', 'x"){ viewer').catch(() => {}));
+  assert.equal(args[args.indexOf('owner=12345') - 1], '-f');
+  assert.equal(args[args.indexOf('repo=x"){ viewer') - 1], '-f');
+  const at = args.findIndex((a) => a.startsWith('query='));
+  const query = args.slice(at, args.indexOf('-f', at)).join('\n');
+  assert.ok(!query.includes('12345') && !query.includes('x"){ viewer'), query);
+  for (const field of ['milestones(', 'pullRequests(', 'mergeStateStatus', 'viewerViewedState', 'closingIssuesReferences', 'author{ login }',
+    'mergedPulls: pullRequests(states:MERGED)', 'openIssues: issues(states:OPEN)']) {
+    assert.ok(query.includes(field), field);
+  }
+  // Nothing that costs a connection per pull request -- a row's milestone's
+  // counts included, which strayCounts reads for the few that need them.
+  assert.ok(!query.includes('reviewThreads') && !query.includes('comments'), query);
+  assert.match(query, /milestone\{ number title dueOn state \}/);
+
+  // The closed milestone's counts are asked for on their own, after the
+  // listing: the rows' milestones do not carry them.
+  const counted = { data: { repository: { m9: { openPulls: { totalCount: 1 }, mergedPulls: { totalCount: 3 }, closedPulls: { totalCount: 1 }, openIssues: { totalCount: 2 }, closedIssues: { totalCount: 6 } } } } };
+  const answer = `case "$*" in\n*m9:*) cat <<'JSON'\n${JSON.stringify(counted)}\nJSON\n;;\n*) cat <<'JSON'\n${JSON.stringify(PULLS_PAGE)}\nJSON\n;;\nesac`;
+  const { calls: [countCall] } = await ghCalls(answer, async () => {
+    const got = await repoPulls(os.tmpdir(), 'gaurav', 'prcoder');
+    assert.equal(got.total, 6);
+    assert.equal(got.listed, 2);
+    // The open milestones, and the closed one a listed pull request is still on, after them.
+    assert.deepEqual(got.milestones.map((m) => [m.number, m.title, m.dueOn, m.closed]), [
+      [1, 'PRCoder v1.0', '2026-10-14T00:00:00Z', false], [2, 'PRCoder v0.1', '2026-10-02T00:00:00Z', false],
+      [3, 'Not urgent', null, false], [4, 'Needed soon', null, false], [5, 'Needed later', null, false],
+      [9, 'PRCoder v0.9', '2026-09-01T00:00:00Z', true]]);
+    assert.equal(got.milestones[4].description, '', 'a null description is nothing');
+    // The whole milestone's counts, issues' as well; the closed milestone's
+    // come from the call after the listing.
+    assert.deepEqual(got.milestones[1].counts, { pulls: { open: 1, merged: 2, closed: 0 }, issues: { open: 9, closed: 3 } });
+    assert.deepEqual(got.milestones[5].counts, { pulls: { open: 1, merged: 3, closed: 1 }, issues: { open: 2, closed: 6 } });
+    const [first, second] = got.pulls;
+    // The switcher's seven fields under their names, and the rest the row draws.
+    assert.deepEqual([first.number, first.title, first.url, first.isDraft, first.isCrossRepository, first.headRefName, first.baseRefName],
+      [156, "Mark a pull request's #N in the description, and show every mention's title on hover", 'https://github.com/gaurav/prcoder/pull/156', true, false, 'pr-refs-inline', 'issues-tab']);
+    assert.deepEqual([first.author, first.additions, first.deletions, first.changedFiles, first.lines, first.milestone, first.labels, first.merge, first.reviewDecision],
+      ['gaurav', 58, 5, 4, 63, 4, ['enhancement'], 'ready', null]);
+    assert.equal(first.createdAt, '2026-10-17T08:38:19Z');
+    // The pie is the Files tab's: by changed lines viewed, over the files listed, against the pull request's own counts.
+    assert.equal(first.viewed.label, '1 of 4 files, 30 of 63 changed lines viewed');
+    assert.ok(first.viewed.p > 0.4 && first.viewed.p < 0.5 && !first.viewed.full, JSON.stringify(first.viewed));
+    // The lead is the first paragraph as one line of plain text; the body is the whole of it, LF-ended.
+    assert.equal(first.lead, "A bare `#N` in a pull request's description links to `/issues/N` whatever it is.");
+    assert.equal(first.body, "A bare `#N` in a pull request's description links to `/issues/N` whatever it is.\n\n## Why\n\nGitHub redirects a pull request's number.");
+    assert.deepEqual(first.closes, []);
+    // A description that opens with a heading still has a first paragraph.
+    assert.equal(second.lead, "The queue's Issues tab showed only the issues the description mentions without closing.");
+    assert.deepEqual([second.merge, second.reviewDecision, second.milestone], ['conflicts', 'APPROVED', 9]);
+    assert.deepEqual(second.closes, [{ number: 58, url: 'https://github.com/gaurav/prcoder/issues/58',
+      title: "Decide what the queue's Issues tab shows beyond the description's mentions", milestone: 'PRCoder v1.0' }]);
+    assert.ok(!('files' in first) && !('closingIssuesReferences' in first) && !('mergeStateStatus' in first), 'GitHub\'s own shapes stay here');
+  }).then(({ calls }) => ({ calls: calls.filter((c) => c.some((a) => a.includes('m9: milestone(number:9)'))) }));
+  assert.ok(countCall, 'one call for the closed milestone\'s counts');
+  assert.equal(countCall[countCall.indexOf('owner=gaurav') - 1], '-f');
+  // The counts only draw a pie, so a call for them that fails costs the pie
+  // and not the listing.
+  const failing = `case "$*" in\n*m9:*) echo 'error connecting to api.github.com' >&2; exit 1;;\n*) cat <<'JSON'\n${JSON.stringify(PULLS_PAGE)}\nJSON\n;;\nesac`;
+  await withGh(() => failing, async () => {
+    const got = await repoPulls(os.tmpdir(), 'gaurav', 'prcoder');
+    assert.equal(got.pulls.length, 2);
+    assert.deepEqual(got.milestones.map((m) => [m.number, !!m.counts]), [[1, true], [2, true], [3, true], [4, true], [5, true], [9, false]]);
+  });
+
+  // Every merge state GitHub documents has a word, and one it does not is `checking…`.
+  assert.deepEqual(Object.keys(MERGE_WORD).sort(), ['BEHIND', 'BLOCKED', 'CLEAN', 'DIRTY', 'DRAFT', 'HAS_HOOKS', 'UNKNOWN', 'UNSTABLE']);
+  assert.equal(pullRow({ number: 1, mergeStateStatus: 'NEW_ONE' }).merge, 'checking…');
+  assert.equal(pullRow({ number: 1, title: '\x1b\r' }).title, '#1', 'a title of control characters is the number');
+  assert.deepEqual(pullRow({ number: 1, labels: { nodes: [{ name: 'needs\x1b[2Jreview' }, { name: '\r' }, {}] } }).labels, ['needs [2Jreview'],
+    'a label is cleaned as the Issues tab cleans one');
+  assert.deepEqual(pullRow({ number: 1 }).viewed.count, { done: 0, total: 0 });
+});
+
+test('a second page of pull requests is read with its cursor, and a failure is a failure', { skip: unix }, async () => {
+  const first = structuredClone(PULLS_PAGE);
+  first.data.repository.pullRequests.pageInfo = { hasNextPage: true, endCursor: 'C1' };
+  const second = structuredClone(PULLS_PAGE);
+  second.data.repository.milestones.nodes = [];
+  second.data.repository.pullRequests.nodes = [{ ...PULLS_PAGE.data.repository.pullRequests.nodes[0], number: 3, milestone: null }];
+  const script = `if [ -e "$(dirname "$0")/again" ]; then cat <<'JSON'\n${JSON.stringify(second)}\nJSON\nelse\ntouch "$(dirname "$0")/again"\ncat <<'JSON'\n${JSON.stringify(first)}\nJSON\nfi`;
+  const { out, calls } = await ghCalls(script, () => repoPulls(os.tmpdir(), 'gaurav', 'prcoder'));
+  assert.deepEqual(out.pulls.map((p) => p.number), [156, 152, 3]);
+  assert.equal(out.listed, 3);
+  assert.equal(out.milestones.length, 6, 'the first page\'s milestones, and the closed one');
+  assert.equal(calls.length, 3, 'two pages, and the closed milestone\'s counts');
+  const paged = calls.find((c) => c.includes('after=C1'));
+  assert.equal(paged[paged.indexOf('after=C1') - 1], '-f');
+  await withGh(() => `echo 'error connecting to api.github.com' >&2\nexit 1`, () =>
+    assert.rejects(repoPulls(os.tmpdir(), 'gaurav', 'prcoder'), { message: 'error connecting to api.github.com' }));
 });
 
 // A title becomes a queue item that ▶ types into the PTY, where a \r would
@@ -406,7 +622,8 @@ test('the cheap per-poll call carries the checks, summarised', { skip: unix }, a
 // GraphQL call that came next: loadPr reads the linked issues alongside the
 // files, and a call of theirs would take a page and shift the rest by one.
 // The mentions' titles query (issueLinks) gets `links.json` where a test has
-// written one. Any other GraphQL call gets an empty answer. The counter is not atomic, so
+// written one, or `links-<owner>.json` when it asks another owner's repository
+// and the test has written that. Any other GraphQL call gets an empty answer. The counter is not atomic, so
 // only the file pages, which prFiles asks for one at a time, may use it.
 const withPr = (view, pages, fn, views = []) => withGh((dir) => [
   'case "$1" in',
@@ -415,7 +632,9 @@ const withPr = (view, pages, fn, views = []) => withGh((dir) => [
   `      if [ -f "${dir}/view$v.json" ]; then cat "${dir}/view$v.json"; else cat "${dir}/view.json"; fi ;;`,
   `  *) case "$*" in`,
   `       *"files(first:100"*) n=$(( $(cat "${dir}/n" 2>/dev/null || echo 0) + 1 )); echo $n > "${dir}/n"; cat "${dir}/page$n.json" ;;`,
-  `       *"issueOrPullRequest"*) cat "${dir}/links.json" 2>/dev/null || echo '{"data":{}}' ;;`,
+  `       *"issueOrPullRequest"*) f="${dir}/links.json"`,
+  `         for a in "$@"; do case "$a" in owner=*) [ -f "${dir}/links-\${a#owner=}.json" ] && f="${dir}/links-\${a#owner=}.json" ;; esac; done`,
+  `         cat "$f" 2>/dev/null || echo '{"data":{}}' ;;`,
   `       *) echo '{"data":{}}' ;;`,
   '     esac ;;',
   'esac',
@@ -535,6 +754,22 @@ test('a mention carries the kind, title and URL its lookup found', { skip: unix 
       { number: 3, kind: 'pull', title: 'Earlier work', url: 'https://github.com/o/r/pull/3' },
       { number: 4, kind: 'issue', title: 'A bug', url: 'https://github.com/o/r/issues/4' },
       { number: 5, kind: null, title: null, url: 'https://github.com/o/r/issues/5' }]);
+  });
+});
+
+// Asked of this repository, another's #3 was this one's #3; not asked at all,
+// it had no title. So it is asked of its own repository, in a call of its own.
+test("another repository's closing reference is titled from that repository", { skip: unix }, async () => {
+  const other = { number: 3, url: 'https://github.com/other/repo/issues/3', repository: { name: 'repo', owner: { login: 'other' } } };
+  await withPr({ ...view, body: 'Fixes other/repo#3; see #3.', closingIssuesReferences: [other] }, [page([file(1)], null)], async (dir) => {
+    const answer = (title, url) => JSON.stringify({ data: { repository: {
+      i3: { __typename: 'Issue', title, url, state: 'OPEN', updatedAt: '2026-10-01T00:00:00Z' } } } });
+    await fs.writeFile(path.join(dir, 'links.json'), answer('Ours', 'https://github.com/o/r/issues/3'));
+    await fs.writeFile(path.join(dir, 'links-other.json'), answer('Theirs', 'https://github.com/other/repo/issues/3'));
+    const pr = await loadPr(os.tmpdir(), undefined, { pause: 0 });
+    assert.deepEqual(pr.issues.map(({ repo, title, url }) => ({ repo, title, url })), [
+      { repo: 'other/repo', title: 'Theirs', url: 'https://github.com/other/repo/issues/3' },
+      { repo: undefined, title: 'Ours', url: 'https://github.com/o/r/issues/3' }]);
   });
 });
 
