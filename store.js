@@ -334,7 +334,8 @@ export async function writePrs(repo, branch, entry, now = Date.now()) {
  * case-blind as prsEntry compares, and a milestone only with an integer number and
  * a string title. The issues a row closes become links, so their URLs are held
  * to GitHub issue links too (closesOf). The rest of a row is drawn as text, or
- * rendered through the description's allowlist (docs/Security.md).
+ * rendered through the description's allowlist (docs/Security.md), and held to
+ * the types the tab draws it by (pullOf).
  */
 const PULLS_FILE = 'pulls.json';
 const pullsFile = (repo) => path.join(dir(repo), PULLS_FILE);
@@ -352,8 +353,37 @@ const closesOf = (list) => (Array.isArray(list) ? list : [])
   .filter((i) => i && Number.isInteger(i.number))
   .map((i) => {
     const l = link(i.url);
-    return { ...i, url: l && !l.kind && l.issue === i.number ? i.url : null };
+    return { ...i, url: l && !l.kind && l.issue === i.number ? i.url : null, title: str(i.title) || `#${i.number}`, milestone: str(i.milestone) };
   });
+
+const str = (v) => (typeof v === 'string' ? v : null);
+const count = (v) => (Number.isFinite(v) ? v : 0);
+
+/**
+ * A cached row in the shape pullRow (github.js) makes, each field the tab reads
+ * held to its type and anything else read as none -- a label that is not a
+ * list, a merge word that is a number -- since the tab draws a row by calling
+ * string and array methods on them, and one throw there leaves the whole tab
+ * undrawn until a read of GitHub replaces the listing. Fields the tab does not
+ * read are kept as they are.
+ */
+const pullOf = (p) => ({
+  ...p,
+  title: str(p.title) || `#${p.number}`,
+  isDraft: p.isDraft === true, isCrossRepository: p.isCrossRepository === true,
+  headRefName: str(p.headRefName) ?? '', baseRefName: str(p.baseRefName) ?? '',
+  createdAt: str(p.createdAt), updatedAt: str(p.updatedAt), author: str(p.author),
+  additions: count(p.additions), deletions: count(p.deletions), changedFiles: count(p.changedFiles), lines: count(p.lines),
+  viewed: p.viewed && typeof p.viewed === 'object' && Number.isFinite(p.viewed.p)
+    ? { ...p.viewed, full: p.viewed.full === true, label: str(p.viewed.label) ?? '' } : null,
+  // MERGE_WORD.UNKNOWN's word: what GitHub not knowing yet reads as.
+  merge: str(p.merge) ?? 'checking…',
+  reviewDecision: str(p.reviewDecision),
+  milestone: Number.isInteger(p.milestone) ? p.milestone : null,
+  labels: Array.isArray(p.labels) ? p.labels.filter((l) => typeof l === 'string') : [],
+  lead: str(p.lead) ?? '', body: str(p.body) ?? '',
+  closes: closesOf(p.closes),
+});
 
 /** The listing as read from disk, or null for anything that is not this repository's. */
 function pullsEntry(parsed, nameWithOwner) {
@@ -363,8 +393,10 @@ function pullsEntry(parsed, nameWithOwner) {
   const pulls = parsed.pulls.filter((p) => {
     const l = link(p?.url);
     return p && Number.isInteger(p.number) && l?.kind === 'pull' && l.issue === p.number && sameRepo(l.repo, nameWithOwner);
-  }).map((p) => ({ ...p, closes: closesOf(p.closes) }));
-  const milestones = parsed.milestones.filter((m) => m && Number.isInteger(m.number) && typeof m.title === 'string' && m.title);
+  }).map(pullOf);
+  // A due date that is not one is none: dueDay (public/items.js) throws on it.
+  const milestones = parsed.milestones.filter((m) => m && Number.isInteger(m.number) && typeof m.title === 'string' && m.title)
+    .map((m) => ({ ...m, dueOn: typeof m.dueOn === 'string' && Number.isFinite(Date.parse(m.dueOn)) ? m.dueOn : null }));
   const total = Number.isInteger(parsed.total) ? parsed.total : pulls.length;
   return { read, milestones, pulls, total, listed: pulls.length };
 }

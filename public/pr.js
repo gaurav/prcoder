@@ -1,7 +1,7 @@
 import { withoutHtml, mention, unmarked, mdLink, bareUrl, opens, repoUrl, urlPath, blocks, sectionize } from './tasks.js';
-import { kids, h, btn, ext, debug, tabBtn, writeThrough, fraction, mark, kept, fold } from './ui.js';
+import { kids, h, btn, ext, debug, tabBtn, writeThrough, fraction, mark, kept, fold, replaceKeeping } from './ui.js';
 import { fileTree, fileGroup, filesProgress, unlisted } from './filelist.js';
-import { refLabel, refClass } from './items.js';
+import { refLabel, refClass, rankMilestones, dueLabel, dueDay } from './items.js';
 
 // Re-exported for the tests, which read the pane's view of a body through here.
 export { withoutHtml };
@@ -761,6 +761,7 @@ function renderPrHead(pr, parsed, handlers) {
     // `pr-links` carries no style of its own -- it is the hook tools/browser.mjs
     // measures the row by, so it is not dead CSS to clean up.
     links: linkRow(ways.links, 'meta pr-ways pr-links', ways.repo),
+    milestone: milestoneRow(pr, handlers),
     state: h('div', { className: 'meta pr-state' },
       badge(state, state),
       h('span', {}, `${arrow.head} → ${arrow.base}`, under ? ' (' : null,
@@ -786,18 +787,180 @@ function renderPrHead(pr, parsed, handlers) {
 }
 
 /**
+ * The milestone picker's options: none first, then the repository's open
+ * milestones in the order the Issues tab groups them (rankMilestones), so the
+ * dated ones come soonest first. Each is its title alone, with its due date
+ * as `title`, the option's tooltip: in the text it was said twice on the line
+ * once picked, beside the due date after the picker, and took the width a
+ * long title needs. The pull request's own milestone is
+ * always among them, last when the list lacks it -- closed, past the fifty
+ * read, or no list yet (`list` is null until the page has one) -- so the
+ * picker can show where the pull request is whatever was read.
+ *
+ * "None" says the pull request wants triage while it is on none, since that
+ * is the state it should not be left in; once it is on one, picking none is
+ * taking it off, and says so plainly.
+ */
+export const milestoneChoices = (current, list) => {
+  const open = rankMilestones(list ?? []);
+  const all = current && !open.some((m) => m.number === current.number) ? [...open, current] : open;
+  return [
+    { value: '', text: current ? 'no milestone' : 'no milestone — needs triage' },
+    ...all.map((m) => ({ value: String(m.number), text: m.title, ...(m.dueOn ? { title: `due ${dueDay(m.dueOn)}` } : {}) })),
+  ];
+};
+
+/**
+ * A kept picker brought up to what `fresh` says, in place. An option already
+ * there stays the same node, and only what differs is touched, so an open
+ * dropdown gets a new milestone rather than closing or losing its highlight.
+ * The value is set only when the pull request's own milestone has moved, since
+ * the select's may be what a keyboard is browsing in an open dropdown.
+ */
+const updatePicker = (live, fresh) => {
+  live.title = fresh.title;
+  live.disabled = fresh.disabled;
+  live.toggleAttribute('data-listed', 'listed' in fresh.dataset);
+  const have = new Map([...live.options].map((o) => [o.value, o]));
+  [...fresh.options].forEach((want, i) => {
+    const o = have.get(want.value) ?? want;
+    have.delete(want.value);
+    if (o !== want) {
+      if (o.textContent !== want.textContent) o.textContent = want.textContent;
+      o.title = want.title;
+    }
+    if (live.options[i] !== o) live.insertBefore(o, live.options[i] ?? null);
+  });
+  have.forEach((o) => o.remove());
+  if (live.dataset.on !== fresh.dataset.on) {
+    live.dataset.on = fresh.dataset.on;
+    live.value = fresh.dataset.on;
+  }
+};
+
+/**
+ * The milestone line, between the links and the state: which milestone the
+ * pull request is on, as a picker that moves it to another or off them.
+ *
+ * Drawn on every pull request, on a milestone or not. One on none is the one
+ * that needs a decision, so the line is there to say so -- in the warning
+ * colour (`.untriaged`) -- and to make it, rather than appearing only once
+ * the decision is made on GitHub. It was a chip at the end of the links row
+ * to begin with, which said nothing on a pull request with no milestone and
+ * had nowhere to put a picker. A line of its own also gives a long title room
+ * without wrapping the links.
+ *
+ * The word in front links to the milestone on GitHub while there is one, and
+ * a dated milestone has its due date after the picker as the queue's
+ * milestone lines say it (dueLabel): `due in 3 days`, yellow within a week,
+ * a red badge once past, the date on hover. The picker takes the rest of the
+ * line, so a long title has the room before it ellipsizes. The
+ * options are milestoneChoices over `handlers.milestones`, which app.js reads
+ * when the pull request's repository changes and again as the pointer or the
+ * focus reaches the picker (`onMilestoneReach`), as the switcher's list is. A
+ * pick goes to `onMilestone` with this pull request's URL and the number, or null for none; the picker
+ * gives up the focus as it does, so the answer redraws it too (paintHead).
+ * Until GitHub answers it shows the pick, disabled (`handlers.picking`).
+ */
+// What moves a closed select's value: an arrow, a page or end key, or a letter to
+// find by. Space is not one: it opens the dropdown.
+const BROWSING_KEY = /^(Arrow.*|Page.*|Home|End|[^ ])$/;
+// How long after a browsing key a change is still that key's. Long enough for a
+// browser that sends the change after the key rather than while handling it,
+// and short beside the time a person takes to pick from a menu the key opened.
+const BROWSE_MS = 300;
+
+const milestoneRow = (pr, { milestones = null, picking = null, onMilestone, onMilestoneReach } = {}) => {
+  const m = pr.milestone;
+  const on = (picking ? picking.number : m?.number) ?? '';
+  const sel = h('select', {
+    // `listed` once the repository's list is in, for a driver to wait on: the
+    // options alone cannot say, as a repository with none open has none.
+    ariaLabel: 'milestone', disabled: !onMilestone || !!picking,
+    dataset: { pr: pr.url, keep: `milestone ${pr.url}`, on: String(on), ...(milestones ? { listed: '' } : {}) },
+    title: m ? 'move this pull request to another milestone' : 'not on a milestone: pick one to triage it',
+  }, ...milestoneChoices(m, milestones).map((c) => h('option', { value: c.value, ...(c.title ? { title: c.title } : {}) }, c.text)));
+  sel.value = sel.dataset.on;
+  // Held through a redraw while it has the focus (paintHead), and brought up to
+  // the picker that redraw drew.
+  sel.refresh = (fresh) => updatePicker(sel, fresh);
+  // A closed select changes on a bare key, and a change here is a write to
+  // GitHub: a letter on its way to the terminal moved the pull request, and an
+  // arrow did on Windows and Linux. A page cannot ask whether a dropdown is
+  // open, but a choice from an open dropdown comes on Enter or a click, and a
+  // key that browses changes the value as it is handled. So a change within
+  // BROWSE_MS of a browsing key is put back, unless an Enter came between, and
+  // to pick by keyboard is to open the dropdown first. keypress too, as that is
+  // where type-ahead happens.
+  //
+  // A time from the key rather than a flag a zero-delay timer clears, as this
+  // was at first: that held only while the change came before the timer, and
+  // browsers do not promise the order -- one that sends the change a task later
+  // let the key write. Not cleared on keyup either: on a Mac an arrow opens a
+  // native menu that keeps the keyup, and the mouse pick from that menu, a
+  // person's time later, would then be put back. And some browsers have sent
+  // the change for a key only as the select loses the focus: a browsing key
+  // means the select had the focus, so a change after one that comes with the
+  // focus already elsewhere is put back, and a value a key moved is put back at
+  // the blur, before a change sent after it. All this goes when #174's picker
+  // of our own replaces the select.
+  let browsedAt = -Infinity;
+  let keyed = false;
+  const browse = (e) => {
+    if (e.key === 'Enter') {
+      browsedAt = -Infinity;
+      keyed = false;
+      return;
+    }
+    if (e.ctrlKey || e.metaKey || e.altKey || !BROWSING_KEY.test(e.key)) return;
+    browsedAt = performance.now();
+    keyed = true;
+  };
+  sel.onkeydown = browse;
+  sel.onkeypress = browse;
+  sel.onblur = () => {
+    if (keyed && sel.value !== sel.dataset.on) sel.value = sel.dataset.on;
+    keyed = false;
+  };
+  sel.onchange = () => {
+    const left = keyed && document.activeElement !== sel;
+    keyed = false;
+    if (left || performance.now() - browsedAt < BROWSE_MS || sel.value === sel.dataset.on) {
+      sel.value = sel.dataset.on;
+      return;
+    }
+    const number = sel.value ? Number(sel.value) : null;
+    sel.blur();
+    onMilestone(pr.url, number);
+  };
+  sel.onpointerenter = () => onMilestoneReach?.();
+  sel.onfocus = () => onMilestoneReach?.();
+  return h('div', { className: `meta pr-milestone${m ? '' : ' untriaged'}` },
+    m ? ext(`${linkBase(pr).repo}/milestone/${m.number}`, 'milestone', { title: `${m.title} on GitHub` })
+      : h('span', {}, 'milestone'),
+    sel,
+    m?.dueOn ? h('span', dueLabel(m.dueOn)) : null);
+};
+
+/**
  * The head, top to bottom, in the order it is read: what this is, the way to
- * it on GitHub with the lists beside it and the repository they are in,
- * whether it is open, and what it changes. Rearranging the head is reordering
- * this.
+ * it on GitHub with the lists beside it and the repository they are in, the
+ * milestone it is on, whether it is open, and what it changes. Rearranging
+ * the head is reordering this.
  *
  * Both views of the pane draw their head through it. The one with no pull
- * request has no state or tabs, and those rows fall out.
+ * request has no milestone, state or tabs, and those rows fall out.
  */
-const HEAD_ORDER = ['title', 'note', 'links', 'state', 'tabs'];
+const HEAD_ORDER = ['title', 'note', 'links', 'milestone', 'state', 'tabs'];
 
+/**
+ * The head, redrawn whole but for a milestone picker that has the focus, whose
+ * open dropdown a redraw would shut (replaceKeeping). The picker names its pull
+ * request in `data-keep`, so a move to another one replaces it: a pick there is
+ * about one no longer on screen, which the server would refuse.
+ */
 const paintHead = (rows) =>
-  document.getElementById('pr-head').replaceChildren(...kids(HEAD_ORDER.map((k) => rows[k])));
+  replaceKeeping(document.getElementById('pr-head'), kids(HEAD_ORDER.map((k) => rows[k])));
 
 /**
  * The count each tab carries is what it can tell you while you are on the other

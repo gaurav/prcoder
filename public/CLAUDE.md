@@ -2,7 +2,7 @@
 
 ## Seven files here are the server's as well
 
-The server imports four files from here, and with them everything they import.
+The server imports six files from here, and with them everything they import.
 `cli.js` imports `pr.js` for the status block (`syncPhrase` and the PR's
 labels) and `items.js` for the queue's counts. `server.js` imports `grammars`
 from `diff.js` to build the Prism half of the vendor map, so the list of
@@ -13,7 +13,10 @@ one box in a body, and `blocks` and `sectionize`, which cut one into the
 paragraphs, lists, tasks and sections the PR pane draws and the queue's PR tab
 counts. `server.js`, `github.js`, `git.js` and `files.js` at the root all
 import it, so the server and the pane read a description by the same rules and
-cannot drift apart. Through those four come `ui.js`, `filelist.js` and
+cannot drift apart. `server.js` imports `QUIT_CODE` from `ui.js`, the close
+code that tells every tab prcoder is quitting. `github.js` imports
+`filesProgress` from `filelist.js`, so a row on the Pull requests tab counts
+viewed files by the same rule as the Files tab. Through those six comes
 `folds.js`.
 
 So all seven have to load in Node, and none of them may touch the DOM at
@@ -29,7 +32,9 @@ importing the server. A new import in any of the seven adds to the list.
 
 `h`, `btn`, `ext`, `api`, `toast`, `debug`, `pref`, the mark and the fold:
 every pane builds from these, so they live in `ui.js` and a pane imports them
-from there. `pr.js` used to hold them, and the other panes imported the PR
+from there. So does `replaceKeeping`, for a redraw that must not shut a focused
+select's dropdown: mark the control `data-keep` and give it a `refresh`,
+rather than teaching the pane's painter about it. `pr.js` used to hold them, and the other panes imported the PR
 pane to get a button.
 
 ## Keyboard shortcuts go through `keys.js`
@@ -67,7 +72,8 @@ Claude's context except a typed user turn; issue #21 lists the options.
 And Claude Code owns that viewport. With `"tui": "fullscreen"` it is on the
 alternate screen, repainting frames over whatever is there, so anything prcoder
 writes survives only until the next frame. The exception is `ws.onclose`, which
-writes `[coding agent exited]` because the PTY is dead and nothing will repaint.
+writes `[coding agent exited]` (or `[prcoder quit]`) because the PTY is dead
+and nothing will repaint.
 
 Notices for the human go to `toast()`, which sits over the panes and has
 nothing to do with the terminal. Pass `sticky` for a notice that stays true

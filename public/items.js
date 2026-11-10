@@ -129,25 +129,38 @@ export function when(iso, now = Date.now()) {
 export const age = (iso, now = Date.now()) => when(iso, Math.max(now, Date.parse(iso ?? '') || now));
 
 /**
+ * The day a milestone is due, `2026-10-20`, out of GitHub's dueOn: a date sent
+ * as midnight wherever it was set, with no word of where. Real ones read
+ * 2026-11-02 (nodejs/node, rust-lang/rust, flutter/flutter) have `T00` from
+ * UTC, `T04` to `T08` from the Americas, and `T13` and `T21` from east of
+ * Greenwich, where it is already the next day. So the UTC date is a day early
+ * for those, and this rounds: an hour from `T11` on is a zone ahead of UTC, and
+ * so the next day. That reads UTC-10 to UTC+13 right, and is a day out only for
+ * the zones past them, Samoa's and Kiribati's.
+ */
+const DUE_ROUND = 13 * 3600_000;
+export const dueDay = (dueOn) => new Date(Date.parse(dueOn) + DUE_ROUND).toISOString().slice(0, 10);
+
+/**
  * A milestone's due date as its line says it, `due 3 days ago`, with the date
  * in full on hover (`Tuesday, October 27, 2026`) and a class saying how near
- * it is: `overdue`, `soon`, or neither. GitHub's dueOn is a date sent as the
- * start of that day (`T07:00:00Z` for a date set in California), so it is
- * compared as a date with today's on this clock: due today is `due today` and
- * soon, and overdue only once the day is over -- compared as a time, a
- * milestone was overdue for most of its own day. The distance is in whole
- * days for the same reason: when() on the time said `due in 19 hours` of
- * tomorrow's, and `5 hours ago` of yesterday's.
+ * it is: `overdue`, `soon`, or neither. Its day (dueDay) is compared with
+ * today's on this clock, and all of it is counted in whole days: due today is
+ * `due today` and soon, soon is within DUE_SOON of today, and overdue only
+ * once the day is over. With a time in any of it, a milestone was overdue for
+ * most of its own day, `due in 19 hours` of tomorrow's, and soon or not by
+ * the hour of the day it was set in.
  */
 export function dueLabel(dueOn, now = Date.now()) {
-  const day = dueOn.slice(0, 10);
+  const day = dueDay(dueOn);
   const d = new Date(now);
   const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   // The day as written, in UTC so no time zone moves it to the one before.
   const title = new Intl.DateTimeFormat('en', { dateStyle: 'full', timeZone: 'UTC' }).format(Date.parse(`${day}T00:00:00Z`));
   if (day === today) return { className: 'due soon', textContent: 'due today', title };
-  const near = day < today ? ' overdue' : Date.parse(dueOn) - now < DUE_SOON ? ' soon' : '';
-  return { className: `due${near}`, textContent: `due ${inDays((Date.parse(day) - Date.parse(today)) / 86400_000)}`, title };
+  const ahead = Date.parse(day) - Date.parse(today);
+  const near = day < today ? ' overdue' : ahead < DUE_SOON ? ' soon' : '';
+  return { className: `due${near}`, textContent: `due ${inDays(ahead / 86400_000)}`, title };
 }
 
 /**
@@ -196,6 +209,22 @@ export const PULL_SORTS = {
 
 /** The pull requests in the order `how` names, ties in the order they came (by number, as a second key); an order not named is `smallest`. */
 export const sortPulls = (list, how) => [...list].sort((a, b) => (PULL_SORTS[how] ?? PULL_SORTS.smallest).by(a, b) || a.number - b.number);
+
+/**
+ * A stack walk (stackOrder in pr.js, `[{ pr, depth }]`) with its stacks put in
+ * `sorted`'s order of their roots, each stack kept whole. stackOrder lists the
+ * roots base by base, as the switcher wants them -- so a sort of `smallest
+ * first` put a 30-line pull request on main before a 20-line one on another
+ * base -- while the Pull requests tab's by-stack view is in the chosen order.
+ */
+export function rootsInOrder(walk, sorted) {
+  const at = new Map(sorted.map((p, i) => [p.number, i]));
+  const stacks = [];
+  for (const row of walk) {
+    if (row.depth && stacks.length) stacks.at(-1).push(row); else stacks.push([row]);
+  }
+  return stacks.sort((a, b) => (at.get(a[0].pr.number) ?? Infinity) - (at.get(b[0].pr.number) ?? Infinity)).flat();
+}
 
 /**
  * Whether the Pull requests tab's search matches a pull request: case-blind,
