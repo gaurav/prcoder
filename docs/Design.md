@@ -44,7 +44,8 @@ goes through the same coercion the page's writes do; whether Claude should get a
 into prcoder is [#21](https://github.com/gaurav/prcoder/issues/21)'s question.
 
 **What else reaches GitHub, and only on a click or a drag:** ◎ files an item as a new issue, a file's checkbox
-marks it viewed, creating a pull request pushes the branch and opens GitHub's compare page, and
+marks it viewed, creating a pull request pushes the branch and opens GitHub's compare page, the PR
+pane's milestone picker moves the pull request on screen to another milestone, and
 dropping an issue on a milestone group in the Issues tab -- or choosing one in its opened row and
 clicking Move -- sets that issue's milestone, and a drop or a pick in the Pull requests tab does the
 same for a pull request, which is triage and not an edit: nothing in prcoder changes what an issue

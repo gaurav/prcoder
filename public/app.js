@@ -3,7 +3,7 @@ import { FitAddon } from '/vendor/addon-fit.mjs';
 import { WebLinksAddon } from '/vendor/addon-web-links.mjs';
 import { renderPr, renderNoPr, renderHeader, pageTitle, prRepo } from './pr.js';
 import { fileFrom, nextUnviewed, revealFile } from './filelist.js';
-import { h, api, toast, pref, setPref, debug } from './ui.js';
+import { h, api, toast, pref, setPref, debug, QUIT_CODE } from './ui.js';
 import { openDiff, closeDiff, selectedPath, setViewed, showViewed, canTickViewed, toggleViewed, toggleWrap, canWrap, openMention } from './diff.js';
 import { initQueue, addItem, setItems, paintPulls } from './queue.js';
 import { bindKeys, keyLabel, isTyping } from './keys.js';
@@ -185,6 +185,9 @@ let sockets = 0;
 function connect(query = '') {
   sockets++;
   ws = new WebSocket(`ws://${location.host}/pty${query && `?${query}`}`);
+  // Whether this socket ever reached a server, for ws.onclose: one that closes
+  // without opening reached no agent, and maybe no prcoder.
+  let opened = false;
   ws.onmessage = (e) => {
     term.write(e.data);
     if (PROBE.test(e.data)) return;
@@ -198,6 +201,7 @@ function connect(query = '') {
   // Starting the agent again from the exit panel does not: you asked for that
   // one, and chose whether to continue.
   ws.onopen = () => {
+    opened = true;
     sent = '';   // a new PTY starts at 80x24, whatever the last one was told
     sync();
     term.focus();
@@ -240,14 +244,35 @@ function connect(query = '') {
   // not take, the reason is the only clue that the setting was the problem.
   ws.onclose = (e) => {
     turn(false);
-    const why = e.code === 1008 ? `refused: ${e.reason}` : 'coding agent exited';
+    // 1006 is the browser's own code for a socket that got no close frame. With
+    // any other code a server answered, open or not: Playwright's mock socket
+    // closed in its handler never fires onopen, but a real prcoder always does.
+    const reached = opened || e.code !== 1006;
+    // The terminal's last line, and what is left to copy once the box over a
+    // gone prcoder is closed, so it names prcoder when prcoder is what went.
+    // A socket that never opened reached no agent to exit.
+    const why = e.code === 1008 ? `refused: ${e.reason}`
+      : e.code === QUIT_CODE || dead ? 'prcoder quit'
+        : reached ? 'coding agent exited' : 'could not reach prcoder';
     term.write(`\r\n\x1b[31m[${why}]\x1b[0m\r\n`);
-    // The PTY a quit killed closes the socket after quitPrcoder has put up the
-    // bar with its own line and no Start, so there is nothing left to do here.
-    if (quit) return;
+    // The PTY a quit killed closes the socket after quitPrcoder has said so
+    // over the whole window, so there is nothing left to do here.
+    if (dead) return;
+    // A socket also closes because prcoder itself is quitting -- q or Ctrl-C
+    // in its terminal, a Quit in another tab, a signal -- and then the bar
+    // below would offer a Start that reaches nothing. quit() in server.js says
+    // so with QUIT_CODE on every tab's socket, and waits for each to close,
+    // before it exits. A /api/whoami fetch a moment after any close, calling a
+    // refused fetch a dead server, was tried on this branch first and dropped:
+    // a guess at the timing, fooled by anything else on the port and hung by a
+    // server too stuck to answer. A crash may get no code out, and a prcoder
+    // killed outright sends none: either way the bar goes up, until loadStatus
+    // finds prcoder gone.
+    if (e.code === QUIT_CODE) return gone();
     // The bar's note repeats the terminal's line, not the reason: that is
     // already there in red, a line up.
-    exitForm.querySelector('span').textContent = e.code === 1008 ? 'Start refused.' : 'Coding agent has exited.';
+    exitForm.querySelector('span').textContent = e.code === 1008 ? 'Start refused.'
+      : reached ? 'Coding agent has exited.' : 'Could not reach prcoder.';
     exitForm.hidden = false;
     // Refit now rather than waiting on the ResizeObserver: in a page that isn't
     // in front it never delivered the shrink, and the terminal went on
@@ -256,6 +281,11 @@ function connect(query = '') {
     // Start, not the first button: Quit is first in the bar, and Enter after
     // an exit should start again rather than ask about quitting.
     document.getElementById('term-start').focus();
+    // Closed, this tab is out of reach of the next quit's QUIT_CODE, so it is
+    // the poll that finds prcoder gone (loadStatus). A Start that never
+    // connected asks at once: a prcoder that quit while the bar was up is the
+    // usual reason.
+    if (!reached) loadStatus();
   };
 }
 
@@ -282,15 +312,48 @@ exitForm.onsubmit = (e) => {
   term.reset();
   connect(new URLSearchParams(new FormData(exitForm)).toString());
 };
-// Quit, from the exit bar or the menu. The exit bar goes up here, filled with
-// the fact rather than with a Start that would reach nothing; `quit` tells
-// ws.onclose, when the killed PTY's socket closes, to leave it so. From the
-// menu, where the bar may be out of sight, a sticky toast says the same. The
-// menu's Quit goes grey with it: picked again, it would reach no server and
-// put a network error in the toast's one slot, over the line saying the quit
-// worked.
-let quit = false;
-async function quitPrcoder(fromMenu = false) {
+// prcoder is gone, and with it everything on the page: the pull request pane,
+// the queue and the terminal all talk to the server, so none of it works and
+// none of it should look as if it might. One modal over the window says so,
+// and the panes behind it are dimmed. Until 2026-11-09 a quit filled the exit
+// bar with a line and left the rest looking alive, and a prcoder quit from its
+// own terminal showed as the coding agent having exited.
+//
+// ✕ or Escape closes the box, so the terminal's last screen can be selected
+// and copied; the panes stay dimmed (main.dead in style.css, opacity rather
+// than `inert`, which would stop the selecting) and the title stays, so the
+// page still reads as switched off. It had a Reload button, dropped: with
+// prcoder gone there is nothing to reload from, and once it is started again
+// the coding agent's session is /resume away in the new tab.
+//
+// `dead` stops the poll, which is the one thing here that fetches without
+// being asked. A click on something left on the page after the box is closed
+// fails as any request to a server that is not there does, with a toast.
+let dead = false;
+function gone() {
+  if (dead) return;
+  dead = true;
+  turn(false);
+  document.title = 'prcoder (not running)';
+  const box = document.getElementById('dead');
+  // The shortcut sheet may be up, listing keys that no longer do anything,
+  // and the box would sit over it.
+  document.getElementById('keys').close();
+  // The exit bar is up if its own Quit got us here, and its Start would reach
+  // nothing; the terminal takes the room back, as on a Start.
+  exitForm.hidden = true;
+  sync();
+  document.getElementById('dead-close').onclick = () => box.close();
+  // The dialog hands the focus back to what had it when it opened, and that is
+  // hidden by now -- the menu's Quit in the closed menu, the exit bar's Quit --
+  // so it would fall to <body>. The terminal is what the box is closed to get
+  // at. The close event comes after the dialog's own hand-back, so this wins.
+  box.addEventListener('close', () => term.focus(), { once: true });
+  document.querySelector('main').classList.add('dead');
+  box.showModal();
+}
+// Quit, from the exit bar or the menu.
+async function quitPrcoder() {
   try {
     let r = await api('/api/quit', {});
     // The same question the terminal's q asks, put where you are.
@@ -298,13 +361,7 @@ async function quitPrcoder(fromMenu = false) {
       if (!confirm(`Quit prcoder? ${r.risk.join('; ')}.`)) return;
       r = await api('/api/quit', { force: true });
     }
-    const gone = 'prcoder has quit — this tab can be closed.';
-    quit = true;
-    exitForm.replaceChildren(gone);
-    exitForm.hidden = false;
-    sync();   // as ws.onclose does, and for the same reason
-    document.getElementById('menu-quit').disabled = true;
-    if (fromMenu) toast(gone, false, true);
+    gone();
   } catch (e) {
     toast(e.message, true);
   }
@@ -332,7 +389,7 @@ document.addEventListener('keydown', (e) => {
   menu.open = false;
   if (menu.contains(document.activeElement)) menu.querySelector('summary').focus();
 });
-document.getElementById('menu-quit').onclick = () => quitPrcoder(true);
+document.getElementById('menu-quit').onclick = () => quitPrcoder();
 // The dialog gives the focus back to the pick it was opened from, which the
 // pick has just hidden in the closed menu, so the focus would fall out of the
 // page. The menu itself is where it was before the pick; the close event comes
@@ -371,6 +428,10 @@ keysDialog.addEventListener('click', (e) => {
   if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) keysDialog.close();
 });
 function toggleKeys() {
+  // Alt+/ is modal, so keys.js fires it over any dialog, the box gone() puts
+  // up among them; and the sheet would list keys that no longer do anything,
+  // which is why gone() closes it.
+  if (dead) return;
   if (keysDialog.open) keysDialog.close();
   else keysDialog.showModal();
 }
@@ -585,6 +646,74 @@ const switcher = document.getElementById('pr-switch');
 switcher.addEventListener('pointerenter', () => reachSwitcher('pointer reached the switcher'));
 switcher.addEventListener('focus', () => reachSwitcher('switcher focused'));
 
+// The open milestones of the repository the pull request on screen is in, for
+// the head's milestone picker: `{ repo, list }`, or null before one lands. Read
+// when that repository changes (`milestonesFor`), which the server answers from
+// its last read of it while that is a few minutes old, so a reload or a move
+// back is not a gh call; and read from GitHub as the pointer or the focus
+// reaches the picker, not within ten seconds of the last one that landed -- the
+// switcher's rule, for the same reason: a milestone made on GitHub since is
+// there to pick. Not only on reach: a dropdown opened faster than that read
+// would offer nothing but none and the pull request's own. A failed read keeps
+// what we had, and the picker still has the pull request's own milestone and
+// none; reaching for it tries again. There is one read at a time, so the pane
+// moving to another repository during one waits for it to end, whatever its
+// answer, and then asks about that one.
+let milestones = null;
+let milestonesFor = null;
+let milestonesAsking = null;
+let milestonesAt = 0;
+const loadMilestones = (why, fresh = false) => {
+  if (milestonesAsking) return milestonesAsking;
+  const asked = milestonesFor;
+  debug('fetching the milestones:', why, fresh ? 'from GitHub' : '');
+  milestonesAsking = api('/api/milestones', { fresh }).then((m) => {
+    if (m.repo !== milestonesFor) return debug('milestones dropped: the pane has moved to', milestonesFor);
+    milestonesAt = Date.now();
+    milestones = { repo: m.repo, list: m.milestones };
+    paint(last);
+  }, (e) => debug('milestones failed:', why, e.message))
+    .finally(() => {
+      milestonesAsking = null;
+      if (milestonesFor !== asked) loadMilestones(`now on ${milestonesFor}`);
+    });
+  return milestonesAsking;
+};
+// The ten seconds hold only while there is a list: with none for the repository
+// on screen -- its first read failed -- every reach tries again. A single
+// time for every repository let a list read for one hold up the retry of
+// another's failed read, and the picker offered nothing for the rest of the ten.
+const reachMilestones = () => {
+  if (!milestones || Date.now() - milestonesAt > 10_000) loadMilestones('picker reached', true);
+};
+
+/**
+ * The pull request moved to another milestone, or off them, from the head's
+ * picker. The route answers with the milestone GitHub now has, which becomes
+ * the pane's, as a ticked box's body does. A refusal is a toast, and the
+ * picker is put back to where the pull request still is. `url` is the pull
+ * request the picker was drawn for, not `last`'s: that is the one a poll has
+ * moved the pane to, and sending it would pass the server's check that the
+ * pick is about the pull request on screen, and move the wrong one.
+ *
+ * `picking` is the pick on its way, here and in the draw key rather than a
+ * `disabled` on the select, which the next repaint would replace with an
+ * enabled picker on the old milestone, as if the pick had been undone.
+ */
+let picking = null;
+async function pickMilestone(url, number) {
+  picking = { url, number };
+  if (last) paint(last);
+  try {
+    const { milestone } = await api('/api/pr/milestone', { url, number });
+    if (last?.pr?.url === url) last.pr.milestone = milestone;
+  } catch (e) {
+    toast(e.message, true);
+  }
+  if (picking?.url === url) picking = null;
+  if (last) paint(last);
+}
+
 const NOTES = {
   'other-branch': 'Not checked out — this pull request is on another branch.',
   'other-repo': 'This pull request is in another repository.',
@@ -750,7 +879,15 @@ function paint(status) {
     const blocked = status.dirtyFiles.length > 0;
     // Everything the pane is drawn from, the Stack tab's inputs included: a
     // fresh PR list, or a tree going dirty, is a redraw even when the PR is not.
-    const key = JSON.stringify([status.pr, status.scope, stack, blocked, [...below.values()], status.remotes]);
+    // The day is one of them, as the milestone's due date counts from it: without
+    // it a pane left open overnight said "due today" past the day, in yellow
+    // rather than overdue's red, until something else redrew the head.
+    if (milestonesFor !== prRepo(status.pr)) {
+      milestonesFor = prRepo(status.pr);
+      milestones = null;
+      loadMilestones(`now on ${milestonesFor}`);
+    }
+    const key = JSON.stringify([status.pr, status.scope, stack, blocked, [...below.values()], status.remotes, milestones, picking, new Date().toDateString()]);
     if (key !== drawn) {
       drawn = key;
       renderPr({ ...status.pr, note: NOTES[status.scope] }, {
@@ -765,6 +902,10 @@ function paint(status) {
         defaultBranch: status.defaultBranch,
         onSwitch: switchPr,
         blocked,
+        milestones: milestones?.list ?? null,
+        picking: picking?.url === status.pr.url ? picking : null,
+        onMilestone: pickMilestone,
+        onMilestoneReach: reachMilestones,
       });
     }
   } else {
@@ -799,10 +940,17 @@ function paint(status) {
  */
 let polledAt = 0;
 async function loadStatus({ search = false } = {}) {
+  if (dead) return;   // gone(): nothing is there to ask
   polledAt = Date.now();
   try {
     paint(await api('/api/status', undefined, search ? 'POST' : 'GET'));
   } catch (e) {
+    // No answer at all -- fetch's TypeError, not an error the server sent --
+    // with the agent's socket closed. QUIT_CODE goes down a socket, so a tab
+    // whose agent had already exited when prcoder went was never told; this is
+    // how it finds out. With the socket open, the socket says it, so a poll
+    // that fails then is left to read as one.
+    if (e instanceof TypeError && ws.readyState === WebSocket.CLOSED) return gone();
     const failed = { error: e.message, dirtyFiles: [], pr: null };
     renderHeader(failed, prs, handlers);
   }
