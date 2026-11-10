@@ -962,6 +962,10 @@ test('Quit in the menu asks what the exit bar asks, and then the whole window sa
   assert.equal(await fresh.isHidden('#term-exit'), true, 'no Start for a prcoder that is not there');
   await fresh.click('#dead-close');
   assert.equal(await fresh.locator('#dead:modal').count(), 0, 'the ✕ closes it');
+  // Not handed back to the menu's Quit, hidden in the closed menu, from where
+  // it would fall to <body>. Waited on: the dialog's close event, which moves
+  // it, is a task of its own.
+  await fresh.waitForFunction(() => !!document.activeElement?.closest('#term-host'));
   assert.equal(await fresh.$eval('main', (m) => m.classList.contains('dead')), true, 'the panes stay dimmed');
   assert.equal(await fresh.title(), 'prcoder (not running)');
   await fresh.close();
@@ -993,6 +997,7 @@ test('a socket closed with prcoder\'s quit code gets the modal, and any other cl
   assert.equal(await gone.$eval('#keys', (d) => d.open), false, 'no shortcut sheet over the box');
   await gone.keyboard.press('Escape');
   assert.equal(await gone.locator('#dead:modal').count(), 0, 'Escape closes it, as the ✕ does');
+  await gone.waitForFunction(() => !!document.activeElement?.closest('#term-host'));
   await gone.keyboard.press('Alt+Slash');
   await settle(gone);
   assert.equal(await gone.$eval('#keys', (d) => d.open), false, 'nor once it is closed');

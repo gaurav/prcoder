@@ -325,6 +325,11 @@ function gone() {
   exitForm.hidden = true;
   sync();
   document.getElementById('dead-close').onclick = () => box.close();
+  // The dialog hands the focus back to what had it when it opened, and that is
+  // hidden by now -- the menu's Quit in the closed menu, the exit bar's Quit --
+  // so it would fall to <body>. The terminal is what the box is closed to get
+  // at. The close event comes after the dialog's own hand-back, so this wins.
+  box.addEventListener('close', () => term.focus(), { once: true });
   document.querySelector('main').classList.add('dead');
   box.showModal();
 }
