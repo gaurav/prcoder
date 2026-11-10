@@ -404,6 +404,10 @@ keysDialog.addEventListener('click', (e) => {
   if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) keysDialog.close();
 });
 function toggleKeys() {
+  // Alt+/ is modal, so keys.js fires it over any dialog, the box gone() puts
+  // up among them; and the sheet would list keys that no longer do anything,
+  // which is why gone() closes it.
+  if (dead) return;
   if (keysDialog.open) keysDialog.close();
   else keysDialog.showModal();
 }

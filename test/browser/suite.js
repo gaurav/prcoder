@@ -987,8 +987,15 @@ test('a socket closed with prcoder\'s quit code gets the modal, and any other cl
   await gone.waitForSelector('#dead:modal');
   assert.equal(await gone.textContent('#dead-title'), 'prcoder has quit');
   assert.equal(await gone.isHidden('#term-exit'), true, 'no Start for a prcoder that is not there');
+  // Alt+/ is the one key that fires over a modal, and here it has nothing to list.
+  await gone.keyboard.press('Alt+Slash');
+  await settle(gone);
+  assert.equal(await gone.$eval('#keys', (d) => d.open), false, 'no shortcut sheet over the box');
   await gone.keyboard.press('Escape');
   assert.equal(await gone.locator('#dead:modal').count(), 0, 'Escape closes it, as the ✕ does');
+  await gone.keyboard.press('Alt+Slash');
+  await settle(gone);
+  assert.equal(await gone.$eval('#keys', (d) => d.open), false, 'nor once it is closed');
   polls = 0;
   await gone.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
   await gone.clock.fastForward(61_000);
