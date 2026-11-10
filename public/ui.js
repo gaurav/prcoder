@@ -3,8 +3,15 @@
 // thing in the PR pane is drawn with. Every pane builds from these, so they
 // live here rather than in any one pane's file.
 //
-// The server loads this through pr.js (cli.js) and diff.js (server.js), so
-// nothing here may touch the DOM at module scope (public/CLAUDE.md).
+// The server loads this itself, for QUIT_CODE, and through pr.js (cli.js) and
+// diff.js (server.js), so nothing here may touch the DOM at module scope
+// (public/CLAUDE.md).
+
+// The close code on the PTY socket that says prcoder itself is quitting, not
+// just the agent exiting: quit() in server.js sends it to every tab, and
+// ws.onclose in app.js locks the page on it. 4000 opens the range RFC 6455
+// leaves to applications.
+export const QUIT_CODE = 4000;
 
 // Skips absent sections; DOM append() would render them as the text "null".
 export const kids = (list) => list.flat().filter((k) => k != null);

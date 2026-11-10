@@ -48,6 +48,7 @@ import { server } from '../../server.js';
 import { bucket } from '../../files.js';
 import { rollup } from '../../github.js';
 import { firefoxEnv } from '../../tools/driver.mjs';
+import { QUIT_CODE } from '../../public/ui.js';
 
 // If a socket ever gets past the mock, the in-process server spawns this (read
 // at connect time) rather than a real `claude` in this repo -- which is what the
@@ -929,11 +930,13 @@ test('Alt+/ shows every shortcut, from the terminal too, and Escape puts the foc
   await fresh.close();
 });
 
-// Quit from the menu is the exit bar's quit: the same question, and the same
-// line in the bar afterwards -- plus a toast, since the bar may be off screen.
-// The PTY dies with prcoder, so its socket closes after the bar is filled:
-// that close must leave the bar saying so, and not throw on the way.
-test('Quit in the menu asks what the exit bar asks, and says when it has quit', { skip }, async () => {
+// Quit from the menu is the exit bar's quit: the same question, and afterwards
+// the same modal over the whole window, since nothing on the page works once
+// prcoder has gone. While it is up the page behind takes no click. Its ✕
+// closes it so the page can be copied from, and the panes stay dimmed and the
+// tab's title says so. The PTY dies with prcoder, so its socket closes after
+// the modal is up: that close must change nothing, and not throw.
+test('Quit in the menu asks what the exit bar asks, and then the whole window says prcoder has quit', { skip }, async () => {
   let sock;
   const fresh = await newPage({ pty: (ws) => { sock = ws; } });
   const errors = [];
@@ -947,19 +950,120 @@ test('Quit in the menu asks what the exit bar asks, and says when it has quit', 
   fresh.once('dialog', (d) => { asked.push(d.message()); d.accept(); });
   await fresh.click('#menu > summary');
   await fresh.click('#menu-quit');
-  await fresh.waitForSelector('#toast:not([hidden])');
-  assert.match(await fresh.textContent('#toast'), /prcoder has quit/);
-  assert.equal(await fresh.$eval('#toast', (el) => el.classList.contains('sticky')), true);
-  await fresh.locator('#term-exit').getByText('prcoder has quit').waitFor();
+  await fresh.waitForSelector('#dead:modal');
+  assert.equal(await fresh.textContent('#dead-title'), 'prcoder has quit');
   assert.deepEqual(asked, [{}, 'Quit prcoder? 2 uncommitted files.', { force: true }]);
+  assert.equal(await fresh.title(), 'prcoder (not running)');
+  // What is at a pane's own middle is the modal's backdrop, not the pane.
+  const hit = await fresh.evaluate(() => {
+    const r = document.getElementById('pr-refresh').getBoundingClientRect();
+    return document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2).id;
+  });
+  assert.equal(hit, 'dead', 'the page behind takes no click');
   await sock.close();
   await settle(fresh);
   assert.deepEqual(errors, []);
-  assert.match(await fresh.textContent('#term-exit'), /prcoder has quit/);
-  // Nothing is left to quit, so the menu's Quit can't be picked again and
-  // put a network error over the toast that says the quit worked.
-  assert.equal(await fresh.$eval('#menu-quit', (b) => b.disabled), true, 'the menu\'s Quit is off');
+  assert.equal(await fresh.isHidden('#term-exit'), true, 'no Start for a prcoder that is not there');
+  await fresh.click('#dead-close');
+  assert.equal(await fresh.locator('#dead:modal').count(), 0, 'the ✕ closes it');
+  // Not handed back to the menu's Quit, hidden in the closed menu, from where
+  // it would fall to <body>. Waited on: the dialog's close event, which moves
+  // it, is a task of its own.
+  await fresh.waitForFunction(() => !!document.activeElement?.closest('#term-host'));
+  assert.equal(await fresh.$eval('main', (m) => m.classList.contains('dead')), true, 'the panes stay dimmed');
+  assert.equal(await fresh.title(), 'prcoder (not running)');
   await fresh.close();
+});
+
+// A prcoder quit from its own terminal, or from another tab, closes this
+// tab's socket with QUIT_CODE, and the page locks itself on that alone. Any
+// other close is the agent exiting, and gets the exit bar. Locked, the page
+// asks nothing more of the server: the clock runs past both the ten-second
+// poll on coming back to the tab and the minute's poll, and neither goes out.
+test('a socket closed with prcoder\'s quit code gets the modal, and any other close the exit bar', { skip }, async () => {
+  let sock;
+  const fresh = await newPage({ pty: (ws) => { sock = ws; } });
+  await sock.close();
+  await fresh.locator('#term-exit').waitFor({ state: 'visible' });
+  assert.equal(await fresh.locator('#dead:modal').count(), 0, 'only the agent went');
+  await fresh.close();
+
+  const gone = await newPage({ clock: true, pty: (ws) => { sock = ws; } });
+  let polls = 0;
+  gone.on('request', (q) => { if (q.url().endsWith('/api/status')) polls++; });
+  await sock.close({ code: QUIT_CODE, reason: 'prcoder quit' });
+  await gone.waitForSelector('#dead:modal');
+  assert.equal(await gone.textContent('#dead-title'), 'prcoder has quit');
+  assert.equal(await gone.isHidden('#term-exit'), true, 'no Start for a prcoder that is not there');
+  // What is left to copy names what went.
+  await gone.locator('#term-host .xterm-rows', { hasText: '[prcoder quit]' }).waitFor();
+  assert.equal(await gone.locator('#term-host .xterm-rows', { hasText: 'coding agent exited' }).count(), 0);
+  // Alt+/ is the one key that fires over a modal, and here it has nothing to list.
+  await gone.keyboard.press('Alt+Slash');
+  await settle(gone);
+  assert.equal(await gone.$eval('#keys', (d) => d.open), false, 'no shortcut sheet over the box');
+  await gone.keyboard.press('Escape');
+  assert.equal(await gone.locator('#dead:modal').count(), 0, 'Escape closes it, as the ✕ does');
+  await gone.waitForFunction(() => !!document.activeElement?.closest('#term-host'));
+  await gone.keyboard.press('Alt+Slash');
+  await settle(gone);
+  assert.equal(await gone.$eval('#keys', (d) => d.open), false, 'nor once it is closed');
+  polls = 0;
+  await gone.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+  await gone.clock.fastForward(61_000);
+  await gone.waitForTimeout(200);
+  assert.equal(polls, 0, 'nothing is asked of a server that is gone');
+  await gone.close();
+});
+
+// QUIT_CODE goes down a socket, so a tab whose agent had already exited when
+// prcoder went -- exit bar up, socket closed -- was never told, and went on
+// offering a Start that reached nothing. Its poll finds out instead: a fetch
+// that gets no answer, with the socket closed, is prcoder gone. With the
+// socket open a failed poll is only that, since the socket would say.
+test('a tab whose agent had already exited finds prcoder gone from its next poll', { skip }, async () => {
+  let sock;
+  const p = await newPage({ clock: true, pty: (ws) => { sock = ws; } });
+  await p.route('**/api/status', (r) => r.abort('connectionrefused'));
+  // Coming back to the tab polls, ten seconds after the last poll at most.
+  const poll = async () => {
+    await p.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+    await p.clock.fastForward(11_000);
+    await settle(p);
+  };
+  await poll();
+  assert.equal(await p.locator('#dead:modal').count(), 0, 'with the socket open, a failed poll is only that');
+  await sock.close();
+  await p.locator('#term-exit').waitFor({ state: 'visible' });
+  await poll();
+  await p.waitForSelector('#dead:modal');
+  assert.equal(await p.isHidden('#term-exit'), true, 'no Start for a prcoder that is not there');
+  await p.close();
+});
+
+// A Start from the exit bar that cannot connect reached no agent, so the
+// terminal does not say one exited, and it asks at once whether prcoder is
+// still there: if it answers, the bar is back; if not, the box. The mock
+// closes the Start's socket as a browser reports a server that is not there:
+// never opened, 1006. Not a socket aimed at a closed port: under
+// routeWebSocket, Playwright's wrapper reports that one as code 0.
+test('a Start that cannot connect asks after prcoder at once', { skip }, async () => {
+  let sockets = 0;
+  const p = await newPage({ pty: (ws) => (++sockets === 1 ? ws.close() : ws.close({ code: 1006 })) });
+  const bar = p.locator('#term-exit');
+  await bar.waitFor({ state: 'visible' });
+  assert.equal(await p.textContent('#term-exit span'), 'Coding agent has exited.');
+  await p.click('#term-start');
+  await p.locator('#term-host .xterm-rows', { hasText: '[could not reach prcoder]' }).waitFor();
+  await bar.waitFor({ state: 'visible' });
+  assert.equal(await p.textContent('#term-exit span'), 'Could not reach prcoder.');
+  await settle(p);
+  assert.equal(await p.locator('#dead:modal').count(), 0, 'prcoder answered, so it is still there');
+  await p.route('**/api/status', (r) => r.abort('connectionrefused'));
+  await p.click('#term-start');
+  await p.waitForSelector('#dead:modal');
+  assert.equal(sockets, 3);
+  await p.close();
 });
 
 // A button drawn as a glyph -- ✕, ⟳, ▼ -- is read out by a screen reader as
@@ -3991,7 +4095,8 @@ test('when the agent exits, starting it again reconnects with the chosen setting
   });
   p.once('dialog', (d) => { asked.push(d.message()); d.accept(); });
   await p.click('#term-quit');
-  await bar.getByText('prcoder has quit').waitFor();
+  await p.waitForSelector('#dead:modal');
+  assert.equal(await bar.isHidden(), true, 'the bar its Quit was in goes with it');
   assert.deepEqual(asked, [{}, 'Quit prcoder? 2 uncommitted files.', { force: true }]);
   await p.close();
 });

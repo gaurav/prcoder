@@ -20,6 +20,7 @@ import { parseCli, usage, VERSION, portCandidates, statusLines, openRepoArgs, OP
 import * as term from './term.js';
 import { toggleTask, refs, wholeRef, resolveRef } from './public/tasks.js';
 import { grammars } from './public/diff.js';
+import { QUIT_CODE } from './public/ui.js';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const repo = process.cwd();
@@ -1171,24 +1172,42 @@ function listQueue() {
   listed = now;
 }
 
+// Every tab is told, with a close code of its own (QUIT_CODE), so the page
+// locks itself rather than offering to start an agent on a server that is
+// about to be gone. Resolves once every tab's socket has closed, or after `ms`
+// for a tab that never answers. Waited on, not just sent: a close frame queues
+// behind whatever the socket has not yet written -- a burst of the agent's
+// output -- and a process that exits with it still queued leaves the page a
+// bare 1006, the exit bar and a Start that reaches nothing. A socket already
+// closing (the PTY's own close, when kill() lands) ignores the second close
+// and still fires 'close'. wss.clients drops a socket on its 'close', so none
+// here has fired it already.
+function tellTabs(ms) {
+  const closed = [...wss.clients].map((ws) => new Promise((r) => ws.once('close', r)));
+  for (const ws of wss.clients) ws.close(QUIT_CODE, 'prcoder quit');
+  return Promise.race([Promise.all(closed), new Promise((r) => setTimeout(r, ms).unref())]);
+}
+
 // Kills the PTYs itself rather than leaving that to the close handlers:
 // process.exit doesn't wait for them, and an orphaned `claude` outlives the
 // terminal it was started from.
 //
-// Exits once stdout has caught up, not straight away. Piped (`prcoder | tee`),
-// stdout is asynchronous on macOS and process.exit drops what is still queued
-// -- the Local list askToQuit printed a moment ago, on a reader that is behind.
-// An empty write calls back once everything ahead of it is out; the timer is
-// for a reader that never catches up, which must not keep prcoder alive.
+// Exits once the tabs have been told and stdout has caught up, not straight
+// away. Piped (`prcoder | tee`), stdout is asynchronous on macOS and
+// process.exit drops what is still queued -- the Local list askToQuit printed
+// a moment ago, on a reader that is behind. An empty write calls back once
+// everything ahead of it is out; the timer is for a reader that never catches
+// up, which must not keep prcoder alive.
 let quitting = false;
 function quit() {
   if (quitting) return;
   quitting = true;
+  const told = tellTabs(2000);
   for (const pty of ptys) pty.kill();
   wss.close();
   server.close();
   setTimeout(() => process.exit(0), 2000);
-  process.stdout.write('', () => process.exit(0));
+  Promise.all([told, new Promise((r) => process.stdout.write('', r))]).then(() => process.exit(0));
 }
 
 function askToQuit() {
@@ -1236,7 +1255,24 @@ if (import.meta.main) {
 
   // Before anything can print: init() is what routes console through the log,
   // and a line written ahead of it would sit above the block and stay there.
-  term.init();
+  // A signal -- SIGHUP from closing the terminal this runs in, SIGTERM, a
+  // SIGINT with no tty -- tells the tabs too and waits a moment for them, as
+  // quit() does, or they would offer to start an agent on a server that is
+  // gone. A second signal goes at once.
+  let leaving = false;
+  term.init({
+    leave: (code) => {
+      if (leaving) process.exit(code);
+      leaving = true;
+      tellTabs(1000).then(() => process.exit(code));
+    },
+  });
+  // The ways out that cannot wait -- the second Ctrl-C at the question, which
+  // must exit at once, and an uncaught exception -- still try. Best effort: an
+  // 'exit' handler runs only synchronous code, so the close frame goes only if
+  // the socket can write it there and then, with nothing queued ahead of it.
+  // Only a SIGKILL gets past this altogether.
+  process.on('exit', () => { for (const ws of wss.clients) ws.close(QUIT_CODE, 'prcoder quit'); });
   term.keys({
     quit: askToQuit,
     key: (ch) => {

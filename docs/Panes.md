@@ -104,7 +104,7 @@ busy or idle as the tab is, and the name, as a menu. The pane needs no label the
 says which pull request it is. The menu holds the keyboard shortcuts (the sheet Alt+/ opens, built
 from the same table the keys are bound from, so it can only list keys the page has), the
 documentation, an issue to report and the repository on GitHub, **Quit prcoder…**, which asks what
-the exit bar's Quit asks ([Claude Code](#claude-code)) and is greyed out once prcoder has quit, and
+the exit bar's Quit asks ([Claude Code](#claude-code)), and
 the version on its last line. It closes on a pick, a click anywhere else, or Escape -- outside a
 text field, so not in the terminal, where Escape is the agent's, nor in the queue's input or the
 pull request switcher. Nothing done in the shortcut sheet closes it, so with the sheet opened over
@@ -364,6 +364,21 @@ a deliberate switch of model than a slip. A setting the server will not take is 
 anything starts, and the terminal says so -- except the command line's own, which is kept as it
 was given even when the bar would refuse it typed in. Quit asks what the terminal's quit asks
 ([Terminal.md](Terminal.md)).
+
+Once prcoder itself has gone, nothing on the page works -- the pull request pane, the queue and
+the terminal all talk to it -- so the whole window says so: a box over the panes, which are dimmed
+behind it and take no click or key, and a tab titled `prcoder (not running)`. It comes up after a
+Quit from the page, and also however else prcoder stopped -- quit from its own terminal or another
+tab, its terminal closed: on the way out it closes every tab's connection with a code of its own,
+and waits for each tab to have it. A tab whose agent had already exited has no connection to be
+told on. A prcoder that crashes may not get the code out, and one killed outright (`kill -9`)
+sends none, so its tabs show the exit bar as if only the agent had gone. All of these find out from
+the page's next poll of prcoder, which gets no answer: at once on a Start that cannot connect,
+otherwise within the minute or on coming back to the tab. The terminal's last line says `[prcoder quit]` rather than
+`[coding agent exited]`.
+The box's ✕, or Escape, closes it so the terminal's last screen can be selected and copied; the
+panes stay dimmed and the title stays. The way on is to close the tab, or start prcoder again, where
+`/resume` or `-- --continue` picks the coding agent's session back up.
 
 ## Queue
 

@@ -1053,8 +1053,7 @@ li.issue-body select.milestone {
   margin: 0; padding: 5px 12px; font: inherit; font-size: 13px; line-height: 1.4;
   color: var(--fg); text-decoration: none; text-align: left; background: none; border: 0; cursor: pointer;
 }
-#menu-list a:hover, #menu-list button:enabled:hover { background: var(--bg); color: var(--fg); }
-#menu-list button:disabled { opacity: .5; cursor: default; }
+#menu-list a:hover, #menu-list button:hover { background: var(--bg); color: var(--fg); }
 #menu-list kbd { font: inherit; font-size: 11px; color: var(--dim); }
 #menu-list hr { margin: 4px 0; border: 0; border-top: 1px solid var(--line); }
 #menu-version { padding: 3px 12px 2px; font-size: 11px; color: var(--dim); }
@@ -1062,16 +1061,27 @@ li.issue-body select.milestone {
 /* The shortcut sheet (Alt+/): a modal over the panes, in the panes' own
    colours, one row per key. The key is drawn as a keycap, so it reads as a
    key and not as a word. */
-#keys {
-  min-width: 360px; max-width: 90vw; padding: 12px 18px 14px;
+#keys, #dead {
   background: var(--panel); color: var(--fg); border: 1px solid var(--line); border-radius: 8px;
   box-shadow: 0 6px 30px #000a;
 }
+#keys { min-width: 360px; max-width: 90vw; padding: 12px 18px 14px; }
 #keys::backdrop { background: #0008; }
-#keys > header { display: flex; align-items: center; margin-bottom: 8px; }
+/* prcoder has gone (gone() in app.js). The sheet's box, edged in red, under a
+   backdrop heavy enough that the panes behind read as switched off and light
+   enough that the last of the terminal and the queue can still be made out. */
+#dead { max-width: min(44ch, 90vw); padding: 18px 22px; border-color: var(--fail); }
+#dead::backdrop { background: #000c; }
+#dead h2 { margin: 0; font-size: 18px; font-weight: 600; }
+#dead p { margin: 0; color: var(--dim); }
+#dead code { white-space: nowrap; }
+/* Closed, the box leaves the panes looking switched off but readable:
+   opacity and a filter, not `inert`, so the terminal can still be selected. */
+main.dead { opacity: .45; filter: grayscale(1); }
+#keys > header, #dead > header { display: flex; align-items: center; margin-bottom: 8px; }
 #keys h2 { margin: 0; font-size: 14px; font-weight: 600; }
-#keys-close { margin-left: auto; background: none; border: 0; color: var(--dim); font: inherit; cursor: pointer; }
-#keys-close:hover { color: var(--fg); }
+#keys-close, #dead-close { margin-left: auto; background: none; border: 0; color: var(--dim); font: inherit; cursor: pointer; }
+#keys-close:hover, #dead-close:hover { color: var(--fg); }
 #keys table { border-collapse: collapse; }
 #keys td { padding: 3px 0; font-size: 13px; vertical-align: baseline; }
 #keys td:first-child { padding-right: 14px; white-space: nowrap; }
