@@ -621,6 +621,38 @@ test('a failed read of the milestones waits for the picker to be reached before 
   await p.close();
 });
 
+// The ten seconds between reads were one clock for every repository, so a
+// list read for one held up the retry of another's failed first read, and the
+// picker offered nothing until they had passed.
+test('a failed read for a new repository is tried again as soon as the picker is reached', { skip }, async () => {
+  const p = await newPage({ clock: true });
+  await p.waitForFunction(() => document.querySelectorAll('#pr-head .pr-milestone option').length > 1);
+  // A fresh list for this repository, read now, starts the ten seconds.
+  await p.clock.fastForward(11_000);
+  const read = p.waitForResponse('**/api/milestones');
+  await p.locator('#pr-head .pr-milestone select').hover();
+  await read;
+  let asked = 0;
+  await p.route('**/api/milestones', (r) => {
+    asked += 1;
+    return asked === 1 ? r.fulfill({ status: 500, json: { error: 'no' } })
+      : r.fulfill({ json: { repo: 'o/elsewhere', milestones: [{ number: 8, title: 'Theirs', dueOn: null }] } });
+  });
+  await p.route('**/api/status', (r) => r.fulfill({ json: { ...status, pr: { ...pr, url: 'https://github.com/o/elsewhere/pull/5', number: 5 } } }));
+  // Coming back to the tab polls at once, ten seconds after the first poll:
+  // the move lands well inside the ten seconds of that read.
+  const failed = p.waitForResponse('**/api/milestones');
+  await p.mouse.move(0, 0);
+  await p.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+  await p.clock.runFor(100);
+  await failed;
+  await p.waitForFunction(() => document.querySelector('#pr-head .pr-milestone select').options.length === 1);
+  await p.locator('#pr-head .pr-milestone select').hover();
+  await p.locator('#pr-head .pr-milestone option', { hasText: 'Theirs' }).waitFor({ state: 'attached', timeout: 5_000 });
+  assert.equal(asked, 2);
+  await p.close();
+});
+
 // While a pick is on its way the picker says what was picked and takes no other.
 // That was a `disabled` on one node, gone with any repaint: a poll, or a tab
 // click, brought back an enabled picker showing the old milestone, as if the

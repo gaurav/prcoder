@@ -679,7 +679,13 @@ const loadMilestones = (why, fresh = false) => {
     });
   return milestonesAsking;
 };
-const reachMilestones = () => { if (Date.now() - milestonesAt > 10_000) loadMilestones('picker reached', true); };
+// The ten seconds hold only while there is a list: with none for the repository
+// on screen -- its first read failed -- every reach tries again. A single
+// time for every repository let a list read for one hold up the retry of
+// another's failed read, and the picker offered nothing for the rest of the ten.
+const reachMilestones = () => {
+  if (!milestones || Date.now() - milestonesAt > 10_000) loadMilestones('picker reached', true);
+};
 
 /**
  * The pull request moved to another milestone, or off them, from the head's
