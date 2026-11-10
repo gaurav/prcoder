@@ -2,7 +2,7 @@
 
 ## Seven files here are the server's as well
 
-The server imports five files from here, and with them everything they import.
+The server imports six files from here, and with them everything they import.
 `cli.js` imports `pr.js` for the status block (`syncPhrase` and the PR's
 labels) and `items.js` for the queue's counts. `server.js` imports `grammars`
 from `diff.js` to build the Prism half of the vendor map, so the list of
@@ -14,8 +14,10 @@ paragraphs, lists, tasks and sections the PR pane draws and the queue's PR tab
 counts. `server.js`, `github.js`, `git.js` and `files.js` at the root all
 import it, so the server and the pane read a description by the same rules and
 cannot drift apart. `server.js` imports `QUIT_CODE` from `ui.js`, the close
-code that tells every tab prcoder is quitting. Through those five come
-`filelist.js` and `folds.js`.
+code that tells every tab prcoder is quitting. `github.js` imports
+`filesProgress` from `filelist.js`, so a row on the Pull requests tab counts
+viewed files by the same rule as the Files tab. Through those six comes
+`folds.js`.
 
 So all seven have to load in Node, and none of them may touch the DOM at
 module scope. A `document.querySelector` beside the imports is ordinary in a
