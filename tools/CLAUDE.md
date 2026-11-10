@@ -104,6 +104,6 @@ timing has to be driven against that stub, not cat. cat is fine for
 
 The driver's sections step clicks the second `.md-section > summary`, so a
 pull request whose body has no `##` headings -- a placeholder written before
-`/update-pr` has run -- makes it time out there with a bare `TimeoutError`
+`/pr-update` has run -- makes it time out there with a bare `TimeoutError`
 after everything before it has printed (2026-10-19). Write the body first,
 or read the steps above the timeout as the run's result.
