@@ -171,9 +171,8 @@ async function bareBases(repo, pulls, defaultBranch) {
  */
 export async function choosePr(repo, facts, { input = process.stdin, output = process.stdout } = {}) {
   const { nameWithOwner, defaultBranch } = facts;
-  const branch = await currentBranch(repo);
   const width = (output.columns || 80) - 1;
-  const read = await listing(repo, nameWithOwner);
+  const [branch, read] = await Promise.all([currentBranch(repo), listing(repo, nameWithOwner)]);
   const below = await bareBases(repo, read.pulls, defaultBranch);
   const { lines, rows, pick } = chooseLines(read, { nameWithOwner, branch, defaultBranch, below, width });
   for (const l of lines) console.log(styled(l, width));
