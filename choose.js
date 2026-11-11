@@ -13,7 +13,7 @@
 
 import readline from 'node:readline/promises';
 import { stackOrder, stackUnder } from './public/pr.js';
-import { sortPulls, sizeChip, age } from './public/items.js';
+import { sortPulls, rootsInOrder, sizeChip, age } from './public/items.js';
 import { repoPulls } from './github.js';
 import { readPulls, writePulls } from './store.js';
 import { currentBranch, checkoutPr, dirtyFiles, branchesBelow } from './git.js';
@@ -52,11 +52,15 @@ const builtOn = (under, depth) => (!depth && under.nodes.length
 /**
  * What `prcoder choose` prints and offers, from a listing as readPulls or
  * repoPulls has it: `{ lines, rows, pick }`. `lines` are term.js lines
- * (styled() renders them); `rows` is stackOrder over the pull requests, most
- * recently updated first among roots and among siblings, each followed by
- * what is built on it a step further in; `pick` is the row Enter takes, the
- * deepest one and the most recently updated of those, since the deepest is
- * usually where the last session was. Null with nothing open.
+ * (styled() renders them); `rows` is stackOrder over the pull requests with
+ * its stacks in their roots' order (rootsInOrder, as the tab's by-stack view
+ * puts them), most recently updated first among roots and among siblings,
+ * each followed by what is built on it a step further in. stackOrder alone
+ * groups the roots base by base, so an older root on main came before a newer
+ * one on another base. `pick` is the row Enter takes, the deepest one and the
+ * most recently updated of those, since the deepest is usually where the last
+ * session was -- not the first of them in the walk, which is the one under
+ * the newest root and can be days staler than another. Null with nothing open.
  *
  * A row is the number, the size (sizeChip, coloured by band), the state in a
  * word, how long since it last moved, and the title -- last, so a narrow
@@ -67,7 +71,8 @@ const builtOn = (under, depth) => (!depth && under.nodes.length
  * `›` marks the one on the checked-out branch, as the tab marks it `here`.
  */
 export function chooseLines(listing, { nameWithOwner, branch, defaultBranch, below = [], now = Date.now(), width = Infinity } = {}) {
-  const rows = stackOrder(sortPulls(listing.pulls ?? [], 'updated'));
+  const sorted = sortPulls(listing.pulls ?? [], 'updated');
+  const rows = rootsInOrder(stackOrder(sorted), sorted);
   const here = (p) => !p.isCrossRepository && p.headRefName === branch;
   const read = listing.read ? `, read ${age(new Date(listing.read).toISOString(), now)}` : '';
   const lines = [
@@ -105,7 +110,8 @@ export function chooseLines(listing, { nameWithOwner, branch, defaultBranch, bel
     const room = width - head.reduce((n, seg) => n + (seg.text ?? seg).length, 0) - base.length;
     lines.push([...head, clip(p.title, Math.max(room, 0)), { text: base, style: 'dim' }]);
   }
-  const pick = rows.reduce((best, r) => (r.depth > best.depth ? r : best), rows[0]);
+  const newer = (a, b) => Date.parse(a.pr.updatedAt) > Date.parse(b.pr.updatedAt);
+  const pick = rows.reduce((best, r) => (r.depth > best.depth || (r.depth === best.depth && newer(r, best)) ? r : best), rows[0]);
   return { lines, rows, pick };
 }
 

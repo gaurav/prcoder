@@ -94,3 +94,19 @@ test('on a tty the size and the state are coloured, and a narrow terminal cuts o
   assert.match(styled(lines().lines[6]), /\x1b\[31mconflicts/);
   assert.match(styled(lines().lines[2]), /\x1b\[31mXXL/);
 });
+
+// stackOrder alone lists the roots base by base, so #1 on main came before
+// the newer #2 on another base; and Enter took the deepest row first in the
+// walk, #5 under the newest root, over #4, five days newer, under an older one.
+test('roots on different bases are in update order, and Enter takes the newest of the deepest', () => {
+  const listing = { read: NOW, total: 5, listed: 5, pulls: [
+    pull(3, 'three', 'main', 10, 'ready', 0),
+    pull(2, 'two', 'release', 10, 'ready', 4),
+    pull(1, 'one', 'main', 10, 'ready', 8),
+    pull(5, 'five', 'three', 10, 'ready', 6),
+    pull(4, 'four', 'one', 10, 'ready', 1),
+  ] };
+  const { rows, pick } = chooseLines(listing, { nameWithOwner: 'o/r', defaultBranch: 'main', now: NOW });
+  assert.deepEqual(rows.map((r) => [r.pr.number, r.depth]), [[3, 0], [5, 1], [2, 0], [1, 0], [4, 1]]);
+  assert.equal(pick.pr.number, 4);
+});
