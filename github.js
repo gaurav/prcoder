@@ -127,20 +127,23 @@ export const prUrl = async (cwd, target) => (await viewPr(cwd, target, 'url'))?.
  * last pull request started one whose every poll failed.
  *
  * gh's two noes, verbatim from gh 2.x on 2026-11-06: `no pull requests found
- * for branch "x"` (viewPr's null), and `GraphQL: Could not resolve to a
- * PullRequest with the number of 99999. (repository.pullRequest)`, for a number
- * or a URL. Anything else -- offline, signed out -- is gh's own words.
+ * for branch "x"`, and `GraphQL: Could not resolve to a PullRequest with the
+ * number of 99999. (repository.pullRequest)`, for a number or a URL. Anything
+ * else -- offline, signed out, no default remote -- is gh's own words.
+ *
+ * gh directly, not viewPr: viewPr's null also covers `no default remote` and
+ * `not a git repo`, which are gh's setup to fix, not a wrong argument -- and
+ * through it they came out as "42 is not a pull request's number".
  */
 export async function pullRequestFor(cwd, target) {
-  let url;
   try {
-    url = await prUrl(cwd, target);
+    return JSON.parse(await gh(['pr', 'view', target, '--json', 'url'], { cwd })).url;
   } catch (e) {
-    if (/could not resolve to a pullrequest/i.test(e.stderr ?? '')) throw new Error(`there is no pull request ${target}`);
+    const said = e.stderr ?? '';
+    if (/no pull requests found/i.test(said)) throw new Error(`${target} is not a pull request's number or URL, or the branch of one`);
+    if (/could not resolve to a pullrequest/i.test(said)) throw new Error(`there is no pull request ${target}`);
     throw new Error(`could not look up ${target}: ${e.message}`);
   }
-  if (!url) throw new Error(`${target} is not a pull request's number or URL, or the branch of one`);
-  return url;
 }
 
 /**

@@ -316,6 +316,10 @@ test('the command line\'s <pr> is pinned to its URL, and refused when it names n
   // gh failing for its own reasons is still a refusal, in gh's words.
   await withGh(() => `echo 'error connecting to api.github.com' >&2\nexit 1`, () =>
     assert.rejects(pullRequestFor(os.tmpdir(), '177'), { message: 'could not look up 177: error connecting to api.github.com' }));
+  // As is gh's setup, which viewPr takes for no pull request: through it, a
+  // clone with no default remote said 42 named none.
+  await withGh(() => `echo 'no default remote repository has been set' >&2\nexit 1`, () =>
+    assert.rejects(pullRequestFor(os.tmpdir(), '42'), { message: 'could not look up 42: no default remote repository has been set' }));
 });
 
 // What gh printed for each: a found PR exits 0, and a missing number or repo
