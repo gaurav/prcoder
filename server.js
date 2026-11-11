@@ -11,13 +11,13 @@ import { fileURLToPath } from 'node:url';
 import { text as readBody } from 'node:stream/consumers';
 import { spawn as ptySpawn } from 'node-pty';
 import { WebSocketServer } from 'ws';
-import { loadPr, prHeads, pullRequestFor, prBody, parsePrUrl, listPrs, branchPrs, lookupPrs, ownPrs, pickPr, issueLinks, lookupRef, setViewed, setBody, createIssue, fetchPatches, runCount, repoPulls, repoIssues, repoMilestones, setIssueMilestone } from './github.js';
+import { loadPr, prHeads, pullRequestFor, prBody, parsePrUrl, listPrs, branchPrs, lookupPrs, ownPrs, pickPr, issueLinks, lookupRef, setViewed, setBody, createIssue, fetchPatches, runCount, repoIssues, repoMilestones, setIssueMilestone } from './github.js';
 import { notAWorkTree, snapshot, currentBranch, headCommit, commitsKnown, commitMemo, repoInfo, pushRepo, prScope, compareUrl, githubUrl, originOwner, wholePrRepo, checkoutPr, pushBranch, remoteBranchHead, trackingHead, localPatch, branchesBelow } from './git.js';
 import { bucket, fileUrl, fileViews } from './files.js';
-import { readPort, writePort, readPrs, writePrs, pick, useQueueFile, movedQueue, issueUrl, readPulls, writePulls } from './store.js';
+import { readPort, writePort, readPrs, writePrs, pick, useQueueFile, movedQueue, issueUrl, readPulls } from './store.js';
 import { readQueue, writeQueue, quote } from './queue.js';
 import { parseCli, usage, VERSION, portCandidates, statusLines, openRepoArgs, OPEN_REPO_VARS, REPO_ENV, queueSummary, quitRisks } from './cli.js';
-import { choosePr } from './choose.js';
+import { choosePr, githubPulls } from './choose.js';
 import * as term from './term.js';
 import { toggleTask, refs, wholeRef, resolveRef } from './public/tasks.js';
 import { grammars } from './public/diff.js';
@@ -412,20 +412,13 @@ export const queuedRun = (fn) => {
 
 /**
  * The Pull requests tab's fresh read: GitHub's listing, written to
- * `.prcoder/pulls.json` and kept as `pulls`. Queued (queuedRun), not under the
+ * `.prcoder/pulls.json` (githubPulls, which `prcoder choose` reads by too)
+ * and kept as `pulls`. Queued (queuedRun), not under the
  * server's lock: two at once each paid for the seconds-long read and wrote
  * the same temp file (writeJson's name is per process), which could leave it
  * interleaved or fail the second rename.
  */
-const freshPulls = queuedRun(async () => {
-  const { nameWithOwner } = await repoFacts();
-  const [owner, name] = nameWithOwner.split('/');
-  const got = await repoPulls(repo, owner, name);
-  const now = Date.now();
-  // A cache: a write that fails costs a read on the next start, not now.
-  await writePulls(repo, nameWithOwner, got, now).catch((e) => term.debug(`pulls.json not written: ${e.message}`));
-  return (pulls = pullsFromGitHub = { ...got, read: now });
-});
+const freshPulls = queuedRun(async () => (pulls = pullsFromGitHub = await githubPulls(repo, (await repoFacts()).nameWithOwner)));
 
 /**
  * What /api/issue/milestone may do, from `listing`: `{ number, milestone, title }`

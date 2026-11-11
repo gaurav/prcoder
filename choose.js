@@ -114,19 +114,30 @@ export function chooseLines(listing, { nameWithOwner, branch, defaultBranch, bel
 }
 
 /**
+ * GitHub's listing of the open pull requests (repoPulls), with `read` in ms,
+ * written to `.prcoder/pulls.json` so the next reader can open from it. The
+ * one way the listing is read fresh: the Pull requests tab's (freshPulls in
+ * server.js) and `prcoder choose`'s, so the two write the same file the same
+ * way. A cache: a write that fails costs a read on the next start, not now.
+ */
+export async function githubPulls(repo, nameWithOwner) {
+  const [owner, name] = nameWithOwner.split('/');
+  const got = await repoPulls(repo, owner, name);
+  const now = Date.now();
+  await writePulls(repo, nameWithOwner, got, now).catch((e) => debug(`pulls.json not written: ${e.message}`));
+  return { ...got, read: now };
+}
+
+/**
  * The listing to print: `.prcoder/pulls.json` when it is under FRESH_FOR old,
- * else GitHub's, written there so the Pull requests tab opens from this read
- * (a write that fails costs a read on the next start, as in server.js).
+ * else GitHub's (githubPulls), written there so the Pull requests tab opens
+ * from this read.
  */
 async function listing(repo, nameWithOwner) {
   const held = await readPulls(repo, nameWithOwner);
   if (held && Date.now() - held.read < FRESH_FOR) return held;
   console.log(`reading the open pull requests in ${nameWithOwner}…`);
-  const [owner, name] = nameWithOwner.split('/');
-  const got = await repoPulls(repo, owner, name);
-  const now = Date.now();
-  await writePulls(repo, nameWithOwner, got, now).catch(() => {});
-  return { ...got, read: now };
+  return githubPulls(repo, nameWithOwner);
 }
 
 /**
