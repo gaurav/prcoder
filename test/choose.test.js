@@ -119,3 +119,12 @@ test('a wide base branch name cuts the title, not the note', () => {
   const drawn = styled(line, 50).replaceAll(/\x1b\[\d+m/g, '');
   assert.match(drawn, / on 機能-基盤$/);
 });
+
+test('a state is coloured as the tab colours its class', () => {
+  const out = { isTTY: true, columns: 200, rows: 24, text: '', write(s) { this.text += s; return true; } };
+  sink(out);
+  const listing = { read: NOW, total: 2, listed: 2, pulls: [pull(1, 'a', 'main', 10, 'blocked', 0), pull(2, 'b', 'main', 10, 'draft', 1)] };
+  const [blocked, draft] = chooseLines(listing, { nameWithOwner: 'o/r', defaultBranch: 'main', now: NOW }).lines.slice(-2).map((l) => styled(l, 200));
+  assert.match(blocked, /\x1b\[33mblocked/);   // yellow, the tab's --warn
+  assert.match(draft, /\x1b\[2mdraft/);        // dim, the tab's default
+});

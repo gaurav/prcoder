@@ -13,7 +13,7 @@
 
 import readline from 'node:readline/promises';
 import { stackOrder, stackUnder } from './public/pr.js';
-import { sortPulls, rootsInOrder, sizeChip, age } from './public/items.js';
+import { sortPulls, rootsInOrder, pullWord, sizeChip, age } from './public/items.js';
 import { repoPulls } from './github.js';
 import { readPulls, writePulls } from './store.js';
 import { currentBranch, checkoutPr, dirtyFiles, branchesBelow } from './git.js';
@@ -27,17 +27,11 @@ export const FRESH_FOR = 60_000;
 // The tab's bands and colours: green at the small end, since a small one is
 // usually the next to take, red at the large.
 const SIZE_STYLE = { XS: 'green', S: 'green', M: 'yellow', L: 'yellow', XL: 'red', XXL: 'red' };
-// The tab's words for a state (MERGE_WORD in github.js) in the tab's colours;
-// a word not here is printed plain.
-const STATE_STYLE = { ready: 'green', conflicts: 'red', 'checks not passing': 'red', blocked: 'red', draft: 'dim' };
-
-/**
- * The tab's word for a row's state: GitHub's `ready` on a pull request built
- * on others is `stacked (N)`, ready to merge into the one under it and not
- * the default branch (pullWord in public/queue.js). N counts what stackUnder
- * found under it, pull requests and bare branches alike, as the tab counts.
- */
-const stateWord = (p, under) => (p.merge === 'ready' && under.nodes.length ? `stacked (${under.nodes.length})` : p.merge ?? '');
+// The tab's colour for each state word, by the class pullWord (public/items.js)
+// gives it and the tab's stylesheet colours (`.pr-merge.<cls>` in
+// public/style.css): green, the accent, red, and yellow for its --warn. A
+// class not here -- draft, checking -- is dim, as the tab's default is.
+const STATE_STYLE = { ready: 'green', stacked: 'cyan', conflicts: 'red', 'checks-not-passing': 'red', 'behind-base': 'yellow', blocked: 'yellow' };
 
 /**
  * What a root is built on when that is not the default branch, as the tab's
@@ -90,13 +84,14 @@ export function chooseLines(listing, { nameWithOwner, branch, defaultBranch, bel
   const wide = (f) => Math.max(...rows.map((r) => f(r).length));
   const numbers = wide(number);
   const unders = new Map(rows.map(({ pr }) => [pr.number, stackUnder({ pr }, listing.pulls, below, defaultBranch)]));
-  const states = wide(({ pr }) => stateWord(pr, unders.get(pr.number)));
+  const states = wide(({ pr }) => pullWord(pr, unders.get(pr.number)).word ?? '');
   const ages = wide(({ pr }) => age(pr.updatedAt, now));
   for (const r of rows) {
     const { pr: p, depth } = r;
     const size = sizeChip(p.lines);
     const under = unders.get(p.number);
-    const state = stateWord(p, under);
+    const { word, cls } = pullWord(p, under);
+    const state = word ?? '';
     const base = builtOn(under, depth);
     const head = [
       here(p) ? { text: '›', style: ['bold', 'cyan'] } : ' ',
@@ -105,7 +100,7 @@ export function chooseLines(listing, { nameWithOwner, branch, defaultBranch, bel
       '  ',
       { text: size.padEnd(3), style: SIZE_STYLE[size] },
       '  ',
-      { text: state.padEnd(states), style: STATE_STYLE[state] ?? (state.startsWith('stacked') ? 'cyan' : undefined) },
+      { text: state.padEnd(states), style: STATE_STYLE[cls] ?? 'dim' },
       '  ',
       { text: age(p.updatedAt, now).padEnd(ages), style: 'dim' },
       '  ',
