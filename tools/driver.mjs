@@ -7,7 +7,7 @@
 
 import { createServer } from 'node:net';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -46,6 +46,10 @@ export const serverEnv = (port, extra = {}) => ({
   ...extra,
 });
 
+// Every server killOnExit has been handed, for onPullRequest's exit handler to
+// wait on before it removes the directory they run in.
+const killed = new Set();
+
 /**
  * Kill `child` however the driver ends. Load-bearing twice over: a live child
  * handle keeps the event loop open, so without a kill a driver never exits on
@@ -58,7 +62,8 @@ export const serverEnv = (port, extra = {}) => ({
  */
 export function killOnExit(child) {
   // Ahead of every other exit handler: onPullRequest's removes the worktree
-  // the server is running in, and the server must be gone first.
+  // the server is running in, and waits for the server to be gone first.
+  killed.add(child);
   process.prependListener('exit', () => child.kill());
   for (const sig of ['SIGTERM', 'SIGHUP', 'SIGINT']) process.on(sig, () => process.exit(130));
 }
@@ -157,33 +162,78 @@ export function firefoxEnv() {
  * working copy (tools/CLAUDE.md).
  */
 export function onPullRequest(number) {
+  const made = path.join(repo, 'data', `wt-${number}.branch`);
   const git = (...args) => execFileSync('git', args, { cwd: repo, encoding: 'utf8' }).trim();
   const { headRefName: branch, isCrossRepository } = JSON.parse(execFileSync('gh',
     ['pr', 'view', String(number), '--json', 'headRefName,isCrossRepository'], { cwd: repo, encoding: 'utf8' }));
   if (isCrossRepository) throw new Error(`#${number} is from another repository's branch; drive one of this repository's own`);
   if (git('branch', '--show-current') === branch) return repo;
   const dir = path.join(repo, 'data', `wt-${number}`);
-  let made = false;
-  // A worktree a killed run left behind is used as it is, and removed this time.
-  if (!existsSync(dir)) {
-    if (spawnSync('git', ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`], { cwd: repo }).status !== 0) {
-      // From origin's branch where it still has one, so the sync light has
-      // something to compare against. A merged pull request's branch is
-      // usually deleted -- PR #1's, which browser.mjs is written against, is
-      // -- and GitHub's refs/pull/<n>/head outlives it.
-      const fetched = spawnSync('git', ['fetch', '-q', 'origin', `+refs/heads/${branch}:refs/remotes/origin/${branch}`], { cwd: repo }).status === 0;
-      if (fetched) git('branch', '-q', '--track', branch, `origin/${branch}`);
-      else {
-        git('fetch', '-q', 'origin', `refs/pull/${number}/head`);
-        git('branch', '-q', branch, 'FETCH_HEAD');
-      }
-      made = true;
+  // What a killed run left -- its worktree, and the branch it made, named in
+  // `made` beside it -- is removed first, so that the branch is made again
+  // from origin and nothing is driven on a commit that run had. Used as it
+  // was, the worktree was removed this time but the branch never was: only
+  // the run that made a branch knew it had, and nothing else deleted it.
+  cleanUp(dir, made);
+  if (spawnSync('git', ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`], { cwd: repo }).status !== 0) {
+    // Named before it is made, so a run killed straight after still leaves
+    // it named for the next one to delete.
+    writeFileSync(made, `${branch}\n`);
+    // From origin's branch where it still has one, so the sync light has
+    // something to compare against. A merged pull request's branch is
+    // usually deleted -- PR #1's, which browser.mjs is written against, is
+    // -- and GitHub's refs/pull/<n>/head outlives it.
+    const fetched = spawnSync('git', ['fetch', '-q', 'origin', `+refs/heads/${branch}:refs/remotes/origin/${branch}`], { cwd: repo }).status === 0;
+    if (fetched) git('branch', '-q', '--track', branch, `origin/${branch}`);
+    else {
+      git('fetch', '-q', 'origin', `refs/pull/${number}/head`);
+      git('branch', '-q', branch, 'FETCH_HEAD');
     }
-    git('worktree', 'add', '-q', dir, branch);
   }
+  git('worktree', 'add', '-q', dir, branch);
   process.on('exit', () => {
-    spawnSync('git', ['worktree', 'remove', '--force', dir], { cwd: repo });
-    if (made) spawnSync('git', ['branch', '-q', '-D', branch], { cwd: repo });
+    // The server runs in `dir`, and its PTY's agent too: killOnExit's handler,
+    // which runs first, only signals it, so the removal waits for it to go.
+    for (const child of killed) waitGone(child);
+    cleanUp(dir, made);
   });
   return dir;
+}
+
+/**
+ * Blocks until `child` has exited, SIGKILLing it after a few seconds. For an
+ * exit handler, which runs only synchronous code -- so the child is not reaped
+ * meanwhile, and `process.kill(pid, 0)` would go on answering for its zombie.
+ * `ps` says Z for that, or nothing once it is reaped.
+ */
+function waitGone(child, ms = 3000) {
+  const alive = () => {
+    const ps = spawnSync('ps', ['-o', 'stat=', '-p', String(child.pid)], { encoding: 'utf8' });
+    return ps.status === 0 && !ps.stdout.trim().startsWith('Z');
+  };
+  const tick = new Int32Array(new SharedArrayBuffer(4));
+  const until = Date.now() + ms;
+  while (alive()) {
+    if (Date.now() > until) {
+      child.kill('SIGKILL');
+      break;
+    }
+    Atomics.wait(tick, 0, 0, 50);
+  }
+}
+
+/**
+ * Removes onPullRequest's worktree `dir`, and the branch it made, which `made`
+ * names when it made one. Either may be missing: on a first run nothing is
+ * there yet.
+ */
+function cleanUp(dir, made) {
+  if (existsSync(dir)) spawnSync('git', ['worktree', 'remove', '--force', dir], { cwd: repo });
+  // A worktree whose directory was deleted by hand is still registered, and
+  // `git worktree add` refuses its path until it is pruned.
+  spawnSync('git', ['worktree', 'prune'], { cwd: repo });
+  if (!existsSync(made)) return;
+  const branch = readFileSync(made, 'utf8').trim();
+  if (branch) spawnSync('git', ['branch', '-q', '-D', branch], { cwd: repo });
+  rmSync(made, { force: true });
 }
