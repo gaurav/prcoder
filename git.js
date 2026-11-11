@@ -601,13 +601,23 @@ export async function startOnPr(cwd, p, { inUse = async () => null } = {}) {
  * refs/heads/<name>` (gh 2.x, 2026-11-11, `prcoder 1` here). Before
  * startOnPr checked out, such a pull request was shown without one.
  *
- * A local branch of that name is checked out as it is; otherwise one is made
- * at GitHub's `refs/pull/<n>/head`, which outlives the branch, with nothing to
- * track. Resolves the note startOnPr adds to its line. Only for a pull request
- * from this repository's own branch: a fork's is fetched from
- * `refs/pull/<n>/head` by gh already. Told by asking the repository whether the
- * branch is there, not by gh's words: `failed` is rethrown unless the answer is
- * that it is not, so a network failure is still reported as gh said it.
+ * GitHub's `refs/pull/<n>/head` outlives the branch, so it is fetched, and a
+ * local branch of the head's name is used only when it is the pull request's:
+ * checked out as it is when it has the head (local commits on top included),
+ * fast-forwarded to it when it is behind. A local branch of that name with
+ * history of its own -- a name reused for other work -- is left alone, and
+ * the head is checked out as `pr-<n>` instead, under the same rules; the pane
+ * finds it by the chosen URL (withChosen in server.js), not by name. With
+ * no branch of the name, one is made at the head, with nothing to track.
+ * Resolves the note startOnPr adds to its line.
+ *
+ * Only for a pull request from this repository's own branch: a fork's is
+ * fetched from `refs/pull/<n>/head` by gh already. Told by asking the
+ * repository whether the branch is there, not by gh's words: `failed` is
+ * rethrown unless the answer is that it is not, so a network failure is still
+ * reported as gh said it. A failure after that -- the fetch, or a branch
+ * checked out in another worktree -- is reported with gh's words before it,
+ * since gh's failure is what the run was refused for.
  */
 async function checkoutGone(cwd, p, failed) {
   if (p.isCrossRepository) throw failed;
@@ -616,13 +626,36 @@ async function checkoutGone(cwd, p, failed) {
     ?? `https://github.com/${base}.git`;
   const there = await text(['ls-remote', '--heads', remote, `refs/heads/${p.headRefName}`], cwd).catch(() => null);
   if (there !== '') throw failed;
-  if (await hasCommit(`refs/heads/${p.headRefName}`, cwd)) {
-    await git(['checkout', '-q', p.headRefName], cwd);
-    return `; its branch is gone from GitHub, so it is as this clone last had it`;
+  const gone = `; its branch is gone from GitHub`;
+  try {
+    await git(['fetch', '-q', remote, `refs/pull/${p.number}/head`], cwd);
+    const head = await text(['rev-parse', 'FETCH_HEAD^{commit}'], cwd);
+    const contains = (a, b) => asks(['merge-base', '--is-ancestor', a, b], cwd);
+    const names = [p.headRefName, `pr-${p.number}`];
+    for (const name of names) {
+      const ref = `refs/heads/${name}`;
+      // `so it is pr-3, made from…` under another name, `so it was made from…` under its own.
+      const say = (was, how) => (name === p.headRefName ? `${gone}, so it ${was} ${how}`
+        : `${gone}, and ${p.headRefName} here is other work, so it is ${name}, ${how}`);
+      if (!await hasCommit(ref, cwd)) {
+        await git(['checkout', '-q', '-b', name, head], cwd);
+        return say('was', "made from the pull request's head, tracking nothing");
+      }
+      if (await contains(head, ref)) {
+        await git(['checkout', '-q', name], cwd);
+        return say('is', 'as this clone last had it');
+      }
+      // -B resets the branch, which is a fast-forward here and nothing more,
+      // and fails before it moves anything, as plain checkout does.
+      if (await contains(ref, head)) {
+        await git(['checkout', '-q', '-B', name, head], cwd);
+        return say('was', "brought up to the pull request's head");
+      }
+    }
+    throw new Error(`${names.join(' and ')} here both have history the pull request's head does not`);
+  } catch (e) {
+    throw new Error(`${failed.message.trim()}\nIts branch is gone from GitHub, and checking out what is left failed too: ${e.message.trim()}`);
   }
-  await git(['fetch', '-q', remote, `refs/pull/${p.number}/head`], cwd);
-  await git(['checkout', '-q', '-b', p.headRefName, 'FETCH_HEAD'], cwd);
-  return `; its branch is gone from GitHub, so it was made from the pull request's head, tracking nothing`;
 }
 
 /**

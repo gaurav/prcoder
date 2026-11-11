@@ -70,8 +70,9 @@ prcoder only ever shows the checked-out branch's PR, so it stops with the reason
 when the argument names no pull request (a typo, a branch with none, an issue's URL), when the PR is
 in a repository this clone does not track, or when uncommitted changes or another prcoder running
 in the same directory are in the way of the checkout. A merged pull request whose branch GitHub has
-since deleted is still checked out: from a local branch of that name if there is one, and otherwise
-from the pull request's head, onto a new branch of that name. Before `--` a flag is prcoder's, and one it does not know is an error that says where it
+since deleted is still checked out, from the pull request's head on GitHub: onto the local branch of
+that name when it has the head or is behind it, onto a new branch of that name when there is none,
+and onto `pr-<n>` when the local one is other work under the same name. Before `--` a flag is prcoder's, and one it does not know is an error that says where it
 goes, rather than a guess at which of the two it was for. `prcoder --help` lists the flags.
 
 Most settings are a flag with an environment variable of the same meaning; the flag wins when both

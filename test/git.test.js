@@ -522,10 +522,37 @@ test('a start on a pull request whose branch is gone makes it from refs/pull', {
       assert.deepEqual(await startOnPr(work, p), { branch: 'topic', said: 'checked out topic for #1; its branch is gone from' +
         " GitHub, so it was made from the pull request's head, tracking nothing" });
       assert.equal((await run('rev-parse', 'HEAD')).stdout.trim(), head);
-      // A local branch of the name is checked out as it is.
+      // A local branch of the name that has the head is checked out as it is.
       await run('checkout', '-q', 'main');
       assert.deepEqual(await startOnPr(work, p), { branch: 'topic', said: 'checked out topic for #1; its branch is gone from' +
         ' GitHub, so it is as this clone last had it' });
+      // One behind it is brought up to it.
+      await run('checkout', '-q', 'main');
+      await run('branch', '-q', '-f', 'topic', 'main');
+      assert.deepEqual(await startOnPr(work, p), { branch: 'topic', said: 'checked out topic for #1; its branch is gone from' +
+         " GitHub, so it was brought up to the pull request's head" });
+      assert.equal((await run('rev-parse', 'HEAD')).stdout.trim(), head);
+      // One with history of its own -- the name reused for other work -- is
+      // left alone, and the head is checked out under another name.
+      await run('checkout', '-q', 'main');
+      await run('branch', '-q', '-D', 'topic');
+      await run('checkout', '-q', '--orphan', 'topic');
+      await run('commit', '-q', '-m', 'other work');
+      const other = (await run('rev-parse', 'HEAD')).stdout.trim();
+      await run('checkout', '-q', 'main');
+      assert.deepEqual(await startOnPr(work, p), { branch: 'pr-1', said: 'checked out topic for #1; its branch is gone from' +
+        " GitHub, and topic here is other work, so it is pr-1, made from the pull request's head, tracking nothing" });
+      assert.equal((await run('rev-parse', 'HEAD')).stdout.trim(), head);
+      assert.equal((await run('rev-parse', 'topic')).stdout.trim(), other);
+      // A branch checked out in another worktree cannot be checked out here,
+      // and gh's words come first in the refusal, git's after.
+      await run('checkout', '-q', 'main');
+      await run('branch', '-q', '-D', 'topic', 'pr-1');
+      await run('branch', '-q', 'topic', head);
+      await run('worktree', 'add', '-q', path.join(dir, 'elsewhere'), 'topic');
+      await assert.rejects(startOnPr(work, p), (e) => /^fatal: couldn't find remote ref refs\/heads\/topic\nIts branch is gone from GitHub, and checking out what is left failed too: .*topic/s.test(e.message));
+      assert.equal(await branch(), 'main');
+      await run('worktree', 'remove', '--force', path.join(dir, 'elsewhere'));
       // A branch still there is gh's failure to report, not a gone one.
       await run('checkout', '-q', 'main');
       await run('push', '-q', 'https://github.com/o/r.git', 'topic');
