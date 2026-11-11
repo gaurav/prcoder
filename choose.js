@@ -14,10 +14,10 @@
 import readline from 'node:readline/promises';
 import { stackOrder, stackUnder } from './public/pr.js';
 import { sortPulls, rootsInOrder, pullWord, sizeChip, age } from './public/items.js';
-import { repoPulls } from './github.js';
+import { repoPulls, branchPrUrl } from './github.js';
 import { readPulls, writePulls } from './store.js';
 import { currentBranch, checkoutPr, dirtyFiles, branchesBelow } from './git.js';
-import { styled, clip, span } from './term.js';
+import { styled, clip, span, debug } from './term.js';
 
 // A listing younger than this is printed as it is, as the Pull requests tab
 // opens from one (POST /api/pulls); older, GitHub is asked first, since the
@@ -186,15 +186,32 @@ export async function choosePr(repo, facts, { input = process.stdin, output = pr
   }
 }
 
+/**
+ * Whether `p` is the checked-out branch's pull request, so there is nothing to
+ * check out. A fork's head is in the fork, so its name says nothing about this
+ * clone -- the fork's `main` is not this `main` -- and the branch gh checked it
+ * out to may be `owner/name`, tracking `refs/pull/N/head`. gh reads that
+ * config back, so it is asked which pull request this branch is
+ * (branchPrUrl): a network round trip, paid only on a pick of
+ * a fork's pull request. A failure there is taken as no, and the checkout goes
+ * ahead as it did.
+ */
+export async function isHere(repo, p, branch) {
+  if (!p.isCrossRepository) return p.headRefName === branch;
+  if (!branch) return false;
+  const url = await branchPrUrl(repo).catch((e) => (debug(`gh could not say which pull request ${branch} is: ${e.message}`), null));
+  return url === p.url;
+}
+
 async function start(repo, p, branch) {
-  if (!p.isCrossRepository && p.headRefName === branch) return { url: p.url, follow: true };
+  if (await isHere(repo, p, branch)) return { url: p.url, follow: true };
   const dirty = await dirtyFiles(repo);
   if (dirty.length) {
     console.log(`not checked out: ${dirty.length} uncommitted file${dirty.length > 1 ? 's' : ''} on ${branch ?? 'a detached HEAD'}; showing #${p.number} here instead`);
     return { url: p.url, follow: false };
   }
   const { unfinished } = await checkoutPr(repo, p.url);
-  console.log(`checked out ${p.headRefName} for #${p.number}` +
+  console.log(`checked out ${p.isCrossRepository ? `#${p.number}` : `${p.headRefName} for #${p.number}`}` +
     (unfinished ? `, but gh did not finish: ${unfinished}` : ''));
   return { url: p.url, follow: true };
 }

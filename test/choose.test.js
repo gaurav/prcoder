@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { chooseLines } from '../choose.js';
+import { chooseLines, isHere } from '../choose.js';
 import { plain, styled, sink } from '../term.js';
+import { withGh, unix } from './stub-gh.js';
 
 const NOW = Date.parse('2026-11-05T12:00:00Z');
 const day = (n) => new Date(NOW - n * 86400_000).toISOString();
@@ -127,4 +128,18 @@ test('a state is coloured as the tab colours its class', () => {
   const [blocked, draft] = chooseLines(listing, { nameWithOwner: 'o/r', defaultBranch: 'main', now: NOW }).lines.slice(-2).map((l) => styled(l, 200));
   assert.match(blocked, /\x1b\[33mblocked/);   // yellow, the tab's --warn
   assert.match(draft, /\x1b\[2mdraft/);        // dim, the tab's default
+});
+
+// gh's answer for the branch it checked a fork's pull request out to: that
+// pull request, whatever the branch is called.
+test('a fork\'s pull request is here when gh says it is the branch\'s', { skip: unix }, async () => {
+  const fork = pull(200, 'main', 'main', 60, 'ready', 0, { isCrossRepository: true });
+  await withGh(() => `echo '{"url":"${fork.url}"}'`, async () => {
+    assert.equal(await isHere('.', fork, 'someone/main'), true);
+    assert.equal(await isHere('.', { ...fork, url: 'https://github.com/gaurav/prcoder/pull/201' }, 'someone/main'), false);
+    // Not gh's question on a detached HEAD, or for one of this repository's own.
+    assert.equal(await isHere('.', fork, null), false);
+  });
+  await withGh(() => `echo 'error connecting to api.github.com' >&2\nexit 1`, async () =>
+    assert.equal(await isHere('.', fork, 'someone/main'), false));
 });

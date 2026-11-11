@@ -113,7 +113,8 @@ recently updated root when nothing is stacked. `q` or end of input starts nothin
 A pick on another branch is checked out, as the tab's Switch checks one out, and prcoder starts
 on it. With uncommitted changes nothing is checked out: the line says so, and prcoder starts
 showing that pull request on the branch you are on instead, as `prcoder <n>` would. A pick on
-the branch you are on is simply started. A local copy of the branch with commits the pull request
+the branch you are on is simply started -- a fork's pull request too, when the branch is the one
+gh checked it out to. A local copy of the branch with commits the pull request
 lacks is checked out but not fast-forwarded: the line gives gh's words (`Not possible to
 fast-forward`), prcoder starts on it, and the sync light reads `diverged`, for you or the agent to
 merge or rebase. Any other failure after the switch -- a pull that timed out, a dropped connection

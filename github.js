@@ -114,6 +114,14 @@ async function viewPr(cwd, target, fields) {
 }
 
 /**
+ * The URL of the pull request gh finds for the checked-out branch, or null:
+ * `gh pr view` with no argument, which reads the branch config `gh pr
+ * checkout` writes -- so a fork's pull request is found on the branch it was
+ * checked out to, whatever that is called (`prcoder choose`'s isHere).
+ */
+export const branchPrUrl = async (cwd) => (await viewPr(cwd, undefined, 'url'))?.url ?? null;
+
+/**
  * The URL of the pull request the command line's `<pr>` names, or an Error
  * saying why there isn't one. gh already takes a number (`42` or `#42`), a URL
  * or a head branch (`gh pr view <branch>`), so recognising one is gh's job;
