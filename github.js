@@ -282,25 +282,14 @@ export async function branchPrs(cwd, repos, branch, { has = async () => new Set(
 /** `name` (`owner/repo`) as `repos` spells it, matched case-blind, or undefined. */
 const inRepos = (repos, name) => repos.find((r) => r.toLowerCase() === name.toLowerCase());
 
-/**
- * One pull request read by its URL, in branchPrs's shape, checks and all when
- * `checks` asks: for the one the switcher or the command line chose, when the
- * branch's lookup did not find it. The lookup searches by the local branch's
- * name, and two choices it cannot find stay the branch's all the same: a
- * fork's pull request gh checked out to `owner/name` (`gh pr list --head
- * owner/name` matches nothing), and a merged or closed one on a branch that
- * also has an open one, which branchPrs leaves out once anything is open.
- *
- * `repo` is the entry of `repos` it is in, as branchPrs would have set it, and
- * null when it is in none of them, so the caller can refuse it.
- */
-export async function prByUrl(cwd, url, repos, { checks = true } = {}) {
-  const { owner, repo: name } = parsePrUrl(url);
-  const repo = inRepos(repos, `${owner}/${name}`);
-  if (!repo) return null;
-  const fields = checks ? [...BRANCH_FIELDS, 'statusCheckRollup'] : BRANCH_FIELDS;
-  const p = headSide({ ...JSON.parse(await gh(['pr', 'view', url, '--json', fields.join(',')], { cwd })), repo });
-  return 'statusCheckRollup' in p ? withChecks(p) : p;
+/** The entry of `repos` pull request `url` is in, as `repos` spells it, or undefined. */
+function repoOfUrl(repos, url) {
+  try {
+    const { owner, repo } = parsePrUrl(url);
+    return inRepos(repos, `${owner}/${repo}`);
+  } catch {
+    return undefined;
+  }
 }
 
 /** The row with its checks from prHeads, for one read without them; as it was if that fails. */
@@ -386,13 +375,30 @@ async function viewKnown(cwd, { url, repo, state }, checks) {
  * clone given a push target after its `main` was handed the parent's), and
  * nothing else would ever let go of it.
  *
+ * `chosen` is the URL of the pull request picked for this branch -- in the
+ * switcher, or on the command line -- which is the branch's whatever the
+ * search says, and is remembered with the rest, so that it is read by URL on
+ * every poll as they are. Two the search cannot find need it: a fork's pull
+ * request gh checked out to `owner/name` (`gh pr list --head owner/name`
+ * matches nothing, and `own` holds a head to the branch's name), and a merged
+ * or closed one on a branch that also has an open one, which branchPrs leaves
+ * out once anything is open. So it is added the first time, kept past `own`,
+ * and shown beside open ones whatever its state. Only one in `repos`, as for
+ * the rest. Once another is chosen, the rules apply to it again, and the next
+ * search lets it go.
+ *
  * Answers `{ prs, remember }`. `remember` is the new `known` after a search --
  * with no pull requests in it when there are none, which removes the branch's
  * entry -- and undefined when there is nothing to write: on a branch with none
  * known and none found, or none open and the same ones found, which is every
  * poll there, it would rewrite the file to say what it already says.
  */
-export async function lookupPrs(cwd, repos, known, search, { own = async (rows) => rows, fresh = false, checks = true, now = Date.now() } = {}) {
+export async function lookupPrs(cwd, repos, known, search, { own: ownRows = async (rows) => rows, chosen = null, fresh = false, checks = true, now = Date.now() } = {}) {
+  // The chosen one is the branch's whatever `own` says of it (above).
+  const own = async (rows) => {
+    const mine = new Set((await ownRows(rows.filter((p) => p.url !== chosen))).map((p) => p.url));
+    return rows.filter((p) => p.url === chosen || mine.has(p.url));
+  };
   // The row, null for one that is gone, or the entry marked unread since the
   // first read of it that failed.
   const read = (k) => viewKnown(cwd, k, checks).catch((e) => {
@@ -403,6 +409,10 @@ export async function lookupPrs(cwd, repos, known, search, { own = async (rows) 
   // URL as GitHub does; readPrs holds the two together the same way.
   const held = (k) => repos.includes(k.repo) && k.url.toLowerCase().startsWith(`https://github.com/${k.repo}/pull/`.toLowerCase());
   const prs = (known?.prs ?? []).filter((k) => held(k) && !(k.unread && now - k.unread >= UNREAD_FOR));
+  // The chosen one, the first time: in no state yet, so the first read of it
+  // is news and searches, and remembers it.
+  const pin = chosen && !prs.some((k) => k.url === chosen) && repoOfUrl(repos, chosen);
+  if (pin) prs.push({ url: chosen, repo: pin, state: null });
   const seen = new Map();
   const age = now - known?.searched;
   if (prs.some((k) => k.state === 'OPEN') && !fresh && age >= 0 && age < SEARCH_EVERY) {
@@ -410,8 +420,10 @@ export async function lookupPrs(cwd, repos, known, search, { own = async (rows) 
     // Each as it was: in the state it was remembered in, or still unread; and
     // still the branch's, by the rules a search would hold it to.
     const shown = rows.filter((p) => p && !p.unread);
+    // A closed one beside an open one stands only while it is chosen.
+    const stray = shown.some((p) => p.state !== 'OPEN' && p.url !== chosen) && shown.some((p) => p.state === 'OPEN');
     if (rows.every((p, i) => p && (prs[i].unread ? p.unread : !p.unread && p.state === prs[i].state))
-      && (await own(shown)).length === shown.length) {
+      && !stray && (await own(shown)).length === shown.length) {
       return { prs: shown, remember: prs.length === known.prs.length ? undefined : { ...known, prs } };
     }
     prs.forEach((k, i) => seen.set(k.url, rows[i]));
@@ -431,8 +443,8 @@ export async function lookupPrs(cwd, repos, known, search, { own = async (rows) 
   // In the repositories' order, as branchPrs answers, which pickPr ranks by.
   const all = [...found, ...mine]
     .sort((a, b) => repos.indexOf(a.repo) - repos.indexOf(b.repo));
-  const open = all.filter((p) => p.state === 'OPEN');
-  const shown = open.length ? open : all;
+  const open = all.filter((p) => p.state === 'OPEN' || p.url === chosen);
+  const shown = open.some((p) => p.state === 'OPEN') ? open : all;
   // One whose URL is in a repository other than the one it was found in --
   // renamed on GitHub since the remote's URL was set -- would be dropped on
   // the next read, and written again by the search that follows, every poll.

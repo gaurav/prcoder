@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { text as readBody } from 'node:stream/consumers';
 import { spawn as ptySpawn } from 'node-pty';
 import { WebSocketServer } from 'ws';
-import { loadPr, pullRequestFor, prByUrl, prBody, parsePrUrl, listPrs, branchPrs, lookupPrs, ownPrs, pickPr, issueLinks, lookupRef, setViewed, setBody, createIssue, fetchPatches, runCount, repoIssues, repoMilestones, setIssueMilestone } from './github.js';
+import { loadPr, pullRequestFor, prBody, parsePrUrl, listPrs, branchPrs, lookupPrs, ownPrs, pickPr, issueLinks, lookupRef, setViewed, setBody, createIssue, fetchPatches, runCount, repoIssues, repoMilestones, setIssueMilestone } from './github.js';
 import { notAWorkTree, snapshot, currentBranch, headCommit, commitsKnown, commitMemo, repoInfo, pushRepo, compareUrl, githubUrl, originOwner, wholePrRepo, checkoutPr, startOnPr, pushBranch, remoteBranchHead, trackingHead, localPatch, branchesBelow } from './git.js';
 import { bucket, fileUrl, fileViews } from './files.js';
 import { readPort, writePort, readRunning, writeRunning, dropRunning, readPrs, writePrs, pick, useQueueFile, movedQueue, issueUrl, readPulls } from './store.js';
@@ -205,39 +205,24 @@ const forPage = ({ checks, ...p }) => p;
  * searched and what the caller ranks and scopes by are the same repositories.
  * Run under the serial lock, since it writes the file.
  * Where the branch pushes is asked once, being for branchPrs and for ownPrs's
- * test of what is remembered, which is held to it on every poll.
+ * test of what is remembered, which is held to it on every poll. `chosen` is
+ * the URL picked for this branch (the switcher, `prcoder <pr>`), remembered
+ * with the rest so that one the search by name cannot find -- a fork's checked
+ * out to `owner/name`, a merged one beside an open one -- is read by URL like
+ * them (lookupPrs). Before it was, `prcoder <fork's PR>` showed another pull
+ * request, or none, though the start said it was on the one named.
  */
-async function findPrs(branch, { repos, repoOf }, { has, checks, fresh = false }) {
+async function findPrs(branch, { repos, repoOf }, { has, checks, chosen = null, fresh = false }) {
   if (!branch) return [];
   let pushes;
   const home = () => (pushes ??= pushRepo(repo, branch, repoOf));
   const search = async () => branchPrs(repo, repos, branch, { has, checks, home: await home() });
   const own = async (rows) => ownPrs(rows, repos, { branch, has, home: await home() });
-  const { prs, remember } = await lookupPrs(repo, repos, await readPrs(repo, branch), search, { own, fresh, checks });
+  const { prs, remember } = await lookupPrs(repo, repos, await readPrs(repo, branch), search, { own, chosen, fresh, checks });
   // A cache: a write that fails costs a search on the next poll, not this one.
   // Nothing to write on a branch with none known and none found (lookupPrs).
   if (remember) await writePrs(repo, branch, remember).catch((e) => term.debug(`prs.json not written: ${e.message}`));
   return prs;
-}
-
-/**
- * `found` with the chosen pull request in it, read by its URL when the lookup
- * by the branch's name did not find it (prByUrl in github.js says when that
- * is): without it pickPr passes over the choice, and `prcoder <fork's PR>`
- * or `prcoder <a merged PR>` showed another pull request, or none, though the
- * start said it was on the one named. `choice` is the chosen URL for this
- * branch, or null. A gh call a poll, paid only while the lookup misses it; a
- * read that fails leaves `found` as it was, so the poll shows what it can.
- */
-async function withChosen(found, choice, repos, { checks }) {
-  if (!choice || found.some((p) => p.url === choice)) return found;
-  try {
-    const p = await prByUrl(repo, choice, repos, { checks });
-    return p ? [...found, p] : found;
-  } catch (e) {
-    term.debug(`${choice} not read: ${e.message}`);
-    return found;
-  }
 }
 
 /**
@@ -269,8 +254,7 @@ async function status({ full = false, search = false } = {}) {
   // file remembers.
   const commits = commitMemo(repo);
   const fresh = search || (last != null && last.branch !== branch);
-  const found = await withChosen(await findPrs(branch, facts, { has: commits.many, checks: true, fresh }),
-    chosen?.url, facts.repos, { checks: true });
+  const found = await findPrs(branch, facts, { has: commits.many, checks: true, chosen: chosen?.url, fresh });
   const heads = pickPr(found, { head, chosen: chosen?.url, shown: pr?.url, repos: facts.repos });
   // Reloaded when the cheap check says it changed. A full refresh reloads
   // regardless, so it has no use for the cheap check.
@@ -1163,9 +1147,8 @@ async function openGithub() {
   const facts = await repoFacts();
   const { nameWithOwner, defaultBranch, repos } = facts;
   const choice = chosen?.branch === branch ? chosen.url : null;
-  const found = await serial(() => findPrs(branch, facts, { has: (oids) => commitsKnown(oids, repo), checks: false, fresh: true }));
-  const url = pickPr(await withChosen(found, choice, repos, { checks: false }),
-    { head, chosen: choice, shown: pr?.url, repos })?.url;
+  const found = await serial(() => findPrs(branch, facts, { has: (oids) => commitsKnown(oids, repo), checks: false, chosen: choice, fresh: true }));
+  const url = pickPr(found, { head, chosen: choice, shown: pr?.url, repos })?.url;
   openBrowser(githubUrl({
     prUrl: url, nameWithOwner, defaultBranch, branch,
     pushed: Boolean(await trackingHead(repo, branch)), owner: await originOwner(repo),

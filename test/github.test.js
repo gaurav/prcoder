@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { rollup, linkedIssues, linksFrom, parsePrUrl, run, issueNumber, lf, setViewed, listPrs, loadPr, prHeads, branchPrs, lookupPrs, ownPrs, SEARCH_EVERY, UNREAD_FOR, pickPr, prByUrl, lookupRef, issueLinks, createIssue, repoIssues, setIssueMilestone, pullRequestFor, repoMilestones, repoPulls, pullRow, MERGE_WORD } from '../github.js';
+import { rollup, linkedIssues, linksFrom, parsePrUrl, run, issueNumber, lf, setViewed, listPrs, loadPr, prHeads, branchPrs, lookupPrs, ownPrs, SEARCH_EVERY, UNREAD_FOR, pickPr, lookupRef, issueLinks, createIssue, repoIssues, setIssueMilestone, pullRequestFor, repoMilestones, repoPulls, pullRow, MERGE_WORD } from '../github.js';
 import { taskLines } from '../public/tasks.js';
 import { withGh, ghArgs, ghCalls, unix } from './stub-gh.js';
 
@@ -1075,6 +1075,52 @@ test('remembered pull requests are read by URL, with no search, until one is due
   }
 });
 
+// The pull request picked for the branch, in the switcher or on the command
+// line, is the branch's whatever the search by name finds or `own` says --
+// a fork's checked out to `owner/name`, a merged one beside an open one -- so
+// it is remembered and read by URL on every poll like the rest, rather than
+// read again by a second call each time. Once another is chosen, the rules
+// apply to it again and the next search lets it go.
+test('a chosen pull request is remembered and shown whatever the search finds or own says', { skip: unix }, async () => {
+  const fork = { ...HEADS[1], headRefName: 'main' };
+  const ownTopic = async (rows) => rows.filter((p) => p.headRefName === 'topic');
+  const look = (k, search, chosen, gh) => ghCalls(viewing(gh), () =>
+    lookupPrs(os.tmpdir(), ['up/repo'], k, search, { own: ownTopic, chosen, now: NOW }));
+  // A fork's, which the search by `owner/main` cannot find and own refuses.
+  const first = await look(null, searching([]), fork.url, [fork]);
+  assert.deepEqual(first.out.prs.map((p) => p.number), [2]);
+  assert.deepEqual(first.out.remember, { searched: NOW, prs: [{ url: fork.url, repo: 'up/repo', state: 'OPEN' }] });
+  // And then read by URL, with no search, as anything remembered is.
+  const search = searching([]);
+  const next = await look(first.out.remember, search, fork.url, [fork]);
+  assert.equal(search.runs, 0);
+  assert.deepEqual(next.out.prs.map((p) => p.number), [2]);
+  assert.equal(next.calls.length, 1);
+  // Chosen no longer, own's rules hold it again, and it is let go.
+  const after = await look(first.out.remember, searching([]), null, [fork]);
+  assert.deepEqual(after.out, { prs: [], remember: { searched: NOW, prs: [] } });
+  // A merged one beside an open one, which branchPrs leaves out once anything is open.
+  const open = { ...HEADS[0], headRefName: 'topic', repo: 'up/repo' };
+  const merged = { ...HEADS[2], headRefName: 'topic', state: 'MERGED' };
+  const both = await look(null, searching([open]), merged.url, [merged]);
+  assert.deepEqual(both.out.prs.map((p) => p.number).sort(), [1, 3]);
+  assert.deepEqual(both.out.remember.prs.map((k) => k.state).sort(), ['MERGED', 'OPEN']);
+  const kept = searching([open]);
+  const read = await look(both.out.remember, kept, merged.url, [open, merged]);
+  assert.equal(kept.runs, 0);
+  assert.deepEqual(read.out.prs.map((p) => p.number).sort(), [1, 3]);
+  // Chosen no longer, the merged one does not stand beside the open one.
+  const dropped = searching([open]);
+  const lone = await look(both.out.remember, dropped, null, [open, merged]);
+  assert.equal(dropped.runs, 1);
+  assert.deepEqual(lone.out.prs.map((p) => p.number), [1]);
+  assert.deepEqual(lone.out.remember.prs.map((k) => k.url), [open.url]);
+  // One in a repository this clone does not track is not read at all.
+  const elsewhere = await look(null, searching([]), 'https://github.com/else/repo/pull/9', []);
+  assert.deepEqual(elsewhere.out, { prs: [], remember: undefined });
+  assert.equal(elsewhere.calls.length, 0);
+});
+
 test('a search runs when nothing open is known, when asked, when one is due, and when one has moved', { skip: unix }, async () => {
   const merged = { ...HEADS[0], state: 'MERGED' };
   const cases = [
@@ -1265,22 +1311,3 @@ test('which of the branch\'s pull requests is shown: chosen, open, at HEAD, as b
   assert.equal(pickPr([open(1), open(2)], { head: 'aaa', chosen: 'https://github.com/up/repo/pull/7', repos }).number, 2);
 });
 
-// The chosen pull request the branch's lookup by name cannot find -- a fork's
-// checked out to `owner/name`, a merged one beside an open one -- is read by
-// its URL instead, in the lookup's shape, with the repository as `repos`
-// spells it; one in none of them is not read at all.
-test('a chosen pull request is read by its URL, in a repository this clone tracks', { skip: unix }, async () => {
-  const row = { number: 80, url: 'https://github.com/o/r/pull/80', state: 'MERGED', headRefName: 'main',
-    headRepository: { nameWithOwner: 'someone/r' }, headRepositoryOwner: { login: 'someone' },
-    statusCheckRollup: [] };
-  const { out, calls } = await ghCalls(`echo '${JSON.stringify(row)}'`, () => prByUrl(os.tmpdir(), row.url, ['O/R']));
-  assert.equal(out.repo, 'O/R');
-  assert.equal(out.headRepo, 'someone/r');
-  assert.equal(out.headOwner, 'someone');
-  assert.ok('checks' in out && !('statusCheckRollup' in out));
-  assert.equal(calls.length, 1);
-  assert.deepEqual(calls[0].slice(0, 3), ['pr', 'view', row.url]);
-  const none = await ghCalls('exit 9', () => prByUrl(os.tmpdir(), row.url, ['someone/else']));
-  assert.equal(none.out, null);
-  assert.equal(none.calls.length, 0);
-});

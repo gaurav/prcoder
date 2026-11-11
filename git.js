@@ -607,7 +607,7 @@ export async function startOnPr(cwd, p, { inUse = async () => null } = {}) {
  * fast-forwarded to it when it is behind. A local branch of that name with
  * history of its own -- a name reused for other work -- is left alone, and
  * the head is checked out as `pr-<n>` instead, under the same rules; the pane
- * finds it by the chosen URL (withChosen in server.js), not by name. With
+ * finds it by the chosen URL (lookupPrs in github.js), not by name. With
  * no branch of the name, one is made at the head, with nothing to track.
  * Resolves the note startOnPr adds to its line.
  *
