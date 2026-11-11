@@ -110,3 +110,12 @@ test('roots on different bases are in update order, and Enter takes the newest o
   assert.deepEqual(rows.map((r) => [r.pr.number, r.depth]), [[3, 0], [5, 1], [2, 0], [1, 0], [4, 1]]);
   assert.equal(pick.pr.number, 4);
 });
+
+// A base branch's name is measured in terminal columns, as styled() cuts: by
+// its length, each CJK character counted one and the note lost its tail.
+test('a wide base branch name cuts the title, not the note', () => {
+  const listing = { read: NOW, total: 1, listed: 1, pulls: [pull(1, 'a', '機能-基盤', 10, 'draft', 0, { title: 'A title long enough to cut' })] };
+  const [line] = chooseLines(listing, { nameWithOwner: 'o/r', defaultBranch: 'main', now: NOW, width: 50 }).lines.slice(-1);
+  const drawn = styled(line, 50).replaceAll(/\x1b\[\d+m/g, '');
+  assert.match(drawn, / on 機能-基盤$/);
+});

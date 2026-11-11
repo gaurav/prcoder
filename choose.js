@@ -17,7 +17,7 @@ import { sortPulls, rootsInOrder, sizeChip, age } from './public/items.js';
 import { repoPulls } from './github.js';
 import { readPulls, writePulls } from './store.js';
 import { currentBranch, checkoutPr, dirtyFiles, branchesBelow } from './git.js';
-import { styled, clip } from './term.js';
+import { styled, clip, span } from './term.js';
 
 // A listing younger than this is printed as it is, as the Pull requests tab
 // opens from one (POST /api/pulls); older, GitHub is asked first, since the
@@ -69,6 +69,9 @@ const builtOn = (under, depth) => (!depth && under.nodes.length
  * dim, and the title gives way to it (builtOn); `below` is git's word on
  * such bare branches, as branchesBelow gives it and the tab's rows take it.
  * `›` marks the one on the checked-out branch, as the tab marks it `here`.
+ * Widths are terminal columns (span in term.js), the measure styled() cuts
+ * by, so a wide character in a base branch's name cuts the title, not the
+ * note after it.
  */
 export function chooseLines(listing, { nameWithOwner, branch, defaultBranch, below = [], now = Date.now(), width = Infinity } = {}) {
   const sorted = sortPulls(listing.pulls ?? [], 'updated');
@@ -107,7 +110,7 @@ export function chooseLines(listing, { nameWithOwner, branch, defaultBranch, bel
       { text: age(p.updatedAt, now).padEnd(ages), style: 'dim' },
       '  ',
     ];
-    const room = width - head.reduce((n, seg) => n + (seg.text ?? seg).length, 0) - base.length;
+    const room = width - head.reduce((n, seg) => n + span(seg.text ?? seg), 0) - span(base);
     lines.push([...head, clip(p.title, Math.max(room, 0)), { text: base, style: 'dim' }]);
   }
   const newer = (a, b) => Date.parse(a.pr.updatedAt) > Date.parse(b.pr.updatedAt);

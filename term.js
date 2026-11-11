@@ -107,7 +107,7 @@ export function clip(line, width) {
 }
 
 /** The terminal columns `line` takes, as clip() counts them. */
-const span = (line) => [...line].reduce((n, ch) => n + columns(ch), 0);
+export const span = (line) => [...line].reduce((n, ch) => n + columns(ch), 0);
 
 /**
  * A line is a string, or an array of segments, each a string or
