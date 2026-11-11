@@ -277,6 +277,30 @@ export async function branchPrs(cwd, repos, branch, { has = async () => new Set(
   return open.length ? open : list('all', BRANCH_FIELDS);
 }
 
+/** `name` (`owner/repo`) as `repos` spells it, matched case-blind, or undefined. */
+const inRepos = (repos, name) => repos.find((r) => r.toLowerCase() === name.toLowerCase());
+
+/**
+ * One pull request read by its URL, in branchPrs's shape, checks and all when
+ * `checks` asks: for the one the switcher or the command line chose, when the
+ * branch's lookup did not find it. The lookup searches by the local branch's
+ * name, and two choices it cannot find stay the branch's all the same: a
+ * fork's pull request gh checked out to `owner/name` (`gh pr list --head
+ * owner/name` matches nothing), and a merged or closed one on a branch that
+ * also has an open one, which branchPrs leaves out once anything is open.
+ *
+ * `repo` is the entry of `repos` it is in, as branchPrs would have set it, and
+ * null when it is in none of them, so the caller can refuse it.
+ */
+export async function prByUrl(cwd, url, repos, { checks = true } = {}) {
+  const { owner, repo: name } = parsePrUrl(url);
+  const repo = inRepos(repos, `${owner}/${name}`);
+  if (!repo) return null;
+  const fields = checks ? [...BRANCH_FIELDS, 'statusCheckRollup'] : BRANCH_FIELDS;
+  const p = headSide({ ...JSON.parse(await gh(['pr', 'view', url, '--json', fields.join(',')], { cwd })), repo });
+  return 'statusCheckRollup' in p ? withChecks(p) : p;
+}
+
 /** The row with its checks from prHeads, for one read without them; as it was if that fails. */
 async function headChecks(cwd, p) {
   const heads = await prHeads(cwd, p.url);

@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { text as readBody } from 'node:stream/consumers';
 import { spawn as ptySpawn } from 'node-pty';
 import { WebSocketServer } from 'ws';
-import { loadPr, pullRequestFor, prBody, parsePrUrl, listPrs, branchPrs, lookupPrs, ownPrs, pickPr, issueLinks, lookupRef, setViewed, setBody, createIssue, fetchPatches, runCount, repoIssues, repoMilestones, setIssueMilestone } from './github.js';
+import { loadPr, pullRequestFor, prByUrl, prBody, parsePrUrl, listPrs, branchPrs, lookupPrs, ownPrs, pickPr, issueLinks, lookupRef, setViewed, setBody, createIssue, fetchPatches, runCount, repoIssues, repoMilestones, setIssueMilestone } from './github.js';
 import { notAWorkTree, snapshot, currentBranch, headCommit, commitsKnown, commitMemo, repoInfo, pushRepo, compareUrl, githubUrl, originOwner, wholePrRepo, checkoutPr, startOnPr, pushBranch, remoteBranchHead, trackingHead, localPatch, branchesBelow } from './git.js';
 import { bucket, fileUrl, fileViews } from './files.js';
 import { readPort, writePort, readPrs, writePrs, pick, useQueueFile, movedQueue, issueUrl, readPulls } from './store.js';
@@ -175,12 +175,13 @@ async function editBody(edit) {
 }
 
 /**
- * Whether the PR the last poll loaded still stands, by what prHeads answered --
+ * Whether the PR the last poll loaded still stands, by the cheap answer the
+ * poll picked (pickPr over findPrs: branchPrs's rows, or one read by URL) --
  * and if it does, it takes its checks from that answer. updatedAt decides,
  * because loadPr also runs a paginated GraphQL pass, far too much for a 60s
  * poll; but not for the checks, since one finishing leaves updatedAt alone
- * (prHeads). No PR before and none now stands too, or a branch without one
- * would pay for a loadPr on every poll.
+ * (prHeads in github.js). No PR before and none now stands too, or a branch
+ * without one would pay for a loadPr on every poll.
  *
  * The URL is the identity, not the number: a fork's pull request and one in
  * its parent can share a number. A cheap answer that carries no checks -- a
@@ -220,6 +221,26 @@ async function findPrs(branch, { repos, repoOf }, { has, checks, fresh = false }
 }
 
 /**
+ * `found` with the chosen pull request in it, read by its URL when the lookup
+ * by the branch's name did not find it (prByUrl in github.js says when that
+ * is): without it pickPr passes over the choice, and `prcoder <fork's PR>`
+ * or `prcoder <a merged PR>` showed another pull request, or none, though the
+ * start said it was on the one named. `choice` is the chosen URL for this
+ * branch, or null. A gh call a poll, paid only while the lookup misses it; a
+ * read that fails leaves `found` as it was, so the poll shows what it can.
+ */
+async function withChosen(found, choice, repos, { checks }) {
+  if (!choice || found.some((p) => p.url === choice)) return found;
+  try {
+    const p = await prByUrl(repo, choice, repos, { checks });
+    return p ? [...found, p] : found;
+  } catch (e) {
+    term.debug(`${choice} not read: ${e.message}`);
+    return found;
+  }
+}
+
+/**
  * Where the repo is, plus the PR and queue that go with it. The client polls
  * this; nothing is stored between calls, so an outside `git checkout` or an
  * edit on github.com is picked up without prcoder having to be told. The one
@@ -248,7 +269,8 @@ async function status({ full = false, search = false } = {}) {
   // file remembers.
   const commits = commitMemo(repo);
   const fresh = search || (last != null && last.branch !== branch);
-  const found = await findPrs(branch, facts, { has: commits.many, checks: true, fresh });
+  const found = await withChosen(await findPrs(branch, facts, { has: commits.many, checks: true, fresh }),
+    chosen?.url, facts.repos, { checks: true });
   const heads = pickPr(found, { head, chosen: chosen?.url, shown: pr?.url, repos: facts.repos });
   // Reloaded when the cheap check says it changed. A full refresh reloads
   // regardless, so it has no use for the cheap check.
@@ -1091,9 +1113,10 @@ async function openGithub() {
   const [branch, head] = await Promise.all([currentBranch(repo), headCommit(repo)]);
   const facts = await repoFacts();
   const { nameWithOwner, defaultBranch, repos } = facts;
-  const url = pickPr(
-    await serial(() => findPrs(branch, facts, { has: (oids) => commitsKnown(oids, repo), checks: false, fresh: true })),
-    { head, chosen: chosen?.branch === branch ? chosen.url : null, shown: pr?.url, repos })?.url;
+  const choice = chosen?.branch === branch ? chosen.url : null;
+  const found = await serial(() => findPrs(branch, facts, { has: (oids) => commitsKnown(oids, repo), checks: false, fresh: true }));
+  const url = pickPr(await withChosen(found, choice, repos, { checks: false }),
+    { head, chosen: choice, shown: pr?.url, repos })?.url;
   openBrowser(githubUrl({
     prUrl: url, nameWithOwner, defaultBranch, branch,
     pushed: Boolean(await trackingHead(repo, branch)), owner: await originOwner(repo),

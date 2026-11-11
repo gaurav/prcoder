@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { rollup, linkedIssues, linksFrom, parsePrUrl, run, issueNumber, lf, setViewed, listPrs, loadPr, prHeads, branchPrs, lookupPrs, ownPrs, SEARCH_EVERY, UNREAD_FOR, pickPr, lookupRef, issueLinks, createIssue, repoIssues, setIssueMilestone, pullRequestFor, repoMilestones, repoPulls, pullRow, MERGE_WORD } from '../github.js';
+import { rollup, linkedIssues, linksFrom, parsePrUrl, run, issueNumber, lf, setViewed, listPrs, loadPr, prHeads, branchPrs, lookupPrs, ownPrs, SEARCH_EVERY, UNREAD_FOR, pickPr, prByUrl, lookupRef, issueLinks, createIssue, repoIssues, setIssueMilestone, pullRequestFor, repoMilestones, repoPulls, pullRow, MERGE_WORD } from '../github.js';
 import { taskLines } from '../public/tasks.js';
 import { withGh, ghArgs, ghCalls, unix } from './stub-gh.js';
 
@@ -1261,4 +1261,24 @@ test('which of the branch\'s pull requests is shown: chosen, open, at HEAD, as b
   // The one picked in the switcher wins over all of it -- while it is listed.
   assert.equal(pickPr([open(1), open(2)], { head: 'aaa', chosen: open(1).url, repos }).number, 1);
   assert.equal(pickPr([open(1), open(2)], { head: 'aaa', chosen: 'https://github.com/up/repo/pull/7', repos }).number, 2);
+});
+
+// The chosen pull request the branch's lookup by name cannot find -- a fork's
+// checked out to `owner/name`, a merged one beside an open one -- is read by
+// its URL instead, in the lookup's shape, with the repository as `repos`
+// spells it; one in none of them is not read at all.
+test('a chosen pull request is read by its URL, in a repository this clone tracks', { skip: unix }, async () => {
+  const row = { number: 80, url: 'https://github.com/o/r/pull/80', state: 'MERGED', headRefName: 'main',
+    headRepository: { nameWithOwner: 'someone/r' }, headRepositoryOwner: { login: 'someone' },
+    statusCheckRollup: [] };
+  const { out, calls } = await ghCalls(`echo '${JSON.stringify(row)}'`, () => prByUrl(os.tmpdir(), row.url, ['O/R']));
+  assert.equal(out.repo, 'O/R');
+  assert.equal(out.headRepo, 'someone/r');
+  assert.equal(out.headOwner, 'someone');
+  assert.ok('checks' in out && !('statusCheckRollup' in out));
+  assert.equal(calls.length, 1);
+  assert.deepEqual(calls[0].slice(0, 3), ['pr', 'view', row.url]);
+  const none = await ghCalls('exit 9', () => prByUrl(os.tmpdir(), row.url, ['someone/else']));
+  assert.equal(none.out, null);
+  assert.equal(none.calls.length, 0);
 });
