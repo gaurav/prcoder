@@ -576,8 +576,6 @@ test('a start is on the pull request\'s branch, or refused over uncommitted work
       await assert.rejects(startOnPr(dir, p, { inUse }), { message: '#76 is on topic, and another prcoder is running in' +
         ' this directory; a checkout would move the working copy under its agent. Quit that one first, or start this one in a worktree on topic' });
       assert.equal(asked, 1);
-      // The caller's branch is taken as it is, not asked again.
-      assert.deepEqual(await startOnPr(dir, p, { branch: 'topic' }), { branch: 'topic', said: null });
     });
     assert.equal(await branch(), 'main');
     await withGh(() => 'git checkout -q topic', async () => {

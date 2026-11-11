@@ -563,14 +563,16 @@ export function inTheWay(p, dirty, branch) {
  * refusal, as it is for the pane's Switch: a checkout over it is git's to
  * refuse, or worse, to carry.
  *
- * `branch` is the checked-out branch when the caller has just read it
- * (`prcoder choose` has); `inUse` is asked only when there is a checkout to
- * make, and answers with why this working copy is not free to move, or
- * nothing: server.js asks whether another prcoder is running in it, whose
- * agent and sync light a checkout here would move under it.
+ * The branch is read here, never taken from the caller: it is what
+ * checkoutPr's "did gh switch?" compares against, and one read before
+ * `prcoder choose`'s question could be minutes old. `inUse` is asked only
+ * when there is a checkout to make, and answers with why this working copy is
+ * not free to move, or nothing: server.js asks whether another prcoder is
+ * running in it, whose agent and sync light a checkout here would move under
+ * it.
  */
-export async function startOnPr(cwd, p, { branch: given, inUse = async () => null } = {}) {
-  const branch = given === undefined ? await currentBranch(cwd) : given;
+export async function startOnPr(cwd, p, { inUse = async () => null } = {}) {
+  const branch = await currentBranch(cwd);
   if (await isHere(cwd, p, branch)) return { branch, said: null };
   const busy = await inUse();
   if (busy) {

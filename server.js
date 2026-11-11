@@ -1354,7 +1354,7 @@ if (import.meta.main) {
         ? await choosePr(repo, facts)
         : { pr: await pullRequestFor(repo, cli.target, facts.repos) };
       if (!pick) process.exit(0);
-      const { branch, said } = await startOnPr(repo, pick.pr, { branch: pick.branch, inUse: runningHere });
+      const { branch, said } = await startOnPr(repo, pick.pr, { inUse: runningHere });
       if (said) console.log(said);
       chosen = { branch, url: pick.pr.url };
     } catch (e) {

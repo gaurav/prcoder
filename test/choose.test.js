@@ -9,6 +9,7 @@ import { PassThrough } from 'node:stream';
 import { chooseLines, choosePr } from '../choose.js';
 import { writePulls } from '../store.js';
 import { plain, styled, sink } from '../term.js';
+import { withGh } from './stub-gh.js';
 
 // The one test here that runs git does it in a throwaway repo, and a git
 // hook's GIT_DIR would aim it at the clone the suite runs in (test/CLAUDE.md).
@@ -141,12 +142,13 @@ test('a state is coloured as the tab colours its class', () => {
   assert.match(draft, /\x1b\[2mdraft/);        // dim, the tab's default
 });
 
-// Uncommitted work refuses a checkout, so `prcoder choose` says so before the
-// question, and a pick of another branch's pull request is asked again rather
-// than ending the run after the list has been read; this branch's is taken.
-test('with uncommitted work, a pick on another branch is asked again', { skip: process.platform === 'win32' && 'sh' }, async () => {
+// A throwaway repo on `branch` with an uncommitted change, and choosePr run
+// over `pulls` with `answers` typed at each question: what it picked, what it
+// said, and the questions it asked.
+async function chooseOver(branch, pulls, answers) {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'prcoder-choose-'));
   const said = [];
+  const asked = [];
   const log = console.log;
   try {
     const run = (...args) => git('git', ['-c', 'user.name=t', '-c', 'user.email=t@t.invalid', '-c', 'commit.gpgsign=false', ...args], { cwd: dir });
@@ -154,22 +156,55 @@ test('with uncommitted work, a pick on another branch is asked again', { skip: p
     await fs.writeFile(path.join(dir, 'a.txt'), 'a\n');
     await run('add', 'a.txt');
     await run('commit', '-q', '-m', 'x');
-    await run('checkout', '-q', '-b', 'topic');
+    if (branch !== 'main') await run('checkout', '-q', '-b', branch);
     await fs.writeFile(path.join(dir, 'a.txt'), 'changed\n');
-    await writePulls(dir, 'gaurav/prcoder', { total: 2, milestones: [], pulls: [
-      pull(5, 'elsewhere', 'main', 10, 'ready', 1), pull(6, 'topic', 'main', 10, 'ready', 2)] });
+    await writePulls(dir, 'gaurav/prcoder', { total: pulls.length, milestones: [], pulls });
     const input = new PassThrough();
     const output = new PassThrough();
-    const answers = ['5', '6'];
-    output.on('data', (d) => { if (/PR number/.test(String(d))) input.write(`${answers.shift()}\n`); });
+    output.on('data', (d) => {
+      const q = String(d);
+      if (!/PR number/.test(q)) return;
+      asked.push(q);
+      input.write(`${answers.shift() ?? 'q'}\n`);
+    });
     console.log = (...a) => said.push(plain(a.join(' ')));
     const got = await choosePr(dir, { nameWithOwner: 'gaurav/prcoder', defaultBranch: 'main' }, { input, output });
-    assert.equal(got.pr.number, 6);
-    assert.equal(got.branch, 'topic');
-    assert.ok(said.includes("1 uncommitted file on topic: only this branch's pull request can be picked until it is committed or stashed"), said.join('\n'));
-    assert.ok(said.includes('#5 is on elsewhere, and 1 uncommitted file on topic is in the way; commit or stash it first'), said.join('\n'));
+    return { got, said, asked };
   } finally {
     console.log = log;
     await fs.rm(dir, { recursive: true, force: true });
   }
+}
+
+// Uncommitted work refuses a checkout, so `prcoder choose` says so before the
+// question, offers this branch's pull request on Enter rather than the newest
+// (which would only be refused), and asks again after a pick of another
+// branch's rather than ending the run after the list has been read.
+test('with uncommitted work, Enter offers this branch\'s, and a pick on another is asked again', { skip: process.platform === 'win32' && 'sh' }, async () => {
+  const { got, said, asked } = await chooseOver('topic',
+    [pull(5, 'elsewhere', 'main', 10, 'ready', 1), pull(6, 'topic', 'main', 10, 'ready', 2)], ['5', '']);
+  assert.equal(got.pr.number, 6);
+  assert.equal(asked[0], "PR number [6, this branch's], or q: ");
+  assert.ok(said.includes("1 uncommitted file on topic: only this branch's pull request, #6, can be picked until it is committed or stashed"), said.join('\n'));
+  assert.ok(said.includes('#5 is on elsewhere, and 1 uncommitted file on topic is in the way; commit or stash it first'), said.join('\n'));
+});
+
+// With none of the listed on this branch, nothing is offered on Enter, and a
+// fork's pull request -- whose head's name says nothing about this clone -- is
+// asked of gh (isHere), and asked again when it is not this branch's, as a
+// pull request from this repository's own branch is.
+test('with uncommitted work and nothing of this branch\'s, Enter offers nothing and a fork is asked again', { skip: process.platform === 'win32' && 'sh' }, async () => {
+  const fork = pull(7, 'main', 'main', 10, 'ready', 2, { isCrossRepository: true });
+  const { got, said, asked } = await withGh(() => `echo '{"url":"https://github.com/gaurav/prcoder/pull/1"}'`,
+    () => chooseOver('main', [pull(5, 'elsewhere', 'main', 10, 'ready', 1), fork], ['', '7', 'q']));
+  assert.equal(got, null);
+  assert.equal(asked[0], 'PR number, or q: ');
+  assert.ok(said.includes("1 uncommitted file on main: no pull request listed is this branch's, and another's cannot be checked out until it is committed or stashed"), said.join('\n'));
+  assert.ok(said.includes("commit or stash first to pick another branch's pull request, or q to quit"), said.join('\n'));
+  assert.ok(said.includes('#7 is on main, and 1 uncommitted file on main is in the way; commit or stash it first'), said.join('\n'));
+  assert.equal(asked.length, 3);
+  // The fork's own pull request checked out here is no checkout, and is taken.
+  const here = await withGh(() => `echo '{"url":"${fork.url}"}'`,
+    () => chooseOver('someone/main', [fork], ['7']));
+  assert.equal(here.got.pr.number, 7);
 });
