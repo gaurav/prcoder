@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { text as readBody } from 'node:stream/consumers';
 import { spawn as ptySpawn } from 'node-pty';
 import { WebSocketServer } from 'ws';
-import { loadPr, prHeads, prUrl, pullRequestFor, prBody, parsePrUrl, listPrs, branchPrs, lookupPrs, ownPrs, pickPr, issueLinks, lookupRef, setViewed, setBody, createIssue, fetchPatches, runCount, repoPulls, repoIssues, repoMilestones, setIssueMilestone } from './github.js';
+import { loadPr, prHeads, pullRequestFor, prBody, parsePrUrl, listPrs, branchPrs, lookupPrs, ownPrs, pickPr, issueLinks, lookupRef, setViewed, setBody, createIssue, fetchPatches, runCount, repoPulls, repoIssues, repoMilestones, setIssueMilestone } from './github.js';
 import { notAWorkTree, snapshot, currentBranch, headCommit, commitsKnown, commitMemo, repoInfo, pushRepo, prScope, compareUrl, githubUrl, originOwner, wholePrRepo, checkoutPr, pushBranch, remoteBranchHead, trackingHead, localPatch, branchesBelow } from './git.js';
 import { bucket, fileUrl, fileViews } from './files.js';
 import { readPort, writePort, readPrs, writePrs, pick, useQueueFile, movedQueue, issueUrl, readPulls, writePulls } from './store.js';
@@ -1117,7 +1117,9 @@ function watch(child, shell, failed) {
 }
 
 /**
- * `g`: the PR on GitHub, or what githubUrl() opens without one. gh is asked
+ * `g`: the PR on GitHub, or what githubUrl() opens without one. A pinned
+ * `target` is already the URL (pullRequestFor, or `prcoder choose`'s pick), so
+ * it is opened as it is, with no round trip to gh. Otherwise gh is asked
  * again rather than trusting `pr`, which is only as fresh as the last poll --
  * and polls stop while no tab is visible, which is exactly when someone is at
  * this terminal pressing keys, and the agent may have switched branches since.
@@ -1129,7 +1131,7 @@ async function openGithub() {
   const [branch, head] = await Promise.all([currentBranch(repo), headCommit(repo)]);
   const facts = await repoFacts();
   const { nameWithOwner, defaultBranch, repos } = facts;
-  const url = target ? await prUrl(repo, target) : pickPr(
+  const url = target ?? pickPr(
     await serial(() => findPrs(branch, facts, { has: (oids) => commitsKnown(oids, repo), checks: false, fresh: true })),
     { head, chosen: chosen?.branch === branch ? chosen.url : null, shown: pr?.url, repos })?.url;
   openBrowser(githubUrl({

@@ -113,9 +113,6 @@ async function viewPr(cwd, target, fields) {
   }
 }
 
-/** The PR's url and nothing else, which is all the `g` key needs. */
-export const prUrl = async (cwd, target) => (await viewPr(cwd, target, 'url'))?.url;
-
 /**
  * The URL of the pull request the command line's `<pr>` names, or an Error
  * saying why there isn't one. gh already takes a number (`42` or `#42`), a URL
