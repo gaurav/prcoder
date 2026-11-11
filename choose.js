@@ -193,8 +193,8 @@ async function start(repo, p, branch) {
     console.log(`not checked out: ${dirty.length} uncommitted file${dirty.length > 1 ? 's' : ''} on ${branch ?? 'a detached HEAD'}; showing #${p.number} here instead`);
     return { url: p.url, follow: false };
   }
-  const { diverged } = await checkoutPr(repo, p.url);
+  const { unfinished } = await checkoutPr(repo, p.url);
   console.log(`checked out ${p.headRefName} for #${p.number}` +
-    (diverged ? `, but it has diverged from the pull request's head, so it was not fast-forwarded` : ''));
+    (unfinished ? `, but gh did not finish: ${unfinished}` : ''));
   return { url: p.url, follow: true };
 }

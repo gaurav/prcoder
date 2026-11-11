@@ -512,7 +512,7 @@ test('a checkout that switched branches and then could not fast-forward is still
     await run('branch', 'topic');
     const fails = 'echo "fatal: Not possible to fast-forward, aborting." >&2\nexit 1';
     await withGh(() => `git checkout -q topic\n${fails}`, async () => {
-      assert.match((await checkoutPr(dir, url)).diverged, /fast-forward/);
+      assert.match((await checkoutPr(dir, url)).unfinished, /fast-forward/);
     });
     assert.equal((await git('git', ['symbolic-ref', '--short', 'HEAD'], { cwd: dir })).stdout.trim(), 'topic');
     await withGh(() => fails, async () => {

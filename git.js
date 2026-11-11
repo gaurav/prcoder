@@ -519,15 +519,21 @@ export function wholePrRepo(url) {
  * before it reaches gh's argv; which repositories it may be in is the
  * route's to say (server.js).
  *
- * Resolves `{ diverged }` -- gh's complaint -- when gh switched branches and
- * then failed: on a local branch that already exists, gh checks it out and
- * then `git merge --ff-only`s it onto the pull request's head, which a branch
- * with commits of its own refuses ("Not possible to fast-forward"). The merge
- * aborts cleanly, so the branch is checked out and the pane's sync light says
- * `diverged`; reconciling is for you or the agent, not a reason to start
- * nothing. Told by the branch changing, not by git's words, which a
- * translated git prints otherwise. Not `--force`: that resets the local
- * branch to the head and drops its own commits.
+ * Resolves `{ unfinished }` -- gh's own words -- when gh switched branches
+ * and then failed. The usual cause: on a local branch that already exists, gh
+ * checks it out and then `git merge --ff-only`s it onto the pull request's
+ * head, which a branch with commits of its own refuses ("Not possible to
+ * fast-forward"). The merge aborts cleanly, so the branch is checked out and
+ * the pane's sync light says `diverged`; reconciling is for you or the agent,
+ * not a reason to start nothing. Told by the branch changing, not by git's
+ * words, which a translated git prints otherwise. Not `--force`: that resets
+ * the local branch to the head and drops its own commits.
+ *
+ * But that is not the only failure after the switch -- the timeout stopping
+ * the pull, the network dropping, a config write -- and this cannot tell them
+ * apart without reading the words it will not read. So a caller says what gh
+ * said, rather than calling every one of them a divergence, which sent
+ * someone whose pull had timed out looking for commits that were not there.
  */
 export async function checkoutPr(cwd, url) {
   wholePrRepo(url);
@@ -537,7 +543,7 @@ export async function checkoutPr(cwd, url) {
     return {};
   } catch (e) {
     if (await currentBranch(cwd) === before) throw e;
-    return { diverged: e.message };
+    return { unfinished: e.message };
   }
 }
 

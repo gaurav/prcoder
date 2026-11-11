@@ -114,8 +114,10 @@ A pick on another branch is checked out, as the tab's Switch checks one out, and
 on it. With uncommitted changes nothing is checked out: the line says so, and prcoder starts
 showing that pull request on the branch you are on instead, as `prcoder <n>` would. A pick on
 the branch you are on is simply started. A local copy of the branch with commits the pull request
-lacks is checked out but not fast-forwarded: the line says it has diverged, prcoder starts on it,
-and the sync light reads `diverged`, for you or the agent to merge or rebase.
+lacks is checked out but not fast-forwarded: the line gives gh's words (`Not possible to
+fast-forward`), prcoder starts on it, and the sync light reads `diverged`, for you or the agent to
+merge or rebase. Any other failure after the switch -- a pull that timed out, a dropped connection
+-- is reported the same way, in gh's words, and prcoder starts on the branch it switched to.
 
 The list is the tab's listing, read from GitHub unless `.prcoder/pulls.json` is under a minute
 old, and written there, so the tab opens from the same read. `prcoder choose` takes the other
