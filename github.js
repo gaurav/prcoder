@@ -153,7 +153,9 @@ export async function pullRequestFor(cwd, target, repos) {
     throw new Error(`could not look up ${target}: ${e.message}`);
   }
   const { owner, repo } = parsePrUrl(found.url);
-  if (!repos.includes(`${owner}/${repo}`)) {
+  // Case-blind: the URL is spelled as GitHub spells the repository, and
+  // `repos` as each remote's URL spells it (lookupPrs's `held` is the same).
+  if (!inRepos(repos, `${owner}/${repo}`)) {
     throw new Error(`${found.url} is in ${owner}/${repo}, which this clone does not track; run prcoder in a clone of it`);
   }
   return found;

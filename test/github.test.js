@@ -311,6 +311,8 @@ test('the command line\'s <pr> is looked up, and refused when it names no pull r
     // Found, but in a repository this clone's pull requests are not looked for in.
     await assert.rejects(pullRequestFor(os.tmpdir(), '177', ['someone/else']),
       { message: 'https://github.com/gaurav/prcoder/pull/177 is in gaurav/prcoder, which this clone does not track; run prcoder in a clone of it' });
+    // A remote's URL may spell the repository otherwise than GitHub does.
+    assert.deepEqual(await pullRequestFor(os.tmpdir(), '177', ['Gaurav/PRCoder']), found);
   });
   await withGh(() => `echo 'no pull requests found for branch "no-such-branch"' >&2\nexit 1`, () =>
     assert.rejects(pullRequestFor(os.tmpdir(), 'no-such-branch', repos),
