@@ -491,6 +491,58 @@ test('a checkout that switched branches and then could not fast-forward is still
   }
 });
 
+// A merged pull request whose branch GitHub deleted: gh's checkout fetches the
+// branch first and fails, and the start makes it from what is left -- a local
+// branch of that name, or refs/pull/<n>/head -- but only once the repository
+// has said the branch is not there. A bare repo stands in for GitHub, by
+// insteadOf, so nothing here reaches the network.
+test('a start on a pull request whose branch is gone makes it from refs/pull', { skip: unix }, async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'prcoder-gone-'));
+  const work = path.join(dir, 'work');
+  const hub = path.join(dir, 'hub.git');
+  const run = (...args) => testGit(work, ...args);
+  const branch = async () => (await git('git', ['symbolic-ref', '--short', 'HEAD'], { cwd: work })).stdout.trim();
+  const p = { url: 'https://github.com/o/r/pull/1', number: 1, headRefName: 'topic', isCrossRepository: false };
+  const gh = () => `echo "fatal: couldn't find remote ref refs/heads/topic" >&2\nexit 1`;
+  try {
+    await git('git', ['init', '-q', '--bare', hub]);
+    await git('git', ['init', '-q', '-b', 'main', work]);
+    await run('config', `url.${hub}.insteadOf`, 'https://github.com/o/r.git');
+    await fs.writeFile(path.join(work, 'a.txt'), 'a\n');
+    await run('add', 'a.txt');
+    await run('commit', '-q', '-m', 'main');
+    await run('checkout', '-q', '-b', 'topic');
+    await fs.writeFile(path.join(work, 'a.txt'), 'b\n');
+    await run('commit', '-q', '-am', 'topic');
+    const head = (await run('rev-parse', 'HEAD')).stdout.trim();
+    await run('push', '-q', 'https://github.com/o/r.git', 'main', `topic:refs/pull/1/head`);
+    await run('checkout', '-q', 'main');
+    await run('branch', '-q', '-D', 'topic');
+    await withGh(gh, async () => {
+      assert.deepEqual(await startOnPr(work, p), { branch: 'topic', said: 'checked out topic for #1; its branch is gone from' +
+        " GitHub, so it was made from the pull request's head, tracking nothing" });
+      assert.equal((await run('rev-parse', 'HEAD')).stdout.trim(), head);
+      // A local branch of the name is checked out as it is.
+      await run('checkout', '-q', 'main');
+      assert.deepEqual(await startOnPr(work, p), { branch: 'topic', said: 'checked out topic for #1; its branch is gone from' +
+        ' GitHub, so it is as this clone last had it' });
+      // A branch still there is gh's failure to report, not a gone one.
+      await run('checkout', '-q', 'main');
+      await run('push', '-q', 'https://github.com/o/r.git', 'topic');
+      await assert.rejects(startOnPr(work, p), /couldn't find remote ref/);
+      assert.equal(await branch(), 'main');
+      // As is a repository that cannot be asked.
+      await run('config', `url.${path.join(dir, 'nowhere.git')}.insteadOf`, 'https://github.com/o/r.git');
+      await run('config', '--unset', `url.${hub}.insteadOf`);
+      await assert.rejects(startOnPr(work, p), /couldn't find remote ref/);
+      // And a fork's, whose head gh fetches from refs/pull already.
+      await assert.rejects(startOnPr(work, { ...p, isCrossRepository: true }), /couldn't find remote ref/);
+    });
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
+
 // The start's one way onto a pull request (`prcoder <pr>`, a `choose` pick):
 // nothing to do on its branch, a refusal over uncommitted work, since the pane
 // shows only the checked-out branch's pull request, and a checkout otherwise.

@@ -563,12 +563,48 @@ export async function startOnPr(cwd, p, { branch: given, inUse = async () => nul
     throw new Error(`#${p.number} is on ${p.headRefName}, and ${dirty.length} uncommitted file${many ? 's' : ''}` +
       ` on ${branch ?? 'a detached HEAD'} ${many ? 'are' : 'is'} in the way; commit or stash ${many ? 'them' : 'it'} first`);
   }
-  const { unfinished } = await checkoutPr(cwd, p.url, { before: branch });
+  let unfinished, gone;
+  try {
+    ({ unfinished } = await checkoutPr(cwd, p.url, { before: branch }));
+  } catch (e) {
+    gone = await checkoutGone(cwd, p, e);
+  }
   return {
     branch: await currentBranch(cwd),
     said: `checked out ${p.isCrossRepository ? `#${p.number}` : `${p.headRefName} for #${p.number}`}` +
-      (unfinished ? `, but gh did not finish: ${unfinished}` : ''),
+      (unfinished ? `, but gh did not finish: ${unfinished}` : '') + (gone ?? ''),
   };
+}
+
+/**
+ * The checkout gh cannot make of a pull request whose branch is gone from
+ * GitHub -- deleted on merge, as most are -- made from what is left: gh
+ * fetches the head branch first, and fails with `couldn't find remote ref
+ * refs/heads/<name>` (gh 2.x, 2026-11-11, `prcoder 1` here). Before
+ * startOnPr checked out, such a pull request was shown without one.
+ *
+ * A local branch of that name is checked out as it is; otherwise one is made
+ * at GitHub's `refs/pull/<n>/head`, which outlives the branch, with nothing to
+ * track. Resolves the note startOnPr adds to its line. Only for a pull request
+ * from this repository's own branch: a fork's is fetched from
+ * `refs/pull/<n>/head` by gh already. Told by asking the repository whether the
+ * branch is there, not by gh's words: `failed` is rethrown unless the answer is
+ * that it is not, so a network failure is still reported as gh said it.
+ */
+async function checkoutGone(cwd, p, failed) {
+  if (p.isCrossRepository) throw failed;
+  const base = wholePrRepo(p.url);
+  const remote = (await remoteRepos(cwd)).find((r) => r.repo.toLowerCase() === base.toLowerCase())?.name
+    ?? `https://github.com/${base}.git`;
+  const there = await text(['ls-remote', '--heads', remote, `refs/heads/${p.headRefName}`], cwd).catch(() => null);
+  if (there !== '') throw failed;
+  if (await hasCommit(`refs/heads/${p.headRefName}`, cwd)) {
+    await git(['checkout', '-q', p.headRefName], cwd);
+    return `; its branch is gone from GitHub, so it is as this clone last had it`;
+  }
+  await git(['fetch', '-q', remote, `refs/pull/${p.number}/head`], cwd);
+  await git(['checkout', '-q', '-b', p.headRefName, 'FETCH_HEAD'], cwd);
+  return `; its branch is gone from GitHub, so it was made from the pull request's head, tracking nothing`;
 }
 
 /**
