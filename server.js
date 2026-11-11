@@ -1031,6 +1031,30 @@ async function whoHasPort(wanted) {
   }
 }
 
+/**
+ * Whether another prcoder is running in this directory, said for startOnPr's
+ * refusal, or null. Asked on the ports this run would bind first -- the one
+ * named by --port or PRCODER_PORT, and the one recorded for this directory --
+ * which is where an earlier prcoder here is, unless it had moved aside to a
+ * kernel-chosen port itself. One started in a subdirectory has a port of its
+ * own, and is not found. Only the directory counts: one in another worktree
+ * has a working copy of its own, and `whoami`'s `repo` is the directory it
+ * runs in.
+ */
+async function runningHere() {
+  const ports = [...new Set([pinnedPort, await readPort(repo)].filter(Boolean))];
+  for (const port of ports) {
+    try {
+      const res = await fetch(`http://localhost:${port}/api/whoami`, { signal: AbortSignal.timeout(2000) });
+      const other = await res.json();
+      if (other?.prcoder && other.repo === repo) {
+        return `another prcoder is running in this directory (http://localhost:${port}${other.branch ? `, on ${other.branch}` : ''})`;
+      }
+    } catch { /* nothing there, or not a prcoder */ }
+  }
+  return null;
+}
+
 async function ready() {
   const port = server.address().port;
   const url = `http://localhost:${port}`;
@@ -1321,6 +1345,8 @@ if (import.meta.main) {
   // pane shows only the checked-out branch's, and held as that branch's choice
   // the way the pane's Switch holds one: of two pull requests on one branch,
   // the one asked for is the one shown.
+  // The checkout is refused while another prcoder runs in this directory
+  // (runningHere): it would move that one's agent onto another branch.
   if (cli.choose || cli.target) {
     try {
       const facts = await repoFacts();
@@ -1328,7 +1354,7 @@ if (import.meta.main) {
         ? await choosePr(repo, facts)
         : { pr: await pullRequestFor(repo, cli.target, facts.repos) };
       if (!pick) process.exit(0);
-      const { branch, said } = await startOnPr(repo, pick.pr, { branch: pick.branch });
+      const { branch, said } = await startOnPr(repo, pick.pr, { branch: pick.branch, inUse: runningHere });
       if (said) console.log(said);
       chosen = { branch, url: pick.pr.url };
     } catch (e) {

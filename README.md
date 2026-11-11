@@ -68,8 +68,8 @@ and asks which to check out and start on
 `claude` untouched, so `prcoder 123 -- --effort high --model opus` opens PR 123 with that session.
 prcoder only ever shows the checked-out branch's PR, so it stops with the reason, rather than start,
 when the argument names no pull request (a typo, a branch with none, an issue's URL), when the PR is
-in a repository this clone does not track, or when uncommitted changes are in the way of the
-checkout. Before `--` a flag is prcoder's, and one it does not know is an error that says where it
+in a repository this clone does not track, or when uncommitted changes or another prcoder running
+in the same directory are in the way of the checkout. Before `--` a flag is prcoder's, and one it does not know is an error that says where it
 goes, rather than a guess at which of the two it was for. `prcoder --help` lists the flags.
 
 Most settings are a flag with an environment variable of the same meaning; the flag wins when both

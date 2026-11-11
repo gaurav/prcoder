@@ -514,7 +514,16 @@ test('a start is on the pull request\'s branch, or refused over uncommitted work
     });
     assert.equal(await branch(), 'main');
     await run('checkout', '-q', '--', 'a.txt');
+    // Another prcoder running here refuses the checkout, which would move its
+    // agent's working copy, and is asked only when there is one to make.
+    let asked = 0;
+    const inUse = async () => (asked++, 'another prcoder is running in this directory');
     await withGh(() => 'exit 9', async () => {
+      assert.deepEqual(await startOnPr(dir, { ...p, headRefName: 'main' }, { inUse }), { branch: 'main', said: null });
+      assert.equal(asked, 0);
+      await assert.rejects(startOnPr(dir, p, { inUse }), { message: '#76 is on topic, and another prcoder is running in' +
+        ' this directory; a checkout would move the working copy under its agent. Quit that one first, or start this one in a worktree on topic' });
+      assert.equal(asked, 1);
       // The caller's branch is taken as it is, not asked again.
       assert.deepEqual(await startOnPr(dir, p, { branch: 'topic' }), { branch: 'topic', said: null });
     });

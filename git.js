@@ -544,11 +544,19 @@ export async function checkoutPr(cwd, url, opts = {}) {
  * refuse, or worse, to carry.
  *
  * `branch` is the checked-out branch when the caller has just read it
- * (`prcoder choose` has).
+ * (`prcoder choose` has); `inUse` is asked only when there is a checkout to
+ * make, and answers with why this working copy is not free to move, or
+ * nothing: server.js asks whether another prcoder is running in it, whose
+ * agent and sync light a checkout here would move under it.
  */
-export async function startOnPr(cwd, p, { branch: given } = {}) {
+export async function startOnPr(cwd, p, { branch: given, inUse = async () => null } = {}) {
   const branch = given === undefined ? await currentBranch(cwd) : given;
   if (await isHere(cwd, p, branch)) return { branch, said: null };
+  const busy = await inUse();
+  if (busy) {
+    throw new Error(`#${p.number} is on ${p.headRefName}, and ${busy}; a checkout would move the working copy` +
+      ` under its agent. Quit that one first, or start this one in a worktree on ${p.headRefName}`);
+  }
   const dirty = await dirtyFiles(cwd);
   if (dirty.length) {
     const many = dirty.length > 1;
