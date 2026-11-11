@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { normalise, pick, toDisk, readStore, writeStore, readPort, writePort, readPrs, writePrs, readPulls, writePulls, replaceItems, useQueueFile } from '../store.js';
+import { normalise, pick, toDisk, readStore, writeStore, readPort, writePort, readRunning, writeRunning, dropRunning, readPrs, writePrs, readPulls, writePulls, replaceItems, useQueueFile } from '../store.js';
 
 const repo = () => fs.mkdtemp(path.join(os.tmpdir(), 'prcoder-store-'));
 const item = (over = {}) =>
@@ -222,6 +222,29 @@ test('a port file we cannot use reads as no port at all', async () => {
   assert.equal(await write('{"port":0}'), null, 'below the range');
   assert.equal(await write('{"port":70000}'), null, 'above the range');
   assert.equal(await write('{"port":2602}'), 2602, 'an old bookmarked port is still the user\'s to pin');
+});
+
+// Each running prcoder's own record, which runningHere in server.js reads to
+// find one on a port port.json does not name. Read whatever its process is
+// doing; a file that is not one is left out, not thrown over.
+test('a running prcoder\'s record comes back by pid, and goes when dropped', async () => {
+  const dir = await repo();
+  assert.deepEqual(await readRunning(dir), [], 'nothing running yet');
+  await writeRunning(dir, 17433);
+  assert.deepEqual(await readRunning(dir), [{ pid: process.pid, port: 17433 }]);
+  assert.equal(await fs.readFile(path.join(dir, '.prcoder', '.gitignore'), 'utf8'), '*\n');
+  const other = path.join(dir, '.prcoder', 'running');
+  await fs.writeFile(path.join(other, '42.json'), '{"version":1,"port":12001}');
+  await fs.writeFile(path.join(other, '43.json'), '{');
+  await fs.writeFile(path.join(other, '44.json'), '{"port":"12001"}');
+  await fs.writeFile(path.join(other, '45.json'), '{"version":99,"port":12001}');
+  await fs.writeFile(path.join(other, '46.json.123.tmp'), '{"port":12001}');
+  const byPid = (a, b) => a.pid - b.pid;
+  assert.deepEqual((await readRunning(dir)).sort(byPid), [{ pid: 42, port: 12001 }, { pid: process.pid, port: 17433 }].sort(byPid));
+  dropRunning(dir);
+  dropRunning(dir, 42);
+  dropRunning(dir, 42);   // twice is no failure
+  assert.deepEqual(await readRunning(dir), []);
 });
 
 // The queue and the port are separate files: writing one must not conjure the

@@ -15,6 +15,7 @@
 // is where a better answer would go if one is wanted.
 
 import fs from 'node:fs/promises';
+import { rmSync } from 'node:fs';
 import path from 'node:path';
 
 const DIR = '.prcoder';
@@ -193,6 +194,59 @@ async function writeJson(repo, target, obj) {
 async function writeIgnore(repo) {
   await fs.writeFile(path.join(dir(repo), '.gitignore'), '*\n', { flag: 'wx' })
     .catch((e) => { if (e.code !== 'EEXIST') throw e; });
+}
+
+/**
+ * `.prcoder/running/<pid>.json`: one file for each prcoder running in this
+ * directory, `{ version, port }`, written once it listens and removed as it
+ * exits. What startOnPr's guard in server.js (runningHere) reads to find one
+ * on any port: port.json names only the port a run is meant to have, and a
+ * run pinned to another (--port, PRCODER_PORT), moved aside to a free one, or
+ * unable to write port.json is listening somewhere it does not name.
+ *
+ * A file per process, so two that start together never write over each
+ * other. One a killed run left is only a pid and a port that no longer
+ * answer; the reader is the one to tell it apart and drop it (dropRunning).
+ */
+const runningDir = (repo) => path.join(dir(repo), 'running');
+const runningFile = (repo, pid) => path.join(runningDir(repo), `${pid}.json`);
+
+/** This process's record, listening on `port`. */
+export async function writeRunning(repo, port) {
+  await fs.mkdir(runningDir(repo), { recursive: true });
+  // The directory's `*` covers running/ too; writeJson writes it only for a
+  // file at the top of `.prcoder/`.
+  await writeIgnore(repo);
+  await writeJson(repo, runningFile(repo, process.pid), { version: VERSION, port });
+}
+
+/**
+ * Removes `pid`'s record, synchronously, so that a `process.on('exit')`
+ * handler can call it. Nothing to remove is not a failure.
+ */
+export function dropRunning(repo, pid = process.pid) {
+  try { rmSync(runningFile(repo, pid), { force: true }); } catch { /* best effort */ }
+}
+
+/**
+ * Every record, `[{ pid, port }]`, whatever their processes are doing now.
+ * A file that is not one -- a temp file, a hand-edit, a newer prcoder's -- is
+ * left out.
+ */
+export async function readRunning(repo) {
+  const names = await fs.readdir(runningDir(repo)).catch(() => []);
+  const read = await Promise.all(names.map(async (name) => {
+    const m = /^([1-9]\d*)\.json$/.exec(name);
+    if (!m) return null;
+    try {
+      const { version, port } = JSON.parse(await fs.readFile(path.join(runningDir(repo), name), 'utf8'));
+      if (Number(version) > VERSION || !Number.isInteger(port) || port < 1 || port > 65535) return null;
+      return { pid: Number(m[1]), port };
+    } catch {
+      return null;
+    }
+  }));
+  return read.filter(Boolean);
 }
 
 /**

@@ -14,7 +14,7 @@ import { WebSocketServer } from 'ws';
 import { loadPr, pullRequestFor, prByUrl, prBody, parsePrUrl, listPrs, branchPrs, lookupPrs, ownPrs, pickPr, issueLinks, lookupRef, setViewed, setBody, createIssue, fetchPatches, runCount, repoIssues, repoMilestones, setIssueMilestone } from './github.js';
 import { notAWorkTree, snapshot, currentBranch, headCommit, commitsKnown, commitMemo, repoInfo, pushRepo, compareUrl, githubUrl, originOwner, wholePrRepo, checkoutPr, startOnPr, pushBranch, remoteBranchHead, trackingHead, localPatch, branchesBelow } from './git.js';
 import { bucket, fileUrl, fileViews } from './files.js';
-import { readPort, writePort, readPrs, writePrs, pick, useQueueFile, movedQueue, issueUrl, readPulls } from './store.js';
+import { readPort, writePort, readRunning, writeRunning, dropRunning, readPrs, writePrs, pick, useQueueFile, movedQueue, issueUrl, readPulls } from './store.js';
 import { readQueue, writeQueue, quote } from './queue.js';
 import { parseCli, usage, VERSION, portCandidates, statusLines, openRepoArgs, OPEN_REPO_VARS, REPO_ENV, queueSummary, quitRisks } from './cli.js';
 import { choosePr, githubPulls } from './choose.js';
@@ -1016,47 +1016,72 @@ const wss = new WebSocketServer({ server, path: '/pty' }).on('error', () => {}).
  * to read differently or you go hunting for a window that does not exist.
  */
 async function whoHasPort(wanted) {
+  let other;
   try {
-    const res = await fetch(`http://localhost:${wanted}/api/whoami`,
-      { signal: AbortSignal.timeout(2000) });
-    const other = await res.json();
-    if (!other?.prcoder) return 'something that is not prcoder';
-    // The path only when it is not ours. Two worktrees of one repo share a
-    // nameWithOwner and are the collision worth spelling out; a second prcoder
-    // in *this* directory is the common case, and there the path says nothing.
-    return `another prcoder on ${other.nameWithOwner ?? 'an unknown repo'}` +
-      `${other.branch ? ` (${other.branch})` : ''}${other.repo === repo ? '' : ` in ${other.repo}`}`;
+    other = await whoami(wanted);
   } catch {
     return 'something that is not answering as prcoder';
+  }
+  if (!other?.prcoder) return 'something that is not prcoder';
+  // The path only when it is not ours. Two worktrees of one repo share a
+  // nameWithOwner and are the collision worth spelling out; a second prcoder
+  // in *this* directory is the common case, and there the path says nothing.
+  return `another prcoder on ${other.nameWithOwner ?? 'an unknown repo'}` +
+    `${other.branch ? ` (${other.branch})` : ''}${other.repo === repo ? '' : ` in ${other.repo}`}`;
+}
+
+/**
+ * What answers `GET /api/whoami` on localhost:`port`, parsed, or a throw when
+ * nothing answers in time or the answer is not JSON. The one probe of another
+ * port, for whoHasPort and runningHere.
+ */
+async function whoami(port) {
+  const res = await fetch(`http://localhost:${port}/api/whoami`, { signal: AbortSignal.timeout(2000) });
+  return res.json();
+}
+
+/** Whether process `pid` is there. EPERM is someone else's, and there. */
+function alive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    return e.code === 'EPERM';
   }
 }
 
 /**
  * Whether another prcoder is running in this directory, said for startOnPr's
- * refusal, or null. Asked on the ports this run would bind first -- the one
- * named by --port or PRCODER_PORT, and the one recorded for this directory --
- * which is where an earlier prcoder here is, unless it had moved aside to a
- * kernel-chosen port itself. One started in a subdirectory has a port of its
- * own, and is not found. Only the directory counts: one in another worktree
- * has a working copy of its own, and `whoami`'s `repo` is the directory it
- * runs in.
+ * refusal, or null. Asked on every port one could be on: each running
+ * prcoder's own record (`.prcoder/running/`, writeRunning in store.js), which
+ * finds one pinned to another port or moved aside to a free one, and the
+ * ports this run would bind first -- the pinned one and the one in port.json
+ * -- for a prcoder from before the records, which wrote none. All at once, so
+ * a port held by something that never answers costs its 2s once, not once a
+ * port. A record whose process has gone (a killed run) is dropped unasked;
+ * one whose pid has been reused is asked and does not answer as a prcoder
+ * here. One started in a subdirectory has records of its own, and is not
+ * found. Only the directory counts: one in another worktree has a working
+ * copy of its own, and `whoami`'s `repo` is the directory it runs in.
  */
 async function runningHere() {
-  const ports = [...new Set([pinnedPort, await readPort(repo)].filter(Boolean))];
-  for (const port of ports) {
-    try {
-      const res = await fetch(`http://localhost:${port}/api/whoami`, { signal: AbortSignal.timeout(2000) });
-      const other = await res.json();
-      if (other?.prcoder && other.repo === repo) {
-        return `another prcoder is running in this directory (http://localhost:${port}${other.branch ? `, on ${other.branch}` : ''})`;
-      }
-    } catch { /* nothing there, or not a prcoder */ }
-  }
-  return null;
+  const records = (await readRunning(repo)).filter(({ pid }) => pid !== process.pid);
+  for (const { pid } of records.filter(({ pid }) => !alive(pid))) dropRunning(repo, pid);
+  const ports = [...new Set([pinnedPort, await readPort(repo),
+    ...records.filter(({ pid }) => alive(pid)).map(({ port }) => port)].filter(Boolean))];
+  const answers = await Promise.all(ports.map((port) => whoami(port).then((other) => ({ port, other }), () => null)));
+  const found = answers.find((a) => a?.other?.prcoder && a.other.repo === repo);
+  if (!found) return null;
+  const { port, other } = found;
+  return `another prcoder is running in this directory (http://localhost:${port}${other.branch ? `, on ${other.branch}` : ''})`;
 }
 
 async function ready() {
   const port = server.address().port;
+  // Read by a later `prcoder <pr>` here before it checks anything out
+  // (runningHere). Without it that one asks only the ports it would bind.
+  process.on('exit', () => dropRunning(repo));
+  await writeRunning(repo, port).catch((e) => term.debug(`running record not written: ${e.message}`));
   const url = `http://localhost:${port}`;
   urls = {
     local: url,

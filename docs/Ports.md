@@ -14,8 +14,11 @@ ports, so several prcoders can run at once.
 If that port is busy when prcoder starts -- most often because a second prcoder is already running
 in the same repo -- it takes a free one for this run and says so, both on stderr and in the status
 block ([Terminal.md](Terminal.md)). A `prcoder <pr>` or `prcoder choose` that would check out
-another branch asks that port first, and stops if a prcoder in this directory answers: the checkout
-would move the first one's working copy under its agent. Pane sizes and other layout choices are stored per port, so a
+another branch first asks every port a prcoder in this directory could be on, and stops if one
+answers: the checkout would move the first one's working copy under its agent. Each running prcoder
+records its pid and port in `.prcoder/running/<pid>.json` as it starts listening and removes it as
+it exits, so one pinned with `--port`, or moved aside to a free port, is found as well; a record left
+by a killed run is dropped once its process is gone. Pane sizes and other layout choices are stored per port, so a
 run on a different port opens with the default layout ([Panes.md](Panes.md#layout)).
 
 Ports come from 10240-14335 because browsers refuse a list of well-known ones outright -- Firefox
