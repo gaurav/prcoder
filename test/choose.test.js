@@ -1,7 +1,19 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { chooseLines } from '../choose.js';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { PassThrough } from 'node:stream';
+import { chooseLines, choosePr } from '../choose.js';
+import { writePulls } from '../store.js';
 import { plain, styled, sink } from '../term.js';
+
+// The one test here that runs git does it in a throwaway repo, and a git
+// hook's GIT_DIR would aim it at the clone the suite runs in (test/CLAUDE.md).
+for (const k of Object.keys(process.env)) if (k.startsWith('GIT_')) delete process.env[k];
+const git = promisify(execFile);
 
 const NOW = Date.parse('2026-11-05T12:00:00Z');
 const day = (n) => new Date(NOW - n * 86400_000).toISOString();
@@ -127,4 +139,37 @@ test('a state is coloured as the tab colours its class', () => {
   const [blocked, draft] = chooseLines(listing, { nameWithOwner: 'o/r', defaultBranch: 'main', now: NOW }).lines.slice(-2).map((l) => styled(l, 200));
   assert.match(blocked, /\x1b\[33mblocked/);   // yellow, the tab's --warn
   assert.match(draft, /\x1b\[2mdraft/);        // dim, the tab's default
+});
+
+// Uncommitted work refuses a checkout, so `prcoder choose` says so before the
+// question, and a pick of another branch's pull request is asked again rather
+// than ending the run after the list has been read; this branch's is taken.
+test('with uncommitted work, a pick on another branch is asked again', { skip: process.platform === 'win32' && 'sh' }, async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'prcoder-choose-'));
+  const said = [];
+  const log = console.log;
+  try {
+    const run = (...args) => git('git', ['-c', 'user.name=t', '-c', 'user.email=t@t.invalid', '-c', 'commit.gpgsign=false', ...args], { cwd: dir });
+    await git('git', ['init', '-q', '-b', 'main', dir]);
+    await fs.writeFile(path.join(dir, 'a.txt'), 'a\n');
+    await run('add', 'a.txt');
+    await run('commit', '-q', '-m', 'x');
+    await run('checkout', '-q', '-b', 'topic');
+    await fs.writeFile(path.join(dir, 'a.txt'), 'changed\n');
+    await writePulls(dir, 'gaurav/prcoder', { total: 2, milestones: [], pulls: [
+      pull(5, 'elsewhere', 'main', 10, 'ready', 1), pull(6, 'topic', 'main', 10, 'ready', 2)] });
+    const input = new PassThrough();
+    const output = new PassThrough();
+    const answers = ['5', '6'];
+    output.on('data', (d) => { if (/PR number/.test(String(d))) input.write(`${answers.shift()}\n`); });
+    console.log = (...a) => said.push(plain(a.join(' ')));
+    const got = await choosePr(dir, { nameWithOwner: 'gaurav/prcoder', defaultBranch: 'main' }, { input, output });
+    assert.equal(got.pr.number, 6);
+    assert.equal(got.branch, 'topic');
+    assert.ok(said.includes("1 uncommitted file on topic: only this branch's pull request can be picked until it is committed or stashed"), said.join('\n'));
+    assert.ok(said.includes('#5 is on elsewhere, and 1 uncommitted file on topic is in the way; commit or stash it first'), said.join('\n'));
+  } finally {
+    console.log = log;
+    await fs.rm(dir, { recursive: true, force: true });
+  }
 });

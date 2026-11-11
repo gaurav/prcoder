@@ -16,7 +16,7 @@ import { stackOrder, stackUnder } from './public/pr.js';
 import { sortPulls, rootsInOrder, pullWord, sizeChip, age } from './public/items.js';
 import { repoPulls } from './github.js';
 import { readPulls, writePulls } from './store.js';
-import { currentBranch, branchesBelow } from './git.js';
+import { currentBranch, dirtyFiles, branchesBelow } from './git.js';
 import { styled, clip, span, debug } from './term.js';
 
 // A listing younger than this is printed as it is, as the Pull requests tab
@@ -154,22 +154,34 @@ async function bareBases(repo, pulls, defaultBranch) {
 }
 
 /**
- * The list and the question: the pull request picked, as the listing has it
- * (`url`, `number`, `headRefName`, `isCrossRepository` are what the start
- * reads), or null when nothing was picked (`q`, end of input, or nothing
- * open), which the caller takes as nothing to start. The checkout is the
- * caller's (startOnPr in git.js), the same one `prcoder <pr>` makes.
+ * The list and the question: `{ pr, branch }`, the pull request picked as the
+ * listing has it (`url`, `number`, `headRefName`, `isCrossRepository` are what
+ * the start reads) and the branch checked out when it was picked, or null
+ * when nothing was picked (`q`, end of input, or nothing open), which the
+ * caller takes as nothing to start. The checkout is the caller's (startOnPr in
+ * git.js), the same one `prcoder <pr>` makes, and the branch is handed on so
+ * that it does not ask git again.
+ *
+ * Uncommitted work refuses a checkout (startOnPr), so it is said before the
+ * question rather than after the pick, and a pick of another branch's pull
+ * request is asked again rather than ending the run. A fork's pull request
+ * is left to startOnPr, since the name of its head says nothing about which
+ * local branch it is (isHere in git.js).
  *
  * `facts` is repoInfo's answer, which server.js has already paid for.
  */
 export async function choosePr(repo, facts, { input = process.stdin, output = process.stdout } = {}) {
   const { nameWithOwner, defaultBranch } = facts;
   const width = (output.columns || 80) - 1;
-  const [branch, read] = await Promise.all([currentBranch(repo), listing(repo, nameWithOwner)]);
+  const [branch, dirty, read] = await Promise.all([currentBranch(repo), dirtyFiles(repo), listing(repo, nameWithOwner)]);
   const below = await bareBases(repo, read.pulls, defaultBranch);
   const { lines, rows, pick } = chooseLines(read, { nameWithOwner, branch, defaultBranch, below, width });
   for (const l of lines) console.log(styled(l, width));
   if (!pick) return null;
+  const many = dirty.length > 1;
+  const files = `${dirty.length} uncommitted file${many ? 's' : ''} on ${branch ?? 'a detached HEAD'}`;
+  if (dirty.length) console.log(`${files}: only this branch's pull request can be picked until ${many ? 'they are' : 'it is'} committed or stashed`);
+  const elsewhere = (p) => dirty.length && !p.isCrossRepository && p.headRefName !== branch;
   const rl = readline.createInterface({ input, output });
   // End of input settles nothing in readline/promises: the interface closes
   // and the question's promise is left hanging, so the close is the answer.
@@ -181,8 +193,9 @@ export async function choosePr(repo, facts, { input = process.stdin, output = pr
       if (answer === null || /^q$/i.test(answer.trim())) return null;
       const n = answer.trim() === '' ? pick.pr.number : Number(answer.trim().replace(/^#/, ''));
       const row = rows.find((r) => r.pr.number === n);
-      if (row) return row.pr;
-      console.log(`${answer.trim()} is not one of the open pull requests listed`);
+      if (row && elsewhere(row.pr)) console.log(`#${n} is on ${row.pr.headRefName}, and ${files} ${many ? 'are' : 'is'} in the way; commit or stash ${many ? 'them' : 'it'} first`);
+      else if (row) return { pr: row.pr, branch };
+      else console.log(`${answer.trim()} is not one of the open pull requests listed`);
     }
   } finally {
     rl.close();

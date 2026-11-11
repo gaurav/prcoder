@@ -111,9 +111,10 @@ last session was; the most recently updated of them when several are as deep, an
 recently updated root when nothing is stacked. `q` or end of input starts nothing.
 
 A pick on another branch is checked out, as the tab's Switch checks one out, and prcoder starts
-on it, as `prcoder <n>` does. With uncommitted changes nothing is checked out and nothing starts:
-prcoder says how many files are in the way and exits, since the pane only ever shows the
-checked-out branch's pull request. A pick on the branch you are on is simply started -- a fork's
+on it, as `prcoder <n>` does. With uncommitted changes nothing can be checked out, since the pane
+only ever shows the checked-out branch's pull request: prcoder says how many files are in the way
+above the question, and a pick of another branch's pull request is answered with that and asked
+again (a fork's is left to the checkout, which refuses it and exits). A pick on the branch you are on is simply started -- a fork's
 pull request too, when the branch is the one gh checked it out to. A local copy of the branch with
 commits the pull request lacks is checked out but not fast-forwarded: the line gives gh's words
 (`Not possible to fast-forward`), prcoder starts on it, and the sync light reads `diverged`, for

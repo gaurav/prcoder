@@ -1323,13 +1323,14 @@ if (import.meta.main) {
   // the one asked for is the one shown.
   if (cli.choose || cli.target) {
     try {
+      const facts = await repoFacts();
       const pick = cli.choose
-        ? await choosePr(repo, await repoFacts())
-        : await pullRequestFor(repo, cli.target, (await repoFacts()).repos);
+        ? await choosePr(repo, facts)
+        : { pr: await pullRequestFor(repo, cli.target, facts.repos) };
       if (!pick) process.exit(0);
-      const { branch, said } = await startOnPr(repo, pick);
+      const { branch, said } = await startOnPr(repo, pick.pr, { branch: pick.branch });
       if (said) console.log(said);
-      chosen = { branch, url: pick.url };
+      chosen = { branch, url: pick.pr.url };
     } catch (e) {
       console.error(`prcoder: ${e.message}`);
       process.exit(2);

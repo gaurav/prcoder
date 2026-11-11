@@ -514,6 +514,11 @@ test('a start is on the pull request\'s branch, or refused over uncommitted work
     });
     assert.equal(await branch(), 'main');
     await run('checkout', '-q', '--', 'a.txt');
+    await withGh(() => 'exit 9', async () => {
+      // The caller's branch is taken as it is, not asked again.
+      assert.deepEqual(await startOnPr(dir, p, { branch: 'topic' }), { branch: 'topic', said: null });
+    });
+    assert.equal(await branch(), 'main');
     await withGh(() => 'git checkout -q topic', async () => {
       assert.deepEqual(await startOnPr(dir, p), { branch: 'topic', said: 'checked out topic for #76' });
     });

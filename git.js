@@ -517,9 +517,11 @@ export function wholePrRepo(url) {
  * said, rather than calling every one of them a divergence, which sent
  * someone whose pull had timed out looking for commits that were not there.
  */
-export async function checkoutPr(cwd, url) {
+export async function checkoutPr(cwd, url, opts = {}) {
   wholePrRepo(url);
-  const before = await currentBranch(cwd);
+  // The branch before the checkout, when the caller has just read it
+  // (startOnPr); null is a detached HEAD, so only a missing key asks again.
+  const before = 'before' in opts ? opts.before : await currentBranch(cwd);
   try {
     await run('gh', ['pr', 'checkout', url], { cwd, timeout: 120_000 });
     return {};
@@ -540,9 +542,12 @@ export async function checkoutPr(cwd, url) {
  * is refused rather than shown beside another branch. Uncommitted work is that
  * refusal, as it is for the pane's Switch: a checkout over it is git's to
  * refuse, or worse, to carry.
+ *
+ * `branch` is the checked-out branch when the caller has just read it
+ * (`prcoder choose` has).
  */
-export async function startOnPr(cwd, p) {
-  const branch = await currentBranch(cwd);
+export async function startOnPr(cwd, p, { branch: given } = {}) {
+  const branch = given === undefined ? await currentBranch(cwd) : given;
   if (await isHere(cwd, p, branch)) return { branch, said: null };
   const dirty = await dirtyFiles(cwd);
   if (dirty.length) {
@@ -550,7 +555,7 @@ export async function startOnPr(cwd, p) {
     throw new Error(`#${p.number} is on ${p.headRefName}, and ${dirty.length} uncommitted file${many ? 's' : ''}` +
       ` on ${branch ?? 'a detached HEAD'} ${many ? 'are' : 'is'} in the way; commit or stash ${many ? 'them' : 'it'} first`);
   }
-  const { unfinished } = await checkoutPr(cwd, p.url);
+  const { unfinished } = await checkoutPr(cwd, p.url, { before: branch });
   return {
     branch: await currentBranch(cwd),
     said: `checked out ${p.isCrossRepository ? `#${p.number}` : `${p.headRefName} for #${p.number}`}` +
