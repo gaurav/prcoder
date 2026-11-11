@@ -16,7 +16,7 @@ import { stackOrder, stackUnder } from './public/pr.js';
 import { sortPulls, rootsInOrder, pullWord, sizeChip, age } from './public/items.js';
 import { repoPulls } from './github.js';
 import { readPulls, writePulls } from './store.js';
-import { currentBranch, dirtyFiles, branchesBelow } from './git.js';
+import { currentBranch, dirtyFiles, branchesBelow, uncommitted, inTheWay } from './git.js';
 import { styled, clip, span, debug } from './term.js';
 
 // A listing younger than this is printed as it is, as the Pull requests tab
@@ -179,8 +179,7 @@ export async function choosePr(repo, facts, { input = process.stdin, output = pr
   for (const l of lines) console.log(styled(l, width));
   if (!pick) return null;
   const many = dirty.length > 1;
-  const files = `${dirty.length} uncommitted file${many ? 's' : ''} on ${branch ?? 'a detached HEAD'}`;
-  if (dirty.length) console.log(`${files}: only this branch's pull request can be picked until ${many ? 'they are' : 'it is'} committed or stashed`);
+  if (dirty.length) console.log(`${uncommitted(dirty, branch)}: only this branch's pull request can be picked until ${many ? 'they are' : 'it is'} committed or stashed`);
   const elsewhere = (p) => dirty.length && !p.isCrossRepository && p.headRefName !== branch;
   const rl = readline.createInterface({ input, output });
   // End of input settles nothing in readline/promises: the interface closes
@@ -193,7 +192,7 @@ export async function choosePr(repo, facts, { input = process.stdin, output = pr
       if (answer === null || /^q$/i.test(answer.trim())) return null;
       const n = answer.trim() === '' ? pick.pr.number : Number(answer.trim().replace(/^#/, ''));
       const row = rows.find((r) => r.pr.number === n);
-      if (row && elsewhere(row.pr)) console.log(`#${n} is on ${row.pr.headRefName}, and ${files} ${many ? 'are' : 'is'} in the way; commit or stash ${many ? 'them' : 'it'} first`);
+      if (row && elsewhere(row.pr)) console.log(inTheWay(row.pr, dirty, branch));
       else if (row) return { pr: row.pr, branch };
       else console.log(`${answer.trim()} is not one of the open pull requests listed`);
     }

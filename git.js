@@ -532,6 +532,26 @@ export async function checkoutPr(cwd, url, opts = {}) {
 }
 
 /**
+ * `dirty` files, as dirtyFiles lists them, on `branch` (null for a detached
+ * HEAD): `1 uncommitted file on main`. The one wording of them, for
+ * `prcoder choose`'s line before its question as for inTheWay.
+ */
+export function uncommitted(dirty, branch) {
+  return `${dirty.length} uncommitted file${dirty.length > 1 ? 's' : ''} on ${branch ?? 'a detached HEAD'}`;
+}
+
+/**
+ * The refusal of a checkout of pull request `p` over `dirty` files on
+ * `branch`: startOnPr's, and `prcoder choose`'s when it asks again, so the
+ * two say it the same way.
+ */
+export function inTheWay(p, dirty, branch) {
+  const many = dirty.length > 1;
+  return `#${p.number} is on ${p.headRefName}, and ${uncommitted(dirty, branch)} ${many ? 'are' : 'is'} in the way;` +
+    ` commit or stash ${many ? 'them' : 'it'} first`;
+}
+
+/**
  * Puts the working copy on pull request `p` (`url`, `number`, `headRefName`,
  * `isCrossRepository`) for a start: `prcoder <pr>` and a `prcoder choose`
  * pick. Resolves the branch it is then on, and the line to say about the
@@ -558,11 +578,7 @@ export async function startOnPr(cwd, p, { branch: given, inUse = async () => nul
       ` under its agent. Quit that one first, or start this one in a worktree on ${p.headRefName}`);
   }
   const dirty = await dirtyFiles(cwd);
-  if (dirty.length) {
-    const many = dirty.length > 1;
-    throw new Error(`#${p.number} is on ${p.headRefName}, and ${dirty.length} uncommitted file${many ? 's' : ''}` +
-      ` on ${branch ?? 'a detached HEAD'} ${many ? 'are' : 'is'} in the way; commit or stash ${many ? 'them' : 'it'} first`);
-  }
+  if (dirty.length) throw new Error(inTheWay(p, dirty, branch));
   let unfinished, gone;
   try {
     ({ unfinished } = await checkoutPr(cwd, p.url, { before: branch }));
