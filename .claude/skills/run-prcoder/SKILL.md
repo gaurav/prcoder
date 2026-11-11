@@ -75,6 +75,7 @@ node tools/browser.mjs highlighting               # the UI, PNGs to data/shots/h
                                                   # back to Chromium if it will not start
 PRCODER_PLAYWRIGHT=chromium node tools/browser.mjs   # compare engines
 node tools/cli.mjs                                # the terminal half, in a real PTY
+node tools/choose.mjs                             # `prcoder choose` in a PTY; answers q, never a pick
 node tools/no-pr.mjs                              # the pane with no pull request, in a clone
 node tools/diff-views.mjs                         # the diff pane's DIFF, DELETED, renames, outline and .tsx, on fixture PR #87
 ```
@@ -121,7 +122,10 @@ Two rules for them, and for any script after them:
   a real one back. Snapshot the body with `gh pr view <n> --json body -q
   .body` before, and diff after. Opening and closing a description's sections
   is not a write — the fold is browser state and never reaches GitHub — so the
-  driver clicks them freely.
+  driver clicks them freely. `prcoder choose` writes nothing until a pick: a
+  listed number is a `gh pr checkout` of the working copy it runs in, so
+  answer `q` here (`tools/choose.mjs` does), and see a pick through in a clone
+  under `data/`.
 
 If every PTY spawn dies with a bare `posix_spawnp failed`, the `postinstall`
 script was skipped: `npm install` again, and see `tools/postinstall.mjs` for why.

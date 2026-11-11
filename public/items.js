@@ -226,6 +226,22 @@ export function rootsInOrder(walk, sorted) {
   return stacks.sort((a, b) => (at.get(a[0].pr.number) ?? Infinity) - (at.get(b[0].pr.number) ?? Infinity)).flat();
 }
 
+/** A merge word as a class: `checks not passing` -> `checks-not-passing`, `checking…` -> `checking`. */
+export const wordClass = (w) => w.toLowerCase().replace(/[^a-z]+/g, '-').replace(/^-|-$/g, '');
+
+/**
+ * The word a row shows for its state, and its class. GitHub's `ready` is
+ * ready to merge into the base, which for a stacked pull request is the one
+ * under it and not the default branch, so there it is `stacked (N)`, N the
+ * steps that merge first -- pull requests, or now and then a bare branch, as
+ * stackUnder in pr.js found them (`under`). The other words say more than that
+ * one does, and stay. Here rather than in queue.js because `prcoder choose`
+ * prints the same words in the terminal, coloured by `cls` (choose.js).
+ */
+export const pullWord = (p, under) => (p.merge === 'ready' && under.nodes.length
+  ? { word: `stacked (${under.nodes.length})`, cls: 'stacked' }
+  : { word: p.merge, cls: p.merge ? wordClass(p.merge) : '' });
+
 /**
  * Whether the Pull requests tab's search matches a pull request: case-blind,
  * over `#N`, the title, the author, the head and base branches, the labels,
@@ -234,7 +250,7 @@ export function rootsInOrder(walk, sorted) {
  * requests for it whether or not the body names it, and `stacked` or
  * `conflicts` finds those. `word` is the merge word unless the caller knows
  * better: the row says `stacked (N)` for a `ready` built on others (pullWord
- * in queue.js), which needs the stack and so is the caller's to say.
+ * above), which needs the stack and so is the caller's to say.
  */
 export const pullMatches = (p, query, word = p.merge) => {
   const q = (query ?? '').trim().toLowerCase();

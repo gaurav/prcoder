@@ -202,7 +202,8 @@ It also lists the open pull requests that merge *into* the branch you are on, wh
 the question that branch is interesting for, with each one's stack nested under it. A row's `#N`
 opens that pull request on GitHub, so you can compare a few in other tabs; its **Switch** checks it
 out, the same way the switcher does. Uncommitted work disables Switch for the same reason it hides
-the switcher, and leaves the links alone.
+the switcher, and leaves the links alone. A local branch that has diverged from the pull request's
+head is still switched to, just not fast-forwarded, and the sync light says `diverged`.
 
 On any other branch it also shows what the branch is built on, since that is where its pull
 request will go. A branch with no pull request has no base on GitHub, so prcoder asks git: the
@@ -511,7 +512,8 @@ since there is nothing of it here to move. Milestones themselves are not made, r
 from prcoder.
 
 **Pull requests** is always there too: the repository's open pull requests, for picking the next
-one to work on, in the same groups as the issues -- **No milestone** first, then one per open milestone in the
+one to work on (`prcoder choose` is the same pick at the command line, before a browser opens:
+[Terminal.md](Terminal.md#choosing-a-pull-request)), in the same groups as the issues -- **No milestone** first, then one per open milestone in the
 owner's order, each line drawn as the Issues tab's, its badge counting pull requests -- or, with the second select over them set to *one list*, as one list, or
 to *by stack*, as one list with each pull request a step in under the one it is built on, each
 stack placed in the chosen order by its bottom pull request -- not the switcher's order, which goes base by base. A stack can run across milestones, which is why that is a grouping of its own and

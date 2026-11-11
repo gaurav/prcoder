@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { sink, status, log, paint, verbose, debug, cycleVerbosity, setVerbosity, confirm, clip } from '../term.js';
+import { sink, status, log, paint, verbose, debug, cycleVerbosity, setVerbosity, confirm, clip, styled, plain, title } from '../term.js';
 
 /** A stand-in for process.stdout, so the tty path can be exercised anywhere. */
 function fake(isTTY, columns = 40, rows = 24) {
@@ -140,6 +140,49 @@ test('a two-row terminal still shows the question', () => {
   out.text = '';
   confirm('quit? [y/N] ', () => {});
   assert.match(out.text, /quit\? \[y\/N\]/);
+});
+
+// A styled segment is how the block makes the repository's name stand out.
+// The style is applied after the cut, so a line is still one row and no
+// escape sequence is cut in half; and not at all where there is no colour.
+test('a styled segment is coloured on a tty, cut as text, and plain elsewhere', () => {
+  const line = [{ text: 'gaurav/prcoder', style: ['bold', 'cyan'] }, '   main'];
+  assert.equal(plain(line), 'gaurav/prcoder   main');
+  assert.equal(plain('x'), 'x');
+  fake(true);
+  assert.equal(styled(line), '\x1b[1m\x1b[36mgaurav/prcoder\x1b[39m\x1b[22m   main');
+  assert.equal(styled(line, 8), '\x1b[1m\x1b[36mgaurav/p\x1b[39m\x1b[22m');
+  assert.equal(styled(line, 16), '\x1b[1m\x1b[36mgaurav/prcoder\x1b[39m\x1b[22m  ');
+  // A style on a segment the cut emptied is not written at all.
+  assert.equal(styled(['ab', { text: 'c', style: 'bold' }], 2), 'ab');
+  // The text is pictured before it is styled, so it cannot carry a sequence of its own.
+  assert.equal(styled([{ text: 'a\x1b[31m', style: 'bold' }]), '\x1b[1ma␛[31m\x1b[22m');
+  // The block takes the same lines, and does not redraw one that has not changed.
+  const out = fake(true);
+  status([line]);
+  assert.match(out.text, /\x1b\[36mgaurav\/prcoder\x1b\[39m/);
+  out.text = '';
+  status([[{ text: 'gaurav/prcoder', style: ['bold', 'cyan'] }, '   main']]);
+  assert.equal(out.text, '');
+  // The tty's own reading of NO_COLOR and TERM decides, where it has one.
+  const mono = fake(true);
+  mono.hasColors = () => false;
+  assert.equal(styled(line), 'gaurav/prcoder   main');
+  fake(false);
+  assert.equal(styled(line), 'gaurav/prcoder   main');
+});
+
+// The window title is the one sequence written on purpose, and only to a tty.
+test('the title is set on a tty, with its text pictured, and not on a pipe', () => {
+  const out = fake(true);
+  title('gaurav/prcoder · prcoder');
+  assert.equal(out.text, '\x1b]0;gaurav/prcoder · prcoder\x07');
+  out.text = '';
+  title('owned\x07\x1b]0;x');
+  assert.equal(out.text, '\x1b]0;owned␇␛]0;x\x07');
+  const pipe = fake(false);
+  title('gaurav/prcoder');
+  assert.equal(pipe.text, '');
 });
 
 // A queue item is typed into any tab, so its text reaches this terminal from

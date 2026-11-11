@@ -2,8 +2,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { execSync } from 'node:child_process';
-import { openRepoArgs, OPEN_REPO_VARS, REPO_ENV, parseCli, usage, AGENTS, VERSION, portFor, portCandidates, PORT_BASE, PORT_SPAN, statusLines, ago, queueSummary, quitRisks } from '../cli.js';
+import { openRepoArgs, OPEN_REPO_VARS, REPO_ENV, parseCli, usage, AGENTS, VERSION, portFor, portCandidates, PORT_BASE, PORT_SPAN, statusLines, ago, queueSummary, quitRisks, ownerColour, OWNER_COLOURS } from '../cli.js';
 import { queueChanges } from '../queue.js';
+import { plain } from '../term.js';
 
 test('a leading positional is our PR target, everything after -- is the agent\'s', () => {
   const none = parseCli([]);
@@ -22,6 +23,19 @@ test('a leading positional is our PR target, everything after -- is the agent\'s
 });
 
 // The one that matters: a flag's value must not be mistaken for a PR target.
+// `choose` is the one positional that is not a pull request; the flags around
+// it are parsed as ever, and a second positional is the usual refusal.
+test('prcoder choose is a subcommand, not a pull request target', () => {
+  assert.equal(parseCli(['42']).choose, false);
+  const c = parseCli(['choose', '--port', '4000', '--', '--effort', 'high']);
+  assert.equal(c.choose, true);
+  assert.equal(c.target, undefined);
+  assert.equal(c.port, 4000);
+  assert.deepEqual(c.agentArgs, ['--effort', 'high']);
+  assert.throws(() => parseCli(['choose', '42']), /unexpected argument 42/);
+  assert.ok(usage().includes('choose'));
+});
+
 test('flag values are never read as a PR target', () => {
   const agent = parseCli(['--', '--effort', 'high', '--model', 'opus']);
   assert.equal(agent.target, undefined);
@@ -117,10 +131,23 @@ const STATUS = {
     { text: 'd' }],
 };
 const block = (over = {}) =>
-  statusLines({ ...STATUS, ...over }, { local: 'http://localhost:1618' }).join('\n');
+  statusLines({ ...STATUS, ...over }, { local: 'http://localhost:1618' }).map(plain).join('\n');
 
 test('the block says where the branch, the PR and the queue stand', () => {
   const out = block();
+  // The repository opens the block, and nothing comes before it -- the word
+  // `prcoder` in that column was what the eye found first in every window.
+  assert.match(out, /^gaurav\/prcoder {3}initial-implementation → main/);
+  const [name] = statusLines(STATUS, { local: 'x' })[0];
+  assert.deepEqual(name, { text: 'gaurav/prcoder', style: ['bold', ownerColour('gaurav/prcoder')] });
+  assert.doesNotMatch(out, /^prcoder/m);
+  // The colour goes by the owner, so related repos share one, and is the
+  // same in every clone; the four are spread over owners, not all one.
+  assert.ok(OWNER_COLOURS.includes(ownerColour('gaurav/prcoder')));
+  assert.equal(ownerColour('gaurav/prcoder'), ownerColour('gaurav/ideas'));
+  assert.equal(ownerColour('gaurav/prcoder'), 'green');
+  assert.ok(new Set(['gaurav', 'NCATSTranslator', 'uc-cdis', 'anthropics', 'nodejs', 'octocat'].map(ownerColour)).size > 1);
+  assert.ok(OWNER_COLOURS.includes(ownerColour(undefined)));
   assert.match(out, /initial-implementation → main/);
   // The same words as the pane's sync light, which is the point of duplicating them.
   assert.match(out, /2 unpushed/);
@@ -225,9 +252,9 @@ test('the block says how old it is, once that is worth saying', () => {
   // undefined is what a caller with no timestamp yet passes; it is not "old".
   assert.equal(ago(undefined), null);
 
-  assert.match(statusLines(STATUS, { local: 'x', tabs: 1, age: 600_000 }).join('\n'),
+  assert.match(statusLines(STATUS, { local: 'x', tabs: 1, age: 600_000 }).map(plain).join('\n'),
     /1 tab   checked 10m ago/);
-  assert.doesNotMatch(statusLines(STATUS, { local: 'x', tabs: 1, age: 0 }).join('\n'), /checked/);
+  assert.doesNotMatch(statusLines(STATUS, { local: 'x', tabs: 1, age: 0 }).map(plain).join('\n'), /checked/);
 });
 
 // The label column padded, not cut. Sliced to eight, `PR #10000` printed as

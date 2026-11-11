@@ -12,6 +12,8 @@ npm link                   # once, to run it from any repo; edits here go live
 prcoder                    # the PR for the current branch
 prcoder 123                # a specific PR
 prcoder <pr-url>           # any PR, anywhere
+prcoder some-branch        # the PR from that branch, checked out or not
+prcoder choose             # pick one of the repo's open PRs to check out and start on
 prcoder -- --model opus    # ...with flags for the Claude session, after --
 prcoder --help             # prcoder's own flags
 ```
@@ -59,10 +61,14 @@ grouping, and what every control does.
 
 ## Arguments and settings
 
-The first argument, if it isn't a flag, is prcoder's: the PR to open. Everything after `--` is
-handed to `claude` untouched, so `prcoder 123 -- --effort high --model opus` opens PR 123 with that
-session. Before `--` a flag is prcoder's, and one it does not know is an error that says where it
-goes, rather than a guess at which of the two it was for. `prcoder --help` lists the flags.
+The first argument, if it isn't a flag, is prcoder's: the PR to open, by its number, its URL or its
+branch, or `choose`, which lists the repository's open pull requests by stack and asks which to
+check out and start on ([docs/Terminal.md](docs/Terminal.md#choosing-a-pull-request)). Everything
+after `--` is handed to `claude` untouched, so `prcoder 123 -- --effort high --model opus` opens PR
+123 with that session. A PR argument that names no pull request -- a typo, a branch with none, an
+issue's URL -- stops prcoder there with the reason, rather than starting a session with nothing to
+show. Before `--` a flag is prcoder's, and one it does not know is an error that says where it goes,
+rather than a guess at which of the two it was for. `prcoder --help` lists the flags.
 
 Most settings are a flag with an environment variable of the same meaning; the flag wins when both
 are given.
@@ -105,7 +111,7 @@ The window prcoder was launched in keeps a status block pinned under a scrolling
 and its sync state, the pull request, the queue's counts, and the URL.
 
 ```
-prcoder  gaurav/prcoder   initial-implementation → main   2 unpushed · 8 uncommitted
+gaurav/prcoder   initial-implementation → main   2 unpushed · 8 uncommitted
 PR #1    A browser workspace around a live Claude Code session
          https://github.com/gaurav/prcoder/pull/1
 queue    4 local · 1 done

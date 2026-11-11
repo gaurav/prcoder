@@ -113,8 +113,43 @@ async function viewPr(cwd, target, fields) {
   }
 }
 
-/** The PR's url and nothing else, which is all the `g` key needs. */
-export const prUrl = async (cwd, target) => (await viewPr(cwd, target, 'url'))?.url;
+/**
+ * The URL of the pull request gh finds for the checked-out branch, or null:
+ * `gh pr view` with no argument, which reads the branch config `gh pr
+ * checkout` writes -- so a fork's pull request is found on the branch it was
+ * checked out to, whatever that is called (`prcoder choose`'s isHere).
+ */
+export const branchPrUrl = async (cwd) => (await viewPr(cwd, undefined, 'url'))?.url ?? null;
+
+/**
+ * The URL of the pull request the command line's `<pr>` names, or an Error
+ * saying why there isn't one. gh already takes a number (`42` or `#42`), a URL
+ * or a head branch (`gh pr view <branch>`), so recognising one is gh's job;
+ * this is what makes an argument that is none of them a refusal at startup.
+ * Unchecked, a branch with no pull request -- a typo, a branch not pushed yet,
+ * an issue's URL, which gh reads as a branch name -- started a session saying
+ * `none for this branch` about a branch nobody was on, and a number past the
+ * last pull request started one whose every poll failed.
+ *
+ * gh's two noes, verbatim from gh 2.x on 2026-11-06: `no pull requests found
+ * for branch "x"`, and `GraphQL: Could not resolve to a PullRequest with the
+ * number of 99999. (repository.pullRequest)`, for a number or a URL. Anything
+ * else -- offline, signed out, no default remote -- is gh's own words.
+ *
+ * gh directly, not viewPr: viewPr's null also covers `no default remote` and
+ * `not a git repo`, which are gh's setup to fix, not a wrong argument -- and
+ * through it they came out as "42 is not a pull request's number".
+ */
+export async function pullRequestFor(cwd, target) {
+  try {
+    return JSON.parse(await gh(['pr', 'view', target, '--json', 'url'], { cwd })).url;
+  } catch (e) {
+    const said = e.stderr ?? '';
+    if (/no pull requests found/i.test(said)) throw new Error(`${target} is not a pull request's number or URL, or the branch of one`);
+    if (/could not resolve to a pullrequest/i.test(said)) throw new Error(`there is no pull request ${target}`);
+    throw new Error(`could not look up ${target}: ${e.message}`);
+  }
+}
 
 /**
  * Just enough to know whether the PR moved, without the file list loadPr pages

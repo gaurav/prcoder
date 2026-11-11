@@ -1,5 +1,5 @@
 import { h, btn, ext, api, toast, pref, setPref, tabBtn, writeThrough, fold, kept, mark, fraction } from './ui.js';
-import { TABS, refLabel, refClass, forClaude, rankMilestones, issueMatches, pullMatches, sortPulls, rootsInOrder, sizeChip, age, dueLabel, isNew, PULL_SORTS } from './items.js';
+import { TABS, refLabel, refClass, forClaude, rankMilestones, issueMatches, pullMatches, sortPulls, rootsInOrder, pullWord, sizeChip, age, dueLabel, isNew, PULL_SORTS } from './items.js';
 import { refs, resolveRef, blocks } from './tasks.js';
 import { blockNode, inline, stackUnder, stackOrder } from './pr.js';
 
@@ -1137,9 +1137,6 @@ function pullGroups() {
 /** GitHub's reviewDecision as the row says it; null, the usual case, says nothing. */
 const REVIEW = { APPROVED: 'approved', CHANGES_REQUESTED: 'changes requested', REVIEW_REQUIRED: 'review needed' };
 
-/** A merge word as a class: `checks not passing` -> `checks-not-passing`, `checking…` -> `checking`. */
-const wordClass = (w) => w.toLowerCase().replace(/[^a-z]+/g, '-').replace(/^-|-$/g, '');
-
 /**
  * What a listed pull request is built on (stackUnder in pr.js), for its row and
  * the search alike. Asking git about a bare base is the row's to do (onBelow),
@@ -1160,17 +1157,6 @@ function underOf(p) {
   if (!unders.by.has(p.number)) unders.by.set(p.number, stackUnder({ pr: p }, pulls, below, def));
   return unders.by.get(p.number);
 }
-
-/**
- * The word a row shows for its state, and its class. GitHub's `ready` is
- * ready to merge into the base, which for a stacked pull request is the one
- * under it and not the default branch, so there it is `stacked (N)`, N the
- * steps that merge first -- pull requests, or now and then a bare branch. The
- * other words say more than that one does, and stay.
- */
-const pullWord = (p, under) => (p.merge === 'ready' && under.nodes.length
-  ? { word: `stacked (${under.nodes.length})`, cls: 'stacked' }
-  : { word: p.merge, cls: p.merge ? wordClass(p.merge) : '' });
 
 /**
  * One pull request as a row, and when the row is open, its milestone and its

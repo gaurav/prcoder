@@ -90,6 +90,11 @@ command that only records the path it is handed, which checks the keys and that 
 without opening a window. So the platform's own terminal and file manager are not driven: a scratch
 driver that presses either key without those set opens a real window on the machine running it.
 
+**`node tools/choose.mjs`** drives `prcoder choose` in a PTY: the list this repo's open pull requests
+make, a number that is not listed, then `q`. Never a number that is listed, since that is a `gh pr
+checkout` of your working copy; a pick is seen through by hand, in a clone under `data/` when it
+is not the branch you are on.
+
 **`node tools/firefox-runner/probe.mjs`** is not a driver and boots no server. It asks only whether
 anything on this machine can start Firefox, with and without the workaround, and is worth running
 after a macOS, Firefox or Playwright update; [its README](../tools/firefox-runner/README.md) says
