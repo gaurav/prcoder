@@ -94,3 +94,37 @@ test('on a tty the size and the state are coloured, and a narrow terminal cuts o
   assert.match(styled(lines().lines[6]), /\x1b\[31mconflicts/);
   assert.match(styled(lines().lines[2]), /\x1b\[31mXXL/);
 });
+
+// stackOrder alone lists the roots base by base, so #1 on main came before
+// the newer #2 on another base; and Enter took the deepest row first in the
+// walk, #5 under the newest root, over #4, five days newer, under an older one.
+test('roots on different bases are in update order, and Enter takes the newest of the deepest', () => {
+  const listing = { read: NOW, total: 5, listed: 5, pulls: [
+    pull(3, 'three', 'main', 10, 'ready', 0),
+    pull(2, 'two', 'release', 10, 'ready', 4),
+    pull(1, 'one', 'main', 10, 'ready', 8),
+    pull(5, 'five', 'three', 10, 'ready', 6),
+    pull(4, 'four', 'one', 10, 'ready', 1),
+  ] };
+  const { rows, pick } = chooseLines(listing, { nameWithOwner: 'o/r', defaultBranch: 'main', now: NOW });
+  assert.deepEqual(rows.map((r) => [r.pr.number, r.depth]), [[3, 0], [5, 1], [2, 0], [1, 0], [4, 1]]);
+  assert.equal(pick.pr.number, 4);
+});
+
+// A base branch's name is measured in terminal columns, as styled() cuts: by
+// its length, each CJK character counted one and the note lost its tail.
+test('a wide base branch name cuts the title, not the note', () => {
+  const listing = { read: NOW, total: 1, listed: 1, pulls: [pull(1, 'a', '機能-基盤', 10, 'draft', 0, { title: 'A title long enough to cut' })] };
+  const [line] = chooseLines(listing, { nameWithOwner: 'o/r', defaultBranch: 'main', now: NOW, width: 50 }).lines.slice(-1);
+  const drawn = styled(line, 50).replaceAll(/\x1b\[\d+m/g, '');
+  assert.match(drawn, / on 機能-基盤$/);
+});
+
+test('a state is coloured as the tab colours its class', () => {
+  const out = { isTTY: true, columns: 200, rows: 24, text: '', write(s) { this.text += s; return true; } };
+  sink(out);
+  const listing = { read: NOW, total: 2, listed: 2, pulls: [pull(1, 'a', 'main', 10, 'blocked', 0), pull(2, 'b', 'main', 10, 'draft', 1)] };
+  const [blocked, draft] = chooseLines(listing, { nameWithOwner: 'o/r', defaultBranch: 'main', now: NOW }).lines.slice(-2).map((l) => styled(l, 200));
+  assert.match(blocked, /\x1b\[33mblocked/);   // yellow, the tab's --warn
+  assert.match(draft, /\x1b\[2mdraft/);        // dim, the tab's default
+});

@@ -104,7 +104,7 @@ busy or idle as the tab is, and the name, as a menu. The pane needs no label the
 says which pull request it is. The menu holds the keyboard shortcuts (the sheet Alt+/ opens, built
 from the same table the keys are bound from, so it can only list keys the page has), the
 documentation, an issue to report and the repository on GitHub, **Quit prcoder…**, which asks what
-the exit bar's Quit asks ([Claude Code](#claude-code)) and is greyed out once prcoder has quit, and
+the exit bar's Quit asks ([Claude Code](#claude-code)), and
 the version on its last line. It closes on a pick, a click anywhere else, or Escape -- outside a
 text field, so not in the terminal, where Escape is the agent's, nor in the queue's input or the
 pull request switcher. Nothing done in the shortcut sheet closes it, so with the sheet opened over
@@ -117,7 +117,7 @@ it was on is hidden.
 Which pull request you are in stays at the top, in the order it is used: the title; then the way
 out of the window, with this pull request on GitHub drawn as a button beside plain links to the
 repository's issues, pulls and milestones, and the repository they are all in at the end of that
-row; then the state and the branch it targets, with the pull request that branch belongs to
+row; then the milestone the pull request is on; then the state and the branch it targets, with the pull request that branch belongs to
 beside it as `#N` when it is another open one's head, since that is the one you want next.
 
 Each side of `head → base` is labelled the way GitHub labels a branch in another repository: a
@@ -134,6 +134,27 @@ four stay where they are either way. On a line of its own it truncates rather th
 owner is clipped and the repository's own name kept, since that is the half that says which
 checkout you are in. It is drawn as a chip rather than a fifth link: the links are places to go,
 and the chip is the one thing in the head that answers which checkout this is.
+
+The milestone has a line of its own, on every pull request, because one on no milestone is the one
+that needs something done: it still has to be triaged, so its line is in the warning colour and
+reads *no milestone — needs triage*. The line is a picker, as wide as the line leaves it. It offers
+none, then the repository's open milestones in the order the queue's Issues tab groups them, so the
+dated ones soonest first, and the pull request's own milestone even when that one is closed; each is
+its title, with its due date on hover where the browser shows an option's tooltip. Picking one puts
+the pull request on it on GitHub there and then, and picking none takes it off; until GitHub
+answers the picker shows the pick, disabled, through any redraw. A letter or an arrow on the closed
+picker changes nothing, since a change there is a write to GitHub -- whether the browser sends that
+change with the key, a moment after it, or as the picker loses the focus; to pick by keyboard is to
+open the dropdown first. The word *milestone*
+in front links to the milestone on GitHub while there is one, and a dated milestone says when it is
+due after the picker, as the queue's milestone lines do: *due in 3 days*, yellow within a week, a
+red badge once past, with the date on hover. The list is every open milestone, as the queue's tabs
+have, and is read when the pull request's repository changes -- from the server's last read of it,
+while that is a few minutes old -- and from GitHub again as the pointer or the focus reaches the
+picker, so a milestone made on GitHub since is there to pick. A poll that lands while the picker has the focus redraws the rest of the
+head around it and brings the picker's options up to date in place, so an open dropdown is not
+redrawn shut and the head is still current; only a move to another pull request replaces the picker. It was a chip after the repository's to begin with, which
+said nothing on a pull request with no milestone and had nowhere to put a picker.
 
 ### Moving between pull requests
 
@@ -368,6 +389,21 @@ anything starts, and the terminal says so -- except the command line's own, whic
 was given even when the bar would refuse it typed in. Quit asks what the terminal's quit asks
 ([Terminal.md](Terminal.md)).
 
+Once prcoder itself has gone, nothing on the page works -- the pull request pane, the queue and
+the terminal all talk to it -- so the whole window says so: a box over the panes, which are dimmed
+behind it and take no click or key, and a tab titled `prcoder (not running)`. It comes up after a
+Quit from the page, and also however else prcoder stopped -- quit from its own terminal or another
+tab, its terminal closed: on the way out it closes every tab's connection with a code of its own,
+and waits for each tab to have it. A tab whose agent had already exited has no connection to be
+told on. A prcoder that crashes may not get the code out, and one killed outright (`kill -9`)
+sends none, so its tabs show the exit bar as if only the agent had gone. All of these find out from
+the page's next poll of prcoder, which gets no answer: at once on a Start that cannot connect,
+otherwise within the minute or on coming back to the tab. The terminal's last line says `[prcoder quit]` rather than
+`[coding agent exited]`.
+The box's ✕, or Escape, closes it so the terminal's last screen can be selected and copied; the
+panes stay dimmed and the title stays. The way on is to close the tab, or start prcoder again, where
+`/resume` or `-- --continue` picks the coding agent's session back up.
+
 ## Queue
 
 Your own TODO list for this working copy, stored in `.prcoder/queue.json` (or the file `--queue` names). Add an item, drag it by
@@ -479,8 +515,8 @@ from prcoder.
 one to work on (`prcoder choose` is the same pick at the command line, before a browser opens:
 [Terminal.md](Terminal.md#choosing-a-pull-request)), in the same groups as the issues -- **No milestone** first, then one per open milestone in the
 owner's order, each line drawn as the Issues tab's, its badge counting pull requests -- or, with the second select over them set to *one list*, as one list, or
-to *by stack*, as one list in the switcher's order, each pull request a step in under the one it
-is built on. A stack can run across milestones, which is why that is a grouping of its own and
+to *by stack*, as one list with each pull request a step in under the one it is built on, each
+stack placed in the chosen order by its bottom pull request -- not the switcher's order, which goes base by base. A stack can run across milestones, which is why that is a grouping of its own and
 not a way of nesting the milestone groups.
 Within a group they are smallest first, since the next one to take on is usually the one that is
 nearly done; the first select over them changes that to largest first, newest, oldest, most or

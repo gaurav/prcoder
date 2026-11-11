@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { notAWorkTree, syncState, compareUrl, githubUrl, originOwner, remoteRepo, remoteRepos, repoInfo, pushRepo, commitsKnown, commitMemo, wholePrRepo, checkoutPr, startOnPr, userDirt, remoteBranchHead, trackingHead, snapshot, localPatch, branchesBelow } from '../git.js';
+import { notAWorkTree, syncState, compareUrl, githubUrl, originOwner, remoteRepo, remoteRepos, repoInfo, pushRepo, commitsKnown, commitMemo, wholePrRepo, checkoutPr, startOnPr, isHere, userDirt, remoteBranchHead, trackingHead, snapshot, localPatch, branchesBelow } from '../git.js';
 
 // git finds the repository through GIT_DIR and GIT_WORK_TREE before it looks
 // at cwd, and a git hook exports them. Under a hook, `npm test` ran every
@@ -479,7 +479,7 @@ test('a checkout that switched branches and then could not fast-forward is still
     await run('branch', 'topic');
     const fails = 'echo "fatal: Not possible to fast-forward, aborting." >&2\nexit 1';
     await withGh(() => `git checkout -q topic\n${fails}`, async () => {
-      assert.match((await checkoutPr(dir, url)).diverged, /fast-forward/);
+      assert.match((await checkoutPr(dir, url)).unfinished, /fast-forward/);
     });
     assert.equal((await git('git', ['symbolic-ref', '--short', 'HEAD'], { cwd: dir })).stdout.trim(), 'topic');
     await withGh(() => fails, async () => {
@@ -518,7 +518,27 @@ test('a start is on the pull request\'s branch, or refused over uncommitted work
       assert.deepEqual(await startOnPr(dir, p), { branch: 'topic', said: 'checked out topic for #76' });
     });
     assert.equal(await branch(), 'topic');
+    // A fork's pull request on the branch gh checked it out to, whatever that
+    // is called: gh says so, and there is nothing to check out or refuse.
+    const fork = { url: 'https://github.com/o/r/pull/80', number: 80, headRefName: 'main', isCrossRepository: true };
+    await fs.writeFile(path.join(dir, 'a.txt'), 'changed again\n');
+    await withGh(() => `echo '{"url":"${fork.url}"}'`, async () =>
+      assert.deepEqual(await startOnPr(dir, fork), { branch: 'topic', said: null }));
   } finally {
     await fs.rm(dir, { recursive: true, force: true });
   }
+});
+
+// gh's answer for the branch it checked a fork's pull request out to: that
+// pull request, whatever the branch is called. No git here, only the gh stub.
+test('a fork\'s pull request is here when gh says it is the branch\'s', { skip: unix }, async () => {
+  const fork = { url: 'https://github.com/o/r/pull/200', number: 200, headRefName: 'main', isCrossRepository: true };
+  await withGh(() => `echo '{"url":"${fork.url}"}'`, async () => {
+    assert.equal(await isHere('.', fork, 'someone/main'), true);
+    assert.equal(await isHere('.', { ...fork, url: 'https://github.com/o/r/pull/201' }, 'someone/main'), false);
+    // Not gh's question on a detached HEAD.
+    assert.equal(await isHere('.', fork, null), false);
+  });
+  await withGh(() => `echo 'error connecting to api.github.com' >&2\nexit 1`, async () =>
+    assert.equal(await isHere('.', fork, 'someone/main'), false));
 });

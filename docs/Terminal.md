@@ -65,7 +65,8 @@ Quitting kills the PTY, and with it the Claude session in the browser. So when t
 to lose -- tabs open, unpushed commits, uncommitted files -- Ctrl-C asks first and says which;
 with nothing to lose it quits on one press. A second Ctrl-C at the prompt quits immediately;
 nothing here can make prcoder unkillable. The Quit button on the Claude pane, once Claude has
-exited, is the same quit and asks the same question in the browser.
+exited, is the same quit and asks the same question in the browser. However prcoder was quit,
+every tab it was serving then says it is no longer running ([Panes.md](Panes.md#claude-code)).
 
 The queue is not asked about, because quitting leaves it in `.prcoder/queue.json` (or the file
 `--queue` named). Instead, every item still on Local is printed first, under the name of that file, with its issue's link where it has one, so the list is in
@@ -112,9 +113,13 @@ recently updated root when nothing is stacked. `q` or end of input starts nothin
 A pick on another branch is checked out, as the tab's Switch checks one out, and prcoder starts
 on it, as `prcoder <n>` does. With uncommitted changes nothing is checked out and nothing starts:
 prcoder says how many files are in the way and exits, since the pane only ever shows the
-checked-out branch's pull request. A pick on the branch you are on is simply started. A local copy of the branch with commits the pull request
-lacks is checked out but not fast-forwarded: the line says it has diverged, prcoder starts on it,
-and the sync light reads `diverged`, for you or the agent to merge or rebase.
+checked-out branch's pull request. A pick on the branch you are on is simply started -- a fork's
+pull request too, when the branch is the one gh checked it out to. A local copy of the branch with
+commits the pull request lacks is checked out but not fast-forwarded: the line gives gh's words
+(`Not possible to fast-forward`), prcoder starts on it, and the sync light reads `diverged`, for
+you or the agent to merge or rebase. Any other failure after the switch, such as a pull that timed
+out or a dropped connection, is reported the same way, in gh's words, and prcoder starts on the
+branch it switched to.
 
 The list is the tab's listing, read from GitHub unless `.prcoder/pulls.json` is under a minute
 old, and written there, so the tab opens from the same read. `prcoder choose` takes the other

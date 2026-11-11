@@ -3,8 +3,9 @@
 // working tree. The one exception is repoInfo(), which asks for facts that
 // cannot change while the process runs.
 
-import { run, parsePrUrl } from './github.js';
+import { run, parsePrUrl, branchPrUrl } from './github.js';
 import { urlPath } from './public/tasks.js';
+import { debug } from './term.js';
 
 // Shorter than run()'s default: git here is local but for push and ls-remote,
 // and run() is also what turns a credential prompt into an error.
@@ -500,15 +501,21 @@ export function wholePrRepo(url) {
  * before it reaches gh's argv; which repositories it may be in is the
  * route's to say (server.js).
  *
- * Resolves `{ diverged }` -- gh's complaint -- when gh switched branches and
- * then failed: on a local branch that already exists, gh checks it out and
- * then `git merge --ff-only`s it onto the pull request's head, which a branch
- * with commits of its own refuses ("Not possible to fast-forward"). The merge
- * aborts cleanly, so the branch is checked out and the pane's sync light says
- * `diverged`; reconciling is for you or the agent, not a reason to start
- * nothing. Told by the branch changing, not by git's words, which a
- * translated git prints otherwise. Not `--force`: that resets the local
- * branch to the head and drops its own commits.
+ * Resolves `{ unfinished }` -- gh's own words -- when gh switched branches
+ * and then failed. The usual cause: on a local branch that already exists, gh
+ * checks it out and then `git merge --ff-only`s it onto the pull request's
+ * head, which a branch with commits of its own refuses ("Not possible to
+ * fast-forward"). The merge aborts cleanly, so the branch is checked out and
+ * the pane's sync light says `diverged`; reconciling is for you or the agent,
+ * not a reason to start nothing. Told by the branch changing, not by git's
+ * words, which a translated git prints otherwise. Not `--force`: that resets
+ * the local branch to the head and drops its own commits.
+ *
+ * But that is not the only failure after the switch -- the timeout stopping
+ * the pull, the network dropping, a config write -- and this cannot tell them
+ * apart without reading the words it will not read. So a caller says what gh
+ * said, rather than calling every one of them a divergence, which sent
+ * someone whose pull had timed out looking for commits that were not there.
  */
 export async function checkoutPr(cwd, url) {
   wholePrRepo(url);
@@ -518,7 +525,7 @@ export async function checkoutPr(cwd, url) {
     return {};
   } catch (e) {
     if (await currentBranch(cwd) === before) throw e;
-    return { diverged: e.message };
+    return { unfinished: e.message };
   }
 }
 
@@ -536,19 +543,35 @@ export async function checkoutPr(cwd, url) {
  */
 export async function startOnPr(cwd, p) {
   const branch = await currentBranch(cwd);
-  if (!p.isCrossRepository && p.headRefName === branch) return { branch, said: null };
+  if (await isHere(cwd, p, branch)) return { branch, said: null };
   const dirty = await dirtyFiles(cwd);
   if (dirty.length) {
     const many = dirty.length > 1;
     throw new Error(`#${p.number} is on ${p.headRefName}, and ${dirty.length} uncommitted file${many ? 's' : ''}` +
       ` on ${branch ?? 'a detached HEAD'} ${many ? 'are' : 'is'} in the way; commit or stash ${many ? 'them' : 'it'} first`);
   }
-  const { diverged } = await checkoutPr(cwd, p.url);
+  const { unfinished } = await checkoutPr(cwd, p.url);
   return {
     branch: await currentBranch(cwd),
-    said: `checked out ${p.headRefName} for #${p.number}` +
-      (diverged ? `, but it has diverged from the pull request's head, so it was not fast-forwarded` : ''),
+    said: `checked out ${p.isCrossRepository ? `#${p.number}` : `${p.headRefName} for #${p.number}`}` +
+      (unfinished ? `, but gh did not finish: ${unfinished}` : ''),
   };
+}
+
+/**
+ * Whether `p` is the checked-out branch's pull request, so startOnPr has
+ * nothing to check out. A fork's head is in the fork, so its name says nothing
+ * about this clone -- the fork's `main` is not this `main` -- and the branch gh
+ * checked it out to may be `owner/name`, tracking `refs/pull/N/head`. gh reads
+ * that config back, so it is asked which pull request this branch is
+ * (branchPrUrl): a network round trip, paid only on a fork's pull request. A
+ * failure there is taken as no, and the checkout goes ahead.
+ */
+export async function isHere(cwd, p, branch) {
+  if (!p.isCrossRepository) return p.headRefName === branch;
+  if (!branch) return false;
+  const url = await branchPrUrl(cwd).catch((e) => (debug(`gh could not say which pull request ${branch} is: ${e.message}`), null));
+  return url === p.url;
 }
 
 export const pushBranch = (cwd) => git(['push', '-u', 'origin', 'HEAD'], cwd);

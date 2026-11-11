@@ -3,7 +3,8 @@
 // and the status block share.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { TABS, counts, forClaude, refLabel, rankMilestones, issueMatches, sizeChip, sortPulls, pullMatches, age, dueLabel, isNew, PULL_SORTS } from '../public/items.js';
+import { stackOrder } from '../public/pr.js';
+import { TABS, counts, forClaude, refLabel, rankMilestones, issueMatches, sizeChip, sortPulls, rootsInOrder, pullMatches, age, dueLabel, dueDay, isNew, PULL_SORTS } from '../public/items.js';
 import { stripFor } from '../public/queue.js';
 
 const item = (over = {}) => ({ text: 't', done: false, issue: null, deleted: false, ...over });
@@ -217,16 +218,24 @@ test('an age is a word or two, and new is a week', () => {
 });
 
 test('a milestone is due some time ago or in some time, with its date in full on hover', () => {
-  const now = Date.parse('2026-10-19T12:00:00Z');
+  // Noon on the 19th on this clock, since today is this clock's: noon UTC is
+  // already the 20th in Auckland.
+  const now = new Date(2026, 9, 19, 12).getTime();
   assert.deepEqual(dueLabel('2026-10-14T00:00:00Z', now), { className: 'due overdue', textContent: 'due 5 days ago', title: 'Wednesday, October 14, 2026' });
   assert.deepEqual(dueLabel('2026-11-03T00:00:00Z', now), { className: 'due', textContent: 'due in 15 days', title: 'Tuesday, November 3, 2026' });
   assert.equal(dueLabel('2026-10-22T00:00:00Z', now).className, 'due soon');
-  assert.equal(dueLabel('2026-10-26T11:59:00Z', now).className, 'due soon', 'a minute inside the week');
-  assert.equal(dueLabel('2026-10-26T12:00:00Z', now).className, 'due', 'a week off is not soon');
+  // Soon is by the day, like the rest: six days off is, seven is not, and a
+  // day is soon or not whatever hour of it the zone it was set in sends.
+  for (const due of ['2026-10-25T00:00:00Z', '2026-10-25T07:00:00Z', '2026-10-24T22:00:00Z']) assert.equal(dueLabel(due, now).className, 'due soon', due);
+  for (const due of ['2026-10-26T00:00:00Z', '2026-10-26T07:00:00Z', '2026-10-25T22:00:00Z']) assert.equal(dueLabel(due, now).className, 'due', due);
   assert.equal(dueLabel('2026-11-17T00:00:00Z', now).textContent, 'due in 29 days');
   assert.equal(dueLabel('2026-11-18T00:00:00Z', now).textContent, 'due in 1 month', 'months from 30 days, and never `next month`');
   assert.equal(dueLabel('2027-01-01T00:00:00Z', now).textContent, 'due in 2 months');
   assert.equal(dueLabel('2025-09-01T00:00:00Z', now).textContent, 'due 1 year ago');
+  // The start of the 27th where it was set, east of UTC as west: never the 26th.
+  for (const due of ['2026-10-26T22:00:00Z', '2026-10-26T11:00:00Z', '2026-10-27T00:00:00Z', '2026-10-27T07:00:00Z', '2026-10-27T10:00:00Z']) {
+    assert.equal(dueLabel(due, now).title, 'Tuesday, October 27, 2026', due);
+  }
   // GitHub sends a date as the start of that day: due today is not overdue
   // until the day is over, however many hours past its dueOn. Today is this
   // clock's, so the checks are at local times, true in any time zone.
@@ -238,4 +247,44 @@ test('a milestone is due some time ago or in some time, with its date in full on
   assert.equal(dueLabel('2026-10-20T07:00:00Z', new Date(2026, 9, 19, 23).getTime()).textContent, 'due tomorrow');
   assert.equal(dueLabel('2026-10-18T07:00:00Z', new Date(2026, 9, 19, 1).getTime()).textContent, 'due yesterday');
   assert.equal(dueLabel('2026-10-21T07:00:00Z', noon).textContent, 'due in 2 days');
+});
+
+// The review's case: A (10 lines) and C (30) on main, B (20) on a bare branch,
+// and D built on A. stackOrder walks main's tree, then feat's: A, D, C, B.
+test('the by-stack view puts its stacks in the chosen order of their roots', () => {
+  const pr = (number, lines, headRefName, baseRefName) => ({ number, lines, headRefName, baseRefName });
+  const rows = sortPulls([pr(3, 30, 'c', 'main'), pr(2, 20, 'b', 'feat'), pr(1, 10, 'a', 'main'), pr(4, 40, 'd', 'a')], 'smallest');
+  const walk = stackOrder(rows);
+  assert.deepEqual(walk.map(({ pr: p, depth }) => `${'-'.repeat(depth)}${p.number}`), ['1', '-4', '3', '2'], 'the walk, base by base');
+  assert.deepEqual(rootsInOrder(walk, rows).map(({ pr: p, depth }) => `${'-'.repeat(depth)}${p.number}`), ['1', '-4', '2', '3']);
+});
+
+// Every hour here is one read off a real repository's milestones on 2026-11-02
+// (nodejs/node, rust-lang/rust, flutter/flutter): midnight wherever the date
+// was set, so the UTC date is a day early for anyone east of Greenwich.
+test('a due date is the day it was set for, west or east of Greenwich', () => {
+  for (const hour of ['00', '04', '05', '07', '08']) assert.equal(dueDay(`2026-10-20T${hour}:00:00Z`), '2026-10-20', hour);
+  // Sydney's and Moscow's midnight, on the 20th there.
+  for (const hour of ['13', '21']) assert.equal(dueDay(`2026-10-19T${hour}:00:00Z`), '2026-10-20', hour);
+});
+
+// The viewer's time zone is the other half: "today" is theirs. Each of these
+// gave a wrong answer when the due day was the UTC date and nearness a time.
+// noon() is called after TZ is set, so it is noon on the 19th in that zone.
+const noon = () => new Date(2026, 9, 19, 12).getTime();
+test('a due date reads the same way in the viewer\'s time zone', () => {
+  const tz = process.env.TZ;
+  try {
+    process.env.TZ = 'Asia/Tokyo';
+    assert.deepEqual(dueLabel('2026-10-19T15:00:00Z', noon()),
+      { className: 'due soon', textContent: 'due tomorrow', title: 'Tuesday, October 20, 2026' }, 'set in Tokyo for the 20th, seen there on the 19th');
+    assert.equal(dueLabel('2026-10-19T15:00:00Z', new Date(2026, 9, 20, 12).getTime()).textContent, 'due today', 'and on its own day');
+    assert.equal(dueLabel('2026-10-19T15:00:00Z', new Date(2026, 9, 20, 12).getTime()).className, 'due soon', 'not overdue');
+    process.env.TZ = 'America/Los_Angeles';
+    const evening = new Date(2026, 9, 19, 20).getTime();
+    assert.deepEqual(dueLabel('2026-10-20T00:00:00Z', evening), { className: 'due soon', textContent: 'due tomorrow', title: 'Tuesday, October 20, 2026' }, 'not "3 hours ago"');
+    assert.equal(dueLabel('2026-10-20T03:00:30Z', new Date('2026-10-20T03:00:00Z').getTime()).textContent, 'due tomorrow', 'not "just now"');
+  } finally {
+    if (tz === undefined) delete process.env.TZ; else process.env.TZ = tz;
+  }
 });
