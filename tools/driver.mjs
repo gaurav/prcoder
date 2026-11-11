@@ -152,18 +152,28 @@ export function firefoxEnv() {
 
 /**
  * Where to run the server to drive this repository's pull request `number`:
- * this tree when it is already on the pull request's branch, and otherwise a
- * worktree on that branch under data/, removed again on exit with any local
- * branch made for it. Spawn `server.js` from this tree with `cwd` set to the
- * answer, and pass it no pull request.
+ * a worktree that already has the pull request's branch checked out -- this
+ * tree, or another -- and otherwise a worktree on that branch under data/,
+ * removed again on exit with any local branch made for it. Spawn `server.js`
+ * from this tree with `cwd` set to the answer, and pass it no pull request.
  *
  * Never `server.js <n>` in this tree: prcoder checks out the pull request it
  * is started on (startOnPr in git.js), and this tree is often the owner's own
  * working copy (tools/CLAUDE.md).
+ *
+ * A branch checked out in another worktree is driven there, since git will
+ * not check it out twice; a server with no pull request named checks nothing
+ * out, so that is as safe as driving this tree on its own branch. A local
+ * branch that is not checked out anywhere is brought up to origin's (or, for
+ * a merged pull request whose branch is gone, to GitHub's refs/pull/<n>/head)
+ * when it is behind, so the run drives the pull request as it is, not a
+ * commit some earlier run left; one with commits of its own is driven as it
+ * is, and said so on stderr, since a reset would lose them.
  */
 export function onPullRequest(number) {
   const made = path.join(repo, 'data', `wt-${number}.branch`);
   const git = (...args) => execFileSync('git', args, { cwd: repo, encoding: 'utf8' }).trim();
+  const ok = (...args) => spawnSync('git', args, { cwd: repo }).status === 0;
   const { headRefName: branch, isCrossRepository } = JSON.parse(execFileSync('gh',
     ['pr', 'view', String(number), '--json', 'headRefName,isCrossRepository'], { cwd: repo, encoding: 'utf8' }));
   if (isCrossRepository) throw new Error(`#${number} is from another repository's branch; drive one of this repository's own`);
@@ -175,19 +185,28 @@ export function onPullRequest(number) {
   // was, the worktree was removed this time but the branch never was: only
   // the run that made a branch knew it had, and nothing else deleted it.
   cleanUp(dir, made);
-  if (spawnSync('git', ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`], { cwd: repo }).status !== 0) {
+  const there = worktreeOn(branch);
+  if (there) return there;
+  // From origin's branch where it still has one, so the sync light has
+  // something to compare against. A merged pull request's branch is usually
+  // deleted -- PR #1's, which browser.mjs is written against, is -- and
+  // GitHub's refs/pull/<n>/head outlives it.
+  const fetched = ok('fetch', '-q', 'origin', `+refs/heads/${branch}:refs/remotes/origin/${branch}`);
+  if (!fetched) git('fetch', '-q', 'origin', `refs/pull/${number}/head`);
+  const tip = git('rev-parse', fetched ? `refs/remotes/origin/${branch}` : 'FETCH_HEAD');
+  if (!ok('rev-parse', '--verify', '--quiet', `refs/heads/${branch}`)) {
     // Named before it is made, so a run killed straight after still leaves
     // it named for the next one to delete.
     writeFileSync(made, `${branch}\n`);
-    // From origin's branch where it still has one, so the sync light has
-    // something to compare against. A merged pull request's branch is
-    // usually deleted -- PR #1's, which browser.mjs is written against, is
-    // -- and GitHub's refs/pull/<n>/head outlives it.
-    const fetched = spawnSync('git', ['fetch', '-q', 'origin', `+refs/heads/${branch}:refs/remotes/origin/${branch}`], { cwd: repo }).status === 0;
     if (fetched) git('branch', '-q', '--track', branch, `origin/${branch}`);
-    else {
-      git('fetch', '-q', 'origin', `refs/pull/${number}/head`);
-      git('branch', '-q', branch, 'FETCH_HEAD');
+    else git('branch', '-q', branch, tip);
+  } else {
+    const local = git('rev-parse', `refs/heads/${branch}`);
+    // Checked out nowhere (worktreeOn), so moving it moves no one's files;
+    // update-ref with the old value, so a branch moved meanwhile is left be.
+    if (local !== tip && ok('merge-base', '--is-ancestor', local, tip)) git('update-ref', `refs/heads/${branch}`, tip, local);
+    else if (local !== tip && !ok('merge-base', '--is-ancestor', tip, local)) {
+      console.error(`driving ${branch} as it is here: it and ${fetched ? `origin/${branch}` : `#${number}'s head`} have each moved on`);
     }
   }
   git('worktree', 'add', '-q', dir, branch);
@@ -198,6 +217,20 @@ export function onPullRequest(number) {
     cleanUp(dir, made);
   });
   return dir;
+}
+
+/**
+ * The worktree `branch` is checked out in, this tree's included, or null.
+ * From `git worktree list --porcelain`: a `worktree <path>` line, then a
+ * `branch refs/heads/<name>` line for one on a branch.
+ */
+function worktreeOn(branch) {
+  const list = execFileSync('git', ['worktree', 'list', '--porcelain'], { cwd: repo, encoding: 'utf8' });
+  for (const block of list.split('\n\n')) {
+    const at = /^worktree (.+)$/m.exec(block)?.[1];
+    if (at && block.split('\n').includes(`branch refs/heads/${branch}`)) return at;
+  }
+  return null;
 }
 
 /**
