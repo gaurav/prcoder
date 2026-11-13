@@ -179,6 +179,8 @@ export function onPullRequest(number) {
   if (isCrossRepository) throw new Error(`#${number} is from another repository's branch; drive one of this repository's own`);
   if (git('branch', '--show-current') === branch) return repo;
   const dir = path.join(repo, 'data', `wt-${number}`);
+  // Before anything is removed: the worktree below may be a live run's.
+  const release = holdPullRequest(number);
   // What a killed run left -- its worktree, and the branch it made, named in
   // `made` beside it -- is removed first, so that the branch is made again
   // from origin and nothing is driven on a commit that run had. Used as it
@@ -186,14 +188,22 @@ export function onPullRequest(number) {
   // the run that made a branch knew it had, and nothing else deleted it.
   cleanUp(dir, made);
   const there = worktreeOn(branch);
-  if (there) return there;
+  if (there) {
+    process.on('exit', release);
+    return there;
+  }
   // From origin's branch where it still has one, so the sync light has
   // something to compare against. A merged pull request's branch is usually
   // deleted -- PR #1's, which browser.mjs is written against, is -- and
   // GitHub's refs/pull/<n>/head outlives it.
   const fetched = ok('fetch', '-q', 'origin', `+refs/heads/${branch}:refs/remotes/origin/${branch}`);
-  if (!fetched) git('fetch', '-q', 'origin', `refs/pull/${number}/head`);
-  const tip = git('rev-parse', fetched ? `refs/remotes/origin/${branch}` : 'FETCH_HEAD');
+  // Into a ref of its own, not FETCH_HEAD, which every fetch writes -- the
+  // owner's prcoder and its agent fetch in this clone too (checkoutGone in
+  // git.js says the same). Deleted once read.
+  const pull = `refs/prcoder/pull/${number}`;
+  if (!fetched) git('fetch', '-q', '--no-write-fetch-head', 'origin', `+refs/pull/${number}/head:${pull}`);
+  const tip = git('rev-parse', fetched ? `refs/remotes/origin/${branch}` : pull);
+  if (!fetched) git('update-ref', '-d', pull);
   if (!ok('rev-parse', '--verify', '--quiet', `refs/heads/${branch}`)) {
     // Named before it is made, so a run killed straight after still leaves
     // it named for the next one to delete.
@@ -215,8 +225,53 @@ export function onPullRequest(number) {
     // which runs first, only signals it, so the removal waits for it to go.
     for (const child of killed) waitGone(child);
     cleanUp(dir, made);
+    // Last, so a run that starts now finds nothing of this one left to remove.
+    release();
   });
   return dir;
+}
+
+/**
+ * `data/wt-<n>.pid`, this run's claim on pull request `number`'s worktree,
+ * taken before onPullRequest removes anything, and the function that lets
+ * it go. Without it, a second driver on the same pull request -- browser.mjs
+ * with PRCODER_PR=87 while diff-views.mjs drives #87 -- force-removed the
+ * first's worktree and deleted its branch under its live server and agent,
+ * and the first failed partway with errors that named neither.
+ *
+ * `wx`, so one of two at once takes it. A claim whose process has gone (a
+ * run killed with SIGKILL, which skips the release) is taken over.
+ */
+function holdPullRequest(number) {
+  const held = path.join(repo, 'data', `wt-${number}.pid`);
+  for (let tries = 0; ; tries++) {
+    try {
+      writeFileSync(held, `${process.pid}\n`, { flag: 'wx' });
+      break;
+    } catch (e) {
+      if (e.code !== 'EEXIST' || tries > 1) throw e;
+    }
+    const holder = Number(readFileSync(held, 'utf8').trim());
+    if (holder > 0 && holder !== process.pid && running(holder)) {
+      throw new Error(`another driver (pid ${holder}) is driving #${number} in data/wt-${number}; wait for it to finish, or kill it`);
+    }
+    rmSync(held, { force: true });
+  }
+  return () => {
+    try {
+      if (Number(readFileSync(held, 'utf8').trim()) === process.pid) rmSync(held, { force: true });
+    } catch { /* already gone */ }
+  };
+}
+
+/** Whether process `pid` is there; EPERM is someone else's, and there. */
+function running(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    return e.code === 'EPERM';
+  }
 }
 
 /**

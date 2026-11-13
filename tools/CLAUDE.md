@@ -58,7 +58,10 @@ happens in the worktree. Remove the worktree when done, and any local branch
 that for a pull request's number. It brings a stale local branch of that
 name up to origin before making the worktree, and when the branch is
 already checked out in another worktree it answers that one, since git
-will not check a branch out twice.
+will not check a branch out twice. A run holds `data/wt-<n>.pid` until it
+exits, so a second driver on the same pull request stops with the first's pid
+instead of removing its worktree from under it; one left by a killed run is
+taken over.
 
 Never hand `server.js` a pull request in this tree, `server.js 87` or
 `prcoder choose` answered with a number: prcoder checks out what it is
