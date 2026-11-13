@@ -72,7 +72,9 @@ in a repository this clone does not track, or when uncommitted changes or anothe
 in the same directory are in the way of the checkout. A merged pull request whose branch GitHub has
 since deleted is still checked out, from the pull request's head on GitHub: onto the local branch of
 that name when it has the head or is behind it, onto a new branch of that name when there is none,
-and onto `pr-<n>` when the local one is other work under the same name. Before `--` a flag is prcoder's, and one it does not know is an error that says where it
+and onto `pr-<n>` when the local one is other work under the same name. `pr-<n>` tracks
+`refs/pull/<n>/head`, as gh's checkout of a fork's pull request does, so a later prcoder on it
+knows which pull request it is. Before `--` a flag is prcoder's, and one it does not know is an error that says where it
 goes, rather than a guess at which of the two it was for. `prcoder --help` lists the flags.
 
 Most settings are a flag with an environment variable of the same meaning; the flag wins when both

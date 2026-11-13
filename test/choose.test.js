@@ -65,6 +65,9 @@ test('the marker follows the checked-out branch, and the default is the newest r
   assert.ok(!out.map(plain)[3].startsWith('›'));
   // A fork's head is in the fork, whatever it is called.
   assert.ok(!lines({ branch: 'main' }).lines.map(plain).some((l) => l.startsWith('›')));
+  // But the branch gh checked it out to says which it is in its config.
+  const fork = lines({ branch: 'someone/main', tracked: 'https://github.com/Gaurav/Prcoder/pull/200' }).lines.map(plain);
+  assert.deepEqual(fork.filter((l) => l.startsWith('›')).map((l) => l.match(/#\d+/)[0]), ['#200']);
   const flat = chooseLines({ ...LISTING, pulls: LISTING.pulls.filter((p) => p.number === 173 || p.number === 87) }, { nameWithOwner: 'o/r', defaultBranch: 'main', now: NOW });
   assert.equal(flat.pick.pr.number, 173);
   assert.equal(flat.pick.depth, 0);
@@ -145,7 +148,7 @@ test('a state is coloured as the tab colours its class', () => {
 // A throwaway repo on `branch` with an uncommitted change, and choosePr run
 // over `pulls` with `answers` typed at each question: what it picked, what it
 // said, and the questions it asked.
-async function chooseOver(branch, pulls, answers) {
+async function chooseOver(branch, pulls, answers, setup = async () => {}) {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'prcoder-choose-'));
   const said = [];
   const asked = [];
@@ -157,6 +160,7 @@ async function chooseOver(branch, pulls, answers) {
     await run('add', 'a.txt');
     await run('commit', '-q', '-m', 'x');
     if (branch !== 'main') await run('checkout', '-q', '-b', branch);
+    await setup(run);
     await fs.writeFile(path.join(dir, 'a.txt'), 'changed\n');
     await writePulls(dir, 'gaurav/prcoder', { total: pulls.length, milestones: [], pulls });
     const input = new PassThrough();
@@ -207,4 +211,19 @@ test('with uncommitted work and nothing of this branch\'s, Enter offers nothing 
   const here = await withGh(() => `echo '{"url":"${fork.url}"}'`,
     () => chooseOver('someone/main', [fork], ['7']));
   assert.equal(here.got.pr.number, 7);
+});
+
+// A `pr-<n>` made for a pull request whose branch is gone has not the head's
+// name, but its config says which pull request it is, and Enter offers that
+// one over uncommitted work rather than telling you to stash for nothing.
+test('with uncommitted work on a pr-<n> branch, Enter offers the pull request it tracks', { skip: process.platform === 'win32' && 'sh' }, async () => {
+  const { got, said, asked } = await chooseOver('pr-6',
+    [pull(5, 'elsewhere', 'main', 10, 'ready', 1), pull(6, 'topic', 'main', 10, 'ready', 2)], [''], async (run) => {
+      await run('remote', 'add', 'origin', 'https://github.com/gaurav/prcoder.git');
+      await run('config', 'branch.pr-6.remote', 'origin');
+      await run('config', 'branch.pr-6.merge', 'refs/pull/6/head');
+    });
+  assert.equal(got.pr.number, 6);
+  assert.equal(asked[0], "PR number [6, this branch's], or q: ");
+  assert.ok(said.includes("1 uncommitted file on pr-6: only this branch's pull request, #6, can be picked until it is committed or stashed"), said.join('\n'));
 });

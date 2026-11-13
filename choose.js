@@ -16,7 +16,7 @@ import { stackOrder, stackUnder } from './public/pr.js';
 import { sortPulls, rootsInOrder, pullWord, sizeChip, age } from './public/items.js';
 import { repoPulls } from './github.js';
 import { readPulls, writePulls } from './store.js';
-import { currentBranch, dirtyFiles, branchesBelow, isHere, uncommitted, inTheWay } from './git.js';
+import { currentBranch, dirtyFiles, branchesBelow, isHere, trackedPr, branchOwns, uncommitted, inTheWay } from './git.js';
 import { styled, clip, span, debug } from './term.js';
 
 // A listing younger than this is printed as it is, as the Pull requests tab
@@ -62,15 +62,16 @@ const builtOn = (under, depth) => (!depth && under.nodes.length
  * base is not the default branch says what it is built on after the title,
  * dim, and the title gives way to it (builtOn); `below` is git's word on
  * such bare branches, as branchesBelow gives it and the tab's rows take it.
- * `›` marks the one on the checked-out branch, as the tab marks it `here`.
+ * `›` marks the one on the checked-out branch, as the tab marks it `here`
+ * (branchOwns, with `tracked` the URL its config names).
  * Widths are terminal columns (span in term.js), the measure styled() cuts
  * by, so a wide character in a base branch's name cuts the title, not the
  * note after it.
  */
-export function chooseLines(listing, { nameWithOwner, branch, defaultBranch, below = [], now = Date.now(), width = Infinity } = {}) {
+export function chooseLines(listing, { nameWithOwner, branch, tracked = null, defaultBranch, below = [], now = Date.now(), width = Infinity } = {}) {
   const sorted = sortPulls(listing.pulls ?? [], 'updated');
   const rows = rootsInOrder(stackOrder(sorted), sorted);
-  const here = (p) => !p.isCrossRepository && p.headRefName === branch;
+  const here = (p) => branchOwns(p, branch, tracked);
   const read = listing.read ? `, read ${age(new Date(listing.read).toISOString(), now)}` : '';
   const lines = [
     `Open pull requests in ${nameWithOwner}, by stack, most recently updated first${read}:`,
@@ -177,13 +178,15 @@ export async function choosePr(repo, facts, { input = process.stdin, output = pr
   const { nameWithOwner, defaultBranch } = facts;
   const width = (output.columns || 80) - 1;
   const [branch, dirty, read] = await Promise.all([currentBranch(repo), dirtyFiles(repo), listing(repo, nameWithOwner)]);
+  const tracked = await trackedPr(repo, branch, facts.repos).catch(() => null);
   const below = await bareBases(repo, read.pulls, defaultBranch);
-  const { lines, rows, pick } = chooseLines(read, { nameWithOwner, branch, defaultBranch, below, width });
+  const { lines, rows, pick } = chooseLines(read, { nameWithOwner, branch, tracked, defaultBranch, below, width });
   for (const l of lines) console.log(styled(l, width));
   if (!pick) return null;
   // What Enter takes: chooseLines's pick, or over uncommitted work this
   // branch's pull request -- the deepest elsewhere would only be refused.
-  const own = rows.find((r) => !r.pr.isCrossRepository && r.pr.headRefName === branch);
+  // A `pr-<n>` or a fork's branch is found by its config, as the mark is.
+  const own = rows.find((r) => branchOwns(r.pr, branch, tracked));
   const offer = dirty.length ? own : pick;
   if (dirty.length) {
     const until = `until ${dirty.length > 1 ? 'they are' : 'it is'} committed or stashed`;

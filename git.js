@@ -197,6 +197,52 @@ export async function remoteRepos(cwd) {
 }
 
 /**
+ * The URL of the pull request `branch` was checked out for, read from its
+ * config with no network, or null. `gh pr checkout` of a fork's pull request
+ * leaves `branch.<b>.merge` at `refs/pull/<n>/head` and `branch.<b>.remote`
+ * at the base repository's remote, or its URL when no remote names it -- and
+ * gh reads the pair back to say which pull request the branch is. checkoutGone
+ * marks a `pr-<n>` branch the same way, so the pair names the pull request on
+ * both: whatever the branch is called, and in every later run, not only the
+ * one that checked it out (isHere, server.js's poll, `prcoder choose`'s
+ * offer).
+ *
+ * `repos` (repoInfo's) respells the repository as the first of them that
+ * matches it case-blind, which is GitHub's spelling for gh's base and its
+ * parent: the poll compares URLs exactly, and a remote's URL can spell the
+ * owner otherwise. Null too for a remote off GitHub.
+ */
+export async function trackedPr(cwd, branch, repos = []) {
+  if (!branch) return null;
+  const merge = await answer(['config', '--get', `branch.${branch}.merge`], cwd);
+  const n = merge?.match(/^refs\/pull\/([1-9]\d*)\/head$/)?.[1];
+  if (!n) return null;
+  const remote = await answer(['config', '--get', `branch.${branch}.remote`], cwd);
+  if (!remote) return null;
+  const named = (await remoteRepos(cwd)).find((r) => r.name === remote)?.repo ?? remoteRepo(remote);
+  if (!named) return null;
+  const spelled = repos.find((r) => r.toLowerCase() === named.toLowerCase()) ?? named;
+  return `https://github.com/${spelled}/pull/${n}`;
+}
+
+/** Whether two pull request URLs are one, as GitHub reads them: case-blind. */
+const samePr = (a, b) => Boolean(a && b) && a.toLowerCase() === b.toLowerCase();
+
+/**
+ * Whether `p` is the pull request of the checked-out `branch`, without asking
+ * gh: one of this repository's by its head's name, or the one `tracked`
+ * names -- trackedPr, the branch's own config, which is how a
+ * `pr-<n>` made for a gone branch and a fork's checked out by gh say which
+ * they are. isHere's answer short of asking gh, and `prcoder choose`'s
+ * offer and `›` mark.
+ */
+export function branchOwns(p, branch, tracked) {
+  if (!branch) return false;
+  if (!p.isCrossRepository && p.headRefName === branch) return true;
+  return samePr(tracked, p.url);
+}
+
+/**
  * The repository a plain `git push` sends `branch` to, when it goes to a
  * branch of the same name there; null when it would go nowhere, to another
  * name, or to a remote off GitHub. `byName` is repoInfo's `repoOf`.
@@ -606,10 +652,14 @@ export async function startOnPr(cwd, p, { inUse = async () => null } = {}) {
  * checked out as it is when it has the head (local commits on top included),
  * fast-forwarded to it when it is behind. A local branch of that name with
  * history of its own -- a name reused for other work -- is left alone, and
- * the head is checked out as `pr-<n>` instead, under the same rules; the pane
- * finds it by the chosen URL (lookupPrs in github.js), not by name. With
- * no branch of the name, one is made at the head, with nothing to track.
- * Resolves the note startOnPr adds to its line.
+ * the head is checked out as `pr-<n>` instead, under the same rules. Its name
+ * says nothing of the pull request, so `pr-<n>` is marked as gh marks a
+ * fork's checkout, tracking `refs/pull/<n>/head` (markPr), and every later
+ * run reads which pull request it is from that (trackedPr): a start on it
+ * again (isHere), and the pane after a plain restart. Before the mark, only
+ * the run that checked it out knew, and the next refused or lost it. With no
+ * branch of the head's own name, one is made at the head, with nothing to
+ * track. Resolves the note startOnPr adds to its line.
  *
  * Only for a pull request from this repository's own branch: a fork's is
  * fetched from `refs/pull/<n>/head` by gh already. Told by asking the
@@ -637,18 +687,27 @@ async function checkoutGone(cwd, p, failed) {
       // `so it is pr-3, made from…` under another name, `so it was made from…` under its own.
       const say = (was, how) => (name === p.headRefName ? `${gone}, so it ${was} ${how}`
         : `${gone}, and ${p.headRefName} here is other work, so it is ${name}, ${how}`);
+      const own = name === p.headRefName;
+      // After the checkout, which is what the run is for: a mark that fails
+      // costs the next run a fresh checkout, not this one its start.
+      const mark = async () => {
+        if (!own) await markPr(cwd, name, remote, p.number).catch((e) => debug(`${name} not marked as #${p.number}'s: ${e.message}`));
+      };
       if (!await hasCommit(ref, cwd)) {
         await git(['checkout', '-q', '-b', name, head], cwd);
-        return say('was', "made from the pull request's head, tracking nothing");
+        await mark();
+        return say('was', `made from the pull request's head, tracking ${own ? 'nothing' : `refs/pull/${p.number}/head`}`);
       }
       if (await contains(head, ref)) {
         await git(['checkout', '-q', name], cwd);
+        await mark();
         return say('is', 'as this clone last had it');
       }
       // -B resets the branch, which is a fast-forward here and nothing more,
       // and fails before it moves anything, as plain checkout does.
       if (await contains(ref, head)) {
         await git(['checkout', '-q', '-B', name, head], cwd);
+        await mark();
         return say('was', "brought up to the pull request's head");
       }
     }
@@ -659,19 +718,48 @@ async function checkoutGone(cwd, p, failed) {
 }
 
 /**
+ * Marks `branch` as pull request `n`'s in `remote` (a remote's name, or the
+ * repository's URL when no remote names it), the way `gh pr checkout` marks a
+ * fork's: `branch.<b>.remote` and `branch.<b>.merge = refs/pull/<n>/head`,
+ * which trackedPr and gh both read back. A branch that already tracks
+ * something else keeps it: a `pr-<n>` of someone's own that happens to hold
+ * the head is theirs, and its upstream with it.
+ *
+ * Harmless to the rest of prcoder: the sync light compares against the pull
+ * request's head, and trackingHead and pushRepo read `origin/<name>` and
+ * `%(push)`, which this leaves as they were. A plain `git push` from it is
+ * refused, as it was with nothing to track; `git pull` fetches the head.
+ */
+async function markPr(cwd, branch, remote, n) {
+  const pull = `refs/pull/${n}/head`;
+  const merge = await answer(['config', '--get', `branch.${branch}.merge`], cwd);
+  if (merge && merge !== pull) return;
+  await git(['config', `branch.${branch}.remote`, remote], cwd);
+  await git(['config', `branch.${branch}.merge`, pull], cwd);
+}
+
+/**
  * Whether `p` is the checked-out branch's pull request, so startOnPr has
- * nothing to check out. A fork's head is in the fork, so its name says nothing
+ * nothing to check out. One of this repository's is here on a branch of its
+ * head's name, or on the `pr-<n>` checkoutGone made for it when that name was
+ * other work. A fork's head is in the fork, so its name says nothing
  * about this clone -- the fork's `main` is not this `main` -- and the branch gh
- * checked it out to may be `owner/name`, tracking `refs/pull/N/head`. gh reads
- * that config back, so it is asked which pull request this branch is
- * (branchPrUrl): a network round trip, paid only on a fork's pull request. A
- * failure there is taken as no, and the checkout goes ahead.
+ * checked it out to may be `owner/name`, tracking `refs/pull/N/head`. That
+ * config is read first (trackedPr), and answers for either kind when it is
+ * there. Otherwise, for a fork's, gh is asked which pull request this branch
+ * is (branchPrUrl): a network round trip, paid only on a fork's pull request.
+ * A failure there is taken as no, and the checkout goes ahead.
  */
 export async function isHere(cwd, p, branch) {
-  if (!p.isCrossRepository) return p.headRefName === branch;
   if (!branch) return false;
+  // A `pr-<n>` checkoutGone made, or a fork's checked out by gh: the branch's
+  // config says which, with no network, and gh would read the same pair.
+  const tracked = await trackedPr(cwd, branch);
+  if (branchOwns(p, branch, tracked)) return true;
+  if (tracked) return false;
+  if (!p.isCrossRepository) return false;
   const url = await branchPrUrl(cwd).catch((e) => (debug(`gh could not say which pull request ${branch} is: ${e.message}`), null));
-  return url === p.url;
+  return samePr(url, p.url);
 }
 
 export const pushBranch = (cwd) => git(['push', '-u', 'origin', 'HEAD'], cwd);

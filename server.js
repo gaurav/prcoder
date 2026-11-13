@@ -12,7 +12,7 @@ import { text as readBody } from 'node:stream/consumers';
 import { spawn as ptySpawn } from 'node-pty';
 import { WebSocketServer } from 'ws';
 import { loadPr, pullRequestFor, prBody, parsePrUrl, listPrs, branchPrs, lookupPrs, ownPrs, pickPr, issueLinks, lookupRef, setViewed, setBody, createIssue, fetchPatches, runCount, repoIssues, repoMilestones, setIssueMilestone } from './github.js';
-import { notAWorkTree, snapshot, currentBranch, headCommit, commitsKnown, commitMemo, repoInfo, pushRepo, compareUrl, githubUrl, originOwner, wholePrRepo, checkoutPr, startOnPr, pushBranch, remoteBranchHead, trackingHead, localPatch, branchesBelow } from './git.js';
+import { notAWorkTree, snapshot, currentBranch, headCommit, commitsKnown, commitMemo, repoInfo, pushRepo, compareUrl, githubUrl, originOwner, wholePrRepo, checkoutPr, startOnPr, trackedPr, pushBranch, remoteBranchHead, trackingHead, localPatch, branchesBelow } from './git.js';
 import { bucket, fileUrl, fileViews } from './files.js';
 import { readPort, writePort, readRunning, writeRunning, dropRunning, readPrs, writePrs, pick, useQueueFile, movedQueue, issueUrl, readPulls } from './store.js';
 import { readQueue, writeQueue, quote } from './queue.js';
@@ -34,6 +34,19 @@ let agentArgs = [];
 // ever one of the checked-out branch's (docs/Design.md, "The pane shows what is
 // checked out"), and dropped as soon as the poll finds another checked out.
 let chosen = null;
+
+/**
+ * The URL of the pull request to show on `branch` whatever the search by name
+ * says: the one chosen for it in this run, or else the one its config says it
+ * was checked out for (trackedPr in git.js) -- a `pr-<n>` made for a gone
+ * branch, or a fork's gh checked out to `owner/name`. Neither has the pull
+ * request's head name, so the search would drop it, and before the config was
+ * read a restart on such a branch showed no pull request. Null otherwise.
+ */
+async function choiceFor(branch, repos) {
+  if (chosen?.branch === branch) return chosen.url;
+  return trackedPr(repo, branch, repos).catch((e) => (term.debug(`${branch}'s pull request not read from its config: ${e.message}`), null));
+}
 // The PR is fetched once and reused, with its files already grouped and linked
 // (decorateFiles); the PR routes need its body, node id and head.
 let pr = null;
@@ -206,7 +219,8 @@ const forPage = ({ checks, ...p }) => p;
  * Run under the serial lock, since it writes the file.
  * Where the branch pushes is asked once, being for branchPrs and for ownPrs's
  * test of what is remembered, which is held to it on every poll. `chosen` is
- * the URL picked for this branch (the switcher, `prcoder <pr>`), remembered
+ * the URL picked for this branch (the switcher, `prcoder <pr>`, or its config:
+ * choiceFor), remembered
  * with the rest so that one the search by name cannot find -- a fork's checked
  * out to `owner/name`, a merged one beside an open one -- is read by URL like
  * them (lookupPrs). Before it was, `prcoder <fork's PR>` showed another pull
@@ -254,8 +268,9 @@ async function status({ full = false, search = false } = {}) {
   // file remembers.
   const commits = commitMemo(repo);
   const fresh = search || (last != null && last.branch !== branch);
-  const found = await findPrs(branch, facts, { has: commits.many, checks: true, chosen: chosen?.url, fresh });
-  const heads = pickPr(found, { head, chosen: chosen?.url, shown: pr?.url, repos: facts.repos });
+  const choice = await choiceFor(branch, facts.repos);
+  const found = await findPrs(branch, facts, { has: commits.many, checks: true, chosen: choice, fresh });
+  const heads = pickPr(found, { head, chosen: choice, shown: pr?.url, repos: facts.repos });
   // Reloaded when the cheap check says it changed. A full refresh reloads
   // regardless, so it has no use for the cheap check.
   if (full || !keepPr(pr, heads)) {
@@ -1146,7 +1161,7 @@ async function openGithub() {
   const [branch, head] = await Promise.all([currentBranch(repo), headCommit(repo)]);
   const facts = await repoFacts();
   const { nameWithOwner, defaultBranch, repos } = facts;
-  const choice = chosen?.branch === branch ? chosen.url : null;
+  const choice = await choiceFor(branch, repos);
   const found = await serial(() => findPrs(branch, facts, { has: (oids) => commitsKnown(oids, repo), checks: false, chosen: choice, fresh: true }));
   const url = pickPr(found, { head, chosen: choice, shown: pr?.url, repos })?.url;
   openBrowser(githubUrl({

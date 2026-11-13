@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { notAWorkTree, syncState, compareUrl, githubUrl, originOwner, remoteRepo, remoteRepos, repoInfo, pushRepo, commitsKnown, commitMemo, wholePrRepo, checkoutPr, startOnPr, isHere, userDirt, remoteBranchHead, trackingHead, snapshot, localPatch, branchesBelow } from '../git.js';
+import { notAWorkTree, syncState, compareUrl, githubUrl, originOwner, remoteRepo, remoteRepos, repoInfo, pushRepo, commitsKnown, commitMemo, wholePrRepo, checkoutPr, startOnPr, isHere, trackedPr, userDirt, remoteBranchHead, trackingHead, snapshot, localPatch, branchesBelow } from '../git.js';
 
 // git finds the repository through GIT_DIR and GIT_WORK_TREE before it looks
 // at cwd, and a git hook exports them. Under a hook, `npm test` ran every
@@ -541,9 +541,25 @@ test('a start on a pull request whose branch is gone makes it from refs/pull', {
       const other = (await run('rev-parse', 'HEAD')).stdout.trim();
       await run('checkout', '-q', 'main');
       assert.deepEqual(await startOnPr(work, p), { branch: 'pr-1', said: 'checked out topic for #1; its branch is gone from' +
-        " GitHub, and topic here is other work, so it is pr-1, made from the pull request's head, tracking nothing" });
+        " GitHub, and topic here is other work, so it is pr-1, made from the pull request's head, tracking refs/pull/1/head" });
       assert.equal((await run('rev-parse', 'HEAD')).stdout.trim(), head);
       assert.equal((await run('rev-parse', 'topic')).stdout.trim(), other);
+      // Marked as gh marks a fork's checkout, so a later run knows pr-1 is #1's
+      // without the name: a start on it again is already there, over
+      // uncommitted work and with gh failing, and the pane reads it too.
+      assert.equal(await trackedPr(work, 'pr-1'), p.url);
+      await fs.writeFile(path.join(work, 'a.txt'), 'dirty\n');
+      assert.deepEqual(await startOnPr(work, p), { branch: 'pr-1', said: null });
+      await run('checkout', '-q', '--', 'a.txt');
+      // A pr-1 of someone's own that tracks something else keeps its upstream.
+      await run('checkout', '-q', 'main');
+      await run('branch', '-q', '-D', 'pr-1');
+      await run('branch', '-q', 'pr-1', head);
+      await run('config', 'branch.pr-1.remote', 'elsewhere');
+      await run('config', 'branch.pr-1.merge', 'refs/heads/mine');
+      assert.equal((await startOnPr(work, p)).branch, 'pr-1');
+      assert.equal((await run('config', '--get', 'branch.pr-1.merge')).stdout.trim(), 'refs/heads/mine');
+      assert.equal(await trackedPr(work, 'pr-1'), null);
       // A branch checked out in another worktree cannot be checked out here,
       // and gh's words come first in the refusal, git's after.
       await run('checkout', '-q', 'main');
@@ -615,6 +631,35 @@ test('a start is on the pull request\'s branch, or refused over uncommitted work
     await fs.writeFile(path.join(dir, 'a.txt'), 'changed again\n');
     await withGh(() => `echo '{"url":"${fork.url}"}'`, async () =>
       assert.deepEqual(await startOnPr(dir, fork), { branch: 'topic', said: null }));
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
+
+// The pull request a branch's config says it was checked out for: gh's mark
+// on a fork's checkout, and checkoutGone's on a pr-<n>. Only refs/pull/<n>/head
+// is one; the remote is a remote's name or the repository's URL, and the
+// repository is spelled as `repos` spells it.
+test('a branch tracking refs/pull/<n>/head is that pull request\'s', { skip: unix }, async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'prcoder-tracked-'));
+  const run = (...args) => testGit(dir, ...args);
+  try {
+    await git('git', ['init', '-q', '-b', 'main', dir]);
+    await run('remote', 'add', 'upstream', 'git@github.com:Owner/Repo.git');
+    assert.equal(await trackedPr(dir, 'main'), null);
+    await run('config', 'branch.someone/main.remote', 'upstream');
+    await run('config', 'branch.someone/main.merge', 'refs/pull/80/head');
+    assert.equal(await trackedPr(dir, 'someone/main'), 'https://github.com/Owner/Repo/pull/80');
+    assert.equal(await trackedPr(dir, 'someone/main', ['owner/repo']), 'https://github.com/owner/repo/pull/80');
+    await run('config', 'branch.someone/main.remote', 'https://github.com/o/r.git');
+    assert.equal(await trackedPr(dir, 'someone/main'), 'https://github.com/o/r/pull/80');
+    // A branch's own upstream, or a remote off GitHub, names no pull request.
+    await run('config', 'branch.someone/main.merge', 'refs/heads/main');
+    assert.equal(await trackedPr(dir, 'someone/main'), null);
+    await run('config', 'branch.someone/main.merge', 'refs/pull/80/head');
+    await run('config', 'branch.someone/main.remote', 'https://example.com/o/r.git');
+    assert.equal(await trackedPr(dir, 'someone/main'), null);
+    assert.equal(await trackedPr(dir, ''), null);
   } finally {
     await fs.rm(dir, { recursive: true, force: true });
   }

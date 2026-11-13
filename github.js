@@ -376,7 +376,8 @@ async function viewKnown(cwd, { url, repo, state }, checks) {
  * nothing else would ever let go of it.
  *
  * `chosen` is the URL of the pull request picked for this branch -- in the
- * switcher, or on the command line -- which is the branch's whatever the
+ * switcher, or on the command line, or named by the branch's own config
+ * (choiceFor in server.js) -- which is the branch's whatever the
  * search says, and is remembered with the rest, so that it is read by URL on
  * every poll as they are. Two the search cannot find need it: a fork's pull
  * request gh checked out to `owner/name` (`gh pr list --head owner/name`
