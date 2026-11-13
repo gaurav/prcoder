@@ -136,7 +136,7 @@ const pr = {
 const status = {
   branch: 'topic', head: 'b'.repeat(40), detached: false, dirtyFiles: [], sync: 'synced', ahead: 0,
   defaultBranch: 'main', nameWithOwner: 'heal-data-stewards/heal-vlmd-AI-pipeline',
-  scope: 'current', mirrorFailed: false,
+  mirrorFailed: false,
   // Where the branch's pull request was looked for, and what was found: the
   // one repository, with the fixture PR in it (branchPrs in github.js).
   repos: ['heal-data-stewards/heal-vlmd-AI-pipeline'], remotes: { 'heal-data-stewards/heal-vlmd-AI-pipeline': 'origin' },

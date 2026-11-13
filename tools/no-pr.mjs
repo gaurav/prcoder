@@ -3,7 +3,7 @@
 // shows on a branch with *no* pull request.
 //
 // tools/browser.mjs follows the branch it is run on, that branch has a pull
-// request, and PRCODER_PR only pins a different one -- so this state has no way
+// request, and PRCODER_PR only moves it to another one's -- so this state has no way
 // of being driven from this working copy at all. A clone does have one. It
 // arrives on `main`, where the list of pull requests that merge into the branch
 // is the whole point of the pane, and it is also somewhere a row's checkout can

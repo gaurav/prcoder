@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { normalise, pick, toDisk, readStore, writeStore, readPort, writePort, readPrs, writePrs, readPulls, writePulls, replaceItems, useQueueFile } from '../store.js';
+import { normalise, pick, toDisk, readStore, writeStore, readPort, writePort, readRunning, writeRunning, dropRunning, claimStart, releaseStart, readPrs, writePrs, readPulls, writePulls, replaceItems, useQueueFile } from '../store.js';
 
 const repo = () => fs.mkdtemp(path.join(os.tmpdir(), 'prcoder-store-'));
 const item = (over = {}) =>
@@ -224,6 +224,57 @@ test('a port file we cannot use reads as no port at all', async () => {
   assert.equal(await write('{"port":2602}'), 2602, 'an old bookmarked port is still the user\'s to pin');
 });
 
+// Each running prcoder's own record, which runningHere in server.js reads to
+// find one on a port port.json does not name. Read whatever its process is
+// doing; a file that is not one is left out, not thrown over.
+test('a running prcoder\'s record comes back by pid, and goes when dropped', async () => {
+  const dir = await repo();
+  assert.deepEqual(await readRunning(dir), [], 'nothing running yet');
+  await writeRunning(dir, 17433);
+  assert.deepEqual(await readRunning(dir), [{ pid: process.pid, port: 17433 }]);
+  assert.equal(await fs.readFile(path.join(dir, '.prcoder', '.gitignore'), 'utf8'), '*\n');
+  const other = path.join(dir, '.prcoder', 'running');
+  await fs.writeFile(path.join(other, '42.json'), '{"version":1,"port":12001}');
+  await fs.writeFile(path.join(other, '43.json'), '{');
+  await fs.writeFile(path.join(other, '44.json'), '{"port":"12001"}');
+  await fs.writeFile(path.join(other, '45.json'), '{"version":99,"port":12001}');
+  await fs.writeFile(path.join(other, '46.json.123.tmp'), '{"port":12001}');
+  const byPid = (a, b) => a.pid - b.pid;
+  assert.deepEqual((await readRunning(dir)).sort(byPid), [{ pid: 42, port: 12001 }, { pid: process.pid, port: 17433 }].sort(byPid));
+  dropRunning(dir);
+  dropRunning(dir, 42);
+  dropRunning(dir, 42);   // twice is no failure
+  assert.deepEqual(await readRunning(dir), []);
+  // One still starting has no port yet.
+  await writeRunning(dir, null);
+  assert.deepEqual(await readRunning(dir), [{ pid: process.pid, port: null }]);
+  dropRunning(dir);
+});
+
+// The lock a start holds over its check and its checkout (claim in
+// server.js), so two starts at once cannot both find the other unrecorded.
+test('the start lock is one process\'s at a time, and a gone holder\'s is taken', { skip: process.platform === 'win32' && 'kill(0)' }, async () => {
+  const dir = await repo();
+  const lock = path.join(dir, '.prcoder', 'running', 'start.lock');
+  assert.equal(await claimStart(dir), null);
+  assert.equal((await fs.readFile(lock, 'utf8')).trim(), String(process.pid));
+  assert.deepEqual(await readRunning(dir), [], 'the lock is no record');
+  // Held by another live process: its pid, and the lock is left as it is.
+  await fs.writeFile(lock, `${process.ppid}\n`);
+  assert.equal(await claimStart(dir), process.ppid);
+  releaseStart(dir);
+  assert.equal((await fs.readFile(lock, 'utf8')).trim(), String(process.ppid), 'not ours to release');
+  // Held by one that has gone, or by nothing readable: taken.
+  const { spawnSync } = await import('node:child_process');
+  const gone = spawnSync('node', ['-e', 'console.log(process.pid)'], { encoding: 'utf8' }).stdout.trim();
+  for (const held of [`${gone}\n`, 'garbage']) {
+    await fs.writeFile(lock, held);
+    assert.equal(await claimStart(dir), null, held);
+  }
+  releaseStart(dir);
+  await assert.rejects(fs.access(lock));
+});
+
 // The queue and the port are separate files: writing one must not conjure the
 // other, or a repo that never ran gets a port and a repo mid-write gets a queue.
 test('the queue and the port are written independently', async () => {
@@ -276,6 +327,10 @@ test('a branch\'s pull requests come back as written, and an empty list removes 
   // A pull request whose reads have failed since a time, which comes back too.
   await writePrs(dir, 'unread', { searched: now, prs: [{ ...PR, unread: now - 60_000 }] }, now);
   assert.deepEqual(await readPrs(dir, 'unread'), { searched: now, prs: [{ ...PR, unread: now - 60_000 }] });
+  // A chosen one never read has no state, and is kept only beside its unread time.
+  const never = { ...PR, state: null, unread: now - 60_000 };
+  await writePrs(dir, 'unread', { searched: now, prs: [never, { ...PR, url: 'https://github.com/o/r/pull/9', state: null }] }, now);
+  assert.deepEqual(await readPrs(dir, 'unread'), { searched: now, prs: [never] });
   await writePrs(dir, 'unread', { searched: now, prs: [] }, now);
   assert.deepEqual((await fs.readdir(path.join(dir, '.prcoder'))).sort(), ['.gitignore', 'prs.json']);
 });

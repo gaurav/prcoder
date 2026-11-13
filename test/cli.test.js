@@ -125,7 +125,7 @@ test('the candidates are the whole range, starting at the seed', () => {
 // The block under the log. Pure, so the wording is checked without a terminal.
 const STATUS = {
   nameWithOwner: 'gaurav/prcoder', remotes: { 'gaurav/prcoder': 'origin' }, defaultBranch: 'main', branch: 'initial-implementation',
-  sync: 'ahead', ahead: 2, dirtyFiles: ['a.js', 'b.js'], scope: 'current',
+  sync: 'ahead', ahead: 2, dirtyFiles: ['a.js', 'b.js'],
   pr: { number: 1, title: 'Drag the panes', url: 'https://github.com/gaurav/prcoder/pull/1', baseRefName: 'main' },
   queue: [{ text: 'a', issue: 4 }, { text: 'b', done: true }, { text: 'c', deleted: true },
     { text: 'd' }],
@@ -210,7 +210,7 @@ test('sh hands an override the repo path whole, whatever is in it', () => {
 });
 
 test('with no PR there is no PR line to print', () => {
-  const out = block({ pr: null, scope: 'none', queue: [] });
+  const out = block({ pr: null, queue: [] });
   assert.match(out, /none for this branch/);
   assert.doesNotMatch(out, /github\.com/);
 });
@@ -365,13 +365,72 @@ async function withServer(run, { agent = '/bin/cat' } = {}) {
     // server.js), and a slow start outlasts the loop. Either way this says so,
     // rather than leaving it to an opaque WebSocket error further on.
     assert.ok(up, `no prcoder answered on port ${port} within 5s: taken since the probe, or a slow start`);
-    const result = await run(server, base);
+    const result = await run(server, base, dir);
     return { result, code: (await exited)[0] };
   } finally {
     server.kill();
     await fs.rm(dir, { recursive: true, force: true });
   }
 }
+
+// A start that checks out is refused while another prcoder runs in the same
+// working copy -- found by the top level, not the directory, since one in a
+// subdirectory moves the same files under the other's agent. Before, `prcoder
+// 7` in `sub/` read sub/.prcoder's records, found none, and checked out.
+test('a start in a subdirectory is refused while a prcoder runs at the top of the working copy', { skip: process.platform === 'win32' && 'sh' }, async () => {
+  const { execFile } = await import('node:child_process');
+  const { promisify } = await import('node:util');
+  const fs = await import('node:fs/promises');
+  const path = await import('node:path');
+  const { fileURLToPath } = await import('node:url');
+  const { withGh } = await import('./stub-gh.js');
+  const pr = { url: 'https://github.com/o/r/pull/7', number: 7, headRefName: 'other', isCrossRepository: false };
+  // repoInfo's `repo view` and pullRequestFor's `pr view`; anything else --
+  // the checkout this refuses -- fails the test with gh's exit 9.
+  const gh = () => `case "$1 $2" in
+  "repo view") echo '{"defaultBranchRef":{"name":"main"},"nameWithOwner":"o/r","parent":null}';;
+  "pr view") echo '${JSON.stringify(pr)}';;
+  *) echo "gh $* was not expected" >&2; exit 9;; esac`;
+  // withServer waits for the server to exit, so the run ends by stopping it.
+  const { result } = await withGh(gh, () => withServer(async (server, base, dir) => {
+    const sub = path.join(dir, 'sub');
+    await fs.mkdir(sub);
+    const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith('GIT_')));
+    const out = await promisify(execFile)('node', [fileURLToPath(new URL('../server.js', import.meta.url)), '7', '--no-open'],
+      { cwd: sub, env: { ...env, PRCODER_AGENT_BIN: '/usr/bin/false' }, timeout: 15_000 })
+      .then((r) => ({ code: 0, ...r }), (e) => ({ code: e.code, stdout: e.stdout, stderr: e.stderr }));
+    server.kill();
+    return out;
+  }));
+  assert.equal(result.code, 2, result.stderr);
+  assert.match(result.stderr, /^prcoder: #7 is on other, and another prcoder is running in this working copy \(in .*\) \(http:\/\/localhost:\d+\)/);
+});
+
+// The pane's Switch is startOnPr, as a start is: held to this clone's
+// repositories case-blind (a URL spelled `O/R` where gh says `o/r` used to be
+// "not one of this clone's repositories"), and refused over uncommitted work
+// before gh is asked to check anything out. In a spawned server, since the
+// in-process one in api.test.js would check out this working tree.
+test('the pane\'s Switch is a start\'s checkout, held to the repositories case-blind', { skip: process.platform === 'win32' && 'sh' }, async () => {
+  const fs = await import('node:fs/promises');
+  const path = await import('node:path');
+  const { withGh } = await import('./stub-gh.js');
+  const pr = { url: 'https://github.com/o/r/pull/7', number: 7, headRefName: 'other', isCrossRepository: false };
+  const gh = () => `case "$1 $2" in
+  "repo view") echo '{"defaultBranchRef":{"name":"main"},"nameWithOwner":"o/r","parent":null}';;
+  "pr view") echo '${JSON.stringify(pr)}';;
+  *) echo "gh $* was not expected" >&2; exit 9;; esac`;
+  const { result } = await withGh(gh, () => withServer(async (server, base, dir) => {
+    await fs.writeFile(path.join(dir, 'a.txt'), 'staged\n');
+    execSync('git add a.txt', { cwd: dir, env: Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith('GIT_'))) });
+    const res = await fetch(`http://${base}/api/pr/switch`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ url: 'https://github.com/O/R/pull/7' }),
+    });
+    server.kill();
+    return res.json();
+  }));
+  assert.match(result.error, /^#7 is on other, and 1 uncommitted file on \S+ is in the way; commit or stash it first$/);
+});
 
 // A quit tells every tab before it kills anything, with a close code of its
 // own, and that code is all a page has to tell prcoder quitting from its agent

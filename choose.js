@@ -14,9 +14,9 @@
 import readline from 'node:readline/promises';
 import { stackOrder, stackUnder } from './public/pr.js';
 import { sortPulls, rootsInOrder, pullWord, sizeChip, age } from './public/items.js';
-import { repoPulls, branchPrUrl } from './github.js';
+import { repoPulls } from './github.js';
 import { readPulls, writePulls } from './store.js';
-import { currentBranch, checkoutPr, dirtyFiles, branchesBelow } from './git.js';
+import { currentBranch, dirtyFiles, branchesBelow, trackedPr, branchOwns, uncommitted } from './git.js';
 import { styled, clip, span, debug } from './term.js';
 
 // A listing younger than this is printed as it is, as the Pull requests tab
@@ -62,15 +62,16 @@ const builtOn = (under, depth) => (!depth && under.nodes.length
  * base is not the default branch says what it is built on after the title,
  * dim, and the title gives way to it (builtOn); `below` is git's word on
  * such bare branches, as branchesBelow gives it and the tab's rows take it.
- * `›` marks the one on the checked-out branch, as the tab marks it `here`.
+ * `›` marks the one on the checked-out branch, as the tab marks it `here`
+ * (branchOwns, with `tracked` the URL its config names).
  * Widths are terminal columns (span in term.js), the measure styled() cuts
  * by, so a wide character in a base branch's name cuts the title, not the
  * note after it.
  */
-export function chooseLines(listing, { nameWithOwner, branch, defaultBranch, below = [], now = Date.now(), width = Infinity } = {}) {
+export function chooseLines(listing, { nameWithOwner, branch, tracked = null, defaultBranch, below = [], now = Date.now(), width = Infinity } = {}) {
   const sorted = sortPulls(listing.pulls ?? [], 'updated');
   const rows = rootsInOrder(stackOrder(sorted), sorted);
-  const here = (p) => !p.isCrossRepository && p.headRefName === branch;
+  const here = (p) => branchOwns(p, branch, tracked);
   const read = listing.read ? `, read ${age(new Date(listing.read).toISOString(), now)}` : '';
   const lines = [
     `Open pull requests in ${nameWithOwner}, by stack, most recently updated first${read}:`,
@@ -154,74 +155,75 @@ async function bareBases(repo, pulls, defaultBranch) {
 }
 
 /**
- * The list, the question, and what the pick means for the start:
- * `{ url, follow }`, or null when nothing was picked (`q`, end of input, or
- * nothing open), which the caller takes as nothing to start. `follow` says the
- * checked-out branch is the pull request's, so the start follows the branch
- * and holds this pull request as the branch's choice, as the pane's Switch
- * does (POST /api/pr/switch); otherwise the URL is the start's target, shown
- * on whatever branch this is.
+ * The list, the question and the start: `{ pr, ...start(pr) }`, the pull
+ * request picked as the listing has it (`url`, `number`, `headRefName`,
+ * `isCrossRepository` are what the start reads) with what `start` resolved,
+ * or null when nothing was picked (`q`, end of input, or nothing open), which
+ * the caller takes as nothing to start. `start` is the caller's checkout --
+ * startOnPr in git.js, the same one `prcoder <pr>` makes -- run on each pick
+ * as it is answered, against the tree as it is then: the question can wait
+ * any length of time.
  *
- * A pick on another branch is checked out (checkoutPr, gh's checkout) unless
- * the tree has uncommitted changes, which the pane's Switch refuses for the
- * same reason: a checkout over them is git's to refuse, or worse, to carry.
- * Then it is said, and the pull request is shown instead.
+ * Uncommitted work refuses a checkout (startOnPr), so it is said before the
+ * question rather than after the pick; Enter then offers this branch's pull
+ * request, the one pick that needs none, or nothing when it has none listed.
+ * A pick `start` refuses -- uncommitted work, or another prcoder in the
+ * working copy -- is said and asked again rather than ending the run; any
+ * other failure is thrown. Before, this repeated startOnPr's check of the
+ * uncommitted work alone, so a pick refused for another prcoder ended the
+ * run, and a fork's pick over uncommitted work asked gh which branch it was
+ * twice.
  *
  * `facts` is repoInfo's answer, which server.js has already paid for.
  */
-export async function choosePr(repo, facts, { input = process.stdin, output = process.stdout } = {}) {
+export async function choosePr(repo, facts, { start, input = process.stdin, output = process.stdout } = {}) {
   const { nameWithOwner, defaultBranch } = facts;
   const width = (output.columns || 80) - 1;
-  const [branch, read] = await Promise.all([currentBranch(repo), listing(repo, nameWithOwner)]);
+  const [branch, dirty, read] = await Promise.all([currentBranch(repo), dirtyFiles(repo), listing(repo, nameWithOwner)]);
+  const tracked = await trackedPr(repo, branch, facts.repos).catch(() => null);
   const below = await bareBases(repo, read.pulls, defaultBranch);
-  const { lines, rows, pick } = chooseLines(read, { nameWithOwner, branch, defaultBranch, below, width });
+  const { lines, rows, pick } = chooseLines(read, { nameWithOwner, branch, tracked, defaultBranch, below, width });
   for (const l of lines) console.log(styled(l, width));
   if (!pick) return null;
+  // What Enter takes: chooseLines's pick, or over uncommitted work this
+  // branch's pull request -- the deepest elsewhere would only be refused.
+  // A `pr-<n>` or a fork's branch is found by its config, as the mark is.
+  const own = rows.find((r) => branchOwns(r.pr, branch, tracked));
+  const offer = dirty.length ? own : pick;
+  if (dirty.length) {
+    const until = `until ${dirty.length > 1 ? 'they are' : 'it is'} committed or stashed`;
+    console.log(own
+      ? `${uncommitted(dirty, branch)}: only this branch's pull request, #${own.pr.number}, can be picked ${until}`
+      : `${uncommitted(dirty, branch)}: no pull request listed is this branch's, and another's cannot be checked out ${until}`);
+  }
+  const why = !offer ? '' : dirty.length ? "this branch's" : offer.depth ? 'the deepest' : 'the most recently updated';
+  const prompt = offer ? `PR number [${offer.pr.number}, ${why}], or q: ` : 'PR number, or q: ';
   const rl = readline.createInterface({ input, output });
   // End of input settles nothing in readline/promises: the interface closes
   // and the question's promise is left hanging, so the close is the answer.
   const closed = new Promise((resolve) => rl.once('close', () => resolve(null)));
   try {
     for (;;) {
-      const why = pick.depth ? 'the deepest' : 'the most recently updated';
-      const answer = await Promise.race([rl.question(`PR number [${pick.pr.number}, ${why}], or q: `), closed]);
+      const answer = await Promise.race([rl.question(prompt), closed]);
       if (answer === null || /^q$/i.test(answer.trim())) return null;
-      const n = answer.trim() === '' ? pick.pr.number : Number(answer.trim().replace(/^#/, ''));
+      if (answer.trim() === '' && !offer) {
+        console.log('commit or stash first to pick another branch\'s pull request, or q to quit');
+        continue;
+      }
+      const n = answer.trim() === '' ? offer.pr.number : Number(answer.trim().replace(/^#/, ''));
       const row = rows.find((r) => r.pr.number === n);
-      if (row) return start(repo, row.pr, branch);
-      console.log(`${answer.trim()} is not one of the open pull requests listed`);
+      if (!row) {
+        console.log(`${answer.trim()} is not one of the open pull requests listed`);
+        continue;
+      }
+      try {
+        return { pr: row.pr, ...(await start(row.pr)) };
+      } catch (e) {
+        if (!e.refused) throw e;
+        console.log(e.message);
+      }
     }
   } finally {
     rl.close();
   }
-}
-
-/**
- * Whether `p` is the checked-out branch's pull request, so there is nothing to
- * check out. A fork's head is in the fork, so its name says nothing about this
- * clone -- the fork's `main` is not this `main` -- and the branch gh checked it
- * out to may be `owner/name`, tracking `refs/pull/N/head`. gh reads that
- * config back, so it is asked which pull request this branch is
- * (branchPrUrl): a network round trip, paid only on a pick of
- * a fork's pull request. A failure there is taken as no, and the checkout goes
- * ahead as it did.
- */
-export async function isHere(repo, p, branch) {
-  if (!p.isCrossRepository) return p.headRefName === branch;
-  if (!branch) return false;
-  const url = await branchPrUrl(repo).catch((e) => (debug(`gh could not say which pull request ${branch} is: ${e.message}`), null));
-  return url === p.url;
-}
-
-async function start(repo, p, branch) {
-  if (await isHere(repo, p, branch)) return { url: p.url, follow: true };
-  const dirty = await dirtyFiles(repo);
-  if (dirty.length) {
-    console.log(`not checked out: ${dirty.length} uncommitted file${dirty.length > 1 ? 's' : ''} on ${branch ?? 'a detached HEAD'}; showing #${p.number} here instead`);
-    return { url: p.url, follow: false };
-  }
-  const { unfinished } = await checkoutPr(repo, p.url);
-  console.log(`checked out ${p.isCrossRepository ? `#${p.number}` : `${p.headRefName} for #${p.number}`}` +
-    (unfinished ? `, but gh did not finish: ${unfinished}` : ''));
-  return { url: p.url, follow: true };
 }

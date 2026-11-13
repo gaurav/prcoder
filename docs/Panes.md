@@ -203,7 +203,10 @@ the question that branch is interesting for, with each one's stack nested under 
 opens that pull request on GitHub, so you can compare a few in other tabs; its **Switch** checks it
 out, the same way the switcher does. Uncommitted work disables Switch for the same reason it hides
 the switcher, and leaves the links alone. A local branch that has diverged from the pull request's
-head is still switched to, just not fast-forwarded, and the sync light says `diverged`.
+head is still switched to, just not fast-forwarded, and the sync light says `diverged`. A switch is
+the same checkout `prcoder <n>` makes: a merged pull request whose branch GitHub deleted is checked
+out from its head on GitHub, and a switch is refused while another prcoder runs in the same working
+copy, whose agent it would move.
 
 On any other branch it also shows what the branch is built on, since that is where its pull
 request will go. A branch with no pull request has no base on GitHub, so prcoder asks git: the

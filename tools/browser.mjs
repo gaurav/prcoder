@@ -31,7 +31,7 @@ import { spawn, execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { openShots, pruneShots } from './shots.mjs';
-import { repo, free, serverEnv, killOnExit, openPage, launchBrowser } from './driver.mjs';
+import { repo, free, serverEnv, killOnExit, openPage, launchBrowser, onPullRequest } from './driver.mjs';
 
 // data/, not a new top-level shots/: this repo's scratch space is data/, and it
 // is gitignored precisely so driver output has somewhere to live. The argument
@@ -48,25 +48,23 @@ const out = await openShots(shotsRoot, label);
 // Everything below is written against this repo's PR #1 -- its sections, its
 // file groups, its issue chips -- and the server follows the current branch, so
 // a run from any other branch drives a pull request the assertions do not fit.
-// PRCODER_PR pins one; unset is the old branch-following behaviour.
-const queueFile = path.join('data', 'browser-queue.json');
-const server = spawn('node', ['server.js', '--queue', queueFile,
-  ...(process.env.PRCODER_PR ? [process.env.PRCODER_PR] : [])], {
-  cwd: repo,
+// PRCODER_PR=<n> drives that one instead, from a worktree on its branch
+// (onPullRequest in driver.mjs), since prcoder checks out what it is started
+// on and this tree must not move; unset drives this tree's own branch.
+const queueFile = path.join(repo, 'data', 'browser-queue.json');
+const cwd = process.env.PRCODER_PR ? onPullRequest(process.env.PRCODER_PR) : repo;
+const server = spawn('node', [path.join(repo, 'server.js'), '--queue', queueFile], {
+  cwd,
   env: serverEnv(port),
   stdio: 'ignore',
 });
 killOnExit(server);
 
-// Which of the server's two ways of finding a pull request this run is about to
-// exercise. Worth saying out loud: pinning one is the only way to drive the
-// panes from a feature branch, and it is also the way to run the whole file and
-// never touch the path every real user is on. A run from `initial-implementation`
-// with PRCODER_PR unset is what covers that path, and this line is how a reader
-// knows which of the two they just did.
+// Which branch this run drives, and where: a reader of the output should not
+// have to know PRCODER_PR was set to tell.
 console.log('pr:     ', process.env.PRCODER_PR
-  ? `pinned to #${process.env.PRCODER_PR} (branch-following not exercised)`
-  : "following the current branch");
+  ? `#${process.env.PRCODER_PR}, in ${path.relative(repo, cwd) || 'this tree'}`
+  : 'this tree\'s branch');
 // Firefox by default, falling back to Chromium: launchBrowser() in driver.mjs.
 const browser = await launchBrowser();
 

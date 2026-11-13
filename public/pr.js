@@ -128,7 +128,7 @@ export function renderHeader(status, prs, handlers) {
   // Always re-assert: a failed switch has to snap back to the real branch.
   sel.value = status.pr?.url ?? '';
 
-  sel.hidden = (blocked && !group.length) || status.scope === 'other-repo';
+  sel.hidden = blocked && !group.length;
   sel.title = blocked ? 'pick one of this branch\'s pull requests; commit or stash to check out another'
     : 'switch to another open pull request';
   commit.hidden = !blocked;
@@ -147,8 +147,6 @@ export const syncPhrase = (s) => (s.sync === 'ahead' ? `${s.ahead} unpushed` : S
 /** Pure: the status -> the PR pane's light, or null for nothing worth saying. */
 function headerSync(status) {
   if (status.error) return { className: 'light unknown', text: 'unavailable' };
-  if (status.scope === 'other-repo') return { className: 'light', text: 'another repo' };
-  if (status.scope === 'other-branch') return { className: 'light', text: 'not checked out' };
   const out = syncPhrase(status);
   if (out) return { className: 'light warn', text: out };
   if (status.detached) return { className: 'light', text: 'detached HEAD' };
@@ -757,7 +755,6 @@ function renderPrHead(pr, parsed, handlers) {
   // -- so the order is HEAD_ORDER and nothing else.
   const rows = {
     title: h('h2', { className: 'pr-title' }, pr.title),
-    note: pr.note ? h('p', { className: 'pr-note' }, pr.note) : null,
     // `pr-links` carries no style of its own -- it is the hook tools/browser.mjs
     // measures the row by, so it is not dead CSS to clean up.
     links: linkRow(ways.links, 'meta pr-ways pr-links', ways.repo),

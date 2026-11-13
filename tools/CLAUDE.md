@@ -54,7 +54,18 @@ spawn `server.js` *from this tree* with `cwd` set to the worktree: the server
 takes its repo from `cwd` and its page from its own directory, so you drive
 this tree's code against that branch's PR. A switch the driver makes then
 happens in the worktree. Remove the worktree when done, and any local branch
-`gh pr checkout` made there.
+`gh pr checkout` made there. `onPullRequest` in `driver.mjs` does all of
+that for a pull request's number. It brings a stale local branch of that
+name up to origin before making the worktree, and when the branch is
+already checked out in another worktree it answers that one, since git
+will not check a branch out twice. A run holds `data/wt-<n>.pid` until it
+exits, so a second driver on the same pull request stops with the first's pid
+instead of removing its worktree from under it; one left by a killed run is
+taken over.
+
+Never hand `server.js` a pull request in this tree, `server.js 87` or
+`prcoder choose` answered with a number: prcoder checks out what it is
+started on, so that is a checkout of the owner's working copy.
 
 A worktree you *work* in -- a branch off `main` edited and tested there -- has
 no `node_modules`, and `npm test` in it fails a couple of hundred browser and

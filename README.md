@@ -10,9 +10,9 @@ npm install
 npm link                   # once, to run it from any repo; edits here go live
 
 prcoder                    # the PR for the current branch
-prcoder 123                # a specific PR
-prcoder <pr-url>           # any PR, anywhere
-prcoder some-branch        # the PR from that branch, checked out or not
+prcoder 123                # check out PR 123 and start on it
+prcoder <pr-url>           # ...by its URL
+prcoder some-branch        # ...or its branch
 prcoder choose             # pick one of the repo's open PRs to check out and start on
 prcoder -- --model opus    # ...with flags for the Claude session, after --
 prcoder --help             # prcoder's own flags
@@ -61,14 +61,21 @@ grouping, and what every control does.
 
 ## Arguments and settings
 
-The first argument, if it isn't a flag, is prcoder's: the PR to open, by its number, its URL or its
-branch, or `choose`, which lists the repository's open pull requests by stack and asks which to
-check out and start on ([docs/Terminal.md](docs/Terminal.md#choosing-a-pull-request)). Everything
-after `--` is handed to `claude` untouched, so `prcoder 123 -- --effort high --model opus` opens PR
-123 with that session. A PR argument that names no pull request -- a typo, a branch with none, an
-issue's URL -- stops prcoder there with the reason, rather than starting a session with nothing to
-show. Before `--` a flag is prcoder's, and one it does not know is an error that says where it goes,
-rather than a guess at which of the two it was for. `prcoder --help` lists the flags.
+The first argument, if it isn't a flag, is prcoder's: the PR to check out and start on, by its
+number, its URL or its branch, or `choose`, which lists the repository's open pull requests by stack
+and asks which to check out and start on
+([docs/Terminal.md](docs/Terminal.md#choosing-a-pull-request)). Everything after `--` is handed to
+`claude` untouched, so `prcoder 123 -- --effort high --model opus` opens PR 123 with that session.
+prcoder only ever shows the checked-out branch's PR, so it stops with the reason, rather than start,
+when the argument names no pull request (a typo, a branch with none, an issue's URL), when the PR is
+in a repository this clone does not track, or when uncommitted changes or another prcoder running
+in the same working copy are in the way of the checkout. A merged pull request whose branch GitHub has
+since deleted is still checked out, from the pull request's head on GitHub: onto the local branch of
+that name when it has the head or is behind it, onto a new branch of that name when there is none,
+and onto `pr-<n>` when the local one is other work under the same name. `pr-<n>` tracks
+`refs/pull/<n>/head`, as gh's checkout of a fork's pull request does, so a later prcoder on it
+knows which pull request it is. Before `--` a flag is prcoder's, and one it does not know is an error that says where it
+goes, rather than a guess at which of the two it was for. `prcoder --help` lists the flags.
 
 Most settings are a flag with an environment variable of the same meaning; the flag wins when both
 are given.
