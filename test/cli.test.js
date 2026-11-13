@@ -406,6 +406,32 @@ test('a start in a subdirectory is refused while a prcoder runs at the top of th
   assert.match(result.stderr, /^prcoder: #7 is on other, and another prcoder is running in this working copy \(in .*\) \(http:\/\/localhost:\d+\)/);
 });
 
+// The pane's Switch is startOnPr, as a start is: held to this clone's
+// repositories case-blind (a URL spelled `O/R` where gh says `o/r` used to be
+// "not one of this clone's repositories"), and refused over uncommitted work
+// before gh is asked to check anything out. In a spawned server, since the
+// in-process one in api.test.js would check out this working tree.
+test('the pane\'s Switch is a start\'s checkout, held to the repositories case-blind', { skip: process.platform === 'win32' && 'sh' }, async () => {
+  const fs = await import('node:fs/promises');
+  const path = await import('node:path');
+  const { withGh } = await import('./stub-gh.js');
+  const pr = { url: 'https://github.com/o/r/pull/7', number: 7, headRefName: 'other', isCrossRepository: false };
+  const gh = () => `case "$1 $2" in
+  "repo view") echo '{"defaultBranchRef":{"name":"main"},"nameWithOwner":"o/r","parent":null}';;
+  "pr view") echo '${JSON.stringify(pr)}';;
+  *) echo "gh $* was not expected" >&2; exit 9;; esac`;
+  const { result } = await withGh(gh, () => withServer(async (server, base, dir) => {
+    await fs.writeFile(path.join(dir, 'a.txt'), 'staged\n');
+    execSync('git add a.txt', { cwd: dir, env: Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith('GIT_'))) });
+    const res = await fetch(`http://${base}/api/pr/switch`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ url: 'https://github.com/O/R/pull/7' }),
+    });
+    server.kill();
+    return res.json();
+  }));
+  assert.match(result.error, /^#7 is on other, and 1 uncommitted file on \S+ is in the way; commit or stash it first$/);
+});
+
 // A quit tells every tab before it kills anything, with a close code of its
 // own, and that code is all a page has to tell prcoder quitting from its agent
 // exiting (ws.onclose in public/app.js). So does an exit that skips quit():

@@ -526,19 +526,19 @@ test('a start on a pull request whose branch is gone makes it from refs/pull', {
     await fs.writeFile(fetchHead, decoy);
     await withGh(gh, async () => {
       assert.deepEqual(await startOnPr(work, p), { branch: 'topic', said: 'checked out topic for #1; its branch is gone from' +
-        " GitHub, so it was made from the pull request's head, tracking nothing" });
+        " GitHub, so it was made from the pull request's head, tracking nothing", snag: true });
       assert.equal((await run('rev-parse', 'HEAD')).stdout.trim(), head);
       assert.equal(await fs.readFile(fetchHead, 'utf8'), decoy);
       assert.equal((await run('for-each-ref', 'refs/prcoder')).stdout, '');
       // A local branch of the name that has the head is checked out as it is.
       await run('checkout', '-q', 'main');
       assert.deepEqual(await startOnPr(work, p), { branch: 'topic', said: 'checked out topic for #1; its branch is gone from' +
-        ' GitHub, so it is as this clone last had it' });
+        ' GitHub, so it is as this clone last had it', snag: true });
       // One behind it is brought up to it.
       await run('checkout', '-q', 'main');
       await run('branch', '-q', '-f', 'topic', 'main');
       assert.deepEqual(await startOnPr(work, p), { branch: 'topic', said: 'checked out topic for #1; its branch is gone from' +
-         " GitHub, so it was brought up to the pull request's head" });
+         " GitHub, so it was brought up to the pull request's head", snag: true });
       assert.equal((await run('rev-parse', 'HEAD')).stdout.trim(), head);
       // One with history of its own -- the name reused for other work -- is
       // left alone, and the head is checked out under another name.
@@ -549,7 +549,7 @@ test('a start on a pull request whose branch is gone makes it from refs/pull', {
       const other = (await run('rev-parse', 'HEAD')).stdout.trim();
       await run('checkout', '-q', 'main');
       assert.deepEqual(await startOnPr(work, p), { branch: 'pr-1', said: 'checked out topic for #1; its branch is gone from' +
-        " GitHub, and topic here is other work, so it is pr-1, made from the pull request's head, tracking refs/pull/1/head" });
+        " GitHub, and topic here is other work, so it is pr-1, made from the pull request's head, tracking refs/pull/1/head", snag: true });
       assert.equal((await run('rev-parse', 'HEAD')).stdout.trim(), head);
       assert.equal((await run('rev-parse', 'topic')).stdout.trim(), other);
       // Marked as gh marks a fork's checkout, so a later run knows pr-1 is #1's
@@ -625,7 +625,7 @@ test('a start is on the pull request\'s branch, or refused over uncommitted work
       assert.deepEqual(await startOnPr(dir, { ...p, headRefName: 'main' }, { inUse }), { branch: 'main', said: null });
       assert.equal(asked, 0);
       await assert.rejects(startOnPr(dir, p, { inUse }), { message: '#76 is on topic, and another prcoder is running in' +
-        ' this directory; a checkout would move the working copy under its agent. Quit that one first, or start this one in a worktree on topic' });
+        ' this directory; a checkout would move the working copy under its agent. Quit that one first, or run prcoder in a worktree on topic' });
       assert.equal(asked, 1);
     });
     assert.equal(await branch(), 'main');

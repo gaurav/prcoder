@@ -613,9 +613,11 @@ const refusal = (message) => Object.assign(new Error(message), { refused: true }
 
 /**
  * Puts the working copy on pull request `p` (`url`, `number`, `headRefName`,
- * `isCrossRepository`) for a start: `prcoder <pr>` and a `prcoder choose`
- * pick. Resolves the branch it is then on, and the line to say about the
- * checkout, or null when the branch was already the pull request's.
+ * `isCrossRepository`) for a start -- `prcoder <pr>` and a `prcoder choose`
+ * pick -- and for the pane's Switch. Resolves the branch it is then on, and
+ * the line to say about the checkout, or null when the branch was already
+ * the pull request's; `snag` is set when that line says something went
+ * other than planned (gh did not finish, or the branch was gone).
  *
  * The pane shows only the checked-out branch's pull request (docs/Design.md,
  * "The pane shows what is checked out"), so a start that cannot check one out
@@ -641,7 +643,7 @@ export async function startOnPr(cwd, p, { inUse = async () => null } = {}) {
   const busy = await inUse();
   if (busy) {
     throw refusal(`#${p.number} is on ${p.headRefName}, and ${busy}; a checkout would move the working copy` +
-      ` under its agent. Quit that one first, or start this one in a worktree on ${p.headRefName}`);
+      ` under its agent. Quit that one first, or run prcoder in a worktree on ${p.headRefName}`);
   }
   const dirty = await dirtyFiles(cwd);
   if (dirty.length) throw refusal(inTheWay(p, dirty, branch));
@@ -655,6 +657,8 @@ export async function startOnPr(cwd, p, { inUse = async () => null } = {}) {
     branch: await currentBranch(cwd),
     said: `checked out ${p.isCrossRepository ? `#${p.number}` : `${p.headRefName} for #${p.number}`}` +
       (unfinished ? `, but gh did not finish: ${unfinished}` : '') + (gone ?? ''),
+    // Worth a line in the log, not only in verbose: the pane's Switch says it so.
+    ...((unfinished || gone) && { snag: true }),
   };
 }
 

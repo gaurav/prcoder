@@ -12,7 +12,7 @@ import { text as readBody } from 'node:stream/consumers';
 import { spawn as ptySpawn } from 'node-pty';
 import { WebSocketServer } from 'ws';
 import { loadPr, pullRequestFor, prBody, parsePrUrl, listPrs, branchPrs, lookupPrs, ownPrs, pickPr, issueLinks, lookupRef, setViewed, setBody, createIssue, fetchPatches, runCount, repoIssues, repoMilestones, setIssueMilestone } from './github.js';
-import { notAWorkTree, snapshot, currentBranch, headCommit, commitsKnown, commitMemo, repoInfo, pushRepo, compareUrl, githubUrl, originOwner, wholePrRepo, checkoutPr, startOnPr, trackedPr, workTreeTop, pushBranch, remoteBranchHead, trackingHead, localPatch, branchesBelow } from './git.js';
+import { notAWorkTree, snapshot, currentBranch, headCommit, commitsKnown, commitMemo, repoInfo, pushRepo, compareUrl, githubUrl, originOwner, wholePrRepo, startOnPr, trackedPr, workTreeTop, pushBranch, remoteBranchHead, trackingHead, localPatch, branchesBelow } from './git.js';
 import { bucket, fileUrl, fileViews } from './files.js';
 import { readPort, writePort, readRunning, writeRunning, dropRunning, alive, claimStart, releaseStart, readPrs, writePrs, pick, useQueueFile, movedQueue, issueUrl, readPulls } from './store.js';
 import { readQueue, writeQueue, quote } from './queue.js';
@@ -562,20 +562,33 @@ const routes = {
     return { ok: true };
   },
 
+  /**
+   * The switcher's checkout: startOnPr, the one `prcoder <pr>` and `prcoder
+   * choose` make, so a merged pull request whose branch is gone is checked
+   * out from what is left, a pull request already checked out is no
+   * checkout, and uncommitted work or another prcoder in the working copy
+   * (runningHere: this one has its record already) refuses it. It called
+   * checkoutPr directly before, and had none of that.
+   *
+   * Only into a repository the branch's pull requests are looked for in,
+   * which is every one the page can list: the number-only route this
+   * replaced could not reach any other, and this one should not either.
+   * wholePrRepo holds the URL to one before it reaches gh's argv;
+   * pullRequestFor then reads what startOnPr needs and holds it to `repos`
+   * case-blind, as the command line's is -- a remote's URL can spell the
+   * owner otherwise than GitHub does, which an exact match refused.
+   */
   'POST /api/pr/switch': async ({ url } = {}) => {
-    // Only into a repository the branch's pull requests are looked for in,
-    // which is every one the page can list: the number-only route this
-    // replaced could not reach any other, and this one should not either.
-    const where = wholePrRepo(url);
-    if (!(await repoFacts()).repos.includes(where)) throw new Error(`${where} is not one of this clone's repositories`);
-    const { unfinished } = await checkoutPr(repo, url);
-    if (unfinished) console.log(`checked out ${url}, but gh did not finish: ${unfinished}`);
-    else term.verbose(`checked out ${url}`);
+    wholePrRepo(url);
+    const p = await pullRequestFor(repo, url, (await repoFacts()).repos);
+    const { branch, said, snag } = await startOnPr(repo, p, { inUse: runningHere });
+    if (snag) console.log(said);
+    else term.verbose(said ?? `${p.url} is already checked out`);
     // The choice made on the old branch goes with it, and the one asked for here
     // is the new branch's: of two pull requests on it into different bases,
     // pickPr has nothing to tell them apart by but age, and the one clicked
     // must be the one shown. Like any choice, it goes when the branch does.
-    chosen = { branch: await currentBranch(repo), url };
+    chosen = { branch, url: p.url };
     return status({ full: true });
   },
 
@@ -1069,8 +1082,11 @@ async function runningHere() {
   const live = records.filter(({ pid }) => alive(pid));
   const starting = live.find(({ port }) => !port);
   if (starting) return `another prcoder is starting in this working copy (pid ${starting.pid})`;
+  // Not this one's own port, once it listens: the Switch asks too, and
+  // would find itself.
+  const own = server.listening ? server.address().port : null;
   const ports = [...new Set([pinnedPort, await readPort(repo), ...(top === repo ? [] : [await readPort(top)]),
-    ...live.map(({ port }) => port)].filter(Boolean))];
+    ...live.map(({ port }) => port)].filter((port) => port && port !== own))];
   const answers = await Promise.all(ports.map((port) => whoami(port).then((other) => ({ port, other }), () => null)));
   const found = answers.find((a) => a?.other?.prcoder && (a.other.top ?? a.other.repo) === top);
   if (!found) return null;
