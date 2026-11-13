@@ -678,8 +678,14 @@ async function checkoutGone(cwd, p, failed) {
   if (there !== '') throw failed;
   const gone = `; its branch is gone from GitHub`;
   try {
-    await git(['fetch', '-q', remote, `refs/pull/${p.number}/head`], cwd);
-    const head = await text(['rev-parse', 'FETCH_HEAD^{commit}'], cwd);
+    // Into a ref of its own, not FETCH_HEAD: that is every fetch's, and one
+    // the agent or a hook makes between the fetch and the read would put
+    // the branch at a commit of something else. Deleted once read; the
+    // branch made from it is what keeps the commit.
+    const held = `refs/prcoder/pull/${p.number}`;
+    await git(['fetch', '-q', '--no-write-fetch-head', remote, `+refs/pull/${p.number}/head:${held}`], cwd);
+    const head = await text(['rev-parse', `${held}^{commit}`], cwd)
+      .finally(() => git(['update-ref', '-d', held], cwd).catch((e) => debug(`${held} not deleted: ${e.message}`)));
     const contains = (a, b) => asks(['merge-base', '--is-ancestor', a, b], cwd);
     const names = [p.headRefName, `pr-${p.number}`];
     for (const name of names) {

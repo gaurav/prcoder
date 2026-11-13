@@ -518,10 +518,18 @@ test('a start on a pull request whose branch is gone makes it from refs/pull', {
     await run('push', '-q', 'https://github.com/o/r.git', 'main', `topic:refs/pull/1/head`);
     await run('checkout', '-q', 'main');
     await run('branch', '-q', '-D', 'topic');
+    // FETCH_HEAD is every fetch's, so the head is fetched into a ref of its
+    // own and read from there: the shared file is neither written nor read,
+    // and the ref is gone once the branch has the commit.
+    const fetchHead = path.join(work, '.git', 'FETCH_HEAD');
+    const decoy = `${(await run('rev-parse', 'main')).stdout.trim()}\t\tbranch 'main' of elsewhere\n`;
+    await fs.writeFile(fetchHead, decoy);
     await withGh(gh, async () => {
       assert.deepEqual(await startOnPr(work, p), { branch: 'topic', said: 'checked out topic for #1; its branch is gone from' +
         " GitHub, so it was made from the pull request's head, tracking nothing" });
       assert.equal((await run('rev-parse', 'HEAD')).stdout.trim(), head);
+      assert.equal(await fs.readFile(fetchHead, 'utf8'), decoy);
+      assert.equal((await run('for-each-ref', 'refs/prcoder')).stdout, '');
       // A local branch of the name that has the head is checked out as it is.
       await run('checkout', '-q', 'main');
       assert.deepEqual(await startOnPr(work, p), { branch: 'topic', said: 'checked out topic for #1; its branch is gone from' +
