@@ -19,8 +19,9 @@ answers: the checkout would move the first one's working copy under its agent. E
 records its pid in `.prcoder/running/<pid>.json` at the working copy's top level as it starts, adds
 its port once it listens, and removes the record as it exits, so one pinned with `--port`, moved aside
 to a free port, started in a subdirectory, or still starting is found as well; a record left by a
-killed run is dropped once its process is gone. Two starts at the same moment take turns through
-`.prcoder/running/start.lock`, so the second finds the first rather than checking out beside it. Pane sizes and other layout choices are stored per port, so a
+killed run is dropped once its process is gone. Of two starts at the same moment, one takes
+`.prcoder/running/start.lock` for its check and checkout, and the other stops at once, saying
+another prcoder is starting in this working copy, rather than checking out beside it. Pane sizes and other layout choices are stored per port, so a
 run on a different port opens with the default layout ([Panes.md](Panes.md#layout)).
 
 Ports come from 10240-14335 because browsers refuse a list of well-known ones outright -- Firefox
