@@ -8,6 +8,7 @@ import { promisify } from 'node:util';
 import { PassThrough } from 'node:stream';
 import { chooseLines, choosePr } from '../choose.js';
 import { writePulls } from '../store.js';
+import { startOnPr } from '../git.js';
 import { plain, styled, sink } from '../term.js';
 import { withGh } from './stub-gh.js';
 
@@ -148,7 +149,7 @@ test('a state is coloured as the tab colours its class', () => {
 // A throwaway repo on `branch` with an uncommitted change, and choosePr run
 // over `pulls` with `answers` typed at each question: what it picked, what it
 // said, and the questions it asked.
-async function chooseOver(branch, pulls, answers, setup = async () => {}) {
+async function chooseOver(branch, pulls, answers, { setup = async () => {}, dirty = true, inUse } = {}) {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'prcoder-choose-'));
   const said = [];
   const asked = [];
@@ -161,7 +162,7 @@ async function chooseOver(branch, pulls, answers, setup = async () => {}) {
     await run('commit', '-q', '-m', 'x');
     if (branch !== 'main') await run('checkout', '-q', '-b', branch);
     await setup(run);
-    await fs.writeFile(path.join(dir, 'a.txt'), 'changed\n');
+    if (dirty) await fs.writeFile(path.join(dir, 'a.txt'), 'changed\n');
     await writePulls(dir, 'gaurav/prcoder', { total: pulls.length, milestones: [], pulls });
     const input = new PassThrough();
     const output = new PassThrough();
@@ -172,7 +173,9 @@ async function chooseOver(branch, pulls, answers, setup = async () => {}) {
       input.write(`${answers.shift() ?? 'q'}\n`);
     });
     console.log = (...a) => said.push(plain(a.join(' ')));
-    const got = await choosePr(dir, { nameWithOwner: 'gaurav/prcoder', defaultBranch: 'main' }, { input, output });
+    // The start server.js passes, less its claim: a refusal is startOnPr's own.
+    const start = (p) => startOnPr(dir, p, { inUse });
+    const got = await choosePr(dir, { nameWithOwner: 'gaurav/prcoder', defaultBranch: 'main' }, { start, input, output });
     return { got, said, asked };
   } finally {
     console.log = log;
@@ -218,12 +221,25 @@ test('with uncommitted work and nothing of this branch\'s, Enter offers nothing 
 // one over uncommitted work rather than telling you to stash for nothing.
 test('with uncommitted work on a pr-<n> branch, Enter offers the pull request it tracks', { skip: process.platform === 'win32' && 'sh' }, async () => {
   const { got, said, asked } = await chooseOver('pr-6',
-    [pull(5, 'elsewhere', 'main', 10, 'ready', 1), pull(6, 'topic', 'main', 10, 'ready', 2)], [''], async (run) => {
+    [pull(5, 'elsewhere', 'main', 10, 'ready', 1), pull(6, 'topic', 'main', 10, 'ready', 2)], [''], { setup: async (run) => {
       await run('remote', 'add', 'origin', 'https://github.com/gaurav/prcoder.git');
       await run('config', 'branch.pr-6.remote', 'origin');
       await run('config', 'branch.pr-6.merge', 'refs/pull/6/head');
-    });
+    } });
   assert.equal(got.pr.number, 6);
   assert.equal(asked[0], "PR number [6, this branch's], or q: ");
   assert.ok(said.includes("1 uncommitted file on pr-6: only this branch's pull request, #6, can be picked until it is committed or stashed"), said.join('\n'));
+});
+
+// A pick refused for another prcoder in the working copy is asked again, as
+// one refused over uncommitted work is: both are startOnPr's refusals, which
+// change nothing. Before, choose repeated only the uncommitted-work check, and
+// this one ended the run with exit 2 after the list had been read.
+test('a pick refused for another prcoder running here is asked again', { skip: process.platform === 'win32' && 'sh' }, async () => {
+  let asked = 0;
+  const inUse = async () => (asked++, 'another prcoder is running in this directory');
+  const { got, said } = await chooseOver('main', [pull(5, 'elsewhere', 'main', 10, 'ready', 1)], ['5', 'q'], { dirty: false, inUse });
+  assert.equal(got, null);
+  assert.equal(asked, 1);
+  assert.ok(said.some((l) => l.startsWith('#5 is on elsewhere, and another prcoder is running in this directory;')), said.join('\n'));
 });

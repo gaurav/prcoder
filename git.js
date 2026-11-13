@@ -605,6 +605,13 @@ export function inTheWay(p, dirty, branch) {
 }
 
 /**
+ * A start refused before it touched anything -- another prcoder in the
+ * working copy, or uncommitted work -- marked `refused`, so that `prcoder
+ * choose` asks again where any other failure ends the run.
+ */
+const refusal = (message) => Object.assign(new Error(message), { refused: true });
+
+/**
  * Puts the working copy on pull request `p` (`url`, `number`, `headRefName`,
  * `isCrossRepository`) for a start: `prcoder <pr>` and a `prcoder choose`
  * pick. Resolves the branch it is then on, and the line to say about the
@@ -618,7 +625,11 @@ export function inTheWay(p, dirty, branch) {
  *
  * The branch is read here, never taken from the caller: it is what
  * checkoutPr's "did gh switch?" compares against, and one read before
- * `prcoder choose`'s question could be minutes old. `inUse` is asked only
+ * `prcoder choose`'s question could be minutes old. The two refusals, which
+ * change nothing, are thrown marked `refused` (refusal), and `prcoder
+ * choose` asks again after one: it calls this for each pick rather than
+ * repeating these checks, so it cannot ask again over one and end the run
+ * over the other. `inUse` is asked only
  * when there is a checkout to make, and answers with why this working copy is
  * not free to move, or nothing: server.js asks whether another prcoder is
  * running in it, whose agent and sync light a checkout here would move under
@@ -629,11 +640,11 @@ export async function startOnPr(cwd, p, { inUse = async () => null } = {}) {
   if (await isHere(cwd, p, branch)) return { branch, said: null };
   const busy = await inUse();
   if (busy) {
-    throw new Error(`#${p.number} is on ${p.headRefName}, and ${busy}; a checkout would move the working copy` +
+    throw refusal(`#${p.number} is on ${p.headRefName}, and ${busy}; a checkout would move the working copy` +
       ` under its agent. Quit that one first, or start this one in a worktree on ${p.headRefName}`);
   }
   const dirty = await dirtyFiles(cwd);
-  if (dirty.length) throw new Error(inTheWay(p, dirty, branch));
+  if (dirty.length) throw refusal(inTheWay(p, dirty, branch));
   let unfinished, gone;
   try {
     ({ unfinished } = await checkoutPr(cwd, p.url, { before: branch }));

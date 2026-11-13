@@ -1407,13 +1407,14 @@ if (import.meta.main) {
   if (cli.choose || cli.target) {
     try {
       const facts = await repoFacts();
-      const pick = cli.choose
-        ? await choosePr(repo, facts)
-        : { pr: await pullRequestFor(repo, cli.target, facts.repos) };
-      if (!pick) process.exit(0);
-      const { branch, said } = await startOnPr(repo, pick.pr, { inUse: claim }).finally(() => releaseStart(top));
-      if (said) console.log(said);
-      chosen = { branch, url: pick.pr.url };
+      // choosePr runs this on each pick, and asks again after a refusal.
+      const start = async (pr) => startOnPr(repo, pr, { inUse: claim }).finally(() => releaseStart(top));
+      const started = cli.choose
+        ? await choosePr(repo, facts, { start })
+        : await pullRequestFor(repo, cli.target, facts.repos).then(async (pr) => ({ pr, ...(await start(pr)) }));
+      if (!started) process.exit(0);
+      if (started.said) console.log(started.said);
+      chosen = { branch: started.branch, url: started.pr.url };
     } catch (e) {
       console.error(`prcoder: ${e.message}`);
       process.exit(2);

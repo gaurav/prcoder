@@ -16,7 +16,7 @@ import { stackOrder, stackUnder } from './public/pr.js';
 import { sortPulls, rootsInOrder, pullWord, sizeChip, age } from './public/items.js';
 import { repoPulls } from './github.js';
 import { readPulls, writePulls } from './store.js';
-import { currentBranch, dirtyFiles, branchesBelow, isHere, trackedPr, branchOwns, uncommitted, inTheWay } from './git.js';
+import { currentBranch, dirtyFiles, branchesBelow, trackedPr, branchOwns, uncommitted } from './git.js';
 import { styled, clip, span, debug } from './term.js';
 
 // A listing younger than this is printed as it is, as the Pull requests tab
@@ -155,26 +155,28 @@ async function bareBases(repo, pulls, defaultBranch) {
 }
 
 /**
- * The list and the question: `{ pr }`, the pull request picked as the
- * listing has it (`url`, `number`, `headRefName`, `isCrossRepository` are what
- * the start reads), or null when nothing was picked (`q`, end of input, or
- * nothing open), which the caller takes as nothing to start. The checkout is
- * the caller's (startOnPr in git.js), the same one `prcoder <pr>` makes, and
- * it reads the branch again: the question can wait any length of time, and a
- * branch read before it is no guide to what gh's checkout switched.
+ * The list, the question and the start: `{ pr, ...start(pr) }`, the pull
+ * request picked as the listing has it (`url`, `number`, `headRefName`,
+ * `isCrossRepository` are what the start reads) with what `start` resolved,
+ * or null when nothing was picked (`q`, end of input, or nothing open), which
+ * the caller takes as nothing to start. `start` is the caller's checkout --
+ * startOnPr in git.js, the same one `prcoder <pr>` makes -- run on each pick
+ * as it is answered, against the tree as it is then: the question can wait
+ * any length of time.
  *
  * Uncommitted work refuses a checkout (startOnPr), so it is said before the
  * question rather than after the pick; Enter then offers this branch's pull
  * request, the one pick that needs none, or nothing when it has none listed.
- * A pick that needs a checkout is asked again rather than ending the run,
- * against the tree as it is when the answer comes, not as it was when the
- * list was printed. A fork's pull request is asked about through isHere in
- * git.js, since the name of its head says nothing about which local branch
- * it is: a gh call, paid only for a fork's picked over uncommitted work.
+ * A pick `start` refuses -- uncommitted work, or another prcoder in the
+ * working copy -- is said and asked again rather than ending the run; any
+ * other failure is thrown. Before, this repeated startOnPr's check of the
+ * uncommitted work alone, so a pick refused for another prcoder ended the
+ * run, and a fork's pick over uncommitted work asked gh which branch it was
+ * twice.
  *
  * `facts` is repoInfo's answer, which server.js has already paid for.
  */
-export async function choosePr(repo, facts, { input = process.stdin, output = process.stdout } = {}) {
+export async function choosePr(repo, facts, { start, input = process.stdin, output = process.stdout } = {}) {
   const { nameWithOwner, defaultBranch } = facts;
   const width = (output.columns || 80) - 1;
   const [branch, dirty, read] = await Promise.all([currentBranch(repo), dirtyFiles(repo), listing(repo, nameWithOwner)]);
@@ -196,12 +198,6 @@ export async function choosePr(repo, facts, { input = process.stdin, output = pr
   }
   const why = !offer ? '' : dirty.length ? "this branch's" : offer.depth ? 'the deepest' : 'the most recently updated';
   const prompt = offer ? `PR number [${offer.pr.number}, ${why}], or q: ` : 'PR number, or q: ';
-  // The refusal startOnPr would make of `p`, against the tree as it is now.
-  const refusal = async (p) => {
-    const [now, files] = await Promise.all([currentBranch(repo), dirtyFiles(repo)]);
-    if (!files.length || await isHere(repo, p, now)) return null;
-    return inTheWay(p, files, now);
-  };
   const rl = readline.createInterface({ input, output });
   // End of input settles nothing in readline/promises: the interface closes
   // and the question's promise is left hanging, so the close is the answer.
@@ -220,9 +216,12 @@ export async function choosePr(repo, facts, { input = process.stdin, output = pr
         console.log(`${answer.trim()} is not one of the open pull requests listed`);
         continue;
       }
-      const no = await refusal(row.pr);
-      if (no) console.log(no);
-      else return { pr: row.pr };
+      try {
+        return { pr: row.pr, ...(await start(row.pr)) };
+      } catch (e) {
+        if (!e.refused) throw e;
+        console.log(e.message);
+      }
     }
   } finally {
     rl.close();

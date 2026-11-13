@@ -115,10 +115,12 @@ on it, as `prcoder <n>` does. With uncommitted changes nothing can be checked ou
 only ever shows the checked-out branch's pull request: prcoder says how many files are in the way
 above the question, Enter offers the branch's own pull request instead of the deepest (or nothing,
 when none listed is the branch's), and a pick of another branch's pull request is answered with
-that and asked again -- a fork's too, once gh has said it is not the one checked out here. Each
+that and asked again -- a fork's too, once gh has said it is not the one checked out here. So is a
+pick refused because another prcoder is running, or starting, in the same working copy. Each
 answer is held to the working copy as it is when it is typed, not when the list was printed. A
 pick on the branch you are on is simply started -- a fork's pull request too, when the branch is
-the one gh checked it out to. A local copy of the branch with
+the one gh checked it out to, and a `pr-<n>` made for a merged pull request's deleted branch,
+which Enter offers over uncommitted changes as it does a branch of the head's own name. A local copy of the branch with
 commits the pull request lacks is checked out but not fast-forwarded: the line gives gh's words
 (`Not possible to fast-forward`), prcoder starts on it, and the sync light reads `diverged`, for
 you or the agent to merge or rebase. Any other failure after the switch, such as a pull that timed
