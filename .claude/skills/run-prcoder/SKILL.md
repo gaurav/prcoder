@@ -24,8 +24,10 @@ port, and `curl -s localhost:<port>/api/whoami` says if it is live. A running
 server is the cheapest thing to verify against, and it serves `public/` from
 disk, so a reload shows a client change. A second server started in the same
 directory moves aside to another port rather than taking the recorded one.
-Each running server also records its pid and port in `.prcoder/running/`,
-which a `prcoder <pr>` reads to refuse a checkout under it.
+Each running server also records its pid and port in `.prcoder/running/` at
+the working copy's top level (from any subdirectory), which a `prcoder <pr>`
+reads to refuse a checkout under it. A record with `"port": null` is one still
+starting, and refuses a checkout too.
 
 Otherwise:
 

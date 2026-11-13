@@ -69,7 +69,7 @@ and asks which to check out and start on
 prcoder only ever shows the checked-out branch's PR, so it stops with the reason, rather than start,
 when the argument names no pull request (a typo, a branch with none, an issue's URL), when the PR is
 in a repository this clone does not track, or when uncommitted changes or another prcoder running
-in the same directory are in the way of the checkout. A merged pull request whose branch GitHub has
+in the same working copy are in the way of the checkout. A merged pull request whose branch GitHub has
 since deleted is still checked out, from the pull request's head on GitHub: onto the local branch of
 that name when it has the head or is behind it, onto a new branch of that name when there is none,
 and onto `pr-<n>` when the local one is other work under the same name. `pr-<n>` tracks

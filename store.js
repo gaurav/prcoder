@@ -15,7 +15,7 @@
 // is where a better answer would go if one is wanted.
 
 import fs from 'node:fs/promises';
-import { rmSync } from 'node:fs';
+import { readFileSync, rmSync } from 'node:fs';
 import path from 'node:path';
 
 const DIR = '.prcoder';
@@ -198,11 +198,17 @@ async function writeIgnore(repo) {
 
 /**
  * `.prcoder/running/<pid>.json`: one file for each prcoder running in this
- * directory, `{ version, port }`, written once it listens and removed as it
- * exits. What startOnPr's guard in server.js (runningHere) reads to find one
- * on any port: port.json names only the port a run is meant to have, and a
- * run pinned to another (--port, PRCODER_PORT), moved aside to a free one, or
- * unable to write port.json is listening somewhere it does not name.
+ * working copy, `{ version, port }`, written as it starts -- with no port yet
+ * -- again once it listens, and removed as it exits. What startOnPr's guard
+ * in server.js (runningHere) reads to find one on any port: port.json names
+ * only the port a run is meant to have, and a run pinned to another (--port,
+ * PRCODER_PORT), moved aside to a free one, or unable to write port.json is
+ * listening somewhere it does not name. And one with no port is still
+ * starting, which a port cannot show at all.
+ *
+ * `repo` here is the working copy's top level, not the directory prcoder
+ * runs in: one started in a subdirectory moves the same files, so it has to
+ * find, and be found by, one at the top (server.js's `top`).
  *
  * A file per process, so two that start together never write over each
  * other. One a killed run left is only a pid and a port that no longer
@@ -210,8 +216,59 @@ async function writeIgnore(repo) {
  */
 const runningDir = (repo) => path.join(dir(repo), 'running');
 const runningFile = (repo, pid) => path.join(runningDir(repo), `${pid}.json`);
+const startLock = (repo) => path.join(runningDir(repo), 'start.lock');
 
-/** This process's record, listening on `port`. */
+/** Whether process `pid` is there. EPERM is someone else's, and there. */
+export function alive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    return e.code === 'EPERM';
+  }
+}
+
+/**
+ * `.prcoder/running/start.lock`, taken for the check and the checkout of a
+ * start (claim in server.js): null when this process has it, or the pid of
+ * the live one that does. Without it two starts in one working copy each
+ * found no record of the other, since neither had written one, and both
+ * checked out at once -- one on the other's branch, or both on index.lock.
+ *
+ * `wx`, so only one creates it. One whose holder has gone (killed mid-start)
+ * is removed and taken; a second start removing it at the same moment could
+ * take it alongside, which needs two starts racing a crash and is left be.
+ */
+export async function claimStart(repo) {
+  await fs.mkdir(runningDir(repo), { recursive: true });
+  await writeIgnore(repo);
+  let holder = null;
+  for (let tries = 0; tries < 3; tries++) {
+    try {
+      await fs.writeFile(startLock(repo), `${process.pid}\n`, { flag: 'wx' });
+      return null;
+    } catch (e) {
+      if (e.code !== 'EEXIST') throw e;
+    }
+    holder = Number((await fs.readFile(startLock(repo), 'utf8').catch(() => '')).trim());
+    if (Number.isInteger(holder) && holder > 0 && holder !== process.pid && alive(holder)) return holder;
+    // Gone, ours from before, or not a pid; or released between the two reads.
+    await fs.rm(startLock(repo), { force: true });
+  }
+  return holder || 'unknown';
+}
+
+/**
+ * The start lock released, synchronously, for an exit handler too -- and
+ * only when it is this process's, so a late release never frees another's.
+ */
+export function releaseStart(repo) {
+  try {
+    if (Number(readFileSync(startLock(repo), 'utf8').trim()) === process.pid) rmSync(startLock(repo), { force: true });
+  } catch { /* none to release */ }
+}
+
+/** This process's record, listening on `port`, or null while it starts. */
 export async function writeRunning(repo, port) {
   await fs.mkdir(runningDir(repo), { recursive: true });
   // The directory's `*` covers running/ too; writeJson writes it only for a
@@ -229,9 +286,9 @@ export function dropRunning(repo, pid = process.pid) {
 }
 
 /**
- * Every record, `[{ pid, port }]`, whatever their processes are doing now.
- * A file that is not one -- a temp file, a hand-edit, a newer prcoder's -- is
- * left out.
+ * Every record, `[{ pid, port }]`, whatever their processes are doing now;
+ * `port` is null for one still starting. A file that is not one -- a temp
+ * file, the start lock, a hand-edit, a newer prcoder's -- is left out.
  */
 export async function readRunning(repo) {
   const names = await fs.readdir(runningDir(repo)).catch(() => []);
@@ -240,7 +297,9 @@ export async function readRunning(repo) {
     if (!m) return null;
     try {
       const { version, port } = JSON.parse(await fs.readFile(path.join(runningDir(repo), name), 'utf8'));
-      if (Number(version) > VERSION || !Number.isInteger(port) || port < 1 || port > 65535) return null;
+      if (Number(version) > VERSION) return null;
+      if (port === null) return { pid: Number(m[1]), port: null };
+      if (!Number.isInteger(port) || port < 1 || port > 65535) return null;
       return { pid: Number(m[1]), port };
     } catch {
       return null;

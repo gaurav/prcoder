@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { normalise, pick, toDisk, readStore, writeStore, readPort, writePort, readRunning, writeRunning, dropRunning, readPrs, writePrs, readPulls, writePulls, replaceItems, useQueueFile } from '../store.js';
+import { normalise, pick, toDisk, readStore, writeStore, readPort, writePort, readRunning, writeRunning, dropRunning, claimStart, releaseStart, readPrs, writePrs, readPulls, writePulls, replaceItems, useQueueFile } from '../store.js';
 
 const repo = () => fs.mkdtemp(path.join(os.tmpdir(), 'prcoder-store-'));
 const item = (over = {}) =>
@@ -245,6 +245,34 @@ test('a running prcoder\'s record comes back by pid, and goes when dropped', asy
   dropRunning(dir, 42);
   dropRunning(dir, 42);   // twice is no failure
   assert.deepEqual(await readRunning(dir), []);
+  // One still starting has no port yet.
+  await writeRunning(dir, null);
+  assert.deepEqual(await readRunning(dir), [{ pid: process.pid, port: null }]);
+  dropRunning(dir);
+});
+
+// The lock a start holds over its check and its checkout (claim in
+// server.js), so two starts at once cannot both find the other unrecorded.
+test('the start lock is one process\'s at a time, and a gone holder\'s is taken', { skip: process.platform === 'win32' && 'kill(0)' }, async () => {
+  const dir = await repo();
+  const lock = path.join(dir, '.prcoder', 'running', 'start.lock');
+  assert.equal(await claimStart(dir), null);
+  assert.equal((await fs.readFile(lock, 'utf8')).trim(), String(process.pid));
+  assert.deepEqual(await readRunning(dir), [], 'the lock is no record');
+  // Held by another live process: its pid, and the lock is left as it is.
+  await fs.writeFile(lock, `${process.ppid}\n`);
+  assert.equal(await claimStart(dir), process.ppid);
+  releaseStart(dir);
+  assert.equal((await fs.readFile(lock, 'utf8')).trim(), String(process.ppid), 'not ours to release');
+  // Held by one that has gone, or by nothing readable: taken.
+  const { spawnSync } = await import('node:child_process');
+  const gone = spawnSync('node', ['-e', 'console.log(process.pid)'], { encoding: 'utf8' }).stdout.trim();
+  for (const held of [`${gone}\n`, 'garbage']) {
+    await fs.writeFile(lock, held);
+    assert.equal(await claimStart(dir), null, held);
+  }
+  releaseStart(dir);
+  await assert.rejects(fs.access(lock));
 });
 
 // The queue and the port are separate files: writing one must not conjure the

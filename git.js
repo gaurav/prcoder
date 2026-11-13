@@ -101,6 +101,13 @@ export async function notAWorkTree(cwd) {
   }
 }
 
+/**
+ * The top level of the working copy `cwd` is in: the same for a prcoder
+ * started in any directory of it, and different in each worktree, which has
+ * its own files. Where server.js keeps the running records (runningHere).
+ */
+export const workTreeTop = (cwd) => text(['rev-parse', '--show-toplevel'], cwd);
+
 /** Empty on a detached HEAD, which happens mid-rebase and mid-bisect. */
 export const currentBranch = (cwd) =>
   text(['symbolic-ref', '--quiet', '--short', 'HEAD'], cwd).catch(() => '');

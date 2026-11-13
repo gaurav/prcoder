@@ -165,7 +165,8 @@ the branch the working copy is on, and changes when the branch does: the switche
 choose`, or `git` and `gh` run in the Claude session. So `prcoder <pr>` checks the pull request
 out before it starts (`startOnPr` in [`git.js`](../git.js)), and refuses to start when it cannot:
 over uncommitted work, for a pull request in a repository this clone does not track, or while
-another prcoder runs in the same directory, whose agent the checkout would move. Everything
+another prcoder runs, or is starting, in the same working copy (any directory of it), whose agent
+the checkout would move. Everything
 else on screen acts on the working copy -- the agent edits it, the sync light and the quit prompt
 count its commits -- so a pane on another branch's pull request invites work on the wrong branch.
 `prcoder <pr>` used to do exactly that: it pinned the pull request without a checkout, under a
