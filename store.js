@@ -293,7 +293,8 @@ export const writePort = (repo, port) => writeJson(repo, portFile(repo), { versi
  *
  * `{ version, branches: { <branch>: { searched, prs: [{ url, repo, state, unread? }] } } }`,
  * `searched` an ISO time, and `unread` the time a read of that pull request
- * first failed, for one that has failed since. Only a branch with some are kept: one with none is
+ * first failed, for one that has failed since; `state` is null only beside
+ * `unread`, for a chosen one that has never been read. Only a branch with some are kept: one with none is
  * searched on every poll, as it was before this file, since that is the branch
  * a new one is opened from.
  */
@@ -322,8 +323,10 @@ function prsEntry(e) {
   if (!Number.isFinite(searched) || !Array.isArray(e?.prs)) return null;
   const prs = e.prs.filter((p) => {
     const l = link(p?.url);
+    // No state is one chosen and never read (lookupPrs), kept only with the
+    // time its reads began failing, so that it can lapse like any other.
     return l?.kind === 'pull' && typeof p.repo === 'string' && l.repo.toLowerCase() === p.repo.toLowerCase()
-      && STATES.includes(p.state);
+      && (STATES.includes(p.state) || (p.state === null && Number.isFinite(Date.parse(p.unread))));
   }).map(({ url, repo, state, unread }) => {
     const since = Date.parse(unread);
     return { url, repo, state, ...(Number.isFinite(since) && { unread: since }) };

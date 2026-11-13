@@ -1121,6 +1121,37 @@ test('a chosen pull request is remembered and shown whatever the search finds or
   assert.equal(elsewhere.calls.length, 0);
 });
 
+// A chosen pull request that cannot be read is given up on after UNREAD_FOR
+// like any other, and stays given up on while it is chosen: forgotten, it was
+// pinned again as new on the next poll and read on every one after, failing.
+// One never read is remembered too, with no state, so that it can lapse.
+test('a chosen pull request that stays unread is given up on, not read again on every poll', { skip: unix }, async () => {
+  const offline = `echo 'error connecting to api.github.com' >&2; exit 1`;
+  const url = HEADS[1].url;
+  const look = (k, opts) => ghCalls(offline, () => lookupPrs(os.tmpdir(), ['up/repo'], k, searching([]), { chosen: url, now: NOW, ...opts }));
+  const first = await look(null);
+  const stamped = { searched: NOW, prs: [{ url, repo: 'up/repo', state: null, unread: NOW }] };
+  assert.deepEqual(first.out, { prs: [], remember: stamped });
+  // Past UNREAD_FOR: not read, and kept as it is, so the next poll does not pin it again.
+  for (const at of [NOW + UNREAD_FOR, NOW + 2 * UNREAD_FOR]) {
+    const lapsed = await look(stamped, { now: at });
+    assert.deepEqual(lapsed.calls, [], 'not read again');
+    assert.deepEqual(lapsed.out, { prs: [], remember: undefined });
+  }
+  // Beside an open one remembered, the cached path keeps it too.
+  const open = { url: HEADS[0].url, repo: 'up/repo', state: 'OPEN' };
+  const beside = await ghCalls(viewing([HEADS[0]]), () => lookupPrs(os.tmpdir(), ['up/repo'],
+    { searched: NOW + UNREAD_FOR - 60_000, prs: [open, stamped.prs[0]] }, searching([]), { chosen: url, now: NOW + UNREAD_FOR }));
+  assert.deepEqual(beside.calls.map((c) => c[2]), [HEADS[0].url]);
+  assert.equal(beside.out.remember, undefined);
+  // A fresh lookup (r, g, a change of branch) tries it again.
+  const fresh = await look(stamped, { now: NOW + UNREAD_FOR, fresh: true });
+  assert.deepEqual(fresh.calls.map((c) => c[2]), [url]);
+  // Chosen no longer, it is let go.
+  const after = await ghCalls(offline, () => lookupPrs(os.tmpdir(), ['up/repo'], stamped, searching([]), { now: NOW + UNREAD_FOR }));
+  assert.deepEqual(after.out, { prs: [], remember: { searched: NOW + UNREAD_FOR, prs: [] } });
+});
+
 test('a search runs when nothing open is known, when asked, when one is due, and when one has moved', { skip: unix }, async () => {
   const merged = { ...HEADS[0], state: 'MERGED' };
   const cases = [

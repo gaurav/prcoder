@@ -299,6 +299,10 @@ test('a branch\'s pull requests come back as written, and an empty list removes 
   // A pull request whose reads have failed since a time, which comes back too.
   await writePrs(dir, 'unread', { searched: now, prs: [{ ...PR, unread: now - 60_000 }] }, now);
   assert.deepEqual(await readPrs(dir, 'unread'), { searched: now, prs: [{ ...PR, unread: now - 60_000 }] });
+  // A chosen one never read has no state, and is kept only beside its unread time.
+  const never = { ...PR, state: null, unread: now - 60_000 };
+  await writePrs(dir, 'unread', { searched: now, prs: [never, { ...PR, url: 'https://github.com/o/r/pull/9', state: null }] }, now);
+  assert.deepEqual(await readPrs(dir, 'unread'), { searched: now, prs: [never] });
   await writePrs(dir, 'unread', { searched: now, prs: [] }, now);
   assert.deepEqual((await fs.readdir(path.join(dir, '.prcoder'))).sort(), ['.gitignore', 'prs.json']);
 });

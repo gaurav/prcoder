@@ -385,7 +385,9 @@ async function viewKnown(cwd, { url, repo, state }, checks) {
  * or closed one on a branch that also has an open one, which branchPrs leaves
  * out once anything is open. So it is added the first time, kept past `own`,
  * and shown beside open ones whatever its state. Only one in `repos`, as for
- * the rest. Once another is chosen, the rules apply to it again, and the next
+ * the rest. One that stays unread for UNREAD_FOR is given up on, as the rest
+ * are, but kept in the file, marked, while it is chosen: forgotten, it would
+ * be added again as new and read on every poll. Once another is chosen, the rules apply to it again, and the next
  * search lets it go.
  *
  * Answers `{ prs, remember }`. `remember` is the new `known` after a search --
@@ -409,10 +411,18 @@ export async function lookupPrs(cwd, repos, known, search, { own: ownRows = asyn
   // Case-blind, since `repo` is spelled as a remote's URL spells it, and the
   // URL as GitHub does; readPrs holds the two together the same way.
   const held = (k) => repos.includes(k.repo) && k.url.toLowerCase().startsWith(`https://github.com/${k.repo}/pull/`.toLowerCase());
-  const prs = (known?.prs ?? []).filter((k) => held(k) && !(k.unread && now - k.unread >= UNREAD_FOR));
+  const lapsed = (k) => k.unread && now - k.unread >= UNREAD_FOR;
+  const prs = (known?.prs ?? []).filter((k) => held(k) && !lapsed(k));
+  // The chosen one, given up on: unread for UNREAD_FOR, as anything else is
+  // forgotten after. Forgotten, it would be pinned again below and read on
+  // every poll for as long as it is chosen, so it is carried, unread and
+  // unshown, in what is remembered instead -- until another is chosen, or a
+  // fresh lookup (`r`, `g`, a change of branch) tries it again.
+  const gaveUp = !fresh && chosen ? (known?.prs ?? []).find((k) => held(k) && k.url === chosen && lapsed(k)) : undefined;
+  const carried = gaveUp ? [gaveUp] : [];
   // The chosen one, the first time: in no state yet, so the first read of it
   // is news and searches, and remembers it.
-  const pin = chosen && !prs.some((k) => k.url === chosen) && repoOfUrl(repos, chosen);
+  const pin = chosen && !gaveUp && !prs.some((k) => k.url === chosen) && repoOfUrl(repos, chosen);
   if (pin) prs.push({ url: chosen, repo: pin, state: null });
   const seen = new Map();
   const age = now - known?.searched;
@@ -425,7 +435,8 @@ export async function lookupPrs(cwd, repos, known, search, { own: ownRows = asyn
     const stray = shown.some((p) => p.state !== 'OPEN' && p.url !== chosen) && shown.some((p) => p.state === 'OPEN');
     if (rows.every((p, i) => p && (prs[i].unread ? p.unread : !p.unread && p.state === prs[i].state))
       && !stray && (await own(shown)).length === shown.length) {
-      return { prs: shown, remember: prs.length === known.prs.length ? undefined : { ...known, prs } };
+      const next = [...prs, ...carried];
+      return { prs: shown, remember: next.length === known.prs.length ? undefined : { ...known, prs: next } };
     }
     prs.forEach((k, i) => seen.set(k.url, rows[i]));
   }
@@ -449,7 +460,7 @@ export async function lookupPrs(cwd, repos, known, search, { own: ownRows = asyn
   // One whose URL is in a repository other than the one it was found in --
   // renamed on GitHub since the remote's URL was set -- would be dropped on
   // the next read, and written again by the search that follows, every poll.
-  const entries = [...shown, ...unread].map(({ url, repo, state, unread: since }) =>
+  const entries = [...shown, ...unread, ...carried].map(({ url, repo, state, unread: since }) =>
     ({ url, repo, state, ...(since && { unread: since }) })).filter((k) => {
     if (!held(k)) debug(`${k.url} not remembered: not in ${k.repo}, which may have been renamed`);
     return held(k);
