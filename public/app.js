@@ -1,7 +1,7 @@
 import { Terminal } from '/vendor/xterm.mjs';
 import { FitAddon } from '/vendor/addon-fit.mjs';
 import { WebLinksAddon } from '/vendor/addon-web-links.mjs';
-import { renderPr, renderNoPr, renderHeader, pageTitle, prRepo } from './pr.js';
+import { renderPr, renderNoPr, renderHeader, pageTitle, prRepo, WORKTREES_DOC } from './pr.js';
 import { openPicker } from './picker.js';
 import { fileFrom, nextUnviewed, revealFile } from './filelist.js';
 import { h, api, toast, notice, dismissNotice, pref, setPref, debug, QUIT_CODE } from './ui.js';
@@ -729,6 +729,58 @@ const reachMilestones = () => {
   if (!milestones || Date.now() - milestonesAt > 10_000) loadMilestones('picker reached', true);
 };
 
+// The repository's working copies, for the head's worktree line: the main one
+// and each `git worktree add` made, with where the prcoder in each is. Read
+// when the page loads and as the line is reached, on the milestones' ten
+// seconds, and never on the poll: the server probes each one's prcoder to
+// answer. A repository with one working copy has no line to reach, so a
+// worktree made since shows when the tab is next come back to (the
+// visibilitychange below), or on a reload. A failed read keeps what we had.
+let worktrees = null;
+let worktreesAsking = null;
+let worktreesAt = 0;
+const loadWorktrees = (why) => {
+  if (worktreesAsking) return worktreesAsking;
+  debug('fetching the working copies:', why);
+  worktreesAsking = api('/api/worktrees', undefined, 'GET').then((list) => {
+    worktreesAt = Date.now();
+    worktrees = list;
+    if (last) paint(last);
+  }, (e) => debug('working copies failed:', why, e.message))
+    .finally(() => { worktreesAsking = null; });
+  return worktreesAsking;
+};
+const reachWorktrees = () => {
+  if (Date.now() - worktreesAt > 10_000) loadWorktrees('worktree line reached');
+};
+
+/**
+ * A pick on the worktree line. This prcoder stays where it is -- its coding
+ * agent, queue and port are this working copy's -- so the pick answers with
+ * where the other one's prcoder is, as a notice with the link, or how to
+ * start one. Not opened here: a tab on it is very likely open already, and a
+ * second one starts a second coding agent there, since each tab is a session
+ * of its own. A page cannot bring another tab forward, so the notice says so
+ * and leaves the choice.
+ */
+function pickWorktree(where) {
+  const w = worktrees?.find((x) => x.path === where);
+  if (!w) return;
+  const on = w.branch ? ` (on ${w.branch})` : '';
+  if (w.url) {
+    notice(`${w.name}${on} has a prcoder running. If a tab is already open on it, use that one: `
+      + 'a second tab starts a second coding agent there.', { link: { href: w.url, text: w.url }, kind: 'worktree' });
+  } else if (w.prunable) {
+    notice(`${w.name}${on} is still listed by git, but its directory is gone: \`git worktree prune\` forgets it, `
+      + 'and its branch can be checked out again.', { kind: 'worktree' });
+  } else {
+    notice(`No prcoder is running in ${w.name}${on}. To start one, in a terminal: cd ${w.path} && prcoder`,
+      { link: { href: WORKTREES_DOC, text: 'About worktrees' }, kind: 'worktree' });
+  }
+}
+// What both views of the pane draw the line from.
+const worktreeHandlers = () => ({ worktrees, onWorktree: pickWorktree, onWorktreeReach: reachWorktrees });
+
 /**
  * The pull request moved to another milestone, or off them, from the head's
  * picker. The route answers with the milestone GitHub now has, which becomes
@@ -926,7 +978,7 @@ function paint(status) {
       milestones = null;
       loadMilestones(`now on ${milestonesFor}`);
     }
-    const key = JSON.stringify([status.pr, stack, blocked, [...below.values()], status.remotes, milestones, picking, new Date().toDateString()]);
+    const key = JSON.stringify([status.pr, stack, blocked, [...below.values()], status.remotes, milestones, picking, worktrees, new Date().toDateString()]);
     if (key !== drawn) {
       drawn = key;
       renderPr(status.pr, {
@@ -945,11 +997,12 @@ function paint(status) {
         picking: picking?.url === status.pr.url ? picking : null,
         onMilestone: pickMilestone,
         onMilestoneReach: reachMilestones,
+        ...worktreeHandlers(),
       });
     }
   } else {
     drawn = null;
-    renderNoPr(status, prs, { onCreate: createPr, onSwitch: switchPr, onBelow: loadBelow, below: [...below.values()], creating });
+    renderNoPr(status, prs, { onCreate: createPr, onSwitch: switchPr, onBelow: loadBelow, below: [...below.values()], creating, ...worktreeHandlers() });
   }
   // What was under the old branch is not what is under this one.
   if (switched) {
@@ -1109,6 +1162,9 @@ document.addEventListener('visibilitychange', () => {
   returning = setTimeout(() => {
     if (document.visibilityState === 'visible' && polledAt === since) loadStatus();
   }, Math.max(0, since + 10_000 - Date.now()));
+  // A worktree made or removed, or a prcoder started in one, while this tab
+  // was out of sight: the line may not be there to reach yet.
+  reachWorktrees();
 });
 
 const input = document.getElementById('queue-input');
@@ -1156,6 +1212,7 @@ input.addEventListener('input', grow);
 // needs it — renderHeader makes a row for the current PR until it
 // lands, and loadPrs repaints the header itself when it does.
 loadPrs('page load');
+loadWorktrees('page load');
 // `home` for ▶, which reads a bare #N in an item's text as this repo's.
 // `onSwitch` and `blocked` are the PR pane's own Switch and its guard, for the
 // PRs tab's: a checkout is a checkout wherever it is asked for.

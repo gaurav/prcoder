@@ -336,44 +336,92 @@ test('prcoder refuses to start outside a git checkout', async () => {
 // the tabs as it goes: the browser suite fakes the socket, so these are the one
 // place the server's half is checked. `run` gets the server and its `host:port`
 // once it answers, and this returns what `run` returned and the exit code.
-async function withServer(run, { agent = '/bin/cat' } = {}) {
-  const { spawn } = await import('node:child_process');
-  const { once } = await import('node:events');
+async function withServer(run, opts) {
   const fs = await import('node:fs/promises');
-  const net = await import('node:net');
   const os = await import('node:os');
   const path = await import('node:path');
-  const { fileURLToPath } = await import('node:url');
-  // Without git's own variables, as above: under a hook, `git init` would
-  // land in whatever GIT_DIR names (test/CLAUDE.md).
-  const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith('GIT_')));
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'prcoder-quit-'));
-  execSync('git init -q', { cwd: dir, env });
+  execSync('git init -q', { cwd: dir, env: gitless() });
+  let started;
+  try {
+    started = await serve(dir, opts);
+    const result = await run(started.server, started.base, dir);
+    return { result, code: (await started.exited)[0] };
+  } finally {
+    started?.server.kill();
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+}
+
+// Without git's own variables, as above: under a hook, `git init` would land
+// in whatever GIT_DIR names (test/CLAUDE.md).
+const gitless = () => Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith('GIT_')));
+
+/**
+ * A server started in `cwd`, on a port that was free a moment ago, once it
+ * answers: `{ server, base, exited }`. withServer's, and on its own for a test
+ * that needs a second one, in another working copy of the same repository.
+ */
+async function serve(cwd, { agent = '/bin/cat', args = [] } = {}) {
+  const { spawn } = await import('node:child_process');
+  const { once } = await import('node:events');
+  const net = await import('node:net');
+  const { fileURLToPath } = await import('node:url');
   const probe = net.createServer().listen(0, '127.0.0.1');
   await once(probe, 'listening');
   const { port } = probe.address();
   await new Promise((r) => probe.close(r));
-  const server = spawn('node', [fileURLToPath(new URL('../server.js', import.meta.url)), '--no-open'],
-    { cwd: dir, env: { ...env, PRCODER_PORT: String(port), PRCODER_AGENT_BIN: agent }, stdio: 'ignore' });
+  const server = spawn('node', [fileURLToPath(new URL('../server.js', import.meta.url)), '--no-open', ...args],
+    { cwd, env: { ...gitless(), PRCODER_PORT: String(port), PRCODER_AGENT_BIN: agent }, stdio: 'ignore' });
   const exited = once(server, 'exit');
-  try {
-    const base = `localhost:${port}`;
-    let up = false;
-    for (let i = 0; i < 50 && !up; i++) {
-      up = await fetch(`http://${base}/api/whoami`).then((r) => r.json()).then((w) => w?.prcoder === true, () => false);
-      if (!up) await new Promise((r) => setTimeout(r, 100));
-    }
-    // A pinned port that is taken falls back to any free one (bind() in
-    // server.js), and a slow start outlasts the loop. Either way this says so,
-    // rather than leaving it to an opaque WebSocket error further on.
-    assert.ok(up, `no prcoder answered on port ${port} within 5s: taken since the probe, or a slow start`);
-    const result = await run(server, base, dir);
-    return { result, code: (await exited)[0] };
-  } finally {
-    server.kill();
-    await fs.rm(dir, { recursive: true, force: true });
+  const base = `localhost:${port}`;
+  let up = false;
+  for (let i = 0; i < 50 && !up; i++) {
+    up = await fetch(`http://${base}/api/whoami`).then((r) => r.json()).then((w) => w?.prcoder === true, () => false);
+    if (!up) await new Promise((r) => setTimeout(r, 100));
   }
+  // A pinned port that is taken falls back to any free one (bind() in
+  // server.js), and a slow start outlasts the loop. Either way this says so,
+  // rather than leaving it to an opaque WebSocket error further on.
+  if (!up) server.kill();
+  assert.ok(up, `no prcoder answered on port ${port} within 5s: taken since the probe, or a slow start`);
+  return { server, base, exited };
 }
+
+// The pane's worktree line, from the server's side: each working copy of a
+// repository lists them all, says which one it is in, and finds the prcoder
+// running in another by that one's own running record. Two real servers, one
+// in the main working copy and one in a worktree of it.
+test('each working copy lists the others, and where the prcoder in each is', async () => {
+  const fs = await import('node:fs/promises');
+  const path = await import('node:path');
+  const { result } = await withServer(async (server, base, dir) => {
+    const git = (args) => execSync(`git -c user.name=t -c user.email=t@prcoder.invalid -c commit.gpgsign=false ${args}`,
+      { cwd: dir, env: gitless(), encoding: 'utf8' }).trim();
+    git('commit -q --allow-empty -m x');
+    const main = git('symbolic-ref --short HEAD');
+    git('worktree add -q -b topic wt');
+    const list = (at) => fetch(`http://${at}/api/worktrees`).then((r) => r.json());
+    const alone = await list(base);
+    const other = await serve(path.join(dir, 'wt'));
+    try {
+      return { alone, fromMain: await list(base), fromWorktree: await list(other.base), main, here: base, other: other.base, top: await fs.realpath(dir) };
+    } finally {
+      other.server.kill();
+      await other.exited;
+      server.kill();
+    }
+  });
+  const { top, main } = result;
+  const row = { prunable: false, url: null };
+  const rows = [
+    { ...row, path: top, name: path.basename(top), branch: main, main: true, here: true },
+    { ...row, path: path.join(top, 'wt'), name: 'wt', branch: 'topic', main: false, here: false },
+  ];
+  assert.deepEqual(result.alone, rows, 'no prcoder in the worktree yet');
+  assert.deepEqual(result.fromMain, [rows[0], { ...rows[1], url: `http://${result.other}` }]);
+  assert.deepEqual(result.fromWorktree, [{ ...rows[0], here: false, url: `http://${result.here}` }, { ...rows[1], here: true }]);
+});
 
 // A start that checks out is refused while another prcoder runs in the same
 // working copy -- found by the top level, not the directory, since one in a

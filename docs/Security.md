@@ -224,7 +224,11 @@ off with it.
   before answering, holds what it reads to a shape, and has a switch that turns it off; and the
   drivers point it at a fixture (`claudeConfig` in `tools/driver.mjs`), so no screenshot carries
   the owner's real files. `/api/history` is the one there is, and the section above is its
-  argument.
+  argument. `/api/worktrees` reads outside this working copy but not outside the repository: the
+  directories are the ones git lists as this repository's working copies, never one the page
+  names, and what is read in each is prcoder's own running record, a pid and a port, which is then
+  believed only if a prcoder answers on that port saying it runs in that directory. The page gets
+  each one's path, branch and address; nothing it sends back reaches a path or an argv.
 - **A new kind of asset** — a font, an image, a worker, anything loaded rather than inlined — has to
   be allowed by the CSP beside `serveFile`, which is otherwise silent about what it blocks. The
   Prism grammars under `/vendor/prism/` are same-origin script, which `script-src 'self'` already

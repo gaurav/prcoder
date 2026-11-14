@@ -570,6 +570,11 @@ a { color: var(--accent); }
 .pr-milestone.untriaged button.picker:hover:not(:disabled), .pr-milestone.untriaged button.picker[aria-expanded=true] { color: var(--warn); }
 .pr-milestone.untriaged .picker { border-color: color-mix(in srgb, var(--warn) 50%, transparent); }
 
+/* The worktree line, under the milestone's and drawn the same way: the word,
+   which links to what a worktree session is, and a picker taking the rest. */
+.pr-worktree a { color: inherit; }
+.pr-worktree .picker { flex: 1 1 10em; padding: 1px 4px; font: inherit; }
+
 .badge { padding: 1px 6px; border-radius: 9px; background: var(--line); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; }
 .badge.open { background: #1f4d2e; color: #9ae6b4; }
 .badge.merged { background: #3d2a56; color: #d0b0f5; }

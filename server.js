@@ -12,7 +12,7 @@ import { text as readBody } from 'node:stream/consumers';
 import { spawn as ptySpawn } from 'node-pty';
 import { WebSocketServer } from 'ws';
 import { loadPr, pullRequestFor, prBody, parsePrUrl, listPrs, branchPrs, lookupPrs, ownPrs, pickPr, issueLinks, lookupRef, setViewed, setBody, createIssue, fetchPatches, runCount, repoIssues, repoMilestones, setIssueMilestone } from './github.js';
-import { notAWorkTree, snapshot, currentBranch, headCommit, commitsKnown, commitMemo, repoInfo, pushRepo, compareUrl, githubUrl, originOwner, wholePrRepo, startOnPr, trackedPr, workTreeTop, pushBranch, remoteBranchHead, trackingHead, localPatch, branchesBelow } from './git.js';
+import { notAWorkTree, snapshot, currentBranch, headCommit, commitsKnown, commitMemo, repoInfo, pushRepo, compareUrl, githubUrl, originOwner, wholePrRepo, startOnPr, trackedPr, workTreeTop, pushBranch, remoteBranchHead, trackingHead, localPatch, branchesBelow, worktrees } from './git.js';
 import { bucket, fileUrl, fileViews } from './files.js';
 import { readPort, writePort, readRunning, writeRunning, dropRunning, alive, claimStart, releaseStart, readPrs, writePrs, pick, useQueueFile, movedQueue, issueUrl, readPulls } from './store.js';
 import { readQueue, writeQueue, quote } from './queue.js';
@@ -341,8 +341,11 @@ const repaint = () => term.status(last
  * a rename (writePulls), and its fresh reads queue among themselves
  * (freshPulls) rather than behind everything else. The History tab's read
  * touches neither git nor `.prcoder/`: Claude Code's own files, read only.
+ * The worktree line's list is one local git call that writes nothing, and a
+ * probe of each other working copy's prcoder, which can take its two seconds
+ * over a port that never answers -- two seconds the poll should not wait out.
  */
-const UNLOCKED = new Set(['GET /api/whoami', 'GET /api/status', 'POST /api/queue/ref', 'GET /api/issues', 'POST /api/milestones', 'POST /api/pulls', 'POST /api/history']);
+const UNLOCKED = new Set(['GET /api/whoami', 'GET /api/status', 'POST /api/queue/ref', 'GET /api/issues', 'POST /api/milestones', 'POST /api/pulls', 'POST /api/history', 'GET /api/worktrees']);
 
 /**
  * Status polls that arrive while one is still waiting for the lock share it:
@@ -505,6 +508,10 @@ const routes = {
   },
 
   'GET /api/prs': () => listPrs(repo),
+
+  // The pane's worktree line: every working copy of this repository, and
+  // where the prcoder running in each one is (workingCopies).
+  'GET /api/worktrees': () => workingCopies(),
 
   // The exit panel's Quit button, asking what the terminal's q asks. Without
   // `force`, a quit that would cost something only says what it would cost, so
@@ -1104,6 +1111,45 @@ async function whoHasPort(wanted) {
 async function whoami(port) {
   const res = await fetch(`http://localhost:${port}/api/whoami`, { signal: AbortSignal.timeout(2000) });
   return res.json();
+}
+
+/**
+ * Where the prcoder running in the working copy at `where` is, as a URL, or
+ * null when none answers there. From that working copy's own running records,
+ * each asked who it is: a pid can be reused and a port taken by something
+ * else, and only `whoami` saying it is a prcoder in that working copy counts.
+ * A record whose process has gone is passed over and left, since it is that
+ * working copy's to drop (runningHere).
+ */
+async function prcoderIn(where) {
+  const live = (await readRunning(where)).filter(({ pid, port }) => port && pid !== process.pid && alive(pid));
+  const answers = await Promise.all(live.map(({ port }) => whoami(port).then((other) => ({ port, other }), () => null)));
+  const found = answers.find((a) => a?.other?.prcoder && (a.other.top ?? a.other.repo) === where);
+  return found ? `http://localhost:${found.port}` : null;
+}
+
+/**
+ * The repository's working copies, for the pane's worktree line: the main one
+ * and each `git worktree add` made, as git lists them, with the branch each is
+ * on, which one this prcoder is in (`here`), and the URL of the prcoder
+ * running in each of the others. A bare repository is not one, having no
+ * files, and one whose directory is gone (`prunable`) is listed, since its
+ * branch still cannot be checked out anywhere else until it is pruned.
+ *
+ * Asked for when the page loads and when the line is reached, not on the
+ * poll: a worktree is made or removed a few times a day, and whether a
+ * prcoder is running in each is a probe of its port.
+ */
+async function workingCopies() {
+  const row = async (w, i) => {
+    const here = w.path === top;
+    return {
+      path: w.path, name: path.basename(w.path), branch: w.branch, main: i === 0, here, prunable: w.prunable,
+      url: here || w.prunable ? null : await prcoderIn(w.path),
+    };
+  };
+  // Numbered before the bare one is left out: `main` is the first git lists.
+  return (await Promise.all((await worktrees(repo)).map((w, i) => (w.bare ? null : row(w, i))))).filter(Boolean);
 }
 
 /**

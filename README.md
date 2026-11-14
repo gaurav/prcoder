@@ -153,6 +153,8 @@ level adds, and what a busy port looks like.
 - [docs/Terminal.md](docs/Terminal.md) -- the status block, its keys, and quitting.
 - [docs/Ports.md](docs/Ports.md) -- how a repo's port is chosen, and finding a prcoder again: tabs,
   a window or a Dock icon per repo, an IDE pane, and keeping tab unloaders off it.
+- [docs/Worktrees.md](docs/Worktrees.md) -- several prcoders on one repository, each in a git
+  worktree on its own branch.
 - [docs/Design.md](docs/Design.md) -- why prcoder exists, and what it deliberately does not do.
 - [docs/Security.md](docs/Security.md) -- what a localhost server is exposed to, and the checks
   that close it.

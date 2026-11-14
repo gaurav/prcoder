@@ -38,7 +38,8 @@ pane to get a button.
 
 ## A choice that acts at once is a `picker`, not a `<select>`
 
-`picker()` in `picker.js` is the PR pane's switcher and its milestone line: a
+`picker()` in `picker.js` is the PR pane's switcher, its milestone line and
+its worktree line: a
 button that opens a searchable list, where only Enter or a click in the open
 list picks. A native `<select>` acts on `change`, and a closed one changes on
 a bare arrow (Linux and Windows) or a letter (everywhere), so one whose change
