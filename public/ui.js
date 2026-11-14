@@ -209,6 +209,24 @@ export function mark({ p = 0, full = false, state, label }) {
 }
 
 /**
+ * Where a pull request sits in its stack, drawn: a column of bars read from
+ * the bottom, the default branch as the ground, one bar for each pull request
+ * under this one, this one in the accent, and one for each level built on it.
+ * `shape` is stackShape's in pr.js, which says what each bar is and when the
+ * column is cut short.
+ *
+ * Not `mark()`: that is how much of something is done, and this is a place.
+ * Hidden from a screen reader, since the button it sits on says `shape.words`
+ * in its own name; the tooltip is for the pointer.
+ */
+export function stackMark(shape) {
+  const el = h('span', { className: `stack-mark${shape.thin ? ' thin' : ''}`, title: `Stack: ${shape.words}` },
+    ...shape.bars.map((bar) => h('i', { className: bar })));
+  el.setAttribute('aria-hidden', 'true');
+  return el;
+}
+
+/**
  * A fold's `open` and `onToggle`, remembered in `set` -- which holds the keys
  * that are `holds`: the file groups record what was closed (they open by
  * default), the description's sections what was opened (they do not).

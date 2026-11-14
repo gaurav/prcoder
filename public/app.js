@@ -902,7 +902,10 @@ function paint(status) {
   // that fails leaves the last good name up rather than reverting to
   // "prcoder", which is why this is here and not in loadStatus's catch.
   document.title = pageTitle(status);
-  renderHeader(status, prs, handlers);
+  // `below` and `onBelow` for the switcher's stack mark, which draws the same
+  // chain the Stack tab lists and so needs git's answers about the bare
+  // branches in it, and the way to ask.
+  renderHeader(status, prs, { ...handlers, below: [...below.values()], onBelow: loadBelow });
   if (status.pr) {
     // The Stack tab reads `prs`, which is this repository's list: against a pull
     // request in another one it would name strangers. Null rather than empty,

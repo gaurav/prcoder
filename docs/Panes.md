@@ -179,6 +179,9 @@ Linux and Windows and on a letter everywhere. For the switcher that was a checko
 request under the coding agent from a key on its way to the terminal; for the milestone line it
 was a write to GitHub, held off by putting back any change that came within 300ms of a key (#188).
 
+The button is its value as text, and can lead with one drawn thing about that value, as the
+switcher leads with its stack mark; what the drawing says is in the button's name in words.
+
 The list opens on the row the value is on, which is in bold. It is not part of the pane that
 draws its button, so a poll redraws the pane without shutting it, and a list that lands while it
 is open changes its rows in place, with what was typed and the highlight kept.
@@ -190,7 +193,23 @@ and indented under it, and checks one out to move to it. Alt+. opens it from any
 included. Typing a number, with or without its `#`, finds by number: the pull request with exactly
 that number first, then the ones whose number starts with it, then any other the digits are in.
 Other text finds by every word typed, in the number, the title, the branch or the repository.
-What is found is listed flat, without the stacks' indents. The list is the open pull requests, so
+What is found is listed flat, without the stacks' indents.
+
+The button leads with a stack mark for the pull request on screen: a small column of bars, read
+from the bottom. The wide line at the foot is the default branch, each bar over it is a pull
+request under this one, the wider bar in the accent colour is this one, and each fainter bar over
+that is a level of pull requests built on it. So a pull request straight into the default branch
+with nothing on it is one bar on the line, and the top, the middle and the bottom of a stack each
+look different without the list being opened. A branch under it that has no open pull request is
+a dotted bar, and the line at the foot is left out until it is known that the chain reaches the
+default branch; the header asks git about such a branch, as the Stack tab does. The bars over it
+are levels and not pull requests, since a column cannot draw two stacks side by side: the counts
+are in the mark's tooltip and the button's name, written as the Stack tab writes them (`↓2 under,
+↑1 built on, from main`). Past five bars they are drawn thinner, and past eight the ones furthest
+from this one are left out, so the mark is never taller than the title beside it. There is no mark
+with no pull request on screen, before the list of pull requests has been read, or on a pull
+request in another repository. The select the switcher used to be showed the chosen row's indent
+on its closed face; the mark is what replaced that. The list is the open pull requests, so
 a whole number none of them has adds a last row, *Check out #N (not in the open list)*: it looks
 the number up in this checkout's repository and checks it out, which is the way to a merged or
 closed pull request, or to one opened since the list was read. Uncommitted work hides the switcher
