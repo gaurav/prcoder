@@ -44,7 +44,8 @@ goes through the same coercion the page's writes do; whether Claude should get a
 into prcoder is [#21](https://github.com/gaurav/prcoder/issues/21)'s question.
 
 **What else reaches GitHub, and only on a click or a drag:** ◎ files an item as a new issue, a file's checkbox
-marks it viewed, creating a pull request pushes the branch and opens GitHub's compare page, and
+marks it viewed, creating a pull request pushes the branch and opens GitHub's compare page, the PR
+pane's milestone picker moves the pull request on screen to another milestone, and
 dropping an issue on a milestone group in the Issues tab -- or choosing one in its opened row and
 clicking Move -- sets that issue's milestone, and a drop or a pick in the Pull requests tab does the
 same for a pull request, which is triage and not an edit: nothing in prcoder changes what an issue
@@ -181,7 +182,9 @@ no tab until it has a record of its own to read.
 the branch the working copy is on, and changes when the branch does: the switcher, `prcoder
 choose`, or `git` and `gh` run in the Claude session. So `prcoder <pr>` checks the pull request
 out before it starts (`startOnPr` in [`git.js`](../git.js)), and refuses to start when it cannot:
-over uncommitted work, or for a pull request in a repository this clone does not track. Everything
+over uncommitted work, for a pull request in a repository this clone does not track, or while
+another prcoder runs, or is starting, in the same working copy (any directory of it), whose agent
+the checkout would move. Everything
 else on screen acts on the working copy -- the agent edits it, the sync light and the quit prompt
 count its commits -- so a pane on another branch's pull request invites work on the wrong branch.
 `prcoder <pr>` used to do exactly that: it pinned the pull request without a checkout, under a

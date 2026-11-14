@@ -1,5 +1,5 @@
 import { h, btn, ext, api, toast, pref, setPref, tabBtn, writeThrough, fold, kept, mark, fraction } from './ui.js';
-import { TABS, refLabel, refClass, forClaude, rankMilestones, issueMatches, pullMatches, sortPulls, sizeChip, age, dueLabel, isNew, PULL_SORTS } from './items.js';
+import { TABS, refLabel, refClass, forClaude, rankMilestones, issueMatches, pullMatches, sortPulls, rootsInOrder, pullWord, sizeChip, age, dueLabel, isNew, PULL_SORTS } from './items.js';
 import { refs, resolveRef, blocks } from './tasks.js';
 import { blockNode, inline, stackUnder, stackOrder } from './pr.js';
 import { LABEL as HISTORY_LABEL, historyList, historyCount, loadHistory, initHistory } from './history.js';
@@ -38,10 +38,11 @@ export function setItems(next, prOnScreen = null) {
   // caret: its text is kept and put back, but the caret and a composition
   // mid-word are not. Safe to hold on by the same argument as the text above
   // -- focus leaves it with the next click anywhere else -- where a tab is not.
-  // So is a row's milestone select and Move (groupsInUse), which a repaint
-  // would close. Not the rest of the row's ways: a pull request's has Switch,
+  // So is a row's milestone select and Move (groupsInUse), and the Pull
+  // requests tab's order and grouping selects, which a repaint would close
+  // mid-choice. Not the rest of the row's ways: a pull request's has Switch,
   // and focus left on it must not keep the checkout's poll from landing.
-  if (saving || document.activeElement?.closest?.('#queue-body .text[contenteditable], #queue-search, #queue-pull-search, #queue-body .move-to')) return;
+  if (saving || document.activeElement?.closest?.('#queue-body .text[contenteditable], #queue-search, #queue-pull-search, #queue-body .move-to, #queue-body .pull-controls select')) return;
   if (document.querySelector('#queue-body .item.dragging')) return;
   // What the PR and Issues tabs draw from: a tick on github.com changes the
   // PR tab without changing the list, so it has to count as news too.
@@ -88,7 +89,7 @@ const expanded = new Set();
 const seen = new Set();
 // The Pull requests tab's: its listing (/api/pulls' answer -- milestones,
 // pulls, and `read`, when it was read, in ms), whether a read is out, its
-// search, and whether its first listing has chosen what starts closed; its
+// search, and which groups a listing has had (`seen`'s for this tab); its
 // groups and opened rows share the two sets above under keys of their own.
 let pullsListing = null;
 let pullsReading = false;
@@ -97,7 +98,7 @@ let pullsLoading = null;
 // A forced read was asked for while one was out (loadPulls).
 let pullsStale = false;
 let pullQuery = '';
-let pullsSeeded = false;
+const pullsSeen = new Set();
 // Its order and grouping, remembered as the add-to arrow is (below).
 const PULL_SORT_KEY = 'prcoder:pull-sort';
 const PULL_GROUP_KEY = 'prcoder:pull-group';
@@ -1104,14 +1105,16 @@ function pullGroups() {
   const rows = sortPulls(matchingPulls(), pullSort);
   const out = [];
   if (pullGroup !== 'milestone') {
-    // By stack: the switcher's order (stackOrder), each pull request followed
+    // By stack: the switcher's walk (stackOrder), each pull request followed
     // by the ones built on it, indented a step deeper. The rows are sorted
-    // first, and the walk keeps that order among siblings, so the roots and
-    // each stack's branches both come in the chosen order. A parent the
+    // first, and the walk keeps that order among siblings; the stacks are
+    // then put in their roots' order (rootsInOrder), since the walk lists
+    // roots base by base. So the roots and each stack's branches both come in
+    // the chosen order. A parent the
     // search hides leaves its children roots of their own, which is what a
     // narrowed list should show. A stack cannot nest across milestone groups,
     // so this is a grouping of its own and not a mode of the other.
-    const list = pullGroup === 'stack' ? stackOrder(rows) : rows.map((pr) => ({ pr, depth: 0 }));
+    const list = pullGroup === 'stack' ? rootsInOrder(stackOrder(rows), rows) : rows.map((pr) => ({ pr, depth: 0 }));
     out.push(list.length ? h('ul', { className: 'items' }, ...list.flatMap(({ pr: p, depth }) => pullRow(p, depth)))
       : h('p', { className: 'empty' }, searching ? 'No matching pull requests.' : 'No open pull requests.'));
   } else {
@@ -1122,34 +1125,42 @@ function pullGroups() {
       byMilestone.get(key).push(p);
     }
     const ranked = rankMilestones(pullsListing.milestones);
-    // What starts closed, chosen once per page as the Issues tab chooses:
-    // everything but the first group drawn with a pull request in it -- No
-    // milestone when it has one, or else the first milestone in rank.
-    if (!pullsSeeded) {
-      pullsSeeded = true;
-      const keys = [NONE, ...ranked.map((m) => m.number)];
-      const focus = keys.find((k) => byMilestone.has(k)) ?? NONE;
-      for (const key of keys) if (key !== focus) closedGroups.add(`p:${key}`);
+    // What starts closed, as seedGroups chooses on the Issues tab: on the
+    // first listing, everything but the first group with a pull request in it
+    // -- No milestone when it has one, or else the first milestone in rank --
+    // chosen from every pull request, not the ones a search lets through; on a
+    // later one, a milestone not had before joins the rest folded.
+    const keys = [NONE, ...ranked.map((m) => m.number)];
+    const focus = pullsSeen.size ? null
+      : keys.find((k) => pullsListing.pulls.some((p) => (p.milestone ?? NONE) === k)) ?? NONE;
+    for (const key of keys) {
+      if (pullsSeen.has(key)) continue;
+      pullsSeen.add(key);
+      if (key !== focus) closedGroups.add(`p:${key}`);
     }
-    const state = (key, list) => (searching ? { open: list.length > 0, onToggle: () => {} } : kept(closedGroups, key, 'closed'));
+    // While searching, as on the Issues tab: only the groups with a match, open.
+    const state = (key) => (searching ? { open: true, onToggle: () => {} } : kept(closedGroups, key, 'closed'));
     const home = deps.home?.();
     const group = (key, title, list, extra, target) => {
       const d = fold({
         className: target === null && list.length ? 'milestone untriaged' : 'milestone', dataset: { group: key },
         title: [title, ' ', countBadge(list.length, 'pull requests', searching), ...extra.flatMap((e) => [' ', e])],
-        ...state(key, list),
+        ...state(key),
       }, list.length ? [h('ul', { className: 'items' }, ...list.map((p) => pullRow(p)).flat())] : [h('p', { className: 'empty' }, 'no open pull requests')]);
       if (target !== undefined) dropTarget(d.querySelector('summary'), target, PULL, movePull);
       return d;
     };
     const none = byMilestone.get(NONE) ?? [];
-    out.push(group(`p:${NONE}`, 'No milestone', none, triage(none), null));
+    if (!searching || none.length) out.push(group(`p:${NONE}`, 'No milestone', none, triage(none), null));
     for (const m of ranked) {
+      const list = byMilestone.get(m.number) ?? [];
+      if (searching && !list.length) continue;
       const title = home ? ext(`https://github.com/${home}/milestone/${m.number}`, m.title, { title: m.description || undefined }) : m.title;
       // A closed one is listed only because an open pull request is still on it (repoPulls).
       const extra = milestoneExtra(m, 'pull requests');
-      out.push(group(`p:${m.number}`, title, byMilestone.get(m.number) ?? [], extra, m.closed ? undefined : m.title));
+      out.push(group(`p:${m.number}`, title, list, extra, m.closed ? undefined : m.title));
     }
+    if (!out.length) out.push(h('p', { className: 'empty' }, 'No matching pull requests.'));
   }
   const { read, listed, total } = pullsListing;
   out.push(h('p', { className: 'pull-note' },
@@ -1160,9 +1171,6 @@ function pullGroups() {
 
 /** GitHub's reviewDecision as the row says it; null, the usual case, says nothing. */
 const REVIEW = { APPROVED: 'approved', CHANGES_REQUESTED: 'changes requested', REVIEW_REQUIRED: 'review needed' };
-
-/** A merge word as a class: `checks not passing` -> `checks-not-passing`, `checking…` -> `checking`. */
-const wordClass = (w) => w.toLowerCase().replace(/[^a-z]+/g, '-').replace(/^-|-$/g, '');
 
 /**
  * What a listed pull request is built on (stackUnder in pr.js), for its row and
@@ -1184,17 +1192,6 @@ function underOf(p) {
   if (!unders.by.has(p.number)) unders.by.set(p.number, stackUnder({ pr: p }, pulls, below, def));
   return unders.by.get(p.number);
 }
-
-/**
- * The word a row shows for its state, and its class. GitHub's `ready` is
- * ready to merge into the base, which for a stacked pull request is the one
- * under it and not the default branch, so there it is `stacked (N)`, N the
- * steps that merge first -- pull requests, or now and then a bare branch. The
- * other words say more than that one does, and stay.
- */
-const pullWord = (p, under) => (p.merge === 'ready' && under.nodes.length
-  ? { word: `stacked (${under.nodes.length})`, cls: 'stacked' }
-  : { word: p.merge, cls: p.merge ? wordClass(p.merge) : '' });
 
 /**
  * One pull request as a row, and when the row is open, its milestone and its
