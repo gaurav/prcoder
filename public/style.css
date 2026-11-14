@@ -35,7 +35,13 @@ body {
   background: var(--bg); color: var(--fg);
   font: 14px/1.5 ui-sans-serif, system-ui, sans-serif;
 }
-/* The 1px gutter tracks are the lines between the panes — there is no `gap`,
+/* An experiment, to be compared in use with the 1px lines it replaces (the
+   branch under this one): the gutter tracks are --gut wide and --bg, darker
+   than the panes, so each pane is a card with a channel round it and the
+   channel is the thing you drag. The line was hard to find at 1px even with a
+   grip on it; this spends 4px a divider to make the whole of it the target.
+
+   The gutter tracks are the lines between the panes — there is no `gap`,
    because every line in this layout is draggable. Each gutter writes one length
    back onto <main> as a variable (see panes.js); the clamps are what keep a
    drag from squeezing a pane to nothing, so the maxima must leave #term room
@@ -62,8 +68,9 @@ body {
    PR pane can be dragged down to a stub when the terminal wants the window;
    #pr opens at 375px regardless. */
 main {
-  height: 100%; display: grid; background: var(--line);
-  grid-template-columns: clamp(180px, var(--w-pr, 375px), 60%) 1px 1fr;
+  --gut: 5px;
+  height: 100%; display: grid; background: var(--bg);
+  grid-template-columns: clamp(180px, var(--w-pr, 375px), 60%) var(--gut) 1fr;
   /* One length per row of the right-hand column, and the folds below only
      rewrite these: a template per combination of folds was four already and
      grew with every pane that learned to fold. */
@@ -72,11 +79,11 @@ main {
   --diff-size: clamp(140px, var(--h-diff, 40%), 50%);
   --r-diff: var(--diff-size);
   --r-term: 1fr;
-  --queue-max: calc(100% - 121px);   /* the floor, and the 1px line over the queue */
+  --queue-max: calc(100% - 120px - var(--gut));   /* the floor, and the gutter over the queue */
   --r-queue: clamp(120px, var(--h-queue, 227px), var(--queue-max));
   /* The first row is the notices list, which is `display: none` while empty,
      so `auto` is then nothing. */
-  grid-template-rows: auto var(--r-term) 1px var(--r-queue) var(--r-rest, 0);
+  grid-template-rows: auto var(--r-term) var(--gut) var(--r-queue) var(--r-rest, 0);
   grid-template-areas:
     "pr gpr notices"
     "pr gpr term"
@@ -86,7 +93,7 @@ main {
 }
 #pr { grid-area: pr; } #term { grid-area: term; } #queue { grid-area: queue; }
 main.diff-open {
-  grid-template-rows: auto var(--r-diff) 1px var(--r-term) 1px var(--r-queue);
+  grid-template-rows: auto var(--r-diff) var(--gut) var(--r-term) var(--gut) var(--r-queue);
   grid-template-areas:
     "pr gpr notices"
     "pr gpr diff"
@@ -95,7 +102,7 @@ main.diff-open {
     "pr gpr gqueue"
     "pr gpr queue";
 }
-main.diff-open { --queue-max: calc(100% - 122px - var(--diff-size)); }   /* two lines now */
+main.diff-open { --queue-max: calc(100% - 120px - 2 * var(--gut) - var(--diff-size)); }   /* two gutters now */
 /* Folded, the diff is its bar: 40px is that and the line under it, rounded up. */
 main.diff-open.diff-off { --queue-max: calc(100% - 160px); }
 #diff { grid-area: diff; }
@@ -104,7 +111,7 @@ main.diff-open.diff-off { --queue-max: calc(100% - 160px); }
    exactly the header, and whatever sits beside it takes the room. The terminal
    folds for reading a diff by eye, so the diff takes its room, or the queue
    with no diff open; the diff folds for talking to the agent with the file
-   still named on its bar, so the terminal takes its room. The empty 1px track
+   still named on its bar, so the terminal takes its room. The empty gutter track
    between still draws the line. The two are never folded together (app.js);
    if they were, the queue would get the room. */
 main.term-off { --r-term: auto; --r-diff: 1fr; }
@@ -164,37 +171,22 @@ main:not(.term-off) #term-busy { display: none; }
 /* Under a folded terminal the diff is 1fr, and folded itself it is a bar, so
    there is nothing for a drag to set. One rule rather than a later hide: the
    two tie on specificity, and the hide written first once lost to this. */
-main.diff-open:not(.term-off, .diff-off) #gut-diff { display: block; }
-/* 1px of line and a few of grab, above the panes so the cursor changes over
-   it. The line alone was hard to find between the diff, the coding agent and
-   the queue (2026-11-09): it is --line between two --panel panes, and the bar
-   under it ends in a border that looks the same. So three things say where it
-   is. At rest the two row gutters carry a grip, a short pill at their middle;
-   the column ones do not, since the pull request pane's edge was never the one
-   being hunted for and the outline's runs the height of the diff. Under the
-   pointer, held in a drag, or focused from the keyboard, any gutter's line
-   turns --accent and three pixels thick, drawn as the grab area's background
-   so nothing moves. And the row gutters' grab area is 5px above the line and
-   4px below rather than 3px each way -- no more than that, and less below,
-   because below is the next pane's bar, which folds it on a click. */
-.gut { position: relative; z-index: 3; touch-action: none; }
-.gut::after { content: ''; position: absolute; }
-.gut.col::after { inset: 0 -3px; cursor: col-resize; }
-.gut.row::after { inset: -5px 0 -4px; cursor: row-resize; }
-.gut.row::before {
-  content: ''; position: absolute; top: -1px; left: 50%; width: 36px; height: 3px;
-  margin-left: -18px; border-radius: 2px; background: var(--dim);
-}
-/* The bar sits on the line: centred in the column gutters' 7px, and from the
-   fourth pixel of the row gutters' ten. focus-visible, because a gutter you
-   have just dragged should not keep it. */
+main.diff-open:not(.term-off, .diff-off) #gut-diff { display: flex; }   /* flex: it centres the grip */
+/* The gutter is its track: --gut of --bg between two panes, the whole of it
+   the grab area, with nothing overhanging the panes on either side -- so a
+   press just under a row gutter is a press on the next pane's bar and nothing
+   else. The two row gutters carry a grip at their middle, as the 1px ones did.
+   Under the pointer, held in a drag, or focused from the keyboard, the track
+   turns --accent. focus-visible, because a gutter you have just dragged should
+   not keep it. */
+.gut { touch-action: none; }
+.gut.col { cursor: col-resize; }
+.gut.row { cursor: row-resize; display: flex; align-items: center; justify-content: center; }
+.gut.row::before { content: ''; width: 36px; height: 3px; border-radius: 2px; background: var(--dim); }
 .gut:focus { outline: none; }
-.gut.col:is(:hover, :active, :focus-visible)::after {
-  background: linear-gradient(var(--accent), var(--accent)) center / 3px 100% no-repeat;
-}
-.gut.row:is(:hover, :active, :focus-visible)::after {
-  background: linear-gradient(var(--accent), var(--accent)) 0 4px / 100% 3px no-repeat;
-}
+.gut:is(:hover, :active, :focus-visible),
+#gut-outline:is(:hover, :active, :focus-visible) { background: var(--accent); }   /* the id: its own --bg outranks a class */
+.gut.row:is(:hover, :active, :focus-visible)::before { background: var(--bg); }
 
 .pane { background: var(--panel); display: flex; flex-direction: column; min-height: 0; min-width: 0; }
 .pane > header {
@@ -793,10 +785,10 @@ a { color: var(--accent); }
    single hunk (nothing to choose between) get the full width back. */
 #diff-main { display: flex; flex: 1; min-height: 0; }
 #diff-body { flex: 1; min-width: 0; }
-/* The other gutters are 1px grid tracks that let <main>'s background through.
-   This one is a flex item inside a pane, so it has to be the line itself -- and
-   say its width, or an empty flex item shrinks to nothing. */
-#gut-outline { flex: none; width: 1px; background: var(--line); }
+/* The other gutters are grid tracks that let <main>'s background through.
+   This one is a flex item inside a pane, so it has to be the channel itself --
+   and say its width, or an empty flex item shrinks to nothing. */
+#gut-outline { flex: none; width: var(--gut); background: var(--bg); }
 /* One width for every file until the first drag, and a long label ellipsizes.
    It was `auto` -- as wide as the longest hunk label -- so the diff beside it
    changed width from file to file, and a long label could take 60% of the

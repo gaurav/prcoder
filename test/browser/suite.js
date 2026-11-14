@@ -4265,18 +4265,20 @@ test('the queue drags up until the terminal is at its 120px floor, with or witho
 // The line between two panes is a pixel of one grey between two of another,
 // so it says where it is: a grip at rest on the two across the right-hand
 // column, and its own colour under the pointer.
-test('a row gutter carries a grip, and its line lights up under the pointer', { skip }, async () => {
+test('a row gutter carries a grip, and lights up under the pointer', { skip }, async () => {
   const fresh = await newPage();
   const style = (pseudo) => fresh.$eval('#gut-queue', (g, p) => {
     const s = getComputedStyle(g, p);
-    return { image: s.backgroundImage, color: s.backgroundColor, width: s.width };
+    return { color: s.backgroundColor, width: s.width, height: s.height };
   }, pseudo);
   assert.equal((await style('::before')).width, '36px');
-  assert.notEqual((await style('::before')).color, 'rgba(0, 0, 0, 0)');
   assert.equal((await fresh.$eval('#gut-pr', (g) => getComputedStyle(g, '::before').content)), 'none', 'the pull request pane\'s edge has no grip');
-  assert.equal((await style('::after')).image, 'none');
+  // The gutter is the whole channel between the panes, not a line with a
+  // grab area hung over them.
+  const rest = await style(null);
+  assert.equal(rest.height, '5px');
   await fresh.locator('#gut-queue').hover();
-  assert.match((await style('::after')).image, /gradient/);
+  assert.notEqual((await style(null)).color, rest.color);
   await fresh.close();
 });
 
