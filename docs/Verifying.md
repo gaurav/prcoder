@@ -186,9 +186,10 @@ server that answers is in the worktree and a quit tidies it away unasked, and fo
 with a stub gh whose checkout makes the branch. What the worktree is made from in each case --
 this clone's branch, origin's, or a new one from origin's default branch as origin has it now --
 is `test/git.test.js`'s, against a bare repository standing in for origin. That git deletes a worktree's ignored files without
-a word is pinned in `test/git.test.js`, dated, since the question exists because of it. The
-terminal's three-way question is not in `npm test`: it was driven by hand in a PTY (2026-11-14),
-and `tools/cli.mjs` is where a standing check would go.
+a word is pinned in `test/git.test.js`, dated, since the question exists because of it. Which key
+does what at the terminal's three-way question is `test/term.test.js`'s (`press`). That the
+question appears in a real terminal and that `r` then removes the worktree is not in `npm test`:
+it was driven by hand in a PTY (2026-11-14), and `tools/cli.mjs` is where a standing check would go.
 
 Some things were checked against the real thing rather than a stub, and the evidence sits next to
 the code:

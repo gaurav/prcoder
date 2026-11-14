@@ -669,6 +669,8 @@ const WORKTREES = [
   { path: '/w/other', name: 'other', branch: 'other-work', main: false, here: false, prunable: false, url: 'http://localhost:10999' },
   { path: '/w/pr-7', name: 'pr-7', branch: null, main: false, here: false, prunable: false, url: null },
 ];
+// One whose directory was deleted without `git worktree remove`: still listed.
+const GONE = { path: '/w/old', name: 'old', branch: 'old-work', main: false, here: false, prunable: true, url: null };
 const WT = '#pr-head .pr-worktree button.picker';
 
 // A repository with one working copy has no worktree line; with more, the
@@ -707,6 +709,15 @@ test('the worktree line is under the milestone, and a pick says where that worki
   assert.deepEqual(await p.locator(`${popOf('worktree')} [role=option] .picker-text`).allTextContents(), ['other']);
   await p.keyboard.press('Escape');
   await p.close();
+
+  // One git still lists with its directory gone says so, and how to forget it.
+  const q = await newPage({ worktrees: [...WORKTREES, GONE] });
+  await q.waitForSelector(WT);
+  await openPicker(q, 'worktree');
+  assert.equal(await q.locator(`${popOf('worktree')} [data-key="/w/old"] .picker-detail`).textContent(), 'old-work · directory gone');
+  await pickRow(q, 'worktree', '/w/old');
+  assert.match(await q.locator(`${line} .text`).textContent(), /^old \(on old-work\) is still listed by git, but its directory is gone: `git worktree prune` forgets it/);
+  await q.close();
 });
 
 // The branch-only pane has no milestone line, and the worktree line is the

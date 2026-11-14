@@ -124,6 +124,11 @@ timing has to be driven against that stub, not cat. cat is fine for
   open it to read the rows; `openPicker`, `pickRow` and `switcherLabels` in
   `test/browser/suite.js` do. A click on a row that cannot be picked needs `{ force: true }`,
   since Playwright waits on `aria-disabled`.
+- **Wait for a `<dialog>` to close with `{ state: 'attached' }`.**
+  `waitForSelector('#leave:not([open])')` waits for the element to be
+  *visible*, and a closed dialog never is, so it runs its 30 seconds and fails
+  on a page that did exactly what was asked (2026-11-14). `#dead:modal` is
+  fine as it is: an open modal is visible.
 - **Install `MutationObserver`s after `goto`, not in `addInitScript`.** At
   init time there is no `document.head` to observe, and the throw takes the
   rest of the init script with it.

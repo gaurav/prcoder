@@ -244,25 +244,32 @@ export function ask(text, keys) {
  * `stdio: 'ignore'` and never reaches this, and tools/cli.mjs runs it in a
  * real PTY to check it.
  */
-export function keys({ quit, key }) {
+export function keys(handlers) {
   if (!process.stdin.isTTY) return;
   process.stdin.setRawMode(true);
   process.stdin.resume();
-  process.stdin.on('data', (buf) => {
-    for (const b of buf) {
-      const ch = String.fromCharCode(b);
-      if (prompt) {
-        // The escape hatch. A second Ctrl-C goes, no matter what is wrong with
-        // the rest of this: nothing here may make the process unkillable.
-        if (b === 3) process.exit(130);
-        const answer = prompt.keys[ch.toLowerCase()];
-        prompt = null;
-        paint();
-        answer?.();
-      } else if (b === 3 || ch === 'q') quit();
-      else key(ch);
-    }
-  });
+  process.stdin.on('data', (buf) => { for (const b of buf) press(b, handlers); });
+}
+
+/**
+ * One byte from the keyboard. With a question up it is the answer: the
+ * letter's own action (ask), in either case, and any other key is no. With
+ * none, `q` and Ctrl-C are `quit` and the rest go to `key`. Apart from keys()
+ * so that which key does what can be checked without a terminal -- one of
+ * those answers removes a worktree.
+ */
+export function press(b, { quit, key }) {
+  const ch = String.fromCharCode(b);
+  if (prompt) {
+    // The escape hatch. A second Ctrl-C goes, no matter what is wrong with
+    // the rest of this: nothing here may make the process unkillable.
+    if (b === 3) process.exit(130);
+    const answer = prompt.keys[ch.toLowerCase()];
+    prompt = null;
+    paint();
+    answer?.();
+  } else if (b === 3 || ch === 'q') quit();
+  else key(ch);
 }
 
 let restored = false;

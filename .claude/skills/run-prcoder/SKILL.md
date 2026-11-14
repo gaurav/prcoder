@@ -52,12 +52,13 @@ stdout. For a look with the user's own eyes, leave it running and hand them that
 API shape: the `routes` table in `server.js`, keyed `"METHOD /path"`, JSON
 in/out, errors as 500 `{error}`. Every handler but the few in `UNLOCKED` --
 whoami, the `GET` status poll, the queue's reference lookup, the Issues and
-Pull requests tabs' listings, the PR pane's list of milestones -- is serialised, so one slow call delays the rest. `POST /api/status`
+Pull requests tabs' listings, the PR pane's list of milestones and of the repository's working copies -- is serialised, so one slow call delays the rest. `POST /api/status`
 is the page's ⟳: a poll that also searches for the branch's pull requests,
 where `GET` reads the ones `.prcoder/prs.json` remembers by URL. A page load
-also reads, with no tab clicked, `/api/history` and the last `/api/pulls`
-listing at once and `/api/issues` about three seconds after the first status,
-for the tabs' counts; a `PRCODER_VERBOSE=2` log shows all three.
+also reads, with no tab clicked, `/api/history`, the last `/api/pulls`
+listing and `/api/worktrees` at once, and `/api/issues` about three seconds
+after the first status, for the tabs' counts; a `PRCODER_VERBOSE=2` log shows
+all four.
 
 ## Verifying a change
 
@@ -147,7 +148,9 @@ Two rules for them, and for any script after them:
   in the working copy it starts in, as a `prcoder choose` pick does. So never
   name one here; `prcoder choose` writes nothing until a pick, so answer `q`
   here (`tools/choose.mjs` does), and see a pick or a named start through in a
-  clone under `data/`.
+  clone under `data/`. Clone the remote's URL for that, as `tools/no-pr.mjs`
+  does, or point the clone's `origin` at it: a `git clone .` has this
+  directory as its origin, and gh then finds no repository to ask.
 
 If every PTY spawn dies with a bare `posix_spawnp failed`, the `postinstall`
 script was skipped: `npm install` again, and see `tools/postinstall.mjs` for why.

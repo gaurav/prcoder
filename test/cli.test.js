@@ -502,6 +502,10 @@ test('a quit in a worktree removes it or keeps it as told, and never the main wo
         assert.deepEqual(await quit(s.base, {}),
           { risk: [], worktree: { name: answer, path: wt, lose: ['1 untracked file', 'ignored node_modules/'] } });
         assert.deepEqual(await quit(s.base, { force: true, worktree: 'sideways' }), { error: 'worktree: remove or keep' });
+        // One somebody locked is not offered, and not removed when asked.
+        git(`worktree lock ../${answer}`);
+        assert.deepEqual(await quit(s.base, { force: true, worktree: 'remove' }), { error: 'this working copy is not a worktree prcoder can remove' });
+        git(`worktree unlock ../${answer}`);
         assert.deepEqual(await quit(s.base, { force: true, worktree: answer }), { quit: true, ...(answer === 'remove' && { removed: wt }) });
         assert.equal((await s.exited)[0], 0);
       } finally {
