@@ -321,8 +321,8 @@ a { color: var(--accent); }
    sets `margin-left: auto`, shared by all four panes, so a tab button lands
    hard against the right edge -- that rule already carries two exceptions
    (`.commit`, `.where`) and this would be the third. And at the pane's 375px
-   default the header holds an <h1>, a flex:1 <select>, the light and the
-   refresh glyph, so two more buttons squeeze the select to nothing.
+   default the header holds an <h1>, the flex:1 switcher, the light and the
+   refresh glyph, so two more buttons squeeze the switcher to nothing.
 
    A sticky tab row as the first child of #pr-body, keeping one scroller: this
    is the one that looks right and is not. Two views in one scroller share one
@@ -538,7 +538,7 @@ a { color: var(--accent); }
    than wrapping under the word, and the due date keeps its width after it --
    until the picker would be under 10em, where the due date goes onto a line
    of its own instead: at a 240px pane it squeezed the picker to `PR…`.
-   Drawn like the switcher's select in the pane's header, at the line's own
+   Drawn like the switcher in the pane's header (`.picker`), at the line's own
    12px. On no milestone the line is in the warning colour, picker and all,
    since that pull request is waiting to be triaged. The due date's colours
    are the queue's milestone lines' (dueLabel): yellow within a week, and past
@@ -547,15 +547,12 @@ a { color: var(--accent); }
 .pr-milestone .due { flex: none; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .pr-milestone .due.soon { color: var(--warn); }
 .pr-milestone .due.overdue { color: var(--fail); background: #4d1f24; padding: 0 6px; border-radius: 9px; }
-.pr-milestone select {
-  flex: 1 1 10em; min-width: 0; padding: 1px 4px; font: inherit;
-  color: var(--dim); background: var(--bg); border: 1px solid var(--line); border-radius: 4px;
-  text-overflow: ellipsis;
-}
-.pr-milestone select:hover:not(:disabled) { color: var(--fg); }
-.pr-milestone select:disabled { opacity: .5; cursor: progress; }
-.pr-milestone.untriaged, .pr-milestone.untriaged select { color: var(--warn); }
-.pr-milestone.untriaged select { border-color: color-mix(in srgb, var(--warn) 50%, transparent); }
+.pr-milestone .picker { flex: 1 1 10em; padding: 1px 4px; font: inherit; }
+.pr-milestone .picker:disabled { opacity: .5; cursor: progress; }
+/* In every state of the button: its own hover and open rules would turn it back. */
+.pr-milestone.untriaged, .pr-milestone.untriaged button.picker,
+.pr-milestone.untriaged button.picker:hover:not(:disabled), .pr-milestone.untriaged button.picker[aria-expanded=true] { color: var(--warn); }
+.pr-milestone.untriaged .picker { border-color: color-mix(in srgb, var(--warn) 50%, transparent); }
 
 .badge { padding: 1px 6px; border-radius: 9px; background: var(--line); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; }
 .badge.open { background: #1f4d2e; color: #9ae6b4; }
@@ -1184,19 +1181,63 @@ main.dead { opacity: .45; filter: grayscale(1); }
 }
 #keys-note { margin: 10px 0 0; font-size: 12px; color: var(--dim); max-width: 44ch; }
 
-/* --- PR pane header: switcher, sync light --- */
-.pane > header select {
-  /* Takes the header's spare width; min-width:0 lets a long PR title ellipsize
-     instead of pushing the sync light and refresh glyph off the edge. */
-  flex: 1; min-width: 0; padding: 2px 4px; font: inherit; font-size: 12px;
-  color: var(--dim); background: var(--bg);
-  border: 1px solid var(--line); border-radius: 4px;
+/* --- A picker (picker.js): the button, and the list it opens ---
+   The button is drawn as the <select> it replaced was: a bordered box with
+   the value in it, which ellipsizes, and a caret at its end. `button.picker`
+   so the rules win over `.pane > header button`'s, which would take its
+   border and push it to the right edge. */
+button.picker {
+  display: flex; align-items: center; gap: 6px; min-width: 0; margin-left: 0; padding: 2px 4px 2px 6px;
+  font: inherit; font-size: 12px; text-align: left; cursor: pointer;
+  color: var(--dim); background: var(--bg); border: 1px solid var(--line); border-radius: 4px;
 }
-.pane > header select:hover:not(:disabled) { color: var(--fg); }
-.pane > header select:disabled, .pane > header button:disabled {
+button.picker:hover:not(:disabled), button.picker[aria-expanded=true] { color: var(--fg); }
+button.picker[aria-expanded=true] { border-color: var(--accent); }
+button.picker[hidden] { display: none; }
+.picker-value { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.picker .caret { flex: none; font-size: 10px; }
+/* The list: under its button and at least as wide, or over it where the
+   window's foot would cut it off. On <body>, anchored by the name picker()
+   gives the button and sets here as `position-anchor`. The search field does
+   not scroll with the rows. */
+.picker-pop {
+  position: fixed; inset: auto; top: anchor(bottom); left: anchor(left);
+  position-try-fallbacks: flip-block, flip-inline, flip-block flip-inline;
+  min-width: max(anchor-size(width), 16em); max-width: min(44em, calc(100vw - 16px)); max-height: min(60vh, 32em);
+  margin: 2px 0; padding: 0; box-sizing: border-box; overflow: hidden;
+  font: 400 12px/1.5 ui-sans-serif, system-ui, sans-serif; color: var(--fg);
+  background: var(--panel); border: 1px solid var(--line); border-radius: 4px; box-shadow: 0 4px 12px rgb(0 0 0 / 0.35);
+}
+.picker-pop:popover-open { display: flex; flex-direction: column; }
+.picker-search {
+  flex: none; margin: 6px; padding: 3px 6px; font: inherit; color: var(--fg);
+  background: var(--bg); border: 1px solid var(--line); border-radius: 4px;
+}
+.picker-search:focus { outline: none; border-color: var(--accent); }
+.picker-list { flex: 1; min-height: 0; overflow-y: auto; padding-bottom: 4px; }
+.picker-row { display: flex; align-items: baseline; gap: 12px; padding: 2px 8px; cursor: pointer; }
+.picker-row:hover { background: color-mix(in srgb, var(--fg) 6%, transparent); }
+/* The highlight is the row Enter picks; the current value is marked beside it. */
+.picker-row[aria-selected=true] { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+.picker-row[aria-current=true] .picker-text { font-weight: 600; }
+.picker-row[aria-disabled=true] { color: var(--dim); opacity: .6; cursor: not-allowed; }
+.picker-row.unlisted { border-top: 1px solid var(--line); margin-top: 4px; padding-top: 4px; color: var(--accent); }
+.picker-text { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.picker-detail { flex: none; color: var(--dim); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.picker-detail.soon { color: var(--warn); }
+.picker-detail.overdue { color: var(--fail); }
+.picker-group-label { padding: 4px 8px 0; font-size: 11px; letter-spacing: .05em; text-transform: uppercase; color: var(--dim); }
+.picker-group { border-bottom: 1px solid var(--line); padding-bottom: 4px; margin-bottom: 4px; }
+.picker-none { padding: 4px 8px 6px; color: var(--dim); }
+
+/* --- PR pane header: switcher, sync light --- */
+/* Takes the header's spare width; the value ellipsizes instead of pushing the
+   sync light and refresh glyph off the edge. */
+.pane > header button.picker { flex: 1; }
+.pane > header button:disabled {
   opacity: .4; cursor: not-allowed;
 }
-.pane > header select[hidden], .light[hidden], .pane > header button[hidden] { display: none; }
+.light[hidden], .pane > header button[hidden] { display: none; }
 /* margin-left:auto belongs to the refresh glyph alone, not to every header
    button -- these two are the ones that have had to say so. */
 .pane > header button.commit {

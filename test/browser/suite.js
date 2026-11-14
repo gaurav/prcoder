@@ -597,21 +597,61 @@ test('a short repository shares the row with the four links', { skip }, async ()
   await p.close();
 });
 
+// The pickers (picker.js): the switcher in the PR pane's header (`pr-switch`)
+// and the milestone line's (`milestone`). A picker's list is on <body>, not
+// beside its button, and its rows are drawn as it opens, so these open it to
+// read them.
+const popOf = (id) => `.picker-pop[data-picker="${id}"]`;
+const isPickerOpen = async (p, id) => (await p.locator(`${popOf(id)}:popover-open`).count()) === 1;
+const openPicker = async (p, id) => {
+  if (!await isPickerOpen(p, id)) await p.locator(`button[data-picker="${id}"]`).click();
+  await p.waitForSelector(`${popOf(id)}:popover-open`);
+};
+/** Each row's text, without the due date a milestone's row says after it. */
+const pickerRows = async (p, id) => {
+  await openPicker(p, id);
+  return p.locator(`${popOf(id)} [role=option] .picker-text`).allTextContents();
+};
+const pickRow = async (p, id, key) => {
+  await openPicker(p, id);
+  await p.locator(`${popOf(id)} [role=option][data-key="${key}"]`).click();
+};
+/**
+ * The switcher's rows as the list shows them, a stacked one indented under
+ * the one it is built on. Opens the list to read them, and shuts it again
+ * unless `keep`.
+ */
+const switcherLabels = async (p, { keep = false } = {}) => {
+  await openPicker(p, 'pr-switch');
+  const rows = await p.$$eval(`${popOf('pr-switch')} [role=option]`, (rs) => rs.map((r) =>
+    `${'  '.repeat(Number(r.dataset.depth ?? 0))}${r.querySelector('.picker-text').textContent}`));
+  if (!keep) await p.keyboard.press('Escape');
+  return rows;
+};
+const MS = '#pr-head .pr-milestone button.picker';
+/** The milestone the line's picker shows the pull request on: its number, or '' for none. */
+const milestoneOn = (p) => p.locator(MS).getAttribute('data-on');
+
 // Every pull request has a milestone line, above the state, since one on no
 // milestone is the one that needs triaging -- in the warning colour then --
 // and the line is a picker of the repository's open milestones, ranked as the
-// Issues tab groups them, with none first.
+// Issues tab groups them, with none first, each dated one saying when it is due.
 test('the milestone line is above the state, and asks for triage on no milestone', { skip }, async () => {
   const rows = await page.$$eval('#pr-head > *', (rs) => rs.map((r) => r.className));
   assert.equal(rows.indexOf('meta pr-milestone untriaged') + 1, rows.indexOf('meta pr-state'), rows.join(' | '));
-  const sel = page.locator('#pr-head .pr-milestone select');
-  await page.waitForFunction(() => document.querySelectorAll('#pr-head .pr-milestone option').length > 1);
-  assert.equal(await sel.inputValue(), '');
-  assert.deepEqual(await sel.locator('option').allTextContents(),
+  await page.waitForSelector(`${MS}[data-listed]`);
+  assert.equal(await milestoneOn(page), '');
+  assert.equal(await page.locator(`${MS} .picker-value`).textContent(), 'no milestone — needs triage');
+  assert.deepEqual(await pickerRows(page, 'milestone'),
     ['no milestone — needs triage', 'v1.0', 'Needed soon', 'Not urgent']);
-  assert.equal(await sel.locator('option[value="1"]').getAttribute('title'), 'due 2026-11-01');
+  const due = page.locator(`${popOf('milestone')} [data-key="1"] .picker-detail`);
+  assert.match(await due.textContent(), /^due /);
+  assert.equal(await due.getAttribute('title'), 'Sunday, November 1, 2026');
+  assert.equal(await page.locator(`${popOf('milestone')} .picker-detail`).count(), 1, 'only the dated one');
+  await page.keyboard.press('Escape');
+  assert.equal(await isPickerOpen(page, 'milestone'), false);
   assert.equal(await page.locator('#pr-head .pr-milestone a').count(), 0, 'nothing on GitHub to link to');
-  const [warn, colour] = await page.$eval('#pr-head .pr-milestone select', (s) =>
+  const [warn, colour] = await page.$eval(MS, (s) =>
     [getComputedStyle(document.documentElement).getPropertyValue('--warn').trim(), getComputedStyle(s).color]);
   assert.equal(colour, await page.evaluate((c) => { const d = document.createElement('i'); d.style.color = c; document.body.append(d);
     const out = getComputedStyle(d).color; d.remove(); return out; }, warn));
@@ -619,11 +659,14 @@ test('the milestone line is above the state, and asks for triage on no milestone
 
 test('a pull request on a milestone shows it picked, linked, and its own even when the list lacks it', { skip }, async () => {
   const p = await newPage({ st: { ...status, pr: { ...pr, milestone: { number: 7, title: 'v0.1', dueOn: null } } } });
-  await p.waitForFunction(() => document.querySelectorAll('#pr-head .pr-milestone option').length > 2);
-  const sel = p.locator('#pr-head .pr-milestone select');
-  assert.equal(await sel.inputValue(), '7');
-  assert.deepEqual(await sel.locator('option').allTextContents(),
-    ['no milestone', 'v1.0', 'Needed soon', 'Not urgent', 'v0.1']);
+  await p.waitForSelector(`${MS}[data-listed]`);
+  assert.equal(await milestoneOn(p), '7');
+  assert.equal(await p.locator(`${MS} .picker-value`).textContent(), 'v0.1');
+  assert.deepEqual(await pickerRows(p, 'milestone'), ['no milestone', 'v1.0', 'Needed soon', 'Not urgent', 'v0.1']);
+  // It opens on the one the pull request is on: marked, and where Enter is.
+  const own = p.locator(`${popOf('milestone')} [data-key="7"]`);
+  assert.equal(await own.getAttribute('aria-current'), 'true');
+  assert.equal(await own.getAttribute('aria-selected'), 'true');
   assert.equal(await p.locator('#pr-head .pr-milestone').getAttribute('class'), 'meta pr-milestone');
   assert.equal(await p.locator('#pr-head .pr-milestone a').getAttribute('href'), `${REPO}/milestone/7`);
   assert.equal(await p.locator('#pr-head .pr-milestone .due').count(), 0, 'an undated milestone has no due date');
@@ -645,18 +688,21 @@ test('a dated milestone says when it is due after the picker, which takes the re
     return [l.clientWidth, [...l.children].reduce((w, k) => w + k.getBoundingClientRect().width, 0) + gap * (l.children.length - 1)];
   });
   assert.ok(Math.abs(line - used) < 2, `the picker fills the line: ${used} of ${line}px`);
+  // In the list its date is in the same words, and the same red.
+  await openPicker(p, 'milestone');
+  assert.equal(await p.locator(`${popOf('milestone')} [data-key="2"] .picker-detail`).getAttribute('class'), 'picker-detail due overdue');
   await p.close();
 });
 
 // A repository with no open milestones has a picker of none alone, so the
-// options cannot say the list has landed; `data-listed` does, for tools/browser.mjs,
+// rows cannot say the list has landed; `data-listed` does, for tools/browser.mjs,
 // whose wait for a second option ran its full thirty seconds there.
 test('the picker says when its list has landed, even an empty one', { skip }, async () => {
   const p = await newPage();
   await p.route('**/api/milestones', (r) => r.fulfill({ json: { ...MILESTONES, milestones: [] } }));
   await p.reload();
-  await p.waitForSelector('#pr-head .pr-milestone select[data-listed]', { state: 'attached', timeout: 5_000 });
-  assert.deepEqual(await p.locator('#pr-head .pr-milestone option').allTextContents(), ['no milestone — needs triage']);
+  await p.waitForSelector(`${MS}[data-listed]`, { timeout: 5_000 });
+  assert.deepEqual(await pickerRows(p, 'milestone'), ['no milestone — needs triage']);
   await p.close();
 });
 
@@ -681,35 +727,19 @@ test('a milestone due today says it is overdue once the day has passed', { skip 
 // GitHub's answer, out of the warning colour, without waiting for a poll.
 test('picking a milestone sends it with the pull request, and the line takes the answer', { skip }, async () => {
   const p = await newPage();
-  await p.waitForFunction(() => document.querySelectorAll('#pr-head .pr-milestone option').length > 1);
-  await p.locator('#pr-head .pr-milestone select').selectOption('4');
+  await p.waitForSelector(`${MS}[data-listed]`);
+  await pickRow(p, 'milestone', '4');
   await p.waitForSelector('#pr-head .pr-milestone:not(.untriaged) a');
+  assert.equal(await isPickerOpen(p, 'milestone'), false, 'a pick shuts the list');
   assert.deepEqual(p.milestonePicks, [{ url: pr.url, number: 4 }]);
-  assert.equal(await p.locator('#pr-head .pr-milestone select').inputValue(), '4');
+  assert.equal(await milestoneOn(p), '4');
   assert.equal(await p.locator('#pr-head .pr-milestone a').getAttribute('href'), `${REPO}/milestone/4`);
-  await p.locator('#pr-head .pr-milestone select').selectOption('');
+  // The one it is on already is no pick, and no write.
+  await pickRow(p, 'milestone', '4');
+  assert.equal(await isPickerOpen(p, 'milestone'), false);
+  await pickRow(p, 'milestone', '');
   await p.waitForSelector('#pr-head .pr-milestone.untriaged');
-  assert.deepEqual(p.milestonePicks.at(-1), { url: pr.url, number: null });
-  await p.close();
-});
-
-// The server refuses a pick about a pull request that is no longer on screen,
-// which it can only do if the page says which one the pick was about: reading
-// that off the latest poll said the one the pane had just moved to, the check
-// passed, and the other pull request was moved instead.
-test('a pick names the pull request its picker was drawn for, even once the pane has moved on', { skip }, async () => {
-  const p = await newPage({ clock: true });
-  await p.waitForFunction(() => document.querySelectorAll('#pr-head .pr-milestone option').length > 1);
-  const picker = await p.$('#pr-head .pr-milestone select');
-  await p.focus('#pr-head .pr-milestone select');
-  await p.route('**/api/status', (r) => r.fulfill({ json: { ...status, pr: { ...pr, url: `${REPO}/pull/999`, number: 999, title: 'Another pull request' } } }));
-  const polled = p.waitForResponse('**/api/status');
-  await p.clock.fastForward(61_000);
-  await polled;
-  await p.waitForTimeout(200);
-  const sent = p.waitForRequest('**/api/pr/milestone');
-  await picker.evaluate((s) => { s.value = '4'; s.dispatchEvent(new Event('change')); });
-  assert.deepEqual((await sent).postDataJSON(), { url: pr.url, number: 4 });
+  assert.deepEqual(p.milestonePicks, [{ url: pr.url, number: 4 }, { url: pr.url, number: null }]);
   await p.close();
 });
 
@@ -718,7 +748,7 @@ test('a pick names the pull request its picker was drawn for, even once the pane
 // rather than nothing until the next poll, with hovering the picker throttled.
 test('moving to another repository during a read of the milestones reads them again for it', { skip }, async () => {
   const p = await newPage({ clock: true });
-  await p.waitForFunction(() => document.querySelectorAll('#pr-head .pr-milestone option').length > 1);
+  await p.waitForSelector(`${MS}[data-listed]`);
   let release;
   const held = new Promise((r) => { release = r; });
   const asked = [];
@@ -729,17 +759,18 @@ test('moving to another repository during a read of the milestones reads them ag
   });
   await p.clock.fastForward(11_000);
   const first = p.waitForRequest('**/api/milestones');
-  await p.locator('#pr-head .pr-milestone select').hover();
+  await p.locator(MS).hover();
   await first;
   await p.route('**/api/status', (r) => r.fulfill({ json: { ...status, pr: { ...pr, url: 'https://github.com/o/elsewhere/pull/5', number: 5 } } }));
   const polled = p.waitForResponse('**/api/status');
   await p.clock.fastForward(61_000);
   await polled;
-  await p.waitForFunction(() => document.querySelector('#pr-head .pr-milestone select').options.length === 1);
+  await p.waitForSelector(`${MS}[data-pr$="/o/elsewhere/pull/5"]:not([data-listed])`);
   const again = p.waitForRequest('**/api/milestones');
   release();
   await again;
-  await p.locator('#pr-head .pr-milestone option', { hasText: 'Theirs' }).waitFor({ state: 'attached' });
+  await p.waitForSelector(`${MS}[data-listed]`);
+  assert.deepEqual(await pickerRows(p, 'milestone'), ['no milestone — needs triage', 'Theirs']);
   assert.equal(asked.length, 2);
   await p.close();
 });
@@ -752,7 +783,7 @@ test('a failed read of the milestones waits for the picker to be reached before 
   await p.unroute('**/api/milestones');
   await p.route('**/api/milestones', (r) => { asked += 1; return asked === 1 ? r.fulfill({ status: 500, json: { error: 'no' } }) : r.fulfill({ json: MILESTONES }); });
   await p.reload();
-  await p.waitForSelector('#pr-head .pr-milestone select');
+  await p.waitForSelector(MS);
   await p.waitForTimeout(200);
   const before = asked;
   assert.ok(before >= 1, 'the read was made');
@@ -762,8 +793,8 @@ test('a failed read of the milestones waits for the picker to be reached before 
   await polled;
   await p.locator('#pr-head .pr-title', { hasText: 'Retitled on GitHub' }).waitFor();
   assert.equal(asked, before, 'a repaint did not read them again');
-  await p.locator('#pr-head .pr-milestone select').hover();
-  await p.waitForFunction(() => document.querySelectorAll('#pr-head .pr-milestone option').length > 1);
+  await p.locator(MS).hover();
+  await p.waitForSelector(`${MS}[data-listed]`);
   await p.close();
 });
 
@@ -772,11 +803,11 @@ test('a failed read of the milestones waits for the picker to be reached before 
 // picker offered nothing until they had passed.
 test('a failed read for a new repository is tried again as soon as the picker is reached', { skip }, async () => {
   const p = await newPage({ clock: true });
-  await p.waitForFunction(() => document.querySelectorAll('#pr-head .pr-milestone option').length > 1);
+  await p.waitForSelector(`${MS}[data-listed]`);
   // A fresh list for this repository, read now, starts the ten seconds.
   await p.clock.fastForward(11_000);
   const read = p.waitForResponse('**/api/milestones');
-  await p.locator('#pr-head .pr-milestone select').hover();
+  await p.locator(MS).hover();
   await read;
   let asked = 0;
   await p.route('**/api/milestones', (r) => {
@@ -792,9 +823,10 @@ test('a failed read for a new repository is tried again as soon as the picker is
   await p.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
   await p.clock.runFor(100);
   await failed;
-  await p.waitForFunction(() => document.querySelector('#pr-head .pr-milestone select').options.length === 1);
-  await p.locator('#pr-head .pr-milestone select').hover();
-  await p.locator('#pr-head .pr-milestone option', { hasText: 'Theirs' }).waitFor({ state: 'attached', timeout: 5_000 });
+  await p.waitForSelector(`${MS}[data-pr$="/o/elsewhere/pull/5"]:not([data-listed])`);
+  await p.locator(MS).hover();
+  await p.waitForSelector(`${MS}[data-listed]`, { timeout: 5_000 });
+  assert.deepEqual(await pickerRows(p, 'milestone'), ['no milestone — needs triage', 'Theirs']);
   assert.equal(asked, 2);
   await p.close();
 });
@@ -805,129 +837,98 @@ test('a failed read for a new repository is tried again as soon as the picker is
 // pick had been undone, with a second one there to be made.
 test('a pick on its way survives a repaint, disabled and showing what was picked', { skip }, async () => {
   const p = await newPage({ clock: true });
-  await p.waitForFunction(() => document.querySelectorAll('#pr-head .pr-milestone option').length > 1);
+  await p.waitForSelector(`${MS}[data-listed]`);
   let release;
   const held = new Promise((r) => { release = r; });
   await p.route('**/api/pr/milestone', async (r) => { await held; return r.fulfill({ json: { milestone: { number: 4, title: 'Needed soon', dueOn: null } } }); });
   await p.route('**/api/status', (r) => r.fulfill({ json: { ...status, pr: { ...pr, title: 'Retitled on GitHub' } } }));
   const sent = p.waitForRequest('**/api/pr/milestone');
-  await p.locator('#pr-head .pr-milestone select').selectOption('4');
+  await pickRow(p, 'milestone', '4');
   await sent;
   const polled = p.waitForResponse('**/api/status');
   await p.clock.fastForward(61_000);
   await polled;
   await p.locator('#pr-head .pr-title', { hasText: 'Retitled on GitHub' }).waitFor();
-  const sel = p.locator('#pr-head .pr-milestone select');
+  const sel = p.locator(MS);
   assert.equal(await sel.isDisabled(), true, 'after a poll');
-  assert.equal(await sel.inputValue(), '4');
+  assert.equal(await sel.locator('.picker-value').textContent(), 'Needed soon');
   await p.locator('#pr-head .tabs button', { hasText: 'Stack' }).click();
   assert.equal(await sel.isDisabled(), true, 'after a tab click');
-  assert.equal(await sel.inputValue(), '4');
+  assert.equal(await milestoneOn(p), '4');
+  // Disabled, it opens no list to pick another from.
+  await sel.click({ force: true });
+  assert.equal(await isPickerOpen(p, 'milestone'), false);
   release();
-  await p.waitForSelector('#pr-head .pr-milestone:not(.untriaged) select:not(:disabled)');
-  assert.equal(await sel.inputValue(), '4');
+  await p.waitForSelector(`#pr-head .pr-milestone:not(.untriaged) button.picker:not(:disabled)`);
+  assert.equal(await milestoneOn(p), '4');
   await p.close();
 });
 
-// Every change used to write to GitHub at once, and a closed select changes on
-// a bare key: a letter on the way to the terminal moved the pull request. `seen`
-// is there so this cannot pass on a select that ignored the letter.
-test('a letter that finds an option in a closed picker changes nothing and writes nothing', { skip }, async () => {
+// What #188 was about. The line was a native select, whose every change wrote
+// to GitHub and which changes on a bare key while it is closed: a letter on
+// its way to the terminal moved the pull request, and an arrow did on Linux
+// and Windows. The picker's button takes no key but the ones that open it,
+// and the wheel over it scrolls nothing into being picked.
+test('no key and no wheel on the closed milestone picker picks anything', { skip }, async () => {
   const p = await newPage();
-  await p.waitForFunction(() => document.querySelectorAll('#pr-head .pr-milestone option').length > 1);
-  await p.evaluate(() => {
-    window.seen = [];
-    document.querySelector('#pr-head .pr-milestone select').addEventListener('change', (e) => window.seen.push(e.target.value), true);
-  });
-  await p.focus('#pr-head .pr-milestone select');
-  await p.keyboard.press('n');
-  await p.waitForTimeout(200);
-  assert.deepEqual(await p.evaluate(() => window.seen), ['4'], 'the letter did change the select');
-  assert.equal(p.milestonePicks, undefined, 'nothing went to GitHub');
-  assert.equal(await p.locator('#pr-head .pr-milestone select').inputValue(), '');
-  await p.close();
-});
-
-// Keys in the sequence each platform sends them, since no one machine has them
-// all. An arrow on a closed select moves it on Windows and Linux, and opens a
-// menu on a Mac; a headless browser here opens no dropdown Playwright's keys can
-// reach, and sends no change at all for Alt+Down, Space, Enter or F4 then an
-// arrow and Enter (tried 2026-11-02). So these say what the picker does with a
-// key and a change, not that the browser sends them.
-// `wait` is ms between the key and the change; a key reaches only a focused select.
-const keyThenChange = (p, key, { value = '4', wait = 0, up = false } = {}) => p.evaluate(async ({ key, value, wait, up }) => {
-  const sel = document.querySelector('#pr-head .pr-milestone select');
-  sel.focus();
-  sel.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
-  if (up) sel.dispatchEvent(new KeyboardEvent('keyup', { key, bubbles: true }));
-  if (wait) await new Promise((r) => { setTimeout(r, wait); });
-  sel.value = value;
-  sel.dispatchEvent(new Event('change', { bubbles: true }));
-}, { key, value, wait, up });
-
-test('a change during a browsing key is put back, and one on a choosing key is written', { skip }, async () => {
-  const p = await newPage();
-  await p.waitForFunction(() => document.querySelectorAll('#pr-head .pr-milestone option').length > 1);
-  const sel = p.locator('#pr-head .pr-milestone select');
-  for (const key of ['ArrowDown', 'ArrowUp', 'PageDown', 'Home', 'End', 'n']) {
-    await keyThenChange(p, key);
-    assert.equal(await sel.inputValue(), '', key);
-    await p.waitForTimeout(20);
+  await p.waitForSelector(`${MS}[data-listed]`);
+  await p.focus(MS);
+  for (const key of ['n', 'v', 'ArrowRight', 'ArrowLeft', 'PageDown', 'PageUp', 'Home', 'End']) {
+    await p.keyboard.press(key);
+    assert.equal(await isPickerOpen(p, 'milestone'), false, key);
+    assert.equal(await milestoneOn(p), '', key);
   }
+  await p.locator(MS).hover();
+  await p.mouse.wheel(0, 300);
+  await p.mouse.wheel(0, -300);
+  await p.waitForTimeout(100);
+  assert.equal(await milestoneOn(p), '');
   assert.equal(p.milestonePicks, undefined, 'nothing went to GitHub');
-  await keyThenChange(p, 'Enter');
+  await p.close();
+});
+
+// In the open list the arrows move a highlight and letters narrow the rows,
+// and neither is a pick: that is Enter on the highlighted row, or a click.
+test('arrows and letters in the open milestone list only browse, and Enter picks the highlighted row', { skip }, async () => {
+  const p = await newPage();
+  await p.waitForSelector(`${MS}[data-listed]`);
+  await p.focus(MS);
+  await p.keyboard.press('ArrowDown');
+  await p.waitForSelector(`${popOf('milestone')}:popover-open`);
+  assert.ok(await p.evaluate(() => document.activeElement.matches('.picker-search')), 'the caret is in the search field');
+  const at = () => p.locator(`${popOf('milestone')} [role=option][aria-selected=true]`).getAttribute('data-key');
+  assert.equal(await at(), '', 'on the row the pull request is on: none');
+  await p.keyboard.press('ArrowDown');
+  await p.keyboard.press('ArrowDown');
+  assert.equal(await at(), '4');
+  assert.equal(await p.locator(`${popOf('milestone')} .picker-search`).getAttribute('aria-activedescendant'),
+    await p.locator(`${popOf('milestone')} [data-key="4"]`).getAttribute('id'), 'and a screen reader is told which');
+  await p.keyboard.press('End');
+  assert.equal(await at(), '3');
+  await p.keyboard.press('ArrowDown');
+  assert.equal(await at(), '3', 'the list stops at its end');
+  await p.keyboard.press('Home');
+  assert.equal(await at(), '');
+  await p.keyboard.type('not');
+  assert.deepEqual(await pickerRows(p, 'milestone'), ['Not urgent']);
+  assert.equal(await at(), '3', 'the first match');
+  await p.waitForTimeout(100);
+  assert.equal(p.milestonePicks, undefined, 'nothing went to GitHub yet');
+  await p.keyboard.press('Escape');
+  assert.equal(await isPickerOpen(p, 'milestone'), false);
+  assert.equal(p.milestonePicks, undefined, 'nor on Escape');
+  assert.ok(await p.evaluate(() => document.activeElement.matches('#pr-head .pr-milestone button.picker')), 'the focus is back on the button');
+  // Opened again it has forgotten what was typed.
+  await p.keyboard.press('ArrowDown');
+  assert.equal((await pickerRows(p, 'milestone')).length, 4);
+  await p.keyboard.type('zzz');
+  assert.equal(await p.locator(`${popOf('milestone')} .picker-none`).textContent(), 'no open milestone matches');
+  await p.keyboard.press('Enter');
+  assert.equal(await isPickerOpen(p, 'milestone'), true, 'Enter on no row is nothing');
+  await p.locator(`${popOf('milestone')} .picker-search`).fill('soon');
+  await p.keyboard.press('Enter');
   await p.waitForSelector('#pr-head .pr-milestone:not(.untriaged) a');
   assert.deepEqual(p.milestonePicks, [{ url: pr.url, number: 4 }]);
-  await p.close();
-});
-
-// An arrow opens a native menu on a Mac, which keeps the keyup. The choice from
-// that menu comes later, on no key the page saw, and has to count.
-test('a pick after a browsing key whose keyup never came is written', { skip }, async () => {
-  const p = await newPage();
-  await p.waitForFunction(() => document.querySelectorAll('#pr-head .pr-milestone option').length > 1);
-  await keyThenChange(p, 'ArrowDown', { wait: 400 });
-  await p.waitForSelector('#pr-head .pr-milestone:not(.untriaged) a');
-  assert.deepEqual(p.milestonePicks, [{ url: pr.url, number: 4 }]);
-  await p.close();
-});
-
-// The guard was a flag a zero-delay timer cleared, which held only while the
-// browser sent the change before that timer ran; nothing promises the order.
-test('a change that comes a little after a browsing key is put back too', { skip }, async () => {
-  const p = await newPage();
-  await p.waitForFunction(() => document.querySelectorAll('#pr-head .pr-milestone option').length > 1);
-  for (const key of ['ArrowDown', 'n']) {
-    await keyThenChange(p, key, { wait: 50 });
-    assert.equal(await p.locator('#pr-head .pr-milestone select').inputValue(), '', key);
-  }
-  await p.waitForTimeout(100);
-  assert.equal(p.milestonePicks, undefined, 'nothing went to GitHub');
-  await p.close();
-});
-
-// Some browsers have sent the change for a key only as the select loses the
-// focus: before the blur event, with the focus already elsewhere, or after it.
-test('a key\'s change sent as the focus leaves is put back, in either order', { skip }, async () => {
-  const p = await newPage();
-  await p.waitForFunction(() => document.querySelectorAll('#pr-head .pr-milestone option').length > 1);
-  const leave = (before) => p.evaluate(async (before) => {
-    const sel = document.querySelector('#pr-head .pr-milestone select');
-    sel.focus();
-    sel.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
-    sel.value = '4';
-    await new Promise((r) => { setTimeout(r, 400); });
-    const send = () => { if (sel.value !== '4') sel.value = '4'; sel.dispatchEvent(new Event('change', { bubbles: true })); };
-    // A capturing listener on the window runs before the select's own onblur.
-    if (before) window.addEventListener('blur', (e) => { if (e.target === sel) send(); }, { capture: true, once: true });
-    document.getElementById('queue-input').focus();
-    if (!before) sel.dispatchEvent(new Event('change', { bubbles: true }));
-    return sel.value;
-  }, before);
-  assert.equal(await leave(true), '', 'sent before the blur event');
-  assert.equal(await leave(false), '', 'sent after it');
-  await p.waitForTimeout(100);
-  assert.equal(p.milestonePicks, undefined, 'nothing went to GitHub');
   await p.close();
 });
 
@@ -937,92 +938,110 @@ test('a key\'s change sent as the focus leaves is put back, in either order', { 
 test('a refused milestone pick says why and puts the picker back', { skip }, async () => {
   const p = await newPage();
   await p.route('**/api/pr/milestone', (r) => r.fulfill({ status: 500, json: { error: 'gh: Validation Failed (HTTP 422)' } }));
-  await p.waitForFunction(() => document.querySelectorAll('#pr-head .pr-milestone option').length > 1);
-  await p.locator('#pr-head .pr-milestone select').selectOption('4');
+  await p.waitForSelector(`${MS}[data-listed]`);
+  await pickRow(p, 'milestone', '4');
   await p.locator('#toast.bad', { hasText: 'Validation Failed' }).waitFor();
-  await p.waitForSelector('#pr-head .pr-milestone.untriaged select:not(:disabled)');
-  assert.equal(await p.locator('#pr-head .pr-milestone select').inputValue(), '');
+  await p.waitForSelector('#pr-head .pr-milestone.untriaged button.picker:not(:disabled)');
+  assert.equal(await milestoneOn(p), '');
   await p.close();
 });
 
-// A new picker in place of one with its dropdown open closes the dropdown. But
-// a select keeps the focus after its dropdown closes, so holding the whole head
-// for the focus left its title, state and tabs stale until a click elsewhere.
-// So the rest of the head is redrawn around the very same picker.
-test('a poll that lands while the milestone picker has the focus redraws the head around it', { skip }, async () => {
+// The list is not in the head, so the head is redrawn whole by a poll and the
+// list stays as it was: open, with what was typed and the caret in its field.
+// With the native select the page had to guess at an open dropdown from the
+// focus and draw the head around the very same node.
+test('a poll that lands while the milestone list is open redraws the head and leaves the list open', { skip }, async () => {
   const p = await newPage({ clock: true });
-  await p.waitForFunction(() => document.querySelectorAll('#pr-head .pr-milestone option').length > 1);
+  await p.waitForSelector(`${MS}[data-listed]`);
   await p.route('**/api/status', (r) => r.fulfill({ json: { ...status, pr: { ...pr, title: 'Retitled on GitHub', state: 'MERGED', updatedAt: '2026-09-20T00:00:00Z', milestone: null } } }));
-  await p.focus('#pr-head .pr-milestone select');
-  await p.evaluate(() => { document.querySelector('#pr-head .pr-milestone select').dataset.marked = '1'; });
+  await openPicker(p, 'milestone');
+  await p.keyboard.type('n');
+  await p.keyboard.press('ArrowDown');
   const polled = p.waitForResponse('**/api/status');
   await p.clock.fastForward(61_000);
   await polled;
   await p.locator('#pr-head .pr-title', { hasText: 'Retitled on GitHub' }).waitFor();
   assert.equal(await p.locator('#pr-head .badge').textContent(), 'merged');
-  assert.equal(await p.locator('#pr-head .pr-milestone select[data-marked]').count(), 1, 'the same picker');
-  assert.ok(await p.evaluate(() => document.activeElement?.dataset.marked === '1'), 'with the focus still');
+  assert.equal(await isPickerOpen(p, 'milestone'), true);
+  assert.equal(await p.locator(`${popOf('milestone')} .picker-search`).inputValue(), 'n');
+  assert.ok(await p.evaluate(() => document.activeElement.matches('.picker-search')), 'with the focus still');
+  assert.equal(await p.locator(`${popOf('milestone')} [aria-selected=true]`).getAttribute('data-key'), '4', 'and the highlight where it was');
+  // Anchored to the button the redraw drew, not left where the old one was.
+  const [pop, button] = [await p.locator(popOf('milestone')).boundingBox(), await p.locator(MS).boundingBox()];
+  assert.ok(Math.abs(pop.y - (button.y + button.height)) < 6, `under its button: ${pop.y} against ${button.y + button.height}`);
   const rows = await p.$$eval('#pr-head > *', (rs) => rs.map((r) => r.className.split(' ').slice(0, 2).join(' ')));
-  assert.ok(rows.indexOf('meta pr-milestone') < rows.indexOf('meta pr-state'), rows.join(' | '));
   assert.equal(rows.filter((r) => r === 'meta pr-milestone').length, 1, 'one line');
   await p.close();
 });
 
-// The read that reaching for the picker starts is for the dropdown about to be
-// used, so its answer has to reach that very picker, which is kept: into the
-// node, without a new one, and with the pull request's milestone still chosen.
-test('milestones read as the picker takes the focus are added to it in place', { skip }, async () => {
+// The read that opening the list starts is for the list being read, so its
+// answer has to reach it where it is.
+test('milestones read as the list opens are added to it in place', { skip }, async () => {
   const p = await newPage({ clock: true, st: { ...status, pr: { ...pr, milestone: { number: 4, title: 'Needed soon', dueOn: null } } } });
-  await p.waitForFunction(() => document.querySelectorAll('#pr-head .pr-milestone option').length > 2);
+  await p.waitForSelector(`${MS}[data-listed]`);
   await p.route('**/api/milestones', (r) => r.fulfill({ json: { ...MILESTONES, milestones: [
     { number: 4, title: 'Needed soon', dueOn: null }, { number: 1, title: 'v1.0', dueOn: '2026-11-01T00:00:00Z' },
     { number: 6, title: 'Made since', dueOn: null }] } }));
   await p.clock.fastForward(11_000);
-  await p.evaluate(() => { document.querySelector('#pr-head .pr-milestone select').dataset.marked = '1'; });
   const read = p.waitForResponse('**/api/milestones');
-  await p.focus('#pr-head .pr-milestone select');
+  await p.focus(MS);
+  await p.keyboard.press('ArrowDown');
   await read;
-  await p.locator('#pr-head .pr-milestone select[data-marked] option', { hasText: 'Made since' }).waitFor({ state: 'attached' });
-  const sel = p.locator('#pr-head .pr-milestone select');
-  assert.deepEqual(await sel.locator('option').allTextContents(), ['no milestone', 'v1.0', 'Made since', 'Needed soon'], 'in rank, and "Not urgent" has gone');
-  assert.equal(await sel.inputValue(), '4');
-  assert.ok(await p.evaluate(() => document.activeElement?.dataset.marked === '1'), 'with the focus still');
+  await p.locator(`${popOf('milestone')} [role=option]`, { hasText: 'Made since' }).waitFor();
+  assert.deepEqual(await pickerRows(p, 'milestone'), ['no milestone', 'v1.0', 'Made since', 'Needed soon'], 'in rank, and "Not urgent" has gone');
+  assert.equal(await p.locator(`${popOf('milestone')} [aria-selected=true]`).getAttribute('data-key'), '4', 'the highlight stays on its row');
+  assert.ok(await p.evaluate(() => document.activeElement.matches('.picker-search')), 'with the focus still');
   await p.close();
 });
 
-// The same in the other direction: a kept picker follows the pull request.
-test('a focused picker follows a milestone changed on GitHub', { skip }, async () => {
+// The same in the other direction: an open list follows the pull request.
+test('an open milestone list follows a milestone changed on GitHub', { skip }, async () => {
   const p = await newPage({ clock: true });
-  await p.waitForFunction(() => document.querySelectorAll('#pr-head .pr-milestone option').length > 1);
+  await p.waitForSelector(`${MS}[data-listed]`);
   await p.route('**/api/status', (r) => r.fulfill({ json: { ...status, pr: { ...pr, milestone: { number: 3, title: 'Not urgent', dueOn: null } } } }));
-  await p.focus('#pr-head .pr-milestone select');
-  await p.evaluate(() => { document.querySelector('#pr-head .pr-milestone select').dataset.marked = '1'; });
+  await openPicker(p, 'milestone');
   const polled = p.waitForResponse('**/api/status');
   await p.clock.fastForward(61_000);
   await polled;
-  await p.waitForSelector('#pr-head .pr-milestone:not(.untriaged) select[data-marked]');
-  assert.equal(await p.locator('#pr-head .pr-milestone select').inputValue(), '3');
-  assert.equal(await p.locator('#pr-head .pr-milestone option').first().textContent(), 'no milestone', 'no longer asking for triage');
+  await p.waitForSelector('#pr-head .pr-milestone:not(.untriaged) button.picker');
+  assert.equal(await milestoneOn(p), '3');
+  assert.equal(await p.locator(`${popOf('milestone')} [aria-current=true]`).getAttribute('data-key'), '3');
+  assert.equal((await pickerRows(p, 'milestone'))[0], 'no milestone', 'no longer asking for triage');
   await p.close();
 });
 
-// A picker kept for one pull request is a pick about the wrong one once the
-// pane has moved, so that closes the dropdown rather than keeping it.
-test('a poll that moves the pane to another pull request replaces the focused picker', { skip }, async () => {
+// A list open for one pull request is a pick about the wrong one once the pane
+// has moved, so the move shuts it. The server refuses a pick about a pull
+// request no longer on screen, which this keeps from ever being sent.
+test('a poll that moves the pane to another pull request shuts the open milestone list', { skip }, async () => {
   const p = await newPage({ clock: true });
-  await p.waitForFunction(() => document.querySelectorAll('#pr-head .pr-milestone option').length > 1);
+  await p.waitForSelector(`${MS}[data-listed]`);
   const other = { ...pr, url: `${REPO}/pull/999`, number: 999, title: 'Another pull request' };
   await p.route('**/api/status', (r) => r.fulfill({ json: { ...status, pr: other } }));
-  await p.focus('#pr-head .pr-milestone select');
-  await p.evaluate(() => { document.querySelector('#pr-head .pr-milestone select').dataset.marked = '1'; });
+  await openPicker(p, 'milestone');
   const polled = p.waitForResponse('**/api/status');
   await p.clock.fastForward(61_000);
   await polled;
   await p.locator('#pr-head .pr-title', { hasText: 'Another pull request' }).waitFor();
-  assert.equal(await p.locator('#pr-head .pr-milestone select[data-marked]').count(), 0);
-  await p.locator('#pr-head .pr-milestone select').selectOption('4');
+  assert.equal(await isPickerOpen(p, 'milestone'), false);
+  await pickRow(p, 'milestone', '4');
   await p.waitForSelector('#pr-head .pr-milestone:not(.untriaged) a');
   assert.deepEqual(p.milestonePicks, [{ url: other.url, number: 4 }]);
+  await p.close();
+});
+
+// And so does one that leaves the pane with no pull request at all, where
+// there is no milestone line for the list to hang from.
+test('a poll that leaves the branch with no pull request shuts the open milestone list', { skip }, async () => {
+  const p = await newPage({ clock: true });
+  await p.waitForSelector(`${MS}[data-listed]`);
+  await p.route('**/api/status', (r) => r.fulfill({ json: { ...status, pr: null } }));
+  await openPicker(p, 'milestone');
+  const polled = p.waitForResponse('**/api/status');
+  await p.clock.fastForward(61_000);
+  await polled;
+  await p.waitForSelector('#pr-head .pr-milestone', { state: 'detached' });
+  assert.equal(await isPickerOpen(p, 'milestone'), false);
   await p.close();
 });
 
@@ -4451,13 +4470,14 @@ test('stacked PRs nest in the switcher and the Stack tab, each linked and switch
     switched.push(r.request().postDataJSON().url);
     return r.fulfill({ json: status });
   });
-  await fresh.waitForSelector(`#pr-switch option[value="${REPO}/pull/14"]`, { state: 'attached' });
-  assert.deepEqual(await fresh.$$eval('#pr-switch option', (os) => os.map((o) => o.textContent.replaceAll('\u00a0', ' '))), [
-    'no pull request',
+  await fresh.waitForSelector('#pr-switch[data-listed]');
+  assert.deepEqual(await switcherLabels(fresh), [
     '#12 A fixture pull request',
     '  └ #13 (draft) Built on the fixture',
     '    └ #14 Built on that',
   ]);
+  // The button says the one on screen, as its row does.
+  assert.equal(await fresh.locator('#pr-switch .picker-value').textContent(), '#12 A fixture pull request');
 
   const tab = fresh.locator('#pr-head .tab', { hasText: 'Stack' });
   assert.equal(await tab.textContent(), 'Stack (↑2)');
@@ -4490,17 +4510,21 @@ test('a branch with two pull requests gets an "On this branch" group, and a pick
     headRepo: 'heal-data-stewards/heal-vlmd-AI-pipeline', headOwner: 'heal-data-stewards', isCrossRepository: true };
   const two = { ...status, repos: [...status.repos, 'upstream/heal-vlmd-AI-pipeline'], branchPrs: [...status.branchPrs, theirs] };
   const fresh = await newPage({ prs: STACK, st: two });
-  await fresh.waitForSelector(`#pr-switch optgroup option[value="${theirs.url}"]`, { state: 'attached' });
-  assert.deepEqual(await fresh.$$eval('#pr-switch optgroup', (gs) => gs.map((g) => g.label)), ['On this branch']);
-  assert.deepEqual(await fresh.$$eval('#pr-switch optgroup option', (os) => os.map((o) => [o.textContent.replaceAll('\u00a0', ' '), !!o.dataset.choose])), [
-    ['#12 A fixture pull request', true],
-    ['  └ #13 (draft) Built on the fixture', false],
-    ['    └ #14 Built on that', false],
-    ['upstream/heal-vlmd-AI-pipeline#12 (draft) Into the parent', true],
+  await fresh.waitForSelector('#pr-switch[data-listed][data-rows="4"]');
+  await openPicker(fresh, 'pr-switch');
+  const groups = `${popOf('pr-switch')} .picker-group`;
+  assert.deepEqual(await fresh.$$eval(groups, (gs) => gs.map((g) => [g.getAttribute('role'), g.getAttribute('aria-label')])), [['group', 'On this branch']]);
+  assert.deepEqual(await fresh.$$eval(`${groups} [role=option]`, (rs) => rs.map((r) =>
+    `${'  '.repeat(Number(r.dataset.depth ?? 0))}${r.querySelector('.picker-text').textContent}`)), [
+    '#12 A fixture pull request',
+    '  └ #13 (draft) Built on the fixture',
+    '    └ #14 Built on that',
+    'upstream/heal-vlmd-AI-pipeline#12 (draft) Into the parent',
   ]);
   // The rest of the list, without the ones the group took.
-  assert.deepEqual(await fresh.$$eval('#pr-switch > option', (os) => os.map((o) => o.textContent)), ['no pull request']);
-  assert.equal(await fresh.inputValue('#pr-switch'), pr.url);
+  assert.equal(await fresh.locator(`${popOf('pr-switch')} .picker-list > [role=option]`).count(), 0);
+  assert.equal(await fresh.locator(`${popOf('pr-switch')} [aria-current=true]`).getAttribute('data-key'), pr.url);
+  await fresh.keyboard.press('Escape');
 
   const chosen = [];
   const switched = [];
@@ -4516,7 +4540,7 @@ test('a branch with two pull requests gets an "On this branch" group, and a pick
   await fresh.waitForSelector('#diff h1');
   const repatched = fresh.waitForRequest('**/api/diff');
   const sent = fresh.waitForResponse('**/api/pr/choose');
-  await fresh.selectOption('#pr-switch', theirs.url);
+  await pickRow(fresh, 'pr-switch', theirs.url);
   await sent;
   assert.equal((await repatched).postDataJSON().path, 'app.tsx');
   assert.deepEqual(chosen, [theirs.url]);
@@ -4528,17 +4552,17 @@ test('a branch with two pull requests gets an "On this branch" group, and a pick
   assert.equal(await fresh.locator('#pr-head .pr-state span:not(.badge)').first().textContent(), 'topic → upstream:main');
   // A stacked one is still the checkout.
   const go = fresh.waitForResponse('**/api/pr/switch');
-  await fresh.selectOption('#pr-switch', `${REPO}/pull/14`);
+  await pickRow(fresh, 'pr-switch', `${REPO}/pull/14`);
   await go;
   assert.deepEqual(switched, [`${REPO}/pull/14`]);
   await fresh.close();
 
   // One pull request on the branch: the list as it always was.
   const one = await newPage({ prs: STACK });
-  await one.waitForSelector(`#pr-switch option[value="${REPO}/pull/14"]`, { state: 'attached' });
-  assert.equal(await one.locator('#pr-switch optgroup').count(), 0);
-  // Nothing but options in the select: no group was once a "null" text node.
-  assert.deepEqual(await one.$$eval('#pr-switch', ([s]) => [...s.childNodes].filter((n) => n.nodeType !== 1).map((n) => n.textContent)), []);
+  await one.waitForSelector('#pr-switch[data-listed]');
+  await openPicker(one, 'pr-switch');
+  assert.equal(await one.locator(`${popOf('pr-switch')} .picker-group`).count(), 0);
+  assert.equal(await one.locator(`${popOf('pr-switch')} .picker-list > [role=option]`).count(), 3);
   await one.close();
 
   // And none, with more than one repository looked in: the note says where.
@@ -4550,9 +4574,9 @@ test('a branch with two pull requests gets an "On this branch" group, and a pick
   // The one picked gone by the time the server looks: no pull request in the
   // answer, which the toast says rather than throwing on.
   const gone = await newPage({ prs: STACK, st: two });
-  await gone.waitForSelector(`#pr-switch optgroup option[value="${theirs.url}"]`, { state: 'attached' });
+  await gone.waitForSelector('#pr-switch[data-listed][data-rows="4"]');
   await gone.route('**/api/pr/choose', (r) => r.fulfill({ json: { ...two, pr: null, branchPrs: [] } }));
-  await gone.selectOption('#pr-switch', theirs.url);
+  await pickRow(gone, 'pr-switch', theirs.url);
   await gone.waitForSelector('#toast:not([hidden])');
   assert.equal(await gone.textContent('#toast'), 'That pull request is gone; topic has none to show.');
   await gone.close();
@@ -4567,29 +4591,189 @@ test('a dirty tree keeps a switcher that has the group, with only its own picks 
     headRepo: 'heal-data-stewards/heal-vlmd-AI-pipeline', headOwner: 'heal-data-stewards', isCrossRepository: true };
   const dirty = { ...status, dirtyFiles: ['README.md'], branchPrs: [...status.branchPrs, theirs] };
   const fresh = await newPage({ prs: STACK, st: dirty });
-  await fresh.waitForSelector(`#pr-switch optgroup option[value="${theirs.url}"]`, { state: 'attached' });
+  await fresh.waitForSelector('#pr-switch[data-listed][data-rows="4"]');
   assert.equal(await fresh.$eval('#pr-switch', (s) => s.hidden), false);
   assert.equal(await fresh.$eval('#pr-commit', (b) => b.hidden), false);
-  assert.deepEqual(await fresh.$$eval('#pr-switch option', (os) => os.map((o) => [o.value.replace(/.*\//, ''), o.disabled])), [
-    ['', false], ['12', false], ['13', true], ['14', true], ['12', false],
-  ]);
+  const ables = async () => {
+    await openPicker(fresh, 'pr-switch');
+    return fresh.$$eval(`${popOf('pr-switch')} [role=option]`, (rs) => rs.map((r) => [r.dataset.key.replace(/.*\//, ''), r.getAttribute('aria-disabled') === 'true']));
+  };
+  assert.deepEqual(await ables(), [['12', false], ['13', true], ['14', true], ['12', false]]);
   const chosen = [];
+  const switched = [];
+  await fresh.route('**/api/pr/switch', (r) => { switched.push(r.request().postDataJSON()); return r.fulfill({ json: dirty }); });
   await fresh.route('**/api/pr/choose', (r) => { chosen.push(r.request().postDataJSON().url); return r.fulfill({ json: dirty }); });
+  // A disabled row is no pick, by a click or by Enter: the arrows step over it.
+  await fresh.locator(`${popOf('pr-switch')} [data-key="${REPO}/pull/14"]`).click({ force: true });
+  assert.equal(await isPickerOpen(fresh, 'pr-switch'), true, 'the click picked nothing');
+  await fresh.keyboard.press('ArrowDown');
+  assert.equal(await fresh.locator(`${popOf('pr-switch')} [aria-selected=true]`).getAttribute('data-key'), theirs.url, 'past #13 and #14');
+  // Nor is the row a typed number adds for one the list lacks.
+  await fresh.locator(`${popOf('pr-switch')} .picker-search`).fill('99');
+  assert.deepEqual(await ables(), [['#99', true]]);
+  await fresh.keyboard.press('Enter');
+  await fresh.locator(`${popOf('pr-switch')} .picker-search`).fill('');
   const sent = fresh.waitForResponse('**/api/pr/choose');
-  await fresh.selectOption('#pr-switch', theirs.url);
+  await pickRow(fresh, 'pr-switch', theirs.url);
   await sent;
   assert.deepEqual(chosen, [theirs.url]);
-  // Clean again on the next poll: every option back.
+  assert.deepEqual(switched, []);
+  // Clean again on the next poll: every row back.
   await fresh.route('**/api/status', (r) => r.fulfill({ json: { ...dirty, dirtyFiles: [] } }));
   await fresh.click('#pr-refresh');
   await fresh.waitForFunction(() => document.getElementById('pr-commit').hidden);
-  assert.deepEqual(await fresh.$$eval('#pr-switch option', (os) => os.map((o) => o.disabled)), [false, false, false, false, false]);
+  assert.deepEqual((await ables()).map(([, off]) => off), [false, false, false, false]);
   await fresh.close();
 
   const plain = await newPage({ prs: STACK, st: { ...status, dirtyFiles: ['README.md'] } });
   await plain.waitForFunction(() => !document.getElementById('pr-commit').hidden);
   assert.equal(await plain.$eval('#pr-switch', (s) => s.hidden), true);
+  // And Alt+. says why it opened nothing -- from the page: in the terminal,
+  // with no switcher to open, the key is the agent's.
+  await plain.evaluate(() => document.activeElement.blur());
+  await plain.keyboard.press('Alt+Period');
+  await plain.locator('#toast.bad', { hasText: 'Commit or stash your changes first' }).waitFor();
+  assert.equal(await isPickerOpen(plain, 'pr-switch'), false);
   await plain.close();
+});
+
+// What the picker is for: finding one pull request among many. A number, with
+// or without its #, finds by number, the exact one first; other text is every
+// word, in the title, the branch or the repository. Enter checks out the
+// highlighted one, and the focus goes back to where it was.
+test('typing a number or some of a title in the switcher finds the pull request, and Enter checks it out', { skip }, async () => {
+  const many = [...STACK,
+    { number: 1, title: 'The first one', headRefName: 'first', baseRefName: 'main', isDraft: false, url: `${REPO}/pull/1` },
+    { number: 140, title: 'Colour 13 files', headRefName: 'colour-files', baseRefName: 'main', isDraft: false, url: `${REPO}/pull/140` }];
+  const fresh = await newPage({ prs: many });
+  const switched = [];
+  await fresh.route('**/api/pr/switch', (r) => { switched.push(r.request().postDataJSON()); return r.fulfill({ json: status }); });
+  await fresh.waitForSelector('#pr-switch[data-listed]');
+  await openPicker(fresh, 'pr-switch');
+  const search = fresh.locator(`${popOf('pr-switch')} .picker-search`);
+  const rows = () => switcherLabels(fresh, { keep: true });
+  await search.fill('14');
+  assert.deepEqual(await rows(), ['#14 Built on that', '#140 Colour 13 files'], 'the exact number, then the ones that start with it');
+  await search.fill('#13');
+  assert.deepEqual(await rows(), ['#13 (draft) Built on the fixture', '#140 Colour 13 files'], 'then anything else the digits are in; flat, with no indent');
+  await search.fill('1');
+  assert.deepEqual(await rows(), ['#1 The first one', '#12 A fixture pull request', '#13 (draft) Built on the fixture', '#14 Built on that', '#140 Colour 13 files']);
+  await search.fill('BUILT that');
+  assert.deepEqual(await rows(), ['#14 Built on that'], 'every word, in any case');
+  await search.fill('colour-files');
+  assert.deepEqual(await rows(), ['#140 Colour 13 files'], 'by its branch');
+  await search.fill('nothing is called this');
+  assert.equal(await fresh.locator(`${popOf('pr-switch')} .picker-none`).textContent(), 'no open pull request matches');
+  await search.fill('14');
+  assert.deepEqual(switched, [], 'typing checked nothing out');
+  const sent = fresh.waitForResponse('**/api/pr/switch');
+  await fresh.keyboard.press('Enter');
+  await sent;
+  assert.deepEqual(switched, [{ url: `${REPO}/pull/14` }]);
+  assert.equal(await isPickerOpen(fresh, 'pr-switch'), false);
+  await fresh.close();
+});
+
+// The list is the open pull requests, and the one wanted may be merged or
+// closed, or opened since the list was read. A whole number no row has is
+// offered as a checkout by number, which the server looks up.
+test('a number the switcher\'s list lacks is offered as a checkout by number', { skip }, async () => {
+  const fresh = await newPage({ prs: STACK });
+  const switched = [];
+  await fresh.route('**/api/pr/switch', (r) => {
+    switched.push(r.request().postDataJSON());
+    return switched.length === 1 ? r.fulfill({ status: 500, json: { error: 'there is no pull request 99' } }) : r.fulfill({ json: status });
+  });
+  await fresh.waitForSelector('#pr-switch[data-listed]');
+  await openPicker(fresh, 'pr-switch');
+  const search = fresh.locator(`${popOf('pr-switch')} .picker-search`);
+  await search.fill('1');
+  assert.deepEqual(await switcherLabels(fresh, { keep: true }),
+    ['#12 A fixture pull request', '#13 (draft) Built on the fixture', '#14 Built on that', 'Check out #1 (not in the open list)'], 'last, under the ones the digit finds');
+  await search.fill('12');
+  assert.deepEqual(await switcherLabels(fresh, { keep: true }), ['#12 A fixture pull request'], 'not for a number the list has');
+  for (const not of ['0', '12a', '1.5', '-3']) {
+    await search.fill(not);
+    assert.equal(await fresh.locator(`${popOf('pr-switch')} .unlisted`).count(), 0, not);
+  }
+  await search.fill('#99');
+  assert.deepEqual(await switcherLabels(fresh, { keep: true }), ['Check out #99 (not in the open list)']);
+  const refused = fresh.waitForResponse('**/api/pr/switch');
+  await fresh.keyboard.press('Enter');
+  await refused;
+  assert.deepEqual(switched, [{ number: 99 }], 'a number, and no URL made up for it');
+  await fresh.locator('#toast.bad', { hasText: 'there is no pull request 99' }).waitFor();
+  // And one that is there: the pane goes to whatever the server checked out.
+  await openPicker(fresh, 'pr-switch');
+  await search.fill('7');
+  const sent = fresh.waitForResponse('**/api/pr/switch');
+  await fresh.locator(`${popOf('pr-switch')} .unlisted`).click();
+  await sent;
+  assert.deepEqual(switched[1], { number: 7 });
+  await fresh.close();
+});
+
+// What #188 was about, for the switcher: it was a native select whose change
+// ran `gh pr checkout`, and a closed select changes on a bare arrow (Linux and
+// Windows) or a letter (everywhere), so a key on its way to the terminal moved
+// the session's branch under the coding agent. Nothing guarded it.
+test('no key and no wheel on the closed switcher checks anything out, nor does leaving its list', { skip }, async () => {
+  const fresh = await newPage({ prs: STACK });
+  let switches = 0;
+  await fresh.route('**/api/pr/switch', (r) => { switches += 1; return r.fulfill({ json: status }); });
+  await fresh.waitForSelector('#pr-switch[data-listed]');
+  await fresh.focus('#pr-switch');
+  for (const key of ['b', '1', 'ArrowRight', 'ArrowLeft', 'PageDown', 'PageUp', 'Home', 'End']) {
+    await fresh.keyboard.press(key);
+    assert.equal(await isPickerOpen(fresh, 'pr-switch'), false, key);
+  }
+  await fresh.hover('#pr-switch');
+  await fresh.mouse.wheel(0, 300);
+  // ↓ opens the list, on the pull request on screen, and browsing it is not a pick.
+  await fresh.keyboard.press('ArrowDown');
+  await fresh.waitForSelector(`${popOf('pr-switch')}:popover-open`);
+  const at = () => fresh.locator(`${popOf('pr-switch')} [aria-selected=true]`).getAttribute('data-key');
+  assert.equal(await at(), pr.url);
+  await fresh.keyboard.press('ArrowDown');
+  await fresh.keyboard.press('ArrowDown');
+  assert.equal(await at(), `${REPO}/pull/14`);
+  await fresh.mouse.wheel(0, 300);
+  await fresh.keyboard.type('built');
+  await fresh.keyboard.press('Escape');
+  assert.equal(await isPickerOpen(fresh, 'pr-switch'), false);
+  assert.equal(await fresh.evaluate(() => document.activeElement.id), 'pr-switch', 'Escape hands the focus back');
+  // A click elsewhere shuts it too, and a click on the button of an open list.
+  await openPicker(fresh, 'pr-switch');
+  await fresh.locator('#queue-input').click();
+  assert.equal(await isPickerOpen(fresh, 'pr-switch'), false);
+  await openPicker(fresh, 'pr-switch');
+  await fresh.click('#pr-switch');
+  assert.equal(await isPickerOpen(fresh, 'pr-switch'), false);
+  assert.equal(await fresh.locator('#pr-switch').getAttribute('aria-expanded'), 'false');
+  // Enter on the one already checked out is no checkout either.
+  await openPicker(fresh, 'pr-switch');
+  await fresh.keyboard.press('Enter');
+  assert.equal(await isPickerOpen(fresh, 'pr-switch'), false);
+  await fresh.waitForTimeout(100);
+  assert.equal(switches, 0);
+  await fresh.close();
+});
+
+// Alt+. from the terminal, where the hands are: the list opens with the caret
+// in its search field, and leaving it gives the terminal the focus back, so
+// the next key is the agent's again.
+test('Alt+. opens the switcher from the terminal, and the focus goes back there', { skip }, async () => {
+  const fresh = await newPage({ prs: STACK });
+  await fresh.waitForSelector('#pr-switch[data-listed]');
+  await fresh.locator('#term-host').click();
+  assert.ok(await fresh.evaluate(() => document.activeElement.matches('.xterm-helper-textarea')));
+  await fresh.keyboard.press('Alt+Period');
+  await fresh.waitForSelector(`${popOf('pr-switch')}:popover-open`);
+  assert.ok(await fresh.evaluate(() => document.activeElement.matches('.picker-search')));
+  await fresh.keyboard.press('Escape');
+  assert.equal(await isPickerOpen(fresh, 'pr-switch'), false);
+  assert.ok(await fresh.evaluate(() => document.activeElement.matches('.xterm-helper-textarea')), 'back in the terminal');
+  await fresh.close();
 });
 
 // The list behind the tab is not polled, and a PR stacked from the terminal
@@ -4613,41 +4797,46 @@ test('opening the Stack tab picks up a PR stacked since the page loaded', { skip
 // longer nested under #12 in the switcher.
 const MERGED = [{ ...STACK[1], baseRefName: 'main' }, STACK[2]];
 const merged = { ...status, pr: { ...pr, state: 'MERGED' } };
-const switcherLabels = (p) => p.$$eval('#pr-switch option', (os) => os.map((o) => o.textContent.replaceAll('\u00a0', ' ')));
+/** Wait for the open switcher to show #13 on its own, as MERGED has it: opens the list. */
+const unnested = async (p) => {
+  await openPicker(p, 'pr-switch');
+  await p.waitForFunction((sel) => { const r = document.querySelector(sel); return r && !r.dataset.depth; }, `${popOf('pr-switch')} [data-key="${REPO}/pull/13"]`);
+};
 
-// A list landing while the switcher's dropdown is open replaced the options
-// under it, which closed it or moved the pick. Focus is the page's one sign
-// that it may be open, so the options wait for the switcher to lose it.
-test('the switcher keeps its options while it has focus, and takes the new list as it loses it', { skip }, async () => {
+// A list landing while the switcher's list is open brings its rows up to date
+// where they are: the list stays open, with what was typed and the caret in
+// its field. The native select this replaced closed its dropdown or moved the
+// pick when its options were replaced, so the page held them while it had the
+// focus -- the one sign it got that the dropdown might be open.
+test('an open switcher takes a new list where it is, and stays open', { skip }, async () => {
   const fresh = await newPage({ prs: STACK });
-  await fresh.waitForSelector(`#pr-switch option[value="${REPO}/pull/14"]`, { state: 'attached' });
-  const before = await switcherLabels(fresh);
-  await fresh.focus('#pr-switch');
+  await fresh.waitForSelector('#pr-switch[data-listed]');
+  await openPicker(fresh, 'pr-switch');
+  await fresh.keyboard.press('ArrowDown');
   await fresh.route('**/api/prs', (r) => r.fulfill({ json: MERGED }));
   await fresh.route('**/api/status', (r) => r.fulfill({ json: merged }));
-  // Clicked from script, so focus stays on the switcher.
+  // Clicked from script, so the list is not dismissed by the click.
   const landed = fresh.waitForResponse('**/api/prs');
   await fresh.evaluate(() => document.getElementById('pr-refresh').click());
   await landed;
-  await fresh.waitForTimeout(200);
-  assert.deepEqual(await switcherLabels(fresh), before, 'held while focused');
-  assert.equal(await fresh.inputValue('#pr-switch'), pr.url);
-  await fresh.evaluate(() => document.activeElement.blur());
-  assert.deepEqual(await switcherLabels(fresh), [
-    'no pull request',
+  await fresh.waitForFunction((sel) => !document.querySelector(sel)?.dataset.depth, `${popOf('pr-switch')} [data-key="${REPO}/pull/13"]`);
+  assert.equal(await isPickerOpen(fresh, 'pr-switch'), true);
+  assert.deepEqual(await switcherLabels(fresh, { keep: true }), [
     '#12 A fixture pull request',
     '#13 (draft) Built on the fixture',
     '  └ #14 Built on that',
   ]);
+  assert.equal(await fresh.locator(`${popOf('pr-switch')} [aria-selected=true]`).getAttribute('data-key'), `${REPO}/pull/13`, 'the highlight stays on its row');
+  assert.ok(await fresh.evaluate(() => document.activeElement.matches('.picker-search')), 'with the focus still');
   await fresh.close();
 });
 
-// Fetched on mousedown, the list landed with the dropdown already open. The
-// pointer reaching the switcher is a head start; the click that follows it,
-// within ten seconds of a list landing, asks for nothing more.
+// The pointer reaching the switcher is a head start on the list; the click
+// that follows it and opens the list, within ten seconds of a list landing,
+// asks for nothing more. Opened with neither, by Alt+., it asks as it opens.
 test('reaching for the switcher fetches the PR list, and a click right after does not', { skip }, async () => {
   const fresh = await newPage({ prs: STACK, clock: true });
-  await fresh.waitForSelector(`#pr-switch option[value="${REPO}/pull/14"]`, { state: 'attached' });
+  await fresh.waitForSelector('#pr-switch[data-listed]');
   let lists = 0;
   fresh.on('request', (q) => { if (q.url().endsWith('/api/prs')) lists++; });
   await fresh.hover('#pr-switch');
@@ -4660,8 +4849,17 @@ test('reaching for the switcher fetches the PR list, and a click right after doe
   await landed;
   assert.equal(lists, 1, 'hovering fetched it');
   await fresh.focus('#pr-switch');
+  await fresh.click('#pr-switch');
   await fresh.waitForTimeout(200);
-  assert.equal(lists, 1, 'focusing it just after did not');
+  assert.equal(lists, 1, 'focusing and opening it just after did not');
+  await fresh.keyboard.press('Escape');
+  await fresh.mouse.move(0, 0);
+  await fresh.evaluate(() => document.activeElement.blur());
+  await fresh.clock.fastForward(11_000);
+  const opened = fresh.waitForResponse('**/api/prs');
+  await fresh.keyboard.press('Alt+Period');
+  await opened;
+  assert.equal(lists, 2, 'opening it by the shortcut, with no pointer near, fetched it');
   await fresh.close();
 });
 
@@ -4686,14 +4884,13 @@ const pollCounting = async (p) => {
 
 test('a poll that finds the PR on screen merged fetches the PR list, and no other poll does', { skip }, async () => {
   const fresh = await newPage({ prs: STACK });
-  await fresh.waitForSelector(`#pr-switch option[value="${REPO}/pull/14"]`, { state: 'attached' });
+  await fresh.waitForSelector('#pr-switch[data-listed]');
   const poll = await pollCounting(fresh);
   assert.equal(await poll(), 0, 'nothing changed, so no fetch');
   await fresh.route('**/api/prs', (r) => r.fulfill({ json: MERGED }));
   assert.equal(await poll(merged), 1, 'the merge fetched the list');
   // #12 stays, as the PR on screen, but #13 is no longer built on it.
   assert.deepEqual(await switcherLabels(fresh), [
-    'no pull request',
     '#12 A fixture pull request',
     '#13 (draft) Built on the fixture',
     '  └ #14 Built on that',
@@ -4704,7 +4901,7 @@ test('a poll that finds the PR on screen merged fetches the PR list, and no othe
 
 test('a poll that finds the PR on screen closed, or another PR in its place, fetches the PR list', { skip }, async () => {
   const fresh = await newPage({ prs: STACK });
-  await fresh.waitForSelector(`#pr-switch option[value="${REPO}/pull/14"]`, { state: 'attached' });
+  await fresh.waitForSelector('#pr-switch[data-listed]');
   const poll = await pollCounting(fresh);
   assert.equal(await poll({ ...status, pr: { ...pr, state: 'CLOSED' } }), 1, 'closed');
   assert.equal(await poll({ ...status, pr: { ...pr, state: 'OPEN' } }), 2, 'reopened');
@@ -4725,7 +4922,7 @@ test('a poll that finds the PR on screen closed, or another PR in its place, fet
 // would fetch the list again.
 test('a PR list that lands after a later fetch was asked for is dropped', { skip }, async () => {
   const fresh = await newPage({ prs: STACK });
-  await fresh.waitForSelector(`#pr-switch option[value="${REPO}/pull/14"]`, { state: 'attached' });
+  await fresh.waitForSelector('#pr-switch[data-listed]');
   let held;
   await fresh.route('**/api/prs', (r) => { held = r; });
   const asked = fresh.waitForRequest('**/api/prs');
@@ -4734,13 +4931,12 @@ test('a PR list that lands after a later fetch was asked for is dropped', { skip
   await fresh.route('**/api/prs', (r) => r.fulfill({ json: MERGED }));
   await fresh.route('**/api/status', (r) => r.fulfill({ json: merged }));
   await fresh.click('#pr-refresh');
-  await fresh.waitForFunction((u) => !document.querySelector(`#pr-switch option[value="${u}"]`)?.textContent.includes('└'), `${REPO}/pull/13`);
+  await unnested(fresh);
   const late = fresh.waitForResponse('**/api/prs');
   await held.fulfill({ json: STACK });
   await late;
   await fresh.waitForTimeout(200);
   assert.deepEqual(await switcherLabels(fresh), [
-    'no pull request',
     '#12 A fixture pull request',
     '#13 (draft) Built on the fixture',
     '  └ #14 Built on that',
@@ -4786,7 +4982,7 @@ test('the console lines are off unless prcoder:debug is on', { skip }, async () 
     const p = await newPage({ prs: STACK, init });
     const seen = [];
     p.on('console', (m) => { if (m.text().startsWith('[prcoder]')) seen.push(m.text()); });
-    await p.waitForSelector(`#pr-switch option[value="${REPO}/pull/14"]`, { state: 'attached' });
+    await p.waitForSelector('#pr-switch[data-listed]');
     const fetched = p.waitForResponse('**/api/prs');
     await p.locator('#pr-head .tab', { hasText: 'Stack' }).click();
     await fetched;
@@ -4796,7 +4992,7 @@ test('the console lines are off unless prcoder:debug is on', { skip }, async () 
   };
   assert.deepEqual(await lines(null), []);
   const on = await lines(() => localStorage.setItem('prcoder:debug', 'on'));
-  assert.ok(on.includes('[prcoder] PR list landed: 12,13,14 '), on.join('\n'));
+  assert.ok(on.includes('[prcoder] PR list landed: 12,13,14'), on.join('\n'));
 });
 
 // A merge seen by a poll and the Stack tab opened a moment later were two whole
@@ -4804,7 +5000,7 @@ test('the console lines are off unless prcoder:debug is on', { skip }, async () 
 // the fetch in flight; only a trigger that knows the list changed starts one.
 test('opening the Stack tab while a PR list fetch is out joins it', { skip }, async () => {
   const fresh = await newPage({ prs: STACK });
-  await fresh.waitForSelector(`#pr-switch option[value="${REPO}/pull/14"]`, { state: 'attached' });
+  await fresh.waitForSelector('#pr-switch[data-listed]');
   let lists = 0;
   fresh.on('request', (q) => { if (q.url().endsWith('/api/prs')) lists++; });
   let held;
@@ -4817,7 +5013,8 @@ test('opening the Stack tab while a PR list fetch is out joins it', { skip }, as
   await fresh.waitForTimeout(300);
   assert.equal(lists, 1, 'the tab joined the fetch the merge asked for');
   await held.fulfill({ json: MERGED });
-  await fresh.waitForFunction((u) => !document.querySelector(`#pr-switch option[value="${u}"]`)?.textContent.includes('└'), `${REPO}/pull/13`);
+  await unnested(fresh);
+  await fresh.keyboard.press('Escape');
   assert.deepEqual(await fresh.locator('#pr-body .pr-into .pr-num').allTextContents(), [], 'nothing is built on #12 now');
   await fresh.close();
 });
@@ -4828,7 +5025,7 @@ test('opening the Stack tab while a PR list fetch is out joins it', { skip }, as
 test('a failed fetch on opening the Stack tab keeps the rows it had', { skip }, async () => {
   const fresh = await newPage({ prs: STACK });
   const tab = fresh.locator('#pr-head .tab', { hasText: 'Stack' });
-  await fresh.waitForSelector(`#pr-switch option[value="${REPO}/pull/14"]`, { state: 'attached' });
+  await fresh.waitForSelector('#pr-switch[data-listed]');
   await fresh.route('**/api/prs', (r) => r.abort());
   const failed = fresh.waitForEvent('requestfailed', (q) => q.url().endsWith('/api/prs'));
   await tab.click();
@@ -4836,7 +5033,7 @@ test('a failed fetch on opening the Stack tab keeps the rows it had', { skip }, 
   await fresh.waitForTimeout(100);
   assert.deepEqual(await fresh.locator('#pr-body .pr-into > ul > li > .pr-row .pr-num').allTextContents(), ['#13']);
   assert.equal(await tab.textContent(), 'Stack (↑2)');
-  assert.equal(await fresh.locator('#pr-switch option').count(), 4, 'the switcher kept its options');
+  assert.equal(await fresh.locator('#pr-switch').getAttribute('data-rows'), '3', 'the switcher kept its rows');
   await fresh.close();
 });
 
@@ -4864,7 +5061,7 @@ test('the state row labels a side that is in another repository', { skip }, asyn
 test('a stacked PR shows the stack under it in its Stack tab and its head', { skip }, async () => {
   const on13 = { ...status, branch: 'topic-2', pr: { ...pr, number: 13, title: STACK[1].title, headRefName: 'topic-2', baseRefName: 'topic', url: STACK[1].url } };
   const fresh = await newPage({ prs: STACK, st: on13 });
-  await fresh.waitForSelector(`#pr-switch option[value="${REPO}/pull/14"]`, { state: 'attached' });
+  await fresh.waitForSelector('#pr-switch[data-listed]');
   const tab = fresh.locator('#pr-head .tab', { hasText: 'Stack' });
   assert.equal(await tab.textContent(), 'Stack (↓1 ↑1)');
   assert.equal(await fresh.locator('#pr-head .pr-state a').textContent(), '#12');
@@ -4915,7 +5112,9 @@ test('with no list of pull requests, the panes say there is none yet', { skip },
   const alone = await newPage({ prs: null, st: { ...status, branch: 'topic-x', pr: null }, ready: '#pr-head .pr-branch-name' });
   assert.equal(await alone.locator('#pr-body .empty').textContent(), 'No list of open pull requests yet.');
   // And the switcher above it agrees, rather than saying no PRs are open.
-  assert.deepEqual(await alone.locator('#pr-switch option').allTextContents(), ['no list of pull requests yet']);
+  assert.equal(await alone.locator('#pr-switch .picker-value').textContent(), 'no list of pull requests yet');
+  await openPicker(alone, 'pr-switch');
+  assert.equal(await alone.locator(`${popOf('pr-switch')} .picker-none`).textContent(), 'no list of pull requests yet — type a number to check one out');
   await alone.close();
 });
 

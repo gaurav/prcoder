@@ -401,6 +401,22 @@ export const pickerMove = (listed, pr, number) => {
 };
 
 /**
+ * What /api/pr/switch hands gh as the pull request to look up: the whole of a
+ * pull request's URL (wholePrRepo), or, with no URL, a number -- a positive
+ * integer and a JSON number, never a string, which could be a flag or a
+ * branch's name by the time it is in gh's argv. Anything else is refused
+ * here. Pure, and exported for test/api.test.js.
+ */
+export const switchTarget = ({ url, number } = {}) => {
+  if (url !== undefined) {
+    wholePrRepo(url);
+    return url;
+  }
+  if (!Number.isSafeInteger(number) || number < 1) throw new Error(`${JSON.stringify(number) ?? 'nothing'} is not a pull request's number`);
+  return String(number);
+};
+
+/**
  * `fn` on a chain of its own, with poll()'s sharing: a call that arrives while
  * one is waiting shares it, and one arriving mid-run waits for that run and
  * then gets one of its own -- whatever it came to read may have changed since
@@ -606,10 +622,15 @@ const routes = {
    * pullRequestFor then reads what startOnPr needs and holds it to `repos`
    * case-blind, as the command line's is -- a remote's URL can spell the
    * owner otherwise than GitHub does, which an exact match refused.
+   *
+   * Or `{ number }`, from the switcher's search field, for a pull request its
+   * list of open ones does not have: a merged or closed one, or one opened
+   * since the list was read. switchTarget takes a number only as a positive
+   * integer, and gh reads a bare one in its base repository -- the list's own
+   * -- so the same pullRequestFor finds its URL and holds it to `repos`.
    */
-  'POST /api/pr/switch': async ({ url } = {}) => {
-    wholePrRepo(url);
-    const p = await pullRequestFor(repo, url, (await repoFacts()).repos);
+  'POST /api/pr/switch': async (body = {}) => {
+    const p = await pullRequestFor(repo, switchTarget(body), (await repoFacts()).repos);
     const { branch, said, snag } = await startOnPr(repo, p, { inUse: runningHere });
     if (snag) console.log(said);
     else term.verbose(said ?? `${p.url} is already checked out`);

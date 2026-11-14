@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   pageTitle, withoutHtml, inline, headLinks, noPrLinks, prsInto, prTree, stackOn, stackLabel, stackUnder, stackTree, stackTitle, stackBase, stackOrder, stackEmpty, intoEmpty, switcherRows, sideLabel, sides, branchGroup, lookedIn,
-  tabLabel, taskCount, filesName, checkCount, checksName, worst, milestoneChoices,
+  tabLabel, taskCount, filesName, checkCount, checksName, worst, milestoneChoices, switcherChoices, switcherFilter,
 } from '../public/pr.js';
 import { filesProgress } from '../public/filelist.js';
 import { tabDone } from '../public/ui.js';
@@ -878,19 +878,77 @@ test('the repositories looked in read as a list', () => {
 
 // The picker leads with none, then the open milestones in the Issues tab's
 // order, and always has the pull request's own, even one the list lacks.
-// None asks for triage only while it is where the pull request is.
+// None asks for triage only while it is where the pull request is. A dated
+// one says when it is due after its title, as the milestone line does.
 test('the milestone picker offers none, the open milestones in rank, and the pull request\'s own', () => {
   const list = [{ number: 3, title: 'Not urgent', dueOn: null }, { number: 1, title: 'v1.0', dueOn: '2026-10-14T00:00:00Z' },
     { number: 4, title: 'Needed soon', dueOn: null }];
-  assert.deepEqual(milestoneChoices(null, list), [
-    { value: '', text: 'no milestone — needs triage' },
-    { value: '1', text: 'v1.0', title: 'due 2026-10-14' },
-    { value: '4', text: 'Needed soon' },
-    { value: '3', text: 'Not urgent' },
+  // Noon on the 12th, local time, so the 14th is two days off in any zone.
+  const now = new Date(2026, 9, 12, 12).getTime();
+  assert.deepEqual(milestoneChoices(null, list, now), [
+    { key: '', text: 'no milestone — needs triage' },
+    { key: '1', text: 'v1.0', detail: { text: 'due in 2 days', cls: 'due soon', title: 'Wednesday, October 14, 2026' } },
+    { key: '4', text: 'Needed soon' },
+    { key: '3', text: 'Not urgent' },
   ]);
+  assert.equal(milestoneChoices(null, list, new Date(2026, 9, 20, 12).getTime())[1].detail.cls, 'due overdue');
   const closed = { number: 9, title: 'v0.1', dueOn: null };
-  assert.deepEqual(milestoneChoices(closed, list).map((c) => c.value), ['', '1', '4', '3', '9']);
+  assert.deepEqual(milestoneChoices(closed, list).map((c) => c.key), ['', '1', '4', '3', '9']);
   assert.equal(milestoneChoices(closed, list)[0].text, 'no milestone');
-  assert.deepEqual(milestoneChoices(list[2], list).map((c) => c.value), ['', '1', '4', '3'], 'listed once');
-  assert.deepEqual(milestoneChoices(closed, null), [{ value: '', text: 'no milestone' }, { value: '9', text: 'v0.1' }], 'before the list lands');
+  assert.deepEqual(milestoneChoices(list[2], list).map((c) => c.key), ['', '1', '4', '3'], 'listed once');
+  assert.deepEqual(milestoneChoices(closed, null), [{ key: '', text: 'no milestone' }, { key: '9', text: 'v0.1' }], 'before the list lands');
+});
+
+// The switcher's rows: the stack indented, the branch's own in a group, a
+// repository named when it is not this checkout's, and everything but the
+// branch's own disabled while there is uncommitted work.
+test('the switcher\'s rows are keyed by URL, grouped for the branch\'s own, and disabled by uncommitted work', () => {
+  const mine = { number: 1, title: 'Mine', isDraft: true, url: at(1), state: 'OPEN', headRefName: 'initial-implementation', baseRefName: 'main', repo: 'gaurav/prcoder' };
+  const theirs = { number: 9, title: 'Theirs', url: 'https://github.com/upstream/prcoder/pull/9', state: 'OPEN', headRefName: 'initial-implementation',
+    baseRefName: 'main', repo: 'upstream/prcoder', isCrossRepository: true };
+  const status = { dirtyFiles: [], branchPrs: [mine], pr: mine, nameWithOwner: 'gaurav/prcoder' };
+  const prs = OPEN;
+  const said = (rows) => rows.map((r) => `${r.group ? '[' : ''}${'-'.repeat(r.depth)}${r.text}${r.disabled ? ' (off)' : ''}`);
+  assert.deepEqual(said(switcherChoices(status, prs)), ['#1 The one into main', '-#27 One of three', '-#60 Another']);
+  assert.equal(switcherChoices(status, prs)[1].key, at(27));
+  assert.match(switcherChoices(status, prs)[1].search, /^#27 One of three queue-tabs gaurav\/prcoder$/, 'found by its branch and its repository too');
+  // No list yet: the one on screen alone, drawn from the status.
+  assert.deepEqual(said(switcherChoices(status, null)), ['#1 Mine']);
+  assert.deepEqual(switcherChoices({ ...status, pr: null, branchPrs: [] }, null), []);
+  const two = { ...status, branchPrs: [mine, theirs] };
+  assert.deepEqual(said(switcherChoices(two, prs)), ['[#1 (draft) Mine', '[-#27 One of three', '[-#60 Another', '[upstream/prcoder#9 Theirs']);
+  assert.deepEqual(switcherChoices(two, prs).map((r) => r.own), [true, false, false, true]);
+  assert.deepEqual(said(switcherChoices({ ...two, dirtyFiles: ['a'] }, prs)),
+    ['[#1 (draft) Mine', '[-#27 One of three (off)', '[-#60 Another (off)', '[upstream/prcoder#9 Theirs']);
+  assert.deepEqual(said(switcherChoices({ ...status, dirtyFiles: ['a'] }, prs)), ['#1 The one into main (off)', '-#27 One of three (off)', '-#60 Another (off)']);
+});
+
+// What is typed into the switcher. A number finds by number, exact first; a
+// whole number nothing here has is offered as a checkout by number.
+test('the switcher finds by number first, then by words, and offers a number it does not list', () => {
+  const row = (number, text, over = {}) => ({ key: at(number), number, text: `#${number} ${text}`, search: `#${number} ${text} branch-${number} gaurav/prcoder`, depth: 1, here: true, disabled: false, ...over });
+  const rows = [row(1, 'One'), row(12, 'Twelve, for 2 people', { group: 'On this branch' }), row(120, 'One hundred'), row(2, 'Two'), row(27, 'Draft 12')];
+  const found = (q, blocked) => switcherFilter(rows, q, blocked).map((r) => r.text);
+  assert.equal(switcherFilter(rows, '  '), rows, 'nothing typed is the list as it is');
+  assert.deepEqual(found('12'), ['#12 Twelve, for 2 people', '#120 One hundred', '#27 Draft 12']);
+  assert.deepEqual(found('#12'), found('12'));
+  assert.deepEqual(found('2'), ['#2 Two', '#27 Draft 12', '#12 Twelve, for 2 people', '#120 One hundred']);
+  assert.ok(switcherFilter(rows, '12').every((r) => r.depth === 0 && r.group === undefined), 'flat');
+  assert.deepEqual(found('one'), ['#1 One', '#120 One hundred']);
+  assert.deepEqual(found('HUNDRED one'), ['#120 One hundred'], 'every word, in any case');
+  assert.deepEqual(found('branch-27'), ['#27 Draft 12'], 'by what a row is found by, not only its text');
+  assert.deepEqual(found('nothing'), []);
+  // A number no row has: its matches, then the offer.
+  assert.deepEqual(found('3'), ['Check out #3 (not in the open list)']);
+  assert.deepEqual(found('#7'), ['#27 Draft 12', 'Check out #7 (not in the open list)'], 'after anything the digit is in');
+  assert.deepEqual(found('120'), ['#120 One hundred'], 'none for one the list has');
+  assert.deepEqual(found('1200'), ['Check out #1200 (not in the open list)']);
+  const offer = switcherFilter(rows, '34').at(-1);
+  assert.deepEqual([offer.key, offer.number, offer.unlisted, offer.disabled], ['#34', 34, true, false]);
+  assert.equal(switcherFilter(rows, '34', true).at(-1).disabled, true, 'a checkout, so not with uncommitted work');
+  // Not a pull request's number: no offer, and gh never sees it.
+  for (const q of ['0', '007', '-3', '1.5', '12a', '1 2', '1234567890']) assert.equal(switcherFilter(rows, q).some((r) => r.unlisted), false, q);
+  // The same number in another repository is not this one's: still offered.
+  const elsewhere = [row(5, 'Theirs', { here: false, text: 'upstream/prcoder#5 Theirs' })];
+  assert.deepEqual(switcherFilter(elsewhere, '5').map((r) => r.text), ['upstream/prcoder#5 Theirs', 'Check out #5 (not in the open list)']);
 });

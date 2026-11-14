@@ -1,6 +1,6 @@
 # public/ -- the page
 
-## Seven files here are the server's as well
+## Eight files here are the server's as well
 
 The server imports six files from here, and with them everything they import.
 `cli.js` imports `pr.js` for the status block (`syncPhrase` and the PR's
@@ -16,26 +16,37 @@ import it, so the server and the pane read a description by the same rules and
 cannot drift apart. `server.js` imports `QUIT_CODE` from `ui.js`, the close
 code that tells every tab prcoder is quitting. `github.js` imports
 `filesProgress` from `filelist.js`, so a row on the Pull requests tab counts
-viewed files by the same rule as the Files tab. Through those six comes
-`folds.js`.
+viewed files by the same rule as the Files tab. Through those six come
+`folds.js` and `picker.js`, which `pr.js` builds its switcher and milestone
+line with.
 
-So all seven have to load in Node, and none of them may touch the DOM at
+So all eight have to load in Node, and none of them may touch the DOM at
 module scope. A `document.querySelector` beside the imports is ordinary in a
 browser file, but here it stops the *server* from starting, with a stack
 trace naming a file under `public/` and nothing about why the server was
 reading it. Put DOM work inside a function, the way `el()` in `diff.js` does.
 A syntax error in any of them breaks the server the same way; `node --check
 public/*.js` catches it, and `test/api.test.js` loads every one of them by
-importing the server. A new import in any of the seven adds to the list.
+importing the server. A new import in any of the eight adds to the list.
 
 ## The building blocks are in `ui.js`
 
 `h`, `btn`, `ext`, `api`, `toast`, `notice`, `debug`, `pref`, the mark and the fold:
 every pane builds from these, so they live in `ui.js` and a pane imports them
-from there. So does `replaceKeeping`, for a redraw that must not shut a focused
-select's dropdown: mark the control `data-keep` and give it a `refresh`,
-rather than teaching the pane's painter about it. `pr.js` used to hold them, and the other panes imported the PR
+from there. `pr.js` used to hold them, and the other panes imported the PR
 pane to get a button.
+
+## A choice that acts at once is a `picker`, not a `<select>`
+
+`picker()` in `picker.js` is the PR pane's switcher and its milestone line: a
+button that opens a searchable list, where only Enter or a click in the open
+list picks. A native `<select>` acts on `change`, and a closed one changes on
+a bare arrow (Linux and Windows) or a letter (everywhere), so one whose change
+is a checkout or a write to GitHub does that for a key on its way to the
+terminal (#188). A `<select>` is still right where a change only redraws (the
+PRs tab's sort and grouping) or where a button beside it does the writing
+(the queue rows' milestone and **Move**). Call `picker()` on every redraw: it
+keeps its list by id, on `<body>`, so the redraw does not shut it.
 
 ## Keyboard shortcuts go through `keys.js`
 
