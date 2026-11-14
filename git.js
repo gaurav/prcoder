@@ -742,6 +742,19 @@ export async function worktreeFor(cwd, branch, { dirFor, defaultBranch }) {
 }
 
 /**
+ * Which of the repository's working copies (`list`, as worktrees answers)
+ * is on pull request `p`'s branch, or undefined: by the branch's name for one
+ * of this repository's, by its config for a fork's or a `pr-<n>` (branchOwns).
+ * No gh, so a fork's checked out by something that left no mark is missed.
+ */
+async function worktreeOn(cwd, p, list, repos) {
+  for (const w of list) {
+    if (w.branch && branchOwns(p, w.branch, await trackedPr(cwd, w.branch, repos))) return w;
+  }
+  return undefined;
+}
+
+/**
  * The working copy for `prcoder --worktree <pr>`: the one already on pull
  * request `p`'s branch -- by the branch's name for one of this repository's,
  * by its config for a fork's or a `pr-<n>` (branchOwns) -- or the worktree at
@@ -763,11 +776,9 @@ export async function worktreeFor(cwd, branch, { dirFor, defaultBranch }) {
 export async function worktreeForPr(cwd, p, { dirFor, repos }) {
   const list = await worktrees(cwd);
   const what = `#${p.number}`;
-  for (const w of list) {
-    if (!w.branch || !branchOwns(p, w.branch, await trackedPr(cwd, w.branch, repos))) continue;
-    if (w.prunable) throw gone(w, `${what}'s branch, ${w.branch},`);
-    return { path: w.path, made: false, said: `${what} is already checked out in ${w.path}, so starting there` };
-  }
+  const on = await worktreeOn(cwd, p, list, repos);
+  if (on?.prunable) throw gone(on, `${what}'s branch, ${on.branch},`);
+  if (on) return { path: on.path, made: false, said: `${what} is already checked out in ${on.path}, so starting there` };
   const dir = dirFor(list[0].path, p.isCrossRepository ? `pr-${p.number}` : p.headRefName);
   if (list.some((w) => w.path === dir && !w.prunable)) return { path: dir, made: false, said: `starting in the worktree at ${dir}` };
   if (existsSync(dir)) throw taken(dir, what);
@@ -820,9 +831,10 @@ const refusal = (message) => Object.assign(new Error(message), { refused: true }
  *
  * The branch is read here, never taken from the caller: it is what
  * checkoutPr's "did gh switch?" compares against, and one read before
- * `prcoder choose`'s question could be minutes old. The two refusals, which
- * change nothing, are thrown marked `refused` (refusal), and `prcoder
- * choose` asks again after one: it calls this for each pick rather than
+ * `prcoder choose`'s question could be minutes old. The refusals that
+ * change nothing -- the branch is in another working copy, another prcoder
+ * runs in this one, or there is uncommitted work -- are thrown marked
+ * `refused` (refusal), and `prcoder choose` asks again after one: it calls this for each pick rather than
  * repeating these checks, so it cannot ask again over one and end the run
  * over the other. `inUse` is asked only
  * when there is a checkout to make, and answers with why this working copy is
@@ -833,6 +845,18 @@ const refusal = (message) => Object.assign(new Error(message), { refused: true }
 export async function startOnPr(cwd, p, { inUse = async () => null } = {}) {
   const branch = await currentBranch(cwd);
   if (await isHere(cwd, p, branch)) return { branch, said: null };
+  // Its branch in another working copy: git checks a branch out once, and
+  // would say so in its own words after gh had fetched -- or, for a branch
+  // gone from GitHub, after two failures stacked. With a prcoder to a
+  // worktree that is the usual reason a Switch cannot happen, so it is said
+  // first, with where the branch is and the start that goes there. Not this
+  // working copy's own: isHere has just answered for that.
+  const held = await worktreeOn(cwd, p, await worktrees(cwd).catch(() => []));
+  if (held) {
+    throw refusal(`#${p.number} is on ${held.branch}, which is checked out in another working copy, ${held.path}` +
+      (held.prunable ? ', whose directory is gone: `git worktree prune` forgets it, and then it can be checked out here'
+        : `; git checks a branch out in one place at a time. To work on it there: prcoder --worktree ${p.number}`));
+  }
   const busy = await inUse();
   if (busy) {
     throw refusal(`#${p.number} is on ${p.headRefName}, and ${busy}; a checkout would move the working copy` +

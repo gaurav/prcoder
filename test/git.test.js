@@ -793,14 +793,23 @@ test('a start on a pull request whose branch is gone makes it from refs/pull', {
       assert.equal((await run('config', '--get', 'branch.pr-1.merge')).stdout.trim(), 'refs/heads/mine');
       assert.equal(await trackedPr(work, 'pr-1'), null);
       // A branch checked out in another worktree cannot be checked out here,
-      // and gh's words come first in the refusal, git's after.
+      // and that is said before gh is asked for anything: where it is, and
+      // the start that goes there. It read as gh's failure with git's after
+      // it, two errors deep, before there was a reason to have worktrees.
       await run('checkout', '-q', 'main');
       await run('branch', '-q', '-D', 'topic', 'pr-1');
       await run('branch', '-q', 'topic', head);
-      await run('worktree', 'add', '-q', path.join(dir, 'elsewhere'), 'topic');
-      await assert.rejects(startOnPr(work, p), (e) => /^fatal: couldn't find remote ref refs\/heads\/topic\nIts branch is gone from GitHub, and checking out what is left failed too: .*topic/s.test(e.message));
+      const elsewhere = path.join(await fs.realpath(dir), 'elsewhere');
+      await run('worktree', 'add', '-q', elsewhere, 'topic');
+      await assert.rejects(startOnPr(work, p), { refused: true, message: `#1 is on topic, which is checked out in another working copy, ${elsewhere};` +
+        ' git checks a branch out in one place at a time. To work on it there: prcoder --worktree 1' });
       assert.equal(await branch(), 'main');
-      await run('worktree', 'remove', '--force', path.join(dir, 'elsewhere'));
+      // From that worktree it is simply here.
+      assert.deepEqual(await startOnPr(elsewhere, p), { branch: 'topic', said: null });
+      // Its directory deleted, git still holds the branch, and the refusal says how to let go.
+      await fs.rm(elsewhere, { recursive: true });
+      await assert.rejects(startOnPr(work, p), /whose directory is gone: `git worktree prune` forgets it, and then it can be checked out here$/);
+      await run('worktree', 'prune');
       // A branch still there is gh's failure to report, not a gone one.
       await run('checkout', '-q', 'main');
       await run('push', '-q', 'https://github.com/o/r.git', 'topic');

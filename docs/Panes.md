@@ -271,7 +271,9 @@ the switcher, and leaves the links alone. A local branch that has diverged from 
 head is still switched to, just not fast-forwarded, and the sync light says `diverged`. A switch is
 the same checkout `prcoder <n>` makes: a merged pull request whose branch GitHub deleted is checked
 out from its head on GitHub, and a switch is refused while another prcoder runs in the same working
-copy, whose agent it would move.
+copy, whose agent it would move, or when the pull request's branch is checked out in another
+working copy, since git checks a branch out once; the refusal names that working copy
+([Worktrees.md](Worktrees.md#a-branch-is-in-one-working-copy-at-a-time)).
 
 On any other branch it also shows what the branch is built on, since that is where its pull
 request will go. A branch with no pull request has no base on GitHub, so prcoder asks git: the

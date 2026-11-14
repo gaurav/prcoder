@@ -86,6 +86,14 @@ The list is read when the page loads, when the tab is come back to, and as the l
 not on every poll: the server asks each other working copy's prcoder who it is, from the running
 record in that working copy's `.prcoder/running/`.
 
+## A branch is in one working copy at a time
+
+The pull request switcher, `prcoder <pr>` and `prcoder choose` check a pull request out in the
+working copy they are in, and git will not check out a branch that another working copy has. So
+each of them stops before asking gh for anything, saying which working copy has the branch and
+that `prcoder --worktree <n>` starts there. A working copy whose directory was deleted still
+holds its branch until `git worktree prune`, and the refusal says that instead.
+
 ## Quitting in a worktree
 
 A worktree is easy to make and easy to forget, and git will not check its branch out anywhere
