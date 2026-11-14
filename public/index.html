@@ -184,6 +184,18 @@
     <table><tbody id="keys-list"></tbody></table>
     <p id="keys-note"></p>
   </dialog>
+  <!-- prcoder is no longer running (gone() in app.js). ✕ or Escape closes it,
+       so the page behind can be read and copied from; the panes stay dimmed. -->
+  <dialog id="dead" aria-labelledby="dead-title">
+    <header>
+      <h2 id="dead-title">prcoder has quit</h2>
+      <button type="button" id="dead-close" title="close" aria-label="close">✕</button>
+    </header>
+    <p>Nothing on this page works any more. Close this tab, or start prcoder
+       again in this repository. The coding agent's session can be picked up
+       there with <code>/resume</code>, or by starting prcoder with
+       <code>-- --continue</code>.</p>
+  </dialog>
   <script type="module" src="/app.js"></script>
 </body>
 </html>
