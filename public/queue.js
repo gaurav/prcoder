@@ -2,6 +2,7 @@ import { h, btn, ext, api, toast, pref, setPref, tabBtn, writeThrough, fold, kep
 import { TABS, refLabel, refClass, forClaude, rankMilestones, issueMatches, pullMatches, sortPulls, rootsInOrder, pullWord, sizeChip, age, dueLabel, isNew, PULL_SORTS } from './items.js';
 import { refs, resolveRef, blocks } from './tasks.js';
 import { blockNode, inline, stackUnder, stackOrder } from './pr.js';
+import { LABEL as HISTORY_LABEL, historyList, historyCount, loadHistory, initHistory } from './history.js';
 
 // The client owns the list; every change persists the whole array. Single user,
 // single repo — no ids, no diffing.
@@ -105,6 +106,10 @@ let pullSort = 'smallest';
 let pullGroup = 'milestone';
 // A listing younger than this is not read again on a visit to the tab; ⟳ always reads.
 const PULLS_FRESH_FOR = 60_000;
+// Whether the History tab is drawn: /api/whoami's `history`, which app.js
+// hands over when it lands (setHistoryOn). Off until then, and off for good
+// under --no-history, so the tab is never drawn and then taken away.
+let historyOn = false;
 
 // Which end the input adds to. The queue is two things at once -- a backlog in
 // the order you mean to work through it, and somewhere to put the thing you
@@ -120,8 +125,22 @@ const ADD_TO_KEY = 'prcoder:add-to';
 let addTo = 'bottom';
 const readAddTo = () => (pref(ADD_TO_KEY) === 'top' ? 'top' : 'bottom');
 
+/**
+ * The History tab switched on, once whoami has said it is there to read --
+ * and read at once, so its count is on the tab before a visit: the file is
+ * local and cheap, and the count is today's prompts, which is the question
+ * on coming back.
+ */
+export function setHistoryOn(on) {
+  if (historyOn === !!on) return;
+  historyOn = !!on;
+  render();
+  if (historyOn) loadHistory();
+}
+
 export async function initQueue(d) {
   deps = d;
+  initHistory({ type: typeInto, pull: (text) => pull(text) });
   // Read here rather than at module scope: initQueue only ever runs in a
   // browser, so the module stays importable by a node test that has no
   // localStorage to touch.
@@ -167,7 +186,7 @@ const save = async (url = '/api/queue', method = 'PUT', body = { items }) => {
   return true;
 };
 
-const LABELS = { local: 'Local', pr: 'PR', issues: 'Issues', pulls: 'Pull requests', done: 'Completed', deleted: 'Deleted' };
+const LABELS = { local: 'Local', pr: 'PR', issues: 'Issues', pulls: 'Pull requests', history: HISTORY_LABEL, done: 'Completed', deleted: 'Deleted' };
 
 // Local is always there because an *empty* Local is the thing worth seeing --
 // it is how a tidy session ends. Completed is always there because it is where
@@ -235,13 +254,14 @@ function render() {
   const host = document.getElementById('queue-body');
   // Issues and Pull requests are always there -- a repository has both
   // whatever is checked out -- and PR only with a pull request on screen.
-  const { strip, tab: active } = stripFor(items, tab, pr ? ['pr', 'issues', 'pulls'] : ['issues', 'pulls']);
+  const { strip, tab: active } = stripFor(items, tab, [...(pr ? ['pr', 'issues', 'pulls'] : ['issues', 'pulls']), ...(historyOn ? ['history'] : [])]);
   tab = active;
   // A source's count is what it still holds open; the list's own are its tabs.
   const count = (name) => (name === 'pr' ? prTasks().filter((t) => !t.done).length
     : name === 'issues' ? issueCount()
       : name === 'pulls' ? pullCount()
-        : items.filter(TABS[name]).length);
+        : name === 'history' ? historyCount()
+          : items.filter(TABS[name]).length);
   const label = (n) => `${LABELS[n]} (${count(n)})`;
   const shown = TABS[tab] ? items.filter(TABS[tab]) : [];
   // Most recent first on Completed and Deleted, so the item you just ticked or
@@ -260,7 +280,8 @@ function render() {
     tab === 'pr' ? prList()
       : tab === 'issues' ? issueList()
         : tab === 'pulls' ? pullList()
-          : h('ul', { className: 'items' }, ...shown.map((i, n) => row(i, shown[n - 1], shown[n + 1]))),
+          : tab === 'history' ? historyList()
+            : h('ul', { className: 'items' }, ...shown.map((i, n) => row(i, shown[n - 1], shown[n + 1]))),
   );
   staleBreakdown();
 }
@@ -333,6 +354,7 @@ const queueTab = (name, label) => tabBtn(label, tab === name, () => {
   render();
   if (name === 'issues') loadIssues();
   if (name === 'pulls') loadPulls();
+  if (name === 'history') loadHistory();
 }, '', { dataset: { tab: name } });
 
 /**
@@ -397,6 +419,19 @@ async function fetchIssues() {
   }
   if (tab !== 'issues') return;
   if (document.getElementById('queue-search')) paintIssues(); else render();
+}
+
+/**
+ * Text into the coding agent's prompt, typed and not sent -- the turn is left
+ * for you to edit and submit, which is the whole of what prcoder puts into a
+ * session (docs/Design.md). Whether it went: `sendToClaude` answers false on a
+ * closed socket, and the one toast for that lives here rather than beside
+ * every ▶.
+ */
+function typeInto(text) {
+  const went = deps.sendToClaude(text, false);
+  if (!went) toast('The coding agent is not connected — nothing was typed.', true);
+  return went;
 }
 
 /**

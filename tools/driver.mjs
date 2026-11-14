@@ -31,24 +31,68 @@ export const free = (port) => new Promise((res, rej) => {
 });
 
 /**
- * The server's environment for a driver: its port, no browser of its own, and
+ * The server's environment for a driver: its port, no browser of its own,
  * PRCODER_AGENT_BIN stubbed -- every page load opens a websocket and spawns it in a
  * PTY, and unstubbed each run starts a real Claude session and leaves it
- * running. The stub is `tools/claude-stub.mjs` rather than /bin/cat: it echoes
- * as cat does, and it also sends the cursor-position probe a real session sends
- * between turns, which is the half the tab icon's idle check needs (tools/CLAUDE.md).
+ * running -- and CLAUDE_CONFIG_DIR pointed at a fixture (claudeConfig), so the
+ * History tab and the last-prompt notice show made-up prompts rather than the
+ * owner's real ones, which they would otherwise read from ~/.claude and put in
+ * every screenshot. The stub is `tools/claude-stub.mjs` rather than /bin/cat:
+ * it echoes as cat does, and it also sends the cursor-position probe a real
+ * session sends between turns, which is the half the tab icon's idle check
+ * needs (tools/CLAUDE.md). `cwd` is where the server runs, since the fixture's
+ * prompts are filed under it: a run from a worktree (onPullRequest) passes
+ * that.
  */
-export const serverEnv = (port, extra = {}) => ({
+export const serverEnv = (port, extra = {}, cwd = repo) => ({
   ...process.env,
   PRCODER_PORT: String(port),
   PRCODER_NO_OPEN: '1',
   PRCODER_AGENT_BIN: path.join(repo, 'tools', 'claude-stub.mjs'),
+  CLAUDE_CONFIG_DIR: claudeConfig(cwd),
   ...extra,
 });
 
 // Every server killOnExit has been handed, for onPullRequest's exit handler to
 // wait on before it removes the directory they run in.
 const killed = new Set();
+
+/**
+ * A Claude Code config directory under data/ holding a history of prompts
+ * sent from `cwd` (history.js at the root says what the real one holds):
+ * three sessions over three days, one titled, one in a worktree, one slash
+ * command, one paste placeholder, one line that is not a prompt. Written
+ * afresh each call, relative to now, so the days read Today and Yesterday.
+ */
+export function claudeConfig(cwd) {
+  const dir = path.join(repo, 'data', 'claude-config');
+  const titled = '6f1a2b3c-4d5e-4f60-8a9b-0c1d2e3f4a5b';
+  const untitled = 'a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d';
+  const earlier = 'b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e';
+  const now = Date.now();
+  const hour = 3600_000;
+  const day = 24 * hour;
+  const line = (display, timestamp, sessionId, project = cwd) =>
+    JSON.stringify({ display, pastedContents: {}, timestamp, project, sessionId });
+  const prompts = [
+    line('Look at the diff pane\'s wrap button: it folds a long line but the outline stays put', now - 3 * day, earlier),
+    line('/simplify', now - 3 * day + hour, earlier),
+    line('Add a History tab to the queue, grouped by day and by session, with the time each prompt was sent', now - day - 2 * hour, titled),
+    line('Mark a slash command by its word, and give every row a copy button [Pasted text #1 +12 lines]', now - day - hour, titled),
+    line('/code-review high', now - 3 * hour, titled),
+    line('Fix the two findings, then run the browser suite in both engines.\nThe second finding is the one about the clamp: a click that selected text toggled the row.', now - 2 * hour, titled),
+    line('Check that the pull request\'s milestone line says when it is due', now - 50 * 60_000, untitled, path.join(cwd, 'data', 'wt-1')),
+    '{"not": "a prompt"}',
+  ];
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(path.join(dir, 'history.jsonl'), prompts.join('\n') + '\n');
+  const slug = cwd.replace(/[^A-Za-z0-9]/g, '-');
+  mkdirSync(path.join(dir, 'projects', slug), { recursive: true });
+  writeFileSync(path.join(dir, 'projects', slug, `${titled}.jsonl`),
+    JSON.stringify({ type: 'ai-title', aiTitle: 'History tab for the queue pane', sessionId: titled }) + '\n');
+  writeFileSync(path.join(dir, 'projects', slug, `${earlier}.jsonl`), JSON.stringify({ type: 'user' }) + '\n');
+  return dir;
+}
 
 /**
  * Kill `child` however the driver ends. Load-bearing twice over: a live child

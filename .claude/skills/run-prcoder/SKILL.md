@@ -112,6 +112,12 @@ Two rules for them, and for any script after them:
   cursor probe a real session sends. `/bin/cat` is enough for the terminal half
   only -- anything that reads the PTY's timing passes against it for the wrong
   reason (tools/CLAUDE.md).
+- **Point `CLAUDE_CONFIG_DIR` at a fixture.** The queue's History tab and the
+  Claude pane's last-prompt notice read Claude Code's own `history.jsonl`,
+  the owner's real prompts, and a screenshot would carry them. `serverEnv` in
+  `tools/driver.mjs` sets the variable to a made-up history `claudeConfig`
+  writes under `data/claude-config/`; a server started by hand for the owner's
+  own look should read the real one, and `--no-history` turns the tab off.
 - **No writes you do not undo.** The queue is safe. By default it writes only
   `.prcoder/`, which is gitignored and needs no cleanup, and `browser.mjs`
   leaves even that alone: it runs with `--queue data/browser-queue.json`, in the

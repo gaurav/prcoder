@@ -179,8 +179,13 @@ const posted = [];
 // in the page before its own scripts, for a stub of a browser API. `clock`
 // installs Playwright's, for a test that moves time on with `p.clock`: `true`
 // starts it now, and a time in ms starts it then.
+// `history` is /api/history's answer for a page with the History tab -- or
+// a function answering the route, for a test that counts the reads -- and
+// null for one without: whoami then says there is none to read, so no tab
+// is drawn and no last-prompt notice put up, which is what every other test
+// here expects of a first open.
 async function newPage({ prs = [], st = status, ready = '#pr-head .pr-title', below = null, pty = () => {},
-  whoami = { model: '', effort: '' }, folds = null, init = null, clock = false } = {}) {
+  whoami = { model: '', effort: '' }, folds = null, init = null, clock = false, history = null } = {}) {
   const p = await browser.newPage();
   if (init) await p.addInitScript(init);
   if (clock) await p.clock.install(clock === true ? undefined : { time: clock });
@@ -195,7 +200,9 @@ async function newPage({ prs = [], st = status, ready = '#pr-head .pr-title', be
   }
   await p.routeWebSocket(/\/pty(\?|$)/, pty);
   await p.route('**/api/whoami', (r) => (typeof whoami === 'function'
-    ? whoami(r) : r.fulfill({ json: { started: whoami, version: '0.0.0-test' } })));
+    ? whoami(r) : r.fulfill({ json: { started: whoami, version: '0.0.0-test', history: !!history } })));
+  await p.route('**/api/history', (r) => (typeof history === 'function'
+    ? history(r) : r.fulfill({ json: history ? { enabled: true, ...history } : { enabled: false } })));
   await p.route('**/api/status', (r) => r.fulfill({ json: st }));
   await p.route('**/api/prs', (r) => (prs ? r.fulfill({ json: prs }) : r.abort()));
   await p.route('**/api/below', (r) => {
@@ -1862,6 +1869,111 @@ test('a page loaded again says why the session is new, and links to the fix unle
   n = await notice('a discard');
   assert.match(n.text, /^The browser unloaded this tab/);
   assert.deepEqual([n.sticky, n.href], [true, ports], 'a discard');
+  await p.close();
+});
+
+// The History tab and the last-prompt notice, from a listing the route
+// answers: the notice first, since it is up as soon as the agent connects,
+// sticky and text only; Enter in the terminal takes it down.
+// Then the tab: the days by the local calendar, the titled session and the
+// worktree's, the slash command marked, every row with its time and a copy
+// button named by words, and the search narrowing the rows and the count.
+test('the History tab lists what was sent by day and session, and the last prompt is a notice', { skip }, async () => {
+  const S = '6f1a2b3c-4d5e-4f60-8a9b-0c1d2e3f4a5b';
+  const T = 'a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d';
+  // Fixed local times, so the day labels and the clock are the same at any
+  // hour: five past midnight today, and ten to midnight the night before.
+  const early = new Date();
+  early.setHours(0, 5, 0, 0);
+  const at = early.getTime();
+  const listing = {
+    prompts: [
+      { at, text: '/code-review high', session: S, where: '' },
+      { at: at - 15 * 60_000, text: 'fix the thing\nsecond line of the same prompt', session: S, where: '' },
+      { at: at - 16 * 60_000, text: 'check the milestone line', session: T, where: 'data/wt-1' },
+    ],
+    sessions: { [S]: { title: 'A titled session' } },
+    read: at, skipped: 0,
+  };
+  // What the agent is typed, and what Local is saved, for the rows' ▶ and ↓;
+  // and every read of the file, with its body.
+  const typed = [];
+  let queue = [];
+  const reads = [];
+  const p = await newPage({
+    history: (r) => { reads.push(r.request().postDataJSON()); return r.fulfill({ json: { enabled: true, ...listing } }); },
+    pty: (ws) => ws.onMessage((m) => {
+      const msg = JSON.parse(m);
+      if (msg.type === 'input') typed.push(msg.data);
+    }),
+  });
+  await p.route('**/api/queue', (r) => {
+    if (r.request().method() === 'PUT') queue = r.request().postDataJSON().items;
+    return r.fulfill({ json: queue });
+  });
+  await p.waitForSelector('#toast:not([hidden])');
+  const notice = await p.$eval('#toast', (el) => ({
+    text: el.textContent, sticky: el.classList.contains('sticky'), kind: el.dataset.kind,
+    button: el.querySelector('button'),
+  }));
+  assert.match(notice.text, /^Last prompt, .+ \(Today 00:05\): \/code-review high$/);
+  assert.deepEqual([notice.sticky, notice.kind, notice.button], [true, 'last-prompt', null]);
+  // The file is read when the page opens, so the count is on the tab before
+  // a visit, and the notice is drawn from the same read -- one, whole, with
+  // no `limit` of its own. Enter in the terminal is the next prompt, which
+  // takes the notice down and, a second later, has the file read again with
+  // the tab not showing, so the count keeps up.
+  await p.waitForFunction(() => document.querySelector('#queue-body .tab[data-tab="history"]')?.textContent === 'History (1)');
+  assert.deepEqual(reads, [null], 'one read on opening, for the tab and the notice both');
+  const before = reads.length;
+  const again = p.waitForResponse('**/api/history');
+  await p.locator('#term-host textarea').press('Enter');
+  await p.waitForFunction(() => document.getElementById('toast').hidden);
+  await again;
+  assert.equal(reads.length, before + 1, 'one read for the prompt sent');
+  assert.equal(await p.locator('#queue-body .history-pane').count(), 0, 'read with the tab not showing');
+
+  // A visit draws the listing already read.
+  await p.locator('#queue-body .tab', { hasText: /^History/ }).click();
+  await p.waitForSelector('#queue-body .fold.day');
+  assert.equal(reads.length, before + 1, 'the visit reads nothing');
+  assert.equal(await p.locator('#queue-body .tab', { hasText: /^History/ }).innerText(), 'History (1)', 'the count is today\'s prompts');
+  assert.match(await p.locator('#queue-body .history-pane .pull-note').innerText(), /^Read /, 'when the file was read, under the days');
+  const days = await p.$$eval('#queue-body .fold.day', (gs) => gs.map((g) => ({
+    label: g.querySelector('h3').firstChild.textContent, count: g.querySelector('.count').textContent, open: g.open,
+    sessions: [...g.querySelectorAll('.session h4')].map((h) => h.textContent),
+  })));
+  assert.deepEqual(days, [
+    { label: 'Today', count: '1', open: true, sessions: ['A titled session'] },
+    { label: 'Yesterday', count: '2', open: true, sessions: ['A titled session', 'Session from 23:49 in data/wt-1'] },
+  ]);
+  const rows = await p.$$eval('#queue-body .item.history', (ls) => ls.map((l) => ({
+    when: l.querySelector('.when').textContent, command: l.classList.contains('command'),
+    cmd: l.querySelector('.cmd')?.textContent ?? null, text: l.querySelector('.text').textContent,
+    ways: [...l.querySelectorAll('.actions button')].map((b) => `${b.textContent} ${b.getAttribute('aria-label')}`),
+  })));
+  const ways = ['▶ type this prompt into the coding agent again, to edit and send', '↓ copy this prompt into your queue', '⧉ copy this prompt'];
+  assert.deepEqual(rows, [
+    { when: '00:05', command: true, cmd: '/code-review', text: '/code-review high', ways },
+    { when: '23:50', command: false, cmd: null, text: 'fix the thing\nsecond line of the same prompt', ways },
+    { when: '23:49', command: false, cmd: null, text: 'check the milestone line', ways },
+  ]);
+  // ▶ types the prompt back in with nothing after it -- the turn is left to
+  // edit and send, as every ▶ leaves it -- and its newline as a space, since
+  // sendToClaude types no control character (docs/Security.md). The Enter
+  // above is the one line typed so far.
+  await p.locator('#queue-body .item.history .actions button').nth(3).click();
+  for (let i = 0; typed.length < 2 && i < 100; i++) await new Promise((r) => setTimeout(r, 50));
+  assert.deepEqual(typed, ['\r', 'fix the thing second line of the same prompt']);
+  // ↓ copies it into Local, untagged, and says so; the tab stays.
+  await p.locator('#queue-body .item.history .actions button').nth(7).click();
+  await p.waitForFunction(() => document.querySelector('#toast')?.textContent.startsWith('added to your queue'));
+  assert.deepEqual(queue.map((i) => [i.text, i.issue]), [['check the milestone line', null]]);
+  assert.ok(await p.locator('#queue-body .fold.day').count(), 'still on the History tab');
+  await p.locator('#queue-history-search').fill('milestone');
+  await p.waitForFunction(() => document.querySelectorAll('#queue-body .item.history').length === 1);
+  assert.equal(await p.locator('#queue-body .tab', { hasText: /^History/ }).innerText(), 'History (1)', 'the count is the matches');
+  assert.equal(await p.locator('#queue-body .fold.day').count(), 1, 'a day without a match is left out');
   await p.close();
 });
 

@@ -179,6 +179,11 @@ Some things were checked against the real thing rather than a stub, and the evid
 the code:
 
 - GitHub's diff-anchor scheme: pinned, with the date, in `test/files.test.js`.
+- The shape of Claude Code's `history.jsonl` and the `ai-title` line of a transcript, neither
+  documented: observed on 2026-11-07 (the header of `history.js` says what) and pinned as the
+  reader's guards in `test/history.test.js`. The drivers and `test/browser/suite.js` never read the
+  real file: `claudeConfig` in `tools/driver.mjs` writes a fixture under `data/claude-config/` and
+  points `CLAUDE_CONFIG_DIR` at it, and the suite answers `/api/history` itself.
 - `gh pr view --json files` stops at 100 files, so the file list is paged by hand: the dated check
   against a real 110-file pull request is in the comment on `prFiles` in `github.js`. The test
   in `test/github.test.js` replays it with a stub, and does not ask GitHub again.

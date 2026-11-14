@@ -55,7 +55,7 @@ const queueFile = path.join(repo, 'data', 'browser-queue.json');
 const cwd = process.env.PRCODER_PR ? onPullRequest(process.env.PRCODER_PR) : repo;
 const server = spawn('node', [path.join(repo, 'server.js'), '--queue', queueFile], {
   cwd,
-  env: serverEnv(port),
+  env: serverEnv(port, {}, cwd),
   stdio: 'ignore',
 });
 killOnExit(server);
@@ -110,6 +110,16 @@ await page.waitForTimeout(500);
 await page.screenshot({ path: path.join(out, 'full.png') });
 for (const pane of ['pr', 'queue']) {
   await page.locator(`#${pane}`).screenshot({ path: path.join(out, `${pane}.png`) });
+}
+// The last prompt sent, as the Claude pane says it on connecting -- from the
+// fixture claudeConfig wrote, not the owner's history. Sticky, so dismissed
+// here rather than left over the queue for the run.
+const lastPrompt = page.locator('#toast:not([hidden])');
+console.log('last:   ', (await lastPrompt.count()) ? await lastPrompt.innerText() : '(no toast)',
+  '\n  (want "Last prompt, 50 minutes ago (Today hh:mm): Check that the pull request\'s milestone line…", no button)');
+if (await lastPrompt.count()) {
+  await lastPrompt.screenshot({ path: path.join(out, 'toast-last-prompt.png') });
+  await lastPrompt.click();
 }
 
 // The gutters, which are only ever right or wrong on screen. Each drag moves
@@ -354,6 +364,33 @@ if (await openPull.count()) {
     '(want the description as rendered text, ending in Open on GitHub)');
 }
 await page.locator('#queue').screenshot({ path: path.join(out, 'queue-pulls.png') });
+
+// History is what was sent to the coding agent from this working copy, read
+// from the fixture: three days, the first two open, a titled session, a
+// worktree's, a slash command marked, and ▶ ↓ ⧉ on every row -- ▶ types the
+// prompt back into the stub, which echoes it.
+console.log('history:', await page.locator('#queue-body .tab', { hasText: /^History/ }).innerText(), '(want History (3) before any click: the file is read when the page opens)');
+await page.locator('#queue-body .tab', { hasText: /^History/ }).click();
+await page.waitForSelector('#queue-body .fold.day');
+console.log('  days:  ', await page.locator('#queue-body .tab', { hasText: /^History/ }).innerText(), '|',
+  (await page.$$eval('#queue-body .fold.day', (gs) => gs.map((g) =>
+    `${g.querySelector('h3').textContent.replace(/\s+/g, ' ').trim()}${g.open ? ' (open)' : ''}: ${[...g.querySelectorAll('.session h4')].map((h) => h.textContent).join(', ')}`))).join(' | '),
+  '\n  (want History (3), Today and Yesterday open with the titled session and a "Session from" one in a worktree, a third day folded)');
+console.log('  rows:  ', (await page.$$eval('#queue-body .item.history', (ls) => ls.map((l) =>
+  `${l.querySelector('.when').textContent} ${l.classList.contains('command') ? '[cmd] ' : ''}${l.querySelector('.text').textContent.slice(0, 50)} [${[...l.querySelectorAll('.actions button')].map((b) => b.textContent).join(' ')}]`))).join('\n          '),
+  '\n  (want a time on every row, the /code-review and /simplify rows marked [cmd], and [▶ ↓ ⧉] on each)');
+await page.locator('#queue').screenshot({ path: path.join(out, 'queue-history.png') });
+// ▶ on the newest row types its prompt into the stub, unsent: the stub echoes
+// it, so the terminal is the evidence, as for the Local row's ▶ above.
+const HISTORY_SENT = 'milestone line says when it is due';
+await page.locator('#queue-body .item.history', { hasText: HISTORY_SENT }).locator('.actions button').first().click();
+await page.waitForTimeout(400);   // the stub echoes on the PTY's own schedule
+console.log('  row ▶: ', `terminal echoed it: ${(await page.locator('#term-host').innerText()).includes(HISTORY_SENT)}`, ' (want true, and the row still on the tab)');
+await page.locator('#queue-history-search').fill('milestone');
+await page.waitForTimeout(150);
+console.log('  search:', await page.locator('#queue-body .tab', { hasText: /^History/ }).innerText(),
+  `${await page.locator('#queue-body .item.history').count()} rows`, '(want History (1) and 1 row)');
+await page.locator('#queue-history-search').fill('');
 await page.locator('#queue-body .tab', { hasText: /^Local/ }).click();
 await page.waitForTimeout(150);
 

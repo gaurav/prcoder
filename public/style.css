@@ -947,7 +947,7 @@ li.issue-body select.milestone {
    queue's rows wear it; the size chip is a size label in a plain outline; the
    merge word takes the file list's colours. */
 .pull-controls { display: flex; gap: 6px; align-items: center; margin: 0 0 6px; }
-.pull-controls #queue-pull-search { flex: 1; margin: 0; }
+.pull-controls #queue-pull-search, .pull-controls #queue-history-search { flex: 1; margin: 0; }
 .pull-controls select {
   font: inherit; font-size: 12px; padding: 2px 4px; color: var(--fg); background: var(--bg);
   border: 1px solid var(--line); border-radius: 4px;
@@ -1213,3 +1213,41 @@ code.branch { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-
 .pr-go:disabled { color: var(--dim); cursor: not-allowed; }
 
 .pr-note { color: var(--dim); font-size: 12px; margin: 0 0 8px; }
+
+/* The queue's History tab (history.js): a fold per day, set as a category like
+   a file group's label, with the day's count as a milestone's badge; under it
+   a block per session, headed by the title the coding agent gave it in the
+   text's own colour, or by the time it started in the dim; and a row per
+   prompt, the time in a tabular column, the text as typed -- pre-wrap, since a
+   prompt has its lines -- clamped to three lines until clicked, and ⧉ at the
+   end as the diff header's. A slash command is its word in the accent. */
+.history-pane .history-groups { margin-top: 2px; }
+.fold.day { margin-bottom: 4px; }
+.fold.day > summary {
+  padding: 2px 0;
+  font: 600 12px/1.5 ui-sans-serif, system-ui, sans-serif;
+  text-transform: uppercase; letter-spacing: .06em; color: var(--dim);
+}
+.fold.day > summary:hover { color: var(--fg); }
+.fold.day > summary h3 { display: flex; gap: 6px; align-items: baseline; }
+.fold.day > summary .count {
+  font-variant-numeric: tabular-nums; min-width: 1.5em; box-sizing: border-box; text-align: center;
+  padding: 0 5px; border-radius: 9px; background: color-mix(in srgb, var(--dim) 22%, transparent);
+  text-transform: none; letter-spacing: 0; font-weight: 400;
+}
+.fold.day > .sec-body { padding: 2px 0 4px 10px; }
+.history-pane .session { margin: 0 0 8px; }
+.history-pane .session h4 { margin: 4px 0 1px; font: 400 12px/1.5 ui-sans-serif, system-ui, sans-serif; color: var(--dim); }
+.history-pane .session h4.titled { color: var(--fg); font-weight: 600; }
+.history-pane .session h4 .where { font-weight: 400; color: var(--dim); }
+.item.history { align-items: flex-start; gap: 8px; font-size: 14px; }
+.item.history .when { flex: none; font-size: 12px; color: var(--dim); font-variant-numeric: tabular-nums; padding-top: 2px; }
+.item.history .text {
+  white-space: pre-wrap; overflow-wrap: anywhere; cursor: pointer;
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+}
+.item.history.open .text { display: block; -webkit-line-clamp: none; }
+.item.history .cmd { color: var(--accent); font-weight: 600; }
+/* Its ▶ ↓ ⧉ are the row's .actions, styled with every other row's; only
+   the top edge is set, since this row's text can run to three lines. */
+.item.history .actions { flex: none; padding-top: 2px; }

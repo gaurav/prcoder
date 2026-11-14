@@ -84,7 +84,9 @@ item's ▶ sends its text verbatim, and an item can arrive by ↓ from the PR ta
 checklist line of the description, or from the Issues tab, which copies an issue's title (`pull` in
 [`public/queue.js`](../public/queue.js)); the Issues tab's own ▶ types an issue's title and link
 straight in, unsent — so whoever can edit that description or that issue can
-write the words. Commit sends a message built from the names of the working tree's uncommitted files.
+write the words. The History tab's ▶ types a prompt back in, unsent, and its ↓ copies one into
+Local: text the user already sent once, read from Claude Code's own record (below). Commit sends a
+message built from the names of the working tree's uncommitted files.
 
 The Issues tab also draws an issue's body, which is anyone's text, into the page with `innerHTML`,
 and the Pull requests tab the first paragraph of a pull request's under its row:
@@ -139,6 +141,28 @@ a stall there freezes one browser tab, a stall in the server freezes the process
 A modified file's diff is not highlighted at all, and
 [#68](https://github.com/gaurav/prcoder/issues/68) has what changes before it can be.
 
+## What prcoder reads outside the repository
+
+One file, and one line of some others: Claude Code's `history.jsonl` in its config directory
+(`~/.claude`, or `$CLAUDE_CONFIG_DIR`, the same variable the `claude` child honours, so the file
+read is the file written), which records every prompt typed into any Claude Code session on the
+machine, with its project directory; and, for a session's title, the `ai-title` line of its
+transcript under `projects/`. That is every repository's prompts, so the reader keeps only the
+ones whose project is this working copy, or a worktree under its `data/`, and drops the rest before
+anything leaves the server (`whereIn` in [`history.js`](../history.js), `test/history.test.js`).
+A prompt's pasted text is in the same file, under `pastedContents`; it is never read, since a paste
+is where a secret lands, and the `[Pasted text #1 +N lines]` placeholder in the prompt is all the tab
+shows. The session id names the transcript to open, so only a UUID is taken as one. Both files are
+read and never written -- when the page opens, after each prompt sent from it, and on the tab's
+⟳ -- and nothing read from them goes anywhere but this page, over the same origin as everything
+else: the route is `POST /api/history`, under `handleApi` like the rest.
+The prompts are drawn with `h()` and text nodes, and the one thing that acts on one -- the History
+tab's ▶ on a row -- goes through `sendToClaude`, typed and not submitted. The file's
+format is Claude Code's and undocumented, so each line is held to the shape observed before it
+counts, and a line that does not fit is skipped. `--no-history` or `PRCODER_NO_HISTORY` turns the
+read off, and `CLAUDE_CODE_SKIP_PROMPT_HISTORY`, which stops Claude Code writing the file, turns it
+off with it.
+
 ## Checking new work
 
 - **A new route** goes under `/api/` and through `handleApi`, which is where `sameOrigin` runs. A
@@ -192,6 +216,11 @@ A modified file's diff is not highlighted at all, and
   source, and the link ▶ adds is built from the repo name and number the row's tag shows. New text
   from GitHub or a file goes to the agent through `sendToClaude`, not straight to `typeIntoAgent`.
   `linksFrom` in `github.js` cleans titles too, so they are stored and shown without them.
+- **A route that reads outside the repository** reads only, keeps only what is this working copy's
+  before answering, holds what it reads to a shape, and has a switch that turns it off; and the
+  drivers point it at a fixture (`claudeConfig` in `tools/driver.mjs`), so no screenshot carries
+  the owner's real files. `/api/history` is the one there is, and the section above is its
+  argument.
 - **A new kind of asset** — a font, an image, a worker, anything loaded rather than inlined — has to
   be allowed by the CSP beside `serveFile`, which is otherwise silent about what it blocks. The
   Prism grammars under `/vendor/prism/` are same-origin script, which `script-src 'self'` already

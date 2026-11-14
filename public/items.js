@@ -257,3 +257,75 @@ export const pullMatches = (p, query, word = p.merge) => {
   return !q || [`#${p.number}`, p.title ?? '', p.author ?? '', p.headRefName ?? '', p.baseRefName ?? '', ...(p.labels ?? []), p.body ?? '', word ?? '',
     ...(p.closes ?? []).flatMap((i) => [`#${i.number}`, i.title ?? ''])].join('\n').toLowerCase().includes(q);
 };
+
+// The History tab: what was sent to the coding agent, by day and by session.
+// Pure, so the grouping and the labels are checked without a DOM, and `now`
+// is a parameter so a test can hold it still. Every date here is the local
+// one: "Yesterday" is the calendar's, not twenty-four hours.
+
+/** The local calendar day `ms` falls on, as a Date at its midnight. */
+const localDay = (ms) => {
+  const d = new Date(ms);
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+};
+
+/** The local day as `YYYY-MM-DD`, a key that sorts as it reads. */
+export const dayKey = (ms) => {
+  const d = new Date(ms);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+
+/**
+ * A day's heading: `Today`, `Yesterday`, the weekday's name within the last
+ * week, and `Sat, Oct 31` before that, with the year once it is not this one.
+ * Rounded to whole days from midnight to midnight, so a clock change does
+ * not make yesterday two days ago. A day still to come (a clock put back) is
+ * written as a date.
+ */
+export function dayLabel(ms, now = Date.now()) {
+  const day = localDay(ms);
+  const today = localDay(now);
+  const days = Math.round((today - day) / 86400_000);
+  if (days === 0) return 'Today';
+  if (days === 1) return 'Yesterday';
+  if (days > 1 && days < 7) return new Intl.DateTimeFormat('en', { weekday: 'long' }).format(day);
+  const year = day.getFullYear() === today.getFullYear() ? {} : { year: 'numeric' };
+  return new Intl.DateTimeFormat('en', { weekday: 'short', day: 'numeric', month: 'short', ...year }).format(day);
+}
+
+/** The time of day, `21:14`, on a 24-hour clock whatever the locale. */
+export const timeLabel = (ms) =>
+  new Intl.DateTimeFormat('en', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(ms));
+
+/**
+ * The prompts by day, newest day first, and within a day by session, each
+ * session's prompts newest first, as `[{ key, label, sessions: [{ id, rows }] }]`.
+ * A session's order within a day is its newest prompt's, and one that ran
+ * past midnight is under both days. A prompt with no session (`id` null) is
+ * grouped under none.
+ */
+export function byDay(prompts, now = Date.now()) {
+  const days = new Map();
+  for (const p of [...prompts].sort((a, b) => b.at - a.at)) {
+    const key = dayKey(p.at);
+    if (!days.has(key)) days.set(key, { key, label: dayLabel(p.at, now), sessions: new Map() });
+    const sessions = days.get(key).sessions;
+    const id = p.session ?? '';
+    if (!sessions.has(id)) sessions.set(id, { id: p.session ?? null, rows: [] });
+    sessions.get(id).rows.push(p);
+  }
+  return [...days.values()].map((d) => ({ ...d, sessions: [...d.sessions.values()] }));
+}
+
+/**
+ * The slash command a prompt starts with, `/code-review`, or null: what the
+ * tab marks, since "did I review this yet" is answered by seeing one. A path
+ * typed on its own, `/tmp`, is marked too, which costs nothing.
+ */
+export const commandOf = (text) => /^\/[A-Za-z][\w:-]*/.exec(String(text ?? '').trimStart())?.[0] ?? null;
+
+/** Whether the History tab's search matches a prompt: case-blind, over its text. */
+export const historyMatches = (p, query) => {
+  const q = (query ?? '').trim().toLowerCase();
+  return !q || String(p.text ?? '').toLowerCase().includes(q);
+};
