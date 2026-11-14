@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { notAWorkTree, parseWorktrees, worktrees, linkedWorktree, syncState, compareUrl, githubUrl, originOwner, remoteRepo, remoteRepos, repoInfo, pushRepo, commitsKnown, commitMemo, wholePrRepo, checkoutPr, startOnPr, isHere, trackedPr, userDirt, remoteBranchHead, trackingHead, snapshot, localPatch, branchesBelow } from '../git.js';
+import { notAWorkTree, parseWorktrees, worktrees, linkedWorktree, worktreeLoss, removeWorktree, syncState, compareUrl, githubUrl, originOwner, remoteRepo, remoteRepos, repoInfo, pushRepo, commitsKnown, commitMemo, wholePrRepo, checkoutPr, startOnPr, isHere, trackedPr, userDirt, remoteBranchHead, trackingHead, snapshot, localPatch, branchesBelow } from '../git.js';
 
 // git finds the repository through GIT_DIR and GIT_WORK_TREE before it looks
 // at cwd, and a git hook exports them. Under a hook, `npm test` ran every
@@ -155,7 +155,7 @@ test('a linked worktree knows the main working copy, and the main one is not lin
     assert.equal(await linkedWorktree(main), null);
     await testGit(main, 'worktree', 'add', '-q', '-b', 'topic', wt);
     await fs.mkdir(path.join(wt, 'sub'));
-    assert.deepEqual(await linkedWorktree(path.join(wt, 'sub')), { path: wt, main });
+    assert.deepEqual(await linkedWorktree(path.join(wt, 'sub')), { path: wt, main, common: path.join(main, '.git') });
     assert.equal(await linkedWorktree(main), null, 'the main working copy, with a worktree made from it');
     // Asked from either, the list is the same, and says which branch is where.
     for (const cwd of [main, wt]) {
@@ -169,7 +169,62 @@ test('a linked worktree knows the main working copy, and the main one is not lin
     const bare = path.join(dir, 'bare.git');
     await git('git', ['clone', '-q', '--bare', main, bare]);
     await git('git', ['worktree', 'add', '-q', path.join(dir, 'of-bare'), 'main'], { cwd: bare });
-    assert.deepEqual(await linkedWorktree(path.join(dir, 'of-bare')), { path: path.join(dir, 'of-bare'), main: null });
+    assert.deepEqual(await linkedWorktree(path.join(dir, 'of-bare')), { path: path.join(dir, 'of-bare'), main: null, common: bare });
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
+
+// What a quit in a worktree offers to do, and what it has to say first. git's
+// own behaviour is the thing checked: that an unforced removal is refused over
+// changed and untracked files, and that ignored ones go without a word (git
+// 2.54, 2026-11-14). The second is why worktreeLoss lists them.
+test('removing a worktree deletes its ignored files without asking, and its branch stays', async () => {
+  const dir = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'prcoder-remove-')));
+  const main = path.join(dir, 'main');
+  const wt = path.join(dir, 'topic');
+  const exists = (p) => fs.access(p).then(() => true, () => false);
+  try {
+    await git('git', ['init', '-q', '-b', 'main', main]);
+    await fs.writeFile(path.join(main, '.gitignore'), 'node_modules\n.env\n');
+    await fs.writeFile(path.join(main, 'a.txt'), 'a\n');
+    await fs.writeFile(path.join(main, 'b.txt'), 'b\n');
+    await testGit(main, 'add', '.');
+    await testGit(main, 'commit', '-q', '-m', 'x');
+    await testGit(main, 'worktree', 'add', '-q', '-b', 'topic', wt);
+    const { common } = await linkedWorktree(wt);
+    assert.deepEqual(await worktreeLoss(wt), { changed: 0, untracked: 0, ignored: [] });
+    // prcoder's own directory is not in the list; the caller counts the queue.
+    await fs.mkdir(path.join(wt, '.prcoder'));
+    await fs.writeFile(path.join(wt, '.prcoder', '.gitignore'), '*\n');
+    await fs.writeFile(path.join(wt, '.prcoder', 'queue.json'), '[]');
+    assert.deepEqual(await worktreeLoss(wt), { changed: 0, untracked: 0, ignored: [] });
+    await fs.mkdir(path.join(wt, 'node_modules'));
+    await fs.writeFile(path.join(wt, 'node_modules', 'x.js'), '');
+    await fs.writeFile(path.join(wt, '.env'), 'SECRET=1\n');
+    await fs.writeFile(path.join(wt, 'new one.txt'), '');
+    await fs.writeFile(path.join(wt, 'a.txt'), 'changed\n');
+    // A rename is two records, a deletion and an addition, not one and a half.
+    await testGit(wt, 'mv', 'b.txt', 'c.txt');
+    assert.deepEqual(await worktreeLoss(wt), { changed: 3, untracked: 1, ignored: ['.env', 'node_modules/'] });
+    await assert.rejects(removeWorktree(common, wt), /contains modified or untracked files, use --force to delete it/);
+    assert.ok(await exists(wt));
+    // With only ignored files in it, nothing is refused and nothing is said.
+    await testGit(wt, 'reset', '-q', '--hard');
+    await fs.rm(path.join(wt, 'new one.txt'));
+    assert.deepEqual(await worktreeLoss(wt), { changed: 0, untracked: 0, ignored: ['.env', 'node_modules/'] });
+    assert.equal(await removeWorktree(common, wt), '');
+    assert.equal(await exists(wt), false, '.env, node_modules and .prcoder/queue.json went with it');
+    assert.match((await testGit(main, 'branch', '--list', 'topic')).stdout, /topic/);
+    assert.equal((await worktrees(main)).length, 1);
+    // Forced, over changed and untracked files; and a locked one is not.
+    await testGit(main, 'worktree', 'add', '-q', wt, 'topic');
+    await fs.writeFile(path.join(wt, 'new.txt'), '');
+    await testGit(main, 'worktree', 'lock', wt);
+    await assert.rejects(removeWorktree(common, wt, { force: true }), /cannot remove a locked working tree/);
+    await testGit(main, 'worktree', 'unlock', wt);
+    await removeWorktree(common, wt, { force: true });
+    assert.equal(await exists(wt), false);
   } finally {
     await fs.rm(dir, { recursive: true, force: true });
   }

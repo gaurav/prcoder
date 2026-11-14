@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { execSync } from 'node:child_process';
-import { openRepoArgs, OPEN_REPO_VARS, REPO_ENV, parseCli, usage, AGENTS, VERSION, portFor, portCandidates, PORT_BASE, PORT_SPAN, statusLines, ago, queueSummary, quitRisks, ownerColour, OWNER_COLOURS } from '../cli.js';
+import { openRepoArgs, OPEN_REPO_VARS, REPO_ENV, parseCli, usage, AGENTS, VERSION, portFor, portCandidates, PORT_BASE, PORT_SPAN, statusLines, ago, queueSummary, quitRisks, worktreeLosses, leaveQuestion, ownerColour, OWNER_COLOURS } from '../cli.js';
 import { queueChanges } from '../queue.js';
 import { plain } from '../term.js';
 
@@ -423,6 +423,64 @@ test('each working copy lists the others, and where the prcoder in each is', asy
   assert.deepEqual(result.fromWorktree, [{ ...rows[0], here: false, url: `http://${result.here}` }, { ...rows[1], here: true }]);
 });
 
+// A quit in a worktree, against real servers and real git: the question
+// carries what removing the worktree would delete, the forced request says
+// remove or keep in one of two words, and a removal leaves the branch. The
+// main working copy is asked nothing about worktrees and cannot be removed.
+test('a quit in a worktree removes it or keeps it as told, and never the main working copy', async () => {
+  const fs = await import('node:fs/promises');
+  const os = await import('node:os');
+  const path = await import('node:path');
+  const dir = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'prcoder-leave-')));
+  const main = path.join(dir, 'main');
+  const git = (args, cwd = main) => execSync(`git -c user.name=t -c user.email=t@prcoder.invalid -c commit.gpgsign=false ${args}`,
+    { cwd, env: gitless(), encoding: 'utf8' }).trim();
+  const exists = (p) => fs.access(p).then(() => true, () => false);
+  const quit = (base, body) => fetch(`http://${base}/api/quit`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+    .then((r) => r.json());
+  try {
+    await fs.mkdir(main);
+    git('init -q');
+    await fs.writeFile(path.join(main, '.gitignore'), 'node_modules\n');
+    git('add .gitignore');
+    git('commit -q -m x');
+    for (const answer of ['keep', 'remove']) {
+      const wt = path.join(dir, answer);
+      git(`worktree add -q -b topic-${answer} ${answer === 'keep' ? '../keep' : '../remove'}`);
+      // With a file in it: git lists no directory that is empty.
+      await fs.mkdir(path.join(wt, 'node_modules'));
+      await fs.writeFile(path.join(wt, 'node_modules', 'x.js'), '');
+      await fs.writeFile(path.join(wt, 'notes.txt'), 'not committed\n');
+      const s = await serve(wt, { agent: '/usr/bin/false' });
+      try {
+        assert.deepEqual(await quit(s.base, {}),
+          { risk: [], worktree: { name: answer, path: wt, lose: ['1 untracked file', 'ignored node_modules/'] } });
+        assert.deepEqual(await quit(s.base, { force: true, worktree: 'sideways' }), { error: 'worktree: remove or keep' });
+        assert.deepEqual(await quit(s.base, { force: true, worktree: answer }), { quit: true });
+        assert.equal((await s.exited)[0], 0);
+      } finally {
+        s.server.kill();
+      }
+      assert.equal(await exists(wt), answer === 'keep', `${answer}: the worktree's directory`);
+      assert.match(git('branch --list'), new RegExp(`topic-${answer}`), 'its branch stays either way');
+    }
+    assert.deepEqual(git('worktree list --porcelain').match(/^worktree .*$/gm), [`worktree ${main}`, `worktree ${path.join(dir, 'keep')}`]);
+    // The main working copy: no worktree in the question, so with nothing at
+    // risk there is no question, and a request to remove it is refused.
+    const s = await serve(main, { agent: '/usr/bin/false' });
+    try {
+      assert.deepEqual(await quit(s.base, { force: true, worktree: 'remove' }), { error: 'this working copy is not a worktree prcoder can remove' });
+      assert.deepEqual(await quit(s.base, {}), { quit: true });
+      await s.exited;
+    } finally {
+      s.server.kill();
+    }
+    assert.ok(await exists(path.join(main, '.gitignore')));
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
+
 // A start that checks out is refused while another prcoder runs in the same
 // working copy -- found by the top level, not the directory, since one in a
 // subdirectory moves the same files under the other's agent. Before, `prcoder
@@ -609,4 +667,20 @@ test('the quit question names only what quitting costs', () => {
   assert.deepEqual(quitRisks({}), []);
   assert.deepEqual(quitRisks({ tabs: 1, ahead: 2 }), ['1 browser tab — its Claude session ends', '2 unpushed commits']);
   assert.deepEqual(quitRisks({ tabs: 2, dirty: 1 }), ['2 browser tabs — their Claude sessions end', '1 uncommitted file']);
+});
+
+// A quit in a worktree can remove it, and git removes ignored files and
+// prcoder's own queue without a word, so the question names each kind of
+// thing that would go. Completed and deleted queue items are not counted:
+// what is on Local is what is still to do.
+test('the quit question in a worktree says what removing it would delete', () => {
+  assert.deepEqual(worktreeLosses({}), []);
+  const queue = [{ text: 'a' }, { text: 'b' }, { text: 'done', done: true }];
+  assert.deepEqual(worktreeLosses({ changed: 1, untracked: 2, ignored: ['.env', 'node_modules/'], queue }),
+    ['1 uncommitted change', '2 untracked files', 'ignored .env, node_modules/', '2 queue items']);
+  assert.deepEqual(worktreeLosses({ ignored: ['.env', 'a/', 'b/', 'c/', 'd/'] }), ['ignored .env, a/, b/ and 2 more']);
+  assert.equal(leaveQuestion(['1 unpushed commit'], { name: 'topic', lose: ['1 untracked file', '1 queue item'] }),
+    'quit, and [r]emove worktree topic or [k]eep it? [N]  1 unpushed commit; removing it deletes 1 untracked file, 1 queue item ');
+  // The keys are inside the first of an 80-column line, whatever follows.
+  assert.equal(leaveQuestion([], { name: 'topic', lose: [] }), 'quit, and [r]emove worktree topic or [k]eep it? [N]  it has nothing git lacks ');
 });

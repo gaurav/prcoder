@@ -261,6 +261,39 @@ export function queueSummary(items = [], file = '.prcoder/queue.json') {
 }
 
 /**
+ * What removing a worktree would delete that git does not have, as the
+ * clauses of the question a quit in one asks: worktreeLoss's counts (git.js)
+ * and `queue`, the queue's items when its file is in the worktree, of which
+ * the ones on Local are counted. Empty when there is nothing: every commit is still on the
+ * branch, which stays. Three ignored paths are named and the rest counted,
+ * since the ones worth a second thought (`.env`) sort first and the line is
+ * one line.
+ */
+export function worktreeLosses({ changed = 0, untracked = 0, ignored = [], queue = [] } = {}) {
+  const n = (count, what) => `${count} ${what}${count > 1 ? 's' : ''}`;
+  const queued = counts(queue).local;
+  return [
+    changed && n(changed, 'uncommitted change'),
+    untracked && n(untracked, 'untracked file'),
+    ignored.length && `ignored ${ignored.slice(0, 3).join(', ')}${ignored.length > 3 ? ` and ${ignored.length - 3} more` : ''}`,
+    queued && n(queued, 'queue item'),
+  ].filter(Boolean);
+}
+
+/**
+ * The terminal's question for a quit in worktree `wt` (`{ name, lose }`,
+ * `lose` being worktreeLosses): the three answers, then the usual risks and
+ * what goes with the worktree. Any other key is no. The answers come first
+ * because the block clips a line to the terminal's width, and a question cut
+ * short of its keys is one answered blind; what is cut this way round is the
+ * end of a list.
+ */
+export function leaveQuestion(risk, wt) {
+  const about = wt.lose.length ? `removing it deletes ${wt.lose.join(', ')}` : 'it has nothing git lacks';
+  return `quit, and [r]emove worktree ${wt.name} or [k]eep it? [N]  ${[...risk, about].join('; ')} `;
+}
+
+/**
  * What quitting would cost, as the clauses of the y/N: the Claude sessions the
  * open tabs hold, which end with it, and work only this working copy has. Not
  * the queue, which quitting does not touch (queueSummary).

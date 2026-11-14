@@ -396,12 +396,38 @@ function gone() {
   document.querySelector('main').classList.add('dead');
   box.showModal();
 }
+/**
+ * The quit question in a worktree, which has three answers where the usual
+ * one has two: quitting can take the worktree away with it. Resolves
+ * `'remove'`, `'keep'`, or null for no quit at all (the third button, or
+ * Escape). `worktree` is the server's account of it: its name, its path, and
+ * `lose`, what removing it would delete that git does not have -- ignored
+ * files and the queue included, which git itself removes without a word.
+ * A box of our own because the browser's confirm() has two buttons.
+ */
+function askLeave({ risk = [], worktree }) {
+  const box = document.getElementById('leave');
+  document.getElementById('leave-risk').textContent = risk.length ? `Quitting: ${risk.join('; ')}.` : '';
+  document.getElementById('leave-lose').textContent = worktree.lose.length
+    ? `Removing ${worktree.path} deletes what git does not have: ${worktree.lose.join(', ')}. Its branch and commits stay.`
+    : `${worktree.path} has nothing git does not have. Its branch and commits stay either way.`;
+  box.returnValue = '';
+  return new Promise((resolve) => {
+    box.addEventListener('close', () => resolve(box.returnValue || null), { once: true });
+    box.showModal();
+  });
+}
+
 // Quit, from the exit bar or the menu.
 async function quitPrcoder() {
   try {
     let r = await api('/api/quit', {});
     // The same question the terminal's q asks, put where you are.
-    if (r.risk) {
+    if (r.worktree) {
+      const answer = await askLeave(r);
+      if (!answer) return;
+      r = await api('/api/quit', { force: true, worktree: answer });
+    } else if (r.risk) {
       if (!confirm(`Quit prcoder? ${r.risk.join('; ')}.`)) return;
       r = await api('/api/quit', { force: true });
     }

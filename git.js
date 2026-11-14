@@ -139,10 +139,12 @@ export function parseWorktrees(out) {
 export const worktrees = async (cwd) => parseWorktrees(await git(['worktree', 'list', '--porcelain', '-z'], cwd));
 
 /**
- * `{ path, main }` when `cwd` is in a linked worktree -- one made by `git
- * worktree add` -- and null in a repository's main working copy. `path` is
- * the worktree's top level and `main` the main working copy's, or null when
- * the repository is bare and has none.
+ * `{ path, main, common }` when `cwd` is in a linked worktree -- one made by
+ * `git worktree add` -- and null in a repository's main working copy. `path`
+ * is the worktree's top level and `main` the main working copy's, or null
+ * when the repository is bare and has none. `common` is the git directory
+ * every working copy shares, which is there either way: where a command about
+ * a worktree is run from once it must not be run inside it (removeWorktree).
  *
  * Told by the two directories git keeps: a linked worktree's own is
  * `.git/worktrees/<name>` inside the one it shares with the rest. Not by
@@ -152,8 +154,49 @@ export async function linkedWorktree(cwd) {
   const [own, common] = (await text(['rev-parse', '--path-format=absolute', '--git-dir', '--git-common-dir'], cwd)).split('\n');
   if (own === common) return null;
   const [first] = await worktrees(cwd);
-  return { path: await workTreeTop(cwd), main: first && !first.bare ? first.path : null };
+  return { path: await workTreeTop(cwd), main: first && !first.bare ? first.path : null, common };
 }
+
+/**
+ * What `git worktree remove` would delete from the working copy `cwd` is in
+ * that git does not have: `{ changed, untracked, ignored }`, the first two
+ * counts of files and the last the ignored paths as git names them, a
+ * directory once (`node_modules/`). Commits are not in it: a worktree's
+ * branch stays when the worktree goes.
+ *
+ * git refuses the removal over the first two unless forced, and says nothing
+ * at all about the third: with only ignored files in it a worktree is removed
+ * whole, exit 0 (git 2.54, 2026-11-14, and test/git.test.js). That is a
+ * `node_modules`, an `.env`, and prcoder's own `.prcoder/` with the queue in
+ * it, so the caller is told about each and decides; `.prcoder/` is left to
+ * the caller, which knows whether there is a queue in it.
+ *
+ * `--no-renames`, so a rename is a deletion and an addition, one record each:
+ * with `-z` a rename's old name is a record of its own with no status on it.
+ */
+export async function worktreeLoss(cwd) {
+  const out = await git(['status', '--porcelain', '-z', '--ignored', '--no-renames'], cwd);
+  const entries = out.split('\0').filter(Boolean).map((e) => ({ status: e.slice(0, 2), path: e.slice(3) }));
+  return {
+    changed: entries.filter((e) => e.status !== '??' && e.status !== '!!').length,
+    untracked: entries.filter((e) => e.status === '??').length,
+    ignored: entries.filter((e) => e.status === '!!' && e.path !== '.prcoder/').map((e) => e.path),
+  };
+}
+
+/**
+ * `git worktree remove` of the worktree at `where`, run in `from`: the
+ * shared git directory (linkedWorktree's `common`), since the worktree itself
+ * is about to go and a bare repository has no main working copy to stand in.
+ * `force` is git's `--force`, for one with changed or untracked files, which
+ * are deleted with it. A locked worktree is refused either way: it takes two
+ * `--force`, and whoever locked it meant something by that.
+ *
+ * The branch is not touched. Two minutes, as a checkout gets: a removal cut
+ * short leaves half a directory that git no longer lists.
+ */
+export const removeWorktree = (from, where, { force = false } = {}) =>
+  run('git', ['worktree', 'remove', ...(force ? ['--force'] : []), where], { cwd: from, timeout: 120_000 });
 
 /** Empty on a detached HEAD, which happens mid-rebase and mid-bisect. */
 export const currentBranch = (cwd) =>

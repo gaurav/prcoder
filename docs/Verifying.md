@@ -178,6 +178,12 @@ real sockets -- and that the code still arrives at a tab megabytes behind on the
 which a server that exits as soon as it has sent the close loses. The worktree line's list is
 checked there too, with two real servers: one in a throwaway repo's main working copy and one in
 a worktree of it, each asked for the list, so that one finds the other by its running record.
+A quit that removes its worktree is there as well, against real git: the question's account of
+what would go, the directory gone and the branch kept after `remove`, both left after `keep`, and
+the main working copy refusing to be removed. That git deletes a worktree's ignored files without
+a word is pinned in `test/git.test.js`, dated, since the question exists because of it. The
+terminal's three-way question is not in `npm test`: it was driven by hand in a PTY (2026-11-14),
+and `tools/cli.mjs` is where a standing check would go.
 
 Some things were checked against the real thing rather than a stub, and the evidence sits next to
 the code:

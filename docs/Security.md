@@ -229,6 +229,10 @@ off with it.
   names, and what is read in each is prcoder's own running record, a pid and a port, which is then
   believed only if a prcoder answers on that port saying it runs in that directory. The page gets
   each one's path, branch and address; nothing it sends back reaches a path or an argv.
+- **A quit that removes a worktree** takes one of two words from the page, `remove` or `keep`, and
+  anything else is refused. The directory `git worktree remove` is given is the server's own top
+  level, and whether it is given `--force` is decided by the server from what is in that
+  directory, so the page can choose that this prcoder's worktree goes and nothing else about it.
 - **A new kind of asset** — a font, an image, a worker, anything loaded rather than inlined — has to
   be allowed by the CSP beside `serveFile`, which is otherwise silent about what it blocks. The
   Prism grammars under `/vendor/prism/` are same-origin script, which `script-src 'self'` already

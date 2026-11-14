@@ -31,7 +31,7 @@ export const setVerbosity = (n) => { level = clamp(n); };
 let out = process.stdout;
 let footer = [];
 let painted = 0;     // rows the block occupies right now
-let prompt = null;   // { text, onYes } while a confirm is up
+let prompt = null;   // { text, keys } while a question is up
 
 /**
  * Tests point the module at a fake stream; nothing else calls this. The
@@ -218,7 +218,17 @@ export function title(text) {
  * it.
  */
 export function confirm(text, onYes) {
-  prompt = { text: visible(text), onYes };
+  ask(text, { y: onYes });
+}
+
+/**
+ * A question with more answers than yes: `keys` is what each letter does,
+ * lower case, and any other key is no, as it is for confirm. The quit in a
+ * worktree asks one, since removing the worktree and keeping it are both
+ * ways of quitting.
+ */
+export function ask(text, keys) {
+  prompt = { text: visible(text), keys };
   paint();
 }
 
@@ -245,10 +255,10 @@ export function keys({ quit, key }) {
         // The escape hatch. A second Ctrl-C goes, no matter what is wrong with
         // the rest of this: nothing here may make the process unkillable.
         if (b === 3) process.exit(130);
-        const { onYes } = prompt;
+        const answer = prompt.keys[ch.toLowerCase()];
         prompt = null;
         paint();
-        if (ch === 'y' || ch === 'Y') onYes();
+        answer?.();
       } else if (b === 3 || ch === 'q') quit();
       else key(ch);
     }

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { sink, status, log, paint, verbose, debug, cycleVerbosity, setVerbosity, confirm, clip, styled, plain, title } from '../term.js';
+import { sink, status, log, paint, verbose, debug, cycleVerbosity, setVerbosity, confirm, ask, clip, styled, plain, title } from '../term.js';
 
 /** A stand-in for process.stdout, so the tty path can be exercised anywhere. */
 function fake(isTTY, columns = 40, rows = 24) {
@@ -106,6 +106,18 @@ test('a confirm adds to the block rather than being written past it', () => {
   confirm('quit? [y/N] ', () => {});
   assert.match(out.text, /quit\? \[y\/N\]/);
   // Rule + status line + blank + prompt: the next erase must walk up all four.
+  log('x');
+  assert.match(out.text, /\x1b\[4F\x1b\[0Jx\n/);
+});
+
+// A question with more than one way to say yes is the same two lines of the
+// block as a confirm, which is one of these with `y` alone.
+test('a question with several answers is asked in the block, as a confirm is', () => {
+  const out = fake(true);
+  status(['a']);
+  out.text = '';
+  ask('quit, and [r]emove or [k]eep? [N] ', { r: () => {}, k: () => {} });
+  assert.match(out.text, /quit, and \[r\]emove or \[k\]eep\? \[N\]/);
   log('x');
   assert.match(out.text, /\x1b\[4F\x1b\[0Jx\n/);
 });

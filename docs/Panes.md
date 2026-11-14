@@ -471,7 +471,10 @@ the other tab's (#77). It is unticked by default and last in the bar: starting a
 a deliberate switch of model than a slip. A setting the server will not take is refused before
 anything starts, and the terminal says so -- except the command line's own, which is kept as it
 was given even when the bar would refuse it typed in. Quit asks what the terminal's quit asks
-([Terminal.md](Terminal.md)).
+([Terminal.md](Terminal.md)), in the browser's own confirm box; in a git worktree, where the
+question has three answers, it is a box of the page's: **Quit and remove the worktree**, **Quit
+and keep it**, and **Don't quit**, which Escape is too, over what the quit costs and what removing
+the worktree would delete ([Worktrees.md](Worktrees.md#quitting-in-a-worktree)).
 
 Once prcoder itself has gone, nothing on the page works -- the pull request pane, the queue and
 the terminal all talk to it -- so the whole window says so: a box over the panes, which are dimmed

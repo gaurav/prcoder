@@ -5374,6 +5374,62 @@ test('when the agent exits, starting it again reconnects with the chosen setting
   await p.close();
 });
 
+// In a worktree the quit has a third answer, so the question is a box of the
+// page's own: what quitting costs, what removing the worktree would delete,
+// and three buttons. The server is told which, in one of two words.
+test('a quit in a worktree asks whether to remove it, keep it, or not quit', { skip }, async () => {
+  const p = await newPage({ pty: (ws) => ws.close() });
+  await p.locator('#term-exit').waitFor({ state: 'visible' });
+  const asked = [];
+  const worktree = { name: 'topic', path: '/w/topic', lose: ['1 untracked file', 'ignored .env, node_modules/', '2 queue items'] };
+  await p.route('**/api/quit', (r) => {
+    const body = r.request().postDataJSON();
+    asked.push(body);
+    return r.fulfill({ json: body.force ? { quit: true } : { risk: ['2 unpushed commits'], worktree } });
+  });
+  p.on('dialog', (d) => { asked.push(`a browser dialog: ${d.message()}`); d.dismiss(); });
+  await p.click('#term-quit');
+  await p.waitForSelector('#leave:modal');
+  assert.equal(await p.locator('#leave-risk').textContent(), 'Quitting: 2 unpushed commits.');
+  assert.equal(await p.locator('#leave-lose').textContent(),
+    'Removing /w/topic deletes what git does not have: 1 untracked file, ignored .env, node_modules/, 2 queue items. Its branch and commits stay.');
+  assert.deepEqual(await p.locator('#leave button').allTextContents(), ['Quit and remove the worktree', 'Quit and keep it', "Don't quit"]);
+  // A stray Enter must not be the answer that deletes.
+  assert.equal(await p.evaluate(() => document.activeElement.textContent), "Don't quit");
+  // Escape, and the third button, are no quit: nothing more is asked of the server.
+  await p.keyboard.press('Escape');
+  await p.waitForSelector('#leave:not([open])', { state: 'attached' });
+  await p.click('#term-quit');
+  await p.waitForSelector('#leave:modal');
+  await p.locator('#leave button', { hasText: "Don't quit" }).click();
+  await p.waitForSelector('#leave:not([open])', { state: 'attached' });
+  assert.deepEqual(asked, [{}, {}]);
+  assert.equal(await p.locator('#dead').evaluate((d) => d.open), false);
+  // Keep, then on a fresh page remove: each quits, saying which.
+  await p.click('#term-quit');
+  await p.locator('#leave button', { hasText: 'Quit and keep it' }).click();
+  await p.waitForSelector('#dead:modal');
+  assert.deepEqual(asked.at(-1), { force: true, worktree: 'keep' });
+  await p.close();
+
+  const q = await newPage({ pty: (ws) => ws.close() });
+  await q.locator('#term-exit').waitFor({ state: 'visible' });
+  const sent = [];
+  await q.route('**/api/quit', (r) => {
+    const body = r.request().postDataJSON();
+    sent.push(body);
+    return r.fulfill({ json: body.force ? { quit: true } : { risk: [], worktree: { ...worktree, lose: [] } } });
+  });
+  await q.click('#term-quit');
+  await q.waitForSelector('#leave:modal');
+  assert.equal(await q.locator('#leave-risk').isVisible(), false, 'nothing to say about the quit itself');
+  assert.equal(await q.locator('#leave-lose').textContent(), '/w/topic has nothing git does not have. Its branch and commits stay either way.');
+  await q.locator('#leave button', { hasText: 'Quit and remove the worktree' }).click();
+  await q.waitForSelector('#dead:modal');
+  assert.deepEqual(sent, [{}, { force: true, worktree: 'remove' }]);
+  await q.close();
+});
+
 // The fill is a fetch, so it can land after you have typed into the bar; it
 // must not take that back. And an effort the select has no option for still
 // shows, rather than reading "as started".

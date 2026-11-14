@@ -12,12 +12,12 @@ import { text as readBody } from 'node:stream/consumers';
 import { spawn as ptySpawn } from 'node-pty';
 import { WebSocketServer } from 'ws';
 import { loadPr, pullRequestFor, prBody, parsePrUrl, listPrs, branchPrs, lookupPrs, ownPrs, pickPr, issueLinks, lookupRef, setViewed, setBody, createIssue, fetchPatches, runCount, repoIssues, repoMilestones, setIssueMilestone } from './github.js';
-import { notAWorkTree, snapshot, currentBranch, headCommit, commitsKnown, commitMemo, repoInfo, pushRepo, compareUrl, githubUrl, originOwner, wholePrRepo, startOnPr, trackedPr, workTreeTop, pushBranch, remoteBranchHead, trackingHead, localPatch, branchesBelow, worktrees } from './git.js';
+import { notAWorkTree, snapshot, currentBranch, headCommit, commitsKnown, commitMemo, repoInfo, pushRepo, compareUrl, githubUrl, originOwner, wholePrRepo, startOnPr, trackedPr, workTreeTop, pushBranch, remoteBranchHead, trackingHead, localPatch, branchesBelow, worktrees, linkedWorktree, worktreeLoss, removeWorktree } from './git.js';
 import { bucket, fileUrl, fileViews } from './files.js';
 import { readPort, writePort, readRunning, writeRunning, dropRunning, alive, claimStart, releaseStart, readPrs, writePrs, pick, useQueueFile, movedQueue, issueUrl, readPulls } from './store.js';
 import { readQueue, writeQueue, quote } from './queue.js';
 import { readHistory } from './history.js';
-import { parseCli, usage, VERSION, portCandidates, statusLines, openRepoArgs, OPEN_REPO_VARS, REPO_ENV, queueSummary, quitRisks } from './cli.js';
+import { parseCli, usage, VERSION, portCandidates, statusLines, openRepoArgs, OPEN_REPO_VARS, REPO_ENV, queueSummary, quitRisks, worktreeLosses, leaveQuestion } from './cli.js';
 import { choosePr, githubPulls } from './choose.js';
 import * as term from './term.js';
 import { toggleTask, refs, wholeRef, resolveRef } from './public/tasks.js';
@@ -30,6 +30,10 @@ const repo = process.cwd();
 // running records are kept, and what another prcoder is matched by
 // (runningHere). Settled in main, once `repo` is known to be in a work tree.
 let top = repo;
+// The worktree this working copy is, when it is one `git worktree add` made
+// (linkedWorktree in git.js), and null in a repository's main working copy.
+// Settled in main with `top`, and what a quit reads to offer the removal.
+let linked = null;
 // The agent's argv, from the command line -- see cli.js. Parsed in main, not
 // here: a test importing this module must not parse the runner's argv, and the
 // spawn needs `agentArgs` to be an array either way.
@@ -516,15 +520,24 @@ const routes = {
   // The exit panel's Quit button, asking what the terminal's q asks. Without
   // `force`, a quit that would cost something only says what it would cost, so
   // the page can put the same question to you there.
-  'POST /api/quit': ({ force } = {}) => {
+  //
+  // In a worktree the answer also carries `worktree`, what removing it would
+  // delete (leaving), and the question has a third answer: the forced request
+  // says `worktree: 'remove'` or `'keep'`. Those two words are all the page
+  // can say about it. The directory removed is this server's own, and whether
+  // git is told `--force` is decided here, from what is in it.
+  'POST /api/quit': async ({ force, worktree } = {}) => {
+    if (worktree !== undefined && worktree !== 'remove' && worktree !== 'keep') throw new Error('worktree: remove or keep');
     // Into the terminal's scrollback, as q does: first, and whether or not the
     // question that follows is answered yes. listQueue() prints nothing new on
     // the forced request that follows a yes, and lists anything added since.
     listQueue();
     const risk = quitRisk();
-    if (risk.length && !force) return { risk };
+    const wt = await leaving();
+    if (!force && (risk.length || wt)) return { risk, ...(wt && { worktree: { name: wt.name, path: wt.path, lose: wt.lose } }) };
+    if (worktree === 'remove' && !wt) throw new Error('this working copy is not a worktree prcoder can remove');
     // Deferred so the reply goes out first: process.exit doesn't wait for it.
-    setTimeout(quit, 100);
+    setTimeout(() => quit({ remove: worktree === 'remove' ? wt : null }), 100);
     return { quit: true };
   },
 
@@ -1443,25 +1456,94 @@ function tellTabs(ms) {
 // a moment ago, on a reader that is behind. An empty write calls back once
 // everything ahead of it is out; the timer is for a reader that never catches
 // up, which must not keep prcoder alive.
+//
+// `remove` is the worktree to take away on the way out (leaving), once the
+// tabs are told and the agents killed, since they are in it. The hard stop
+// waits for git then: a removal is given two minutes (removeWorktree).
 let quitting = false;
-function quit() {
+function quit({ remove = null } = {}) {
   if (quitting) return;
   quitting = true;
   const told = tellTabs(2000);
   for (const pty of ptys) pty.kill();
   wss.close();
   server.close();
-  setTimeout(() => process.exit(0), 2000);
-  Promise.all([told, new Promise((r) => process.stdout.write('', r))]).then(() => process.exit(0));
+  const written = () => new Promise((r) => process.stdout.write('', r));
+  setTimeout(() => process.exit(0), remove ? 125_000 : 2000);
+  Promise.all([told, written()])
+    .then(() => remove && removeHere(remove).then(written))
+    .then(() => process.exit(0));
 }
 
-function askToQuit() {
-  listQueue();
-  const risk = quitRisk();
-  if (!risk.length) return quit();
-  // Listed again on yes: the queue can change while the question waits, and
-  // an item added from a tab in that time would otherwise go unprinted.
-  term.confirm(`quit? ${risk.join('; ')}  [y/N] `, () => { listQueue(); quit(); });
+/**
+ * What a quit can do about the worktree this prcoder is in: `{ name, path,
+ * lose, force }`, or null when there is nothing to offer -- the repository's
+ * main working copy, a worktree another prcoder is also running in, or one
+ * someone locked. `lose` is what removing it would delete that git does not
+ * have (worktreeLosses), and `force` whether git has to be told `--force`,
+ * which it does over changed and untracked files and not over ignored ones.
+ *
+ * The queue is in `lose` only while its file is in the worktree: one moved
+ * with --queue stays where it is. A failure to read any of this is no offer,
+ * said at debug: a quit must not fail on the way to asking about a removal.
+ */
+async function leaving() {
+  if (!linked) return null;
+  try {
+    if (await runningHere()) return null;
+    if ((await worktrees(repo)).find((w) => w.path === top)?.locked) return null;
+    const loss = await worktreeLoss(top);
+    return {
+      name: path.basename(top), path: top, force: loss.changed + loss.untracked > 0,
+      lose: worktreeLosses({ ...loss, queue: movedQueue() ? [] : last?.queue ?? [] }),
+    };
+  } catch (e) {
+    term.debug(`removing this worktree not offered: ${e.message}`);
+    return null;
+  }
+}
+
+/**
+ * Removes the worktree this prcoder ran in, as its last act. From the shared
+ * git directory, with this process moved there first: the directory it is
+ * standing in is the one going. This run's record and start lock go before
+ * it, so the exit handler finds nothing left to drop. The branch stays, and
+ * the line says so, since "removed" beside a branch's name reads otherwise.
+ * A refusal -- a file made since the question, a submodule -- is git's words
+ * and the command that would do it, and the worktree is left as it is.
+ */
+async function removeHere({ path: where, force }) {
+  const branch = await currentBranch(top).catch(() => '');
+  releaseStart(top);
+  dropRunning(top);
+  try {
+    process.chdir(linked.common);
+    await removeWorktree(linked.common, where, { force });
+    console.log(`removed the worktree ${where}${branch ? `; its branch, ${branch}, is kept` : ''}`);
+  } catch (e) {
+    console.error(`worktree not removed: ${e.message.trim()}\nit is still at ${where}; \`git worktree remove --force ${where}\` removes it`);
+  }
+}
+
+// One question at a time: leaving() takes a moment, and a second q inside it
+// would ask twice.
+let asking = false;
+async function askToQuit() {
+  if (asking || quitting) return;
+  asking = true;
+  try {
+    listQueue();
+    const risk = quitRisk();
+    const wt = await leaving();
+    // Listed again on yes: the queue can change while the question waits, and
+    // an item added from a tab in that time would otherwise go unprinted.
+    const go = (opts) => () => { listQueue(); quit(opts); };
+    if (wt) term.ask(leaveQuestion(risk, wt), { r: go({ remove: wt }), k: go() });
+    else if (risk.length) term.confirm(`quit? ${risk.join('; ')}  [y/N] `, go());
+    else quit();
+  } finally {
+    asking = false;
+  }
 }
 
 if (import.meta.main) {
@@ -1491,6 +1573,7 @@ if (import.meta.main) {
     process.exit(2);
   }
   top = await workTreeTop(repo).catch((e) => (term.debug(`top level not read, so ${repo} stands for it: ${e.message}`), repo));
+  linked = await linkedWorktree(repo).catch((e) => (term.debug(`not read whether this is a worktree: ${e.message}`), null));
   // This run's record and start lock go with it, whatever ends it: a refusal
   // below, a quit, or a crash (claim writes the record for a checkout, the
   // line after the start block for everything else, and ready() its port).
