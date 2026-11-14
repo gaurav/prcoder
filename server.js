@@ -362,7 +362,7 @@ const poll = () => (queuedPoll ??= serial(() => {
 // issues, which nothing here reads again.
 let listing = null;
 
-// What the Pull requests tab was last shown (POST /api/pulls, from the cache
+// What the PRs tab was last shown (POST /api/pulls, from the cache
 // or GitHub), and the last listing this process read from GitHub, which is
 // what the route that acts on a row holds a move to: pulls.json can be days
 // old, and a pull request merged since is still a row in it.
@@ -423,7 +423,7 @@ export const queuedRun = (fn) => {
 };
 
 /**
- * The Pull requests tab's fresh read: GitHub's listing, written to
+ * The PRs tab's fresh read: GitHub's listing, written to
  * `.prcoder/pulls.json` (githubPulls, which `prcoder choose` reads by too)
  * and kept as `pulls`. Queued (queuedRun), not under the
  * server's lock: two at once each paid for the seconds-long read and wrote
@@ -443,7 +443,7 @@ const freshPulls = queuedRun(async () => (pulls = pullsFromGitHub = await github
  * pullMove is the same hold for /api/pull/milestone, on the pulls listing.
  */
 export const issueMove = (listing, body) => heldMove(listing?.issues, listing?.milestones, 'issue', 'Issues', body);
-export const pullMove = (listing, body) => heldMove(listing?.pulls, listing?.milestones, 'pull request', 'Pull requests', body);
+export const pullMove = (listing, body) => heldMove(listing?.pulls, listing?.milestones, 'pull request', 'PRs', body);
 
 function heldMove(rows, milestones, what, tab, { number, milestone } = {}) {
   const row = rows?.find((r) => r.number === number);
@@ -572,7 +572,7 @@ const routes = {
   },
 
   /**
-   * A pull request dropped on a milestone group in the Pull requests tab, or
+   * A pull request dropped on a milestone group in the PRs tab, or
    * one picked in its opened row: the milestone is set on GitHub
    * (setIssueMilestone, as an issue's is), and the tab reads the listing again.
    * pullMove holds the number and the title to the last listing read from
@@ -583,7 +583,7 @@ const routes = {
    */
   'POST /api/pull/milestone': async (body = {}) => {
     const shown = pullsFromGitHub ?? await freshPulls.pending();
-    if (!shown) throw new Error('The Pull requests tab has not read GitHub yet: press ⟳, then move it again');
+    if (!shown) throw new Error('The PRs tab has not read GitHub yet: press ⟳, then move it again');
     const { number, milestone, title } = pullMove(shown, body);
     const [owner, name] = (await repoFacts()).nameWithOwner.split('/');
     await setIssueMilestone(repo, { owner, repo: name, number }, milestone);

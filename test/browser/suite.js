@@ -155,8 +155,9 @@ const EMPTY_ISSUES = { milestones: [], issues: [], total: 0, listed: 0, repo: 'h
 const MILESTONES = { repo: 'heal-data-stewards/heal-vlmd-AI-pipeline', milestones: [
   { number: 3, title: 'Not urgent', dueOn: null }, { number: 4, title: 'Needed soon', dueOn: null },
   { number: 1, title: 'v1.0', dueOn: '2026-11-01T00:00:00Z' }] };
-// And /api/pulls, which the Pull requests tab asks twice on opening: once for
-// the last listing, once for a fresh one. `read` is when, in ms.
+// And /api/pulls, which the page asks for the last listing as it opens, for
+// the PRs tab's count, and the tab asks for a fresh one on a visit. `read` is
+// when, in ms.
 const EMPTY_PULLS = { milestones: [], pulls: [], total: 0, listed: 0, read: 0 };
 
 let browser;
@@ -318,12 +319,71 @@ test('checkboxes render with their state, and a tick posts through', { skip }, a
   assert.ok((await page.locator('#pr-head .tab').allTextContents()).includes('Detail (2/3)'));
 });
 
-test('the queue\'s PR tab names each box by its line', { skip }, async () => {
-  const fresh = await newPage();
+test('the queue\'s PR #N tab names each box by its line, and its ▶ types the line without ticking it', { skip }, async () => {
+  const typed = [];
+  const fresh = await newPage({ pty: (ws) => ws.onMessage((m) => {
+    const msg = JSON.parse(m);
+    if (msg.type === 'input') typed.push(msg.data);
+  }) });
   await fresh.locator('#queue-body .tab[data-tab="pr"]').click();
   const box = fresh.locator('#queue-body').getByRole('checkbox', { name: 'first task', exact: true });
   assert.equal(await box.count(), 1);
   assert.equal(await box.isChecked(), false);
+  // The row's ways, in every row's order; ▶ types the bare line, unsent, and
+  // the box is still GitHub's to tick.
+  const row = fresh.locator('#queue-body .item.source').first();
+  assert.deepEqual(await row.locator('.actions button').allTextContents(), ['▶', '↓']);
+  await row.locator('.actions button').first().click();
+  for (let i = 0; !typed.length && i < 100; i++) await new Promise((r) => setTimeout(r, 50));
+  assert.deepEqual(typed, ['first task']);
+  assert.equal(await box.isChecked(), false);
+  await fresh.close();
+});
+
+// The PR #N tab is everything the description points at, in three folds: the
+// checklist, the mentions as the Issues tab draws them, and the issues it
+// closes, dimmed and with nothing to drag. Its count is the unticked boxes
+// plus the mentions not known to be closed -- every mention until the
+// listing lands, then the open ones.
+test('the PR #N tab holds the checklist, the mentions and what it closes, and counts what is open', { skip }, async () => {
+  const fresh = await newPage();
+  const issues = [
+    { number: 7, url: `${REPO}/issues/7`, closes: false, title: 'Per-route locking' },
+    { number: 9, url: `${REPO}/issues/9`, closes: false, title: 'An old one' },
+    { number: 8, url: `${REPO}/issues/8`, closes: true, title: 'Lock per route' },
+  ];
+  let answer;
+  const asked = new Promise((res) => { answer = res; });
+  await fresh.route('**/api/status', (r) => r.fulfill({ json: { ...status, pr: { ...pr, issues } } }));
+  await fresh.route('**/api/issues', async (r) => {
+    await asked;
+    return r.fulfill({ json: { ...EMPTY_ISSUES, mentions: [
+      { number: 7, title: 'Per-route locking', state: 'OPEN', kind: 'issue', url: `${REPO}/issues/7`, updatedAt: '2026-10-02T00:00:00Z' },
+      { number: 9, title: 'An old one', state: 'CLOSED', kind: 'issue', url: `${REPO}/issues/9`, updatedAt: '2026-10-01T00:00:00Z' },
+    ] } });
+  });
+  await fresh.reload();
+  await fresh.waitForSelector('#queue-body .tab[data-tab="pr"]');
+  const label = () => fresh.locator('#queue-body .tab[data-tab="pr"]').textContent();
+  assert.equal(await label(), 'PR #12 (4)', 'two boxes to tick and two mentions, before the listing says which are open');
+  await fresh.locator('#queue-body .tab[data-tab="pr"]').click();
+  const parts = () => fresh.$$eval('#queue-body .pr-parts .fold.part', (gs) => gs.map((g) =>
+    `${g.dataset.group}|${g.querySelector('h3').textContent.replace(/\s+/g, ' ').trim()}|${g.open ? 'open' : 'closed'}|${g.querySelectorAll('.item').length}`));
+  assert.deepEqual((await parts()).map((p) => p.split('|')[0]), ['tasks', 'mentioned', 'closes']);
+  assert.equal(await fresh.locator('[data-group="mentioned"] .item .text').first().textContent(), '…', 'a mention not looked up yet');
+  answer();
+  await fresh.waitForSelector('[data-group="mentioned"] .item.closed');
+  assert.equal(await label(), 'PR #12 (3)', 'the closed mention drops out');
+  assert.deepEqual(await parts(), ['tasks|Checklist 2|open|3', 'mentioned|Mentions 2|open|2', 'closes|Closes 1|open|1']);
+  const closes = fresh.locator('[data-group="closes"] .item');
+  assert.deepEqual(await closes.evaluateAll((ls) => ls.map((l) => [l.classList.contains('closes'), l.querySelector('.text').textContent, l.querySelector('.grip')?.getAttribute('draggable') ?? null, l.querySelector('.tag').textContent])),
+    [[true, 'Lock per route', null, '#8']]);
+  assert.equal(await fresh.locator('[data-group="mentioned"] .item.closed .text').textContent(), 'An old one · closed');
+  // A fold closed stays closed across the poll's repaint.
+  await fresh.locator('[data-group="closes"] summary').click();
+  await fresh.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+  await fresh.waitForTimeout(200);
+  assert.equal((await parts())[2].split('|')[2], 'closed');
   await fresh.close();
 });
 
@@ -2043,6 +2103,63 @@ test('Deleted lists the most recently deleted first', { skip }, async () => {
   await fresh.close();
 });
 
+// The strip stays put while the list scrolls under it, and each tab keeps its
+// own offset: forty Local rows scrolled, a visit to Completed starts at its
+// top, and Local is where it was on the way back. A poll landing meanwhile
+// (the queue's own repaint) keeps the offset too.
+test('the queue\'s tabs stay above a list that scrolls, each tab at its own offset', { skip }, async () => {
+  const fresh = await newPage();
+  const queue = Array.from({ length: 40 }, (_, n) => ({ text: `item ${n}`, done: n % 2 === 1, issue: null, deleted: false }));
+  await fresh.route('**/api/queue', (r) => r.fulfill({ json: queue }));
+  await fresh.route('**/api/status', (r) => r.fulfill({ json: { ...status, queue } }));
+  await fresh.reload();
+  await fresh.waitForSelector('#queue-body .item');
+  const where = () => fresh.evaluate(() => {
+    const list = document.getElementById('queue-list');
+    return { top: list.scrollTop, scrolls: list.scrollHeight > list.clientHeight, strip: !!document.querySelector('#queue-head .tabs'), inList: !!list.querySelector('.tabs') };
+  });
+  assert.deepEqual(await where(), { top: 0, scrolls: true, strip: true, inList: false }, 'the strip is in the head, the rows in the list');
+  await fresh.evaluate(() => { document.getElementById('queue-list').scrollTop = 150; });
+  await fresh.waitForFunction(() => document.getElementById('queue-list').scrollTop === 150);
+  await fresh.locator('#queue-body .tab', { hasText: 'Completed' }).click();
+  assert.equal((await where()).top, 0, 'Completed opens at its top');
+  await fresh.evaluate(() => { document.getElementById('queue-list').scrollTop = 60; });
+  await fresh.waitForFunction(() => document.getElementById('queue-list').scrollTop === 60);
+  await fresh.locator('#queue-body .tab', { hasText: 'Local' }).click();
+  assert.equal((await where()).top, 150, 'Local is where it was');
+  await fresh.locator('#queue-body .tab', { hasText: 'Completed' }).click();
+  assert.equal((await where()).top, 60, 'and so is Completed');
+  await fresh.close();
+});
+
+// A tab's controls stay at the top of the list as the groups scroll under
+// them: the Issues tab's search here, which is in the same row the PRs and
+// History tabs have. The box is the row's first control, so a search typed
+// after a scroll lands in a box that is on screen.
+test('the Issues tab\'s search stays in sight as its groups scroll', { skip }, async () => {
+  const { fresh } = await issuesPage();
+  // Where the row is, and what a click just above it would land on: the row
+  // itself (its ::before covers the scroller's padding band), never a group.
+  const at = () => fresh.evaluate(() => {
+    const list = document.getElementById('queue-list').getBoundingClientRect();
+    const row = document.querySelector('#queue-list .pull-controls').getBoundingClientRect();
+    const above = document.elementFromPoint(row.left + row.width / 2, row.top - 5);
+    return { top: Math.round(row.top - list.top), scrolled: document.getElementById('queue-list').scrollTop, above: above?.closest('.pull-controls, [data-group]')?.className ?? above?.id };
+  });
+  assert.deepEqual(await at(), { top: 10, scrolled: 0, above: 'pull-controls' }, 'under the list\'s padding, unscrolled');
+  // To the bottom, however far that is at the pane's default height.
+  await fresh.evaluate(() => { const l = document.getElementById('queue-list'); l.scrollTop = l.scrollHeight; });
+  await fresh.waitForFunction(() => document.getElementById('queue-list').scrollTop > 0);
+  const scrolled = await at();
+  assert.ok(scrolled.scrolled > 0);
+  assert.deepEqual([scrolled.top, scrolled.above], [10, 'pull-controls'], 'stuck under the list\'s padding, and covering it');
+  // And a group really is under it: the first group's line has scrolled past.
+  assert.ok(await fresh.evaluate(() => document.querySelector('.issue-groups [data-group] summary').getBoundingClientRect().top
+    < document.querySelector('#queue-list .pull-controls').getBoundingClientRect().bottom), 'the first group is under the row');
+  assert.ok(await fresh.locator('#queue-list .pull-controls #queue-search').isVisible());
+  await fresh.close();
+});
+
 // Completed is sorted by when each item was finished, so the one just ticked by
 // mistake is on top to be unticked -- whatever order the queue holds them in.
 // One the store has not stamped yet goes last. With the order not the user's to
@@ -2200,7 +2317,7 @@ test('a reference on its own is added as the issue\'s title, tagged, and ▶ car
   await fresh.waitForFunction(() => document.getElementById('toast').textContent.includes('PR #91 is already in your queue'));
   assert.equal(await rows().count(), 1);
   assert.equal(await fresh.locator('#queue-input').inputValue(), '#91');
-  await rows().locator('button[title^="type into Claude"]').click();
+  await rows().locator('button[title^="type into the coding agent"]').click();
   await fresh.waitForFunction(() => document.querySelector('#queue-body .tab.on')?.textContent.startsWith('Local (0)'));
   assert.deepEqual(typed, ['Make the queue read references (https://github.com/gaurav/prcoder/pull/91)']);
   await fresh.close();
@@ -2216,7 +2333,7 @@ test('a reference inside other text keeps the text, and the tag is another repo\
   // Another repo's issue can still be filed here, as a new one.
   assert.equal(await rows().locator('button[title="move into a new issue"]').count(), 1);
   // The text already says which issue, so ▶ adds nothing to it.
-  await rows().locator('button[title^="type into Claude"]').click();
+  await rows().locator('button[title^="type into the coding agent"]').click();
   await fresh.waitForFunction(() => document.querySelector('#queue-body .tab.on')?.textContent.startsWith('Local (0)'));
   assert.deepEqual(typed, ['Work around cli/cli#123']);
   await fresh.close();
@@ -2248,11 +2365,12 @@ test('a reference GitHub could not be asked about is added as plain text', { ski
 // refPage's PR is in heal-data-stewards/... while prcoder is in gaurav/prcoder,
 // so the fixture's #7 is another repo's: stored as this one's, its tag would
 // link to gaurav/prcoder#7 and ◎ would be hidden.
-test('↓ on the Issues tab keeps the repo the mention is in', { skip }, async () => {
+test('↓ on the PR #N tab keeps the repo the mention is in', { skip }, async () => {
   const { fresh, rows } = await refPage(() => ({ json: { ref: null } }));
   await fresh.route('**/api/issues', (r) => r.fulfill({ json: { ...EMPTY_ISSUES, mentions: [
     { number: 7, url: `${REPO}/issues/7`, title: 'Per-route locking', kind: 'issue', state: 'OPEN', updatedAt: '2026-09-01T00:00:00Z' }] } }));
-  await fresh.locator('#queue-body .tab[data-tab="issues"]').click();
+  await fresh.locator('#queue-body .tab[data-tab="pr"]').click();
+  await fresh.waitForSelector('#queue-body [data-group="mentioned"] .item:not(.closed) .tag');
   await fresh.locator('#queue-body [data-group="mentioned"] button[title="copy into your queue"]').click();
   await fresh.locator('#queue-body .tab[data-tab="local"]').click();
   await fresh.waitForSelector('#queue-body .item .tag.issue');
@@ -2298,8 +2416,8 @@ const groupsOf = (p) => p.$$eval('#queue-body .fold.milestone', (gs) => gs.map((
   return `${g.dataset.group}|${line.textContent.replace(/\s+/g, ' ').trim()}|${g.open ? 'open' : 'closed'}|${g.querySelectorAll('.item').length}`;
 }));
 
-// The fixture pull request mentions #7 without closing it, so every page has
-// a Mentioned group ahead of the milestones; `prIssues` replaces that list.
+// The fixture pull request mentions #7 without closing it, which the PR #N
+// tab's Mentions fold draws from this listing; `prIssues` replaces that list.
 async function issuesPage(listing = ISSUES, prIssues = null, nameWithOwner = 'gaurav/prcoder') {
   const { fresh, typed, rows } = await refPage(() => ({ json: { ref: null } }));
   if (prIssues) {
@@ -2325,7 +2443,7 @@ test('the Issues tab groups the repository\'s open issues by milestone in rank o
   // soonest first, then the buckets in order; only the first with an issue
   // starts open, and an empty bucket is drawn.
   assert.deepEqual(await groupsOf(fresh), [
-    'mentioned|Mentioned by PR #12 (1)|open|1', 'm:none|No milestone (1) to triage|open|1',
+    'm:none|No milestone (1) to triage|open|1',
     'm:2|v0.1 (1) due 17 days ago|closed|1', 'm:1|v1.0 (1) 2 PRs 1 merged due 5 days ago|closed|1', 'm:4|Needed soon (0)|closed|0',
     'm:3|Not urgent (1)|closed|1']);
   // No milestone is marked as the pile to triage: its line in the text's own
@@ -2355,8 +2473,14 @@ test('the Issues tab groups the repository\'s open issues by milestone in rank o
   assert.equal(await fresh.locator('[data-group="m:2"] summary :is(.other-kind, .merged)').count(), 0, 'nor any of its figures');
   assert.equal(await fresh.locator('[data-group="m:4"] summary :is(.other-kind, .merged)').count(), 0, 'and a figure of 0 is left out');
   assert.equal(await fresh.locator('[data-group="m:3"] summary .mark').count(), 0, 'nor one without counts');
-  // GitHub did not know the mention, so it says so, dimmed.
+  // GitHub did not know the mention, so the PR #N tab says so, dimmed -- from
+  // the listing already read, with no second ask.
+  const asks = [];
+  await fresh.route('**/api/issues', (r) => { asks.push(1); return r.fulfill({ json: ISSUES }); });
+  await fresh.locator('#queue-body .tab[data-tab="pr"]').click();
   assert.equal(await fresh.locator('[data-group="mentioned"] .item.closed .text').textContent(), 'not found on GitHub');
+  assert.equal(asks.length, 0, 'the listing on hand was asked about this pull request');
+  await fresh.locator('#queue-body .tab[data-tab="issues"]').click();
   assert.equal(await fresh.locator('[data-group="m:4"] .empty').textContent(), 'no open issues');
   assert.equal(await fresh.locator('[data-group="m:3"] summary a').getAttribute('href'), 'https://github.com/gaurav/prcoder/milestone/3');
   assert.equal(await fresh.locator('[data-group="m:3"] summary a').getAttribute('title'), 'Worth doing eventually.');
@@ -2381,7 +2505,7 @@ test('the Issues tab groups the repository\'s open issues by milestone in rank o
   await again;
   await fresh.waitForSelector('[data-group="m:10"]');
   assert.deepEqual((await groupsOf(fresh)).map((g) => g.split('|').slice(0, 3).join(' ')), [
-    'mentioned Mentioned by PR #12 (1) open', 'm:none No milestone (1) to triage closed', 'm:2 v0.1 (1) due 17 days ago closed',
+    'm:none No milestone (1) to triage closed', 'm:2 v0.1 (1) due 17 days ago closed',
     'm:1 v1.0 (1) 2 PRs 1 merged due 5 days ago open', 'm:10 v2.0 (0) due in 1 month closed', 'm:4 Needed soon (0) closed', 'm:3 Not urgent (1) closed']);
   await fresh.close();
 });
@@ -2394,7 +2518,7 @@ test('an open issue on a closed milestone has a group of its own, marked closed'
     issues: [...ISSUES.issues, { number: 30, title: 'Left over', url: 'https://github.com/gaurav/prcoder/issues/30', updatedAt: '2026-10-01T00:00:00Z',
       body: '', milestone: 9, labels: [] }],
     total: 5, listed: 5 });
-  assert.equal((await groupsOf(fresh))[2], 'm:9|v0.0 (1) due 1 month ago closed|closed|1');
+  assert.equal((await groupsOf(fresh))[1], 'm:9|v0.0 (1) due 1 month ago closed|closed|1');
   await fresh.locator('[data-group="m:9"] summary .count').click();
   assert.equal(await fresh.locator('[data-group="m:9"] .item .text').textContent(), 'Left over');
   // Nothing is moved onto it: its line takes no drop, and in an opened row it
@@ -2437,7 +2561,7 @@ test('searching the issues narrows the rows, opens the groups with a match, and 
   assert.equal(await fresh.locator('#queue-body .tab[data-tab="local"]').textContent(), 'Local (0)', 'held back');
   // Cleared, the groups go back to what was chosen.
   await search.fill('');
-  assert.deepEqual((await groupsOf(fresh)).map((g) => g.split('|')[2]), ['open', 'open', 'closed', 'closed', 'closed', 'closed']);
+  assert.deepEqual((await groupsOf(fresh)).map((g) => g.split('|')[2]), ['open', 'closed', 'closed', 'closed', 'closed']);
   assert.equal(await fresh.locator('#queue-body .tab[data-tab="issues"]').textContent(), 'Issues (4)');
   await fresh.close();
 });
@@ -2460,6 +2584,82 @@ test('the listing landing keeps the search box\'s focus and what is typed in it'
   await fresh.keyboard.type(' is');
   assert.equal(await search.inputValue(), 'row is');
   assert.equal(await fresh.locator('#queue-body .tab[data-tab="issues"]').textContent(), 'Issues (1)');
+  await fresh.close();
+});
+
+// The Issues tab has the row the PRs and History tabs have: the search, ⟳,
+// and under the groups when the listing was read, `updating…` while a read is out.
+test('the Issues tab says when it was read, and ⟳ reads again', { skip }, async () => {
+  const { fresh } = await issuesPage();
+  const note = fresh.locator('#queue-body .issue-groups .pull-note');
+  assert.equal(await note.textContent(), 'Read just now');
+  let release;
+  const held = new Promise((r) => { release = r; });
+  const asked = [];
+  await fresh.route('**/api/issues', async (r) => { asked.push(1); await held; return r.fulfill({ json: ISSUES }); });
+  await fresh.locator('#queue-body .pull-controls .issue-reload').click();
+  await fresh.waitForFunction(() => document.querySelector('#queue-body .issue-groups .pull-note')?.textContent.includes('updating'));
+  assert.equal(await fresh.locator('#queue-search').count(), 1, 'the search box is still there');
+  release();
+  await fresh.waitForFunction(() => !document.querySelector('#queue-body .issue-groups .pull-note')?.textContent.includes('updating'));
+  assert.deepEqual(asked, [1]);
+  assert.equal(await note.textContent(), 'Read just now');
+  await fresh.close();
+});
+
+// The issues are read once, three seconds after the first status, so the
+// count is on the tab before a visit; a visit then reads again, as every
+// visit does. A read that fails behind another tab leaves `?` and no toast,
+// and is not tried again until a visit asks.
+test('the Issues count is read once a few seconds after the first status, and a visit reads again', { skip }, async () => {
+  const fresh = await newPage({ clock: true });
+  const asked = [];
+  await fresh.route('**/api/issues', (r) => { asked.push(1); return r.fulfill({ json: ISSUES }); });
+  await fresh.reload();
+  await fresh.waitForSelector('#queue-body .tab[data-tab="local"]');
+  // Paused a moment ahead of the real clock (pauseAt cannot go back), so the
+  // page-open timer runs only when the test says.
+  await fresh.clock.pauseAt(Date.now() + 500);
+  const label = () => fresh.locator('#queue-body .tab[data-tab="issues"]').textContent();
+  assert.equal(await label(), 'Issues (…)', 'nothing read yet');
+  const read = fresh.waitForResponse('**/api/issues');
+  await fresh.clock.runFor(3000);
+  await read;
+  await fresh.waitForFunction(() => document.querySelector('#queue-body .tab[data-tab="issues"]')?.textContent === 'Issues (4)');
+  assert.deepEqual(asked, [1]);
+  assert.equal(await fresh.locator('#queue-body .issues-pane').count(), 0, 'with the tab not showing');
+  await fresh.clock.runFor(60_000);
+  assert.deepEqual(asked, [1], 'once');
+  const again = fresh.waitForResponse('**/api/issues');
+  await fresh.locator('#queue-body .tab[data-tab="issues"]').click();
+  await again;
+  assert.deepEqual(asked, [1, 1], 'the visit reads again');
+  assert.equal((await groupsOf(fresh))[0], 'm:none|No milestone (1) to triage|open|1', 'the folds were seeded from the real listing');
+  await fresh.close();
+});
+
+test('an Issues read that fails behind another tab leaves ? and says nothing until a visit asks', { skip }, async () => {
+  const fresh = await newPage({ clock: true });
+  const asked = [];
+  await fresh.route('**/api/issues', (r) => { asked.push(1); return r.fulfill({ status: 500, json: { error: 'gh: API rate limit exceeded' } }); });
+  await fresh.reload();
+  await fresh.waitForSelector('#queue-body .tab[data-tab="local"]');
+  // Paused a moment ahead of the real clock (pauseAt cannot go back), so the
+  // page-open timer runs only when the test says.
+  await fresh.clock.pauseAt(Date.now() + 500);
+  const read = fresh.waitForResponse('**/api/issues');
+  await fresh.clock.runFor(3000);
+  await read;
+  await fresh.waitForFunction(() => document.querySelector('#queue-body .tab[data-tab="issues"]')?.textContent === 'Issues (?)');
+  // The reload's own notice may be up; the failure is not.
+  assert.doesNotMatch(await fresh.evaluate(() => document.getElementById('toast').hidden ? '' : document.getElementById('toast').textContent), /rate limit/, 'nobody asked, so no toast');
+  await fresh.clock.runFor(60_000);
+  assert.deepEqual(asked, [1], 'not tried again on its own');
+  const again = fresh.waitForResponse('**/api/issues');
+  await fresh.locator('#queue-body .tab[data-tab="issues"]').click();
+  await again;
+  await fresh.waitForFunction(() => !document.getElementById('toast').hidden);
+  assert.match(await fresh.locator('#toast').textContent(), /rate limit/, 'the visit\'s own read says why');
   await fresh.close();
 });
 
@@ -2498,7 +2698,7 @@ test('a query typed before the listing lands does not choose which group starts 
   await fresh.waitForSelector('#queue-body .fold.milestone');
   await fresh.locator('#queue-search').fill('');
   assert.deepEqual((await groupsOf(fresh)).map((g) => `${g.split('|')[0]} ${g.split('|')[2]}`), [
-    'mentioned open', 'm:none open', 'm:2 closed', 'm:1 closed', 'm:4 closed', 'm:3 closed']);
+    'm:none open', 'm:2 closed', 'm:1 closed', 'm:4 closed', 'm:3 closed']);
   await fresh.close();
 });
 
@@ -2605,9 +2805,8 @@ test('a milestone picked in an opened row is written by Move, and the keyboard f
   assert.equal(moves.length, 3);
   assert.equal(await dropRow(fresh, '[data-group="m:3"] summary', PULL_DRAG, 12), false, 'a pull request is not dropped here');
   assert.equal(moves.length, 3);
-  // A listed row has a grip to drag it by, and a mention that is not listed has none.
+  // A listed row has a grip to drag it by.
   assert.equal(await fresh.locator('[data-group="m:none"] .item[data-issue="58"] .grip').getAttribute('draggable'), 'true');
-  assert.equal(await fresh.locator('[data-group="mentioned"] .item .grip').getAttribute('draggable'), null);
   // A refusal is a toast, the select goes back to where the issue still is, and
   // the listing is read again, in case that is what the server and page differ on.
   await fresh.route('**/api/issue/milestone', (r) => r.fulfill({ status: 500, json: { error: '"x" is not an open milestone the Issues tab listed' } }));
@@ -2637,14 +2836,24 @@ test('an issue row\'s title can be selected with the mouse', { skip }, async () 
   await fresh.close();
 });
 
+/**
+ * A queue pane tall enough for a drag's every target to be on screen before
+ * the press (tools/CLAUDE.md: Chromium's emulated drag starts on whatever has
+ * scrolled under the pointer). At the pane's default height the list under
+ * the strip is 143px, and a listing's lower groups are below it.
+ */
+async function tallQueue(p) {
+  await p.setViewportSize({ width: 1280, height: 1000 });
+  await p.evaluate(() => document.querySelector('main').style.setProperty('--h-queue', '400px'));
+}
+
 // Chromium only: Firefox gets no HTML5 drag events from dragTo (tools/CLAUDE.md).
 // Each target is a folded group's line, on screen before the press.
 test('the grip\'s drag moves an issue, and a link\'s drag, its own group or a closed milestone does not', { skip: skip || (engineName === 'firefox' && 'dragTo sends Firefox no drag events') }, async () => {
   const { fresh } = await issuesPage({ ...ISSUES,
     milestones: [...ISSUES.milestones, { number: 7, title: 'v0.0', dueOn: null, description: '', closed: true }] });
   await noToast(fresh);
-  // Folded, so that every target is on screen before the press.
-  await fresh.locator('[data-group="mentioned"] summary .count').click();
+  await tallQueue(fresh);
   const moves = [];
   await fresh.route('**/api/issue/milestone', (r) => { moves.push(r.request().postDataJSON()); return r.fulfill({ json: { ok: true } }); });
   const row = fresh.locator('[data-group="m:none"] .item');
@@ -2717,9 +2926,11 @@ test('a listing landing during a drag or with a row\'s select in use waits for i
   await fresh.close();
 });
 
-// With a pull request on screen its mentions lead the tab, and one that is an
-// open issue here is the listing's own row, body and all.
-test('the Issues tab leads with what the PR mentions, and a mention that is listed opens like any row', { skip }, async () => {
+// The PR #N tab's Mentions are drawn as the Issues tab draws a row, from the
+// same listing, and one that is an open issue here is the listing's own row,
+// body, labels and all -- with no grip to drag, since nothing on this tab is
+// a drop target.
+test('the PR #N tab\'s Mentions are the Issues tab\'s rows, and a mention that is listed opens like any row', { skip }, async () => {
   const { fresh } = await issuesPage({ ...ISSUES, mentions: [
     { number: 66, url: 'https://github.com/gaurav/prcoder/issues/66', title: 'Show whether each linked issue is still open', kind: 'issue', state: 'OPEN', updatedAt: '2026-10-09T00:00:00Z' },
     { number: 7, url: `${REPO}/issues/7`, title: 'Per-route locking', kind: 'pull', state: 'MERGED', updatedAt: '2026-09-01T00:00:00Z' },
@@ -2727,8 +2938,9 @@ test('the Issues tab leads with what the PR mentions, and a mention that is list
   [{ number: 7, url: `${REPO}/issues/7`, closes: false, title: 'Per-route locking' },
     { number: 8, url: `${REPO}/pull/8`, closes: false, title: 'Still in review' },
     { number: 66, url: 'https://github.com/gaurav/prcoder/issues/66', closes: false, title: 'Show whether each linked issue is still open' }]);
-  const [first] = await groupsOf(fresh);
-  assert.equal(first, 'mentioned|Mentioned by PR #12 (3)|open|3');
+  assert.equal(await fresh.locator('[data-group="mentioned"]').count(), 0, 'the Issues tab is the repository\'s issues alone');
+  await fresh.locator('#queue-body .tab[data-tab="pr"]').click();
+  assert.deepEqual((await groupsOf(fresh)).map((g) => g.split('|').slice(0, 2).join('|')), ['tasks|Checklist (2)', 'mentioned|Mentions (3)']);
   const rows = fresh.locator('[data-group="mentioned"] .item');
   // The tag says which is a pull request, so the text needs only its state --
   // and an open one, like an open issue, is not dimmed and needs none.
@@ -2740,28 +2952,22 @@ test('the Issues tab leads with what the PR mentions, and a mention that is list
   assert.deepEqual(await rows.evaluateAll((ls) => ls.map((l) => l.classList.contains('closed'))), [false, true, false]);
   assert.equal(await rows.nth(0).locator('button.disclose').count(), 1);
   assert.equal(await rows.nth(1).locator('button.disclose').count(), 0, 'a mention with no body has nothing to open');
-  await fresh.close();
-});
-
-// A mention that is a listed issue is searched as that issue's own row is,
-// labels and all, so a search never finds one of the two and not the other.
-test('a mention that is a listed issue matches a search on its labels, as its row does', { skip }, async () => {
-  const url = 'https://github.com/gaurav/prcoder/issues/90';
-  const { fresh } = await issuesPage({ ...ISSUES, mentions: [
-    { number: 90, url, title: 'Something for later', kind: 'issue', state: 'OPEN', updatedAt: '2026-10-08T00:00:00Z' }] },
-  [{ number: 90, url, closes: false, title: 'Something for later' }]);
-  await fresh.locator('#queue-search').fill('help wanted');
-  assert.deepEqual((await groupsOf(fresh)).map((g) => g.split('|')[0]), ['mentioned', 'm:3']);
+  assert.deepEqual(await rows.evaluateAll((ls) => ls.map((l) => l.querySelector('.grip')?.getAttribute('draggable') ?? null)), [null, null, null], 'nothing here drags');
+  // The listed one opens to its body, with the move control the Issues tab's row has.
+  await rows.nth(0).locator('button.disclose').click();
+  assert.equal(await fresh.locator('[data-group="mentioned"] .issue-body select.milestone').count(), 1);
   await fresh.close();
 });
 
 // The mentions are looked up for the pull request that was on screen when
 // the listing was asked for; a poll that brings a description mentioning
-// something new asks again, and the new mention reads `…` until it lands,
-// rather than not found.
-test('a mention the description gains while the Issues tab is open is looked up', { skip }, async () => {
+// something new, while the PR #N tab is up, asks again, and the new mention
+// reads `…` until it lands, rather than not found.
+test('a mention the description gains while the PR #N tab is open is looked up', { skip }, async () => {
   const seven = { number: 7, url: `${REPO}/issues/7`, title: 'Per-route locking', kind: 'issue', state: 'OPEN', updatedAt: '2026-09-01T00:00:00Z' };
   const { fresh } = await issuesPage({ ...ISSUES, mentions: [seven] });
+  await fresh.locator('#queue-body .tab[data-tab="pr"]').click();
+  await fresh.waitForSelector('[data-group="mentioned"] .item');
   let release;
   const held = new Promise((r) => { release = r; });
   await fresh.route('**/api/issues', async (r) => { await held; return r.fulfill({ json: { ...ISSUES, mentions: [seven,
@@ -2788,6 +2994,7 @@ test('a mention from another repository is not drawn as the listed issue of the 
   const { fresh } = await issuesPage({ ...ISSUES, mentions: [
     { number: 66, url, title: 'Upstream\'s sixty-six', kind: 'issue', state: 'OPEN', updatedAt: '2026-10-09T00:00:00Z' }] },
   [{ number: 66, url, closes: false }], null);
+  await fresh.locator('#queue-body .tab[data-tab="pr"]').click();
   const row = fresh.locator('[data-group="mentioned"] .item');
   assert.equal(await row.locator('.text').textContent(), 'Upstream\'s sixty-six');
   assert.equal(await row.locator('.tag.issue').getAttribute('href'), url);
@@ -2795,7 +3002,7 @@ test('a mention from another repository is not drawn as the listed issue of the 
   await fresh.close();
 });
 
-// The Pull requests tab: the repository's open pull requests, grouped by
+// The PRs tab: the repository's open pull requests, grouped by
 // milestone as the issues are, each row carrying what picking the next one
 // turns on. The listing is the fixture repository's, with the pull request on
 // screen (#12) among them; dates are read against the page's clock, which
@@ -2835,7 +3042,11 @@ const pullGroupsOf = (p) => p.$$eval('#queue-body .fold.milestone', (gs) => gs.m
   return `${g.dataset.group}|${line.textContent.replace(/\s+/g, ' ').trim()}|${g.open ? 'open' : 'closed'}|${[...g.querySelectorAll('.item')].map((i) => i.dataset.pull).join(',')}`;
 }));
 
-/** A page on the Pull requests tab with `listing` answered, counting what the route was asked. */
+/**
+ * A page on the PRs tab with `listing` answered, counting what the route was
+ * asked: the page's own `false` as it opens, then the visit's `true` when the
+ * listing is stale.
+ */
 async function pullsPage(listing = PULLS, { stale = true } = {}) {
   const fresh = await newPage({ clock: true, below: BELOW });
   await fresh.clock.setFixedTime(NOW);
@@ -2857,17 +3068,45 @@ async function pullsPage(listing = PULLS, { stale = true } = {}) {
   });
   await fresh.reload();
   await fresh.waitForSelector('#queue-body .tab[data-tab="local"]');
+  // The rows ask git what a bare base is built on (/api/below) as they are
+  // first drawn, and the answer repaints them. With the listing on hand as
+  // the page opens, the rows are drawn by the click itself, so a test that
+  // took hold of a row right after this returned found it replaced under it
+  // (2026-11-08); wait for that answer, and the tick that paints it.
+  const below = fresh.waitForResponse('**/api/below', { timeout: 2000 }).catch(() => null);
   await fresh.locator('#queue-body .tab[data-tab="pulls"]').click();
   await fresh.waitForSelector('#queue-body .pull-note');
+  await below;
+  await fresh.waitForTimeout(100);
   return { fresh, typed, asked };
 }
 
-test('the Pull requests tab groups the open pull requests by milestone, smallest first, with the facts a choice turns on', { skip }, async () => {
+// The count is on the tab as the page opens, from the last listing, with no
+// fresh read until someone visits; the visit then reads behind it.
+test('the PRs count is on the tab before a visit, from the last listing alone', { skip }, async () => {
+  const fresh = await newPage({ clock: true, below: BELOW });
+  await fresh.clock.setFixedTime(NOW);
+  const asked = [];
+  await fresh.route('**/api/pulls', (r) => { asked.push(r.request().postDataJSON().fresh); return r.fulfill({ json: PULLS }); });
+  await fresh.reload();
+  await fresh.waitForFunction(() => document.querySelector('#queue-body .tab[data-tab="pulls"]')?.textContent === 'PRs (3)');
+  await fresh.waitForTimeout(200);
+  assert.deepEqual(asked, [false], 'the last listing, and nothing fresh for a tab nobody is looking at');
+  assert.equal(await fresh.locator('#queue-body .pulls-pane').count(), 0);
+  await fresh.locator('#queue-body .tab[data-tab="pulls"]').click();
+  await fresh.waitForSelector('#queue-body .pull-note');
+  await fresh.waitForFunction(() => document.querySelectorAll('#queue-body .item.pull').length === 3);
+  assert.deepEqual(asked, [false, true], 'the visit reads behind the hour-old listing');
+  await fresh.close();
+});
+
+test('the PRs tab groups the open pull requests by milestone, smallest first, with the facts a choice turns on', { skip }, async () => {
   const { fresh, asked } = await pullsPage();
-  // The last listing, then a fresh one behind it, since the last was an hour old.
+  // The last listing as the page opened, then a fresh one behind the visit,
+  // since the last was an hour old.
   await fresh.waitForFunction(() => document.querySelector('#queue-body .pull-note')?.textContent === 'Read 1 hour ago');
   assert.deepEqual(asked, [false, true]);
-  assert.equal(await fresh.locator('#queue-body .tab[data-tab="pulls"]').textContent(), 'Pull requests (3)');
+  assert.equal(await fresh.locator('#queue-body .tab[data-tab="pulls"]').textContent(), 'PRs (3)');
   // None first, to triage, then releases, then the buckets; only the first
   // with a pull request starts open; smallest first within a group; an empty
   // one is drawn.
@@ -3002,7 +3241,7 @@ test('a ready pull request built on another reads `stacked (N)`, and the search 
   assert.equal(await word(12).textContent(), 'ready', 'one on the default branch is still ready');
   const search = fresh.locator('#queue-pull-search');
   await search.fill('stacked');
-  assert.equal(await fresh.locator('#queue-body .tab[data-tab="pulls"]').textContent(), 'Pull requests (1)');
+  assert.equal(await fresh.locator('#queue-body .tab[data-tab="pulls"]').textContent(), 'PRs (1)');
   assert.deepEqual(await fresh.locator('#queue-body .item.pull').evaluateAll((ls) => ls.map((l) => l.dataset.pull)), ['20']);
   await search.fill('ready');
   assert.deepEqual(await fresh.locator('#queue-body .item.pull').evaluateAll((ls) => ls.map((l) => l.dataset.pull)), ['12'], 'and `ready` only the one that is');
@@ -3058,21 +3297,22 @@ test('a pull request row\'s title can be selected, and it has a grip only by mil
 });
 
 test('a pull request\'s grip moves it, and its link\'s drag does not', { skip: skip || (engineName === 'firefox' && 'dragTo sends Firefox no drag events') }, async () => {
-  // One row open and the pane scrolled to it, so the next group's line is on
-  // screen before the press (tools/CLAUDE.md): a row is three lines tall.
+  // One row, in a pane tall enough that its group's line and the next are
+  // both on screen before the press (tallQueue): a row is three lines tall.
+  // Until 2026-11-08 the test scrolled the list by a fixed 100px instead,
+  // which was right while the strip scrolled with the rows and put both out
+  // of view once it stayed put.
   const { fresh } = await pullsPage({ ...PULLS, pulls: PULLS.pulls.filter((p) => p.number === 30) }, { stale: false });
   await noToast(fresh);
+  await tallQueue(fresh);
   const moves = [];
   await fresh.route('**/api/pull/milestone', (r) => { moves.push(r.request().postDataJSON()); return r.fulfill({ json: { ok: true } }); });
   const row = fresh.locator('.item[data-pull="30"]');
   const next = fresh.locator('.pull-groups [data-group]').nth(1);
   const milestone = await next.locator('summary a').first().textContent();
-  const onScreen = () => fresh.evaluate(() => { document.getElementById('queue-body').scrollTop = 100; });
-  await onScreen();
   await row.locator('.tag.pull').dragTo(next.locator('summary'));
   await row.locator('.grip').dragTo(fresh.locator('[data-group="p:none"] summary'));
   const read = fresh.waitForResponse('**/api/pulls');
-  await onScreen();
   await row.locator('.grip').dragTo(next.locator('summary'));
   await read;
   assert.deepEqual(moves, [{ number: 30, milestone }]);
@@ -3229,10 +3469,10 @@ test('searching the pull requests narrows the rows and counts them, and a row op
   await search.fill('nothing is called this');
   assert.equal(await fresh.locator('#queue-body .pull-groups').textContent(), 'No matching pull requests.' + await fresh.locator('#queue-body .pull-note').textContent());
   await search.fill('copilot');
-  assert.equal(await fresh.locator('#queue-body .tab[data-tab="pulls"]').textContent(), 'Pull requests (1)');
+  assert.equal(await fresh.locator('#queue-body .tab[data-tab="pulls"]').textContent(), 'PRs (1)');
   assert.equal(await fresh.evaluate(() => document.activeElement.id), 'queue-pull-search', 'the box keeps its focus');
   await search.fill('');
-  assert.equal(await fresh.locator('#queue-body .tab[data-tab="pulls"]').textContent(), 'Pull requests (3)');
+  assert.equal(await fresh.locator('#queue-body .tab[data-tab="pulls"]').textContent(), 'PRs (3)');
   // ▸ opens the milestone select, Switch and Open on GitHub, and not the
   // description: that is read on GitHub. Nor the issues it closes, which the
   // row itself carries.
@@ -3277,7 +3517,7 @@ test('a milestone picked in an opened pull request row is written by Move, and a
   assert.deepEqual(asked.slice(before), [true], 'read fresh once GitHub has it');
   // A refusal is a toast, the select goes back to where it still is, and the
   // listing is read again, in case that is what the server and page differ on.
-  await fresh.route('**/api/pull/milestone', (r) => r.fulfill({ status: 500, json: { error: '"x" is not an open milestone the Pull requests tab listed' } }));
+  await fresh.route('**/api/pull/milestone', (r) => r.fulfill({ status: 500, json: { error: '"x" is not an open milestone the PRs tab listed' } }));
   await pick.selectOption('Not urgent');
   const again = fresh.waitForResponse('**/api/pulls');
   await moveBtn.click();
@@ -3319,7 +3559,7 @@ test('▶ types an item\'s control characters as spaces', { skip }, async () => 
   const { fresh, typed, rows } = await refPage(() => ({ json: { ref: null } }),
     [{ text: 'do this\rand\u001b[2Jthat', done: false, issue: null, deleted: false }]);
   await fresh.waitForSelector('#queue-body .item');
-  await rows().locator('button[title^="type into Claude"]').click();
+  await rows().locator('button[title^="type into the coding agent"]').click();
   await fresh.waitForFunction(() => document.querySelector('#queue-body .tab.on')?.textContent.startsWith('Local (0)'));
   assert.deepEqual(typed, ['do this and [2Jthat']);
   await fresh.close();
@@ -3352,7 +3592,7 @@ test('▶ with Claude disconnected types nothing and leaves the item active', { 
   await fresh.reload();
   await fresh.waitForSelector('#queue-body .item');
   await fresh.waitForFunction(() => document.getElementById('term-host').textContent.includes('coding agent exited'));
-  await fresh.locator('#queue-body .item button[title^="type into Claude"]').click();
+  await fresh.locator('#queue-body .item button[title^="type into the coding agent"]').click();
   await fresh.waitForFunction(() => document.getElementById('toast').textContent.includes('not connected'));
   assert.deepEqual(puts, []);
   assert.deepEqual(await fresh.locator('#queue-body .item .text').allTextContents(), ['send me']);

@@ -424,6 +424,19 @@ its grip (or focus the grip and use ↑ ↓) to reorder, tick it off. ▶ types 
 and ticks it off in the same click; ◎ files it as a new GitHub issue and takes it off the queue, so
 the issue is where it lives from then on.
 
+The tabs sit in a strip of their own above the list, which scrolls under it, so a tab is always a
+click away however long the listing below it runs; a strip that does not fit the pane's width wraps
+whole tabs onto a second row rather than running off the edge. Each tab keeps its own scroll
+offset while the page is open: back from Issues, Local is where you left it, as the pull request
+pane's tabs are. A tab's own row of controls -- the search box, and the selects and ⟳ where it has
+them -- stays in sight at the top of the list as the groups scroll under it.
+
+Every row on every tab is laid out the same way: its handle and state first (a grip, a checkbox, a
+▸), then its tag, its text and any chips, then at its end, on hover, its ways out in one order --
+▶ types into the coding agent, ↓ copies into Local, ⧉ copies to the clipboard -- and after those
+whatever is the row's own, ◎ and ✕ on a queue item. A button means one thing wherever it sits; a
+row leaves out what it lacks.
+
 New items go to the bottom, so typing them in builds a list in the order you mean to work through
 it. The arrow next to the input flips that to the top, for the other way of using a queue -- the
 thing you must not forget to do next -- and stays flipped. They always go on Local, whichever tab
@@ -449,18 +462,28 @@ a slip. **Deleted** holds tombstones, the latest on top, until you empty it, and
 nothing. Every item is on exactly one of those.
 
 Two more tabs read GitHub rather than your queue, and ↓ on either copies an item into Local and
-leaves it where it was. **PR** is there with a pull request on screen: the description's own
-checklist, ticked through to GitHub like the boxes in the PR pane.
+leaves it where it was. **PR #N**, named by the pull request on screen and there only with one,
+is everything its description points at, in three folds. *Checklist* is the description's own
+boxes, ticked through to GitHub like the boxes in the PR pane, with a pie of how many are done;
+▶ on a line types it into the coding agent and ticks nothing, since the box is GitHub's. *Mentions*
+is the issues and pull requests the description mentions without closing, the most recently
+updated on GitHub first, each drawn as the Issues tab draws a row -- a pull request's tag says `PR`,
+one in another repository is tagged with that repository's name, and one no longer open is dimmed
+and followed by its state, `· closed` or `· merged`; one that is one of this repository's open
+issues is the listing's own row, body, labels and all. *Closes* is the issues the pull request
+closes, dimmed, since they are what it answers. A fold with nothing in it is left out, and one you
+close stays closed until the page is reloaded. The tab's count is what the pull request still
+points at that is open: its unticked boxes and the mentions not known to be closed -- every mention
+until GitHub has been asked, so the count never reads `…`. The mentions' titles and states come
+with the Issues listing, which the tab asks for only when it has none, or has one asked about
+another pull request; until they land a mention reads `…`. A poll that brings another pull request,
+or a description that mentions something new, while the tab is open has the listing read again.
 
 **Issues** is always there, since a repository has issues whatever is checked out: its open
-issues, read when the tab is opened and again on every visit, in groups you fold. With a pull
-request on screen the first group is what its description mentions without closing, the most
-recently updated on GitHub first; a pull request's tag says `PR`, one in another repository -- upstream's, in a
-fork-headed checkout -- is tagged with that repository's name as a queue item is, and a mention that is no longer open -- a closed
-issue, or a merged or closed pull request -- is dimmed and followed by its state, `· closed` or `· merged`.
-A poll that brings another pull request, or a description that mentions something new, while the
-tab is open has the listing read again, and a mention reads `…` until it is looked up. Then the
-issues on no milestone, ahead of every milestone: they are the untriaged, and one could belong at
+issues, read once a few seconds after the page's first status, so the count is on the tab before a
+visit, and again on every visit, in groups you fold -- the
+repository's issues alone, since what the pull request on screen mentions is the PR #N tab's.
+First the issues on no milestone, ahead of every milestone: they are the untriaged, and one could belong at
 any level, `Critical` included, so they are the ones to sort first. While it holds any, its
 line is in the text's own colour rather than the dim of a milestone's, with a yellow *to triage*
 badge. Then one group per open milestone, in the order the owner's
@@ -471,7 +494,7 @@ ranked the same way and marked *closed*, so that no listed issue goes undrawn; n
 onto it, by a drop or in a row's select, where it shows only on a row already on it. A milestone's line
 is its title, linking to it on GitHub; how many issues it holds, in a grey badge right after the
 title, not at the line's end where it was too far off to read as the milestone's; how many of the
-other kind are open on it, `2 PRs` here and `9 issues` on the Pull requests tab, so the line says
+other kind are open on it, `2 PRs` here and `9 issues` on the PRs tab, so the line says
 what the milestone holds beyond the rows listed; a pie of how
 much of the whole milestone is done on GitHub, its pull requests and its issues together, so it is
 the same on either tab: merged pull requests and closed issues of all of them, with a pull request
@@ -487,8 +510,8 @@ count are left out at 0);
 and when it is due, in calendar days, as `due 5 days ago`, `due yesterday`, `due today`, `due tomorrow` or `due in 2
 months` (months from 30 days), with the date in full on hover, `Tuesday, October 27, 2026` -- a round red badge once
 the day is past, yellow within a week, so a milestone to reschedule stands out; an empty one is
-still drawn, folded. Only the mentions and the first
-group with an issue start open, which is the one to focus on -- **No milestone** whenever it has any -- and a milestone that appears
+still drawn, folded. Only the first
+group with an issue starts open, which is the one to focus on -- **No milestone** whenever it has any -- and a milestone that appears
 later, made on GitHub since, starts folded; a group you open or close stays so until the page is
 reloaded, through every poll.
 
@@ -496,8 +519,10 @@ The box above the groups searches the number, title, labels and body of every is
 group with a match opens and one without is left out, and the tab's count becomes how many matched.
 Cleared, the groups go back to how you left them. The count is otherwise the repository's open
 issues, and `…` until the first listing lands; if that one cannot be read, the count is `?` and
-the tab says why, with a way to try again. The listing stops at 500, the most recently
-updated, and says so under the groups when a repository has more.
+the tab says why, with a way to try again. ⟳ beside the search reads the listing again, and the
+line under the groups says when it was read and `updating…` while a read is out, as the PRs and
+History tabs say it. The listing stops at 500, the most recently
+updated, and says so on the same line when a repository has more.
 
 Each row is the issue's number, as a link, its title, and its labels as plain chips -- names only,
 with none of GitHub's colours, which would fight the pane. ▸ at the row's start opens the issue's
@@ -506,7 +531,7 @@ body under it, drawn by the same renderer as a description and under the same ru
 **Open on GitHub** under it, filled, for the comments and everything else the body is not. ▶ types
 the title with the issue's link into the coding agent's prompt, unsent, and ticks nothing, since
 there is no item to tick; the row stays where it is. ↓ copies the title into Local, tagged with
-the issue, as the PR tab's ↓ copies a checklist line.
+the issue, as the PR #N tab's ↓ copies a checklist line.
 
 A row can be dragged by its grip (⠿) onto a milestone's line, or onto **No milestone**, and that sets the issue's
 milestone on GitHub -- the one thing the tab writes, and the only kind of change it makes to an
@@ -520,11 +545,9 @@ drop, and it is in the select only of an issue already on it, marked closed. Eit
 reads the listing again once GitHub has it, so the row moves group then and not before. A listing
 that lands during a drag, or with focus in the select or Move, is drawn when that ends. A refusal
 is a toast, and the tab reads the listing again then too, with the row left where GitHub has it. Only the grip drags, so a row's title can still be selected and its #N link
-dragged as a link. A mention that is not one of the repository's open issues has no grip,
-since there is nothing of it here to move. Milestones themselves are not made, renamed or closed
-from prcoder.
+dragged as a link. Milestones themselves are not made, renamed or closed from prcoder.
 
-**Pull requests** is always there too: the repository's open pull requests, for picking the next
+**PRs** is always there too: the repository's open pull requests, for picking the next
 one to work on (`prcoder choose` is the same pick at the command line, before a browser opens:
 [Terminal.md](Terminal.md#choosing-a-pull-request)), in the same groups as the issues -- **No milestone** first, then one per open milestone in the
 owner's order, each line drawn as the Issues tab's, its badge counting pull requests -- or, with the second select over them set to *one list*, as one list, or
@@ -576,9 +599,11 @@ and the copied item is tagged `PR #N`.
 
 The list is read from GitHub only for this tab, never for the switcher: the one call that carries
 the size, the merge state and the viewed files takes seconds on a repository with many open
-([Verifying.md](Verifying.md#figures-worth-re-measuring) has the figure), so the tab opens from
-the last listing -- the server's, or `.prcoder/pulls.json`, which keeps it between runs -- and
-reads GitHub behind it, unless the listing is under a minute old. The line under the groups says
+([Verifying.md](Verifying.md#figures-worth-re-measuring) has the figure), so the page reads the
+last listing as it opens -- the server's, or `.prcoder/pulls.json`, which keeps it between runs; a
+clone with neither reads GitHub once and keeps that -- and the tab's count is on the strip before a
+visit. A visit opens the tab from that listing and reads GitHub behind it, unless the listing is
+under a minute old. The line under the groups says
 when the listing was read and `updating…` while the read is out; ⟳ beside the search reads
 whatever the age. A read that fails leaves the list as it was and says so in a toast.
 A row dragged by its grip (⠿) onto a milestone's line, or the pick in its opened row, sets the pull request's
@@ -612,5 +637,5 @@ prompts' text, leaving out a day without a match, and the tab's count is the pro
 or the matches while searching. The file is read when the page opens, so the count is on the tab
 before a visit, and again a second after a prompt is sent from this page, whichever tab is
 showing, so the count and the list keep up with the terminal beside them; ⟳ reads it again by
-hand, and the line under the days says when it was last read, as the Pull requests tab's does. A read that
+hand, and the line under the days says when it was last read, as the PRs tab's does. A read that
 fails says so, with a way to try again, and leaves the list as it was.

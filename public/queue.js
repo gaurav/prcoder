@@ -1,4 +1,4 @@
-import { h, btn, ext, api, toast, pref, setPref, tabBtn, writeThrough, fold, kept, mark, fraction } from './ui.js';
+import { h, btn, ext, api, toast, pref, setPref, tabBtn, writeThrough, fold, kept, mark, fraction, actions } from './ui.js';
 import { TABS, refLabel, refClass, forClaude, rankMilestones, issueMatches, pullMatches, sortPulls, rootsInOrder, pullWord, sizeChip, age, dueLabel, isNew, PULL_SORTS } from './items.js';
 import { refs, resolveRef, blocks } from './tasks.js';
 import { blockNode, inline, stackUnder, stackOrder } from './pr.js';
@@ -45,16 +45,18 @@ export function setItems(next, prOnScreen = null) {
   if (saving || document.activeElement?.closest?.('#queue-body .text[contenteditable], #queue-search, #queue-pull-search, #queue-body .move-to, #queue-body .pull-controls select')) return;
   if (document.querySelector('#queue-body .item.dragging')) return;
   // What the PR and Issues tabs draw from: a tick on github.com changes the
-  // PR tab without changing the list, so it has to count as news too.
+  // PR #N tab without changing the list, so it has to count as news too.
   const source = (p) => (p ? JSON.stringify([p.number, p.body, p.issues]) : '');
   const samePr = source(prOnScreen) === source(pr);
   // The mentions' titles and states come with the listing, looked up for the
-  // pull request on screen when it was asked for. A different one, or a
-  // description that mentions something new -- or the first poll's, after a
-  // visit to the tab before it -- needs them asked for again, and until they
-  // land a mention not looked up reads `…` (mentionRow).
-  const asks = (p) => JSON.stringify([p?.url ?? null, mentioned(p).map((i) => i.number)]);
-  if (tab === 'issues' && asks(prOnScreen) !== asks(pr)) loadIssues(true);
+  // pull request on screen when it was asked for (askedFor). A different one,
+  // or a description that mentions something new -- or the first poll's,
+  // after a visit to the tab before it -- needs them asked for again while a
+  // tab that draws them is up, and until they land a mention not looked up
+  // reads `…` (mentionRow).
+  if ((tab === 'issues' || tab === 'pr') && asks(prOnScreen) !== askedFor) loadIssues(true);
+  // A different pull request is a different checklist: its tab starts at the top.
+  if (prOnScreen?.url !== pr?.url) scrolled.pr = 0;
   pr = prOnScreen;
   // Most polls bring the list already on screen, and a rebuild for nothing
   // costs every row and listener. `items` is kept, not swapped for the equal
@@ -70,7 +72,7 @@ export function setItems(next, prOnScreen = null) {
 
 // The sources, read straight from where they live rather than kept in the
 // queue: the PR on screen, from the poll, whose description's checkboxes are
-// the PR tab; and the repository's open issues, fetched when the Issues tab is
+// the PR #N tab; and the repository's open issues, fetched when the Issues tab is
 // opened, since nothing else needs them. `listing` is /api/issues' answer --
 // milestones, issues, and the mentions the description makes without closing,
 // which `mentions` indexes by number as it always did; `listed` indexes the
@@ -79,6 +81,12 @@ let pr = null;
 let listing = null;
 let mentions = null;
 let listed = new Map();
+// What the listing out, or on hand, was asked about: the pull request and the
+// mentions its description made when fetchIssues started. A tab that draws
+// the mentions reads again when the one on screen asks something else.
+let askedFor = null;
+const asks = (p) => JSON.stringify([p?.url ?? null, mentioned(p).map((i) => i.number)]);
+const listingStale = () => !listing || askedFor !== asks(pr);
 // The Issues tab's own state, kept across the repaint every poll causes and
 // not across a reload, like the file groups' folds: the search, which groups
 // are closed, which rows are open, and which groups a listing has had, so a
@@ -87,7 +95,7 @@ let query = '';
 const closedGroups = new Set();
 const expanded = new Set();
 const seen = new Set();
-// The Pull requests tab's: its listing (/api/pulls' answer -- milestones,
+// The PRs tab's: its listing (/api/pulls' answer -- milestones,
 // pulls, and `read`, when it was read, in ms), whether a read is out, its
 // search, and which groups a listing has had (`seen`'s for this tab); its
 // groups and opened rows share the two sets above under keys of their own.
@@ -97,6 +105,8 @@ let pullsReading = false;
 let pullsLoading = null;
 // A forced read was asked for while one was out (loadPulls).
 let pullsStale = false;
+// A visit to the tab arrived while a read was out, and is owed its age check.
+let pullsVisit = false;
 let pullQuery = '';
 const pullsSeen = new Set();
 // Its order and grouping, remembered as the add-to arrow is (below).
@@ -106,6 +116,11 @@ let pullSort = 'smallest';
 let pullGroup = 'milestone';
 // A listing younger than this is not read again on a visit to the tab; ⟳ always reads.
 const PULLS_FRESH_FOR = 60_000;
+// How long after the page's first status the issues are read for the Issues
+// tab's count (primeIssues): past the page-load `gh pr list` and a clone's
+// first pull request read, so the one GitHub call that is up to five pages
+// does not land on top of them.
+const ISSUES_AFTER_POLL = 3000;
 // Whether the History tab is drawn: /api/whoami's `history`, which app.js
 // hands over when it lands (setHistoryOn). Off until then, and off for good
 // under --no-history, so the tab is never drawn and then taken away.
@@ -155,6 +170,8 @@ export async function initQueue(d) {
   // Before the fetch, so a remembered ↑ is not shown as the markup's ↓ for as
   // long as /api/queue takes to answer.
   paintWhere();
+  // The last pull request listing, for the PRs tab's count before a visit.
+  loadPulls(false, { visit: false });
   // api(), not a bare fetch: a 500 answers `{error}` with a 200-shaped body, and
   // assigning that object to `items` made the very next render() throw on
   // items.filter -- a server-side error taking the whole pane down rather than
@@ -186,7 +203,20 @@ const save = async (url = '/api/queue', method = 'PUT', body = { items }) => {
   return true;
 };
 
-const LABELS = { local: 'Local', pr: 'PR', issues: 'Issues', pulls: 'Pull requests', history: HISTORY_LABEL, done: 'Completed', deleted: 'Deleted' };
+// `PRs` and `Issues`, the repository's, then `PR #N`, the one on screen: the
+// short word for the listing and the number for the one, so the two tabs
+// about pull requests are never confused (they were `Pull requests` and
+// `PR` until 2026-11-08). tabName() puts the number in.
+const LABELS = { local: 'Local', pr: 'PR', issues: 'Issues', pulls: 'PRs', history: HISTORY_LABEL, done: 'Completed', deleted: 'Deleted' };
+const tabName = (n) => (n === 'pr' && pr ? `PR #${pr.number}` : LABELS[n]);
+
+/**
+ * The source tabs, in the strip's order: the repository's pull requests
+ * first, since picking the next one is what the queue is most often opened
+ * for, then its issues, then the pull request on screen when there is one,
+ * then the History tab when there is a file to read. Pure, for the test.
+ */
+export const sourcesFor = (prOnScreen, history) => ['pulls', 'issues', ...(prOnScreen ? ['pr'] : []), ...(history ? ['history'] : [])];
 
 // Local is always there because an *empty* Local is the thing worth seeing --
 // it is how a tidy session ends. Completed is always there because it is where
@@ -195,8 +225,8 @@ const ALWAYS = ['local', 'done'];
 
 /**
  * Which tabs the strip draws, and which of them is active: your own list's tabs,
- * with the `sources` that are available -- PR and Issues, when there is a PR on
- * screen -- between Local and the rest. Pure, and exported only so it can
+ * with the `sources` that are available (sourcesFor) between Local and the
+ * rest. Pure, and exported only so it can
  * be checked without a DOM -- render() is the sole caller and decides neither
  * for itself.
  *
@@ -219,9 +249,20 @@ export function stripFor(list, active, sources = []) {
 const prTasks = () => (pr ? blocks(pr.body).filter((b) => b.kind === 'task') : []);
 
 /**
+ * The PR #N tab's count: what the pull request still points at that is open
+ * -- its unticked boxes, and the mentions not known to be closed, which is
+ * the rule every source's count keeps. A mention counts until the listing
+ * says it is closed, so the label never reads `…` and only drops as closed
+ * ones are found. The issues it closes are left out: they are what the pull
+ * request answers, and would not drop until it merges.
+ */
+const prCount = () => prTasks().filter((t) => !t.done).length
+  + mentioned().filter((i) => { const f = mentions?.get(i.number); return !f || f.state === 'OPEN'; }).length;
+
+/**
  * The issues the description mentions and does not close. The ones it closes
  * are what the PR already answers; a bare `#N` elsewhere is work it points at.
- * The Issues tab's first group, ahead of the repository's own.
+ * The PR #N tab's Mentions fold, looked up with the Issues listing.
  */
 const mentioned = (p = pr) => (p?.issues ?? []).filter((i) => !i.closes);
 
@@ -244,25 +285,36 @@ const matching = () => {
 };
 let matched = { listing: null, query: null, issues: [] };
 
-/** The Pull requests tab's count, on the same rule as the Issues tab's. */
+/** The PRs tab's count, on the same rule as the Issues tab's. */
 const pullCount = () => (!pullsListing ? '…' : pullQuery.trim() ? matchingPulls().length : pullsListing.total);
 
 /** The listed pull requests the tab's search lets through, by the state word each row shows. */
 const matchingPulls = () => (pullsListing?.pulls ?? []).filter((p) => pullMatches(p, pullQuery, pullWord(p, underOf(p)).word));
 
+// Each tab's scroll offset, put back when it is drawn again: the list is one
+// scroller under a strip that stays put, and a Local row ticked should not
+// land you at the top of Local, nor a switch to Issues at the offset you had
+// on the PRs tab. As the pull request pane's (renderPrTab in pr.js).
+const scrolled = {};
+
 function render() {
-  const host = document.getElementById('queue-body');
-  // Issues and Pull requests are always there -- a repository has both
-  // whatever is checked out -- and PR only with a pull request on screen.
-  const { strip, tab: active } = stripFor(items, tab, [...(pr ? ['pr', 'issues', 'pulls'] : ['issues', 'pulls']), ...(historyOn ? ['history'] : [])]);
+  const head = document.getElementById('queue-head');
+  const list = document.getElementById('queue-list');
+  // Recorded as it happens, not read before the replace: queueTab sets `tab`
+  // to the tab being switched to before this runs, so a read here would file
+  // the outgoing tab's offset under the incoming one (pr.js has the same note).
+  list.onscroll = () => { scrolled[tab] = list.scrollTop; };
+  // PRs and Issues are always there -- a repository has both whatever is
+  // checked out -- and PR #N only with a pull request on screen (sourcesFor).
+  const { strip, tab: active } = stripFor(items, tab, sourcesFor(pr, historyOn));
   tab = active;
   // A source's count is what it still holds open; the list's own are its tabs.
-  const count = (name) => (name === 'pr' ? prTasks().filter((t) => !t.done).length
+  const count = (name) => (name === 'pr' ? prCount()
     : name === 'issues' ? issueCount()
       : name === 'pulls' ? pullCount()
         : name === 'history' ? historyCount()
           : items.filter(TABS[name]).length);
-  const label = (n) => `${LABELS[n]} (${count(n)})`;
+  const label = (n) => `${tabName(n)} (${count(n)})`;
   const shown = TABS[tab] ? items.filter(TABS[tab]) : [];
   // Most recent first on Completed and Deleted, so the item you just ticked or
   // deleted by mistake is on top to be taken back. The store stamps the times;
@@ -271,18 +323,22 @@ function render() {
   const at = { done: 'doneAt', deleted: 'deletedAt' }[tab];
   if (at) shown.sort((a, b) => (b[at] ?? -Infinity) - (a[at] ?? -Infinity));
 
-  host.replaceChildren(
+  head.replaceChildren(
     h('div', { className: 'tabs' },
       ...strip.map((n) => queueTab(n, label(n))),
       h('span', { className: 'spacer' }),
       ...bulks(),
     ),
-    tab === 'pr' ? prList()
+  );
+  list.replaceChildren(
+    tab === 'pr' ? prTab()
       : tab === 'issues' ? issueList()
         : tab === 'pulls' ? pullList()
           : tab === 'history' ? historyList()
             : h('ul', { className: 'items' }, ...shown.map((i, n) => row(i, shown[n - 1], shown[n + 1]))),
   );
+  // Assigning forces layout, so this lands against the new content.
+  list.scrollTop = scrolled[tab] ?? 0;
   staleBreakdown();
 }
 
@@ -352,7 +408,14 @@ export function reorder(list, from, to) {
 const queueTab = (name, label) => tabBtn(label, tab === name, () => {
   tab = name;
   render();
-  if (name === 'issues') loadIssues();
+  if (name === 'issues') {
+    issuesVisited = true;
+    loadIssues();
+  }
+  // The mentions come with the Issues listing, read once in the background
+  // (primeIssues) and usually on hand: asked for only when it is not, or was
+  // asked about another pull request.
+  if (name === 'pr' && listingStale()) loadIssues(true);
   if (name === 'pulls') loadPulls();
   if (name === 'history') loadHistory();
 }, '', { dataset: { tab: name } });
@@ -394,31 +457,70 @@ function loadIssues(again = false) {
   }
   issuesLoading = fetchIssues().finally(() => {
     issuesLoading = null;
+    // Painted here, once the read is no longer out, so the line under the
+    // groups does not say `updating…` of a listing that has just landed.
+    paintAfterRead();
     if (!issuesStale) return;
     issuesStale = false;
     if (tab === 'issues') loadIssues();
   });
+  // And now, so the line says `updating…` while it is.
+  if (listing && (tab === 'issues' || tab === 'pr')) paintGroups();
+}
+
+/**
+ * After a read lands or fails: the counts whatever tab shows, and the groups
+ * on a tab that draws them -- in place when they are up, since the search
+ * box is there before the listing and a render() would take it out from
+ * under a query being typed; drawn whole otherwise.
+ */
+function paintAfterRead() {
+  if (tab !== 'issues' && tab !== 'pr') return paintCounts();
+  if (document.querySelector('#queue-body :is(.issue-groups, .pr-parts)')) paintIssues(); else render();
 }
 let issuesLoading = null;
 let issuesStale = false;
+// The tab has been visited, so a visit's read is out or in and the page-open
+// read (primeIssues) has nothing to add.
+let issuesVisited = false;
+// When the listing on hand was read, in ms, for the line under the groups.
+let issuesRead = 0;
+
+/**
+ * One read of the issues a few seconds after the page's first status lands
+ * (paint in app.js), so the Issues tab's count is on the strip before a
+ * visit -- unless a visit has already asked, a read is out, or the first
+ * read failed, which the tab says and a visit tries again; a failure here
+ * leaves `?` and says nothing, since nobody asked. After the first status,
+ * not before: GET /api/issues looks the mentions up for the pull request
+ * the server has, which the first poll is what gives it.
+ */
+export function primeIssues() {
+  setTimeout(() => {
+    if (listing || issuesLoading || issuesFailed || issuesVisited) return;
+    loadIssues();
+  }, ISSUES_AFTER_POLL);
+}
 // Why the first listing could not be read, so the tab says so after the toast
 // has gone: left reading "Reading…" and `…`, it looked as if it still was.
 // Once there is a listing, a failed refresh keeps it and only the toast says.
 let issuesFailed = null;
 
 async function fetchIssues() {
+  askedFor = asks(pr);
   try {
     const got = await api('/api/issues', undefined, 'GET');
     listing = got;
     mentions = new Map(got.mentions.map((i) => [i.number, i]));
     listed = new Map(got.issues.map((i) => [i.number, i]));
+    issuesRead = Date.now();
     seedGroups();
   } catch (e) {
-    toast(e.message, true);
+    // The toast is for a read someone is waiting on; a read behind another
+    // tab (primeIssues) leaves `?` on the strip and keeps quiet.
+    if (tab === 'issues' || tab === 'pr') toast(e.message, true);
     if (!listing) issuesFailed = e.message;
   }
-  if (tab !== 'issues') return;
-  if (document.getElementById('queue-search')) paintIssues(); else render();
 }
 
 /**
@@ -433,6 +535,18 @@ function typeInto(text) {
   if (!went) toast('The coding agent is not connected — nothing was typed.', true);
   return went;
 }
+
+/**
+ * The two buttons every source row has, and a Local row too, built here so
+ * they say and do the same thing on every tab (actions in ui.js has the
+ * order). ▶ types `text` -- or what the function gives, for a row whose text
+ * can change under an edit before the click -- and runs `then` only if it
+ * went; ↓ copies `text` into Local, tagged with the issue when there is one.
+ */
+const typeBtn = (text, { title = 'type into the coding agent, with the link', then } = {}) => btn('▶', () => {
+  if (typeInto(typeof text === 'function' ? text() : text)) then?.();
+}, { title });
+const pullBtn = (text, issue = null, kind = null, repo = null) => btn('↓', () => pull(text, issue, kind, repo), { title: 'copy into your queue' });
 
 /**
  * Copied into your queue, and left where it was: a checkbox in the description
@@ -452,20 +566,56 @@ async function pull(text, issue = null, kind = null, repo = null) {
   flashLocal();
 }
 
-/** The PR tab: the description's own checkboxes, ticked through to GitHub. */
-function prList() {
+/**
+ * The PR #N tab: everything the pull request's description points at, in
+ * three folds -- its own checklist, ticked through to GitHub; the issues and
+ * pull requests it mentions without closing, drawn as the Issues tab draws a
+ * mention; and the issues it closes, dimmed, since they are what it answers.
+ * Folds rather than headings, as every listing tab is: an agent-written
+ * checklist can run to dozens of lines and would bury the mentions, and a
+ * fold carries its count and remembers being closed across the poll's
+ * repaints (closedGroups, under keys no milestone has). The parts are
+ * repainted on their own as the listing lands (paintIssues), so an open row
+ * stays open.
+ */
+function prTab() {
+  return h('div', { className: 'pr-pane' }, groupsList('pr-parts', prParts()));
+}
+
+function prParts() {
+  if (!pr) return [];
   const tasks = prTasks();
-  if (!tasks.length) return h('p', { className: 'empty' }, `No checkboxes in PR #${pr.number}'s description.`);
-  return h('ul', { className: 'items' }, ...tasks.map((t) => {
-    // Named by its line, or every box in the list is called by the one title.
-    const box = h('input', { type: 'checkbox', checked: t.done, title: 'tick this on GitHub', ariaLabel: t.text });
-    writeThrough(box, (v) => deps.onTask({ index: t.index, done: v, text: t.text }));
-    return h('li', { className: 'item source' },
-      box,
-      h('span', { className: 'text', textContent: t.text }),
-      h('span', { className: 'actions' },
-        btn('↓', () => pull(t.text), { title: 'copy into your queue' })));
-  }));
+  const ment = newestFirst(mentioned(), mentions);
+  const closes = (pr.issues ?? []).filter((i) => i.closes);
+  // `milestone` is the groups' face in style.css, `part` what the PR #N tab
+  // adds to it; the suite's groupsOf reads the Issues tab by the first.
+  const part = (key, title, n, label, rows, progress) => fold({
+    className: 'milestone part', dataset: { group: key },
+    title: [title, ' ', badge(n, label)], progress, ...kept(closedGroups, key, 'closed'),
+  }, [h('ul', { className: 'items' }, ...rows)]);
+  const out = [];
+  if (tasks.length) {
+    const done = tasks.filter((t) => t.done).length;
+    out.push(part('tasks', 'Checklist', tasks.length - done, `${tasks.length - done} of ${tasks.length} ${tasks.length - done === 1 ? 'box' : 'boxes'} still to tick`,
+      tasks.map((t) => taskRow(t)), { ...fraction({ done, total: tasks.length }), label: `${done} of ${tasks.length} ticked` }));
+  }
+  if (ment.length) out.push(part('mentioned', 'Mentions', ment.length, `${ment.length} ${several(ment.length, 'issues')} or pull requests the description mentions without closing`, ment.map((i) => mentionRow(i)).flat()));
+  if (closes.length) out.push(part('closes', 'Closes', closes.length, `${closes.length} ${several(closes.length, 'issues')} this pull request closes`, closes.map((i) => closesRow(i)).flat()));
+  if (!out.length) out.push(h('p', { className: 'empty' }, `Nothing in PR #${pr.number}'s description to point at: no checkboxes, no mentions.`));
+  return out;
+}
+
+/** A checklist line: its box, ticked through to GitHub, and the row's ways. */
+function taskRow(t) {
+  // Named by its line, or every box in the list is called by the one title.
+  const box = h('input', { type: 'checkbox', checked: t.done, title: 'tick this on GitHub', ariaLabel: t.text });
+  writeThrough(box, (v) => deps.onTask({ index: t.index, done: v, text: t.text }));
+  // ▶ types the line and ticks nothing: the box is GitHub's, and typing a
+  // task to the agent is not doing it.
+  return h('li', { className: 'item source' },
+    box,
+    h('span', { className: 'text', textContent: t.text }),
+    actions(typeBtn(t.text, { title: 'type into the coding agent' }), pullBtn(t.text)));
 }
 
 /**
@@ -482,9 +632,10 @@ export function newestFirst(list, found) {
 
 /**
  * The Issues tab: a search over the repository's open issues, and the issues
- * in groups -- what the description mentions without closing first, then the
- * issues on no milestone, which are the ones to triage, then one group per
- * milestone in the owner's order (rankMilestones). Each row can open to show the issue's body and a way to it
+ * in groups -- the issues on no milestone first, which are the ones to
+ * triage, then one group per milestone in the owner's order (rankMilestones);
+ * what the pull request on screen mentions is the PR #N tab's (prParts), read
+ * with this listing. Each row can open to show the issue's body and a way to it
  * on GitHub, be typed to the coding agent with its link (▶), or be copied
  * into Local (↓). The groups are repainted on their own as the search and the
  * rows change, so the search box keeps its focus.
@@ -498,7 +649,10 @@ function issueList() {
     query = search.value;
     paintIssues();
   };
-  return h('div', { className: 'issues-pane' }, search, groupsList('issue-groups', issueGroups()));
+  // ⟳ as the PRs and History tabs have it, `again` so that one pressed while
+  // a read is out still causes a read after it.
+  const reload = btn('⟳', () => loadIssues(true), { className: 'issue-reload', title: 'read the issues again from GitHub', ariaLabel: 'read the issues again from GitHub' });
+  return h('div', { className: 'issues-pane' }, h('div', { className: 'pull-controls' }, search, reload), groupsList('issue-groups', issueGroups()));
 }
 
 /**
@@ -514,9 +668,13 @@ const groupsInUse = () => !!(document.querySelector('#queue-body .item.dragging'
   || document.activeElement?.closest?.('#queue-body .move-to'));
 // A repaint held back, drawn once what held it is over.
 let groupsOwed = false;
+// What each tab that draws from the Issues listing paints its groups into,
+// and with what: the Issues tab its milestone groups, the PR #N tab its parts.
+const GROUPS = { issues: ['.issue-groups', issueGroups], pr: ['.pr-parts', prParts] };
 const drawGroups = () => {
   groupsOwed = false;
-  document.querySelector('#queue-body .issue-groups')?.replaceChildren(...issueGroups());
+  const [host, groups] = GROUPS[tab] ?? [];
+  if (host) document.querySelector(`#queue-body ${host}`)?.replaceChildren(...groups());
   staleBreakdown();
 };
 const paintGroups = () => { if (groupsInUse()) groupsOwed = true; else drawGroups(); };
@@ -531,14 +689,25 @@ const groupsList = (className, groups) => {
   return list;
 };
 const payGroups = () => {
-  if (groupsOwed) MOVES[tab]?.paint();
+  // The PR #N tab's rows move through the Issues listing's MOVES.
+  if (groupsOwed) (tab === 'pr' ? MOVES.issues : MOVES[tab])?.paint();
 };
 
-/** The groups and the tab's count, leaving the search box, its focus and its caret alone. */
+/**
+ * The groups of whichever tab draws from the Issues listing, and both tabs'
+ * counts, leaving the search box, its focus and its caret alone.
+ */
 function paintIssues() {
   paintGroups();
+  paintCounts();
+}
+
+/** The two tabs' counts drawn from the Issues listing, whatever tab shows. */
+function paintCounts() {
   const t = document.querySelector('#queue-body .tab[data-tab="issues"]');
   if (t) t.textContent = `${LABELS.issues} (${issueCount()})`;
+  const p = document.querySelector('#queue-body .tab[data-tab="pr"]');
+  if (p) p.textContent = `${tabName('pr')} (${prCount()})`;
 }
 
 /** The group an issue with no milestone is in. */
@@ -553,10 +722,10 @@ const triage = (list) => (list.length ? [h('span', { className: 'triage', title:
  * the line's end, where on a wide pane it was too far off to read as the
  * milestone's (2026-10-24). `noun` is the plural, `issues` or `pull requests`.
  */
-const countBadge = (n, noun, searching) => h('span', {
-  className: n ? 'count' : 'count none',
-  title: `${n} open ${several(n, noun)} ${searching ? (n === 1 ? 'matches the search' : 'match the search') : 'listed'}`,
-}, String(n));
+const countBadge = (n, noun, searching) => badge(n,
+  `${n} open ${several(n, noun)} ${searching ? (n === 1 ? 'matches the search' : 'match the search') : 'listed'}`);
+/** The badge itself: the digits, hollow at 0, with `title` saying what they count. */
+const badge = (n, title) => h('span', { className: n ? 'count' : 'count none', title }, String(n));
 
 /** `noun`, a plural, as one of them when `n` is 1: `issue`, `pull request`. */
 const several = (n, noun) => (n === 1 ? noun.replace(/s$/, '') : noun);
@@ -580,7 +749,7 @@ function tally(counts) {
 
 /**
  * What follows a milestone's count on its line, from its tally: how many of
- * the other kind are open on it -- `9 issues` on the Pull requests tab, `2 PRs`
+ * the other kind are open on it -- `9 issues` on the PRs tab, `2 PRs`
  * on the Issues tab, `noun` being the tab's own rows -- so the line says what
  * the milestone holds beyond the rows listed; the pie of how much of it is
  * done; how many pull requests have merged into it, which is what says whether
@@ -708,16 +877,16 @@ function issueGroups() {
   const ranked = rankMilestones(listing.milestones);
   // While searching every group drawn has a match and is open, without
   // touching what was chosen: fold() reports its initial state too. One
-  // without a match is left out, as the mentions are -- drawn, it said "no
-  // open issues" of a milestone that has them.
+  // without a match is left out -- drawn, it said "no open issues" of a
+  // milestone that has them.
   const state = (key) => (searching ? { open: true, onToggle: () => {} } : kept(closedGroups, key, 'closed'));
   const home = deps.home?.();
   // `list` is the group's issues and `rows` what they draw, which is more
   // than one element per issue once a row is open: the count is the issues'.
   // `target` is the milestone the group stands for -- a title, or null for
-  // none -- and makes its summary somewhere an issue row can be dropped; the
-  // mentions and a closed milestone have none. No milestone with anything on
-  // it is marked as the pile to triage (untriaged in style.css).
+  // none -- and makes its summary somewhere an issue row can be dropped; a
+  // closed milestone has none. No milestone with anything on it is marked as
+  // the pile to triage (untriaged in style.css).
   const group = (key, title, list, rows, extra = [], target) => {
     const d = fold({
       className: target === null && list.length ? 'milestone untriaged' : 'milestone', dataset: { group: key }, title: [title, ' ', countBadge(list.length, 'issues', searching), ...extra.flatMap((e) => [' ', e])],
@@ -728,14 +897,6 @@ function issueGroups() {
   };
 
   const out = [];
-  // The mentions, searched by what is known of them: one that is a listed
-  // issue as that issue is, labels and body too, so the two rows match alike;
-  // any other by its looked-up title.
-  const ment = mentioned().filter((i) => issueMatches(listedAs(i)
-    ?? { number: i.number, title: mentions?.get(i.number)?.title }, query));
-  if (pr && ment.length) {
-    out.push(group('mentioned', `Mentioned by PR #${pr.number}`, ment, newestFirst(ment, mentions).map((i) => mentionRow(i)).flat()));
-  }
   // No milestone before the milestones: an issue on none is untriaged, and
   // could belong at any level, Critical included.
   const none = byMilestone.get(NONE) ?? [];
@@ -750,9 +911,11 @@ function issueGroups() {
     out.push(group(`m:${m.number}`, title, list, list.map((i) => issueRow(i)).flat(), extra, m.closed ? undefined : m.title));
   }
   if (!out.length) out.push(h('p', { className: 'empty' }, 'No open issues match.'));
-  if (listing.listed < listing.total) {
-    out.push(h('p', { className: 'pr-note' }, `The ${listing.listed} most recently updated of ${listing.total} open issues.`));
-  }
+  // When the listing was read, and that a read is out, as the PRs and
+  // History tabs say it under their groups.
+  out.push(h('p', { className: 'pull-note' },
+    `Read ${age(new Date(issuesRead).toISOString())}${issuesLoading ? ' · updating…' : ''}`
+    + (listing.listed < listing.total ? `. The ${listing.listed} most recently updated of ${listing.total} open issues.` : '')));
   return out;
 }
 
@@ -801,7 +964,7 @@ function moveControl(name, number, current, ariaLabel) {
     await kind.settled();
     // The repaint took the focus with it, and the row may have gone to a folded
     // group: the keyboard follows it there, unless it has since gone elsewhere.
-    // A list with no groups (one of the Pull requests tab's) has only the row.
+    // A list with no groups (one of the PRs tab's) has only the row.
     const now = kind.row(number);
     if (tab !== name || !now || (document.activeElement && document.activeElement !== document.body)) return;
     const to = from && kind.group(now.milestone, from);
@@ -843,7 +1006,8 @@ function mentionRow(i) {
   const found = mentions?.get(i.number);
   const repo = mentionRepo(i);
   const own = listedAs(i);
-  if (own) return issueRow(own);
+  // Dragged only on the Issues tab, where a milestone's line is a drop target.
+  if (own) return issueRow(own, { drag: tab === 'issues' });
   const title = found?.title;
   const open = found?.state === 'OPEN';
   // Not in the lookup is not looked up yet: every mention it was asked
@@ -853,6 +1017,23 @@ function mentionRow(i) {
       : open ? title : `${title} · ${found.state?.toLowerCase() ?? 'state unknown'}`;
   return issueRow({ number: i.number, url: i.url, title: text, body: null }, {
     repo, kind: found?.kind ?? null, closed: !open && !!found, text: title ?? `#${i.number}`,
+  });
+}
+
+/**
+ * An issue the pull request closes, as a row on the PR #N tab: the listing's
+ * own row when it is one of this repository's open issues, body and all, or
+ * else the number and the title the description's links carry (withLinks in
+ * github.js), with no state to look up -- GitHub's closing references are
+ * open issues. Dimmed and under the Closes heading, since it is what the pull
+ * request answers, and with no grip: nothing on this tab is dropped anywhere.
+ */
+function closesRow(i) {
+  const own = listedAs(i);
+  if (own) return issueRow(own, { closes: true, drag: false });
+  const text = i.title ?? `#${i.number}`;
+  return issueRow({ number: i.number, url: i.url, title: text, body: null }, {
+    repo: i.repo ?? mentionRepo(i), kind: i.kind ?? 'issue', closes: true, drag: false, text,
   });
 }
 
@@ -877,7 +1058,9 @@ function listedAs(i) {
  * written against this repository, with Open on GitHub under it: reading the
  * issue is the point, and the button is the way to the rest of it.
  */
-function issueRow(i, { repo = null, kind = 'issue', closed = false, text = i.title } = {}) {
+function issueRow(i, { repo = null, kind = 'issue', closed = false, closes = false, drag = true, text = i.title } = {}) {
+  // Shared between the Issues and PR #N tabs: a row opened on one is open on
+  // the other, which is the same issue either way.
   const key = `${repo ?? ''}#${i.number}`;
   const open = expanded.has(key);
   const can = i.body != null;
@@ -890,8 +1073,8 @@ function issueRow(i, { repo = null, kind = 'issue', closed = false, text = i.tit
   // A listed issue can be dragged onto a milestone group; a mention that is
   // not listed cannot, since the move is held to the listing, and gets an empty
   // grip so the rows still line up.
-  const grip = can ? dragGrip() : h('span', { className: 'grip' });
-  const row = h('li', { className: `item source${closed ? ' closed' : ''}`, dataset: { issue: String(i.number) } },
+  const grip = can && drag ? dragGrip() : h('span', { className: 'grip' });
+  const row = h('li', { className: `item source${closed ? ' closed' : ''}${closes ? ' closes' : ''}`, dataset: { issue: String(i.number) } },
     grip,
     disclose,
     // With the repo when it is another's, as the item ↓ makes is tagged: the
@@ -899,13 +1082,8 @@ function issueRow(i, { repo = null, kind = 'issue', closed = false, text = i.tit
     ext(i.url, refLabel({ issue: i.number, kind, repo }), { className: tagClass(kind) }),
     h('span', { className: 'text', textContent: i.title }),
     ...(i.labels ?? []).map((l) => h('span', { className: 'tag label' }, l)),
-    h('span', { className: 'actions' },
-      btn('▶', () => {
-        const item = { text, issue: i.number, repo, kind, issueUrl: i.url };
-        if (!deps.sendToClaude(forClaude(item, deps.home?.()), false)) toast('The coding agent is not connected — nothing was typed.', true);
-      }, { title: 'type into the coding agent, with the link' }),
-      btn('↓', () => pull(text, i.number, kind, repo), { title: 'copy into your queue' })));
-  if (can) carries(grip, row, ISSUE, i.number);
+    actions(typeBtn(() => forClaude({ text, issue: i.number, repo, kind, issueUrl: i.url }, deps.home?.())), pullBtn(text, i.number, kind, repo)));
+  if (can && drag) carries(grip, row, ISSUE, i.number);
   if (!open) return [row];
   const home = deps.home?.();
   const where = home ? { repo: `https://github.com/${home}`, ref: 'HEAD' } : null;
@@ -957,8 +1135,9 @@ const MOVES = {
     draw: () => drawGroups(),
     read: () => loadIssues(true),
     settled: async () => { while (issuesLoading) await issuesLoading; },
-    // The mentions are drawn wherever a row's milestone says, so a row moved
-    // from there is still in that group; from a milestone's, it has gone.
+    // The PR #N tab's mentions are drawn wherever a row's milestone says, so
+    // a row moved from there is still in that group; from a milestone's
+    // group on the Issues tab, it has gone.
     group: (milestone, from) => (from === 'mentioned' ? from : `m:${milestone ?? NONE}`),
     searching: () => query.trim(),
   },
@@ -977,7 +1156,7 @@ const MOVES = {
 
 /**
  * A row onto a milestone, or off one with null, on a drop or Move: the one write
- * each of the Issues and Pull requests tabs makes, which GitHub's own rules call
+ * each of the Issues and PRs tabs makes, which GitHub's own rules call
  * triage. The tab reads the listing again after, so the row moves group once
  * GitHub has it and not before -- asking again even when a listing is already
  * out, since that one was asked for before the write.
@@ -1016,25 +1195,37 @@ const movePull = (number, milestone) => moveRow('pulls', number, milestone);
  * unless the listing is under a minute old. `force` is the tab's ⟳, which
  * reads whatever the age. The listing on screen stays until the new one
  * lands, and stays if it does not; the note under the groups says which.
+ *
+ * Not a `visit` when the page opens (initQueue): the last listing is read
+ * then too, so the tab's count is there before a visit -- a millisecond from
+ * the file, or GitHub once in a clone that has none, which the file then
+ * keeps -- but the fresh read behind it waits for a visit, since nobody is
+ * looking yet.
  */
-function loadPulls(force = false) {
+function loadPulls(force = false, { visit = true } = {}) {
   // A forced read asked for during another -- a move, whose write that read
-  // was sent before -- runs once that one is in, as loadIssues's `again` does.
+  // was sent before -- runs once that one is in, as loadIssues's `again` does;
+  // and a visit during the page-open read gets its age check once that is in.
   if (pullsLoading) {
     pullsStale ||= force;
+    pullsVisit ||= visit;
     return pullsLoading;
   }
-  pullsLoading = readPulls(force).finally(() => {
+  pullsLoading = readPulls(force, visit).finally(() => {
     pullsLoading = null;
     paintPulls();
-    if (!pullsStale) return;
-    pullsStale = false;
-    loadPulls(true);
+    if (pullsStale) {
+      pullsStale = false;
+      loadPulls(true);
+    } else if (pullsVisit) {
+      pullsVisit = false;
+      loadPulls();
+    }
   });
   return pullsLoading;
 }
 
-async function readPulls(force) {
+async function readPulls(force, visit) {
   pullsReading = true;
   try {
     if (!pullsListing) {
@@ -1043,7 +1234,7 @@ async function readPulls(force) {
       try { pullsListing = await api('/api/pulls', { fresh: false }); } catch (e) { return toast(e.message, true); }
       paintPulls();
     }
-    if (force || Date.now() - pullsListing.read >= PULLS_FRESH_FOR) {
+    if (force || (visit && Date.now() - pullsListing.read >= PULLS_FRESH_FOR)) {
       paintPulls();
       try { pullsListing = await api('/api/pulls', { fresh: true }); } catch (e) { toast(e.message, true); }
     }
@@ -1064,14 +1255,16 @@ const drawPulls = () => {
 };
 
 export function paintPulls() {
-  if (tab !== 'pulls') return;
-  if (groupsInUse()) groupsOwed = true; else drawPulls();
+  // The count whatever tab shows -- the listing is read before a visit -- and
+  // the groups only on this one.
   const t = document.querySelector('#queue-body .tab[data-tab="pulls"]');
   if (t) t.textContent = `${LABELS.pulls} (${pullCount()})`;
+  if (tab !== 'pulls') return;
+  if (groupsInUse()) groupsOwed = true; else drawPulls();
 }
 
 /**
- * The Pull requests tab: a search, the order within a group and whether to
+ * The PRs tab: a search, the order within a group and whether to
  * group at all, ⟳, and the pull requests -- the ones on no milestone, to
  * triage, and then one group per open milestone in the owner's order
  * (rankMilestones), as the Issues tab groups, or one list. Each row carries what picking the next one turns
@@ -1291,12 +1484,7 @@ function pullRow(p, depth = 0) {
     // and Switch follows its last word; apart, the title took a line of its own.
     h('span', { className: 'pull-title' }, h('span', { className: 'text', textContent: p.title }), ' ', stack, stack ? ' ' : null,
       here ? h('span', { className: 'tag here', title: 'the pull request on screen' }, 'here') : go()),
-    h('span', { className: 'actions' },
-      btn('▶', () => {
-        const item = { text: p.title, issue: p.number, repo: null, kind: 'pull', issueUrl: p.url };
-        if (!deps.sendToClaude(forClaude(item, home), false)) toast('The coding agent is not connected — nothing was typed.', true);
-      }, { title: 'type into the coding agent, with the link' }),
-      btn('↓', () => pull(p.title, p.number, 'pull', null), { title: 'copy into your queue' })),
+    actions(typeBtn(() => forClaude({ text: p.title, issue: p.number, repo: null, kind: 'pull', issueUrl: p.url }, home)), pullBtn(p.title, p.number, 'pull', null)),
     h('div', { className: 'pr-facts' }, ...facts.flatMap(([node, plain], i) => [i && plain && facts[i - 1][1] ? h('span', { className: 'sep' }, '·') : null, node])),
     p.lead ? h('p', { className: 'pr-lead', innerHTML: inline(p.lead, where) }) : null,
     closes);
@@ -1342,34 +1530,36 @@ function row(item, above, below) {
   text.onblur = () => { if (text.textContent.trim() !== item.text) { item.text = text.textContent.trim(); save(); } };
   text.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); text.blur(); } };
 
+  // The tag before the text, as every source row and the PR pane's Closes list
+  // draw it: after a text that takes the row's width it sat at the far right,
+  // beside the buttons, away from the words it labels.
   const li = h('li', { className: 'item', draggable: ordered },
     ordered ? grip : null,
     box,
-    text,
     item.issue ? ext(item.issueUrl ?? '#', refLabel(item), { className: tagClass(item.kind) }) : null,
-    h('span', { className: 'actions' },
+    text,
+    actions(
       // Typed, not sent: the turn is left in the prompt for you to edit, which
       // is the whole of what prcoder puts into a session (docs/Design.md).
       // Handing it over is what doing an item looks like here, so it ticks the
       // box the way finishing it would: the row leaves Local for Completed, and
       // the Local tab stays a list of what has not been handed over yet. Not a
       // delete -- Completed is where you go to see what you handed over, and its
-      // own checkbox puts an item back if Claude turned out not to do it.
+      // own checkbox puts an item back if the agent turned out not to do it.
       //
-      // Only if it went. `sendToClaude` answers false on a closed socket, and
-      // an item ticked off after a refused send is work nobody has done and
-      // nothing will remind you of.
+      // Only if it went (typeBtn): an item ticked off after a refused send is
+      // work nobody has done and nothing will remind you of. The text is read
+      // at the click, since an edit can change it after the row is drawn.
       //
       // With the link to the issue or PR it is about, where the text does not
       // already say which (forClaude in items.js).
-      btn('▶', () => {
-        if (!deps.sendToClaude(forClaude(item, deps.home?.()), false)) return toast('Claude is not connected — nothing was typed.', true);
-        item.done = true;
-        return save();
-      }, { title: 'type into Claude, and check it off' }),
+      typeBtn(() => forClaude(item, deps.home?.()), {
+        title: 'type into the coding agent, and check it off',
+        then: () => { item.done = true; save(); },
+      }),
       // A move, not a flag: the issue is filed and the item leaves the queue.
       // Nothing moves into the PR description -- prcoder does not write one,
-      // bar a box you tick on the PR tab. Disabled while the issue is filed: a
+      // bar a box you tick on the PR #N tab. Disabled while the issue is filed: a
       // second click filed a second issue for the same item.
       //
       // Not for an item about an issue or PR in this repo, which already has a
@@ -1459,7 +1649,7 @@ export async function addItem(text) {
   // longer exists as a row -- but the end it went to is known, and that is all
   // this needs. It stays out of save() itself, which every checkbox and drag
   // also calls; the viewport should not jump for those.
-  const host = document.getElementById('queue-body');
+  const host = document.getElementById('queue-list');
   host.scrollTop = addTo === 'top' ? 0 : host.scrollHeight;
   return true;
 }

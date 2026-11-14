@@ -178,6 +178,15 @@ export const setPref = (key, value) => {
   try { localStorage.setItem(key, value); } catch { /* this session only */ }
 };
 
+/**
+ * A row's ways out, at its end and on hover: every row of the queue pane
+ * builds its cluster from this, in one order -- ▶ (type into the coding
+ * agent), ↓ (copy into Local), ⧉ (copy to the clipboard), then whatever is
+ * the row's own (◎, ✕, ↩) -- so a button means one thing wherever it sits. A
+ * row leaves out what it lacks; h() drops the nulls.
+ */
+export const actions = (...buttons) => h('span', { className: 'actions' }, ...buttons);
+
 /** One of a pane's tabs; `on` is the one showing, and `extra` is any class besides. */
 export const tabBtn = (label, on, onClick, extra = '', props = {}) =>
   btn(label, onClick, { ...props, className: ['tab', extra, on ? 'on' : ''].filter(Boolean).join(' ') });

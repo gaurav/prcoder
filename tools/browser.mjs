@@ -106,6 +106,12 @@ const page = await openPage(browser, port);
 // `.file` only exists once the Files tab has been clicked.
 await page.waitForSelector('#pr-head .pr-title', { timeout: 30_000 });
 await page.waitForTimeout(500);
+// Every source tab's count is on the strip before any tab is clicked: History
+// and the last pull request listing as the page opens, the issues a few
+// seconds after the first status.
+await page.waitForFunction(() => ['issues', 'pulls', 'history'].every((n) =>
+  /\(\d+\)$/.test(document.querySelector(`#queue-body .tab[data-tab="${n}"]`)?.textContent ?? '')), null, { timeout: 30_000 });
+console.log('counts: ', (await page.locator('#queue-body .tab').allTextContents()).join(' | '), '\n  (want a number on every tab before any click)');
 
 await page.screenshot({ path: path.join(out, 'full.png') });
 for (const pane of ['pr', 'queue']) {
@@ -139,7 +145,7 @@ const drag = async (sel, x, y) => {
 // tabs wrap. `#queue-body .tab` and not `.tab`: the pull request pane has a strip of
 // its own, driven further down.
 const queueStrip = () => page.locator('#queue-body .tab').allTextContents();
-console.log('q tabs: ', (await queueStrip()).join(' | '));
+console.log('q tabs: ', (await queueStrip()).join(' | '), '\n  (want Local, PRs, Issues, PR #N, History, Completed, Deleted, each with a count)');
 for (const name of ['Local', 'Completed', 'Deleted']) {
   await page.locator('#queue-body .tab', { hasText: name }).click();
   await page.waitForTimeout(150);
@@ -151,18 +157,19 @@ for (const name of ['Local', 'Completed', 'Deleted']) {
 // 1440px is the only width the strip had been looked at -- where the tabs and
 // the bulk button fit easily. The pane the queue
 // actually lives in is whatever is left after the PR column, so drag that wide
-// and ask the tabs themselves whether they are still on one row: same offsetTop
-// for the first and the last is the only version of "does not wrap" that does
-// not depend on reading a screenshot.
+// and ask the tabs themselves how many rows they take (distinct offsetTops) and
+// whether every one is inside the pane: the strip wraps whole tabs rather than
+// overflowing, so two rows are fine and a tab past the pane's edge is not.
 await drag('#gut-pr', 980, 450);
 await page.waitForTimeout(300);
 const strip = await page.evaluate(() => {
   const t = [...document.querySelectorAll('#queue-body .tab')];
-  const pane = document.getElementById('queue').getBoundingClientRect().width;
-  return { rows: new Set(t.map((b) => b.offsetTop)).size, n: t.length, pane: Math.round(pane) };
+  const pane = document.getElementById('queue').getBoundingClientRect();
+  const out = t.filter((b) => b.getBoundingClientRect().right > pane.right + 1).length;
+  return { rows: new Set(t.map((b) => b.offsetTop)).size, n: t.length, out, pane: Math.round(pane.width) };
 });
-console.log('narrow: ', `${strip.n} tabs on ${strip.rows} row(s) in a ${strip.pane}px pane`,
-  strip.rows === 1 ? '' : '  <-- the strip wrapped');
+console.log('narrow: ', `${strip.n} tabs on ${strip.rows} row(s) in a ${strip.pane}px pane, ${strip.out} past its edge`,
+  '(want 0 past the edge; two rows is the strip wrapping, as it should)');
 await page.locator('#queue').screenshot({ path: path.join(out, 'queue-narrow.png') });
 await drag('#gut-pr', 375, 450);
 await page.waitForTimeout(300);
@@ -208,7 +215,7 @@ console.log('row ↩:  ', await local(), JSON.stringify(await page.locator('.ite
 // out. Round-tripped like the ✕ above -- the caret check below still needs a
 // full Local tab.
 const SENT = 'a local item, still only on this machine';
-await page.locator('.item', { hasText: SENT }).locator('button[title="type into Claude, and check it off"]').click();
+await page.locator('.item', { hasText: SENT }).locator('button[title="type into the coding agent, and check it off"]').click();
 await page.locator('#queue-body .tab', { hasText: 'Local (2)' }).waitFor({ timeout: 10_000 });
 await page.waitForTimeout(400);   // the stub echoes on the PTY's own schedule
 const echoed = (await page.locator('#term-host').innerText()).includes(SENT);
@@ -226,24 +233,32 @@ await page.locator('#queue-body .tab', { hasText: 'Local' }).click();
 await page.waitForTimeout(150);
 console.log('unticked:', await local(), ' (want Local (3) again)');
 
-// The source tabs, which read GitHub rather than the queue. The PR tab is this
-// PR's own checklist: one box ticked from here and unticked again is two real
-// edits to the description, checked to leave the body as it was -- read back
-// through /api/status, whose copy is the one editBody replaced after each
-// write. Issues is the issues the description mentions without closing them;
-// ↓ copies one into Local without touching the issue -- into the driver's own
-// queue, where the next run's seed replaces it.
+// The source tabs, which read GitHub rather than the queue. The PR #N tab is
+// what this PR's description points at, in three folds: its checklist, where
+// one box ticked from here and unticked again is two real edits to the
+// description, checked to leave the body as it was -- read back through
+// /api/status, whose copy is the one editBody replaced after each write; the
+// issues it mentions without closing; and the issues it closes. Issues is the
+// repository's open issues by milestone; ↓ copies one into Local without
+// touching the issue -- into the driver's own queue, where the next run's
+// seed replaces it.
 const prBody = () => page.evaluate(() => fetch('/api/status').then((r) => r.json()).then((st) => st.pr?.body));
 const bodyBefore = await prBody();
-await page.locator('#queue-body .tab', { hasText: /^PR/ }).click();
+// `/^PR #/`, not `/^PR/`: that matches the PRs tab too, and two matches is a
+// strict-mode throw that looks like a hang.
+await page.locator('#queue-body .tab', { hasText: /^PR #/ }).click();
 await page.waitForTimeout(150);
 await page.locator('#queue').screenshot({ path: path.join(out, 'queue-pr.png') });
 const prRows = page.locator('#queue-body .item.source');
-console.log('pr tab: ', await page.locator('#queue-body .tab', { hasText: /^PR/ }).innerText(), `${await prRows.count()} rows`);
+console.log('pr tab: ', await page.locator('#queue-body .tab', { hasText: /^PR #/ }).innerText(), `${await prRows.count()} rows`, '|',
+  (await page.$$eval('#queue-body .fold.part', (gs) => gs.map((g) =>
+    `${g.querySelector('h3').textContent.replace(/\s+/g, ' ').trim()}${g.open ? ' (open)' : ''}: ${g.querySelectorAll('.item').length} rows`))).join(' | '),
+  '\n  (want Checklist, Mentions and Closes, each only when the description has any, and the count = unticked boxes + open mentions)');
 const firstBox = () => page.locator('#queue-body .item.source input[type=checkbox]').first();
-// A description can have no checkboxes at all -- this repo's PR #27 has none --
-// and then there is nothing to tick, which is a skip rather than a hang.
-if (await prRows.count()) {
+// A description can have no checkboxes at all -- this repo's PR #1 has none --
+// and then there is nothing to tick, which is a skip rather than a hang. The
+// boxes, not the rows: the tab's rows are the mentions and closes too.
+if (await firstBox().count()) {
   // The untick is the undo, so a run that fails between the two clicks -- a
   // timeout, a refused write, the browser going away -- would leave the box
   // ticked on GitHub. The description is snapshotted first, byte for byte from
@@ -277,8 +292,8 @@ if (await prRows.count()) {
   }
 } else console.log('  no checkboxes in this description to tick');
 
-// Issues is the repository's open issues by milestone, the mentions first;
-// the tab's count says `…` until the listing lands. The groups' summaries are
+// Issues is the repository's open issues by milestone; its count was read in
+// the background above, and the visit reads again. The groups' summaries are
 // what the screenshot is for -- the folds, the chips and an opened body in a
 // 15px row are nothing a selector can judge.
 await page.locator('#queue-body .tab', { hasText: /^Issues/ }).click();
@@ -288,15 +303,13 @@ await page.waitForSelector('#queue-body .fold.milestone');
 console.log('issues: ', await page.locator('#queue-body .tab', { hasText: /^Issues/ }).innerText(), '|',
   (await page.$$eval('#queue-body .fold.milestone', (gs) => gs.map((g) =>
     `${g.querySelector('h3').textContent.replace(/\s+/g, ' ').trim()}${g.open ? ' (open)' : ''}`))).join(' | '),
-'  (want the open-issue count, then the mentions, No milestone marked "to triage" if it has any, and every open milestone in rank order with its count, the first with issues open)');
+'  (want the open-issue count, No milestone marked "to triage" if it has any, and every open milestone in rank order with its count, the first with issues open)');
 // The first row that can open: its body through the description renderer,
 // and Open on GitHub under it.
 const openable = page.locator('#queue-body .fold.milestone[open] .item button.disclose').first();
 if (await openable.count()) {
   await openable.click();
   await page.waitForSelector('#queue-body .issue-body');
-  // `.first()`: a mention that is also listed under its milestone is one row
-  // drawn twice, and opening either opens both.
   console.log('  opened:', JSON.stringify((await page.locator('#queue-body .issue-body').first().innerText()).slice(0, 80)),
     '(want the body as rendered text, ending in Open on GitHub)');
 }
@@ -319,15 +332,15 @@ console.log('  search: ', await page.locator('#queue-body .tab', { hasText: /^Is
   `${await page.locator('#queue-body .fold.milestone .item').count()} rows`, '(want Issues (0) and 0 rows)');
 await page.locator('#queue-search').fill('');
 
-// Pull requests is the repository's open pull requests by milestone, with the
+// PRs is the repository's open pull requests by milestone, with the
 // facts the choice of the next one turns on; the tab opens from the last
 // listing and reads GitHub behind it, and the note under the groups says
 // when the listing was read. Nothing here is moved: a drag or a pick would
 // put a real pull request on a milestone.
-await page.locator('#queue-body .tab', { hasText: /^Pull requests/ }).click();
+await page.locator('#queue-body .tab', { hasText: /^PRs/ }).click();
 await page.waitForFunction(() => /^Read /.test(document.querySelector('#queue-body .pull-note')?.textContent ?? '')
   && !document.querySelector('#queue-body .pull-note').textContent.includes('updating'), null, { timeout: 60_000 });
-console.log('pulls:  ', await page.locator('#queue-body .tab', { hasText: /^Pull requests/ }).innerText(), '|',
+console.log('pulls:  ', await page.locator('#queue-body .tab', { hasText: /^PRs/ }).innerText(), '|',
   (await page.$$eval('#queue-body .fold.milestone', (gs) => gs.map((g) =>
     `${g.querySelector('h3').textContent.replace(/\s+/g, ' ').trim()}${g.open ? ' (open)' : ''}`))).join(' | '),
   '|', await page.locator('#queue-body .pull-note').innerText(),

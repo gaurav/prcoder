@@ -23,7 +23,7 @@ is parked in [#82](https://github.com/gaurav/prcoder/pull/82), a draft kept for 
 description that still carries its block holds an ordinary checklist now.
 
 **prcoder does not edit a pull request's title or description**, and keeps no list anywhere but
-that file. The one exception is a checkbox you tick, in the PR pane or on the queue's PR tab: that
+that file. The one exception is a checkbox you tick, in the PR pane or on the queue's PR #N tab: that
 flips its one line (`toggleTask` in [`public/tasks.js`](../public/tasks.js)), re-reading the body first and
 refusing if the line has changed under it, and never falling back to a cached copy (`editBody`) — a
 read that did not happen says nothing about what the description holds now. An earlier version of
@@ -47,20 +47,22 @@ into prcoder is [#21](https://github.com/gaurav/prcoder/issues/21)'s question.
 marks it viewed, creating a pull request pushes the branch and opens GitHub's compare page, the PR
 pane's milestone picker moves the pull request on screen to another milestone, and
 dropping an issue on a milestone group in the Issues tab -- or choosing one in its opened row and
-clicking Move -- sets that issue's milestone, and a drop or a pick in the Pull requests tab does the
+clicking Move -- sets that issue's milestone, and a drop or a pick in the PRs tab does the
 same for a pull request, which is triage and not an edit: nothing in prcoder changes what an issue
 or a pull request says, and no milestone is ever made, renamed or closed from here. None
 of them writes a description.
 
-**Each permanent source is a tab, read straight from it.** PR is the description's checklist,
-Issues is the repository's open issues, and Pull requests its open pull requests; pulling from any
+**Each permanent source is a tab, read straight from it.** PR #N is what the description of
+the pull request on screen points at -- its checklist, what it mentions, what it closes -- Issues
+is the repository's open issues, and PRs its open pull requests; pulling from any
 of them copies the item
 into Local and leaves the source alone, since a checkbox is the PR's record and an issue is the
 project's. Issues began as only the issues the description mentions, and grew on 2026-10-15
 ([#58](https://github.com/gaurav/prcoder/issues/58)) into the whole repository's, grouped by
 milestone in the order the owner's milestones mean, searchable, with each issue's body readable
 in place -- so that the next thing to do is picked with the issue read, and handed to the agent
-with its link, rather than built from memory. What it still is not is a tracker: nothing here
+with its link, rather than built from memory. On 2026-11-08 the mentions moved to the PR #N tab,
+so that each tab is about one thing: the repository, or the pull request on screen. What it still is not is a tracker: nothing here
 changes what an issue says, and the groups are GitHub's milestones, not a list of prcoder's own.
 Nothing asks which milestone to look at, because the ranking already says which group to open first. Pull requests
 (2026-10-19) is the same shape for the other thing a repository holds, built for the repository
@@ -189,5 +191,5 @@ else on screen acts on the working copy -- the agent edits it, the sync light an
 count its commits -- so a pane on another branch's pull request invites work on the wrong branch.
 `prcoder <pr>` used to do exactly that: it pinned the pull request without a checkout, under a
 "Not checked out" note, even one in another repository. That was removed on purpose. To read a pull
-request without moving the working copy, open it on GitHub or in the Pull requests tab, or start
+request without moving the working copy, open it on GitHub or in the PRs tab, or start
 prcoder in a worktree on its branch, as the drivers do (`onPullRequest` in `tools/driver.mjs`).
