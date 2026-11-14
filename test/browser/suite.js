@@ -2298,6 +2298,27 @@ async function refPage(answer, queue = []) {
   return { fresh, add, typed, rows: () => fresh.locator('#queue-body .item') };
 }
 
+// The arrow button's choice from the keyboard, for the item being typed: the
+// input is the one place bindKeys never fires, so this is the input's own key.
+test('Alt+Shift+↑ and ↓ in the input choose which end the next item goes to', { skip }, async () => {
+  const { fresh, add, rows } = await refPage(() => ({ json: { ref: null } }));
+  const input = fresh.locator('#queue-input');
+  const texts = () => rows().locator('.text').allTextContents();
+  await add('first');
+  await fresh.waitForFunction(() => document.querySelectorAll('#queue-body .item').length === 1);
+  await input.press('Alt+Shift+ArrowUp');
+  assert.equal(await fresh.locator('#queue-where').textContent(), '↑');
+  await add('on top');
+  await fresh.waitForFunction(() => document.querySelectorAll('#queue-body .item').length === 2);
+  assert.deepEqual(await texts(), ['on top', 'first']);
+  await input.press('Alt+Shift+ArrowDown');
+  assert.equal(await fresh.locator('#queue-where').textContent(), '↓');
+  await add('at the end');
+  await fresh.waitForFunction(() => document.querySelectorAll('#queue-body .item').length === 3);
+  assert.deepEqual(await texts(), ['on top', 'first', 'at the end']);
+  await fresh.close();
+});
+
 test('a reference on its own is added as the issue\'s title, tagged, and ▶ carries the link', { skip }, async () => {
   const { fresh, add, typed, rows } = await refPage(() => ({ json: { ref: {
     whole: true, issue: 91, repo: null, kind: 'pull', title: 'Make the queue read references' } } }));
@@ -4185,6 +4206,39 @@ test('@ with the agent disconnected types nothing and says so', { skip }, async 
   await fresh.waitForFunction(() => document.getElementById('toast').textContent.includes('not connected'));
   // Not moved to a terminal nothing reads, where Alt+W is off.
   assert.equal(await fresh.evaluate(() => document.activeElement.closest('#term-host') == null), true);
+  await fresh.close();
+});
+
+// The queue's ceiling used to be 40% of the window, which a listing outgrew.
+// It is now whatever leaves the terminal its floor, with a diff open or not.
+test('the queue drags up until the terminal is at its 120px floor, with or without a diff', { skip }, async () => {
+  const fresh = await newPage();
+  await fresh.setViewportSize({ width: 1280, height: 1000 });
+  await fresh.evaluate(() => document.querySelector('main').style.setProperty('--h-queue', '2000px'));
+  const height = (sel) => fresh.$eval(sel, (el) => Math.round(el.getBoundingClientRect().height));
+  assert.equal(await height('#term'), 120);
+  assert.ok(await height('#queue') > 800, `the queue is ${await height('#queue')}px of 1000`);
+  await openFile(fresh);
+  assert.equal(await height('#term'), 120, 'the diff\'s share comes out of the queue, not the terminal');
+  assert.ok(await height('#diff') >= 140);
+  await fresh.close();
+});
+
+// The line between two panes is a pixel of one grey between two of another,
+// so it says where it is: a grip at rest on the two across the right-hand
+// column, and its own colour under the pointer.
+test('a row gutter carries a grip, and its line lights up under the pointer', { skip }, async () => {
+  const fresh = await newPage();
+  const style = (pseudo) => fresh.$eval('#gut-queue', (g, p) => {
+    const s = getComputedStyle(g, p);
+    return { image: s.backgroundImage, color: s.backgroundColor, width: s.width };
+  }, pseudo);
+  assert.equal((await style('::before')).width, '36px');
+  assert.notEqual((await style('::before')).color, 'rgba(0, 0, 0, 0)');
+  assert.equal((await fresh.$eval('#gut-pr', (g) => getComputedStyle(g, '::before').content)), 'none', 'the pull request pane\'s edge has no grip');
+  assert.equal((await style('::after')).image, 'none');
+  await fresh.locator('#gut-queue').hover();
+  assert.match((await style('::after')).image, /gradient/);
   await fresh.close();
 });
 

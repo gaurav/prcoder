@@ -41,10 +41,19 @@ body {
    drag from squeezing a pane to nothing, so the maxima must leave #term room
    even when both row gutters are pushed as far as they go.
 
+   The queue's maximum is whatever leaves the terminal 120px -- the floor the
+   queue has itself -- once the diff has taken its share (--queue-max). It was
+   40% of the window until 2026-11-09, from when the queue was a short list of
+   your own lines; the PRs and Issues tabs are listings that want the height,
+   and folding the terminal already handed the queue the whole column, so the
+   cap only stopped a drag from doing what a fold did. In a window too short
+   for both floors clamp() lets the queue's minimum win, as it always has. The
+   diff keeps its 50%: that is what bounds the sum.
+
    The defaults for the PR and queue panes are pixels, not percentages. The PR
    pane holds prose set to a fixed measure and the queue holds rows of a fixed
    height, so a percentage only pads them out on a big screen and leaves the
-   terminal less room. The % maxima still stop a pixel default from starving
+   terminal less room. The maxima still stop a pixel default from starving
    #term in a small window. The values are the ones the owner had dragged to
    and kept (2026-09-15).
 
@@ -58,9 +67,13 @@ main {
   /* One length per row of the right-hand column, and the folds below only
      rewrite these: a template per combination of folds was four already and
      grew with every pane that learned to fold. */
-  --r-diff: clamp(140px, var(--h-diff, 40%), 50%);
+  /* The diff's dragged size apart from its row, because --queue-max subtracts
+     it and the folds rewrite the row to `auto` and `1fr`, which calc() cannot. */
+  --diff-size: clamp(140px, var(--h-diff, 40%), 50%);
+  --r-diff: var(--diff-size);
   --r-term: 1fr;
-  --r-queue: clamp(120px, var(--h-queue, 227px), 40%);
+  --queue-max: calc(100% - 121px);   /* the floor, and the 1px line over the queue */
+  --r-queue: clamp(120px, var(--h-queue, 227px), var(--queue-max));
   grid-template-rows: var(--r-term) 1px var(--r-queue) var(--r-rest, 0);
   grid-template-areas:
     "pr gpr term"
@@ -78,6 +91,9 @@ main.diff-open {
     "pr gpr gqueue"
     "pr gpr queue";
 }
+main.diff-open { --queue-max: calc(100% - 122px - var(--diff-size)); }   /* two lines now */
+/* Folded, the diff is its bar: 40px is that and the line under it, rounded up. */
+main.diff-open.diff-off { --queue-max: calc(100% - 160px); }
 #diff { grid-area: diff; }
 #diff[hidden] { display: none; }
 /* A pane folded to its header row (folds.js): its body goes, `auto` is then
@@ -145,16 +161,36 @@ main:not(.term-off) #term-busy { display: none; }
    there is nothing for a drag to set. One rule rather than a later hide: the
    two tie on specificity, and the hide written first once lost to this. */
 main.diff-open:not(.term-off, .diff-off) #gut-diff { display: block; }
-/* 1px of line, ±3px of grab, above the panes so the cursor changes over it. */
+/* 1px of line and a few of grab, above the panes so the cursor changes over
+   it. The line alone was hard to find between the diff, the coding agent and
+   the queue (2026-11-09): it is --line between two --panel panes, and the bar
+   under it ends in a border that looks the same. So three things say where it
+   is. At rest the two row gutters carry a grip, a short pill at their middle;
+   the column ones do not, since the pull request pane's edge was never the one
+   being hunted for and the outline's runs the height of the diff. Under the
+   pointer, held in a drag, or focused from the keyboard, any gutter's line
+   turns --accent and three pixels thick, drawn as the grab area's background
+   so nothing moves. And the row gutters' grab area is 5px above the line and
+   4px below rather than 3px each way -- no more than that, and less below,
+   because below is the next pane's bar, which folds it on a click. */
 .gut { position: relative; z-index: 3; touch-action: none; }
 .gut::after { content: ''; position: absolute; }
 .gut.col::after { inset: 0 -3px; cursor: col-resize; }
-.gut.row::after { inset: -3px 0; cursor: row-resize; }
-/* The line is 1px, so the ring goes on the grab area -- there is nowhere else
-   to put it. focus-visible, because a gutter you have just dragged should not
-   keep one. */
+.gut.row::after { inset: -5px 0 -4px; cursor: row-resize; }
+.gut.row::before {
+  content: ''; position: absolute; top: -1px; left: 50%; width: 36px; height: 3px;
+  margin-left: -18px; border-radius: 2px; background: var(--dim);
+}
+/* The bar sits on the line: centred in the column gutters' 7px, and from the
+   fourth pixel of the row gutters' ten. focus-visible, because a gutter you
+   have just dragged should not keep it. */
 .gut:focus { outline: none; }
-.gut:focus-visible::after { outline: 2px solid var(--accent); }
+.gut.col:is(:hover, :active, :focus-visible)::after {
+  background: linear-gradient(var(--accent), var(--accent)) center / 3px 100% no-repeat;
+}
+.gut.row:is(:hover, :active, :focus-visible)::after {
+  background: linear-gradient(var(--accent), var(--accent)) 0 4px / 100% 3px no-repeat;
+}
 
 .pane { background: var(--panel); display: flex; flex-direction: column; min-height: 0; min-width: 0; }
 .pane > header {
@@ -362,11 +398,16 @@ a { color: var(--accent); }
 
    The chip's colour is where it leaves the tag. A `--line` border on the
    panel is about 1.2:1, which is enough to notice once you know it is there and
-   not enough to make you look (2026-09-25). So the border and a faint fill are
-   the chip's own `--accent`, mixed toward transparent: the chip stands out from
-   the prose while being the same blue as its text, and it stops well short of
-   the solid fills and uppercase text the `.badge`s use for status. A brighter
-   grey ring was the other candidate, and it read as one more `.tab`.
+   not enough to make you look (2026-09-25). So the border and the fill are the
+   chip's own `--accent`, mixed toward transparent. The fill was 8% until
+   2026-11-09, and that was still a thing you had to look for: with several
+   prcoder windows open, which repository this one is in is the first question,
+   and a faint outline did not answer it at a glance. So the fill is now strong
+   enough to be a filled shape, and the name -- the half that says which
+   checkout -- is bold and `--fg` on it, with the owner left `--accent`. It
+   still stops short of `.primary`'s solid accent with dark text, so the pull
+   request stays the one button in the row, and of the `.badge`s' uppercase. A
+   brighter grey ring was the other candidate, and it read as one more `.tab`.
 
    Two things deliberately not done. A logo or an emoji ahead of the slug, the
    other way to mark it: no other glyph in this window earns its place that way
@@ -450,15 +491,15 @@ a { color: var(--accent); }
 .pr-repo {
   display: inline-flex; min-width: 0;
   text-decoration: none; padding: 1px 7px;
-  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent); border-radius: 9px;
-  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent); border-radius: 9px;
+  background: color-mix(in srgb, var(--accent) 24%, transparent);
 }
 .pr-repo:hover {
-  border-color: color-mix(in srgb, var(--accent) 60%, transparent);
-  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 34%, transparent);
 }
 .pr-repo .owner { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pr-repo .name { flex: none; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pr-repo .name { color: var(--fg); font-weight: 600; flex: none; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* Serif, like the description under it: the title is the first sentence of the
    argument, not a label on the pane. Everything else in this header -- the

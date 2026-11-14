@@ -139,6 +139,12 @@ let historyOn = false;
 const ADD_TO_KEY = 'prcoder:add-to';
 let addTo = 'bottom';
 const readAddTo = () => (pref(ADD_TO_KEY) === 'top' ? 'top' : 'bottom');
+/** The button's click, and Alt+Shift+↑ / ↓ in the input (app.js). */
+export function setAddTo(where) {
+  addTo = where;
+  setPref(ADD_TO_KEY, addTo);
+  paintWhere();
+}
 
 /**
  * The History tab switched on, once whoami has said it is there to read --
@@ -162,11 +168,7 @@ export async function initQueue(d) {
   addTo = readAddTo();
   pullSort = PULL_SORTS[pref(PULL_SORT_KEY)] ? pref(PULL_SORT_KEY) : 'smallest';
   pullGroup = ['none', 'stack'].includes(pref(PULL_GROUP_KEY)) ? pref(PULL_GROUP_KEY) : 'milestone';
-  document.getElementById('queue-where').onclick = () => {
-    addTo = addTo === 'bottom' ? 'top' : 'bottom';
-    setPref(ADD_TO_KEY, addTo);
-    paintWhere();
-  };
+  document.getElementById('queue-where').onclick = () => setAddTo(addTo === 'bottom' ? 'top' : 'bottom');
   // Before the fetch, so a remembered ↑ is not shown as the markup's ↓ for as
   // long as /api/queue takes to answer.
   paintWhere();
@@ -381,8 +383,8 @@ function bulks() {
 function paintWhere() {
   const b = document.getElementById('queue-where');
   const title = addTo === 'bottom'
-    ? 'new items go to the bottom — click to add to the top'
-    : 'new items go to the top — click to add to the bottom';
+    ? 'new items go to the bottom — click, or Alt+Shift+↑ in the input, to add to the top'
+    : 'new items go to the top — click, or Alt+Shift+↓ in the input, to add to the bottom';
   b.textContent = addTo === 'bottom' ? '↓' : '↑';
   b.title = title;
   b.setAttribute('aria-label', title);

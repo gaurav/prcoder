@@ -8,7 +8,12 @@ rule keeps its reason beside it, so a change can see what it is trading away.
 ## Layout
 
 Every line between the panes is a splitter, and so is the diff outline's left edge: drag it to
-resize, double-click it to go back to the default. Sizes are remembered per repo and per browser, so
+resize, double-click it to go back to the default. The two lines across the right-hand column --
+under the diff and over the queue -- carry a small grip at their middle so they can be found, and
+any splitter's line lights up under the pointer, while it is dragged, and when it has the keyboard's
+focus (← → or ↑ ↓ then move it, Shift for bigger steps, Home for the default). Each pane has a
+floor rather than a share: the queue can be dragged up until the coding agent is down to 120px, so
+a long listing can have most of the column without folding the terminal. Sizes are remembered per repo and per browser, so
 the next `prcoder` in that repo opens with the layout you settled on. They live in the browser's
 `localStorage`, which is kept per origin, and the origin includes the port from
 `.prcoder/port.json`. So each repo, each worktree, and each browser or profile has a layout of its
@@ -133,7 +138,8 @@ bound. A short one fits beside the four links; a long one drops whole onto the n
 four stay where they are either way. On a line of its own it truncates rather than wraps: a long
 owner is clipped and the repository's own name kept, since that is the half that says which
 checkout you are in. It is drawn as a chip rather than a fifth link: the links are places to go,
-and the chip is the one thing in the head that answers which checkout this is.
+and the chip is the one thing in the head that answers which checkout this is, so it is filled
+and its name is bold: with several windows open it is what you look for first.
 
 The milestone has a line of its own, on every pull request, because one on no milestone is the one
 that needs something done: it still has to be triaged, so its line is in the warning colour and
@@ -439,7 +445,10 @@ row leaves out what it lacks.
 
 New items go to the bottom, so typing them in builds a list in the order you mean to work through
 it. The arrow next to the input flips that to the top, for the other way of using a queue -- the
-thing you must not forget to do next -- and stays flipped. They always go on Local, whichever tab
+thing you must not forget to do next -- and stays flipped. From the input itself, Alt+Shift+↑ sets
+it to the top and Alt+Shift+↓ to the bottom, so the end can be chosen for the item being typed
+without reaching for the arrow; the two are the input's own and are not on the shortcut sheet,
+whose keys are the ones that work everywhere but there. They always go on Local, whichever tab
 is showing -- the input's placeholder says so -- and adding one from another tab leaves you there
 and flashes the Local tab instead.
 
