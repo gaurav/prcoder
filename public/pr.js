@@ -1,5 +1,5 @@
 import { withoutHtml, mention, unmarked, mdLink, bareUrl, opens, repoUrl, urlPath, blocks, sectionize } from './tasks.js';
-import { kids, h, btn, ext, debug, tabBtn, writeThrough, fraction, mark, kept, fold } from './ui.js';
+import { kids, h, btn, ext, debug, tabBtn, writeThrough, fraction, mark, stackMark, kept, fold } from './ui.js';
 import { picker, matchRows, closeOrphans } from './picker.js';
 import { fileTree, fileGroup, filesProgress, unlisted } from './filelist.js';
 import { refLabel, refClass, rankMilestones, dueLabel } from './items.js';
@@ -143,9 +143,20 @@ export function renderHeader(status, prs, handlers) {
   const blocked = status.dirtyFiles.length > 0;
   const none = rows.length ? 'no pull request' : prs ? 'no open pull requests' : 'no list of pull requests yet';
   const on = status.pr && rows.find((r) => r.key === status.pr.url);
+  // Where the one on screen sits in its stack, in front of its name. Only
+  // where the Stack tab has something to say: a list to read the stack from,
+  // and a pull request in the repository the list is of.
+  const under = on && prs && status.defaultBranch && prRepo(status.pr) === status.nameWithOwner
+    ? stackUnder({ pr: status.pr }, prs, handlers.below ?? [], status.defaultBranch) : null;
+  const shape = under && stackShape(stackOn(status.pr, prs), under);
+  // A branch with no pull request in the chain: git is asked what it is built
+  // on, as the Stack tab asks, or the mark would have no ground until that
+  // tab had been opened.
+  if (under?.ask) handlers.onBelow?.(under.ask);
   const sel = picker('pr-switch', {
     button: document.getElementById('pr-switch'),
     label: 'pull request', text: on ? on.text : none,
+    lead: shape && stackMark(shape), leadLabel: shape?.words,
     rows, current: status.pr?.url ?? null,
     // `listed` once there is a list, and how many rows, for a driver to wait
     // on: the rows themselves are drawn only as the list opens.

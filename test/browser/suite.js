@@ -4457,6 +4457,9 @@ test('a poll that brings nothing new leaves the panes as they were', { skip }, a
 // The fixture PR, one built on its branch, and one built on that. The switcher
 // and the Stack tab both have to show the chain as a chain, and a row's #N has
 // to be a link out while its Switch is the checkout -- one control each.
+// The switcher's stack mark, as the classes of its bars from the bottom up.
+const stackBars = (page) => page.locator('#pr-switch .stack-mark i').evaluateAll((bars) => bars.map((b) => b.className));
+
 const STACK = [
   { number: 12, title: pr.title, headRefName: 'topic', baseRefName: 'main', isDraft: false, url: pr.url },
   { number: 13, title: 'Built on the fixture', headRefName: 'topic-2', baseRefName: 'topic', isDraft: true, url: `${REPO}/pull/13` },
@@ -4478,6 +4481,15 @@ test('stacked PRs nest in the switcher and the Stack tab, each linked and switch
   ]);
   // The button says the one on screen, as its row does.
   assert.equal(await fresh.locator('#pr-switch .picker-value').textContent(), '#12 A fixture pull request');
+  // And where it sits in its stack, as a mark in front: on the ground, with
+  // two levels built on it. A shape, so the button's name says it in words.
+  assert.deepEqual(await stackBars(fresh), ['ground', 'here', 'over', 'over']);
+  assert.equal(await fresh.locator('#pr-switch').getAttribute('aria-label'),
+    'pull request: #12 A fixture pull request, ↑2 built on, from main');
+  assert.equal(await fresh.locator('#pr-switch .stack-mark').getAttribute('title'), 'Stack: ↑2 built on, from main');
+  // It sits inside the button's line of text: the header is no taller for it.
+  const box = (sel) => fresh.locator(sel).evaluate((el) => el.getBoundingClientRect().height);
+  assert.ok(await box('#pr-switch .stack-mark') <= await box('#pr-switch .picker-value'), 'the mark is taller than the text');
 
   const tab = fresh.locator('#pr-head .tab', { hasText: 'Stack' });
   assert.equal(await tab.textContent(), 'Stack (↑2)');
@@ -5064,6 +5076,10 @@ test('a stacked PR shows the stack under it in its Stack tab and its head', { sk
   await fresh.waitForSelector('#pr-switch[data-listed]');
   const tab = fresh.locator('#pr-head .tab', { hasText: 'Stack' });
   assert.equal(await tab.textContent(), 'Stack (↓1 ↑1)');
+  // The switcher's mark counts as the tab does: one under, this one, one on it.
+  assert.deepEqual(await stackBars(fresh), ['ground', 'under', 'here', 'over']);
+  assert.equal(await fresh.locator('#pr-switch').getAttribute('aria-label'),
+    `pull request: #13 (draft) ${STACK[1].title}, ↓1 under, ↑1 built on, from main`);
   assert.equal(await fresh.locator('#pr-head .pr-state a').textContent(), '#12');
   assert.equal(await fresh.locator('#pr-head .pr-state a').getAttribute('href'), pr.url);
   await tab.click();
@@ -5075,6 +5091,26 @@ test('a stacked PR shows the stack under it in its Stack tab and its head', { sk
   assert.equal(await fresh.locator('#pr-body .pr-row.here .pr-go').count(), 0);
   assert.deepEqual(await fresh.locator('#pr-body .pr-into ul ul ul .pr-num').allTextContents(), ['#14']);
   await fresh.close();
+});
+
+// A pull request on a branch that has none of its own: the mark is drawn in
+// the header, which is there before any tab is opened, so the header asks git
+// what that branch is built on, and the ground appears when git has said.
+test('the stack mark asks git about a bare branch under its pull request, and draws the ground once told', { skip }, async () => {
+  const onBare = [{ number: 16, title: 'On a merged branch', headRefName: 'on-merged', baseRefName: 'merged-topic', isDraft: false, url: `${REPO}/pull/16` }];
+  const st = { ...status, branch: 'on-merged', pr: { ...pr, number: 16, title: onBare[0].title, headRefName: 'on-merged', baseRefName: 'merged-topic', url: onBare[0].url } };
+  const untold = await newPage({ prs: onBare, st });
+  await untold.waitForSelector('#pr-switch[data-listed] .stack-mark');
+  assert.deepEqual(await stackBars(untold), ['bare', 'here']);
+  assert.equal(untold.belowAsked.branch, 'merged-topic');
+  await untold.close();
+
+  const told = await newPage({ prs: onBare, st, below: { branch: 'merged-topic', names: [], toDefault: true } });
+  await told.waitForSelector('#pr-switch .stack-mark .ground');
+  assert.deepEqual(await stackBars(told), ['ground', 'bare', 'here']);
+  assert.equal(await told.locator('#pr-switch .stack-mark').getAttribute('title'),
+    'Stack: 1 branch with no pull request under, from main');
+  await told.close();
 });
 
 // A branch with no PR has no base on GitHub, so the pane asks git -- sending
@@ -5107,6 +5143,8 @@ test('with no list of pull requests, the panes say there is none yet', { skip },
   const fresh = await newPage({ prs: null });
   await fresh.locator('#pr-head .tab', { hasText: 'Stack' }).click();
   assert.equal(await fresh.locator('#pr-body .empty').textContent(), 'No list of open pull requests yet.');
+  // No list to read a stack from, so no mark saying this one is in none.
+  assert.equal(await fresh.locator('#pr-switch .stack-mark').count(), 0);
   await fresh.close();
 
   const alone = await newPage({ prs: null, st: { ...status, branch: 'topic-x', pr: null }, ready: '#pr-head .pr-branch-name' });
