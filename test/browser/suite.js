@@ -1868,18 +1868,18 @@ test('folding a pane with the focus inside hands the focus to its ▼', { skip }
 // reads the rule -- and that the text is padded clear of it -- for each kind.
 test('every toast has its ✕ in the top right corner, clear of the text', { skip }, async () => {
   const fresh = await newPage();
-  for (const [bad, sticky] of [[false, false], [true, false], [false, true]]) {
-    const x = await fresh.evaluate(async ([b, s]) => {
+  for (const bad of [false, true]) {
+    const x = await fresh.evaluate(async (b) => {
       const { toast } = await import('/ui.js');
       toast('Switched to add-retries (#123). Claude still has the old branch\'s files in mind '
-        + '— tell it to re-read anything it had open.', b, s);
+        + '— tell it to re-read anything it had open.', b);
       const el = document.getElementById('toast');
       const after = getComputedStyle(el, '::after');
       return { content: after.content, position: after.position, top: parseFloat(after.top),
         right: parseFloat(after.right), pad: parseFloat(getComputedStyle(el).paddingTop),
         padRight: parseFloat(getComputedStyle(el).paddingRight), fontSize: parseFloat(after.fontSize) };
-    }, [bad, sticky]);
-    const kind = `bad ${bad}, sticky ${sticky}`;
+    }, bad);
+    const kind = `bad ${bad}`;
     assert.equal(x.content, '"✕"', kind);
     assert.equal(x.position, 'absolute', kind);
     assert.equal(x.top, x.pad, `level with the first line (${kind})`);
@@ -1888,28 +1888,68 @@ test('every toast has its ✕ in the top right corner, clear of the text', { ski
   await fresh.close();
 });
 
-// A tab that had a PTY and loads again has a new session, and the toast says
-// which kind of load it was (ws.onopen in app.js). The link to keeping tab
+// A notice that waits is a line in the list over the right-hand panes, not a
+// toast: any number at once, one per kind, each gone on its box or its ✕, and
+// the panes below it moved down rather than covered.
+test('notices that wait are lines over the right-hand panes, one per kind, dismissed by the box or the ✕', { skip }, async () => {
+  const fresh = await newPage();
+  const lines = () => fresh.locator('#notices > li .text').allTextContents();
+  const top = () => fresh.$eval('#term', (el) => el.getBoundingClientRect().top);
+  assert.equal(await fresh.locator('#notices').isVisible(), false, 'no room taken while it is empty');
+  const before = await top();
+  await fresh.evaluate(async () => {
+    const { notice, toast } = await import('/ui.js');
+    notice('first', { kind: 'a' });
+    notice('second', { bad: true, link: { href: 'https://example.com/x', text: 'a link' } });
+    notice('first again', { kind: 'a' });
+    toast('a toast does not take a line down');
+  });
+  assert.deepEqual(await lines(), ['second a link', 'first again']);
+  assert.equal(await fresh.getAttribute('#notices a', 'href'), 'https://example.com/x');
+  const list = await fresh.$eval('#notices', (el) => el.getBoundingClientRect());
+  assert.equal(await top(), before + list.height, 'the terminal starts under the list');
+  // The diff's height is measured from under the list, not from the window's
+  // top: a nudge of its gutter moves it ten pixels, not ten and the list.
+  await openFile(fresh);
+  const diff = await fresh.$eval('#diff', (el) => el.getBoundingClientRect().height);
+  await fresh.locator('#gut-diff').focus();
+  await fresh.keyboard.press('ArrowDown');
+  assert.equal(await fresh.$eval('main', (m) => m.style.getPropertyValue('--h-diff')), `${Math.round(diff) + 10}px`);
+  await fresh.locator('#diff-close').click();
+  await fresh.locator('#notices > li.bad button').click();
+  assert.deepEqual(await lines(), ['first again']);
+  // click, not check(): the line goes with the tick, and check() waits to read it back.
+  await fresh.locator('#notices > li input').click();
+  assert.deepEqual(await lines(), []);
+  assert.equal(await top(), before);
+  await fresh.close();
+});
+
+// A tab that had a PTY and loads again has a new session, and the page says
+// which kind of load it was (ws.onopen in app.js): a toast for a reload, and
+// for the others a notice that waits. The link to keeping tab
 // unloaders off prcoder is the part that matters: a reload never gets it, and a
 // load that may be the browser's restore always does. Each new page reaches the
 // mock socket, which is what opens it and runs onopen.
 test('a page loaded again says why the session is new, and links to the fix unless it was a reload', { skip }, async () => {
   const p = await newPage();
+  // Whichever is up: the toast, or the list's line about the load.
   const notice = async (label) => {
-    await p.waitForFunction(() => !document.getElementById('toast').hidden, null, { timeout: 5000 })
-      .catch(() => assert.fail(`no toast after ${label}`));
-    return p.$eval('#toast', (el) => ({ text: el.textContent,
-      sticky: el.classList.contains('sticky'), href: el.querySelector('a')?.href ?? null }));
+    const up = '#toast:not([hidden]), #notices > li[data-kind="reloaded"]';
+    await p.waitForSelector(up, { timeout: 5000 }).catch(() => assert.fail(`nothing said after ${label}`));
+    return p.$eval(up, (el) => ({ text: el.textContent,
+      sticky: el.tagName === 'LI', href: el.querySelector('a')?.href ?? null }));
   };
   const ports = 'https://github.com/gaurav/prcoder/blob/main/docs/Ports.md#finding-it-again';
 
   await p.waitForFunction(() => sessionStorage.getItem('prcoder:pty'));
   assert.equal(await p.locator('#toast').isHidden(), true, 'a first open has nothing to say');
+  assert.equal(await p.locator('#notices > li[data-kind="reloaded"]').count(), 0);
 
   await p.reload();
   let n = await notice('a reload');
   assert.match(n.text, /^Claude was restarted/);
-  assert.deepEqual([n.sticky, n.href], [false, null], 'a reload is not sticky and has no link');
+  assert.deepEqual([n.sticky, n.href], [false, null], 'a reload is a toast and has no link');
 
   // Back to a tab you left, and a fresh navigation to it: neither is a reload,
   // and outside Chrome either may be a restored tab.
@@ -1971,13 +2011,11 @@ test('the History tab lists what was sent by day and session, and the last promp
     if (r.request().method() === 'PUT') queue = r.request().postDataJSON().items;
     return r.fulfill({ json: queue });
   });
-  await p.waitForSelector('#toast:not([hidden])');
-  const notice = await p.$eval('#toast', (el) => ({
-    text: el.textContent, sticky: el.classList.contains('sticky'), kind: el.dataset.kind,
-    button: el.querySelector('button'),
-  }));
-  assert.match(notice.text, /^Last prompt, .+ \(Today 00:05\): \/code-review high$/);
-  assert.deepEqual([notice.sticky, notice.kind, notice.button], [true, 'last-prompt', null]);
+  const line = '#notices > li[data-kind="last-prompt"]';
+  await p.waitForSelector(line);
+  assert.match(await p.textContent(`${line} .text`), /^Last prompt, .+ \(Today 00:05\): \/code-review high$/);
+  // Text only: its one button is the list's ✕, not a ▶.
+  assert.equal(await p.locator(`${line} button`).count(), 1);
   // The file is read when the page opens, so the count is on the tab before
   // a visit, and the notice is drawn from the same read -- one, whole, with
   // no `limit` of its own. Enter in the terminal is the next prompt, which
@@ -1988,7 +2026,7 @@ test('the History tab lists what was sent by day and session, and the last promp
   const before = reads.length;
   const again = p.waitForResponse('**/api/history');
   await p.locator('#term-host textarea').press('Enter');
-  await p.waitForFunction(() => document.getElementById('toast').hidden);
+  await p.waitForSelector(line, { state: 'detached' });
   await again;
   assert.equal(reads.length, before + 1, 'one read for the prompt sent');
   assert.equal(await p.locator('#queue-body .history-pane').count(), 0, 'read with the tab not showing');
@@ -3560,7 +3598,7 @@ test('a milestone picked in an opened pull request row is written by Move, and a
   const switched = [];
   await fresh.route('**/api/pr/switch', (r) => { switched.push(r.request().postDataJSON()); return r.fulfill({ json: { ...status, nameWithOwner: 'gaurav/prcoder', queue: [] } }); });
   await fresh.locator('.item[data-pull="30"] .pr-go').click();
-  await fresh.waitForFunction(() => document.getElementById('toast').textContent.includes('Switched to'));
+  await fresh.waitForFunction(() => document.querySelector('#notices > li[data-kind="switched"]')?.textContent.includes('Switched to'));
   assert.deepEqual(switched, [{ url: `${REPO}/pull/30` }]);
   await fresh.route('**/api/status', (r) => r.fulfill({ json: { ...status, nameWithOwner: 'gaurav/prcoder', queue: [], dirtyFiles: ['a.js'] } }));
   const polled = fresh.waitForResponse('**/api/status');

@@ -20,11 +20,16 @@ const KEY = 'prcoder:panes';
 main.style.cssText = pref(KEY) ?? '';
 const save = () => setPref(KEY, main.style.cssText);
 
+// The right-hand column starts under the notices list (ui.js) while it has a
+// line in it, so a height measured from the top is measured from there: from
+// <main>'s own top, the diff came out too tall by the list's height.
+const lead = () => document.getElementById('notices').offsetHeight;
+
 /** Pointer position as a distance from the edge of <main> the pane grows from. */
 const px = (r, from, e) => ({
   left: e.clientX - r.left,
   right: r.right - e.clientX,
-  top: e.clientY - r.top,
+  top: e.clientY - r.top - lead(),
   bottom: r.bottom - e.clientY,
 }[from]);
 
@@ -40,7 +45,7 @@ const at = (r, from, g) => {
   const b = g.getBoundingClientRect();
   return {
     left: b.left - r.left, right: r.right - b.right,
-    top: b.top - r.top, bottom: r.bottom - b.bottom,
+    top: b.top - r.top - lead(), bottom: r.bottom - b.bottom,
   }[from];
 };
 

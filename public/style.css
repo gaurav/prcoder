@@ -74,8 +74,11 @@ main {
   --r-term: 1fr;
   --queue-max: calc(100% - 121px);   /* the floor, and the 1px line over the queue */
   --r-queue: clamp(120px, var(--h-queue, 227px), var(--queue-max));
-  grid-template-rows: var(--r-term) 1px var(--r-queue) var(--r-rest, 0);
+  /* The first row is the notices list, which is `display: none` while empty,
+     so `auto` is then nothing. */
+  grid-template-rows: auto var(--r-term) 1px var(--r-queue) var(--r-rest, 0);
   grid-template-areas:
+    "pr gpr notices"
     "pr gpr term"
     "pr gpr gqueue"
     "pr gpr queue"
@@ -83,8 +86,9 @@ main {
 }
 #pr { grid-area: pr; } #term { grid-area: term; } #queue { grid-area: queue; }
 main.diff-open {
-  grid-template-rows: var(--r-diff) 1px var(--r-term) 1px var(--r-queue);
+  grid-template-rows: auto var(--r-diff) 1px var(--r-term) 1px var(--r-queue);
   grid-template-areas:
+    "pr gpr notices"
     "pr gpr diff"
     "pr gpr gdiff"
     "pr gpr term"
@@ -1229,7 +1233,8 @@ main.dead { opacity: .45; filter: grayscale(1); }
 
 /* Sits over the panes so it never reflows them. Above the terminal pane rather
    than inside it: the Claude session owns that viewport and repaints over
-   anything written into it. */
+   anything written into it. Only for what goes away by itself; a notice that
+   waits is a line in #notices, below. */
 #toast {
   position: fixed; bottom: 14px; left: 50%; transform: translateX(-50%);
   max-width: 60ch; padding: 7px 14px; border-radius: 6px; font-size: 13px;
@@ -1238,8 +1243,7 @@ main.dead { opacity: .45; filter: grayscale(1); }
 }
 #toast[hidden] { display: none; }
 #toast.bad { background: #4d1f24; color: var(--fail); border-color: var(--fail); }
-/* Every toast closes on a click, so every one says so -- a sticky one most of
-   all, since it waits for that click, which is what its border marks. The
+/* Every toast closes on a click, so every one says so. The
    glyph is a pseudo-element because toast() sets textContent. In the top right
    corner, where a close button is looked for: after the text, a toast that
    wrapped put it at the end of its last line, mid-box. The padding keeps the
@@ -1250,7 +1254,38 @@ main.dead { opacity: .45; filter: grayscale(1); }
 #toast:hover::after { color: var(--fg); }
 #toast.bad::after { color: inherit; opacity: .7; }
 #toast.bad:hover::after { opacity: 1; }
-#toast.sticky { border-color: var(--warn); }
+
+/* The notices that wait (notice() in ui.js): a list across the top of the
+   right-hand column, a line each, the box that ticks it off at the left and
+   the ✕ at the right. In the grid, so a line pushes the panes down: over them,
+   as a sticky toast was, it covered the queue's last rows for as long as it
+   was left up (#23), and the notice left up longest is the one about the
+   branch you have just switched to. That costs the terminal one resize when a
+   line arrives or goes, which is why only a notice that waits comes here.
+   --warn down the left edge is "still waiting", as it is everywhere, and
+   --fail for one that is an error. The height is capped at about four lines
+   and scrolls past that: --queue-max leaves the terminal a floor measured
+   without this list, and an unbounded one would push the column past the
+   window. */
+#notices {
+  grid-area: notices; margin: 0; padding: 0; list-style: none;
+  max-height: 7.5em; overflow-y: auto;
+  background: var(--panel); border-bottom: 1px solid var(--line); font-size: 13px;
+}
+#notices:empty { display: none; }
+#notices > li {
+  display: flex; align-items: flex-start; gap: 8px; padding: 4px 10px 4px 7px;
+  border-left: 3px solid var(--warn);
+}
+#notices > li + li { border-top: 1px solid var(--line); }
+#notices > li.bad { border-left-color: var(--fail); color: var(--fail); }
+#notices .text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+#notices input { flex: none; margin: 3px 0 0; cursor: pointer; }
+#notices button {
+  flex: none; background: none; border: 0; padding: 0 2px; font: inherit;
+  color: var(--dim); cursor: pointer;
+}
+#notices button:hover { color: var(--fg); }
 
 /* A row per pull request that merges into this branch: the #N is a link out,
    Switch is the checkout, and the title sits between them and gives way first. */

@@ -30,7 +30,7 @@ importing the server. A new import in any of the seven adds to the list.
 
 ## The building blocks are in `ui.js`
 
-`h`, `btn`, `ext`, `api`, `toast`, `debug`, `pref`, the mark and the fold:
+`h`, `btn`, `ext`, `api`, `toast`, `notice`, `debug`, `pref`, the mark and the fold:
 every pane builds from these, so they live in `ui.js` and a pane imports them
 from there. So does `replaceKeeping`, for a redraw that must not shut a focused
 select's dropdown: mark the control `data-keep` and give it a `refresh`,
@@ -75,10 +75,12 @@ writes survives only until the next frame. The exception is `ws.onclose`, which
 writes `[coding agent exited]` (or `[prcoder quit]`) because the PTY is dead
 and nothing will repaint.
 
-Notices for the human go to `toast()`, which sits over the panes and has
-nothing to do with the terminal. Pass `sticky` for a notice that stays true
-until someone acts on it, rather than one reporting something already done:
-a sticky toast waits for a click instead of timing out.
+Notices for the human go to `toast()` or `notice()`, neither of which has
+anything to do with the terminal. `toast()` is for something already done: it
+sits over the panes and goes by itself. `notice()` is for something that
+stays true until someone acts on it: a line in the list over the right-hand
+panes, which waits to be dismissed. A `kind` on a notice keeps a repeat to
+one line and lets the page take it down (`dismissNotice`).
 
 ## The UI says "coding agent", not Claude
 
