@@ -332,14 +332,11 @@ test('prcoder refuses to start outside a git checkout', async () => {
   }
 });
 
-// A quit tells every tab before it kills anything, with a close code of its
-// own, and that code is all a page has to tell prcoder quitting from its agent
-// exiting (ws.onclose in public/app.js). So does an exit that skips quit():
-// closing the terminal prcoder runs in (SIGHUP), or the second Ctrl-C that
-// exits at once. The browser suite fakes the socket, so this is the one place
-// the server's half is checked: a real server, in a throwaway repo, with two
-// tabs' sockets.
-test('a quit, or a signal, closes every tab\'s socket with QUIT_CODE', async () => {
+// A real server, in a throwaway repo, for the tests below of what it tells
+// the tabs as it goes: the browser suite fakes the socket, so these are the one
+// place the server's half is checked. `run` gets the server and its `host:port`
+// once it answers, and this returns what `run` returned and the exit code.
+async function withServer(run, { agent = '/bin/cat' } = {}) {
   const { spawn } = await import('node:child_process');
   const { once } = await import('node:events');
   const fs = await import('node:fs/promises');
@@ -347,53 +344,193 @@ test('a quit, or a signal, closes every tab\'s socket with QUIT_CODE', async () 
   const os = await import('node:os');
   const path = await import('node:path');
   const { fileURLToPath } = await import('node:url');
-  const { QUIT_CODE } = await import('../public/ui.js');
   // Without git's own variables, as above: under a hook, `git init` would
   // land in whatever GIT_DIR names (test/CLAUDE.md).
   const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith('GIT_')));
-  // The two tabs' close codes, and the exit code, after `end` is done to a
-  // server with both open.
-  const run = async (end) => {
-    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'prcoder-quit-'));
-    execSync('git init -q', { cwd: dir, env });
-    const probe = net.createServer().listen(0, '127.0.0.1');
-    await once(probe, 'listening');
-    const { port } = probe.address();
-    await new Promise((r) => probe.close(r));
-    const server = spawn('node', [fileURLToPath(new URL('../server.js', import.meta.url)), '--no-open'],
-      { cwd: dir, env: { ...env, PRCODER_PORT: String(port), PRCODER_AGENT_BIN: '/bin/cat' }, stdio: 'ignore' });
-    const exited = once(server, 'exit');
-    try {
-      const base = `localhost:${port}`;
-      for (let i = 0; i < 50; i++) {
-        if (await fetch(`http://${base}/api/whoami`).then(() => true, () => false)) break;
-        await new Promise((r) => setTimeout(r, 100));
-      }
-      // In an object: resolved with the promise itself, tab() would wait for
-      // the close rather than the open, and nothing here closes it.
-      const tab = () => new Promise((resolve, reject) => {
-        const ws = new WebSocket(`ws://${base}/pty`);
-        const closed = new Promise((r) => { ws.onclose = (e) => r([e.code, e.reason]); });
-        ws.onopen = () => resolve({ closed });
-        ws.onerror = reject;
-      });
-      const tabs = [(await tab()).closed, (await tab()).closed];
-      await end(server, base);
-      return { tabs: await Promise.all(tabs), code: (await exited)[0] };
-    } finally {
-      server.kill();
-      await fs.rm(dir, { recursive: true, force: true });
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'prcoder-quit-'));
+  execSync('git init -q', { cwd: dir, env });
+  const probe = net.createServer().listen(0, '127.0.0.1');
+  await once(probe, 'listening');
+  const { port } = probe.address();
+  await new Promise((r) => probe.close(r));
+  const server = spawn('node', [fileURLToPath(new URL('../server.js', import.meta.url)), '--no-open'],
+    { cwd: dir, env: { ...env, PRCODER_PORT: String(port), PRCODER_AGENT_BIN: agent }, stdio: 'ignore' });
+  const exited = once(server, 'exit');
+  try {
+    const base = `localhost:${port}`;
+    let up = false;
+    for (let i = 0; i < 50 && !up; i++) {
+      up = await fetch(`http://${base}/api/whoami`).then((r) => r.json()).then((w) => w?.prcoder === true, () => false);
+      if (!up) await new Promise((r) => setTimeout(r, 100));
     }
+    // A pinned port that is taken falls back to any free one (bind() in
+    // server.js), and a slow start outlasts the loop. Either way this says so,
+    // rather than leaving it to an opaque WebSocket error further on.
+    assert.ok(up, `no prcoder answered on port ${port} within 5s: taken since the probe, or a slow start`);
+    const result = await run(server, base, dir);
+    return { result, code: (await exited)[0] };
+  } finally {
+    server.kill();
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+}
+
+// A start that checks out is refused while another prcoder runs in the same
+// working copy -- found by the top level, not the directory, since one in a
+// subdirectory moves the same files under the other's agent. Before, `prcoder
+// 7` in `sub/` read sub/.prcoder's records, found none, and checked out.
+test('a start in a subdirectory is refused while a prcoder runs at the top of the working copy', { skip: process.platform === 'win32' && 'sh' }, async () => {
+  const { execFile } = await import('node:child_process');
+  const { promisify } = await import('node:util');
+  const fs = await import('node:fs/promises');
+  const path = await import('node:path');
+  const { fileURLToPath } = await import('node:url');
+  const { withGh } = await import('./stub-gh.js');
+  const pr = { url: 'https://github.com/o/r/pull/7', number: 7, headRefName: 'other', isCrossRepository: false };
+  // repoInfo's `repo view` and pullRequestFor's `pr view`; anything else --
+  // the checkout this refuses -- fails the test with gh's exit 9.
+  const gh = () => `case "$1 $2" in
+  "repo view") echo '{"defaultBranchRef":{"name":"main"},"nameWithOwner":"o/r","parent":null}';;
+  "pr view") echo '${JSON.stringify(pr)}';;
+  *) echo "gh $* was not expected" >&2; exit 9;; esac`;
+  // withServer waits for the server to exit, so the run ends by stopping it.
+  const { result } = await withGh(gh, () => withServer(async (server, base, dir) => {
+    const sub = path.join(dir, 'sub');
+    await fs.mkdir(sub);
+    const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith('GIT_')));
+    const out = await promisify(execFile)('node', [fileURLToPath(new URL('../server.js', import.meta.url)), '7', '--no-open'],
+      { cwd: sub, env: { ...env, PRCODER_AGENT_BIN: '/usr/bin/false' }, timeout: 15_000 })
+      .then((r) => ({ code: 0, ...r }), (e) => ({ code: e.code, stdout: e.stdout, stderr: e.stderr }));
+    server.kill();
+    return out;
+  }));
+  assert.equal(result.code, 2, result.stderr);
+  assert.match(result.stderr, /^prcoder: #7 is on other, and another prcoder is running in this working copy \(in .*\) \(http:\/\/localhost:\d+\)/);
+});
+
+// The pane's Switch is startOnPr, as a start is: held to this clone's
+// repositories case-blind (a URL spelled `O/R` where gh says `o/r` used to be
+// "not one of this clone's repositories"), and refused over uncommitted work
+// before gh is asked to check anything out. In a spawned server, since the
+// in-process one in api.test.js would check out this working tree.
+test('the pane\'s Switch is a start\'s checkout, held to the repositories case-blind', { skip: process.platform === 'win32' && 'sh' }, async () => {
+  const fs = await import('node:fs/promises');
+  const path = await import('node:path');
+  const { withGh } = await import('./stub-gh.js');
+  const pr = { url: 'https://github.com/o/r/pull/7', number: 7, headRefName: 'other', isCrossRepository: false };
+  const gh = () => `case "$1 $2" in
+  "repo view") echo '{"defaultBranchRef":{"name":"main"},"nameWithOwner":"o/r","parent":null}';;
+  "pr view") echo '${JSON.stringify(pr)}';;
+  *) echo "gh $* was not expected" >&2; exit 9;; esac`;
+  const { result } = await withGh(gh, () => withServer(async (server, base, dir) => {
+    await fs.writeFile(path.join(dir, 'a.txt'), 'staged\n');
+    execSync('git add a.txt', { cwd: dir, env: Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith('GIT_'))) });
+    const res = await fetch(`http://${base}/api/pr/switch`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ url: 'https://github.com/O/R/pull/7' }),
+    });
+    server.kill();
+    return res.json();
+  }));
+  assert.match(result.error, /^#7 is on other, and 1 uncommitted file on \S+ is in the way; commit or stash it first$/);
+});
+
+// A quit tells every tab before it kills anything, with a close code of its
+// own, and that code is all a page has to tell prcoder quitting from its agent
+// exiting (ws.onclose in public/app.js). So does an exit that skips quit():
+// closing the terminal prcoder runs in (SIGHUP). Two tabs' sockets each time.
+test('a quit, or a signal, closes every tab\'s socket with QUIT_CODE', async () => {
+  const { QUIT_CODE } = await import('../public/ui.js');
+  // In an object: resolved with the promise itself, tab() would wait for the
+  // close rather than the open, and nothing here closes it.
+  const tab = (base) => new Promise((resolve, reject) => {
+    const ws = new WebSocket(`ws://${base}/pty`);
+    const closed = new Promise((r) => { ws.onclose = (e) => r([e.code, e.reason]); });
+    ws.onopen = () => resolve({ closed });
+    ws.onerror = reject;
+  });
+  // The two tabs' close codes, after `end` is done to a server with both open.
+  const tabsAfter = (end) => async (server, base) => {
+    const tabs = [(await tab(base)).closed, (await tab(base)).closed];
+    await end(server, base);
+    return Promise.all(tabs);
   };
   const told = [[QUIT_CODE, 'prcoder quit'], [QUIT_CODE, 'prcoder quit']];
 
-  assert.deepEqual(await run(async (_, base) => {
+  assert.deepEqual(await withServer(tabsAfter(async (_, base) => {
     const r = await fetch(`http://${base}/api/quit`, {
       method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"force":true}',
     });
     assert.deepEqual(await r.json(), { quit: true });
-  }), { tabs: told, code: 0 });
-  assert.deepEqual(await run((server) => server.kill('SIGHUP')), { tabs: told, code: 130 });
+  })), { result: told, code: 0 });
+  assert.deepEqual(await withServer(tabsAfter((server) => server.kill('SIGHUP'))), { result: told, code: 130 });
+});
+
+// The close frame queues behind whatever the socket has not yet written, so a
+// server that exits as soon as it has sent it loses it under a burst of the
+// agent's output, and the page sees a bare 1006 and offers a Start that
+// reaches nothing. Here the agent floods the terminal while the tab reads
+// nothing, so megabytes are queued when the quit comes; the tab reads on a
+// moment later, and the last frame must still be QUIT_CODE. Until 2026-11-10 quit()
+// exited once stdout had drained, and this tab got no close frame at all.
+// A raw socket, not a WebSocket: that reads as fast as it can, and the backlog
+// is the point.
+test('a quit\'s close frame reaches a tab that is behind on the agent\'s output', async () => {
+  const fs = await import('node:fs/promises');
+  const net = await import('node:net');
+  const os = await import('node:os');
+  const path = await import('node:path');
+  const { randomBytes } = await import('node:crypto');
+  const { QUIT_CODE } = await import('../public/ui.js');
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const stubDir = await fs.mkdtemp(path.join(os.tmpdir(), 'prcoder-flood-'));
+  const flood = path.join(stubDir, 'agent');
+  await fs.writeFile(flood, '#!/bin/sh\nhead -c 16000000 /dev/zero | tr \'\\000\' x\nexec sleep 600\n', { mode: 0o755 });
+  try {
+    const { result } = await withServer(async (_, base) => {
+      const [host, port] = base.split(':');
+      const sock = net.connect(Number(port), host);
+      // One listener for the whole run: a 'data' event with nobody listening
+      // is lost.
+      const chunks = [];
+      sock.on('data', (b) => chunks.push(b));
+      const ended = new Promise((r) => sock.on('close', r));
+      sock.write(`GET /pty HTTP/1.1\r\nHost: ${base}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n`
+        + `Sec-WebSocket-Key: ${randomBytes(16).toString('base64')}\r\nSec-WebSocket-Version: 13\r\n\r\n`);
+      for (let i = 0; i < 100 && !Buffer.concat(chunks).includes('\r\n\r\n'); i++) await sleep(20);
+      sock.pause();
+      await sleep(1500);   // the flood, queueing in the server
+      const r = await fetch(`http://${base}/api/quit`, {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"force":true}',
+      });
+      assert.deepEqual(await r.json(), { quit: true });
+      // A tab can be slow to read -- busy, or in the background -- and the
+      // server has to wait for it. Half a second is well past the moment the
+      // old quit() was gone, and well inside the 2s it now waits at most.
+      await sleep(500);
+      sock.resume();
+      await ended;
+      // The server's frames, unmasked, after the handshake's reply.
+      const all = Buffer.concat(chunks);
+      let at = all.indexOf('\r\n\r\n') + 4;
+      let read = 0;
+      let close = null;
+      while (at + 2 <= all.length) {
+        const op = all[at] & 0x0f;
+        let len = all[at + 1] & 0x7f;
+        let head = 2;
+        if (len === 126) { len = all.readUInt16BE(at + 2); head = 4; }
+        else if (len === 127) { len = Number(all.readBigUInt64BE(at + 2)); head = 10; }
+        if (at + head + len > all.length) break;   // cut off mid-frame
+        if (op === 8) close = all.readUInt16BE(at + head);
+        else read += len;
+        at += head + len;
+      }
+      return { close, behind: read > 4_000_000 };
+    }, { agent: flood });
+    assert.deepEqual(result, { close: QUIT_CODE, behind: true });
+  } finally {
+    await fs.rm(stubDir, { recursive: true, force: true });
+  }
 });
 
 // Quitting prints Local rather than asking about it: the queue is on disk, so

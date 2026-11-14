@@ -57,11 +57,25 @@ takes its repo from `cwd` and its page from its own directory, so you drive
 this tree's code against that branch's PR. A switch the driver makes then
 happens in the worktree. Remove the worktree when done, and any local branch
 `gh pr checkout` made there. `onPullRequest` in `driver.mjs` does all of
-that for a pull request's number.
+that for a pull request's number. It brings a stale local branch of that
+name up to origin before making the worktree, and when the branch is
+already checked out in another worktree it answers that one, since git
+will not check a branch out twice. A run holds `data/wt-<n>.pid` until it
+exits, so a second driver on the same pull request stops with the first's pid
+instead of removing its worktree from under it; one left by a killed run is
+taken over.
 
 Never hand `server.js` a pull request in this tree, `server.js 87` or
 `prcoder choose` answered with a number: prcoder checks out what it is
 started on, so that is a checkout of the owner's working copy.
+
+A worktree you *work* in -- a branch off `main` edited and tested there -- has
+no `node_modules`, and `npm test` in it fails a couple of hundred browser and
+vendor tests with nothing in common. Its imports resolve anyway, from this
+tree's `node_modules` two directories up, but the server serves xterm and
+Prism from `node_modules` beside its own `server.js` (`vendor` in server.js),
+which is the worktree's. `ln -s ../../node_modules node_modules` in the
+worktree fixes it; `.gitignore`'s `node_modules` covers the link (2026-10-21).
 
 ## A stub that only echoes is not a session
 
@@ -94,6 +108,12 @@ timing has to be driven against that stub, not cat. cat is fine for
   30s for a box that is gone. It failed only on CI, where the stubbed save
   answers before Playwright's re-read (2026-10-02). This goes for
   `test/browser/suite.js` too.
+- **A key can't drive a native `<select>`'s open dropdown here.** On this Mac, headless, Alt+Down,
+  Space, Enter or F4 then an arrow and Enter send no `change` in either engine, so a script waiting
+  on one sees nothing, which looks like the page ignoring the pick (2026-11-02). A letter on the
+  closed select does change it. `selectOption()` is the way to make a pick, and it is a change with
+  no key behind it. For the keys, send the sequence yourself, as `keyThenChange` in
+  `test/browser/suite.js` does.
 - **Install `MutationObserver`s after `goto`, not in `addInitScript`.** At
   init time there is no `document.head` to observe, and the throw takes the
   rest of the init script with it.
@@ -111,6 +131,6 @@ timing has to be driven against that stub, not cat. cat is fine for
 
 The driver's sections step clicks the second `.md-section > summary`, so a
 pull request whose body has no `##` headings -- a placeholder written before
-`/update-pr` has run -- makes it time out there with a bare `TimeoutError`
+`/pr-update` has run -- makes it time out there with a bare `TimeoutError`
 after everything before it has printed (2026-10-19). Write the body first,
 or read the steps above the timeout as the run's result.
