@@ -188,8 +188,8 @@ this clone's branch, origin's, or a new one from origin's default branch as orig
 is `test/git.test.js`'s, against a bare repository standing in for origin. That git deletes a worktree's ignored files without
 a word is pinned in `test/git.test.js`, dated, since the question exists because of it. Which key
 does what at the terminal's three-way question is `test/term.test.js`'s (`press`). That the
-question appears in a real terminal and that `r` then removes the worktree is not in `npm test`:
-it was driven by hand in a PTY (2026-11-14), and `tools/cli.mjs` is where a standing check would go.
+question appears in a real terminal, and that `k` then leaves the worktree and `r` removes it and
+keeps its branch, is `tools/cli.mjs`'s last step, in a throwaway repository under `data/`.
 
 Some things were checked against the real thing rather than a stub, and the evidence sits next to
 the code:
