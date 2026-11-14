@@ -112,8 +112,14 @@ timing has to be driven against that stub, not cat. cat is fine for
   Space, Enter or F4 then an arrow and Enter send no `change` in either engine, so a script waiting
   on one sees nothing, which looks like the page ignoring the pick (2026-11-02). A letter on the
   closed select does change it. `selectOption()` is the way to make a pick, and it is a change with
-  no key behind it. For the keys, send the sequence yourself, as `keyThenChange` in
-  `test/browser/suite.js` does.
+  no key behind it. The PR pane's switcher and milestone line are not selects any more
+  (`public/picker.js`), and keys drive them like any other element.
+- **A picker's rows exist only while its list is open, and not beside its button.** The list is
+  `.picker-pop[data-picker="<id>"]` on `<body>`, drawn as it opens, so wait on the button to know
+  a list has landed (`#pr-switch[data-listed]`, and `data-listed` on the milestone line's) and
+  open it to read the rows; `openPicker`, `pickRow` and `switcherLabels` in
+  `test/browser/suite.js` do. A click on a row that cannot be picked needs `{ force: true }`,
+  since Playwright waits on `aria-disabled`.
 - **Install `MutationObserver`s after `goto`, not in `addInitScript`.** At
   init time there is no `document.head` to observe, and the throw takes the
   rest of the init script with it.

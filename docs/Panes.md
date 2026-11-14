@@ -71,6 +71,7 @@ Mac Alt is Option, and on another layout Alt+/ is whatever key sits where a US k
 | Alt+M | presses **@** in the diff pane                                                   | a file that has one is open                      |
 | Alt+W | presses *Wrap* in the diff pane                                                  | a file is open and the pane is not folded        |
 | Alt+R | types the pull request's URL into the coding agent's prompt, unsent; copies it   | the branch has a pull request                    |
+| Alt+. | opens the pull request switcher with the caret in its search field               | the switcher is there: no uncommitted work, or the branch has pull requests of its own to pick between |
 | Alt+G | presses the coding agent pane's ▼: folds it, or unfolds it and puts the focus back in the terminal | always                         |
 | Alt+/ | shows these shortcuts, or hides them                                             | always                                           |
 
@@ -111,8 +112,8 @@ from the same table the keys are bound from, so it can only list keys the page h
 documentation, an issue to report and the repository on GitHub, **Quit prcoder…**, which asks what
 the exit bar's Quit asks ([Claude Code](#claude-code)), and
 the version on its last line. It closes on a pick, a click anywhere else, or Escape -- outside a
-text field, so not in the terminal, where Escape is the agent's, nor in the queue's input or the
-pull request switcher. Nothing done in the shortcut sheet closes it, so with the sheet opened over
+text field, so not in the terminal, where Escape is the agent's, nor in the queue's input or a
+picker's search field, where it shuts the list. Nothing done in the shortcut sheet closes it, so with the sheet opened over
 the menu, closing the sheet gives the focus back to the item it was opened from. Escape from one of
 its items, and closing the sheet its first item opened, leave the focus on the menu, since the item
 it was on is hidden.
@@ -143,29 +144,56 @@ and its name is bold: with several windows open it is what you look for first.
 
 The milestone has a line of its own, on every pull request, because one on no milestone is the one
 that needs something done: it still has to be triaged, so its line is in the warning colour and
-reads *no milestone — needs triage*. The line is a picker, as wide as the line leaves it. It offers
+reads *no milestone — needs triage*. The line is a picker ([Pickers](#pickers)), as wide as the
+line leaves it. It offers
 none, then the repository's open milestones in the order the queue's Issues tab groups them, so the
 dated ones soonest first, and the pull request's own milestone even when that one is closed; each is
-its title, with its due date on hover where the browser shows an option's tooltip. Picking one puts
+its title, and a dated one says when it is due after it, in the line's own words and colours.
+Typing narrows them by title. Picking one puts
 the pull request on it on GitHub there and then, and picking none takes it off; until GitHub
-answers the picker shows the pick, disabled, through any redraw. A letter or an arrow on the closed
-picker changes nothing, since a change there is a write to GitHub -- whether the browser sends that
-change with the key, a moment after it, or as the picker loses the focus; to pick by keyboard is to
-open the dropdown first. The word *milestone*
+answers the picker shows the pick, disabled, through any redraw. The word *milestone*
 in front links to the milestone on GitHub while there is one, and a dated milestone says when it is
 due after the picker, as the queue's milestone lines do: *due in 3 days*, yellow within a week, a
 red badge once past, with the date on hover. The list is every open milestone, as the queue's tabs
 have, and is read when the pull request's repository changes -- from the server's last read of it,
 while that is a few minutes old -- and from GitHub again as the pointer or the focus reaches the
-picker, so a milestone made on GitHub since is there to pick. A poll that lands while the picker has the focus redraws the rest of the
-head around it and brings the picker's options up to date in place, so an open dropdown is not
-redrawn shut and the head is still current; only a move to another pull request replaces the picker. It was a chip after the repository's to begin with, which
+picker or its list opens, so a milestone made on GitHub since is there to pick. A poll that lands
+while the list is open redraws the head and brings the list's rows up to date where they are; only
+a move to another pull request, or to a branch with none, shuts it. It was a chip after the repository's to begin with, which
 said nothing on a pull request with no milestone and had nowhere to put a picker.
+
+### Pickers
+
+The switcher in the pane's header and the milestone line are the same control: a button that shows
+the current value and opens a list under it, with a search field over the rows and the caret in
+it. A click on the button opens the list, and so do ↓ and ↑ with the focus on it; no other key
+does anything to the closed button, and the wheel over it does nothing. In the open list ↑ and ↓
+move a highlight, stopping at the ends and stepping over a row that cannot be picked, Home and End
+go to the ends while nothing is typed, and typing narrows the rows. A pick is Enter on the
+highlighted row or a click on a row, and nothing else is. Escape, Tab, a click anywhere else or on
+the button shuts the list with nothing picked, and Enter on the row the value is already on shuts
+it the same way. After a pick or Escape the focus goes back to where it was when the list opened.
+
+They were native selects, which act on `change`, and a closed select changes on a bare arrow on
+Linux and Windows and on a letter everywhere. For the switcher that was a checkout of another pull
+request under the coding agent from a key on its way to the terminal; for the milestone line it
+was a write to GitHub, held off by putting back any change that came within 300ms of a key (#188).
+
+The list opens on the row the value is on, which is in bold. It is not part of the pane that
+draws its button, so a poll redraws the pane without shutting it, and a list that lands while it
+is open changes its rows in place, with what was typed and the highlight kept.
 
 ### Moving between pull requests
 
 The switcher in the head lists open pull requests, each followed by the ones stacked on its branch
-and indented under it, and runs `gh pr checkout` to move between them. Uncommitted work hides it
+and indented under it, and checks one out to move to it. Alt+. opens it from anywhere, the terminal
+included. Typing a number, with or without its `#`, finds by number: the pull request with exactly
+that number first, then the ones whose number starts with it, then any other the digits are in.
+Other text finds by every word typed, in the number, the title, the branch or the repository.
+What is found is listed flat, without the stacks' indents. The list is the open pull requests, so
+a whole number none of them has adds a last row, *Check out #N (not in the open list)*: it looks
+the number up in this checkout's repository and checks it out, which is the way to a merged or
+closed pull request, or to one opened since the list was read. Uncommitted work hides the switcher
 behind a Commit button, because the checkout would fail anyway.
 
 The pull request shown for the branch is looked for in every repository it could be in -- the one
@@ -187,11 +215,11 @@ leads with all of them under **On this branch**, the ones in another repository 
 `owner/repo#N` as the tab's title names them, each with what is stacked on it under it, and the
 rest of the list follows without them. Picking one there changes what the pane shows and checks
 nothing out, since the branch is already this one, and it stays shown until the branch changes;
-every other option is the checkout it always was, and shows the pull request picked even when the
+every other row is the checkout it always was, and shows the pull request picked even when the
 branch it lands on has others. Either kind of pick replaces a pull request named on prcoder's
 command line. Because a pick there needs no checkout, a dirty
 tree does not hide a switcher that has the group: it stays beside the Commit button with every
-option but the group's own disabled. The list the rest comes from is the one
+row but the group's own disabled, the row for an unlisted number included. The list the rest comes from is the one
 repository's, `gh`'s own, so a pull request in another repository has no Stack and no `#N` beside
 its base, as before.
 
@@ -266,13 +294,12 @@ colour so that it survives colour blindness, and the tab's name, read by a scree
 on hover, says the same in words: `Checks (1/3): 1 failed, 1 pending`.
 
 The list of open pull requests is fetched when the page loads, when the pointer or the keyboard
-reaches the switcher, after a checkout, and when a poll finds the pull request on screen merged,
+reaches the switcher or its list opens, after a checkout, and when a poll finds the pull request on screen merged,
 closed, reopened or replaced by another, not on every poll, so the Stack count can be a few minutes
-old. While the switcher has focus its options stay as they are, since replacing them under an open
-dropdown closes it or moves your pick; a list that lands then shows once it loses focus. So after a
-merge on github.com the switcher is right if the poll as you come back to the tab -- put off to ten
-seconds after the last one, if that was sooner -- and the `gh pr list` it starts finish before you
-open it, and otherwise you pick from the list as it was until you open it again. Opening the tab fetches the list again, so a pull request stacked from the terminal shows up there, and one that
+old. A list that lands while the switcher's list is open changes its rows where they are. So after
+a merge on github.com the switcher is right if the poll as you come back to the tab -- put off to
+ten seconds after the last one, if that was sooner -- and the `gh pr list` it starts finish before
+you open it, and otherwise the rows change under you a moment after you do. Opening the tab fetches the list again, so a pull request stacked from the terminal shows up there, and one that
 merged drops out. A fetch that fails keeps the list it had, and until the first one lands the tab,
 and the list of pull requests into a branch, say there is no list yet rather than that it is empty.
 

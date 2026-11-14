@@ -411,8 +411,21 @@ await page.waitForTimeout(150);
 // what you can see while you are looking at another one.
 const tabs = await page.locator('#pr-head .tab').allInnerTexts();
 console.log('tabs:    ', tabs.join('  |  '), '  (want a count on each)');
-console.log('switch:  ', (await page.$$eval('#pr-switch option', (os) => os.slice(1, 4)
-  .map((o) => o.textContent.slice(0, 12)))).join('  |  '), '  (want the pinned PR first if it is not open, then each open PR with its stack indented under it)');
+// The switcher is a picker (public/picker.js): its rows are drawn as its list
+// opens, on <body>. Opened, read, searched and shut; nothing is picked, since
+// a pick is a checkout.
+await page.waitForSelector('#pr-switch[data-listed]', { timeout: 30_000 }).catch(() => {});
+await page.locator('#pr-switch').click();
+await page.waitForSelector('.picker-pop[data-picker="pr-switch"]:popover-open');
+const switchRows = () => page.$$eval('.picker-pop[data-picker="pr-switch"] [role=option]', (rs) => rs.slice(0, 4)
+  .map((r) => `${'  '.repeat(Number(r.dataset.depth ?? 0))}${r.textContent.slice(0, 14)}`));
+console.log('switch:  ', (await switchRows()).join('  |  '), '  (want the pinned PR first if it is not open, then each open PR with its stack indented under it)');
+await page.screenshot({ path: path.join(out, 'switcher.png') });
+await page.keyboard.type('999999');
+console.log('switch #:', (await switchRows()).join('  |  '), '  (want only "Check out #999999 (not in the open list)", cut short)');
+await page.keyboard.press('Escape');
+console.log('switch ⎋:', await page.locator('.picker-pop[data-picker="pr-switch"]:popover-open').count(), 'open,',
+  await page.evaluate(() => document.activeElement.id), 'focused  (want 0 open, pr-switch focused)');
 
 // The checks, which are a tab and a mark rather than the badges they used to be
 // above the title: the green ✓ circle every tab gets once everything passed,
@@ -488,16 +501,21 @@ console.log('out:    ', await page.evaluate(() =>
 // Waits for the list to land (`data-listed`), not for a second option: a
 // repository with no open milestones never has one, and that wait ran its
 // full thirty seconds.
-await page.waitForSelector('#pr-head .pr-milestone select[data-listed]', { state: 'attached', timeout: 30_000 })
+await page.waitForSelector('#pr-head .pr-milestone .picker[data-listed]', { state: 'attached', timeout: 30_000 })
   .catch(() => {});
+await page.locator('#pr-head .pr-milestone .picker').click().catch(() => {});
 console.log('milestone:', await page.evaluate(() => {
   const line = document.querySelector('#pr-head .pr-milestone');
   if (!line) return 'no line';
   const next = line.nextElementSibling?.classList.contains('pr-state') ? 'over the state' : 'NOT over the state';
-  const sel = line.querySelector('select');
+  const sel = line.querySelector('.picker');
   const listed = sel.hasAttribute('data-listed') ? '' : ' (THE LIST NEVER CAME)';
-  return `${line.classList.contains('untriaged') ? 'untriaged' : 'on one'}, "${sel.selectedOptions[0]?.textContent}", ${sel.options.length - 1} to pick from${listed}, ${next}`;
-}), ' (want "untriaged" exactly when the PR is on no milestone, the open milestones to pick from, over the state)');
+  const rows = document.querySelectorAll('.picker-pop[data-picker="milestone"]:popover-open [role=option]');
+  const dated = [...rows].filter((r) => r.querySelector('.picker-detail')).length;
+  return `${line.classList.contains('untriaged') ? 'untriaged' : 'on one'}, "${sel.querySelector('.picker-value').textContent}", ${rows.length - 1} to pick from, ${dated} dated${listed}, ${next}`;
+}), ' (want "untriaged" exactly when the PR is on no milestone, the open milestones to pick from in the open list, over the state)');
+await page.screenshot({ path: path.join(out, 'milestone-picker.png') });
+await page.keyboard.press('Escape');
 // The repository ends that row because it is the one link with no bound on its
 // width: where it does not fit it wraps whole onto a line of its own, and clips
 // only there.

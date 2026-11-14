@@ -16,64 +16,6 @@ export const QUIT_CODE = 4000;
 // Skips absent sections; DOM append() would render them as the text "null".
 export const kids = (list) => list.flat().filter((k) => k != null);
 
-/** Everything in `parent` but `kept` replaced by `list`, with `kept` where `stand` is in it. */
-const around = (parent, kept, list, stand) => {
-  const at = list.indexOf(stand);
-  [...parent.childNodes].forEach((k) => { if (k !== kept) k.remove(); });
-  kept.before(...list.slice(0, at));
-  kept.after(...list.slice(at + 1));
-};
-
-/** `node` and its ancestors, up to and not including `top` (or to the root). */
-const lineage = (node, top = null) => {
-  const out = [];
-  for (let n = node; n && n !== top; n = n.parentElement) out.push(n);
-  return out;
-};
-
-/**
- * `parent`'s children replaced by `list`, as replaceChildren would, except for
- * a node that has the focus and asks to be kept: one with a `data-keep` that
- * some node in `list` has too, and a `refresh(fresh)` to bring itself up to
- * that node. It stays, the rest is redrawn around it -- each element above it
- * takes the new one's attributes and children, with it in its place -- and
- * then it is refreshed.
- *
- * For a native control whose open popup a redraw would shut: the focus is the
- * one sign a page gets that a select's dropdown may be open. Only that node is
- * kept, because a select keeps the focus after its dropdown closes: holding
- * the whole of the PR pane's head until a blur, as its milestone picker did at
- * first, left the title, state and tabs stale for as long as nobody clicked
- * elsewhere, and the first click after that landed on a node the blur had just
- * replaced. Around it rather than moving it into the new tree, because removing
- * a node takes the focus away and closes the dropdown, even to put it straight
- * back. A `data-keep` that differs -- the picker names its pull request in it
- * -- is a node about something else, and is replaced.
- *
- * The elements above it keep their identity, so a handler set on one as a
- * property, not an attribute, is the old one's; none of the head's rows has one.
- * A new tree of another shape around it is drawn whole.
- */
-export const replaceKeeping = (parent, list) => {
-  const held = document.activeElement;
-  const key = held && held !== parent && parent.contains(held) ? held.dataset?.keep : undefined;
-  if (key === undefined || typeof held.refresh !== 'function') return parent.replaceChildren(...list);
-  const want = `[data-keep="${CSS.escape(key)}"]`;
-  const fresh = list.map((n) => (n.matches?.(want) ? n : n.querySelector?.(want))).find(Boolean);
-  const live = lineage(held, parent);
-  const wanted = fresh ? lineage(fresh) : [];
-  if (!fresh || live.length !== wanted.length || !list.includes(wanted.at(-1))) return parent.replaceChildren(...list);
-  for (let i = 1; i < live.length; i++) {
-    const [up, to] = [live[i], wanted[i]];
-    [...up.attributes].forEach((a) => { if (!to.hasAttribute(a.name)) up.removeAttribute(a.name); });
-    [...to.attributes].forEach((a) => up.setAttribute(a.name, a.value));
-    around(up, live[i - 1], [...to.childNodes], wanted[i - 1]);
-  }
-  around(parent, live.at(-1), list, wanted.at(-1));
-  held.refresh(fresh);
-  return undefined;
-};
-
 /**
  * Small helper: build an element and append children.
  *

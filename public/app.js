@@ -2,6 +2,7 @@ import { Terminal } from '/vendor/xterm.mjs';
 import { FitAddon } from '/vendor/addon-fit.mjs';
 import { WebLinksAddon } from '/vendor/addon-web-links.mjs';
 import { renderPr, renderNoPr, renderHeader, pageTitle, prRepo } from './pr.js';
+import { openPicker } from './picker.js';
 import { fileFrom, nextUnviewed, revealFile } from './filelist.js';
 import { h, api, toast, notice, dismissNotice, pref, setPref, debug, QUIT_CODE } from './ui.js';
 import { openDiff, closeDiff, selectedPath, setViewed, showViewed, canTickViewed, toggleViewed, toggleWrap, canWrap, openMention } from './diff.js';
@@ -58,11 +59,18 @@ term.open(document.getElementById('term-host'));
 // Ω and Polish ż. G over R for "go to the agent", which unfolding does. R
 // types the pull request's URL and copies it: the owner asked for P, Claude
 // Code's model switch, then U, a dead key, and took R, whose ® nobody types
-// into a prompt either.
+// into a prompt either. Period opens the switcher with the caret in its
+// search field, so a pull request is Alt+. and a number and Enter away: no
+// letter is left that passes all of the above (A C L Q Z are the ones that
+// type something on a Mac), and Option+. types ≥, which a prompt can spare.
+// No browser, Claude Code or desktop takes Alt+. itself. It fires from the
+// terminal while the switcher is there to open, and the pick hands the focus
+// back to the terminal (picker.js).
 //
 // Each binding's `label` is its row on the shortcut sheet (Alt+/ below), which
 // is built from this table and so can only list keys the page has. The
 // order here is the sheet's order: the review loop first, then the rest.
+const switcher = document.getElementById('pr-switch');
 const KEYS = {
   'Alt+KeyV': { fn: toggleViewed, terminal: canTickViewed, label: 'mark the open file viewed, or unviewed' },
   'Alt+KeyX': { fn: tickAndNext, terminal: () => selectedPath() != null || nextUnviewed(last?.pr?.files, null) != null, label: 'mark the open file viewed and open the next unviewed one' },
@@ -71,6 +79,7 @@ const KEYS = {
   'Alt+KeyM': { fn: mentionOpenFile, terminal: () => openMention('') != null, label: 'mention the open file to the coding agent' },
   'Alt+KeyW': { fn: toggleWrap, terminal: canWrap, label: 'wrap long lines in the diff' },
   'Alt+KeyR': { fn: mentionPr, terminal: () => last?.pr?.url != null, label: 'type the pull request\'s URL into the coding agent and copy it' },
+  'Alt+Period': { fn: findPr, terminal: () => !switcher.hidden, label: 'find a pull request by number or title, and switch to it' },
   'Alt+KeyG': { fn: toggleTerm, terminal: () => canFold('term'), label: 'fold or unfold the coding agent pane' },
   'Alt+Slash': { fn: toggleKeys, terminal: () => true, modal: true, label: 'show these shortcuts' },
 };
@@ -636,13 +645,12 @@ const loadPrs = (why, { fresh = false } = {}) => {
   const n = ++asks;
   debug('fetching the PR list:', why);
   // Repaint, or a PR opened since page load stays invisible until the next
-  // poll — the switcher only rebuilds its options when the set changes. The
+  // poll; an open switcher takes the new rows where it is (picker.js). The
   // whole status, because the branch-only pane reads this list too; `last` is
   // already the branch this fetch was for, so nothing asks for it again.
   asking = api('/api/prs', undefined, 'GET').then((l) => {
     if (n !== asks) return debug('PR list dropped: a later fetch was asked for', why);
-    debug('PR list landed:', () => l.map((p) => p.number).join(',') || '(empty)',
-      document.activeElement?.id === 'pr-switch' ? '(switcher focused)' : '');
+    debug('PR list landed:', () => l.map((p) => p.number).join(',') || '(empty)');
     prs = l;
     listedAt = Date.now();
     // The list is what says which branches have a pull request, so what git
@@ -671,13 +679,12 @@ const loadBelow = (branch) => {
   api('/api/below', { branch, prs: pairs })
     .then((b) => { below.set(branch, b); if (last) paint(last); paintPulls(); }, () => {});
 };
-// Asked for as the pointer or the keyboard reaches the switcher, not on
-// mousedown: by the time a fetch from there landed the dropdown was open, too
-// late for the pick, and renderHeader holds the options while it has focus.
-// Not again within ten seconds of a list landing, or hovering and then
-// clicking would be two fetches.
+// Asked for as the pointer or the keyboard reaches the switcher, and as its
+// list opens (Alt+. opens it with neither), so the list is as new as it can be
+// by the time it is read; one that lands with the list open brings its rows up
+// to date in place. Not again within ten seconds of a list landing, or
+// hovering and then clicking would be two fetches.
 const reachSwitcher = (how) => { if (Date.now() - listedAt > 10_000) loadPrs(how); };
-const switcher = document.getElementById('pr-switch');
 switcher.addEventListener('pointerenter', () => reachSwitcher('pointer reached the switcher'));
 switcher.addEventListener('focus', () => reachSwitcher('switcher focused'));
 
@@ -686,10 +693,10 @@ switcher.addEventListener('focus', () => reachSwitcher('switcher focused'));
 // when that repository changes (`milestonesFor`), which the server answers from
 // its last read of it while that is a few minutes old, so a reload or a move
 // back is not a gh call; and read from GitHub as the pointer or the focus
-// reaches the picker, not within ten seconds of the last one that landed -- the
-// switcher's rule, for the same reason: a milestone made on GitHub since is
-// there to pick. Not only on reach: a dropdown opened faster than that read
-// would offer nothing but none and the pull request's own. A failed read keeps
+// reaches the picker or its list opens, not within ten seconds of the last one
+// that landed -- the switcher's rule, for the same reason: a milestone made on
+// GitHub since is there to pick. Not only on reach: a list opened faster than
+// that read would offer nothing but none and the pull request's own. A failed read keeps
 // what we had, and the picker still has the pull request's own milestone and
 // none; reaching for it tries again. There is one read at a time, so the pane
 // moving to another repository during one waits for it to end, whatever its
@@ -732,7 +739,7 @@ const reachMilestones = () => {
  * pick is about the pull request on screen, and move the wrong one.
  *
  * `picking` is the pick on its way, here and in the draw key rather than a
- * `disabled` on the select, which the next repaint would replace with an
+ * `disabled` on its button, which the next repaint would replace with an
  * enabled picker on the old milestone, as if the pick had been undone.
  */
 let picking = null;
@@ -882,9 +889,8 @@ function paint(status) {
   // The PR on screen merging or closing takes it out of the open list, and
   // GitHub retargets the ones stacked on it. Fetched now, from the poll that
   // noticed -- the one that runs as you come back to the tab -- rather than
-  // left to reaching for the switcher: a fetch that starts then can still land
-  // with the dropdown open, and renderHeader holds the options until it closes,
-  // so the pick would be from the old list.
+  // left to reaching for the switcher: a fetch that starts then lands with
+  // the list already open and being read, and its rows move under the pick.
   // Any change to which PR is on the branch, not only its state: one closed and
   // another opened in its place from the terminal is the same branch with a
   // new number, and a PR opened on a bare branch is a new entry in the list.
@@ -990,11 +996,15 @@ async function loadStatus({ search = false } = {}) {
   }
 }
 
-/** `gh pr checkout` of the pull request at `url`, from the switcher or a Stack row. */
+/**
+ * A checkout of the pull request at `url`, from the switcher or a Stack row
+ * -- or of `{ number }`, one the switcher's list does not have, typed into its
+ * search field: the server looks that up in this repository.
+ */
 async function switchPr(url) {
   debug('switching to', url);
   try {
-    const status = await api('/api/pr/switch', { url });
+    const status = await api('/api/pr/switch', typeof url === 'string' ? { url } : { number: url.number });
     debug('switched: now on', status.branch, status.pr?.url);
     paint(status);
     // Claude's cwd survives a checkout, but its idea of the files does not, and
@@ -1063,7 +1073,17 @@ async function choosePr(url) {
   }
 }
 
-const handlers = { onSwitch: switchPr, onChoose: choosePr, onCommit: askClaudeToCommit };
+const handlers = {
+  onSwitch: switchPr, onSwitchNumber: (number) => switchPr({ number }), onChoose: choosePr, onCommit: askClaudeToCommit,
+  onReach: reachSwitcher,
+};
+
+// Alt+.: the switcher's list, open, with the caret in its search field. With
+// uncommitted work and no pull request of the branch's own to pick between,
+// the switcher is hidden behind Commit, and this says why nothing opened.
+function findPr() {
+  if (!openPicker('pr-switch')) toast('Commit or stash your changes first: a switch would check out another branch.', true);
+}
 
 // ⟳ also searches for the branch's pull requests, where a poll reads only the
 // ones the server remembers: one just opened on github.com shows now, not in
@@ -1130,7 +1150,7 @@ const grow = () => {
 input.addEventListener('input', grow);
 
 // Not awaited: the switcher's list is a whole `gh pr list` and nothing below
-// needs it — renderHeader synthesises an option for the current PR until it
+// needs it — renderHeader makes a row for the current PR until it
 // lands, and loadPrs repaints the header itself when it does.
 loadPrs('page load');
 // `home` for ▶, which reads a bare #N in an item's text as this repo's.
