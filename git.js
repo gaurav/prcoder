@@ -108,6 +108,53 @@ export async function notAWorkTree(cwd) {
  */
 export const workTreeTop = (cwd) => text(['rev-parse', '--show-toplevel'], cwd);
 
+/**
+ * `git worktree list --porcelain -z` as `[{ path, branch, detached, bare,
+ * locked, prunable }]`: every working copy of the repository, the main one
+ * first, as git lists them. `branch` is the short name, or null on a detached
+ * HEAD and for a bare repository, which is listed first with no files of its
+ * own. `prunable` is one whose directory is gone and that `git worktree
+ * prune` would forget; its branch still counts as checked out until then.
+ *
+ * `-z` because a path may hold a newline: each line ends in NUL and each
+ * record in one more. A line git adds later is ignored.
+ */
+export function parseWorktrees(out) {
+  return out.split('\0\0').map((record) => record.split('\0').filter(Boolean)).map((lines) => {
+    const line = (key) => lines.find((l) => l === key || l.startsWith(`${key} `));
+    const value = (key) => line(key)?.slice(key.length + 1) || null;
+    const ref = value('branch');
+    return {
+      path: value('worktree'),
+      branch: ref?.startsWith('refs/heads/') ? ref.slice('refs/heads/'.length) : null,
+      detached: line('detached') !== undefined,
+      bare: line('bare') !== undefined,
+      locked: line('locked') !== undefined,
+      prunable: line('prunable') !== undefined,
+    };
+  }).filter((w) => w.path);
+}
+
+/** The repository's working copies (parseWorktrees), asked from any of them. */
+export const worktrees = async (cwd) => parseWorktrees(await git(['worktree', 'list', '--porcelain', '-z'], cwd));
+
+/**
+ * `{ path, main }` when `cwd` is in a linked worktree -- one made by `git
+ * worktree add` -- and null in a repository's main working copy. `path` is
+ * the worktree's top level and `main` the main working copy's, or null when
+ * the repository is bare and has none.
+ *
+ * Told by the two directories git keeps: a linked worktree's own is
+ * `.git/worktrees/<name>` inside the one it shares with the rest. Not by
+ * `.git` being a file, which a submodule's is too.
+ */
+export async function linkedWorktree(cwd) {
+  const [own, common] = (await text(['rev-parse', '--path-format=absolute', '--git-dir', '--git-common-dir'], cwd)).split('\n');
+  if (own === common) return null;
+  const [first] = await worktrees(cwd);
+  return { path: await workTreeTop(cwd), main: first && !first.bare ? first.path : null };
+}
+
 /** Empty on a detached HEAD, which happens mid-rebase and mid-bisect. */
 export const currentBranch = (cwd) =>
   text(['symbolic-ref', '--quiet', '--short', 'HEAD'], cwd).catch(() => '');

@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { notAWorkTree, syncState, compareUrl, githubUrl, originOwner, remoteRepo, remoteRepos, repoInfo, pushRepo, commitsKnown, commitMemo, wholePrRepo, checkoutPr, startOnPr, isHere, trackedPr, userDirt, remoteBranchHead, trackingHead, snapshot, localPatch, branchesBelow } from '../git.js';
+import { notAWorkTree, parseWorktrees, worktrees, linkedWorktree, syncState, compareUrl, githubUrl, originOwner, remoteRepo, remoteRepos, repoInfo, pushRepo, commitsKnown, commitMemo, wholePrRepo, checkoutPr, startOnPr, isHere, trackedPr, userDirt, remoteBranchHead, trackingHead, snapshot, localPatch, branchesBelow } from '../git.js';
 
 // git finds the repository through GIT_DIR and GIT_WORK_TREE before it looks
 // at cwd, and a git hook exports them. Under a hook, `npm test` ran every
@@ -119,6 +119,57 @@ test('only a checkout, or a directory inside one, is a work tree', async () => {
     assert.match(await notAWorkTree(path.join(dir, '.git')), /bare repository, not a checkout/);
     await git('git', ['init', '-q', '--bare', path.join(dir, 'bare.git')]);
     assert.match(await notAWorkTree(path.join(dir, 'bare.git')), /bare repository, not a checkout/);
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
+
+// git's list of a repository's working copies, as the pane's worktree line
+// and `prcoder --worktree` read it. The fixture is what git 2.54 prints
+// (2026-11-14), with a line it does not print yet.
+test('the worktree list is read record by record, the main working copy first', () => {
+  const record = (...lines) => `${lines.join('\0')}\0\0`;
+  const out = record('worktree /r', 'HEAD 1111', 'branch refs/heads/main') +
+    record('worktree /r/data/wt-7', 'HEAD 2222', 'detached') +
+    record('worktree /w/a\nb', 'HEAD 3333', 'branch refs/heads/feature/x', 'locked for a reason', 'later-line 1') +
+    record('worktree /w/gone', 'HEAD 4444', 'branch refs/heads/old', 'prunable gitdir file points to non-existent location');
+  const row = { branch: null, detached: false, bare: false, locked: false, prunable: false };
+  assert.deepEqual(parseWorktrees(out), [
+    { ...row, path: '/r', branch: 'main' },
+    { ...row, path: '/r/data/wt-7', detached: true },
+    { ...row, path: '/w/a\nb', branch: 'feature/x', locked: true },
+    { ...row, path: '/w/gone', branch: 'old', prunable: true },
+  ]);
+  assert.deepEqual(parseWorktrees(record('worktree /bare.git', 'bare')), [{ ...row, path: '/bare.git', bare: true }]);
+  assert.deepEqual(parseWorktrees(''), []);
+});
+
+test('a linked worktree knows the main working copy, and the main one is not linked', async () => {
+  // realpath: git answers with the real path, and macOS's tmpdir is a symlink.
+  const dir = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'prcoder-linked-')));
+  const main = path.join(dir, 'main');
+  const wt = path.join(dir, 'elsewhere', 'topic');
+  try {
+    await git('git', ['init', '-q', '-b', 'main', main]);
+    await testGit(main, 'commit', '-q', '--allow-empty', '-m', 'x');
+    assert.equal(await linkedWorktree(main), null);
+    await testGit(main, 'worktree', 'add', '-q', '-b', 'topic', wt);
+    await fs.mkdir(path.join(wt, 'sub'));
+    assert.deepEqual(await linkedWorktree(path.join(wt, 'sub')), { path: wt, main });
+    assert.equal(await linkedWorktree(main), null, 'the main working copy, with a worktree made from it');
+    // Asked from either, the list is the same, and says which branch is where.
+    for (const cwd of [main, wt]) {
+      assert.deepEqual((await worktrees(cwd)).map(({ path: p, branch }) => ({ path: p, branch })),
+        [{ path: main, branch: 'main' }, { path: wt, branch: 'topic' }]);
+    }
+    // A directory deleted without `git worktree remove` is still listed.
+    await fs.rm(wt, { recursive: true });
+    assert.deepEqual((await worktrees(main))[1], { path: wt, branch: 'topic', detached: false, bare: false, locked: false, prunable: true });
+    // A bare repository's worktree has no main working copy to name.
+    const bare = path.join(dir, 'bare.git');
+    await git('git', ['clone', '-q', '--bare', main, bare]);
+    await git('git', ['worktree', 'add', '-q', path.join(dir, 'of-bare'), 'main'], { cwd: bare });
+    assert.deepEqual(await linkedWorktree(path.join(dir, 'of-bare')), { path: path.join(dir, 'of-bare'), main: null });
   } finally {
     await fs.rm(dir, { recursive: true, force: true });
   }
