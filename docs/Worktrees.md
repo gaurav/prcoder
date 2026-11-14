@@ -27,7 +27,8 @@ cd ../myrepo-topic && prcoder
 
 `prcoder -- --worktree <name>` is not. That passes `--worktree` to the coding agent, which moves
 itself into a worktree of its own making after prcoder has started; prcoder stays in the directory
-it was started in, and the pane goes on showing that directory's branch.
+it was started in, and the pane goes on showing that directory's branch. The flag is still passed
+on, since what follows `--` is the agent's, and prcoder says at startup which of the two it was.
 
 ## What `--worktree` does
 

@@ -132,6 +132,20 @@ export function parseCli(argv) {
 export const worktreeTarget = (value) => (/^\d+$/.test(value) || /^https?:\/\//.test(value) ? { pr: value } : { branch: value });
 
 /**
+ * What to say at startup when `--worktree` (or `-w`) is among the agent's
+ * arguments, or null. After `--` it is Claude Code's flag: the agent makes a
+ * worktree of its own and moves into it once it has started, and prcoder,
+ * which is told nothing, goes on showing the branch of the directory it was
+ * started in -- the pane on one branch and the agent editing another, with
+ * nothing on screen to say so. Passed on untouched all the same: the line
+ * after `--` is the agent's, and someone may want exactly that.
+ */
+export const agentWorktree = (agentArgs) => (agentArgs.some((a) => a === '--worktree' || a === '-w' || a.startsWith('--worktree='))
+  ? '--worktree after -- goes to the coding agent, which will move into a worktree of its own: the pull request pane' +
+    ' stays on this directory\'s branch, not the agent\'s. To start prcoder itself in a worktree, put it before --: prcoder --worktree <branch|pr>'
+  : null);
+
+/**
  * The directory `--worktree` makes a worktree in: under `base`
  * (`~/.prcoder/worktrees`, or PRCODER_WORKTREES), in a directory for the
  * repository -- its main working copy's name, and eight hex of a hash of that

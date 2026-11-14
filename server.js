@@ -18,7 +18,7 @@ import { bucket, fileUrl, fileViews } from './files.js';
 import { readPort, writePort, readRunning, writeRunning, dropRunning, alive, claimStart, releaseStart, readPrs, writePrs, pick, useQueueFile, movedQueue, issueUrl, readPulls, markMade, madeHere } from './store.js';
 import { readQueue, writeQueue, quote } from './queue.js';
 import { readHistory } from './history.js';
-import { parseCli, usage, VERSION, portCandidates, statusLines, openRepoArgs, OPEN_REPO_VARS, REPO_ENV, queueSummary, quitRisks, worktreeLosses, leaveQuestion, worktreeDir } from './cli.js';
+import { parseCli, usage, VERSION, portCandidates, statusLines, openRepoArgs, OPEN_REPO_VARS, REPO_ENV, queueSummary, quitRisks, worktreeLosses, leaveQuestion, worktreeDir, agentWorktree } from './cli.js';
 import { choosePr, githubPulls } from './choose.js';
 import * as term from './term.js';
 import { toggleTask, refs, wholeRef, resolveRef } from './public/tasks.js';
@@ -1266,6 +1266,9 @@ async function ready() {
   if (pr) console.log(pr.url);
   console.log(url);
   if (urls.moved) console.error(urls.moved);
+  // Here, with the rest of what this run is, and not as it parsed: a line
+  // written before the block exists is left above it, out of the log.
+  if (agentWorktree(agentArgs)) console.error(agentWorktree(agentArgs));
   // Said, because nothing else would: the pane looks the same whichever file
   // it is showing, and a forgotten PRCODER_QUEUE reads as a lost queue.
   if (movedQueue()) console.log(`queue: ${movedQueue()}`);

@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { execSync } from 'node:child_process';
-import { openRepoArgs, OPEN_REPO_VARS, REPO_ENV, parseCli, usage, AGENTS, VERSION, portFor, portCandidates, PORT_BASE, PORT_SPAN, statusLines, ago, queueSummary, quitRisks, worktreeLosses, leaveQuestion, worktreeTarget, worktreeDir, ownerColour, OWNER_COLOURS } from '../cli.js';
+import { openRepoArgs, OPEN_REPO_VARS, REPO_ENV, parseCli, usage, AGENTS, VERSION, portFor, portCandidates, PORT_BASE, PORT_SPAN, statusLines, ago, queueSummary, quitRisks, worktreeLosses, leaveQuestion, worktreeTarget, worktreeDir, agentWorktree, ownerColour, OWNER_COLOURS } from '../cli.js';
 import { queueChanges } from '../queue.js';
 import { plain } from '../term.js';
 
@@ -53,6 +53,16 @@ test('--worktree takes a branch or a pull request, and stands in for the positio
   }
   // After --, it is the agent's own flag, and not this one.
   assert.equal(parseCli(['--', '--worktree', 'abc']).worktree, undefined);
+});
+
+// The mistake --worktree exists because of: the flag after --, where it is
+// the agent's and the pane cannot follow. Said at startup; still passed on.
+test('--worktree among the agent\'s arguments is passed on, and said to be the agent\'s', () => {
+  for (const args of [['--worktree', 'abc'], ['-w', 'abc'], ['--model', 'opus', '--worktree=abc']]) {
+    assert.deepEqual(parseCli(['--', ...args]).agentArgs, args);
+    assert.match(agentWorktree(args), /^--worktree after -- goes to the coding agent.*prcoder --worktree <branch\|pr>$/);
+  }
+  for (const args of [[], ['--model', 'opus'], ['--continue'], ['-p', 'what is a worktree']]) assert.equal(agentWorktree(args), null);
 });
 
 // Where a worktree is made: outside the repository, in a directory of the
