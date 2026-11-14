@@ -6,18 +6,19 @@ import http from 'node:http';
 import { spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
 import { existsSync } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { text as readBody } from 'node:stream/consumers';
 import { spawn as ptySpawn } from 'node-pty';
 import { WebSocketServer } from 'ws';
 import { loadPr, pullRequestFor, prBody, parsePrUrl, listPrs, branchPrs, lookupPrs, ownPrs, pickPr, issueLinks, lookupRef, setViewed, setBody, createIssue, fetchPatches, runCount, repoIssues, repoMilestones, setIssueMilestone } from './github.js';
-import { notAWorkTree, snapshot, currentBranch, headCommit, commitsKnown, commitMemo, repoInfo, pushRepo, compareUrl, githubUrl, originOwner, wholePrRepo, startOnPr, trackedPr, workTreeTop, pushBranch, remoteBranchHead, trackingHead, localPatch, branchesBelow, worktrees, linkedWorktree, worktreeLoss, removeWorktree } from './git.js';
+import { notAWorkTree, snapshot, currentBranch, headCommit, commitsKnown, commitMemo, repoInfo, pushRepo, compareUrl, githubUrl, originOwner, wholePrRepo, startOnPr, trackedPr, workTreeTop, pushBranch, remoteBranchHead, trackingHead, localPatch, branchesBelow, worktrees, linkedWorktree, worktreeLoss, removeWorktree, worktreeFor, worktreeForPr } from './git.js';
 import { bucket, fileUrl, fileViews } from './files.js';
-import { readPort, writePort, readRunning, writeRunning, dropRunning, alive, claimStart, releaseStart, readPrs, writePrs, pick, useQueueFile, movedQueue, issueUrl, readPulls } from './store.js';
+import { readPort, writePort, readRunning, writeRunning, dropRunning, alive, claimStart, releaseStart, readPrs, writePrs, pick, useQueueFile, movedQueue, issueUrl, readPulls, markMade, madeHere } from './store.js';
 import { readQueue, writeQueue, quote } from './queue.js';
 import { readHistory } from './history.js';
-import { parseCli, usage, VERSION, portCandidates, statusLines, openRepoArgs, OPEN_REPO_VARS, REPO_ENV, queueSummary, quitRisks, worktreeLosses, leaveQuestion } from './cli.js';
+import { parseCli, usage, VERSION, portCandidates, statusLines, openRepoArgs, OPEN_REPO_VARS, REPO_ENV, queueSummary, quitRisks, worktreeLosses, leaveQuestion, worktreeDir } from './cli.js';
 import { choosePr, githubPulls } from './choose.js';
 import * as term from './term.js';
 import { toggleTask, refs, wholeRef, resolveRef } from './public/tasks.js';
@@ -25,7 +26,10 @@ import { grammars } from './public/diff.js';
 import { QUIT_CODE } from './public/ui.js';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
-const repo = process.cwd();
+// Where prcoder was started, and what every git and gh call, the agent and
+// `.prcoder/` are given. Not a const for one reason: `--worktree` moves this
+// process into the worktree before anything else starts (startInWorktree).
+let repo = process.cwd();
 // The working copy's top level, which `repo` is or is inside: where the
 // running records are kept, and what another prcoder is matched by
 // (runningHere). Settled in main, once `repo` is known to be in a work tree.
@@ -534,11 +538,14 @@ const routes = {
     listQueue();
     const risk = quitRisk();
     const wt = await leaving();
-    if (!force && (risk.length || wt)) return { risk, ...(wt && { worktree: { name: wt.name, path: wt.path, lose: wt.lose } }) };
+    const unasked = tidy(risk, wt);
+    if (!force && !unasked && (risk.length || wt)) return { risk, ...(wt && { worktree: { name: wt.name, path: wt.path, lose: wt.lose } }) };
     if (worktree === 'remove' && !wt) throw new Error('this working copy is not a worktree prcoder can remove');
+    const remove = worktree === 'remove' || (unasked && worktree === undefined) ? wt : null;
     // Deferred so the reply goes out first: process.exit doesn't wait for it.
-    setTimeout(() => quit({ remove: worktree === 'remove' ? wt : null }), 100);
-    return { quit: true };
+    setTimeout(() => quit({ remove }), 100);
+    // `removed`, for the page to say: nothing else would, once it has gone.
+    return { quit: true, ...(remove && { removed: remove.path }) };
   },
 
   /**
@@ -1496,6 +1503,7 @@ async function leaving() {
     return {
       name: path.basename(top), path: top, force: loss.changed + loss.untracked > 0,
       lose: worktreeLosses({ ...loss, queue: movedQueue() ? [] : last?.queue ?? [] }),
+      made: await madeHere(top),
     };
   } catch (e) {
     term.debug(`removing this worktree not offered: ${e.message}`);
@@ -1525,6 +1533,16 @@ async function removeHere({ path: where, force }) {
   }
 }
 
+/**
+ * Whether a quit removes worktree `wt` without asking: one prcoder made
+ * (`--worktree`), with nothing in it that git lacks, and nothing else about
+ * the quit to ask over. Then the removal deletes a directory this command
+ * made and can make again, and the question would be a keypress on every
+ * quit. Anything else is asked about -- a worktree made by hand above all,
+ * which is its maker's however clean it is.
+ */
+const tidy = (risk, wt) => Boolean(wt?.made && !wt.lose.length && !risk.length);
+
 // One question at a time: leaving() takes a moment, and a second q inside it
 // would ask twice.
 let asking = false;
@@ -1538,11 +1556,55 @@ async function askToQuit() {
     // Listed again on yes: the queue can change while the question waits, and
     // an item added from a tab in that time would otherwise go unprinted.
     const go = (opts) => () => { listQueue(); quit(opts); };
-    if (wt) term.ask(leaveQuestion(risk, wt), { r: go({ remove: wt }), k: go() });
+    if (tidy(risk, wt)) quit({ remove: wt });
+    else if (wt) term.ask(leaveQuestion(risk, wt), { r: go({ remove: wt }), k: go() });
     else if (risk.length) term.confirm(`quit? ${risk.join('; ')}  [y/N] `, go());
     else quit();
   } finally {
     asking = false;
+  }
+}
+
+/**
+ * `prcoder --worktree <branch|pr>`: the worktree for it found or made
+ * (worktreeFor, worktreeForPr in git.js), and this process moved into it, so
+ * that everything after is a start in that directory like any other -- its
+ * own port, queue and running record, the agent started there, and a quit
+ * that offers to remove it. Resolves the pull request it named, still to be
+ * checked out there, which the start block takes in place of its own lookup;
+ * null for a branch, which the worktree is already on. A refusal ends
+ * the run before anything of this one's has started.
+ *
+ * The pull request is looked up, and the repository's facts read, from the
+ * directory prcoder was started in, and the facts are kept: they are the
+ * repository's, the same from every working copy of it, but for `prefix`,
+ * which is where in the working copy this run stands -- the top, after the
+ * move. `repo` is taken from the process again rather than from the path
+ * asked for, so it is spelled as a later plain `prcoder` there will spell it:
+ * the port's seed is a hash of that string.
+ *
+ * A worktree this made is marked as prcoder's (markMade), which is what lets
+ * a quit remove it without asking once nothing in it is unsaved.
+ */
+async function startInWorktree(target) {
+  try {
+    const facts = await repoInfo(repo);
+    const base = process.env.PRCODER_WORKTREES ? path.resolve(process.env.PRCODER_WORKTREES) : path.join(os.homedir(), '.prcoder', 'worktrees');
+    const dirFor = (main, name) => worktreeDir(base, main, name);
+    const p = target.pr ? await pullRequestFor(repo, target.pr, facts.repos) : null;
+    const found = p ? await worktreeForPr(repo, p, { dirFor, repos: facts.repos })
+      : await worktreeFor(repo, target.branch, { dirFor, defaultBranch: facts.defaultBranch });
+    console.log(found.said);
+    process.chdir(found.path);
+    repo = process.cwd();
+    top = await workTreeTop(repo);
+    linked = await linkedWorktree(repo);
+    info = { ...facts, prefix: '' };
+    if (found.made) await markMade(top).catch((e) => term.debug(`worktree not marked as prcoder's: ${e.message}`));
+    return p;
+  } catch (e) {
+    console.error(`prcoder: ${e.message}`);
+    process.exit(2);
   }
 }
 
@@ -1600,14 +1662,19 @@ if (import.meta.main) {
   // The checkout is refused while another prcoder runs in this working copy,
   // or is starting in it (claim): it would move that one's agent onto another
   // branch, or two checkouts would run at once.
-  if (cli.choose || cli.target) {
+  //
+  // `--worktree <pr>` is the same start one step later: the worktree is made
+  // or found first, this process moves into it (startInWorktree), and the
+  // pull request it named is checked out there.
+  const named = cli.worktree ? await startInWorktree(cli.worktree) : null;
+  if (cli.choose || cli.target || named) {
     try {
       const facts = await repoFacts();
       // choosePr runs this on each pick, and asks again after a refusal.
       const start = async (pr) => startOnPr(repo, pr, { inUse: claim }).finally(() => releaseStart(top));
       const started = cli.choose
         ? await choosePr(repo, facts, { start })
-        : await pullRequestFor(repo, cli.target, facts.repos).then(async (pr) => ({ pr, ...(await start(pr)) }));
+        : await Promise.resolve(named ?? pullRequestFor(repo, cli.target, facts.repos)).then(async (pr) => ({ pr, ...(await start(pr)) }));
       if (!started) process.exit(0);
       if (started.said) console.log(started.said);
       chosen = { branch: started.branch, url: started.pr.url };

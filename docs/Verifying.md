@@ -180,7 +180,12 @@ checked there too, with two real servers: one in a throwaway repo's main working
 a worktree of it, each asked for the list, so that one finds the other by its running record.
 A quit that removes its worktree is there as well, against real git: the question's account of
 what would go, the directory gone and the branch kept after `remove`, both left after `keep`, and
-the main working copy refusing to be removed. That git deletes a worktree's ignored files without
+the main working copy refusing to be removed. `--worktree` is started for real there too, in a
+throwaway repo with `PRCODER_WORKTREES` inside the test's own directory: for a branch, where the
+server that answers is in the worktree and a quit tidies it away unasked, and for a pull request,
+with a stub gh whose checkout makes the branch. What the worktree is made from in each case --
+this clone's branch, origin's, or a new one from origin's default branch as origin has it now --
+is `test/git.test.js`'s, against a bare repository standing in for origin. That git deletes a worktree's ignored files without
 a word is pinned in `test/git.test.js`, dated, since the question exists because of it. The
 terminal's three-way question is not in `npm test`: it was driven by hand in a PTY (2026-11-14),
 and `tools/cli.mjs` is where a standing check would go.

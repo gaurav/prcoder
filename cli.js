@@ -12,6 +12,7 @@
 import { parseArgs } from 'node:util';
 import { createRequire } from 'node:module';
 import { createHash } from 'node:crypto';
+import path from 'node:path';
 import { syncPhrase, sides, prRepo } from './public/pr.js';
 import { counts, TABS } from './public/items.js';
 
@@ -30,14 +31,19 @@ const OPTIONS = {
   'no-open': { type: 'boolean' },
   'no-history': { type: 'boolean' },
   queue: { type: 'string' },
+  worktree: { type: 'string', short: 'w' },
   verbose: { type: 'boolean', short: 'v', multiple: true },
 };
 
 export function usage() {
-  return `usage: prcoder [<pr> | choose] [--port <n>] [--no-open] [--no-history] [--queue <file>] [-v] [--agent <name>] [-- <agent args>]
+  return `usage: prcoder [<pr> | choose | --worktree <branch|pr>] [--port <n>] [--no-open] [--no-history] [--queue <file>] [-v] [--agent <name>] [-- <agent args>]
 
   <pr>             check out this pull request (number, URL or branch) and start on it
   choose           list the open pull requests, and pick the one to check out
+  -w, --worktree <branch|pr>
+                   start in a git worktree on this branch, or this pull request (number
+                   or URL), made if there is none; this working copy stays as it is.
+                   Made under ~/.prcoder/worktrees                env PRCODER_WORKTREES
   --port <n>       listen on this port for this run          env PRCODER_PORT
   --no-open        print the URL, don't open a browser        env PRCODER_NO_OPEN=1
   --no-history     don't read the agent's prompt history     env PRCODER_NO_HISTORY=1
@@ -68,6 +74,11 @@ export function parseCli(argv) {
       const flag = /^Unknown option '([^']+)'/.exec(e.message)?.[1] ?? '?';
       throw new Error(`unknown option ${flag}; flags for the agent go after --, as in: prcoder [pr] -- ${flag} …`);
     }
+    // Node's own advice for a value it took for a flag is `--worktree=-XYZ`,
+    // which is the one spelling refused below.
+    if (e.code === 'ERR_PARSE_ARGS_INVALID_OPTION_VALUE' && /'(--worktree|-w)[ ']/.test(e.message)) {
+      throw new Error('--worktree wants a branch, or a pull request\'s number or URL');
+    }
     if (e.code === 'ERR_PARSE_ARGS_INVALID_OPTION_VALUE') throw new Error(e.message);
     throw e;
   }
@@ -83,6 +94,17 @@ export function parseCli(argv) {
     throw new Error(`--port wants a port number, not ${values.port}`);
   }
   if (values.queue === '') throw new Error('--queue wants a file path');
+  // A value git or gh would read as a flag of its own is refused here, not
+  // left to them: `--worktree=--force` gets past parseArgs, which only stops
+  // one written as a separate word.
+  if (values.worktree !== undefined && !/^[^-\s]\S*$/.test(values.worktree)) {
+    throw new Error('--worktree wants a branch, or a pull request\'s number or URL');
+  }
+  // One way to say what to start on. With both, which pull request the
+  // worktree was for would be a guess.
+  if (values.worktree !== undefined && positionals.length) {
+    throw new Error(`--worktree ${values.worktree} already says what to start on; ${positionals[0]} is one too many`);
+  }
   return {
     target: choose ? undefined : positionals[0],
     choose,
@@ -92,10 +114,41 @@ export function parseCli(argv) {
     noOpen: !!values['no-open'],
     noHistory: !!values['no-history'],
     queue: values.queue,
+    worktree: values.worktree === undefined ? undefined : worktreeTarget(values.worktree),
     verbose: values.verbose?.length ?? 0,
     help: !!values.help,
     version: !!values.version,
   };
+}
+
+/**
+ * What `--worktree`'s value names: `{ pr }` for a pull request -- all digits,
+ * or a URL -- and `{ branch }` for anything else. Told apart here and not by
+ * asking gh, as the positional is: a branch with no pull request is a thing to
+ * start a worktree on, and "gh found none" and "gh could not be asked" must
+ * not both end as a new branch of that name. A branch named in digits is the
+ * one this cannot reach; its pull request's URL does.
+ */
+export const worktreeTarget = (value) => (/^\d+$/.test(value) || /^https?:\/\//.test(value) ? { pr: value } : { branch: value });
+
+/**
+ * The directory `--worktree` makes a worktree in: under `base`
+ * (`~/.prcoder/worktrees`, or PRCODER_WORKTREES), in a directory for the
+ * repository -- its main working copy's name, and eight hex of a hash of that
+ * path, so two clones called the same do not share one -- and then a name for
+ * the worktree: the branch's, or `pr-<n>` for a fork's pull request. Whatever
+ * is not a letter, digit, dot, dash or underscore becomes a dash, so
+ * `feature/x` is one directory, `feature-x`. Two branches can come to the same
+ * name; the second is refused, since the directory is there (worktreeFor).
+ *
+ * Outside the repository on purpose. Inside it, a coding agent started in
+ * the worktree reads the instruction files of every directory above -- the
+ * main working copy's, on another branch -- and whatever walks the main
+ * working copy without reading .gitignore finds a second copy of the code.
+ */
+export function worktreeDir(base, main, name) {
+  const repo = `${path.basename(main)}-${createHash('sha1').update(main).digest('hex').slice(0, 8)}`;
+  return path.join(base, repo.replace(/[^\w.-]+/g, '-'), name.replace(/[^\w.-]+/g, '-').replace(/^[.-]+/, '') || 'worktree');
 }
 
 /**

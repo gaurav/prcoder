@@ -229,6 +229,14 @@ off with it.
   names, and what is read in each is prcoder's own running record, a pid and a port, which is then
   believed only if a prcoder answers on that port saying it runs in that directory. The page gets
   each one's path, branch and address; nothing it sends back reaches a path or an argv.
+- **A value from prcoder's own command line** came from whoever started it, and is still not
+  handed to git or gh to read as it likes. `--worktree` is the one that reaches git's argv. It is
+  refused in `parseCli` when it starts with a dash or holds a space, a branch is then held to `git
+  check-ref-format --branch` answering with the same name (so `@{-1}`, which that command turns
+  into another branch, is not one), and a pull request goes through `pullRequestFor`, which keeps
+  it to this clone's repositories, as the positional does. The directory a worktree is made in is
+  built from the branch's name with everything but letters, digits, dots, dashes and underscores
+  replaced, so no name climbs out of `PRCODER_WORKTREES` (`worktreeDir` in `cli.js`).
 - **A quit that removes a worktree** takes one of two words from the page, `remove` or `keep`, and
   anything else is refused. The directory `git worktree remove` is given is the server's own top
   level, and whether it is given `--force` is decided by the server from what is in that

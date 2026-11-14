@@ -14,6 +14,8 @@ prcoder 123                # check out PR 123 and start on it
 prcoder <pr-url>           # ...by its URL
 prcoder some-branch        # ...or its branch
 prcoder choose             # pick one of the repo's open PRs to check out and start on
+prcoder --worktree 123     # PR 123 in a git worktree of its own; this checkout stays put
+prcoder -w some-branch     # ...or a branch, made from the default branch if it is new
 prcoder -- --model opus    # ...with flags for the Claude session, after --
 prcoder --help             # prcoder's own flags
 ```
@@ -77,6 +79,12 @@ and onto `pr-<n>` when the local one is other work under the same name. `pr-<n>`
 knows which pull request it is. Before `--` a flag is prcoder's, and one it does not know is an error that says where it
 goes, rather than a guess at which of the two it was for. `prcoder --help` lists the flags.
 
+`--worktree` (`-w`) takes the place of that argument when the working copy you are in should stay
+as it is: because another prcoder is running in it, or because you are in the middle of something.
+It starts prcoder in a git worktree on the branch or pull request named, making the worktree if
+there is none, and this one is not touched. [docs/Worktrees.md](docs/Worktrees.md) has where the
+worktree goes, what a new branch is made from, and what happens to it when that prcoder quits.
+
 Most settings are a flag with an environment variable of the same meaning; the flag wins when both
 are given.
 
@@ -86,6 +94,8 @@ are given.
 | `--no-open` | `PRCODER_NO_OPEN` | Don't open a browser; just print the URL. |
 | `--no-history` | `PRCODER_NO_HISTORY` | Don't read the coding agent's prompt history: no History tab, no last-prompt notice. |
 | `--queue <file>` | `PRCODER_QUEUE` | Keep the queue in this file instead of `.prcoder/queue.json`; said at startup. |
+| `-w`, `--worktree <branch\|pr>` | | Start in a git worktree on this branch, or this pull request by number or URL, made if there is none ([docs/Worktrees.md](docs/Worktrees.md)). No variable: one left set would start every run in a worktree. |
+| | `PRCODER_WORKTREES` | The directory `--worktree` makes worktrees under, instead of `~/.prcoder/worktrees`. |
 | `-v`, `-vv` | `PRCODER_VERBOSE` | Start the log at verbose (`1`) or debug (`2`) rather than quiet. |
 | `--agent <name>` | | The coding agent; only `claude` today. |
 | | `PRCODER_BROWSER` | The browser to open the URL in, as a command, instead of the platform's opener; the URL is appended. |
@@ -101,6 +111,11 @@ of `*`), so nothing shows up in `git status`: `queue.json` is the queue, `port.j
 working copy's port, and `prs.json` remembers which pull requests each branch has, so a poll can
 ask GitHub about them directly instead of searching. It is a cache; deleting it costs a search.
 
+`prcoder --worktree` is the one command that writes outside it, and only what it was asked for: a
+git worktree under `~/.prcoder/worktrees` (or `PRCODER_WORKTREES`), and a branch when the one named
+is new. A quit in a worktree can remove the worktree, after saying what would go with it; it never
+deletes a branch ([docs/Worktrees.md](docs/Worktrees.md#quitting-in-a-worktree)).
+
 On GitHub, it writes only when you act on something that says it will: ticking a description
 checkbox flips that one line of the description, ticking a file marks it viewed, picking a milestone
 in the PR pane moves the pull request onto it, ◎ moves a queue item into a new issue, dragging an
@@ -108,7 +123,8 @@ issue onto a milestone or clicking Move in its opened row sets its milestone, an
 request pushes the branch and opens GitHub's compare page.
 
 The queue is one list per working copy, whatever branch is checked out, and it stays on this
-machine. `queue.json` is safe for something else to edit, but while prcoder is running the server
+machine. A git worktree is a working copy, so each has a queue of its own, which goes when the
+worktree is removed. `queue.json` is safe for something else to edit, but while prcoder is running the server
 is the better way in: `GET /api/queue`, then `PUT /api/queue` with `{items}`.
 Quitting prints what is still on Local, since nothing but this machine has it.
 [docs/Design.md](docs/Design.md#the-queue-is-yours) has the reasons for all of this.

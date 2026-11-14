@@ -5410,6 +5410,7 @@ test('a quit in a worktree asks whether to remove it, keep it, or not quit', { s
   await p.locator('#leave button', { hasText: 'Quit and keep it' }).click();
   await p.waitForSelector('#dead:modal');
   assert.deepEqual(asked.at(-1), { force: true, worktree: 'keep' });
+  assert.equal(await p.locator('#dead-worktree').isVisible(), false, 'kept: nothing to say about it');
   await p.close();
 
   const q = await newPage({ pty: (ws) => ws.close() });
@@ -5418,7 +5419,7 @@ test('a quit in a worktree asks whether to remove it, keep it, or not quit', { s
   await q.route('**/api/quit', (r) => {
     const body = r.request().postDataJSON();
     sent.push(body);
-    return r.fulfill({ json: body.force ? { quit: true } : { risk: [], worktree: { ...worktree, lose: [] } } });
+    return r.fulfill({ json: body.force ? { quit: true, removed: '/w/topic' } : { risk: [], worktree: { ...worktree, lose: [] } } });
   });
   await q.click('#term-quit');
   await q.waitForSelector('#leave:modal');
@@ -5427,6 +5428,9 @@ test('a quit in a worktree asks whether to remove it, keep it, or not quit', { s
   await q.locator('#leave button', { hasText: 'Quit and remove the worktree' }).click();
   await q.waitForSelector('#dead:modal');
   assert.deepEqual(sent, [{}, { force: true, worktree: 'remove' }]);
+  // The page that has just lost its server says what went with it.
+  assert.equal(await q.locator('#dead-worktree').textContent(), 'Its worktree, /w/topic, was removed with it. The branch and its commits are kept.');
+  assert.equal(await p.isClosed(), true);
   await q.close();
 });
 

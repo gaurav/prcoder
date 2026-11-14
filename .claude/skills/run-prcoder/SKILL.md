@@ -14,7 +14,9 @@ otherwise. **Never hand it a pull request here** -- `node server.js 87`,
 is started on, and this directory is the owner's working copy. To see
 another pull request, use `onPullRequest` in `tools/driver.mjs`, which
 answers a worktree under `data/` on its branch; start `server.js` from this
-tree with that as `cwd`, and no argument. Test against this repo's own PRs; another repo only when its owner
+tree with that as `cwd`, and no argument. `node server.js --worktree <n>` moves nothing here, but it is not
+the drivers' way: it leaves a worktree under `~/.prcoder/worktrees` (set `PRCODER_WORKTREES` to a
+directory under `data/` if you do try it), and a branch, behind it. Test against this repo's own PRs; another repo only when its owner
 has said so (CLAUDE.md).
 
 ## Launch

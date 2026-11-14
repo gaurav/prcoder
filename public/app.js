@@ -374,7 +374,14 @@ const dismissLastPrompt = () => dismissNotice('last-prompt');
 // being asked. A click on something left on the page after the box is closed
 // fails as any request to a server that is not there does, with a toast.
 let dead = false;
-function gone() {
+function gone(removed = null) {
+  // Before the guard: the socket's close can get here first, with nothing to
+  // say about a worktree, and the quit's own answer comes after it.
+  if (removed) {
+    const line = document.getElementById('dead-worktree');
+    line.textContent = `Its worktree, ${removed}, was removed with it. The branch and its commits are kept.`;
+    line.hidden = false;
+  }
   if (dead) return;
   dead = true;
   turn(false);
@@ -431,7 +438,7 @@ async function quitPrcoder() {
       if (!confirm(`Quit prcoder? ${r.risk.join('; ')}.`)) return;
       r = await api('/api/quit', { force: true });
     }
-    gone();
+    gone(r.removed);
   } catch (e) {
     toast(e.message, true);
   }

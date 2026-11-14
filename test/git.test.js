@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { notAWorkTree, parseWorktrees, worktrees, linkedWorktree, worktreeLoss, removeWorktree, syncState, compareUrl, githubUrl, originOwner, remoteRepo, remoteRepos, repoInfo, pushRepo, commitsKnown, commitMemo, wholePrRepo, checkoutPr, startOnPr, isHere, trackedPr, userDirt, remoteBranchHead, trackingHead, snapshot, localPatch, branchesBelow } from '../git.js';
+import { notAWorkTree, parseWorktrees, worktrees, linkedWorktree, worktreeLoss, removeWorktree, worktreeFor, worktreeForPr, syncState, compareUrl, githubUrl, originOwner, remoteRepo, remoteRepos, repoInfo, pushRepo, commitsKnown, commitMemo, wholePrRepo, checkoutPr, startOnPr, isHere, trackedPr, userDirt, remoteBranchHead, trackingHead, snapshot, localPatch, branchesBelow } from '../git.js';
 
 // git finds the repository through GIT_DIR and GIT_WORK_TREE before it looks
 // at cwd, and a git hook exports them. Under a hook, `npm test` ran every
@@ -225,6 +225,121 @@ test('removing a worktree deletes its ignored files without asking, and its bran
     await testGit(main, 'worktree', 'unlock', wt);
     await removeWorktree(common, wt, { force: true });
     assert.equal(await exists(wt), false);
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
+
+// `prcoder --worktree <branch>`: the working copy the branch is in already,
+// or a new worktree on it. A bare repo is origin, so nothing reaches the
+// network, and gh fails the test if it is asked anything.
+test('a worktree for a branch is the one it is checked out in, or a new one on it', { skip: unix }, async () => {
+  const dir = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'prcoder-wtfor-')));
+  const work = path.join(dir, 'work');
+  const hub = path.join(dir, 'hub.git');
+  const run = (...args) => testGit(work, ...args);
+  const out = async (cwd, ...args) => (await testGit(cwd, ...args)).stdout.trim();
+  const opts = { dirFor: (main, name) => path.join(dir, 'made', `${path.basename(main)}--${name.replace(/\W+/g, '-')}`), defaultBranch: 'main' };
+  const at = (name) => opts.dirFor(work, name);
+  try {
+    await git('git', ['init', '-q', '--bare', '-b', 'main', hub]);
+    await git('git', ['init', '-q', '-b', 'main', work]);
+    await run('commit', '-q', '--allow-empty', '-m', 'one');
+    await run('remote', 'add', 'origin', hub);
+    await run('push', '-q', 'origin', 'main', 'main:theirs');
+    await run('update-ref', '-d', 'refs/remotes/origin/theirs');
+    await run('branch', 'mine');
+    await withGh(() => 'exit 9', async () => {
+      // Already checked out, here in the main working copy: nothing is made.
+      assert.deepEqual(await worktreeFor(work, 'main', opts), { path: work, made: false, said: `main is already checked out in ${work}, so starting there` });
+      // A branch this clone has, as it is; and found there the second time, from either.
+      assert.deepEqual(await worktreeFor(work, 'mine', opts), { path: at('mine'), made: true, said: `made a worktree for mine in ${at('mine')}` });
+      assert.equal(await out(at('mine'), 'symbolic-ref', '--short', 'HEAD'), 'mine');
+      for (const cwd of [work, at('mine')]) assert.equal((await worktreeFor(cwd, 'mine', opts)).made, false);
+      // One only origin has, which this clone had not heard of: fetched, and tracked.
+      assert.deepEqual(await worktreeFor(work, 'theirs', opts),
+        { path: at('theirs'), made: true, said: `made a worktree for theirs in ${at('theirs')}, from origin's theirs` });
+      assert.equal(await out(at('theirs'), 'rev-parse', '--abbrev-ref', '@{upstream}'), 'origin/theirs');
+      // One nobody has: from origin's default branch as origin has it now --
+      // not from this working copy's commit, and not from a stale memory of
+      // origin's -- tracking nothing.
+      await run('push', '-q', 'origin', 'main');
+      const elsewhere = path.join(dir, 'elsewhere');
+      await git('git', ['clone', '-q', hub, elsewhere]);
+      await testGit(elsewhere, 'commit', '-q', '--allow-empty', '-m', 'two, pushed from elsewhere');
+      await testGit(elsewhere, 'push', '-q', 'origin', 'main');
+      const theirs = await out(elsewhere, 'rev-parse', 'HEAD');
+      await run('checkout', '-q', '-b', 'other-work');
+      await run('commit', '-q', '--allow-empty', '-m', 'not on main');
+      assert.deepEqual(await worktreeFor(work, 'feature/new', opts), { path: at('feature/new'), made: true,
+        said: `made a worktree in ${at('feature/new')} on feature/new, a new branch from origin's main` });
+      assert.equal(await out(at('feature/new'), 'rev-parse', 'HEAD'), theirs);
+      await assert.rejects(testGit(at('feature/new'), 'rev-parse', '--abbrev-ref', '@{upstream}'), /no upstream/);
+      // A tag of the same name does not take the branch's place (git 2.54, 2026-11-14).
+      await run('branch', 'v1', 'main');
+      await run('tag', 'v1', 'other-work');
+      await worktreeFor(work, 'v1', opts);
+      assert.equal(await out(at('v1'), 'symbolic-ref', 'HEAD'), 'refs/heads/v1');
+      // A directory already there is not taken over, whatever it is.
+      await fs.mkdir(at('blocked'), { recursive: true });
+      await assert.rejects(worktreeFor(work, 'blocked', opts), { message: `${at('blocked')} is in the way of a worktree for blocked: remove it, or move it aside` });
+      // One whose directory was deleted still holds its branch, and is not pruned from here.
+      await fs.rm(at('mine'), { recursive: true });
+      await assert.rejects(worktreeFor(work, 'mine', opts), /^Error: mine is checked out in a worktree whose directory is gone, .*`git worktree prune` forgets it/);
+      // Not a branch's name, or not the plain name of one.
+      for (const bad of ['@{-1}', 'a..b', 'with space', 'HEAD~1']) {
+        await assert.rejects(worktreeFor(work, bad, opts), { message: `${bad} is not a name a branch can have` });
+      }
+      // With origin out of reach, what this clone last saw of it, and said so.
+      await run('remote', 'set-url', 'origin', path.join(dir, 'nowhere.git'));
+      assert.match((await worktreeFor(work, 'offline', opts)).said, /a new branch from origin's main as last fetched$/);
+      assert.equal(await out(at('offline'), 'rev-parse', 'HEAD'), theirs);
+    });
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
+
+// `prcoder --worktree <pr>` up to the checkout, which is startOnPr's in the
+// directory this answers: the working copy already on the pull request, by
+// its branch's name or its config, or a worktree at its directory.
+test('a worktree for a pull request is the one on its branch, or one made at its directory', { skip: unix }, async () => {
+  const dir = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'prcoder-wtpr-')));
+  const work = path.join(dir, 'work');
+  const run = (...args) => testGit(work, ...args);
+  const opts = { dirFor: (main, name) => path.join(dir, 'made', name), repos: ['o/r'] };
+  const own = { url: 'https://github.com/o/r/pull/7', number: 7, headRefName: 'topic', isCrossRepository: false };
+  const fork = { url: 'https://github.com/o/r/pull/9', number: 9, headRefName: 'main', isCrossRepository: true };
+  try {
+    await git('git', ['init', '-q', '-b', 'main', work]);
+    await run('commit', '-q', '--allow-empty', '-m', 'x');
+    await run('remote', 'add', 'origin', 'https://github.com/o/r.git');
+    await withGh(() => 'exit 9', async () => {
+      // None yet: made at the branch's directory, on no branch, for the checkout to come.
+      const made = path.join(dir, 'made', 'topic');
+      assert.deepEqual(await worktreeForPr(work, own, opts), { path: made, made: true, said: `made a worktree for #7 in ${made}` });
+      await assert.rejects(testGit(made, 'symbolic-ref', 'HEAD'), /not a symbolic ref/);
+      // Found by its directory before the checkout has happened, and by its branch after.
+      assert.deepEqual(await worktreeForPr(work, own, opts), { path: made, made: false, said: `starting in the worktree at ${made}` });
+      await testGit(made, 'checkout', '-q', '-b', 'topic');
+      assert.deepEqual(await worktreeForPr(work, own, opts), { path: made, made: false, said: `#7 is already checked out in ${made}, so starting there` });
+      // One of this repository's on the branch the main working copy is on.
+      assert.equal((await worktreeForPr(work, { ...own, headRefName: 'main' }, opts)).path, work);
+      // A fork's is not found by its head's name -- the fork's main is not this
+      // main -- and gets pr-<n>; then by the config gh marks its checkout with.
+      const forks = path.join(dir, 'made', 'pr-9');
+      assert.deepEqual(await worktreeForPr(work, fork, opts), { path: forks, made: true, said: `made a worktree for #9 in ${forks}` });
+      await testGit(forks, 'checkout', '-q', '-b', 'someone/main');
+      await run('config', 'branch.someone/main.remote', 'origin');
+      await run('config', 'branch.someone/main.merge', 'refs/pull/9/head');
+      await fs.rename(forks, path.join(dir, 'moved'));
+      await testGit(work, 'worktree', 'repair', path.join(dir, 'moved'));
+      assert.deepEqual(await worktreeForPr(work, fork, opts),
+        { path: path.join(dir, 'moved'), made: false, said: `#9 is already checked out in ${path.join(dir, 'moved')}, so starting there` });
+      // Something else at the directory is left alone.
+      await fs.mkdir(path.join(dir, 'made', 'other'));
+      await assert.rejects(worktreeForPr(work, { ...own, number: 8, headRefName: 'other' }, opts), /is in the way of a worktree for #8/);
+    });
   } finally {
     await fs.rm(dir, { recursive: true, force: true });
   }
@@ -738,7 +853,7 @@ test('a start is on the pull request\'s branch, or refused over uncommitted work
       assert.deepEqual(await startOnPr(dir, { ...p, headRefName: 'main' }, { inUse }), { branch: 'main', said: null });
       assert.equal(asked, 0);
       await assert.rejects(startOnPr(dir, p, { inUse }), { message: '#76 is on topic, and another prcoder is running in' +
-        ' this directory; a checkout would move the working copy under its agent. Quit that one first, or run prcoder in a worktree on topic' });
+        ' this directory; a checkout would move the working copy under its agent. Quit that one first, or start in a worktree of its own: prcoder --worktree 76' });
       assert.equal(asked, 1);
     });
     assert.equal(await branch(), 'main');

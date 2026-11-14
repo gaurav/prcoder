@@ -117,7 +117,7 @@ where a button beside it does the writing, as a queue row's milestone and **Move
 Review comment threads (counts and a link only), syntax highlighting of a modified file's diff (a
 file the PR adds is highlighted, because a whole file is what a tokenizer can read from its first
 line and a hunk is not; [#68](https://github.com/gaurav/prcoder/issues/68) has the safe way for the
-rest), multi-session and worktree management, and a queue API made for an agent (#21 decides that). No auto-pull, and nothing
+rest), sessions kept alive out of view, and a queue API made for an agent (#21 decides that). No auto-pull, and nothing
 parses the terminal. The tab icon does read whether Claude is working, but from the *timing* of the
 PTY's output rather than its content — red while frames are arriving, green five seconds after they
 stop — and that is the whole of prcoder's idea of what the session is doing.
@@ -130,6 +130,20 @@ is skipped. It is still not reading the TUI: it is a question addressed to the t
 terminal answers by itself, and nothing Claude drew is looked at. Anything that *is* drawn stays
 off limits — which is why the third state, "stopped to ask you something", is issue #51 and not a
 match against the prompt box.
+
+**One prcoder is one working copy, and several working copies are several prcoders.** "Multi-session
+and worktree management" stood in the list above until 2026-11-14, and half of it still does: one
+process does not hold several sessions, switch between repositories, or keep an agent running
+that no tab is showing. What changed is that two branches at once is an ordinary thing to want,
+and the answer the docs already gave -- start prcoder in a git worktree -- was a recipe with no
+support behind it. So `--worktree` makes or finds the worktree and starts there, the pane lists
+the repository's working copies and where each one's prcoder is, and a quit in a worktree offers
+to remove it ([Worktrees.md](Worktrees.md)). Everything else stays as it was, because a prcoder
+started in a worktree was already a whole one: its directory decides its agent, its pane, its
+queue and its port. prcoder does not move a running session to another working copy, start one
+from the page, or remove any worktree but the one it is quitting in. `prcoder -- --worktree x` is
+not this: it hands the flag to the agent, which moves itself after prcoder has started, and the
+pane cannot follow it.
 
 **The description renderer is an allowlist and stays one.** It handles headings, fences, inline
 code, emphasis, strikethrough, links — including the two kinds that mean nothing without a
@@ -165,10 +179,16 @@ refused), and `choose` is the one subcommand. [#99](https://github.com/gaurav/pr
 fewer keystrokes, and a command word in front of the target clashes with a branch of that name, so
 the PR had to move behind a verb, which broke the CLI. `choose` settles the clash by taking the word
 from the branch: a branch called `choose` is still reachable by its pull request's number or URL.
-`prcoder queue` (#95) or `status` (#96) would have to do the same. `--port`, `--no-open`, `--no-history`, `--queue` and `-v`
+`prcoder queue` (#95) or `status` (#96) would have to do the same. `--worktree <branch|pr>` is a
+flag for that reason, where `prcoder worktree <branch>` was the first thought: its value is the
+target, so it takes the positional's place and is refused beside one. It tells a pull request
+from a branch by its shape -- digits or a URL -- and does not ask gh, as the positional does,
+because a branch with no pull request is a fine thing to start a worktree on, and "gh found none"
+must not read the same as "gh could not be asked". `--port`, `--no-open`, `--no-history`, `--queue` and `-v`
 each have an environment variable of the same meaning, which the flag overrides; `--agent` has none
-yet, and `PRCODER_BROWSER`, `PRCODER_TERMINAL`, `PRCODER_FILE_MANAGER` and `PRCODER_AGENT_BIN`
-have no flag.
+yet, `--worktree` has none on purpose, since one left set in a shell would start every prcoder
+in a worktree, and `PRCODER_BROWSER`, `PRCODER_TERMINAL`, `PRCODER_FILE_MANAGER`,
+`PRCODER_AGENT_BIN` and `PRCODER_WORKTREES` have no flag.
 The three opener variables each name the kind of program a key launches, and there is no generic
 `PRCODER_OPEN`: the platform's own opener (`open`, `start`, `xdg-open`) already is one, and the
 only reason to override it is to want a particular browser for URLs, or a particular file manager
@@ -222,4 +242,4 @@ count its commits -- so a pane on another branch's pull request invites work on 
 `prcoder <pr>` used to do exactly that: it pinned the pull request without a checkout, under a
 "Not checked out" note, even one in another repository. That was removed on purpose. To read a pull
 request without moving the working copy, open it on GitHub or in the PRs tab, or start
-prcoder in a worktree on its branch, as the drivers do (`onPullRequest` in `tools/driver.mjs`).
+prcoder in a worktree on it: `prcoder --worktree <pr>` ([Worktrees.md](Worktrees.md)).

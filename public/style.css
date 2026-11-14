@@ -1195,6 +1195,7 @@ li.issue-body select.milestone {
 #dead::backdrop { background: #000c; }
 #dead h2 { margin: 0; font-size: 18px; font-weight: 600; }
 #dead p { margin: 0; color: var(--dim); }
+#dead p + p { margin-top: 8px; overflow-wrap: anywhere; }
 #dead code { white-space: nowrap; }
 /* Closed, the box leaves the panes looking switched off but readable:
    opacity and a filter, not `inert`, so the terminal can still be selected. */

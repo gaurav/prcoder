@@ -6,6 +6,7 @@
 import { run, parsePrUrl, branchPrUrl } from './github.js';
 import { urlPath } from './public/tasks.js';
 import { debug } from './term.js';
+import { existsSync } from 'node:fs';
 
 // Shorter than run()'s default: git here is local but for push and ls-remote,
 // and run() is also what turns a credential prompt into an error.
@@ -675,6 +676,106 @@ export async function checkoutPr(cwd, url, opts = {}) {
 }
 
 /**
+ * A worktree that git lists and whose directory is gone: its branch is held
+ * until it is pruned, so neither a checkout nor a new worktree can have it.
+ * Never pruned from here: the directory may be on a disk that is not mounted.
+ */
+const gone = (w, what) => new Error(`${what} is checked out in a worktree whose directory is gone, ${w.path};` +
+  ' `git worktree prune` forgets it, and then this can make one');
+
+/** `dir` taken by something that is not the worktree asked for: left alone, and said. */
+const taken = (dir, what) => new Error(`${dir} is in the way of a worktree for ${what}: remove it, or move it aside`);
+
+/**
+ * The working copy for `prcoder --worktree <branch>`: the one `branch` is
+ * already checked out in, the main one included, or a new worktree on it at
+ * `dirFor(main, branch)` (worktreeDir in cli.js). Resolves `{ path, made,
+ * said }`: where it is, whether this made it, and the line to print.
+ *
+ * A branch this clone has is checked out as it is; one only origin has
+ * becomes a local branch tracking it, fetched first; one nobody has is made
+ * from origin's default branch, fetched first too, tracking nothing -- or
+ * from what this clone last saw of it when origin cannot be reached, which
+ * the line says. Not from HEAD: a second session is usually for other work,
+ * and a branch quietly built on whatever this working copy happened to be on
+ * is found out at the pull request. A stacked branch is made by hand first
+ * (`git branch child parent`), and then is one this clone has.
+ *
+ * The name is held to git's own rule, and to being a plain name: `@{-1}`
+ * passes `check-ref-format --branch` by turning into the branch it stands
+ * for, which is not the one written. A directory already at the path is not
+ * taken over, whatever it is.
+ */
+export async function worktreeFor(cwd, branch, { dirFor, defaultBranch }) {
+  if (await text(['check-ref-format', '--branch', branch], cwd).catch(() => null) !== branch) {
+    throw new Error(`${branch} is not a name a branch can have`);
+  }
+  const list = await worktrees(cwd);
+  const on = list.find((w) => w.branch === branch);
+  if (on?.prunable) throw gone(on, branch);
+  if (on) return { path: on.path, made: false, said: `${branch} is already checked out in ${on.path}, so starting there` };
+  const dir = dirFor(list[0].path, branch);
+  if (existsSync(dir)) throw taken(dir, branch);
+  const add = (args) => run('git', ['worktree', 'add', '-q', ...args], { cwd, timeout: 120_000 });
+  if (await hasCommit(`refs/heads/${branch}`, cwd)) {
+    await add([dir, branch]);
+    return { path: dir, made: true, said: `made a worktree for ${branch} in ${dir}` };
+  }
+  // origin's own answer where it can be had, and git's memory of it where
+  // origin cannot be asked (undefined). One origin has is fetched, and a fetch
+  // that then fails ends the run: the alternative is a new branch of a name
+  // that is already somebody's.
+  const fetch = (name) => git(['fetch', '-q', 'origin', `+refs/heads/${name}:refs/remotes/origin/${name}`], cwd);
+  const there = await remoteBranchHead(cwd, branch).catch(() => undefined);
+  if (there) await fetch(branch);
+  if (there || (there === undefined && await trackingHead(cwd, branch).catch(() => null))) {
+    await add(['--track', '-b', branch, dir, `refs/remotes/origin/${branch}`]);
+    return { path: dir, made: true, said: `made a worktree for ${branch} in ${dir}, from origin's ${branch}${there ? '' : ' as last fetched'}` };
+  }
+  const fresh = await fetch(defaultBranch).then(() => true, () => false);
+  const base = await hasCommit(`refs/remotes/origin/${defaultBranch}`, cwd) ? `refs/remotes/origin/${defaultBranch}`
+    : await hasCommit(`refs/heads/${defaultBranch}`, cwd) ? `refs/heads/${defaultBranch}` : 'HEAD';
+  const from = base === 'HEAD' ? 'the commit this working copy is on'
+    : `${base.startsWith('refs/remotes/') ? "origin's " : ''}${defaultBranch}${fresh || !base.startsWith('refs/remotes/') ? '' : ' as last fetched'}`;
+  await add(['--no-track', '-b', branch, dir, base]);
+  return { path: dir, made: true, said: `made a worktree in ${dir} on ${branch}, a new branch from ${from}` };
+}
+
+/**
+ * The working copy for `prcoder --worktree <pr>`: the one already on pull
+ * request `p`'s branch -- by the branch's name for one of this repository's,
+ * by its config for a fork's or a `pr-<n>` (branchOwns) -- or the worktree at
+ * its directory from an earlier run, or a new one there, on no branch yet.
+ * Resolves as worktreeFor does. The checkout is not made here: startOnPr
+ * makes it in the directory this answers, as it does for `prcoder <pr>`, with
+ * the same refusals and the same handling of a branch gone from GitHub.
+ *
+ * The directory is named for the branch when the pull request is this
+ * repository's, so `--worktree topic` and `--worktree 12` for the pull
+ * request on topic are one worktree; a fork's is `pr-<n>`, since what gh will
+ * call its local branch is gh's to decide. A new one starts detached at this
+ * working copy's commit, which is only where gh's checkout starts from.
+ *
+ * A worktree this makes is not removed when the checkout then fails. A
+ * second start may already be in it, waiting on the first's lock; and the
+ * next run finds it by its directory and tries again.
+ */
+export async function worktreeForPr(cwd, p, { dirFor, repos }) {
+  const list = await worktrees(cwd);
+  const what = `#${p.number}`;
+  for (const w of list) {
+    if (!w.branch || !branchOwns(p, w.branch, await trackedPr(cwd, w.branch, repos))) continue;
+    if (w.prunable) throw gone(w, `${what}'s branch, ${w.branch},`);
+    return { path: w.path, made: false, said: `${what} is already checked out in ${w.path}, so starting there` };
+  }
+  const dir = dirFor(list[0].path, p.isCrossRepository ? `pr-${p.number}` : p.headRefName);
+  if (list.some((w) => w.path === dir && !w.prunable)) return { path: dir, made: false, said: `starting in the worktree at ${dir}` };
+  if (existsSync(dir)) throw taken(dir, what);
+  await run('git', ['worktree', 'add', '-q', '--detach', dir], { cwd, timeout: 120_000 });
+  return { path: dir, made: true, said: `made a worktree for ${what} in ${dir}` };
+}
+
+/**
  * `dirty` files, as dirtyFiles lists them, on `branch`: `1 uncommitted file on
  * main`. The one wording of them, for `prcoder choose`'s line before its
  * question as for inTheWay. No branch is a detached HEAD, which currentBranch
@@ -735,7 +836,7 @@ export async function startOnPr(cwd, p, { inUse = async () => null } = {}) {
   const busy = await inUse();
   if (busy) {
     throw refusal(`#${p.number} is on ${p.headRefName}, and ${busy}; a checkout would move the working copy` +
-      ` under its agent. Quit that one first, or run prcoder in a worktree on ${p.headRefName}`);
+      ` under its agent. Quit that one first, or start in a worktree of its own: prcoder --worktree ${p.number}`);
   }
   const dirty = await dirtyFiles(cwd);
   if (dirty.length) throw refusal(inTheWay(p, dirty, branch));

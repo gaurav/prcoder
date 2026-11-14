@@ -68,6 +68,10 @@ taken over.
 Never hand `server.js` a pull request in this tree, `server.js 87` or
 `prcoder choose` answered with a number: prcoder checks out what it is
 started on, so that is a checkout of the owner's working copy.
+`server.js --worktree 87` does not move this tree, but a driver keeps to
+`onPullRequest`: it cleans up after itself, where `--worktree` leaves a
+worktree in the owner's `~/.prcoder/worktrees` unless `PRCODER_WORKTREES`
+points under `data/`, and a local branch either way.
 
 A worktree you *work* in -- a branch off `main` edited and tested there -- has
 no `node_modules`, and `npm test` in it fails a couple of hundred browser and
