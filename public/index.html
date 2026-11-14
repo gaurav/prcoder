@@ -192,6 +192,20 @@
     <table><tbody id="keys-list"></tbody></table>
     <p id="keys-note"></p>
   </dialog>
+  <!-- Quitting a prcoder that runs in a git worktree (askLeave() in app.js):
+       what the quit costs, what removing the worktree would delete, and the
+       three answers. Escape is Don't quit, and so is Enter as the box opens:
+       the focus starts on that button, not on the one that deletes. -->
+  <dialog id="leave" aria-labelledby="leave-title">
+    <h2 id="leave-title">Quit prcoder, and remove this worktree?</h2>
+    <p id="leave-risk"></p>
+    <p id="leave-lose"></p>
+    <form method="dialog">
+      <button value="remove" class="danger">Quit and remove the worktree</button>
+      <button value="keep" class="primary">Quit and keep it</button>
+      <button value="" autofocus>Don't quit</button>
+    </form>
+  </dialog>
   <!-- prcoder is no longer running (gone() in app.js). ✕ or Escape closes it,
        so the page behind can be read and copied from; the panes stay dimmed. -->
   <dialog id="dead" aria-labelledby="dead-title">
@@ -203,6 +217,8 @@
        again in this repository. The coding agent's session can be picked up
        there with <code>/resume</code>, or by starting prcoder with
        <code>-- --continue</code>.</p>
+    <!-- Filled when the quit took this prcoder's worktree with it (gone()). -->
+    <p id="dead-worktree" hidden></p>
   </dialog>
   <script type="module" src="/app.js"></script>
 </body>

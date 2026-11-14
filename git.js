@@ -6,6 +6,7 @@
 import { run, parsePrUrl, branchPrUrl } from './github.js';
 import { urlPath } from './public/tasks.js';
 import { debug } from './term.js';
+import { existsSync } from 'node:fs';
 
 // Shorter than run()'s default: git here is local but for push and ls-remote,
 // and run() is also what turns a credential prompt into an error.
@@ -107,6 +108,116 @@ export async function notAWorkTree(cwd) {
  * its own files. Where server.js keeps the running records (runningHere).
  */
 export const workTreeTop = (cwd) => text(['rev-parse', '--show-toplevel'], cwd);
+
+/**
+ * `git worktree list --porcelain -z` as `[{ path, branch, detached, bare,
+ * locked, prunable }]`: every working copy of the repository, the main one
+ * first, as git lists them. `branch` is the short name, or null on a detached
+ * HEAD and for a bare repository, which is listed first with no files of its
+ * own. `prunable` is one whose directory is gone and that `git worktree
+ * prune` would forget; its branch still counts as checked out until then.
+ *
+ * `-z` because a path may hold a newline: each line ends in NUL and each
+ * record in one more. A line git adds later is ignored.
+ */
+export function parseWorktrees(out) {
+  return out.split('\0\0').map((record) => record.split('\0').filter(Boolean)).map((lines) => {
+    const line = (key) => lines.find((l) => l === key || l.startsWith(`${key} `));
+    const value = (key) => line(key)?.slice(key.length + 1) || null;
+    const ref = value('branch');
+    return {
+      path: value('worktree'),
+      branch: ref?.startsWith('refs/heads/') ? ref.slice('refs/heads/'.length) : null,
+      detached: line('detached') !== undefined,
+      bare: line('bare') !== undefined,
+      locked: line('locked') !== undefined,
+      prunable: line('prunable') !== undefined,
+    };
+  }).filter((w) => w.path);
+}
+
+/** The repository's working copies (parseWorktrees), asked from any of them. */
+export const worktrees = async (cwd) => parseWorktrees(await git(['worktree', 'list', '--porcelain', '-z'], cwd));
+
+/**
+ * `{ path, main, common }` when `cwd` is in a linked worktree -- one made by
+ * `git worktree add` -- and null in a repository's main working copy. `path`
+ * is the worktree's top level and `main` the main working copy's, or null
+ * when the repository is bare and has none. `common` is the git directory
+ * every working copy shares, which is there either way: where a command about
+ * a worktree is run from once it must not be run inside it (removeWorktree).
+ *
+ * Told by the two directories git keeps: a linked worktree's own is
+ * `.git/worktrees/<name>` inside the one it shares with the rest. Not by
+ * `.git` being a file, which a submodule's is too.
+ */
+export async function linkedWorktree(cwd) {
+  const [own, common] = (await text(['rev-parse', '--path-format=absolute', '--git-dir', '--git-common-dir'], cwd)).split('\n');
+  if (own === common) return null;
+  const [first] = await worktrees(cwd);
+  return { path: await workTreeTop(cwd), main: first && !first.bare ? first.path : null, common };
+}
+
+/**
+ * What `git worktree remove` would delete from the working copy `cwd` is in
+ * that git does not have: `{ changed, untracked, ignored }`, the first two
+ * counts of files and the last the ignored paths as git names them, a
+ * directory once (`node_modules/`). Commits are not in it: a worktree's
+ * branch stays when the worktree goes.
+ *
+ * git refuses the removal over the first two unless forced, and says nothing
+ * at all about the third: with only ignored files in it a worktree is removed
+ * whole, exit 0 (git 2.54, 2026-11-14, and test/git.test.js). That is a
+ * `node_modules`, an `.env`, and prcoder's own `.prcoder/` with the queue in
+ * it, so the caller is told about each and decides; `.prcoder/` is left to
+ * the caller, which knows whether there is a queue in it.
+ *
+ * `--no-renames`, so a rename is a deletion and an addition, one record each:
+ * with `-z` a rename's old name is a record of its own with no status on it.
+ */
+export async function worktreeLoss(cwd) {
+  const out = await git(['status', '--porcelain', '-z', '--ignored', '--no-renames'], cwd);
+  const entries = out.split('\0').filter(Boolean).map((e) => ({ status: e.slice(0, 2), path: e.slice(3) }));
+  return {
+    changed: entries.filter((e) => e.status !== '??' && e.status !== '!!').length,
+    untracked: entries.filter((e) => e.status === '??').length,
+    ignored: entries.filter((e) => e.status === '!!' && e.path !== '.prcoder/').map((e) => e.path),
+  };
+}
+
+/**
+ * The commits on HEAD in `cwd` that removing its worktree would leave
+ * somewhere unexpected: `{ unpushed, orphaned }`.
+ *
+ * `unpushed` is how many are on its branch and on no remote. They stay,
+ * since the branch does, but they are on this machine alone, and a worktree
+ * that goes without a word takes with it the one place that showed them as
+ * work in progress. Nothing when the repository has no remote at all: there
+ * is nowhere they could have been pushed.
+ *
+ * `orphaned` is how many are on no branch, tag or remote, which only a
+ * detached HEAD can have: those do go with the worktree, as nothing else
+ * names them once its HEAD and reflog are deleted.
+ */
+export async function commitsOnlyHere(cwd) {
+  const count = async (...not) => Number(await text(['rev-list', '--count', 'HEAD', '--not', ...not], cwd));
+  if (!await currentBranch(cwd)) return { unpushed: 0, orphaned: await count('--branches', '--tags', '--remotes') };
+  return { unpushed: await text(['remote'], cwd) ? await count('--remotes') : 0, orphaned: 0 };
+}
+
+/**
+ * `git worktree remove` of the worktree at `where`, run in `from`: the
+ * shared git directory (linkedWorktree's `common`), since the worktree itself
+ * is about to go and a bare repository has no main working copy to stand in.
+ * `force` is git's `--force`, for one with changed or untracked files, which
+ * are deleted with it. A locked worktree is refused either way: it takes two
+ * `--force`, and whoever locked it meant something by that.
+ *
+ * The branch is not touched. Two minutes, as a checkout gets: a removal cut
+ * short leaves half a directory that git no longer lists.
+ */
+export const removeWorktree = (from, where, { force = false } = {}) =>
+  run('git', ['worktree', 'remove', ...(force ? ['--force'] : []), where], { cwd: from, timeout: 120_000 });
 
 /** Empty on a detached HEAD, which happens mid-rebase and mid-bisect. */
 export const currentBranch = (cwd) =>
@@ -573,7 +684,7 @@ export function wholePrRepo(url) {
 export async function checkoutPr(cwd, url, opts = {}) {
   wholePrRepo(url);
   // The branch before the checkout, when the caller has just read it
-  // (startOnPr); null is a detached HEAD, so only a missing key asks again.
+  // (startOnPr); '' is a detached HEAD, so only a missing key asks again.
   const before = 'before' in opts ? opts.before : await currentBranch(cwd);
   try {
     await run('gh', ['pr', 'checkout', url], { cwd, timeout: 120_000 });
@@ -585,12 +696,125 @@ export async function checkoutPr(cwd, url, opts = {}) {
 }
 
 /**
- * `dirty` files, as dirtyFiles lists them, on `branch` (null for a detached
- * HEAD): `1 uncommitted file on main`. The one wording of them, for
- * `prcoder choose`'s line before its question as for inTheWay.
+ * A worktree that git lists and whose directory is gone: its branch is held
+ * until it is pruned, so neither a checkout nor a new worktree can have it.
+ * Never pruned from here: the directory may be on a disk that is not mounted.
+ */
+const gone = (w, what) => new Error(`${what} is checked out in a worktree whose directory is gone, ${w.path};` +
+  ' `git worktree prune` forgets it, and then this can make one');
+
+/** `dir` taken by something that is not the worktree asked for: left alone, and said. */
+const taken = (dir, what) => new Error(`${dir} is in the way of a worktree for ${what}: remove it, or move it aside`);
+
+/**
+ * The working copy for `prcoder --worktree <branch>`: the one `branch` is
+ * already checked out in, the main one included, or a new worktree on it at
+ * `dirFor(main, branch)` (worktreeDir in cli.js). Resolves `{ path, made,
+ * said }`: where it is, whether this made it, and the line to print.
+ *
+ * A branch this clone has is checked out as it is; one only origin has
+ * becomes a local branch tracking it, fetched first; one nobody has is made
+ * from origin's default branch, fetched first too, tracking nothing -- or
+ * from what this clone last saw of it when origin cannot be reached, which
+ * the line says. Not from HEAD: a second session is usually for other work,
+ * and a branch quietly built on whatever this working copy happened to be on
+ * is found out at the pull request. A stacked branch is made by hand first
+ * (`git branch child parent`), and then is one this clone has.
+ *
+ * The name is held to git's own rule, and to being a plain name: `@{-1}`
+ * passes `check-ref-format --branch` by turning into the branch it stands
+ * for, which is not the one written. A directory already at the path is not
+ * taken over, whatever it is.
+ */
+export async function worktreeFor(cwd, branch, { dirFor, defaultBranch }) {
+  if (await text(['check-ref-format', '--branch', branch], cwd).catch(() => null) !== branch) {
+    throw new Error(`${branch} is not a name a branch can have`);
+  }
+  const list = await worktrees(cwd);
+  const on = list.find((w) => w.branch === branch);
+  if (on?.prunable) throw gone(on, branch);
+  if (on) return { path: on.path, made: false, said: `${branch} is already checked out in ${on.path}, so starting there` };
+  const dir = dirFor(list[0].path, branch);
+  if (existsSync(dir)) throw taken(dir, branch);
+  const add = (args) => run('git', ['worktree', 'add', '-q', ...args], { cwd, timeout: 120_000 });
+  if (await hasCommit(`refs/heads/${branch}`, cwd)) {
+    await add([dir, branch]);
+    return { path: dir, made: true, said: `made a worktree for ${branch} in ${dir}` };
+  }
+  // origin's own answer where it can be had, and git's memory of it where
+  // origin cannot be asked (undefined). One origin has is fetched, and a fetch
+  // that then fails ends the run: the alternative is a new branch of a name
+  // that is already somebody's.
+  const fetch = (name) => git(['fetch', '-q', 'origin', `+refs/heads/${name}:refs/remotes/origin/${name}`], cwd);
+  const there = await remoteBranchHead(cwd, branch).catch(() => undefined);
+  if (there) await fetch(branch);
+  if (there || (there === undefined && await trackingHead(cwd, branch).catch(() => null))) {
+    await add(['--track', '-b', branch, dir, `refs/remotes/origin/${branch}`]);
+    return { path: dir, made: true, said: `made a worktree for ${branch} in ${dir}, from origin's ${branch}${there ? '' : ' as last fetched'}` };
+  }
+  const fresh = await fetch(defaultBranch).then(() => true, () => false);
+  const base = await hasCommit(`refs/remotes/origin/${defaultBranch}`, cwd) ? `refs/remotes/origin/${defaultBranch}`
+    : await hasCommit(`refs/heads/${defaultBranch}`, cwd) ? `refs/heads/${defaultBranch}` : 'HEAD';
+  const from = base === 'HEAD' ? 'the commit this working copy is on'
+    : `${base.startsWith('refs/remotes/') ? "origin's " : ''}${defaultBranch}${fresh || !base.startsWith('refs/remotes/') ? '' : ' as last fetched'}`;
+  await add(['--no-track', '-b', branch, dir, base]);
+  return { path: dir, made: true, said: `made a worktree in ${dir} on ${branch}, a new branch from ${from}` };
+}
+
+/**
+ * Which of the repository's working copies (`list`, as worktrees answers)
+ * is on pull request `p`'s branch, or undefined: by the branch's name for one
+ * of this repository's, by its config for a fork's or a `pr-<n>` (branchOwns).
+ * No gh, so a fork's checked out by something that left no mark is missed.
+ */
+async function worktreeOn(cwd, p, list, repos) {
+  for (const w of list) {
+    if (w.branch && branchOwns(p, w.branch, await trackedPr(cwd, w.branch, repos))) return w;
+  }
+  return undefined;
+}
+
+/**
+ * The working copy for `prcoder --worktree <pr>`: the one already on pull
+ * request `p`'s branch -- by the branch's name for one of this repository's,
+ * by its config for a fork's or a `pr-<n>` (branchOwns) -- or the worktree at
+ * its directory from an earlier run, or a new one there, on no branch yet.
+ * Resolves as worktreeFor does. The checkout is not made here: startOnPr
+ * makes it in the directory this answers, as it does for `prcoder <pr>`, with
+ * the same refusals and the same handling of a branch gone from GitHub.
+ *
+ * The directory is named for the branch when the pull request is this
+ * repository's, so `--worktree topic` and `--worktree 12` for the pull
+ * request on topic are one worktree; a fork's is `pr-<n>`, since what gh will
+ * call its local branch is gh's to decide. A new one starts detached at this
+ * working copy's commit, which is only where gh's checkout starts from.
+ *
+ * A worktree this makes is not removed when the checkout then fails. A
+ * second start may already be in it, waiting on the first's lock; and the
+ * next run finds it by its directory and tries again.
+ */
+export async function worktreeForPr(cwd, p, { dirFor, repos }) {
+  const list = await worktrees(cwd);
+  const what = `#${p.number}`;
+  const on = await worktreeOn(cwd, p, list, repos);
+  if (on?.prunable) throw gone(on, `${what}'s branch, ${on.branch},`);
+  if (on) return { path: on.path, made: false, said: `${what} is already checked out in ${on.path}, so starting there` };
+  const dir = dirFor(list[0].path, p.isCrossRepository ? `pr-${p.number}` : p.headRefName);
+  if (list.some((w) => w.path === dir && !w.prunable)) return { path: dir, made: false, said: `starting in the worktree at ${dir}` };
+  if (existsSync(dir)) throw taken(dir, what);
+  await run('git', ['worktree', 'add', '-q', '--detach', dir], { cwd, timeout: 120_000 });
+  return { path: dir, made: true, said: `made a worktree for ${what} in ${dir}` };
+}
+
+/**
+ * `dirty` files, as dirtyFiles lists them, on `branch`: `1 uncommitted file on
+ * main`. The one wording of them, for `prcoder choose`'s line before its
+ * question as for inTheWay. No branch is a detached HEAD, which currentBranch
+ * answers as '' and not null: with `??` the line ended at "on ", and a
+ * worktree made for a pull request starts detached.
  */
 export function uncommitted(dirty, branch) {
-  return `${dirty.length} uncommitted file${dirty.length > 1 ? 's' : ''} on ${branch ?? 'a detached HEAD'}`;
+  return `${dirty.length} uncommitted file${dirty.length > 1 ? 's' : ''} on ${branch || 'a detached HEAD'}`;
 }
 
 /**
@@ -627,9 +851,10 @@ const refusal = (message) => Object.assign(new Error(message), { refused: true }
  *
  * The branch is read here, never taken from the caller: it is what
  * checkoutPr's "did gh switch?" compares against, and one read before
- * `prcoder choose`'s question could be minutes old. The two refusals, which
- * change nothing, are thrown marked `refused` (refusal), and `prcoder
- * choose` asks again after one: it calls this for each pick rather than
+ * `prcoder choose`'s question could be minutes old. The refusals that
+ * change nothing -- the branch is in another working copy, another prcoder
+ * runs in this one, or there is uncommitted work -- are thrown marked
+ * `refused` (refusal), and `prcoder choose` asks again after one: it calls this for each pick rather than
  * repeating these checks, so it cannot ask again over one and end the run
  * over the other. `inUse` is asked only
  * when there is a checkout to make, and answers with why this working copy is
@@ -640,10 +865,22 @@ const refusal = (message) => Object.assign(new Error(message), { refused: true }
 export async function startOnPr(cwd, p, { inUse = async () => null } = {}) {
   const branch = await currentBranch(cwd);
   if (await isHere(cwd, p, branch)) return { branch, said: null };
+  // Its branch in another working copy: git checks a branch out once, and
+  // would say so in its own words after gh had fetched -- or, for a branch
+  // gone from GitHub, after two failures stacked. With a prcoder to a
+  // worktree that is the usual reason a Switch cannot happen, so it is said
+  // first, with where the branch is and the start that goes there. Not this
+  // working copy's own: isHere has just answered for that.
+  const held = await worktreeOn(cwd, p, await worktrees(cwd).catch(() => []));
+  if (held) {
+    throw refusal(`#${p.number} is on ${held.branch}, which is checked out in another working copy, ${held.path}` +
+      (held.prunable ? ', whose directory is gone: `git worktree prune` forgets it, and then it can be checked out here'
+        : `; git checks a branch out in one place at a time. To work on it there: prcoder --worktree ${p.number}`));
+  }
   const busy = await inUse();
   if (busy) {
     throw refusal(`#${p.number} is on ${p.headRefName}, and ${busy}; a checkout would move the working copy` +
-      ` under its agent. Quit that one first, or run prcoder in a worktree on ${p.headRefName}`);
+      ` under its agent. Quit that one first, or start in a worktree of its own: prcoder --worktree ${p.number}`);
   }
   const dirty = await dirtyFiles(cwd);
   if (dirty.length) throw refusal(inTheWay(p, dirty, branch));

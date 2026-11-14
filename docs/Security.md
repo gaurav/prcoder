@@ -224,7 +224,23 @@ off with it.
   before answering, holds what it reads to a shape, and has a switch that turns it off; and the
   drivers point it at a fixture (`claudeConfig` in `tools/driver.mjs`), so no screenshot carries
   the owner's real files. `/api/history` is the one there is, and the section above is its
-  argument.
+  argument. `/api/worktrees` reads outside this working copy but not outside the repository: the
+  directories are the ones git lists as this repository's working copies, never one the page
+  names, and what is read in each is prcoder's own running record, a pid and a port, which is then
+  believed only if a prcoder answers on that port saying it runs in that directory. The page gets
+  each one's path, branch and address; nothing it sends back reaches a path or an argv.
+- **A value from prcoder's own command line** came from whoever started it, and is still not
+  handed to git or gh to read as it likes. `--worktree` is the one that reaches git's argv. It is
+  refused in `parseCli` when it starts with a dash or holds a space, a branch is then held to `git
+  check-ref-format --branch` answering with the same name (so `@{-1}`, which that command turns
+  into another branch, is not one), and a pull request goes through `pullRequestFor`, which keeps
+  it to this clone's repositories, as the positional does. The directory a worktree is made in is
+  built from the branch's name with everything but letters, digits, dots, dashes and underscores
+  replaced, so no name climbs out of `PRCODER_WORKTREES` (`worktreeDir` in `cli.js`).
+- **A quit that removes a worktree** takes one of two words from the page, `remove` or `keep`, and
+  anything else is refused. The directory `git worktree remove` is given is the server's own top
+  level, and whether it is given `--force` is decided by the server from what is in that
+  directory, so the page can choose that this prcoder's worktree goes and nothing else about it.
 - **A new kind of asset** — a font, an image, a worker, anything loaded rather than inlined — has to
   be allowed by the CSP beside `serveFile`, which is otherwise silent about what it blocks. The
   Prism grammars under `/vendor/prism/` are same-origin script, which `script-src 'self'` already

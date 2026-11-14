@@ -17,7 +17,7 @@
 
 import { execSync } from 'node:child_process';
 import { setTimeout as wait } from 'node:timers/promises';
-import { existsSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node-pty';
@@ -46,13 +46,13 @@ const port = Number(process.env.PRCODER_PORT) || 17455;
 // then report that stranger's status block as its own.
 await free(port);   // before `first` only: `second` is meant to find it taken
 
-function start(label) {
-  const p = spawn('node', ['server.js'], {
+function start(label, cwd = repo, on = port) {
+  const p = spawn('node', [path.join(repo, 'server.js')], {
     name: 'xterm-256color',
     cols: 100,
     rows: 30,
-    cwd: repo,
-    env: { ...process.env, PRCODER_PORT: String(port), PRCODER_NO_OPEN: '1', PRCODER_AGENT_BIN: '/bin/cat',
+    cwd,
+    env: { ...process.env, PRCODER_PORT: String(on), PRCODER_NO_OPEN: '1', PRCODER_AGENT_BIN: '/bin/cat',
       PRCODER_TERMINAL: recorder('terminal'), PRCODER_FILE_MANAGER: recorder('folder'), PRCODER_BROWSER: recorder('browser') },
   });
   // See the note in browser.mjs: a throw past this point would otherwise leave
@@ -149,4 +149,45 @@ await wait(1500);
 console.log('stubs left: ', execSync('pgrep -f "^/bin/cat$" | wc -l').toString().trim());
 ws.close();
 first.kill();
+
+// A quit in a git worktree has a third answer, and one of the three deletes a
+// directory. In a throwaway repository under data/, not a worktree of this
+// one: the answers are k, which must leave it, and r, which must take it and
+// leave its branch. An untracked file is in it, so the question has something
+// to name and r has to pass --force. gh has no repository to find there, so
+// the block is empty and a `status:` error is in the log; neither is the point.
+const scratch = path.join(repo, 'data', 'cli-worktree');
+const wt = path.join(scratch, 'topic');
+rmSync(scratch, { recursive: true, force: true });
+mkdirSync(path.join(scratch, 'main'), { recursive: true });
+// Without git's own variables: under a hook they aim git at the clone the
+// hook ran in (test/CLAUDE.md).
+const gitEnv = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith('GIT_')));
+const git = (args) => execSync(`git -c user.name=cli -c user.email=cli@prcoder.invalid -c commit.gpgsign=false ${args}`,
+  { cwd: path.join(scratch, 'main'), env: gitEnv }).toString().trim();
+git('init -q -b main');
+git('commit -q --allow-empty -m x');
+git('worktree add -q -b topic ../topic');
+writeFileSync(path.join(wt, 'notes.txt'), 'not committed\n');
+await free(port + 1);
+for (const [answer, want] of [['n', 'still running'], ['k', 'kept'], ['r', 'removed']]) {
+  const there = start(`worktree, ${answer}`, wt, port + 1);
+  let gone = false;
+  there.onExit(() => { gone = true; });
+  await wait(6000);
+  there.buf = '';
+  there.write('\x03');
+  await wait(2000);
+  // The keys are first on the line, so a narrow terminal clips the list after them.
+  console.log(`worktree quit (${answer}):`, there.line('[r]emove') ?? 'NO question');
+  there.buf = '';
+  there.write(answer);
+  await wait(3000);
+  console.log('  after:    ', gone ? 'exited' : 'still running', '|', existsSync(wt) ? 'worktree kept' : 'worktree removed',
+    '|', there.line('removed the worktree') ?? there.line('not removed') ?? 'nothing said about it', `(want ${want})`);
+  there.kill();
+  await wait(300);
+}
+console.log('  branch:   ', git('branch --list topic') || 'GONE', '(want topic, kept after the removal)');
+rmSync(scratch, { recursive: true, force: true });
 process.exit(0);

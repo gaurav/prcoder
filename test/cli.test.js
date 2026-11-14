@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { execSync } from 'node:child_process';
-import { openRepoArgs, OPEN_REPO_VARS, REPO_ENV, parseCli, usage, AGENTS, VERSION, portFor, portCandidates, PORT_BASE, PORT_SPAN, statusLines, ago, queueSummary, quitRisks, ownerColour, OWNER_COLOURS } from '../cli.js';
+import { openRepoArgs, OPEN_REPO_VARS, REPO_ENV, parseCli, usage, AGENTS, VERSION, portFor, portCandidates, PORT_BASE, PORT_SPAN, statusLines, ago, queueSummary, quitRisks, worktreeLosses, leaveQuestion, worktreeTarget, worktreeDir, agentWorktree, ownerColour, OWNER_COLOURS } from '../cli.js';
 import { queueChanges } from '../queue.js';
 import { plain } from '../term.js';
 
@@ -34,6 +34,52 @@ test('prcoder choose is a subcommand, not a pull request target', () => {
   assert.deepEqual(c.agentArgs, ['--effort', 'high']);
   assert.throws(() => parseCli(['choose', '42']), /unexpected argument 42/);
   assert.ok(usage().includes('choose'));
+});
+
+// --worktree says what to start on, in place of the positional: a pull
+// request by number or URL, or a branch by name, with or without one. Its
+// value reaches git and gh, so nothing that could be a flag of theirs is one.
+test('--worktree takes a branch or a pull request, and stands in for the positional', () => {
+  assert.equal(parseCli([]).worktree, undefined);
+  assert.deepEqual(parseCli(['--worktree', 'feature/x']).worktree, { branch: 'feature/x' });
+  assert.deepEqual(parseCli(['-w', '12', '--', '--model', 'opus']).worktree, { pr: '12' });
+  assert.deepEqual(parseCli(['--worktree=https://github.com/o/r/pull/3']).worktree, { pr: 'https://github.com/o/r/pull/3' });
+  assert.deepEqual(worktreeTarget('12a'), { branch: '12a' });
+  assert.equal(parseCli(['-w', 'topic']).target, undefined);
+  assert.throws(() => parseCli(['--worktree', 'topic', '7']), /--worktree topic already says what to start on; 7 is one too many/);
+  assert.throws(() => parseCli(['choose', '--worktree', 'topic']), /already says what to start on; choose is one too many/);
+  for (const bad of [['--worktree='], ['--worktree=--force'], ['--worktree', '--no-open'], ['-w', '-x'], ['-w', 'a b']]) {
+    assert.throws(() => parseCli(bad), { message: "--worktree wants a branch, or a pull request's number or URL" }, bad.join(' '));
+  }
+  // After --, it is the agent's own flag, and not this one.
+  assert.equal(parseCli(['--', '--worktree', 'abc']).worktree, undefined);
+});
+
+// The mistake --worktree exists because of: the flag after --, where it is
+// the agent's and the pane cannot follow. Said at startup; still passed on.
+test('--worktree among the agent\'s arguments is passed on, and said to be the agent\'s', () => {
+  for (const args of [['--worktree', 'abc'], ['-w', 'abc'], ['--model', 'opus', '--worktree=abc']]) {
+    assert.deepEqual(parseCli(['--', ...args]).agentArgs, args);
+    assert.match(agentWorktree(args), /^--worktree after -- goes to the coding agent.*prcoder --worktree <branch\|pr>$/);
+  }
+  for (const args of [[], ['--model', 'opus'], ['--continue'], ['-p', 'what is a worktree']]) assert.equal(agentWorktree(args), null);
+});
+
+// Where a worktree is made: outside the repository, in a directory of the
+// repository's own, by a name that is one path segment whatever the branch.
+test('a worktree\'s directory is the repository\'s, then the branch\'s name as one segment', () => {
+  const at = (main, name) => worktreeDir('/home/me/.prcoder/worktrees', main, name);
+  assert.match(at('/src/my repo', 'topic'), /^\/home\/me\/\.prcoder\/worktrees\/my-repo-[0-9a-f]{8}\/topic$/);
+  assert.match(at('/src/r', 'feature/x y'), /\/r-[0-9a-f]{8}\/feature-x-y$/);
+  // Two clones of one name do not share a directory.
+  assert.notEqual(at('/a/r', 'topic'), at('/b/r', 'topic'));
+  assert.equal(at('/a/r', 'topic'), at('/a/r', 'topic'));
+  // Nothing in a name climbs out of it, hides it, or leaves it empty.
+  for (const name of ['..', '../../etc', '.hidden', '-x', '/']) {
+    const dir = at('/a/r', name);
+    assert.equal(dir.split('/').length, at('/a/r', 'topic').split('/').length, name);
+    assert.match(dir.split('/').at(-1), /^[\w][\w.-]*$/, name);
+  }
 });
 
 test('flag values are never read as a PR target', () => {
@@ -78,7 +124,7 @@ test('bad input is an error that names the problem', () => {
 test('the help names every flag, env var and agent', () => {
   const text = usage();
   for (const s of ['--port', '--no-open', '--no-history', '--verbose', '--agent', '--help', '--version', '-- ',
-    '--queue', 'PRCODER_QUEUE', 'PRCODER_PORT', 'PRCODER_NO_OPEN', 'PRCODER_NO_HISTORY', 'PRCODER_VERBOSE', 'PRCODER_BROWSER', 'PRCODER_AGENT_BIN', ...AGENTS,
+    '--queue', 'PRCODER_QUEUE', '--worktree', 'PRCODER_WORKTREES', 'PRCODER_PORT', 'PRCODER_NO_OPEN', 'PRCODER_NO_HISTORY', 'PRCODER_VERBOSE', 'PRCODER_BROWSER', 'PRCODER_AGENT_BIN', ...AGENTS,
     ...Object.values(OPEN_REPO_VARS)]) {
     assert.ok(text.includes(s), `help mentions ${s}`);
   }
@@ -336,44 +382,242 @@ test('prcoder refuses to start outside a git checkout', async () => {
 // the tabs as it goes: the browser suite fakes the socket, so these are the one
 // place the server's half is checked. `run` gets the server and its `host:port`
 // once it answers, and this returns what `run` returned and the exit code.
-async function withServer(run, { agent = '/bin/cat' } = {}) {
-  const { spawn } = await import('node:child_process');
-  const { once } = await import('node:events');
+async function withServer(run, opts) {
   const fs = await import('node:fs/promises');
-  const net = await import('node:net');
   const os = await import('node:os');
   const path = await import('node:path');
-  const { fileURLToPath } = await import('node:url');
-  // Without git's own variables, as above: under a hook, `git init` would
-  // land in whatever GIT_DIR names (test/CLAUDE.md).
-  const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith('GIT_')));
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'prcoder-quit-'));
-  execSync('git init -q', { cwd: dir, env });
+  execSync('git init -q', { cwd: dir, env: gitless() });
+  let started;
+  try {
+    started = await serve(dir, opts);
+    const result = await run(started.server, started.base, dir);
+    return { result, code: (await started.exited)[0] };
+  } finally {
+    started?.server.kill();
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+}
+
+// Without git's own variables, as above: under a hook, `git init` would land
+// in whatever GIT_DIR names (test/CLAUDE.md).
+const gitless = () => Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith('GIT_')));
+
+/**
+ * A server started in `cwd`, on a port that was free a moment ago, once it
+ * answers: `{ server, base, exited }`. withServer's, and on its own for a test
+ * that needs a second one, in another working copy of the same repository.
+ */
+async function serve(cwd, { agent = '/bin/cat', args = [], env = {} } = {}) {
+  const { spawn } = await import('node:child_process');
+  const { once } = await import('node:events');
+  const net = await import('node:net');
+  const { fileURLToPath } = await import('node:url');
   const probe = net.createServer().listen(0, '127.0.0.1');
   await once(probe, 'listening');
   const { port } = probe.address();
   await new Promise((r) => probe.close(r));
-  const server = spawn('node', [fileURLToPath(new URL('../server.js', import.meta.url)), '--no-open'],
-    { cwd: dir, env: { ...env, PRCODER_PORT: String(port), PRCODER_AGENT_BIN: agent }, stdio: 'ignore' });
+  const server = spawn('node', [fileURLToPath(new URL('../server.js', import.meta.url)), '--no-open', ...args],
+    { cwd, env: { ...gitless(), PRCODER_PORT: String(port), PRCODER_AGENT_BIN: agent, ...env }, stdio: 'ignore' });
   const exited = once(server, 'exit');
-  try {
-    const base = `localhost:${port}`;
-    let up = false;
-    for (let i = 0; i < 50 && !up; i++) {
-      up = await fetch(`http://${base}/api/whoami`).then((r) => r.json()).then((w) => w?.prcoder === true, () => false);
-      if (!up) await new Promise((r) => setTimeout(r, 100));
+  const base = `localhost:${port}`;
+  let up = false;
+  for (let i = 0; i < 50 && !up; i++) {
+    up = await fetch(`http://${base}/api/whoami`).then((r) => r.json()).then((w) => w?.prcoder === true, () => false);
+    if (!up) await new Promise((r) => setTimeout(r, 100));
+  }
+  // A pinned port that is taken falls back to any free one (bind() in
+  // server.js), and a slow start outlasts the loop. Either way this says so,
+  // rather than leaving it to an opaque WebSocket error further on.
+  if (!up) server.kill();
+  assert.ok(up, `no prcoder answered on port ${port} within 5s: taken since the probe, or a slow start`);
+  return { server, base, exited };
+}
+
+// The pane's worktree line, from the server's side: each working copy of a
+// repository lists them all, says which one it is in, and finds the prcoder
+// running in another by that one's own running record. Two real servers, one
+// in the main working copy and one in a worktree of it.
+test('each working copy lists the others, and where the prcoder in each is', async () => {
+  const fs = await import('node:fs/promises');
+  const path = await import('node:path');
+  const { result } = await withServer(async (server, base, dir) => {
+    const git = (args) => execSync(`git -c user.name=t -c user.email=t@prcoder.invalid -c commit.gpgsign=false ${args}`,
+      { cwd: dir, env: gitless(), encoding: 'utf8' }).trim();
+    git('commit -q --allow-empty -m x');
+    const main = git('symbolic-ref --short HEAD');
+    git('worktree add -q -b topic wt');
+    const list = (at) => fetch(`http://${at}/api/worktrees`).then((r) => r.json());
+    const alone = await list(base);
+    const other = await serve(path.join(dir, 'wt'));
+    try {
+      return { alone, fromMain: await list(base), fromWorktree: await list(other.base), main, here: base, other: other.base, top: await fs.realpath(dir) };
+    } finally {
+      other.server.kill();
+      await other.exited;
+      server.kill();
     }
-    // A pinned port that is taken falls back to any free one (bind() in
-    // server.js), and a slow start outlasts the loop. Either way this says so,
-    // rather than leaving it to an opaque WebSocket error further on.
-    assert.ok(up, `no prcoder answered on port ${port} within 5s: taken since the probe, or a slow start`);
-    const result = await run(server, base, dir);
-    return { result, code: (await exited)[0] };
+  });
+  const { top, main } = result;
+  const row = { prunable: false, url: null };
+  const rows = [
+    { ...row, path: top, name: path.basename(top), branch: main, main: true, here: true },
+    { ...row, path: path.join(top, 'wt'), name: 'wt', branch: 'topic', main: false, here: false },
+  ];
+  assert.deepEqual(result.alone, rows, 'no prcoder in the worktree yet');
+  assert.deepEqual(result.fromMain, [rows[0], { ...rows[1], url: `http://${result.other}` }]);
+  assert.deepEqual(result.fromWorktree, [{ ...rows[0], here: false, url: `http://${result.here}` }, { ...rows[1], here: true }]);
+});
+
+// A quit in a worktree, against real servers and real git: the question
+// carries what removing the worktree would delete, the forced request says
+// remove or keep in one of two words, and a removal leaves the branch. The
+// main working copy is asked nothing about worktrees and cannot be removed.
+test('a quit in a worktree removes it or keeps it as told, and never the main working copy', async () => {
+  const fs = await import('node:fs/promises');
+  const os = await import('node:os');
+  const path = await import('node:path');
+  const dir = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'prcoder-leave-')));
+  const main = path.join(dir, 'main');
+  const git = (args, cwd = main) => execSync(`git -c user.name=t -c user.email=t@prcoder.invalid -c commit.gpgsign=false ${args}`,
+    { cwd, env: gitless(), encoding: 'utf8' }).trim();
+  const exists = (p) => fs.access(p).then(() => true, () => false);
+  const quit = (base, body) => fetch(`http://${base}/api/quit`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+    .then((r) => r.json());
+  try {
+    await fs.mkdir(main);
+    git('init -q');
+    await fs.writeFile(path.join(main, '.gitignore'), 'node_modules\n');
+    git('add .gitignore');
+    git('commit -q -m x');
+    for (const answer of ['keep', 'remove']) {
+      const wt = path.join(dir, answer);
+      git(`worktree add -q -b topic-${answer} ${answer === 'keep' ? '../keep' : '../remove'}`);
+      // With a file in it: git lists no directory that is empty.
+      await fs.mkdir(path.join(wt, 'node_modules'));
+      await fs.writeFile(path.join(wt, 'node_modules', 'x.js'), '');
+      await fs.writeFile(path.join(wt, 'notes.txt'), 'not committed\n');
+      const s = await serve(wt, { agent: '/usr/bin/false' });
+      try {
+        assert.deepEqual(await quit(s.base, {}),
+          { risk: [], worktree: { name: answer, path: wt, lose: ['1 untracked file', 'ignored node_modules/'], unpushed: 0 } });
+        assert.deepEqual(await quit(s.base, { force: true, worktree: 'sideways' }), { error: 'worktree: remove or keep' });
+        // One somebody locked is not offered, and not removed when asked.
+        git(`worktree lock ../${answer}`);
+        assert.deepEqual(await quit(s.base, { force: true, worktree: 'remove' }), { error: 'this working copy is not a worktree prcoder can remove' });
+        git(`worktree unlock ../${answer}`);
+        assert.deepEqual(await quit(s.base, { force: true, worktree: answer }), { quit: true, ...(answer === 'remove' && { removed: wt }) });
+        assert.equal((await s.exited)[0], 0);
+      } finally {
+        s.server.kill();
+      }
+      assert.equal(await exists(wt), answer === 'keep', `${answer}: the worktree's directory`);
+      assert.match(git('branch --list'), new RegExp(`topic-${answer}`), 'its branch stays either way');
+    }
+    assert.deepEqual(git('worktree list --porcelain').match(/^worktree .*$/gm), [`worktree ${main}`, `worktree ${path.join(dir, 'keep')}`]);
+    // The main working copy: no worktree in the question, so with nothing at
+    // risk there is no question, and a request to remove it is refused.
+    const s = await serve(main, { agent: '/usr/bin/false' });
+    try {
+      assert.deepEqual(await quit(s.base, { force: true, worktree: 'remove' }), { error: 'this working copy is not a worktree prcoder can remove' });
+      assert.deepEqual(await quit(s.base, {}), { quit: true });
+      await s.exited;
+    } finally {
+      s.server.kill();
+    }
+    assert.ok(await exists(path.join(main, '.gitignore')));
   } finally {
-    server.kill();
     await fs.rm(dir, { recursive: true, force: true });
   }
-}
+});
+
+// `prcoder --worktree`, started for real in a throwaway repo's main working
+// copy: the server that answers is in the worktree it made, the main working
+// copy is where it was, and a quit there, with nothing in the worktree that
+// git lacks, takes the worktree away without a question since prcoder made
+// it. Then a pull request: the worktree is made first and gh's checkout runs
+// in it. PRCODER_WORKTREES keeps all of it out of the real ~/.prcoder.
+test('--worktree starts in a worktree it makes, on the branch or pull request, and a quit tidies it away', { skip: process.platform === 'win32' && 'sh' }, async () => {
+  const fs = await import('node:fs/promises');
+  const os = await import('node:os');
+  const path = await import('node:path');
+  const { withGh } = await import('./stub-gh.js');
+  const dir = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'prcoder-wtstart-')));
+  const main = path.join(dir, 'main');
+  const base = path.join(dir, 'worktrees');
+  const git = (args, cwd = main) => execSync(`git -c user.name=t -c user.email=t@prcoder.invalid -c commit.gpgsign=false ${args}`,
+    { cwd, env: gitless(), encoding: 'utf8' }).trim();
+  const exists = (p) => fs.access(p).then(() => true, () => false);
+  const ask = (at, route, body) => fetch(`http://${at}${route}`, body === undefined ? {}
+    : { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).then((r) => r.json());
+  const pr = { url: 'https://github.com/o/r/pull/7', number: 7, headRefName: 'other', isCrossRepository: false };
+  // repoInfo's `repo view`, pullRequestFor's `pr view`, and the checkout,
+  // which stands in for gh's by making the branch where it is run. The poll's
+  // own calls fail, which leaves the pane empty and the start as it was.
+  const gh = () => `case "$1 $2" in
+  "repo view") echo '{"defaultBranchRef":{"name":"main"},"nameWithOwner":"o/r","parent":null}';;
+  "pr view") echo '${JSON.stringify(pr)}';;
+  "pr checkout") git checkout -q -b other;;
+  *) echo "gh $* was not expected" >&2; exit 9;; esac`;
+  try {
+    await fs.mkdir(main);
+    git('init -q -b main');
+    git('commit -q --allow-empty -m x');
+    await withGh(gh, async () => {
+      const wt = worktreeDir(base, main, 'topic');
+      const s = await serve(main, { agent: '/usr/bin/false', args: ['--worktree', 'topic'], env: { PRCODER_WORKTREES: base } });
+      try {
+        const who = await ask(s.base, '/api/whoami');
+        assert.deepEqual([who.repo, who.top], [wt, wt]);
+        assert.equal(git('symbolic-ref --short HEAD', wt), 'topic');
+        assert.equal(git('symbolic-ref --short HEAD'), 'main', 'the working copy it was started in has not moved');
+        assert.equal(typeof JSON.parse(await fs.readFile(path.join(wt, '.prcoder', 'worktree.json'), 'utf8')).made, 'string');
+        assert.deepEqual((await ask(s.base, '/api/worktrees')).map((w) => [w.name, w.branch, w.here]), [['main', 'main', false], ['topic', 'topic', true]]);
+        // prcoder's own, and nothing in it git lacks: gone with the quit, unasked.
+        assert.deepEqual(await ask(s.base, '/api/quit', {}), { quit: true, removed: wt });
+        assert.equal((await s.exited)[0], 0);
+      } finally {
+        s.server.kill();
+      }
+      assert.equal(await exists(wt), false);
+      assert.match(git('branch --list'), /topic/);
+
+      // The same, with a commit on its branch that no remote has: nothing
+      // would be lost, and it is asked about all the same, saying so. Then
+      // with a file git lacks as well.
+      git('init -q --bare ../hub.git');
+      git('remote add origin ../hub.git');
+      git('push -q origin main');
+      const again = await serve(main, { agent: '/usr/bin/false', args: ['-w', 'topic'], env: { PRCODER_WORKTREES: base } });
+      try {
+        assert.equal(git('symbolic-ref --short HEAD', wt), 'topic', 'the branch it left, in a worktree made again');
+        git('commit -q --allow-empty -m "only here"', wt);
+        assert.deepEqual(await ask(again.base, '/api/quit', {}), { risk: [], worktree: { name: 'topic', path: wt, lose: [], unpushed: 1 } });
+        await fs.writeFile(path.join(wt, 'notes.txt'), 'x');
+        assert.deepEqual(await ask(again.base, '/api/quit', {}), { risk: [], worktree: { name: 'topic', path: wt, lose: ['1 untracked file'], unpushed: 1 } });
+        assert.deepEqual(await ask(again.base, '/api/quit', { force: true, worktree: 'keep' }), { quit: true });
+        await again.exited;
+      } finally {
+        again.server.kill();
+      }
+      assert.ok(await exists(wt));
+
+      // A pull request: its worktree is named for its branch, and gh checks it out there.
+      const forPr = worktreeDir(base, main, 'other');
+      const third = await serve(main, { agent: '/usr/bin/false', args: ['--worktree', '7'], env: { PRCODER_WORKTREES: base } });
+      try {
+        assert.equal((await ask(third.base, '/api/whoami')).top, forPr);
+        assert.equal(git('symbolic-ref --short HEAD', forPr), 'other');
+        assert.equal(git('symbolic-ref --short HEAD'), 'main');
+      } finally {
+        third.server.kill();
+        await third.exited;
+      }
+    });
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
 
 // A start that checks out is refused while another prcoder runs in the same
 // working copy -- found by the top level, not the directory, since one in a
@@ -561,4 +805,27 @@ test('the quit question names only what quitting costs', () => {
   assert.deepEqual(quitRisks({}), []);
   assert.deepEqual(quitRisks({ tabs: 1, ahead: 2 }), ['1 browser tab — its Claude session ends', '2 unpushed commits']);
   assert.deepEqual(quitRisks({ tabs: 2, dirty: 1 }), ['2 browser tabs — their Claude sessions end', '1 uncommitted file']);
+});
+
+// A quit in a worktree can remove it, and git removes ignored files and
+// prcoder's own queue without a word, so the question names each kind of
+// thing that would go. Completed and deleted queue items are not counted:
+// what is on Local is what is still to do.
+test('the quit question in a worktree says what removing it would delete', () => {
+  assert.deepEqual(worktreeLosses({}), []);
+  const queue = [{ text: 'a' }, { text: 'b' }, { text: 'done', done: true }];
+  assert.deepEqual(worktreeLosses({ changed: 1, untracked: 2, ignored: ['.env', 'node_modules/'], queue }),
+    ['1 uncommitted change', '2 untracked files', 'ignored .env, node_modules/', '2 queue items']);
+  assert.deepEqual(worktreeLosses({ ignored: ['.env', 'a/', 'b/', 'c/', 'd/'] }), ['ignored .env, a/, b/ and 2 more']);
+  // A detached HEAD's commits that no branch has do go with it, and come first.
+  assert.deepEqual(worktreeLosses({ orphaned: 2, untracked: 1 }), ['2 commits on no branch', '1 untracked file']);
+  // Commits on its branch and no remote stay, and are said after, as staying.
+  assert.equal(leaveQuestion([], { name: 'topic', lose: [], unpushed: 1 }),
+    'quit, and [r]emove worktree topic or [k]eep it? [N]  it has nothing git lacks; its branch stays, with 1 commit that is on no remote ');
+  assert.match(leaveQuestion([], { name: 'topic', lose: ['1 untracked file'], unpushed: 3 }),
+    /removing it deletes 1 untracked file; its branch stays, with 3 commits that are on no remote $/);
+  assert.equal(leaveQuestion(['1 unpushed commit'], { name: 'topic', lose: ['1 untracked file', '1 queue item'] }),
+    'quit, and [r]emove worktree topic or [k]eep it? [N]  1 unpushed commit; removing it deletes 1 untracked file, 1 queue item ');
+  // The keys are inside the first of an 80-column line, whatever follows.
+  assert.equal(leaveQuestion([], { name: 'topic', lose: [] }), 'quit, and [r]emove worktree topic or [k]eep it? [N]  it has nothing git lacks ');
 });

@@ -123,7 +123,8 @@ it was on is hidden.
 Which pull request you are in stays at the top, in the order it is used: the title; then the way
 out of the window, with this pull request on GitHub drawn as a button beside plain links to the
 repository's issues, pulls and milestones, and the repository they are all in at the end of that
-row; then the milestone the pull request is on; then the state and the branch it targets, with the pull request that branch belongs to
+row; then the milestone the pull request is on; then, when the repository has more than one
+working copy, which of them this is; then the state and the branch it targets, with the pull request that branch belongs to
 beside it as `#N` when it is another open one's head, since that is the one you want next.
 
 Each side of `head → base` is labelled the way GitHub labels a branch in another repository: a
@@ -161,6 +162,17 @@ picker or its list opens, so a milestone made on GitHub since is there to pick. 
 while the list is open redraws the head and brings the list's rows up to date where they are; only
 a move to another pull request, or to a branch with none, shuts it. It was a chip after the repository's to begin with, which
 said nothing on a pull request with no milestone and had nowhere to put a picker.
+
+The worktree line is under the milestone's, and only in a repository with more than one working
+copy: the main one and each that `git worktree add` made. It is a picker too, showing the
+directory this prcoder is in. Its list is every working copy by its directory's name, the main one
+marked, each followed by the branch it is on and one of *here*, *prcoder running*, *no prcoder
+running* or *directory gone*; typing narrows them by name, branch or path. A pick moves nothing:
+it puts up a notice saying where that working copy's prcoder is, as a link, or the command that
+starts one there. The word *worktree* in front links to [Worktrees.md](Worktrees.md), which says
+why a prcoder stays in the working copy it was started in. The branch-only pane has the line as
+well, as the last of its head. The list is read when the page loads, when the tab is come back to
+and as the pointer or the focus reaches the picker or its list opens, never on the poll.
 
 ### Pickers
 
@@ -259,7 +271,9 @@ the switcher, and leaves the links alone. A local branch that has diverged from 
 head is still switched to, just not fast-forwarded, and the sync light says `diverged`. A switch is
 the same checkout `prcoder <n>` makes: a merged pull request whose branch GitHub deleted is checked
 out from its head on GitHub, and a switch is refused while another prcoder runs in the same working
-copy, whose agent it would move.
+copy, whose agent it would move, or when the pull request's branch is checked out in another
+working copy, since git checks a branch out once; the refusal names that working copy
+([Worktrees.md](Worktrees.md#a-branch-is-in-one-working-copy-at-a-time)).
 
 On any other branch it also shows what the branch is built on, since that is where its pull
 request will go. A branch with no pull request has no base on GitHub, so prcoder asks git: the
@@ -459,7 +473,10 @@ the other tab's (#77). It is unticked by default and last in the bar: starting a
 a deliberate switch of model than a slip. A setting the server will not take is refused before
 anything starts, and the terminal says so -- except the command line's own, which is kept as it
 was given even when the bar would refuse it typed in. Quit asks what the terminal's quit asks
-([Terminal.md](Terminal.md)).
+([Terminal.md](Terminal.md)), in the browser's own confirm box; in a git worktree, where the
+question has three answers, it is a box of the page's: **Quit and remove the worktree**, **Quit
+and keep it**, and **Don't quit**, which Escape is too, over what the quit costs and what removing
+the worktree would delete ([Worktrees.md](Worktrees.md#quitting-in-a-worktree)).
 
 Once prcoder itself has gone, nothing on the page works -- the pull request pane, the queue and
 the terminal all talk to it -- so the whole window says so: a box over the panes, which are dimmed

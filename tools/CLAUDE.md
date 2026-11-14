@@ -68,6 +68,10 @@ taken over.
 Never hand `server.js` a pull request in this tree, `server.js 87` or
 `prcoder choose` answered with a number: prcoder checks out what it is
 started on, so that is a checkout of the owner's working copy.
+`server.js --worktree 87` does not move this tree, but a driver keeps to
+`onPullRequest`: it cleans up after itself, where `--worktree` leaves a
+worktree in the owner's `~/.prcoder/worktrees` unless `PRCODER_WORKTREES`
+points under `data/`, and a local branch either way.
 
 A worktree you *work* in -- a branch off `main` edited and tested there -- has
 no `node_modules`, and `npm test` in it fails a couple of hundred browser and
@@ -120,6 +124,11 @@ timing has to be driven against that stub, not cat. cat is fine for
   open it to read the rows; `openPicker`, `pickRow` and `switcherLabels` in
   `test/browser/suite.js` do. A click on a row that cannot be picked needs `{ force: true }`,
   since Playwright waits on `aria-disabled`.
+- **Wait for a `<dialog>` to close with `{ state: 'attached' }`.**
+  `waitForSelector('#leave:not([open])')` waits for the element to be
+  *visible*, and a closed dialog never is, so it runs its 30 seconds and fails
+  on a page that did exactly what was asked (2026-11-14). `#dead:modal` is
+  fine as it is: an open modal is visible.
 - **Install `MutationObserver`s after `goto`, not in `addInitScript`.** At
   init time there is no `document.head` to observe, and the throw takes the
   rest of the init script with it.

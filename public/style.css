@@ -570,6 +570,11 @@ a { color: var(--accent); }
 .pr-milestone.untriaged button.picker:hover:not(:disabled), .pr-milestone.untriaged button.picker[aria-expanded=true] { color: var(--warn); }
 .pr-milestone.untriaged .picker { border-color: color-mix(in srgb, var(--warn) 50%, transparent); }
 
+/* The worktree line, under the milestone's and drawn the same way: the word,
+   which links to what a worktree session is, and a picker taking the rest. */
+.pr-worktree a { color: inherit; }
+.pr-worktree .picker { flex: 1 1 10em; padding: 1px 4px; font: inherit; }
+
 .badge { padding: 1px 6px; border-radius: 9px; background: var(--line); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; }
 .badge.open { background: #1f4d2e; color: #9ae6b4; }
 .badge.merged { background: #3d2a56; color: #d0b0f5; }
@@ -1167,10 +1172,20 @@ li.issue-body select.milestone {
 /* The shortcut sheet (Alt+/): a modal over the panes, in the panes' own
    colours, one row per key. The key is drawn as a keycap, so it reads as a
    key and not as a word. */
-#keys, #dead {
+#keys, #dead, #leave {
   background: var(--panel); color: var(--fg); border: 1px solid var(--line); border-radius: 8px;
   box-shadow: 0 6px 30px #000a;
 }
+/* The quit question in a worktree (askLeave() in app.js): the same box, with
+   what removing the worktree deletes on a line of its own and the three
+   answers in a row that wraps in a narrow window. */
+#leave { max-width: min(56ch, 90vw); padding: 18px 22px; }
+#leave::backdrop { background: #0008; }
+#leave h2 { margin: 0 0 8px; font-size: 16px; font-weight: 600; }
+#leave p { margin: 0 0 8px; color: var(--dim); overflow-wrap: anywhere; }
+#leave p:empty { display: none; }
+#leave form { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+#leave button { padding: 3px 10px; font: inherit; }
 #keys { min-width: 360px; max-width: 90vw; padding: 12px 18px 14px; }
 #keys::backdrop { background: #0008; }
 /* prcoder has gone (gone() in app.js). The sheet's box, edged in red, under a
@@ -1180,6 +1195,7 @@ li.issue-body select.milestone {
 #dead::backdrop { background: #000c; }
 #dead h2 { margin: 0; font-size: 18px; font-weight: 600; }
 #dead p { margin: 0; color: var(--dim); }
+#dead p + p { margin-top: 8px; overflow-wrap: anywhere; }
 #dead code { white-space: nowrap; }
 /* Closed, the box leaves the panes looking switched off but readable:
    opacity and a filter, not `inert`, so the terminal can still be selected. */

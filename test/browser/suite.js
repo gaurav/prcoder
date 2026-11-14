@@ -186,7 +186,7 @@ const posted = [];
 // is drawn and no last-prompt notice put up, which is what every other test
 // here expects of a first open.
 async function newPage({ prs = [], st = status, ready = '#pr-head .pr-title', below = null, pty = () => {},
-  whoami = { model: '', effort: '' }, folds = null, init = null, clock = false, history = null } = {}) {
+  whoami = { model: '', effort: '' }, folds = null, init = null, clock = false, history = null, worktrees = [] } = {}) {
   const p = await browser.newPage();
   if (init) await p.addInitScript(init);
   if (clock) await p.clock.install(clock === true ? undefined : { time: clock });
@@ -206,6 +206,10 @@ async function newPage({ prs = [], st = status, ready = '#pr-head .pr-title', be
     ? history(r) : r.fulfill({ json: history ? { enabled: true, ...history } : { enabled: false } })));
   await p.route('**/api/status', (r) => r.fulfill({ json: st }));
   await p.route('**/api/prs', (r) => (prs ? r.fulfill({ json: prs }) : r.abort()));
+  // Mocked like the rest, and empty unless a test gives some: the real route
+  // would list this clone's own worktrees, and a driver's `data/wt-<n>` left
+  // from a run would put a worktree line in every head here.
+  await p.route('**/api/worktrees', (r) => r.fulfill({ json: worktrees }));
   await p.route('**/api/below', (r) => {
     p.belowAsked = r.request().postDataJSON();
     return below ? r.fulfill({ json: below }) : r.abort();
@@ -655,6 +659,76 @@ test('the milestone line is above the state, and asks for triage on no milestone
     [getComputedStyle(document.documentElement).getPropertyValue('--warn').trim(), getComputedStyle(s).color]);
   assert.equal(colour, await page.evaluate((c) => { const d = document.createElement('i'); d.style.color = c; document.body.append(d);
     const out = getComputedStyle(d).color; d.remove(); return out; }, warn));
+});
+
+// What /api/worktrees answers: the main working copy, the worktree this
+// prcoder is in, one with a prcoder of its own running, and one with none.
+const WORKTREES = [
+  { path: '/r/pipeline', name: 'pipeline', branch: 'main', main: true, here: false, prunable: false, url: null },
+  { path: '/w/topic', name: 'topic', branch: 'topic', main: false, here: true, prunable: false, url: null },
+  { path: '/w/other', name: 'other', branch: 'other-work', main: false, here: false, prunable: false, url: 'http://localhost:10999' },
+  { path: '/w/pr-7', name: 'pr-7', branch: null, main: false, here: false, prunable: false, url: null },
+];
+// One whose directory was deleted without `git worktree remove`: still listed.
+const GONE = { path: '/w/old', name: 'old', branch: 'old-work', main: false, here: false, prunable: true, url: null };
+const WT = '#pr-head .pr-worktree button.picker';
+
+// A repository with one working copy has no worktree line; with more, the
+// line is under the milestone's, says which one this prcoder is in, and a
+// pick of another says where its prcoder is rather than moving this one.
+test('the worktree line is under the milestone, and a pick says where that working copy\'s prcoder is', { skip }, async () => {
+  assert.equal(await page.locator('#pr-head .pr-worktree').count(), 0, 'one working copy: no line');
+  const p = await newPage({ worktrees: WORKTREES });
+  await p.waitForSelector(WT);
+  const rows = await p.$$eval('#pr-head > *', (els) => els.map((e) => e.className));
+  assert.deepEqual(rows.slice(rows.indexOf('meta pr-milestone untriaged')), ['meta pr-milestone untriaged', 'meta pr-worktree', 'meta pr-state', 'tabs']);
+  assert.equal(await p.locator(`${WT} .picker-value`).textContent(), 'topic');
+  assert.equal(await p.locator(WT).getAttribute('aria-label'), 'working copy: topic');
+  assert.deepEqual([await p.locator(WT).getAttribute('data-copies'), await p.locator(WT).getAttribute('data-running')], ['4', '1']);
+  assert.match(await p.locator('#pr-head .pr-worktree a').getAttribute('href'), /\/docs\/Worktrees\.md$/);
+  assert.deepEqual(await pickerRows(p, 'worktree'), ['pipeline (main working copy)', 'topic', 'other', 'pr-7']);
+  assert.deepEqual(await p.locator(`${popOf('worktree')} .picker-detail`).allTextContents(),
+    ['main · no prcoder running', 'topic · here', 'other-work · prcoder running', 'detached HEAD · no prcoder running']);
+  assert.equal(await p.locator(`${popOf('worktree')} [data-key="/w/topic"]`).getAttribute('aria-current'), 'true');
+  // The one this prcoder is in is no pick.
+  await pickRow(p, 'worktree', '/w/topic');
+  assert.equal(await p.locator('#notices > li').count(), 0);
+  // One with a prcoder running: the link to it, and why it was not opened.
+  const line = '#notices > li[data-kind="worktree"]';
+  await pickRow(p, 'worktree', '/w/other');
+  assert.match(await p.locator(`${line} .text`).textContent(), /^other \(on other-work\) has a prcoder running\. .*a second tab starts a second coding agent there\./);
+  assert.equal(await p.locator(`${line} a`).getAttribute('href'), 'http://localhost:10999');
+  // One with none: the command that starts it, in place of the last notice.
+  await pickRow(p, 'worktree', '/w/pr-7');
+  assert.equal(await p.locator(line).count(), 1);
+  assert.match(await p.locator(`${line} .text`).textContent(), /^No prcoder is running in pr-7\. To start one, in a terminal: cd \/w\/pr-7 && prcoder/);
+  assert.equal(await p.locator(`${WT} .picker-value`).textContent(), 'topic', 'still in the one it was started in');
+  // Found by the branch as well as the directory's name.
+  await openPicker(p, 'worktree');
+  await p.keyboard.type('other-work');
+  assert.deepEqual(await p.locator(`${popOf('worktree')} [role=option] .picker-text`).allTextContents(), ['other']);
+  await p.keyboard.press('Escape');
+  await p.close();
+
+  // One git still lists with its directory gone says so, and how to forget it.
+  const q = await newPage({ worktrees: [...WORKTREES, GONE] });
+  await q.waitForSelector(WT);
+  await openPicker(q, 'worktree');
+  assert.equal(await q.locator(`${popOf('worktree')} [data-key="/w/old"] .picker-detail`).textContent(), 'old-work · directory gone');
+  await pickRow(q, 'worktree', '/w/old');
+  assert.match(await q.locator(`${line} .text`).textContent(), /^old \(on old-work\) is still listed by git, but its directory is gone: `git worktree prune` forgets it/);
+  await q.close();
+});
+
+// The branch-only pane has no milestone line, and the worktree line is the
+// last of its head.
+test('a branch with no pull request has the worktree line too', { skip }, async () => {
+  const p = await newPage({ st: { ...status, pr: null }, ready: '#pr-head .pr-branch-name', worktrees: WORKTREES });
+  await p.waitForSelector(WT);
+  const rows = await p.$$eval('#pr-head > *', (els) => els.map((e) => e.className));
+  assert.equal(rows.at(-1), 'meta pr-worktree', rows.join(' | '));
+  assert.equal(await p.locator(`${WT} .picker-value`).textContent(), 'topic');
+  await p.close();
 });
 
 test('a pull request on a milestone shows it picked, linked, and its own even when the list lacks it', { skip }, async () => {
@@ -5309,6 +5383,76 @@ test('when the agent exits, starting it again reconnects with the chosen setting
   assert.equal(await bar.isHidden(), true, 'the bar its Quit was in goes with it');
   assert.deepEqual(asked, [{}, 'Quit prcoder? 2 uncommitted files.', { force: true }]);
   await p.close();
+});
+
+// In a worktree the quit has a third answer, so the question is a box of the
+// page's own: what quitting costs, what removing the worktree would delete,
+// and three buttons. The server is told which, in one of two words.
+test('a quit in a worktree asks whether to remove it, keep it, or not quit', { skip }, async () => {
+  const p = await newPage({ pty: (ws) => ws.close() });
+  await p.locator('#term-exit').waitFor({ state: 'visible' });
+  const asked = [];
+  const worktree = { name: 'topic', path: '/w/topic', lose: ['1 untracked file', 'ignored .env, node_modules/', '2 queue items'] };
+  await p.route('**/api/quit', (r) => {
+    const body = r.request().postDataJSON();
+    asked.push(body);
+    return r.fulfill({ json: body.force ? { quit: true } : { risk: ['2 unpushed commits'], worktree } });
+  });
+  p.on('dialog', (d) => { asked.push(`a browser dialog: ${d.message()}`); d.dismiss(); });
+  await p.click('#term-quit');
+  await p.waitForSelector('#leave:modal');
+  assert.equal(await p.locator('#leave-risk').textContent(), 'Quitting: 2 unpushed commits.');
+  assert.equal(await p.locator('#leave-lose').textContent(),
+    'Removing /w/topic deletes what git does not have: 1 untracked file, ignored .env, node_modules/, 2 queue items. Its branch and commits stay.');
+  assert.deepEqual(await p.locator('#leave button').allTextContents(), ['Quit and remove the worktree', 'Quit and keep it', "Don't quit"]);
+  // A stray Enter must not be the answer that deletes.
+  assert.equal(await p.evaluate(() => document.activeElement.textContent), "Don't quit");
+  // Escape, and the third button, are no quit: nothing more is asked of the server.
+  await p.keyboard.press('Escape');
+  await p.waitForSelector('#leave:not([open])', { state: 'attached' });
+  await p.click('#term-quit');
+  await p.waitForSelector('#leave:modal');
+  await p.locator('#leave button', { hasText: "Don't quit" }).click();
+  await p.waitForSelector('#leave:not([open])', { state: 'attached' });
+  assert.deepEqual(asked, [{}, {}]);
+  assert.equal(await p.locator('#dead').evaluate((d) => d.open), false);
+  // Keep, then on a fresh page remove: each quits, saying which.
+  await p.click('#term-quit');
+  await p.locator('#leave button', { hasText: 'Quit and keep it' }).click();
+  await p.waitForSelector('#dead:modal');
+  assert.deepEqual(asked.at(-1), { force: true, worktree: 'keep' });
+  assert.equal(await p.locator('#dead-worktree').isVisible(), false, 'kept: nothing to say about it');
+  await p.close();
+
+  const q = await newPage({ pty: (ws) => ws.close() });
+  await q.locator('#term-exit').waitFor({ state: 'visible' });
+  const sent = [];
+  await q.route('**/api/quit', (r) => {
+    const body = r.request().postDataJSON();
+    sent.push(body);
+    return r.fulfill({ json: body.force ? { quit: true, removed: '/w/topic' } : { risk: [], worktree: { ...worktree, lose: [] } } });
+  });
+  await q.click('#term-quit');
+  await q.waitForSelector('#leave:modal');
+  assert.equal(await q.locator('#leave-risk').isVisible(), false, 'nothing to say about the quit itself');
+  assert.equal(await q.locator('#leave-lose').textContent(), '/w/topic has nothing git does not have. Its branch and commits stay.');
+  await q.locator('#leave button', { hasText: 'Quit and remove the worktree' }).click();
+  await q.waitForSelector('#dead:modal');
+  assert.deepEqual(sent, [{}, { force: true, worktree: 'remove' }]);
+  // Commits on its branch that no remote has stay, and the box says so: it
+  // is the reason a worktree with nothing to lose is asked about at all.
+  const u = await newPage({ pty: (ws) => ws.close() });
+  await u.locator('#term-exit').waitFor({ state: 'visible' });
+  await u.route('**/api/quit', (r) => r.fulfill({ json: { risk: [], worktree: { ...worktree, lose: [], unpushed: 2 } } }));
+  await u.click('#term-quit');
+  await u.waitForSelector('#leave:modal');
+  assert.equal(await u.locator('#leave-lose').textContent(),
+    '/w/topic has nothing git does not have. Its branch stays, with 2 commits that are on no remote.');
+  await u.close();
+  // The page that has just lost its server says what went with it.
+  assert.equal(await q.locator('#dead-worktree').textContent(), 'Its worktree, /w/topic, was removed with it. The branch and its commits are kept.');
+  assert.equal(await p.isClosed(), true);
+  await q.close();
 });
 
 // The fill is a fetch, so it can land after you have typed into the bar; it

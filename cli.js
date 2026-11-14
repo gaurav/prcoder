@@ -12,6 +12,7 @@
 import { parseArgs } from 'node:util';
 import { createRequire } from 'node:module';
 import { createHash } from 'node:crypto';
+import path from 'node:path';
 import { syncPhrase, sides, prRepo } from './public/pr.js';
 import { counts, TABS } from './public/items.js';
 
@@ -30,14 +31,19 @@ const OPTIONS = {
   'no-open': { type: 'boolean' },
   'no-history': { type: 'boolean' },
   queue: { type: 'string' },
+  worktree: { type: 'string', short: 'w' },
   verbose: { type: 'boolean', short: 'v', multiple: true },
 };
 
 export function usage() {
-  return `usage: prcoder [<pr> | choose] [--port <n>] [--no-open] [--no-history] [--queue <file>] [-v] [--agent <name>] [-- <agent args>]
+  return `usage: prcoder [<pr> | choose | --worktree <branch|pr>] [--port <n>] [--no-open] [--no-history] [--queue <file>] [-v] [--agent <name>] [-- <agent args>]
 
   <pr>             check out this pull request (number, URL or branch) and start on it
   choose           list the open pull requests, and pick the one to check out
+  -w, --worktree <branch|pr>
+                   start in a git worktree on this branch, or this pull request (number
+                   or URL), made if there is none; this working copy stays as it is.
+                   Made under ~/.prcoder/worktrees                env PRCODER_WORKTREES
   --port <n>       listen on this port for this run          env PRCODER_PORT
   --no-open        print the URL, don't open a browser        env PRCODER_NO_OPEN=1
   --no-history     don't read the agent's prompt history     env PRCODER_NO_HISTORY=1
@@ -68,6 +74,11 @@ export function parseCli(argv) {
       const flag = /^Unknown option '([^']+)'/.exec(e.message)?.[1] ?? '?';
       throw new Error(`unknown option ${flag}; flags for the agent go after --, as in: prcoder [pr] -- ${flag} …`);
     }
+    // Node's own advice for a value it took for a flag is `--worktree=-XYZ`,
+    // which is the one spelling refused below.
+    if (e.code === 'ERR_PARSE_ARGS_INVALID_OPTION_VALUE' && /'(--worktree|-w)[ ']/.test(e.message)) {
+      throw new Error('--worktree wants a branch, or a pull request\'s number or URL');
+    }
     if (e.code === 'ERR_PARSE_ARGS_INVALID_OPTION_VALUE') throw new Error(e.message);
     throw e;
   }
@@ -83,6 +94,17 @@ export function parseCli(argv) {
     throw new Error(`--port wants a port number, not ${values.port}`);
   }
   if (values.queue === '') throw new Error('--queue wants a file path');
+  // A value git or gh would read as a flag of its own is refused here, not
+  // left to them: `--worktree=--force` gets past parseArgs, which only stops
+  // one written as a separate word.
+  if (values.worktree !== undefined && !/^[^-\s]\S*$/.test(values.worktree)) {
+    throw new Error('--worktree wants a branch, or a pull request\'s number or URL');
+  }
+  // One way to say what to start on. With both, which pull request the
+  // worktree was for would be a guess.
+  if (values.worktree !== undefined && positionals.length) {
+    throw new Error(`--worktree ${values.worktree} already says what to start on; ${positionals[0]} is one too many`);
+  }
   return {
     target: choose ? undefined : positionals[0],
     choose,
@@ -92,10 +114,55 @@ export function parseCli(argv) {
     noOpen: !!values['no-open'],
     noHistory: !!values['no-history'],
     queue: values.queue,
+    worktree: values.worktree === undefined ? undefined : worktreeTarget(values.worktree),
     verbose: values.verbose?.length ?? 0,
     help: !!values.help,
     version: !!values.version,
   };
+}
+
+/**
+ * What `--worktree`'s value names: `{ pr }` for a pull request -- all digits,
+ * or a URL -- and `{ branch }` for anything else. Told apart here and not by
+ * asking gh, as the positional is: a branch with no pull request is a thing to
+ * start a worktree on, and "gh found none" and "gh could not be asked" must
+ * not both end as a new branch of that name. A branch named in digits is the
+ * one this cannot reach; its pull request's URL does.
+ */
+export const worktreeTarget = (value) => (/^\d+$/.test(value) || /^https?:\/\//.test(value) ? { pr: value } : { branch: value });
+
+/**
+ * What to say at startup when `--worktree` (or `-w`) is among the agent's
+ * arguments, or null. After `--` it is Claude Code's flag: the agent makes a
+ * worktree of its own and moves into it once it has started, and prcoder,
+ * which is told nothing, goes on showing the branch of the directory it was
+ * started in -- the pane on one branch and the agent editing another, with
+ * nothing on screen to say so. Passed on untouched all the same: the line
+ * after `--` is the agent's, and someone may want exactly that.
+ */
+export const agentWorktree = (agentArgs) => (agentArgs.some((a) => a === '--worktree' || a === '-w' || a.startsWith('--worktree='))
+  ? '--worktree after -- goes to the coding agent, which will move into a worktree of its own: the pull request pane' +
+    ' stays on this directory\'s branch, not the agent\'s. To start prcoder itself in a worktree, put it before --: prcoder --worktree <branch|pr>'
+  : null);
+
+/**
+ * The directory `--worktree` makes a worktree in: under `base`
+ * (`~/.prcoder/worktrees`, or PRCODER_WORKTREES), in a directory for the
+ * repository -- its main working copy's name, and eight hex of a hash of that
+ * path, so two clones called the same do not share one -- and then a name for
+ * the worktree: the branch's, or `pr-<n>` for a fork's pull request. Whatever
+ * is not a letter, digit, dot, dash or underscore becomes a dash, so
+ * `feature/x` is one directory, `feature-x`. Two branches can come to the same
+ * name; the second is refused, since the directory is there (worktreeFor).
+ *
+ * Outside the repository on purpose. Inside it, a coding agent started in
+ * the worktree reads the instruction files of every directory above -- the
+ * main working copy's, on another branch -- and whatever walks the main
+ * working copy without reading .gitignore finds a second copy of the code.
+ */
+export function worktreeDir(base, main, name) {
+  const repo = `${path.basename(main)}-${createHash('sha1').update(main).digest('hex').slice(0, 8)}`;
+  return path.join(base, repo.replace(/[^\w.-]+/g, '-'), name.replace(/[^\w.-]+/g, '-').replace(/^[.-]+/, '') || 'worktree');
 }
 
 /**
@@ -259,6 +326,51 @@ export function queueSummary(items = [], file = '.prcoder/queue.json') {
   return [head, ...items.filter(TABS.local).map((i) =>
     `${indent}${i.text.replace(/\r?\n/g, `\n${indent}`)}${i.issueUrl ? `  ${i.issueUrl}` : ''}`)];
 }
+
+/**
+ * What removing a worktree would delete that git does not have, as the
+ * clauses of the question a quit in one asks: worktreeLoss's counts (git.js)
+ * and `queue`, the queue's items when its file is in the worktree, of which
+ * the ones on Local are counted, and `orphaned`, the commits of a detached
+ * HEAD that no branch has. Empty when there is nothing: every other commit
+ * is still on its branch, which stays. Three ignored paths are named and the rest counted,
+ * since the ones worth a second thought (`.env`) sort first and the line is
+ * one line.
+ */
+export function worktreeLosses({ changed = 0, untracked = 0, ignored = [], queue = [], orphaned = 0 } = {}) {
+  const n = (count, what) => `${count} ${what}${count > 1 ? 's' : ''}`;
+  const queued = counts(queue).local;
+  return [
+    // First: a commit is the one thing here nobody expects to lose. Only a
+    // detached HEAD has any (commitsOnlyHere in git.js).
+    orphaned && `${n(orphaned, 'commit')} on no branch`,
+    changed && n(changed, 'uncommitted change'),
+    untracked && n(untracked, 'untracked file'),
+    ignored.length && `ignored ${ignored.slice(0, 3).join(', ')}${ignored.length > 3 ? ` and ${ignored.length - 3} more` : ''}`,
+    queued && n(queued, 'queue item'),
+  ].filter(Boolean);
+}
+
+/**
+ * The terminal's question for a quit in worktree `wt` (`{ name, lose,
+ * unpushed }`, `lose` being worktreeLosses): the three answers, then the usual risks and
+ * what goes with the worktree. Any other key is no. The answers come first
+ * because the block clips a line to the terminal's width, and a question cut
+ * short of its keys is one answered blind; what is cut this way round is the
+ * end of a list.
+ */
+export function leaveQuestion(risk, wt) {
+  const about = wt.lose.length ? `removing it deletes ${wt.lose.join(', ')}` : 'it has nothing git lacks';
+  return `quit, and [r]emove worktree ${wt.name} or [k]eep it? [N]  ${[...risk, about, ...onlyHere(wt)].join('; ')} `;
+}
+
+/**
+ * The clause for a worktree's `unpushed` commits (commitsOnlyHere in git.js),
+ * or none: they are not lost with it, so they are not in `lose`, but they are
+ * why a worktree that is otherwise spotless is still asked about.
+ */
+export const onlyHere = (wt) => (wt.unpushed
+  ? [`its branch stays, with ${wt.unpushed} commit${wt.unpushed > 1 ? 's' : ''} that ${wt.unpushed > 1 ? 'are' : 'is'} on no remote`] : []);
 
 /**
  * What quitting would cost, as the clauses of the y/N: the Claude sessions the
