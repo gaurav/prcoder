@@ -573,7 +573,7 @@ export function wholePrRepo(url) {
 export async function checkoutPr(cwd, url, opts = {}) {
   wholePrRepo(url);
   // The branch before the checkout, when the caller has just read it
-  // (startOnPr); null is a detached HEAD, so only a missing key asks again.
+  // (startOnPr); '' is a detached HEAD, so only a missing key asks again.
   const before = 'before' in opts ? opts.before : await currentBranch(cwd);
   try {
     await run('gh', ['pr', 'checkout', url], { cwd, timeout: 120_000 });
@@ -585,12 +585,14 @@ export async function checkoutPr(cwd, url, opts = {}) {
 }
 
 /**
- * `dirty` files, as dirtyFiles lists them, on `branch` (null for a detached
- * HEAD): `1 uncommitted file on main`. The one wording of them, for
- * `prcoder choose`'s line before its question as for inTheWay.
+ * `dirty` files, as dirtyFiles lists them, on `branch`: `1 uncommitted file on
+ * main`. The one wording of them, for `prcoder choose`'s line before its
+ * question as for inTheWay. No branch is a detached HEAD, which currentBranch
+ * answers as '' and not null: with `??` the line ended at "on ", and a
+ * worktree made for a pull request starts detached.
  */
 export function uncommitted(dirty, branch) {
-  return `${dirty.length} uncommitted file${dirty.length > 1 ? 's' : ''} on ${branch ?? 'a detached HEAD'}`;
+  return `${dirty.length} uncommitted file${dirty.length > 1 ? 's' : ''} on ${branch || 'a detached HEAD'}`;
 }
 
 /**

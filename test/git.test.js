@@ -616,6 +616,13 @@ test('a start is on the pull request\'s branch, or refused over uncommitted work
         { message: '#76 is on topic, and 1 uncommitted file on main is in the way; commit or stash it first' });
     });
     assert.equal(await branch(), 'main');
+    // On no branch, the refusal says so: currentBranch answers '' there.
+    await run('checkout', '-q', '--detach');
+    await withGh(() => 'exit 9', async () => {
+      await assert.rejects(startOnPr(dir, p),
+        { message: '#76 is on topic, and 1 uncommitted file on a detached HEAD is in the way; commit or stash it first' });
+    });
+    await run('checkout', '-q', 'main');
     await run('checkout', '-q', '--', 'a.txt');
     // Another prcoder running here refuses the checkout, which would move its
     // agent's working copy, and is asked only when there is one to make.
