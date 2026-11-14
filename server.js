@@ -13,7 +13,7 @@ import { text as readBody } from 'node:stream/consumers';
 import { spawn as ptySpawn } from 'node-pty';
 import { WebSocketServer } from 'ws';
 import { loadPr, pullRequestFor, prBody, parsePrUrl, listPrs, branchPrs, lookupPrs, ownPrs, pickPr, issueLinks, lookupRef, setViewed, setBody, createIssue, fetchPatches, runCount, repoIssues, repoMilestones, setIssueMilestone } from './github.js';
-import { notAWorkTree, snapshot, currentBranch, headCommit, commitsKnown, commitMemo, repoInfo, pushRepo, compareUrl, githubUrl, originOwner, wholePrRepo, startOnPr, trackedPr, workTreeTop, pushBranch, remoteBranchHead, trackingHead, localPatch, branchesBelow, worktrees, linkedWorktree, worktreeLoss, removeWorktree, worktreeFor, worktreeForPr } from './git.js';
+import { notAWorkTree, snapshot, currentBranch, headCommit, commitsKnown, commitMemo, repoInfo, pushRepo, compareUrl, githubUrl, originOwner, wholePrRepo, startOnPr, trackedPr, workTreeTop, pushBranch, remoteBranchHead, trackingHead, localPatch, branchesBelow, worktrees, linkedWorktree, worktreeLoss, removeWorktree, worktreeFor, worktreeForPr, commitsOnlyHere } from './git.js';
 import { bucket, fileUrl, fileViews } from './files.js';
 import { readPort, writePort, readRunning, writeRunning, dropRunning, alive, claimStart, releaseStart, readPrs, writePrs, pick, useQueueFile, movedQueue, issueUrl, readPulls, markMade, madeHere } from './store.js';
 import { readQueue, writeQueue, quote } from './queue.js';
@@ -539,7 +539,9 @@ const routes = {
     const risk = quitRisk();
     const wt = await leaving();
     const unasked = tidy(risk, wt);
-    if (!force && !unasked && (risk.length || wt)) return { risk, ...(wt && { worktree: { name: wt.name, path: wt.path, lose: wt.lose } }) };
+    if (!force && !unasked && (risk.length || wt)) {
+      return { risk, ...(wt && { worktree: { name: wt.name, path: wt.path, lose: wt.lose, unpushed: wt.unpushed } }) };
+    }
     if (worktree === 'remove' && !wt) throw new Error('this working copy is not a worktree prcoder can remove');
     const remove = worktree === 'remove' || (unasked && worktree === undefined) ? wt : null;
     // Deferred so the reply goes out first: process.exit doesn't wait for it.
@@ -1487,11 +1489,13 @@ function quit({ remove = null } = {}) {
 
 /**
  * What a quit can do about the worktree this prcoder is in: `{ name, path,
- * lose, force }`, or null when there is nothing to offer -- the repository's
+ * lose, unpushed, force, made }`, or null when there is nothing to offer -- the repository's
  * main working copy, a worktree another prcoder is also running in, or one
  * someone locked. `lose` is what removing it would delete that git does not
  * have (worktreeLosses), and `force` whether git has to be told `--force`,
  * which it does over changed and untracked files and not over ignored ones.
+ * `unpushed` is the commits on its branch that no remote has: kept, with the
+ * branch, but worth the question. `made` is whether prcoder made it.
  *
  * The queue is in `lose` only while its file is in the worktree: one moved
  * with --queue stays where it is. A failure to read any of this is no offer,
@@ -1503,9 +1507,12 @@ async function leaving() {
     if (await runningHere()) return null;
     if ((await worktrees(repo)).find((w) => w.path === top)?.locked) return null;
     const loss = await worktreeLoss(top);
+    const { unpushed, orphaned } = await commitsOnlyHere(top);
     return {
       name: path.basename(top), path: top, force: loss.changed + loss.untracked > 0,
-      lose: worktreeLosses({ ...loss, queue: movedQueue() ? [] : last?.queue ?? [] }),
+      lose: worktreeLosses({ ...loss, orphaned, queue: movedQueue() ? [] : last?.queue ?? [] }),
+      // Not said twice: ahead of its pull request, they are among the risks.
+      unpushed: last?.ahead ? 0 : unpushed,
       made: await madeHere(top),
     };
   } catch (e) {
@@ -1538,13 +1545,13 @@ async function removeHere({ path: where, force }) {
 
 /**
  * Whether a quit removes worktree `wt` without asking: one prcoder made
- * (`--worktree`), with nothing in it that git lacks, and nothing else about
- * the quit to ask over. Then the removal deletes a directory this command
+ * (`--worktree`), with nothing in it that git lacks, no commit on its branch
+ * that is on this machine alone, and nothing else about the quit to ask over. Then the removal deletes a directory this command
  * made and can make again, and the question would be a keypress on every
  * quit. Anything else is asked about -- a worktree made by hand above all,
  * which is its maker's however clean it is.
  */
-const tidy = (risk, wt) => Boolean(wt?.made && !wt.lose.length && !risk.length);
+const tidy = (risk, wt) => Boolean(wt?.made && !wt.lose.length && !wt.unpushed && !risk.length);
 
 // One question at a time: leaving() takes a moment, and a second q inside it
 // would ask twice.

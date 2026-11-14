@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { notAWorkTree, parseWorktrees, worktrees, linkedWorktree, worktreeLoss, removeWorktree, worktreeFor, worktreeForPr, syncState, compareUrl, githubUrl, originOwner, remoteRepo, remoteRepos, repoInfo, pushRepo, commitsKnown, commitMemo, wholePrRepo, checkoutPr, startOnPr, isHere, trackedPr, userDirt, remoteBranchHead, trackingHead, snapshot, localPatch, branchesBelow } from '../git.js';
+import { notAWorkTree, parseWorktrees, worktrees, linkedWorktree, worktreeLoss, removeWorktree, worktreeFor, worktreeForPr, commitsOnlyHere, syncState, compareUrl, githubUrl, originOwner, remoteRepo, remoteRepos, repoInfo, pushRepo, commitsKnown, commitMemo, wholePrRepo, checkoutPr, startOnPr, isHere, trackedPr, userDirt, remoteBranchHead, trackingHead, snapshot, localPatch, branchesBelow } from '../git.js';
 
 // git finds the repository through GIT_DIR and GIT_WORK_TREE before it looks
 // at cwd, and a git hook exports them. Under a hook, `npm test` ran every
@@ -225,6 +225,42 @@ test('removing a worktree deletes its ignored files without asking, and its bran
     await testGit(main, 'worktree', 'unlock', wt);
     await removeWorktree(common, wt, { force: true });
     assert.equal(await exists(wt), false);
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
+
+// What a quit in a worktree counts before it removes one unasked: commits on
+// the branch that no remote has, which stay but are on this machine alone,
+// and a detached HEAD's commits that no branch has, which would go.
+test('commits only this working copy shows are counted: unpushed on a branch, orphaned off one', async () => {
+  const dir = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'prcoder-onlyhere-')));
+  const work = path.join(dir, 'work');
+  const run = (...args) => testGit(work, ...args);
+  const commit = (m) => run('commit', '-q', '--allow-empty', '-m', m);
+  try {
+    await git('git', ['init', '-q', '--bare', path.join(dir, 'hub.git')]);
+    await git('git', ['init', '-q', '-b', 'main', work]);
+    await commit('one');
+    // No remote: nowhere they could have been pushed, so none are unpushed.
+    assert.deepEqual(await commitsOnlyHere(work), { unpushed: 0, orphaned: 0 });
+    await run('remote', 'add', 'origin', path.join(dir, 'hub.git'));
+    assert.deepEqual(await commitsOnlyHere(work), { unpushed: 1, orphaned: 0 });
+    await run('push', '-q', 'origin', 'main');
+    assert.deepEqual(await commitsOnlyHere(work), { unpushed: 0, orphaned: 0 });
+    // A new branch at a pushed commit has nothing of its own; two commits on it are two.
+    await run('checkout', '-q', '-b', 'topic');
+    assert.deepEqual(await commitsOnlyHere(work), { unpushed: 0, orphaned: 0 });
+    await commit('two');
+    await commit('three');
+    assert.deepEqual(await commitsOnlyHere(work), { unpushed: 2, orphaned: 0 });
+    // Detached on a branch's commit, nothing is orphaned; a commit made there is.
+    await run('checkout', '-q', '--detach');
+    assert.deepEqual(await commitsOnlyHere(work), { unpushed: 0, orphaned: 0 });
+    await commit('on no branch');
+    assert.deepEqual(await commitsOnlyHere(work), { unpushed: 0, orphaned: 1 });
+    await run('tag', 'kept');
+    assert.deepEqual(await commitsOnlyHere(work), { unpushed: 0, orphaned: 0 }, 'a tag names it');
   } finally {
     await fs.rm(dir, { recursive: true, force: true });
   }

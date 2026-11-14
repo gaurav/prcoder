@@ -500,7 +500,7 @@ test('a quit in a worktree removes it or keeps it as told, and never the main wo
       const s = await serve(wt, { agent: '/usr/bin/false' });
       try {
         assert.deepEqual(await quit(s.base, {}),
-          { risk: [], worktree: { name: answer, path: wt, lose: ['1 untracked file', 'ignored node_modules/'] } });
+          { risk: [], worktree: { name: answer, path: wt, lose: ['1 untracked file', 'ignored node_modules/'], unpushed: 0 } });
         assert.deepEqual(await quit(s.base, { force: true, worktree: 'sideways' }), { error: 'worktree: remove or keep' });
         // One somebody locked is not offered, and not removed when asked.
         git(`worktree lock ../${answer}`);
@@ -582,11 +582,19 @@ test('--worktree starts in a worktree it makes, on the branch or pull request, a
       assert.equal(await exists(wt), false);
       assert.match(git('branch --list'), /topic/);
 
-      // The same, with something in it: asked about, as any worktree is.
+      // The same, with a commit on its branch that no remote has: nothing
+      // would be lost, and it is asked about all the same, saying so. Then
+      // with a file git lacks as well.
+      git('init -q --bare ../hub.git');
+      git('remote add origin ../hub.git');
+      git('push -q origin main');
       const again = await serve(main, { agent: '/usr/bin/false', args: ['-w', 'topic'], env: { PRCODER_WORKTREES: base } });
       try {
+        assert.equal(git('symbolic-ref --short HEAD', wt), 'topic', 'the branch it left, in a worktree made again');
+        git('commit -q --allow-empty -m "only here"', wt);
+        assert.deepEqual(await ask(again.base, '/api/quit', {}), { risk: [], worktree: { name: 'topic', path: wt, lose: [], unpushed: 1 } });
         await fs.writeFile(path.join(wt, 'notes.txt'), 'x');
-        assert.deepEqual(await ask(again.base, '/api/quit', {}), { risk: [], worktree: { name: 'topic', path: wt, lose: ['1 untracked file'] } });
+        assert.deepEqual(await ask(again.base, '/api/quit', {}), { risk: [], worktree: { name: 'topic', path: wt, lose: ['1 untracked file'], unpushed: 1 } });
         assert.deepEqual(await ask(again.base, '/api/quit', { force: true, worktree: 'keep' }), { quit: true });
         await again.exited;
       } finally {
@@ -809,6 +817,13 @@ test('the quit question in a worktree says what removing it would delete', () =>
   assert.deepEqual(worktreeLosses({ changed: 1, untracked: 2, ignored: ['.env', 'node_modules/'], queue }),
     ['1 uncommitted change', '2 untracked files', 'ignored .env, node_modules/', '2 queue items']);
   assert.deepEqual(worktreeLosses({ ignored: ['.env', 'a/', 'b/', 'c/', 'd/'] }), ['ignored .env, a/, b/ and 2 more']);
+  // A detached HEAD's commits that no branch has do go with it, and come first.
+  assert.deepEqual(worktreeLosses({ orphaned: 2, untracked: 1 }), ['2 commits on no branch', '1 untracked file']);
+  // Commits on its branch and no remote stay, and are said after, as staying.
+  assert.equal(leaveQuestion([], { name: 'topic', lose: [], unpushed: 1 }),
+    'quit, and [r]emove worktree topic or [k]eep it? [N]  it has nothing git lacks; its branch stays, with 1 commit that is on no remote ');
+  assert.match(leaveQuestion([], { name: 'topic', lose: ['1 untracked file'], unpushed: 3 }),
+    /removing it deletes 1 untracked file; its branch stays, with 3 commits that are on no remote $/);
   assert.equal(leaveQuestion(['1 unpushed commit'], { name: 'topic', lose: ['1 untracked file', '1 queue item'] }),
     'quit, and [r]emove worktree topic or [k]eep it? [N]  1 unpushed commit; removing it deletes 1 untracked file, 1 queue item ');
   // The keys are inside the first of an 80-column line, whatever follows.

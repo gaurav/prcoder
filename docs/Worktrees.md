@@ -110,11 +110,16 @@ does not have:
 - **the queue.** `.prcoder/` is in the worktree and ignored, so `.prcoder/queue.json` goes with it;
   the items still on Local are counted. A queue kept elsewhere with `--queue` stays.
 
-Commits are never among them. A worktree's branch stays when the worktree goes, with every commit
-on it, pushed or not, and can be checked out again anywhere.
+Commits on a branch are never among them. A worktree's branch stays when the worktree goes, with
+every commit on it, pushed or not, and can be checked out again anywhere. Two things about commits
+are said all the same. Commits on the branch that no remote has are not lost, but they are on this
+machine alone and the worktree was what showed them as unfinished, so the question counts them
+after the rest, as staying. And a worktree on no branch -- a detached HEAD -- can hold commits
+that nothing else names; those do go with it, and are listed first.
 
-One case is not asked about. A worktree that `--worktree` made, with nothing in it that git lacks
-and nothing else at stake in the quit, is removed as prcoder goes, and the terminal and the page
+One case is not asked about. A worktree that `--worktree` made, with nothing in it that git lacks,
+no commit on its branch that is on this machine alone, and nothing else at stake in the quit, is
+removed as prcoder goes, and the terminal and the page
 say so: the directory is one this command made and can make again in a second. prcoder knows its
 own by `.prcoder/worktree.json`, written as it makes one. A worktree made by hand is always asked
 about, however clean.

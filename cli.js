@@ -331,15 +331,19 @@ export function queueSummary(items = [], file = '.prcoder/queue.json') {
  * What removing a worktree would delete that git does not have, as the
  * clauses of the question a quit in one asks: worktreeLoss's counts (git.js)
  * and `queue`, the queue's items when its file is in the worktree, of which
- * the ones on Local are counted. Empty when there is nothing: every commit is still on the
- * branch, which stays. Three ignored paths are named and the rest counted,
+ * the ones on Local are counted, and `orphaned`, the commits of a detached
+ * HEAD that no branch has. Empty when there is nothing: every other commit
+ * is still on its branch, which stays. Three ignored paths are named and the rest counted,
  * since the ones worth a second thought (`.env`) sort first and the line is
  * one line.
  */
-export function worktreeLosses({ changed = 0, untracked = 0, ignored = [], queue = [] } = {}) {
+export function worktreeLosses({ changed = 0, untracked = 0, ignored = [], queue = [], orphaned = 0 } = {}) {
   const n = (count, what) => `${count} ${what}${count > 1 ? 's' : ''}`;
   const queued = counts(queue).local;
   return [
+    // First: a commit is the one thing here nobody expects to lose. Only a
+    // detached HEAD has any (commitsOnlyHere in git.js).
+    orphaned && `${n(orphaned, 'commit')} on no branch`,
     changed && n(changed, 'uncommitted change'),
     untracked && n(untracked, 'untracked file'),
     ignored.length && `ignored ${ignored.slice(0, 3).join(', ')}${ignored.length > 3 ? ` and ${ignored.length - 3} more` : ''}`,
@@ -348,8 +352,8 @@ export function worktreeLosses({ changed = 0, untracked = 0, ignored = [], queue
 }
 
 /**
- * The terminal's question for a quit in worktree `wt` (`{ name, lose }`,
- * `lose` being worktreeLosses): the three answers, then the usual risks and
+ * The terminal's question for a quit in worktree `wt` (`{ name, lose,
+ * unpushed }`, `lose` being worktreeLosses): the three answers, then the usual risks and
  * what goes with the worktree. Any other key is no. The answers come first
  * because the block clips a line to the terminal's width, and a question cut
  * short of its keys is one answered blind; what is cut this way round is the
@@ -357,8 +361,16 @@ export function worktreeLosses({ changed = 0, untracked = 0, ignored = [], queue
  */
 export function leaveQuestion(risk, wt) {
   const about = wt.lose.length ? `removing it deletes ${wt.lose.join(', ')}` : 'it has nothing git lacks';
-  return `quit, and [r]emove worktree ${wt.name} or [k]eep it? [N]  ${[...risk, about].join('; ')} `;
+  return `quit, and [r]emove worktree ${wt.name} or [k]eep it? [N]  ${[...risk, about, ...onlyHere(wt)].join('; ')} `;
 }
+
+/**
+ * The clause for a worktree's `unpushed` commits (commitsOnlyHere in git.js),
+ * or none: they are not lost with it, so they are not in `lose`, but they are
+ * why a worktree that is otherwise spotless is still asked about.
+ */
+export const onlyHere = (wt) => (wt.unpushed
+  ? [`its branch stays, with ${wt.unpushed} commit${wt.unpushed > 1 ? 's' : ''} that ${wt.unpushed > 1 ? 'are' : 'is'} on no remote`] : []);
 
 /**
  * What quitting would cost, as the clauses of the y/N: the Claude sessions the

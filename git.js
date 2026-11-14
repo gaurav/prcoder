@@ -186,6 +186,26 @@ export async function worktreeLoss(cwd) {
 }
 
 /**
+ * The commits on HEAD in `cwd` that removing its worktree would leave
+ * somewhere unexpected: `{ unpushed, orphaned }`.
+ *
+ * `unpushed` is how many are on its branch and on no remote. They stay,
+ * since the branch does, but they are on this machine alone, and a worktree
+ * that goes without a word takes with it the one place that showed them as
+ * work in progress. Nothing when the repository has no remote at all: there
+ * is nowhere they could have been pushed.
+ *
+ * `orphaned` is how many are on no branch, tag or remote, which only a
+ * detached HEAD can have: those do go with the worktree, as nothing else
+ * names them once its HEAD and reflog are deleted.
+ */
+export async function commitsOnlyHere(cwd) {
+  const count = async (...not) => Number(await text(['rev-list', '--count', 'HEAD', '--not', ...not], cwd));
+  if (!await currentBranch(cwd)) return { unpushed: 0, orphaned: await count('--branches', '--tags', '--remotes') };
+  return { unpushed: await text(['remote'], cwd) ? await count('--remotes') : 0, orphaned: 0 };
+}
+
+/**
  * `git worktree remove` of the worktree at `where`, run in `from`: the
  * shared git directory (linkedWorktree's `common`), since the worktree itself
  * is about to go and a bare repository has no main working copy to stand in.

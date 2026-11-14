@@ -409,15 +409,20 @@ function gone(removed = null) {
  * `'remove'`, `'keep'`, or null for no quit at all (the third button, or
  * Escape). `worktree` is the server's account of it: its name, its path, and
  * `lose`, what removing it would delete that git does not have -- ignored
- * files and the queue included, which git itself removes without a word.
+ * files and the queue included, which git itself removes without a word --
+ * and `unpushed`, how many commits on its branch no remote has.
  * A box of our own because the browser's confirm() has two buttons.
  */
 function askLeave({ risk = [], worktree }) {
   const box = document.getElementById('leave');
   document.getElementById('leave-risk').textContent = risk.length ? `Quitting: ${risk.join('; ')}.` : '';
+  // Commits on no remote are not lost with it, and are said for that reason:
+  // the worktree was the one place that showed them as unfinished.
+  const n = worktree.unpushed ?? 0;
+  const stays = n ? `Its branch stays, with ${n} commit${n > 1 ? 's' : ''} that ${n > 1 ? 'are' : 'is'} on no remote.` : 'Its branch and commits stay.';
   document.getElementById('leave-lose').textContent = worktree.lose.length
-    ? `Removing ${worktree.path} deletes what git does not have: ${worktree.lose.join(', ')}. Its branch and commits stay.`
-    : `${worktree.path} has nothing git does not have. Its branch and commits stay either way.`;
+    ? `Removing ${worktree.path} deletes what git does not have: ${worktree.lose.join(', ')}. ${stays}`
+    : `${worktree.path} has nothing git does not have. ${stays}`;
   box.returnValue = '';
   return new Promise((resolve) => {
     box.addEventListener('close', () => resolve(box.returnValue || null), { once: true });

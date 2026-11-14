@@ -5435,10 +5435,20 @@ test('a quit in a worktree asks whether to remove it, keep it, or not quit', { s
   await q.click('#term-quit');
   await q.waitForSelector('#leave:modal');
   assert.equal(await q.locator('#leave-risk').isVisible(), false, 'nothing to say about the quit itself');
-  assert.equal(await q.locator('#leave-lose').textContent(), '/w/topic has nothing git does not have. Its branch and commits stay either way.');
+  assert.equal(await q.locator('#leave-lose').textContent(), '/w/topic has nothing git does not have. Its branch and commits stay.');
   await q.locator('#leave button', { hasText: 'Quit and remove the worktree' }).click();
   await q.waitForSelector('#dead:modal');
   assert.deepEqual(sent, [{}, { force: true, worktree: 'remove' }]);
+  // Commits on its branch that no remote has stay, and the box says so: it
+  // is the reason a worktree with nothing to lose is asked about at all.
+  const u = await newPage({ pty: (ws) => ws.close() });
+  await u.locator('#term-exit').waitFor({ state: 'visible' });
+  await u.route('**/api/quit', (r) => r.fulfill({ json: { risk: [], worktree: { ...worktree, lose: [], unpushed: 2 } } }));
+  await u.click('#term-quit');
+  await u.waitForSelector('#leave:modal');
+  assert.equal(await u.locator('#leave-lose').textContent(),
+    '/w/topic has nothing git does not have. Its branch stays, with 2 commits that are on no remote.');
+  await u.close();
   // The page that has just lost its server says what went with it.
   assert.equal(await q.locator('#dead-worktree').textContent(), 'Its worktree, /w/topic, was removed with it. The branch and its commits are kept.');
   assert.equal(await p.isClosed(), true);
