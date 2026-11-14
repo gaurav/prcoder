@@ -9,7 +9,12 @@ prcoder serves the repo it is started in, and will not start outside a git
 working tree (a scratch directory needs `git init` first): it reads the current branch's PR via
 `gh` and spawns a real `claude` PTY per websocket connection. Run it from a
 branch with an open PR -- most routes answer `no pull request for this branch`
-otherwise. Test against this repo's own PRs; another repo only when its owner
+otherwise. **Never hand it a pull request here** -- `node server.js 87`,
+`prcoder 87`, a URL or a branch name: prcoder checks out the pull request it
+is started on, and this directory is the owner's working copy. To see
+another pull request, use `onPullRequest` in `tools/driver.mjs`, which
+answers a worktree under `data/` on its branch; start `server.js` from this
+tree with that as `cwd`, and no argument. Test against this repo's own PRs; another repo only when its owner
 has said so (CLAUDE.md).
 
 ## Launch
@@ -19,6 +24,10 @@ port, and `curl -s localhost:<port>/api/whoami` says if it is live. A running
 server is the cheapest thing to verify against, and it serves `public/` from
 disk, so a reload shows a client change. A second server started in the same
 directory moves aside to another port rather than taking the recorded one.
+Each running server also records its pid and port in `.prcoder/running/` at
+the working copy's top level (from any subdirectory), which a `prcoder <pr>`
+reads to refuse a checkout under it. A record with `"port": null` is one still
+starting, and refuses a checkout too.
 
 Otherwise:
 
@@ -40,8 +49,8 @@ stdout. For a look with the user's own eyes, leave it running and hand them that
 
 API shape: the `routes` table in `server.js`, keyed `"METHOD /path"`, JSON
 in/out, errors as 500 `{error}`. Every handler but the few in `UNLOCKED` --
-whoami, the `GET` status poll, the queue's reference lookup, the Issues tab's
-listing -- is serialised, so one slow call delays the rest. `POST /api/status`
+whoami, the `GET` status poll, the queue's reference lookup, the Issues and
+Pull requests tabs' listings, the PR pane's list of milestones -- is serialised, so one slow call delays the rest. `POST /api/status`
 is the page's ⟳: a poll that also searches for the branch's pull requests,
 where `GET` reads the ones `.prcoder/prs.json` remembers by URL. A page load
 also reads, with no tab clicked, `/api/history` and the last `/api/pulls`
@@ -119,7 +128,11 @@ Two rules for them, and for any script after them:
   should do the same -- `--queue` makes no `.gitignore`, so a path outside
   `data/` or `.prcoder/` would show up in `git status`. The PR is not — ticking a
   description checkbox — in the PR pane or the queue's PR #N tab — edits the
-  description on GitHub. Filing a queue item with ◎
+  description on GitHub, and picking in the PR pane's milestone line moves the
+  pull request to that milestone (pick the old one back, or none, to undo; the
+  pull request's timeline keeps both events). To check `/api/pr/milestone`
+  without a write, send a number the picker never listed: it is refused
+  before gh. Filing a queue item with ◎
   writes to GitHub too, and one-way: putting the queue back does not close the
   issue. Dropping an Issues or Pull requests row on a milestone line, or Move in
   its opened row, sets that milestone on GitHub, so route `/api/issue/milestone`
@@ -127,10 +140,12 @@ Two rules for them, and for any script after them:
   a real one back. Snapshot the body with `gh pr view <n> --json body -q
   .body` before, and diff after. Opening and closing a description's sections
   is not a write — the fold is browser state and never reaches GitHub — so the
-  driver clicks them freely. `prcoder choose` writes nothing until a pick: a
-  listed number is a `gh pr checkout` of the working copy it runs in, so
-  answer `q` here (`tools/choose.mjs` does), and see a pick through in a clone
-  under `data/`.
+  driver clicks them freely. A pull request named at startup is a checkout:
+  `server.js <n>`, `prcoder <url>` or `prcoder <branch>` runs `gh pr checkout`
+  in the working copy it starts in, as a `prcoder choose` pick does. So never
+  name one here; `prcoder choose` writes nothing until a pick, so answer `q`
+  here (`tools/choose.mjs` does), and see a pick or a named start through in a
+  clone under `data/`.
 
 If every PTY spawn dies with a bare `posix_spawnp failed`, the `postinstall`
 script was skipped: `npm install` again, and see `tools/postinstall.mjs` for why.

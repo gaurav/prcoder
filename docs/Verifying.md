@@ -118,7 +118,10 @@ already up with `PRCODER_VERBOSE=2`, or a `browser.mjs` run is already printing 
   prints the count on every poll, so a change that adds a call shows up.
   A branch's open pull requests, once found, are read by URL, one `gh pr view` each, from
   `.prcoder/prs.json` (`lookupPrs` in `github.js`), and held to the branch's push target (one
-  `for-each-ref`), so the eight holds however many repositories the clone has. The search by name
+  `for-each-ref`), so the eight holds however many repositories the clone has. The one chosen for
+  the branch (the switcher, `prcoder <pr>`) is remembered with them, so a fork's checked out to
+  `owner/name`, or a merged one beside an open one, is its one read like the rest, not a second
+  `gh pr view` on top of every poll. The search by name
   (`branchPrs`) runs on a branch with none open -- which is every poll there, and what the nine,
   ten and eight are -- and on a branch with one only after a change of branch, ⟳, `r`, `g`, ten
   minutes, a change of state, or a read of one that fails anew. It is one `gh pr list` per repository the
@@ -166,10 +169,13 @@ Each unit test file says at its top what it pins. Two run the server itself:
 ([Security.md](Security.md)), and `test/queue-local.test.js` in a scratch directory with `gh` and
 `git` stubbed to fail, asserting that the routes which only read or rewrite the queue never reach
 either. Filing an item with ◎ is the one queue route that does, on purpose, and is not driven.
-`test/api.test.js` is also the one test that opens a real `/pty`: with settings `sessionArgs`
-refuses, so the claim is that it closes with 1008 before the spawn. The exit bar's "Start coding
-agent" and Quit are `test/browser/suite.js`'s, against a mock socket that closes the way an
-exiting agent does.
+`test/api.test.js` also opens a real `/pty`, with settings `sessionArgs` refuses, so the claim is
+that it closes with 1008 before the spawn. The exit bar's "Start coding agent" and Quit are
+`test/browser/suite.js`'s, against a mock socket that closes the way an exiting agent does, or
+with `QUIT_CODE` the way a quitting prcoder does. That a quit, and a SIGHUP, really send
+`QUIT_CODE` to every tab is `test/cli.test.js`'s, against a real server in a throwaway repo, with
+real sockets -- and that the code still arrives at a tab megabytes behind on the agent's output,
+which a server that exits as soon as it has sent the close loses.
 
 Some things were checked against the real thing rather than a stub, and the evidence sits next to
 the code:
