@@ -15,7 +15,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { WebSocket } from 'ws';
-import { server, sessionArgs, startedWith, missingVendor, keepPr, issueMove, pullMove, pickerMove, queuedRun } from '../server.js';
+import { server, sessionArgs, startedWith, missingVendor, keepPr, issueMove, pullMove, pickerMove, switchTarget, queuedRun } from '../server.js';
 import { grammars } from '../public/diff.js';
 import { VERSION } from '../cli.js';
 
@@ -327,6 +327,26 @@ test('a switch is refused before gh unless it names a pull request', async () =>
     });
     assert.deepEqual(await r.json(), { error: `not a pull request URL: ${url}` });
   }
+});
+
+// The switcher's search field sends a number for a pull request its list does
+// not have, and gh reads a bare number in its base repository. Only a JSON
+// number that is a positive integer gets that far: a string could be a flag,
+// or a branch's name, by the time it is in gh's argv.
+test('a switch by number is refused before gh unless it is a positive integer', async () => {
+  for (const number of ['140', '--repo=x/y', 0, -1, 1.5, 2 ** 53, true, null, [7], { n: 7 }]) {
+    const res = await fetch(`${base}/api/pr/switch`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ number }),
+    });
+    assert.equal(res.status, 500, JSON.stringify(number));
+    assert.deepEqual(await res.json(), { error: `${JSON.stringify(number)} is not a pull request's number` });
+  }
+  const none = await fetch(`${base}/api/pr/switch`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+  assert.deepEqual(await none.json(), { error: 'nothing is not a pull request\'s number' });
+  assert.equal(switchTarget({ number: 140 }), '140');
+  assert.equal(switchTarget({ url: 'https://github.com/a/b/pull/1' }), 'https://github.com/a/b/pull/1');
+  // A URL beside a number is held as a URL, never passed over for the number.
+  assert.throws(() => switchTarget({ url: '--web', number: 140 }), { message: 'not a pull request URL: --web' });
 });
 
 // The milestone goes to gh's -F, which reads `null`, `true` and a number as

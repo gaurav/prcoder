@@ -181,10 +181,14 @@ off with it.
   picker was offered -- the server keeps the last list it read for each repository (`pickerMove`) --
   or the milestone the pull request is already on, as the Issues and Pull requests tabs' moves are
   held to their listings, so a closed milestone or one a stale tab sends never reaches GitHub.
-  The switcher's `/api/pr/switch` hands a URL to `gh pr checkout`, so `wholePrRepo` in `git.js`
-  takes only the whole of a `https://github.com/owner/repo/pull/N` -- anchored, so a flag in front
-  of one or another host with that path behind it is refused -- and the route takes it only in one
-  of `repos`, the repositories `repoInfo` says the branch's pull requests are looked for in. Its
+  The switcher's `/api/pr/switch` hands a URL to `gh pr view` and then a checkout, so `wholePrRepo`
+  in `git.js` takes only the whole of a `https://github.com/owner/repo/pull/N` -- anchored, so a
+  flag in front of one or another host with that path behind it is refused -- and the route takes
+  it only in one of `repos`, the repositories `repoInfo` says the branch's pull requests are looked
+  for in. In place of a URL it takes a number, for a pull request the switcher's list does not
+  have: `switchTarget` in `server.js` takes only a JSON number that is a positive integer -- never
+  a string, which could be a flag or a branch's name once it is in gh's argv -- and gh reads a bare
+  number in its base repository, whose URL is then held to `repos` like any other. Its
   sibling `/api/pr/choose` checks nothing out, and takes only a URL the last poll listed for the
   branch. `test/api.test.js` pins the refusals that need no `gh`. A URL prcoder reads back from
   its own files is held to the same rule, since anyone can edit them: each one `.prcoder/prs.json`
