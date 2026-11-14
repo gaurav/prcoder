@@ -273,6 +273,22 @@ a { color: var(--accent); }
   width: 12px; height: 12px; margin-right: 5px; vertical-align: -1px;
   font-size: 9px; line-height: 12px;
 }
+/* The stack mark (stackMark in ui.js), on the switcher's button: a column of
+   bars, bottom first in the markup and so column-reverse here. The ground is
+   the full width and the bars are inset, which is what makes one bar on the
+   ground read as "into main" and not as two of a kind. No taller than the
+   button's line of text: stackShape in pr.js counts the bars to that. */
+.stack-mark {
+  display: inline-flex; flex: none; flex-direction: column-reverse; align-items: center; gap: 1px;
+  width: 10px;
+}
+.stack-mark i { display: block; box-sizing: border-box; width: 6px; height: 2px; background: var(--dim); }
+.stack-mark.thin i { height: 1px; }
+.stack-mark.thin .here { height: 2px; }   /* the one bar that has to be found */
+.stack-mark .ground { width: 10px; height: 1px; margin-top: 1px; }
+.stack-mark .here { width: 8px; background: var(--accent); }
+.stack-mark .over { opacity: .45; }
+.stack-mark .bare { background: none; border-top: 1px dotted var(--dim); }
 .check .mark { margin-right: 6px; }
 /* The checks, as a mark rather than the row of badges they used to be above the
    title: three counts in colour, at the top of the pane, read as the loudest

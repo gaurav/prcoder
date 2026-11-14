@@ -998,11 +998,62 @@ const stackSize = (nodes) => nodes.reduce((n, k) => n + 1 + stackSize(k.kids), 0
  * switch to -- and neither are the other stacks on the ones under it.
  */
 export const stackLabel = (above, under = []) => {
-  const down = under.filter((n) => n.pr).length;
-  const up = stackSize(above);
-  const parts = [down && `↓${down}`, up && `↑${up}`].filter(Boolean);
+  const parts = stackCounts(above, under).map(([arrow, n]) => `${arrow}${n}`);
   return parts.length ? `Stack (${parts.join(' ')})` : 'Stack';
 };
+
+// The tab's two numbers, and the switcher mark's: one count, so the two
+// cannot say different things about the same stack.
+const stackCounts = (above, under) => [['↓', under.filter((n) => n.pr).length, 'under'], ['↑', stackSize(above), 'built on']]
+  .filter(([, n]) => n);
+
+const stackHeight = (nodes) => nodes.reduce((n, k) => Math.max(n, 1 + stackHeight(k.kids)), 0);
+
+// What fits inside the button's line of text, measured in both engines
+// (2026-11-14): five 2px bars, or eight of 1px, with the ground under them.
+const THICK_BARS = 5;
+const MOST_BARS = 8;
+
+/**
+ * Where a pull request sits in its stack, for the mark on the switcher's
+ * button (stackMark in ui.js): `above` is stackOn's tree and `under`
+ * stackUnder's answer. The select the switcher was showed the chosen row's
+ * indent on its closed face, and the picker's button, which shows the value
+ * alone, lost it (#191).
+ *
+ * `bars` is the column, bottom first: `ground` for the default branch, and
+ * only when the chain is known to reach it; `under` for each pull request
+ * below and `bare` for a branch there with none; `here`; then one `over` for
+ * each *level* built on this one. Levels, not pull requests: a column cannot
+ * draw two stacks side by side, and the count is in `words` and on the tab.
+ *
+ * A column taller than the line of text it sits in would grow the header, so
+ * past THICK_BARS the bars are `thin`, and past MOST_BARS the ones furthest
+ * from `here` go: all but two levels over it, then the bottom of what is
+ * under it. The ground stays, since where the stack bottoms out is still true.
+ *
+ * `words` is the same in the tab's notation, for the tooltip and the button's
+ * name: `↓2 under, ↑1 built on, from main`.
+ */
+export function stackShape(above, under) {
+  const counts = stackCounts(above, under.nodes);
+  const bare = under.nodes.filter((n) => !n.pr).length;
+  let below = under.nodes.map((n) => (n.pr ? 'under' : 'bare'));
+  let over = stackHeight(above);
+  if (below.length + 1 + over > MOST_BARS) {
+    over = Math.min(over, Math.max(2, MOST_BARS - 1 - below.length));
+    below = below.slice(Math.max(0, below.length - (MOST_BARS - 1 - over)));
+  }
+  const bars = [...(under.into ? ['ground'] : []), ...below, 'here', ...Array(over).fill('over')];
+  const parts = [
+    ...counts.map(([arrow, n, what]) => `${arrow}${n} ${what}`),
+    ...(bare ? [`${bare} ${bare > 1 ? 'branches' : 'branch'} with no pull request under`] : []),
+  ];
+  const from = under.into ? `from ${under.into}` : 'what it is built on is not known';
+  const words = parts.length ? `${parts.join(', ')}, ${from}`
+    : under.into ? `into ${under.into}, with nothing stacked on it` : from;
+  return { bars, thin: bars.length - (under.into ? 1 : 0) > THICK_BARS, words };
+}
 
 /**
  * The Files tab's accessible name and tooltip: its label, then what its pie

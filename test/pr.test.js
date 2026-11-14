@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  pageTitle, withoutHtml, inline, headLinks, noPrLinks, prsInto, prTree, stackOn, stackLabel, stackUnder, stackTree, stackTitle, stackBase, stackOrder, stackEmpty, intoEmpty, switcherRows, sideLabel, sides, branchGroup, lookedIn,
+  pageTitle, withoutHtml, inline, headLinks, noPrLinks, prsInto, prTree, stackOn, stackLabel, stackShape, stackUnder, stackTree, stackTitle, stackBase, stackOrder, stackEmpty, intoEmpty, switcherRows, sideLabel, sides, branchGroup, lookedIn,
   tabLabel, taskCount, filesName, checkCount, checksName, worst, milestoneChoices, switcherChoices, switcherFilter,
 } from '../public/pr.js';
 import { filesProgress } from '../public/filelist.js';
@@ -646,6 +646,44 @@ test('the Stack tab counts down and up apart, and leaves out a part that is noth
   // A bare branch under it is drawn, and is nothing to switch to, so not counted.
   const onMerged = { number: 70, headRefName: 'on-merged', baseRefName: 'merged-topic' };
   assert.equal(label(onMerged), 'Stack');
+});
+
+test('the switcher\'s stack mark is a bar for each pull request under, this one, and each level built on it', () => {
+  const deeper = [...OPEN, { number: 61, headRefName: 'tabs-2', baseRefName: 'checks-tab' }];
+  const shape = (pr, prs = deeper, git = []) => stackShape(stackOn(pr, prs), stackUnder({ pr }, prs, git, 'main'));
+  // Into main with nothing on it: one bar on the ground.
+  const alone = { number: 80, headRefName: 'alone', baseRefName: 'main' };
+  assert.deepEqual(shape(alone), { bars: ['ground', 'here'], thin: false, words: 'into main, with nothing stacked on it' });
+  assert.deepEqual(shape(OPEN[2]), { bars: ['ground', 'under', 'here', 'over'], thin: false, words: '↓1 under, ↑1 built on, from main' });
+  assert.deepEqual(shape(deeper[3]).bars, ['ground', 'under', 'under', 'here']);
+  assert.equal(shape(deeper[3]).words, '↓2 under, from main');
+  // Three built on it, two levels high: the column is the levels, the words the count.
+  assert.deepEqual(shape(OPEN[0]).bars, ['ground', 'here', 'over', 'over']);
+  assert.equal(shape(OPEN[0]).words, '↑3 built on, from main');
+  // The words and the tab count alike.
+  for (const pr of deeper) {
+    const tab = stackLabel(stackOn(pr, deeper), stackUnder({ pr }, deeper, [], 'main').nodes).match(/[↓↑]\d+/g) ?? [];
+    assert.deepEqual(shape(pr).words.match(/[↓↑]\d+/g) ?? [], tab, `#${pr.number}`);
+  }
+
+  // A branch with no pull request under it is drawn apart, and until git has
+  // said what that branch is built on there is no ground to draw.
+  const onMerged = { number: 70, headRefName: 'on-merged', baseRefName: 'merged-topic' };
+  assert.deepEqual(shape(onMerged), { bars: ['bare', 'here'], thin: false,
+    words: '1 branch with no pull request under, what it is built on is not known' });
+  const said = shape(onMerged, deeper, [{ branch: 'merged-topic', names: [], toDefault: true }]);
+  assert.deepEqual(said.bars, ['ground', 'bare', 'here']);
+  assert.equal(said.words, '1 branch with no pull request under, from main');
+
+  // Six bars are thin ones, and past eight the far ends go: the ground stays.
+  const chain = (n) => Array.from({ length: n }, (_, i) => ({ number: 100 + i, headRefName: `c${i}`, baseRefName: i ? `c${i - 1}` : 'main' }));
+  const ten = chain(10);
+  assert.equal(shape(ten[4], ten.slice(0, 5)).thin, false);
+  assert.equal(shape(ten[5], ten.slice(0, 6)).thin, true);
+  assert.deepEqual(shape(ten[9], ten).bars, ['ground', ...Array(7).fill('under'), 'here']);
+  assert.deepEqual(shape(ten[0], ten).bars, ['ground', 'here', ...Array(7).fill('over')]);
+  assert.deepEqual(shape(ten[5], ten).bars, ['ground', ...Array(5).fill('under'), 'here', 'over', 'over']);
+  assert.equal(shape(ten[5], ten).words, '↓5 under, ↑4 built on, from main');
 });
 
 const order = (prs) => stackOrder(prs).map(({ pr, depth }) => `${'-'.repeat(depth)}${pr.number}`);
