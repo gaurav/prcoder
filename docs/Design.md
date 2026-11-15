@@ -159,9 +159,12 @@ are cards of two lines, which is what the board draws in a column about this wid
 one line of facts; it lists one milestone, not the repository; and its read is its own, made as it
 opens (`POST /api/milestone`), unlocked, and kept a few minutes.
 
-**What it does not do yet:** change a row's milestone, priority or effort. Every row links to
-GitHub, where that is done. Setting a label would be a new kind of write for prcoder, which so far
-changes only where an issue or a pull request is filed, never what is on it.
+**What it does not do yet:** change a row's milestone, priority or effort
+([#204](https://github.com/gaurav/prcoder/issues/204)). Every row links to GitHub, where that is
+done. Setting a label would be a new kind of write for prcoder, which so far changes only where an
+issue or a pull request is filed, never what is on it. Nor is it on a branch with no pull request,
+which has no milestone line to open it from
+([#205](https://github.com/gaurav/prcoder/issues/205)).
 
 ## What it deliberately does not do
 
