@@ -148,7 +148,7 @@ the button that opens [the milestone viewer](#the-milestone-viewer) in the pane'
 milestone it is a pie of how much of that milestone is done -- its pull requests and its issues
 together, as the queue's milestone lines count them, the figures on hover -- then the milestone's
 title, clipped when it is long, and for a dated one when it is due, as the queue's milestone lines
-say it: *due in 3 days*, yellow within a week, a red badge once past, with the date on hover. On no
+say it: *due in 3 days*, coloured by how near it is, a red badge once past, with the date on hover. On no
 milestone it is a yellow dot and *No milestone*: a nudge, in the dim of the rest of the head, and
 not the warning-coloured line it was. A pull request on no milestone in a repository with no open
 milestones has no line at all, since there is nothing to put it on. Pressing the line shows the
@@ -383,8 +383,9 @@ pull request's own, and says how the pull request on screen stands to the one it
 
 At its top is a picker ([Pickers](#pickers)) of the milestone to look at: *No milestone*, for what
 is open on none, then the repository's open milestones in the order the queue's Issues tab groups
-them, each dated one with when it is due after it, and the pull request's own even when that one is
-closed. Choosing one moves nothing. The viewer opens on the pull request's own milestone; on a pull
+them, each dated one with when it is due after it, at the row's end, in the colour of how near that
+is -- red once past, orange within a week, yellow within two, green further off -- and the pull
+request's own even when that one is closed. Choosing one moves nothing. The viewer opens on the pull request's own milestone; on a pull
 request with none it opens on the milestone last looked at in this page, or on *No milestone* --
 most pull requests in some repositories never get a milestone, and they are still somewhere to look
 for the next thing from. What was picked is kept while that pull request is on screen. The word
@@ -656,7 +657,8 @@ whether a release is ready, and a pie mostly of issues would hide it (it and the
 count are left out at 0);
 and when it is due, in calendar days, as `due 5 days ago`, `due yesterday`, `due today`, `due tomorrow` or `due in 2
 months` (months from 30 days), with the date in full on hover, `Tuesday, October 27, 2026` -- a round red badge once
-the day is past, yellow within a week, so a milestone to reschedule stands out; an empty one is
+the day is past, orange within a week, yellow within two and green further off, so a milestone to
+reschedule stands out and the list reads by colour from the nearest; an empty one is
 still drawn, folded. Only the first
 group with an issue starts open, which is the one to focus on -- **No milestone** whenever it has any -- and a milestone that appears
 later, made on GitHub since, starts folded; a group you open or close stays so until the page is

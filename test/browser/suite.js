@@ -819,6 +819,30 @@ test('a dated milestone says when it is due at the end of the line', { skip }, a
   await p.close();
 });
 
+// In the picker each milestone's date is at the row's end, in the colour of
+// how near it is, so the list reads from the one to reschedule to the ones
+// with room: red once past, orange within a week, yellow within two, green.
+test('the milestone picker colours each due date by how near it is', { skip }, async () => {
+  // Noon on the 10th, local time; the dates are days, read as dueDay reads them.
+  const p = await newPage({ clock: new Date(2026, 10, 10, 12).getTime() });
+  await p.route('**/api/milestones', (r) => r.fulfill({ json: { ...MILESTONES, milestones: [
+    { number: 1, title: 'Past', dueOn: '2026-11-07T00:00:00Z' }, { number: 2, title: 'This week', dueOn: '2026-11-12T00:00:00Z' },
+    { number: 3, title: 'Next week', dueOn: '2026-11-19T00:00:00Z' }, { number: 4, title: 'Later', dueOn: '2026-11-25T00:00:00Z' }] } }));
+  await p.reload();
+  await p.waitForSelector(`${ML}[data-listed]`);
+  await openViewer(p);
+  await openPicker(p, 'milestone');
+  const dates = await p.$$eval(`${popOf('milestone')} .picker-detail`, (ds) => ds.map((d) => [d.textContent, d.className, getComputedStyle(d).color]));
+  assert.deepEqual(dates.map(([text, cls]) => [text, cls]), [
+    ['due 3 days ago', 'picker-detail due overdue'], ['due in 2 days', 'picker-detail due soon'],
+    ['due in 9 days', 'picker-detail due coming'], ['due in 15 days', 'picker-detail due far']]);
+  const colours = [];
+  for (const name of ['--fail', '--soon', '--warn', '--add']) colours.push(await colourOf(p, await token(p, name)));
+  assert.deepEqual(dates.map(([, , colour]) => colour), colours);
+  assert.equal(new Set(colours).size, 4, 'four colours, each its own');
+  await p.close();
+});
+
 // A repository with no open milestones has nothing to put a pull request on,
 // so one on none has no line -- nothing to nudge toward. `data-listed` is on
 // the line for a driver to wait on, so that driver has to allow for no line.

@@ -6,6 +6,9 @@
      pull request and an error toast are one red; anything still waiting is one
      yellow. Passed is --add -- green-for-done is the same green everywhere. */
   --fail: #f5a3a3; --warn: #f0dc9a;
+  /* Between the two: a due date within a week, which is nearer than yellow's
+     waiting and not yet red's past. */
+  --soon: #f3bd8a;
   /* Claude is working: the busy tab icon's fill (`data-busy` in index.html),
      which test/browser/suite.js holds these two to. A state, not a verdict, so
      deliberately not --fail; where it is drawn it is an octagon, like the icon,
@@ -566,11 +569,15 @@ a { color: var(--accent); }
 .pr-milestone .mark { width: 12px; height: 12px; flex: none; }
 .pr-milestone .ms-name { flex: 0 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .pr-milestone .caret { flex: none; font-size: 10px; margin-left: auto; }
-/* A due date, wherever the pane says one: the line, the viewer's status and
-   its summary. Yellow within a week, and past it the round red badge of
-   `.badge.fail`, as the queue's milestone lines have it (dueLabel). */
+/* A due date, wherever it is said -- this pane's line, the viewer's status
+   and summary, the queue's milestone lines, the milestone picker's rows -- is
+   coloured by how near it is (dueLabel in items.js): orange within a week,
+   yellow within two, green further off. Past it, here, it is the round red
+   badge of `.badge.fail`, as the queue's milestone lines have it. */
+.due.soon, .picker-detail.soon { color: var(--soon); }
+.due.coming, .picker-detail.coming { color: var(--warn); }
+.due.far, .picker-detail.far { color: var(--add); }
 .pr-milestone .due, .ms-standing .due, .ms-sum .due { flex: none; white-space: nowrap; font-variant-numeric: tabular-nums; }
-.pr-milestone .due.soon, .ms-standing .due.soon, .ms-sum .due.soon { color: var(--warn); }
 .pr-milestone .due.overdue, .ms-standing .due.overdue, .ms-sum .due.overdue { color: var(--fail); background: #4d1f24; padding: 0 6px; border-radius: 9px; }
 /* The dot that says how things stand, on the line and on the viewer's status:
    yellow for a pull request on no milestone, green for one on the milestone
@@ -1024,7 +1031,6 @@ main.diff-off #diff-wrap { display: none; }
 .fold.milestone > summary a { color: var(--accent); text-decoration: none; }
 .fold.milestone > summary a:hover { text-decoration: underline; }
 .fold.milestone > summary .due { font-variant-numeric: tabular-nums; }
-.fold.milestone > summary .due.soon { color: var(--warn); }
 .fold.milestone > summary .closed-milestone { font-style: italic; }
 /* The count as a badge straight after the title (countBadge in queue.js):
    pushed to the line's end it was too far off to read as the milestone's.
@@ -1339,7 +1345,6 @@ button.picker[hidden] { display: none; }
 .picker-row.unlisted { border-top: 1px solid var(--line); margin-top: 4px; padding-top: 4px; color: var(--accent); }
 .picker-text { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .picker-detail { flex: none; color: var(--dim); white-space: nowrap; font-variant-numeric: tabular-nums; }
-.picker-detail.soon { color: var(--warn); }
 .picker-detail.overdue { color: var(--fail); }
 .picker-group-label { padding: 4px 8px 0; font-size: 11px; letter-spacing: .05em; text-transform: uppercase; color: var(--dim); }
 .picker-group { border-bottom: 1px solid var(--line); padding-bottom: 4px; margin-bottom: 4px; }
