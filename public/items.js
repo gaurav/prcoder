@@ -184,6 +184,9 @@ const SIZES = [['XS', 50], ['S', 100], ['M', 200], ['L', 500], ['XL', 1000]];
 /** A pull request's size as a chip, `XS` to `XXL`, from its lines changed. */
 export const sizeChip = (lines) => SIZES.find(([, under]) => (lines ?? 0) < under)?.[0] ?? 'XXL';
 
+/** GitHub's reviewDecision as a row says it; null, the usual case, says nothing. */
+export const REVIEW_WORD = { APPROVED: 'approved', CHANGES_REQUESTED: 'changes requested', REVIEW_REQUIRED: 'review needed' };
+
 // A pull request opened within this long is `new`. One not updated for months
 // is not dimmed: an old one with conflicts is often the quickest to finish,
 // since the coding agent can fix them (2026-10-20).

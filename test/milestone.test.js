@@ -3,7 +3,7 @@
 // screen stands to the milestone being looked at, and which kinds are listed.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { LABEL_KINDS, labelValue, isValueLabel, effortGuess, sections, viewingFor, standing, kindsFrom, kindsText, flipKind, tally, tallyLabel } from '../public/milestone.js';
+import { LABEL_KINDS, labelValue, isValueLabel, effortGuess, sections, viewingFor, standing, kindsFrom, kindsText, flipKind, tally, tallyLabel, milestoneChoices } from '../public/milestone.js';
 
 // LABELS.md in gaurav/milestones, as read on 2026-11-15 (d46781d): the two
 // tables' values in their order. A change there is a change here, by hand.
@@ -117,4 +117,26 @@ test('a milestone\'s pie is merged and closed over everything but what closed un
   assert.equal(tally(null), null);
   assert.equal(tally({ pulls: { open: 0, merged: 0, closed: 0 }, issues: { open: 0, closed: 0 } }), null, 'one that has never held anything');
   assert.equal(tally({ pulls: { open: 1.5, merged: 0, closed: 0 }, issues: { open: 0, closed: 0 } }), null);
+});
+
+// The picker leads with none, then the open milestones in the Issues tab's
+// order, and always has the pull request's own, even one the list lacks. A
+// dated one says when it is due after its title, as the milestone line does.
+test('the milestone picker offers none, the open milestones in rank, and the pull request\'s own', () => {
+  const list = [{ number: 3, title: 'Not urgent', dueOn: null }, { number: 1, title: 'v1.0', dueOn: '2026-10-14T00:00:00Z' },
+    { number: 4, title: 'Needed soon', dueOn: null }];
+  // Noon on the 12th, local time, so the 14th is two days off in any zone.
+  const now = new Date(2026, 9, 12, 12).getTime();
+  const none = { key: '', text: 'No milestone', title: 'what is open on no milestone' };
+  assert.deepEqual(milestoneChoices(null, list, now), [
+    none,
+    { key: '1', text: 'v1.0', detail: { text: 'due in 2 days', cls: 'due soon', title: 'Wednesday, October 14, 2026' } },
+    { key: '4', text: 'Needed soon' },
+    { key: '3', text: 'Not urgent' },
+  ]);
+  assert.equal(milestoneChoices(null, list, new Date(2026, 9, 20, 12).getTime())[1].detail.cls, 'due overdue');
+  const closed = { number: 9, title: 'v0.1', dueOn: null };
+  assert.deepEqual(milestoneChoices(closed, list).map((c) => c.key), ['', '1', '4', '3', '9']);
+  assert.deepEqual(milestoneChoices(list[2], list).map((c) => c.key), ['', '1', '4', '3'], 'listed once');
+  assert.deepEqual(milestoneChoices(closed, null), [none, { key: '9', text: 'v0.1' }], 'before the list lands');
 });

@@ -4,8 +4,9 @@
 // imports pr.js -- see CLAUDE.md here), and the drawing under them. Nothing
 // here touches the DOM at module scope.
 
-import { h, mark, fraction } from './ui.js';
-import { dueLabel, sizeChip } from './items.js';
+import { h, btn, ext, mark, fraction } from './ui.js';
+import { picker } from './picker.js';
+import { dueLabel, sizeChip, rankMilestones, age, wordClass, forClaude, REVIEW_WORD } from './items.js';
 
 // How priority and effort are written on an issue or a pull request, as
 // LABELS.md in gaurav/milestones has it (read 2026-11-15, at d46781d): two
@@ -239,4 +240,188 @@ function showBreakdown(m, t, at) {
  */
 export function staleBreakdown() {
   if (popFor && !popFor.isConnected && pop.matches(':popover-open')) pop.hidePopover();
+}
+
+/**
+ * The milestone picker's rows: none first, then the repository's open
+ * milestones in the order the Issues tab groups them (rankMilestones), so the
+ * dated ones come soonest first. Each is its title, with when it is due after
+ * it as the line says it (dueLabel: `due in 3 days`, coloured by how near, the
+ * date on hover). The pull request's own milestone is always among them, last
+ * when the list lacks it -- closed, past the pages read, or no list yet
+ * (`list` is null until the page has one) -- so the viewer can show where the
+ * pull request is whatever was read. Keyed by the milestone's number as a
+ * string, and `''` for none.
+ */
+export const milestoneChoices = (current, list, now = Date.now()) => {
+  const open = rankMilestones(list ?? []);
+  const all = current && !open.some((m) => m.number === current.number) ? [...open, current] : open;
+  const due = (m) => {
+    if (!m.dueOn) return {};
+    const { className, textContent, title } = dueLabel(m.dueOn, now);
+    return { detail: { text: textContent, cls: className, title } };
+  };
+  return [
+    { key: '', text: 'No milestone', title: 'what is open on no milestone' },
+    ...all.map((m) => ({ key: String(m.number), text: m.title, ...due(m) })),
+  ];
+};
+
+/** A row's labels that its heading does not already say, as chips. */
+const otherLabels = (labels) => labels.filter((l) => !isValueLabel(l)).map((l) => h('span', { className: 'tag label' }, l));
+
+/** A priority or an effort read from an older label, said on the row: the heading has the value, this where it came from. */
+const oldLabels = (item) => Object.keys(LABEL_KINDS).map((kind) => (item[kind]?.old
+  ? h('em', { className: 'ms-old', title: `read from this label, an older way of writing ${LABEL_KINDS[kind].field}: ${item[kind].value}` }, item[kind].label)
+  : null));
+
+/** When a row last moved, with the day on hover. */
+const moved = (iso, now) => (iso ? h('span', { className: 'age', title: `updated ${new Date(iso).toLocaleString()}` }, age(iso, now)) : null);
+
+/**
+ * One open pull request: the chip that is its link, its title, and Switch --
+ * the checkout the Stack tab's rows have, under the same guard -- or `here`
+ * on the one on screen. Under it, what the choice turns on: whether it can
+ * merge in a word, the review decision when there is one, an effort guessed
+ * from its size where none is recorded (`~M`), its other labels, and when it
+ * last moved.
+ */
+function pullItem({ row: p, ...item }, { pr, blocked, now }, { onSwitch }) {
+  const here = p.url === pr.url;
+  const review = REVIEW_WORD[p.reviewDecision];
+  return h('li', { className: here ? 'ms-row pull here' : 'ms-row pull', dataset: { number: String(p.number) }, ...(here ? { ariaCurrent: 'true' } : {}) },
+    h('div', { className: 'ms-top' },
+      ext(p.url, `PR #${p.number}`, { className: 'tag pull' }),
+      h('span', { className: 'ms-title', title: p.title }, p.title),
+      here ? h('span', { className: 'tag here', title: 'the pull request this working copy is on' }, 'here')
+        : btn('Switch', () => onSwitch?.(p.url), {
+          className: 'pr-go', disabled: !!blocked || !onSwitch,
+          title: blocked ? 'Commit or stash your changes first' : `Check out #${p.number} here`,
+        })),
+    h('div', { className: 'ms-facts' },
+      h('span', { className: `pr-merge ${wordClass(p.merge)}` }, p.merge),
+      review ? h('span', { className: 'pr-review' }, review) : null,
+      item.effort ? null : h('em', {
+        className: 'ms-guess',
+        title: `${p.lines} lines changed (+${p.additions} −${p.deletions}) in ${p.changedFiles} file${p.changedFiles === 1 ? '' : 's'}: an effort guessed from its size, since none is recorded`,
+      }, `~${effortGuess(p.lines)}`),
+      ...oldLabels(item), ...otherLabels(p.labels), moved(p.updatedAt, now)));
+}
+
+/**
+ * One open issue: its chip, its title, and ▶, which types the issue and its
+ * link into the coding agent as the Issues tab's ▶ does, for the turn to be
+ * finished and sent by hand. Under it, its other labels, the open pull
+ * requests that close it -- work already under way -- and when it last moved.
+ */
+function issueItem({ row: i, ...item }, { repo, home, now }, { onType }) {
+  return h('li', { className: 'ms-row issue', dataset: { number: String(i.number) } },
+    h('div', { className: 'ms-top' },
+      ext(i.url, `#${i.number}`, { className: 'tag issue' }),
+      h('span', { className: 'ms-title', title: i.title }, i.title),
+      btn('▶', () => onType?.(forClaude({ text: i.title, issue: i.number, repo: repo ?? null, kind: 'issue', issueUrl: i.url }, home)),
+        { className: 'ms-type', title: 'type into the coding agent, with the link' })),
+    h('div', { className: 'ms-facts' },
+      ...oldLabels(item), ...otherLabels(i.labels),
+      ...i.pulls.map((p) => ext(p.url, `PR #${p.number}`, {
+        className: 'tag pull', title: p.isDraft ? 'a draft pull request that closes this issue' : 'an open pull request that closes this issue',
+      })),
+      moved(i.updatedAt, now)));
+}
+
+/**
+ * The milestone viewer, as the nodes of the PR pane's body: one milestone's
+ * open work in the order to do it, and how the pull request on screen stands
+ * to that milestone.
+ *
+ * Top to bottom: the picker, which chooses the milestone to look at and
+ * writes nothing; the status line (standing), whose button is the one thing
+ * here that writes -- it puts the pull request where the viewer is looking;
+ * what the milestone holds, as the queue's milestone lines say it; the two
+ * kinds as buttons that are each pressed or not, with when the list was read
+ * and a way to read it again; then the rows, in sections' groups, each headed
+ * by its priority and effort. A milestone where nobody has judged anything is
+ * one group, which gets no heading: `No priority · No effort` over every row
+ * says nothing.
+ *
+ * `s` is what it is drawn from: the pull request `pr` and its repository's
+ * URL and name (`repoUrl`, `repo`), the picker's `milestones` (null until
+ * read), `viewing` (a number, or null for none), `view` (the route's answer
+ * for it, or null), `loading`, `error`, the `kinds` listed, `moving` while a
+ * move is on its way, `blocked` when a checkout would be refused, `home`
+ * (the clone's repository, which a typed issue is named against) and `now`.
+ * `on` is what it can ask for: onView(number), onMove(url, number),
+ * onSwitch(url), onType(text), onKinds(kinds), onRefresh() and onReach().
+ */
+export function milestoneView(s, on) {
+  const { pr, repoUrl, milestones = null, viewing = null, view = null, loading = false, error = null, kinds = kindsFrom(null), moving = null, now = Date.now() } = s;
+  const key = viewing == null ? '' : String(viewing);
+  const rows = milestoneChoices(pr.milestone, milestones, now);
+  const m = view?.milestone ?? (viewing == null ? null
+    : milestones?.find((x) => x.number === viewing) ?? (pr.milestone?.number === viewing ? pr.milestone : null));
+  const sel = picker('milestone', {
+    label: 'milestone to look at', text: rows.find((r) => r.key === key)?.text ?? `milestone #${key}`,
+    rows, current: key, scope: pr.url,
+    // `listed` once the repository's list is in, for a driver to wait on: the
+    // rows alone cannot say, as a repository with none open has none.
+    dataset: { pr: pr.url, on: key, ...(milestones ? { listed: '' } : {}) },
+    title: 'look at another milestone: choosing one moves nothing',
+    placeholder: 'find a milestone', none: 'no open milestone matches',
+    onOpen: () => on.onReach?.(),
+    onPick: (row) => on.onView?.(row.key ? Number(row.key) : null),
+  });
+  sel.onpointerenter = () => on.onReach?.();
+  sel.onfocus = () => on.onReach?.();
+
+  const st = standing(pr, viewing);
+  const t = tally(m?.counts);
+  const kindBtn = (which, word, n) => btn(n == null ? word : `${word} ${n}`, () => on.onKinds?.(flipKind(kinds, which)), {
+    className: 'ms-kind', ariaPressed: String(!!kinds[which]), dataset: { kind: which },
+    title: kinds[which] ? `listing the open ${word === 'PRs' ? 'pull requests' : 'issues'}: press to leave them out` : `list the open ${word === 'PRs' ? 'pull requests' : 'issues'} too`,
+  });
+  const listed = view ? [...(kinds.pulls ? view.pulls : []), ...(kinds.issues ? view.issues : [])] : [];
+  const groups = sections(listed);
+  const bare = groups.length === 1 && groups[0].parts.every((p) => p.level === 0);
+  const isPull = new Set(view?.pulls ?? []);
+  const where = viewing == null ? 'on no milestone' : 'on this milestone';
+  const nothing = () => {
+    const [shown, hidden, n, turn] = kinds.pulls && kinds.issues ? ['pull requests or issues', null, 0, '']
+      : kinds.pulls ? ['pull requests', 'issues', view.issues.length, 'Issues'] : ['issues', 'pull requests', view.pulls.length, 'PRs'];
+    return `No open ${shown} ${where}.` + (n ? ` It has ${n} open ${several(n, hidden)}: press ${turn} to list ${n === 1 ? 'it' : 'them'}.` : '');
+  };
+
+  return [
+    h('div', { className: 'meta ms-pick' },
+      m ? ext(`${repoUrl}/milestone/${m.number}`, 'milestone', { title: `${m.title} on GitHub` }) : h('span', {}, 'milestone'),
+      sel),
+    h('div', { className: `ms-standing ${st.dot}` },
+      h('span', { className: 'ms-dot', ariaHidden: 'true' }),
+      h('span', { className: 'ms-where' }, st.text, ...(st.due ? [', ', h('span', dueLabel(st.due, now))] : [])),
+      st.move ? btn(moving ? 'Moving…' : st.move, () => on.onMove?.(pr.url, viewing), {
+        className: 'ms-move', disabled: !!moving || !on.onMove,
+        title: viewing == null ? `take #${pr.number} off its milestone on GitHub` : `put #${pr.number} on ${m?.title ?? 'this milestone'} on GitHub`,
+      }) : null),
+    m || view ? h('div', { className: 'meta ms-sum' },
+      t ? pieButton(m, t) : null,
+      t ? h('span', {}, `${t.done} of ${t.total} done`) : null,
+      t?.pulls.merged ? h('span', { className: 'merged', title: `${t.pulls.merged} ${several(t.pulls.merged, 'pull requests')} merged into this milestone` }, `${t.pulls.merged} merged`) : null,
+      m?.dueOn ? h('span', dueLabel(m.dueOn, now)) : null,
+      m?.closed ? h('span', { className: 'closed-milestone', title: 'closed on GitHub' }, 'closed') : null,
+      !m && view ? h('span', {}, `${view.total} open on no milestone`) : null) : null,
+    m?.description ? h('p', { className: 'ms-desc', title: m.description }, m.description) : null,
+    h('div', { className: 'ms-bar' },
+      kindBtn('pulls', 'PRs', view?.pulls.length), kindBtn('issues', 'Issues', view?.issues.length),
+      h('span', { className: 'ms-read' }, view ? `read ${age(new Date(view.read).toISOString(), now)}${loading ? ' · updating…' : ''}` : ''),
+      btn('⟳', () => on.onRefresh?.(), { className: 'ms-refresh', disabled: loading, title: 'read this milestone again from GitHub' })),
+    error ? h('p', { className: 'ms-error' }, error) : null,
+    !view ? (error ? null : h('p', { className: 'empty' }, 'Reading…'))
+      : !listed.length ? h('p', { className: 'empty' }, nothing())
+        : h('div', { className: 'ms-groups' }, ...groups.map((g) => h('section', { className: 'ms-group' },
+          bare ? null : h('h3', { className: `ms-head level-${g.parts[0].level}` },
+            ...g.parts.flatMap((p, i) => [i ? ' · ' : null, h('span', { className: `level-${p.level}` }, p.text)]),
+            h('span', { className: 'count', title: `${g.items.length} listed` }, String(g.items.length))),
+          h('ul', {}, ...g.items.map((item) => (isPull.has(item.row) ? pullItem : issueItem)(item, { ...s, now }, on)))))),
+    view && view.listed < view.total
+      ? h('p', { className: 'ms-cut' }, `The ${view.listed} read of the ${view.total} open ${where}; the rest are on GitHub.`) : null,
+  ];
 }

@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   pageTitle, withoutHtml, inline, headLinks, noPrLinks, prsInto, prTree, stackOn, stackLabel, stackShape, stackUnder, stackTree, stackTitle, stackBase, stackOrder, stackEmpty, intoEmpty, switcherRows, sideLabel, sides, branchGroup, lookedIn,
-  tabLabel, taskCount, filesName, checkCount, checksName, worst, milestoneChoices, switcherChoices, switcherFilter,
+  tabLabel, taskCount, filesName, checkCount, checksName, worst, switcherChoices, switcherFilter,
 } from '../public/pr.js';
 import { filesProgress } from '../public/filelist.js';
 import { tabDone } from '../public/ui.js';
@@ -912,29 +912,6 @@ test('the repositories looked in read as a list', () => {
   assert.equal(lookedIn(['a/b']), 'a/b');
   assert.equal(lookedIn(['a/b', 'c/d']), 'a/b or c/d');
   assert.equal(lookedIn(['a/b', 'c/d', 'e/f']), 'a/b, c/d or e/f');
-});
-
-// The picker leads with none, then the open milestones in the Issues tab's
-// order, and always has the pull request's own, even one the list lacks.
-// None asks for triage only while it is where the pull request is. A dated
-// one says when it is due after its title, as the milestone line does.
-test('the milestone picker offers none, the open milestones in rank, and the pull request\'s own', () => {
-  const list = [{ number: 3, title: 'Not urgent', dueOn: null }, { number: 1, title: 'v1.0', dueOn: '2026-10-14T00:00:00Z' },
-    { number: 4, title: 'Needed soon', dueOn: null }];
-  // Noon on the 12th, local time, so the 14th is two days off in any zone.
-  const now = new Date(2026, 9, 12, 12).getTime();
-  assert.deepEqual(milestoneChoices(null, list, now), [
-    { key: '', text: 'no milestone — needs triage' },
-    { key: '1', text: 'v1.0', detail: { text: 'due in 2 days', cls: 'due soon', title: 'Wednesday, October 14, 2026' } },
-    { key: '4', text: 'Needed soon' },
-    { key: '3', text: 'Not urgent' },
-  ]);
-  assert.equal(milestoneChoices(null, list, new Date(2026, 9, 20, 12).getTime())[1].detail.cls, 'due overdue');
-  const closed = { number: 9, title: 'v0.1', dueOn: null };
-  assert.deepEqual(milestoneChoices(closed, list).map((c) => c.key), ['', '1', '4', '3', '9']);
-  assert.equal(milestoneChoices(closed, list)[0].text, 'no milestone');
-  assert.deepEqual(milestoneChoices(list[2], list).map((c) => c.key), ['', '1', '4', '3'], 'listed once');
-  assert.deepEqual(milestoneChoices(closed, null), [{ key: '', text: 'no milestone' }, { key: '9', text: 'v0.1' }], 'before the list lands');
 });
 
 // The switcher's rows: the stack indented, the branch's own in a group, a

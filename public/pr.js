@@ -2,7 +2,8 @@ import { withoutHtml, mention, unmarked, mdLink, bareUrl, opens, repoUrl, urlPat
 import { kids, h, btn, ext, debug, tabBtn, writeThrough, fraction, mark, stackMark, kept, fold } from './ui.js';
 import { picker, matchRows, closeOrphans } from './picker.js';
 import { fileTree, fileGroup, filesProgress, unlisted } from './filelist.js';
-import { refLabel, refClass, rankMilestones, dueLabel } from './items.js';
+import { refLabel, refClass, dueLabel } from './items.js';
+import { milestoneView, tally, tallyLabel, staleBreakdown } from './milestone.js';
 
 // Re-exported for the tests, which read the pane's view of a body through here.
 export { withoutHtml };
@@ -439,6 +440,8 @@ export function renderNoPr(status, prs, { onCreate, onSwitch, onBelow, below = [
       : intoRow(status, prs ?? [], opts)
         ?? (status.detached ? null : h('p', { className: 'empty' }, ...named(intoEmpty(status.branch, prs)))),
   ]));
+  // The milestone viewer's picker is in the body, which this has just replaced.
+  closeOrphans();
 }
 
 /** `a, b or c`: the repositories the branch's pull request was looked for in. */
@@ -550,7 +553,9 @@ const bareRow = ({ branch, here }, _opts, kids) => h('li', current(here),
  */
 let tab = 'detail';
 let shownFor = null;
-const scrolled = { detail: 0, files: 0, checks: 0, stack: 0 };
+const scrolled = { detail: 0, files: 0, checks: 0, stack: 0, milestone: 0 };
+// The tab the milestone viewer was opened over, which closing it goes back to.
+let before = 'detail';
 const openSections = new Set();
 // Whether the single-section description below is still allowed to open itself.
 let autoOpen = true;
@@ -766,13 +771,21 @@ export function renderPr(pr, handlers) {
     scrolled.files = 0;
     scrolled.checks = 0;
     scrolled.stack = 0;
+    scrolled.milestone = 0;
     openSections.clear();
     autoOpen = true;
+    // The viewer is where the next pull request is chosen, and a Switch from
+    // it lands here: on the one chosen, which is what there is to read now.
+    if (tab === 'milestone') tab = 'detail';
   }
   // A poll can take the tab out from under the reader: checks that have been
   // deleted from the workflow, or a force-push that has not queued any yet,
   // leave nothing for the Checks tab to show and no tab to leave it by.
   if (tab === 'checks' && !pr.checks.list.length) tab = 'detail';
+  if (before === 'checks' && !pr.checks.list.length) before = 'detail';
+  // The viewer has no way back but its line, so it does not outlive it: a pull
+  // request on no milestone in a repository whose last open one has gone.
+  if (tab === 'milestone' && !pr.milestone && handlers.milestones && !handlers.milestones.length) tab = before;
   // Parsed once for both: the Detail tab's count and the description itself.
   const parsed = blocks(pr.body);
   renderPrHead(pr, parsed, handlers);
@@ -781,11 +794,14 @@ export function renderPr(pr, handlers) {
 
 function renderPrHead(pr, parsed, handlers) {
   const switchTo = (name) => {
+    if (name === 'milestone' && tab !== 'milestone') before = tab;
     tab = name;
     // The Stack tab says what is and is not built on this branch, and the list
     // it says it from is fetched only now and then (see loadPrs in app.js).
     // Opening it asks for a fresh one, which repaints the pane when it lands.
     if (name === 'stack') handlers.onStackOpen?.();
+    // The viewer reads its milestone as it opens, for the same reason.
+    if (name === 'milestone') handlers.milestone?.onOpen?.();
     renderPrHead(pr, parsed, handlers);
     renderPrTab(pr, parsed, handlers);
   };
@@ -810,7 +826,7 @@ function renderPrHead(pr, parsed, handlers) {
     // `pr-links` carries no style of its own -- it is the hook tools/browser.mjs
     // measures the row by, so it is not dead CSS to clean up.
     links: linkRow(ways.links, 'meta pr-ways pr-links', ways.repo),
-    milestone: milestoneRow(pr, handlers),
+    milestone: milestoneLine(pr, handlers, tab === 'milestone', () => switchTo(tab === 'milestone' ? before : 'milestone')),
     worktree: worktreeRow(handlers),
     state: h('div', { className: 'meta pr-state' },
       badge(state, state),
@@ -837,89 +853,52 @@ function renderPrHead(pr, parsed, handlers) {
 }
 
 /**
- * The milestone picker's rows: none first, then the repository's open
- * milestones in the order the Issues tab groups them (rankMilestones), so the
- * dated ones come soonest first. Each is its title, with when it is due after
- * it as the line says it (dueLabel: `due in 3 days`, yellow within a week, red
- * once past, the date on hover) -- in a native select's option that was a
- * tooltip, which not every browser shows. The pull request's own milestone is
- * always among them, last when the list lacks it -- closed, past the fifty
- * read, or no list yet (`list` is null until the page has one) -- so the
- * picker can show where the pull request is whatever was read. Keyed by the
- * milestone's number as a string, and `''` for none.
- *
- * "None" says the pull request wants triage while it is on none, since that
- * is the state it should not be left in; once it is on one, picking none is
- * taking it off, and says so plainly.
- */
-export const milestoneChoices = (current, list, now = Date.now()) => {
-  const open = rankMilestones(list ?? []);
-  const all = current && !open.some((m) => m.number === current.number) ? [...open, current] : open;
-  const due = (m) => {
-    if (!m.dueOn) return {};
-    const { className, textContent, title } = dueLabel(m.dueOn, now);
-    return { detail: { text: textContent, cls: className, title } };
-  };
-  return [
-    { key: '', text: current ? 'no milestone' : 'no milestone — needs triage' },
-    ...all.map((m) => ({ key: String(m.number), text: m.title, ...due(m) })),
-  ];
-};
-
-/**
  * The milestone line, between the links and the state: which milestone the
- * pull request is on, as a picker that moves it to another or off them.
+ * pull request is on, in one line, as the button that opens the milestone
+ * viewer in the pane's body (milestoneView in milestone.js) and closes it
+ * again. On a milestone it is the pie of how much of that milestone is done,
+ * its title and when it is due; on none it is a yellow dot and `No
+ * milestone`, a nudge and no more. There is no line at all on a pull request
+ * with no milestone in a repository with none open: nothing there could be
+ * chosen, so there is nothing to nudge toward.
  *
- * Drawn on every pull request, on a milestone or not. One on none is the one
- * that needs a decision, so the line is there to say so -- in the warning
- * colour (`.untriaged`) -- and to make it, rather than appearing only once
- * the decision is made on GitHub. It was a chip at the end of the links row
- * to begin with, which said nothing on a pull request with no milestone and
- * had nowhere to put a picker. A line of its own also gives a long title room
- * without wrapping the links.
+ * It was a picker that moved the pull request the moment a row was picked,
+ * on every pull request, and in the warning colour on one with no milestone
+ * -- which is most of them in a repository that uses milestones for some
+ * things only. Now the choosing is in the viewer, where what a milestone
+ * holds can be seen before anything is moved onto it, and the line only says
+ * where things stand. It is a button of the head and not a fifth tab: four
+ * tabs fill the row at the pane's default width (`#pr-head .tabs` in
+ * style.css), and a fifth would wrap them.
  *
- * The word in front links to the milestone on GitHub while there is one, and
- * a dated milestone has its due date after the picker as the queue's
- * milestone lines say it (dueLabel). The picker takes the rest of the line,
- * so a long title has the room before it ellipsizes. Its rows are
- * milestoneChoices over `handlers.milestones`, which app.js reads when the
- * pull request's repository changes and again as the pointer or the focus
- * reaches the picker or its list opens (`onMilestoneReach`), as the
- * switcher's list is. A pick goes to `onMilestone` with this pull request's
- * URL and the number, or null for none. Until GitHub answers it shows the
- * pick, disabled (`handlers.picking`).
- *
- * A picker of our own (picker.js), so a pick is Enter or a click in the open
- * list and nothing else. It was a native select at first (#168), whose
- * `change` is a write to GitHub and comes on a bare arrow or letter while it
- * is closed; that one put back any change within 300ms of a browsing key, or
- * after one once the focus had left, which guessed at intent from timing and
- * still left the wheel unguarded (#188). The picker names its pull request as
- * its `scope`, so a move to another one shuts an open list: a pick there
- * would be about one no longer on screen, which the server would refuse.
+ * The pie is drawn from the counts the picker's list carries (`milestones`,
+ * read when the pull request's repository changes), so a milestone the list
+ * lacks -- a closed one -- has its title and no pie; app.js reads it again
+ * as the pointer or the focus reaches the line (`onMilestoneReach`). `open` is
+ * whether the viewer is showing, and `toggle` what a press does.
  */
-const milestoneRow = (pr, { milestones = null, picking = null, onMilestone, onMilestoneReach } = {}) => {
+const milestoneLine = (pr, { milestones = null, onMilestoneReach } = {}, open, toggle) => {
   const m = pr.milestone;
-  const on = String((picking ? picking.number : m?.number) ?? '');
-  const rows = milestoneChoices(m, milestones);
-  const sel = picker('milestone', {
-    label: 'milestone', text: rows.find((r) => r.key === on)?.text ?? `milestone #${on}`,
-    rows, current: on, scope: pr.url, disabled: !onMilestone || !!picking,
-    // `listed` once the repository's list is in, for a driver to wait on: the
-    // rows alone cannot say, as a repository with none open has none.
-    dataset: { pr: pr.url, on, ...(milestones ? { listed: '' } : {}) },
-    title: m ? 'move this pull request to another milestone' : 'not on a milestone: pick one to triage it',
-    placeholder: 'find a milestone', none: 'no open milestone matches',
-    onOpen: () => onMilestoneReach?.(),
-    onPick: (row) => onMilestone(pr.url, row.key ? Number(row.key) : null),
+  if (!m && milestones && !milestones.length) return null;
+  const t = m ? tally(milestones?.find((x) => x.number === m.number)?.counts) : null;
+  const due = m?.dueOn ? dueLabel(m.dueOn) : null;
+  const says = m ? [m.title, t ? tallyLabel(t) : null, due?.textContent].filter(Boolean).join(', ') : 'On no milestone';
+  const line = btn([
+    m ? (t ? mark(fraction(t)) : null) : h('span', { className: 'ms-dot', ariaHidden: 'true' }),
+    h('span', { className: 'ms-name' }, m ? m.title : 'No milestone'),
+    due ? h('span', due) : null,
+    h('span', { className: 'caret', ariaHidden: 'true' }, open ? '▾' : '▸'),
+  ], toggle, {
+    className: `pr-milestone${m ? '' : ' untriaged'}${open ? ' on' : ''}`, ariaExpanded: String(open),
+    // `listed` once the repository's list is in, for a driver to wait on.
+    dataset: { pr: pr.url, on: String(m?.number ?? ''), ...(milestones ? { listed: '' } : {}) },
+    title: `${says}. ${open ? 'Close the milestone viewer' : m ? 'See what else is on it, or on another milestone' : 'See what is on each milestone, and put this pull request on one'}`,
   });
-  sel.onpointerenter = () => onMilestoneReach?.();
-  sel.onfocus = () => onMilestoneReach?.();
-  return h('div', { className: `meta pr-milestone${m ? '' : ' untriaged'}` },
-    m ? ext(`${linkBase(pr).repo}/milestone/${m.number}`, 'milestone', { title: `${m.title} on GitHub` })
-      : h('span', {}, 'milestone'),
-    sel,
-    m?.dueOn ? h('span', dueLabel(m.dueOn)) : null);
+  // The list is read again as the line is reached, as it is for the viewer's
+  // picker: its counts are what the pie is drawn from.
+  line.onpointerenter = () => onMilestoneReach?.();
+  line.onfocus = () => onMilestoneReach?.();
+  return line;
 };
 
 // The server serves only public/, so the docs are linked where they live.
@@ -988,7 +967,7 @@ const worktreeRow = ({ worktrees = null, onWorktree, onWorktreeReach } = {}) => 
 const HEAD_ORDER = ['title', 'note', 'links', 'milestone', 'worktree', 'state', 'tabs'];
 
 /**
- * The head, redrawn whole. The milestone and worktree pickers' open lists are
+ * The head, redrawn whole. The worktree picker's open list is
  * not in it (picker.js keeps them on <body>), so a redraw neither shuts one
  * nor takes the focus from its search field; one whose button this redraw did
  * not draw again -- the pane has turned to a branch with no pull request, or
@@ -1204,7 +1183,12 @@ function renderPrTab(pr, parsed, handlers) {
   const under = stack && stackUnder({ pr }, handlers.prs, handlers.below, handlers.defaultBranch);
   if (under?.ask) handlers.onBelow?.(under.ask);
   const tree = under && stackTree({ pr }, handlers.prs, under);
-  host.replaceChildren(...kids(stack ? [
+  // What the viewer is drawn from, and what it can ask for (app.js's `milestone`).
+  const { onOpen: _opened, onView, onType, onKinds, onRefresh, ...looking } = handlers.milestone ?? {};
+  host.replaceChildren(...kids(tab === 'milestone' ? milestoneView({
+    pr, repoUrl: linkBase(pr).repo, milestones: handlers.milestones ?? null, moving: handlers.picking ?? null,
+    blocked: handlers.blocked, ...looking,
+  }, { onMove: handlers.onMilestone, onSwitch: handlers.onSwitch, onReach: handlers.onMilestoneReach, onView, onType, onKinds, onRefresh }) : stack ? [
     tree
       ? h('div', { className: 'pr-into' },
         h('span', { className: 'pr-into-label' }, ...named(stackTitle(stackBase(pr), under))),
@@ -1237,6 +1221,10 @@ function renderPrTab(pr, parsed, handlers) {
   // serif stack is all system faces, deliberately, because a webfont arriving
   // late would move every line under a scroll position already restored.
   host.scrollTop = scrolled[tab];
+  // A pie the redraw took away leaves its breakdown anchored to nothing, and
+  // the viewer's picker, when the body has turned to another tab, its list.
+  staleBreakdown();
+  closeOrphans();
   if (focused) host.querySelector(`.md-section[data-key="${CSS.escape(focused)}"] > summary`)?.focus();
   // After the focus, which can take a selection with it.
   if (selected) selectAgain(host, selected);

@@ -52,7 +52,7 @@ stdout. For a look with the user's own eyes, leave it running and hand them that
 API shape: the `routes` table in `server.js`, keyed `"METHOD /path"`, JSON
 in/out, errors as 500 `{error}`. Every handler but the few in `UNLOCKED` --
 whoami, the `GET` status poll, the queue's reference lookup, the Issues and
-Pull requests tabs' listings, the PR pane's list of milestones and of the repository's working copies -- is serialised, so one slow call delays the rest. `POST /api/status`
+Pull requests tabs' listings, the PR pane's list of milestones, the milestone viewer's read of one, and the list of the repository's working copies -- is serialised, so one slow call delays the rest. `POST /api/status`
 is the page's ⟳: a poll that also searches for the branch's pull requests,
 where `GET` reads the ones `.prcoder/prs.json` remembers by URL. A page load
 also reads, with no tab clicked, `/api/history`, the last `/api/pulls`
@@ -131,9 +131,11 @@ Two rules for them, and for any script after them:
   should do the same -- `--queue` makes no `.gitignore`, so a path outside
   `data/` or `.prcoder/` would show up in `git status`. The PR is not — ticking a
   description checkbox — in the PR pane or the queue's PR #N tab — edits the
-  description on GitHub, and picking in the PR pane's milestone line moves the
-  pull request to that milestone (pick the old one back, or none, to undo; the
-  pull request's timeline keeps both events). To check `/api/pr/milestone`
+  description on GitHub, and the milestone viewer's **Move it here**, **Add it
+  here** or **Take it off** moves the pull request (move it back to undo; the
+  pull request's timeline keeps both events). The head's milestone line opens
+  the viewer, and its picker only chooses what to look at, so both are safe to
+  drive. To check `/api/pr/milestone`
   without a write, send a number the picker never listed: it is refused
   before gh. Filing a queue item with ◎
   writes to GitHub too, and one-way: putting the queue back does not close the

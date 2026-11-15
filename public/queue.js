@@ -1,5 +1,5 @@
 import { h, btn, ext, api, toast, pref, setPref, tabBtn, writeThrough, fold, kept, mark, fraction, actions } from './ui.js';
-import { TABS, refLabel, refClass, forClaude, rankMilestones, issueMatches, pullMatches, sortPulls, rootsInOrder, pullWord, sizeChip, age, dueLabel, isNew, PULL_SORTS } from './items.js';
+import { TABS, refLabel, refClass, forClaude, rankMilestones, issueMatches, pullMatches, sortPulls, rootsInOrder, pullWord, sizeChip, age, dueLabel, isNew, PULL_SORTS, REVIEW_WORD } from './items.js';
 import { refs, resolveRef, blocks } from './tasks.js';
 import { blockNode, inline, stackUnder, stackOrder } from './pr.js';
 import { tally, pieButton, staleBreakdown, several } from './milestone.js';
@@ -1275,8 +1275,6 @@ function pullGroups() {
   return out;
 }
 
-/** GitHub's reviewDecision as the row says it; null, the usual case, says nothing. */
-const REVIEW = { APPROVED: 'approved', CHANGES_REQUESTED: 'changes requested', REVIEW_REQUIRED: 'review needed' };
 
 /**
  * What a listed pull request is built on (stackUnder in pr.js), for its row and
@@ -1335,7 +1333,7 @@ function pullRow(p, depth = 0) {
     // Not held, as an issue row's (issueRow): this is the user's own click.
     drawPulls();
   }, { className: 'disclose', title: open ? 'hide its milestone and ways out' : 'show its milestone and ways out', ariaExpanded: String(open) });
-  const review = REVIEW[p.reviewDecision];
+  const review = REVIEW_WORD[p.reviewDecision];
   // `p.milestone` is a number and an issue's is a title (pullRow in github.js).
   const mine = pullsListing.milestones.find((m) => m.number === p.milestone)?.title ?? null;
   const closes = (p.closes ?? []).length ? h('p', { className: 'pull-closes' }, 'Closes ', ...(p.closes).flatMap((i, n) => [

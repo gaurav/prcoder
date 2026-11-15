@@ -496,26 +496,39 @@ const headRow = () => page.evaluate(() => {
 console.log('head:   ', await headRow(), ' (want the two lefts the same, and the repo on the same line)');
 console.log('out:    ', await page.evaluate(() =>
   [...document.querySelectorAll('#pr-head .pr-links a')].map((a) => a.href).join(' ')));
-// The milestone line, under the links and over the state, on every pull
-// request. Read only: a pick is a write to the real pull request.
-// Waits for the list to land (`data-listed`), not for a second option: a
-// repository with no open milestones never has one, and that wait ran its
-// full thirty seconds.
-await page.waitForSelector('#pr-head .pr-milestone .picker[data-listed]', { state: 'attached', timeout: 30_000 })
+// The milestone line, under the links and over the state, and the viewer it
+// opens in the body. Read only: looking at a milestone moves nothing, and the
+// viewer's move button, which would write to the real pull request, is left
+// alone. Waits for the list to land (`data-listed`), not for the line: a pull
+// request on no milestone has no line in a repository with none open, and a
+// wait for one ran its full thirty seconds.
+await page.waitForSelector('#pr-head .pr-milestone[data-listed]', { state: 'attached', timeout: 30_000 })
   .catch(() => {});
-await page.locator('#pr-head .pr-milestone .picker').click().catch(() => {});
+const milestoneLine = page.locator('#pr-head .pr-milestone');
+if (await milestoneLine.count()) {
+  await milestoneLine.click();
+  await page.waitForSelector('#pr-body .ms-row, #pr-body .empty:not(:text-is("Reading…")), #pr-body .ms-error', { timeout: 30_000 }).catch(() => {});
+  await page.locator('#pr-body .ms-pick button.picker').click().catch(() => {});
+}
 console.log('milestone:', await page.evaluate(() => {
   const line = document.querySelector('#pr-head .pr-milestone');
   if (!line) return 'no line';
-  const next = line.nextElementSibling?.classList.contains('pr-state') ? 'over the state' : 'NOT over the state';
-  const sel = line.querySelector('.picker');
-  const listed = sel.hasAttribute('data-listed') ? '' : ' (THE LIST NEVER CAME)';
+  const next = (line.nextElementSibling?.classList.contains('pr-worktree') ? line.nextElementSibling : line).nextElementSibling;
+  const over = next?.classList.contains('pr-state') ? 'over the state' : 'NOT over the state';
+  const listed = line.hasAttribute('data-listed') ? '' : ' (THE LIST NEVER CAME)';
   const rows = document.querySelectorAll('.picker-pop[data-picker="milestone"]:popover-open [role=option]');
   const dated = [...rows].filter((r) => r.querySelector('.picker-detail')).length;
-  return `${line.classList.contains('untriaged') ? 'untriaged' : 'on one'}, "${sel.querySelector('.picker-value').textContent}", ${rows.length - 1} to pick from, ${dated} dated${listed}, ${next}`;
-}), ' (want "untriaged" exactly when the PR is on no milestone, the open milestones to pick from in the open list, over the state)');
-await page.screenshot({ path: path.join(out, 'milestone-picker.png') });
+  const body = document.getElementById('pr-body');
+  return `${line.classList.contains('untriaged') ? 'on none' : 'on one'}, "${line.querySelector('.ms-name').textContent}"${listed}, ${over}; `
+    + `viewer ${line.getAttribute('aria-expanded') === 'true' ? 'open' : 'SHUT'} on "${body.querySelector('.ms-pick .picker-value')?.textContent}", `
+    + `${rows.length - 1} milestones to look at, ${dated} dated; "${body.querySelector('.ms-where')?.textContent}", `
+    + `${body.querySelectorAll('.ms-row').length} rows in ${body.querySelectorAll('.ms-head').length} headed groups`
+    + (body.querySelector('.ms-error') ? `; READ FAILED: ${body.querySelector('.ms-error').textContent}` : '');
+}), '\n  (want "on none" exactly when the PR is on no milestone, over the state; the viewer open on the PR\'s own milestone or the one on none, the open milestones in its picker, a line saying where the PR is, and that milestone\'s open pull requests)');
+await page.screenshot({ path: path.join(out, 'milestone-viewer.png') });
 await page.keyboard.press('Escape');
+// Back to the description, which the steps below read.
+if (await milestoneLine.count()) await milestoneLine.click();
 // The repository ends that row because it is the one link with no bound on its
 // width: where it does not fit it wraps whole onto a line of its own, and clips
 // only there.

@@ -123,7 +123,7 @@ it was on is hidden.
 Which pull request you are in stays at the top, in the order it is used: the title; then the way
 out of the window, with this pull request on GitHub drawn as a button beside plain links to the
 repository's issues, pulls and milestones, and the repository they are all in at the end of that
-row; then the milestone the pull request is on; then, when the repository has more than one
+row; then where it stands on a milestone; then, when the repository has more than one
 working copy, which of them this is; then the state and the branch it targets, with the pull request that branch belongs to
 beside it as `#N` when it is another open one's head, since that is the one you want next.
 
@@ -143,25 +143,24 @@ checkout you are in. It is drawn as a chip rather than a fifth link: the links a
 and the chip is the one thing in the head that answers which checkout this is, so it is filled
 and its name is bold: with several windows open it is what you look for first.
 
-The milestone has a line of its own, on every pull request, because one on no milestone is the one
-that needs something done: it still has to be triaged, so its line is in the warning colour and
-reads *no milestone — needs triage*. The line is a picker ([Pickers](#pickers)), as wide as the
-line leaves it. It offers
-none, then the repository's open milestones in the order the queue's Issues tab groups them, so the
-dated ones soonest first, and the pull request's own milestone even when that one is closed; each is
-its title, and a dated one says when it is due after it, in the line's own words and colours.
-Typing narrows them by title. Picking one puts
-the pull request on it on GitHub there and then, and picking none takes it off; until GitHub
-answers the picker shows the pick, disabled, through any redraw. The word *milestone*
-in front links to the milestone on GitHub while there is one, and a dated milestone says when it is
-due after the picker, as the queue's milestone lines do: *due in 3 days*, yellow within a week, a
-red badge once past, with the date on hover. The list is every open milestone, as the queue's tabs
-have, and is read when the pull request's repository changes -- from the server's last read of it,
-while that is a few minutes old -- and from GitHub again as the pointer or the focus reaches the
-picker or its list opens, so a milestone made on GitHub since is there to pick. A poll that lands
-while the list is open redraws the head and brings the list's rows up to date where they are; only
-a move to another pull request, or to a branch with none, shuts it. It was a chip after the repository's to begin with, which
-said nothing on a pull request with no milestone and had nowhere to put a picker.
+The milestone has a line of its own, which says where the pull request stands in one line and is
+the button that opens [the milestone viewer](#the-milestone-viewer) in the pane's body. On a
+milestone it is a pie of how much of that milestone is done -- its pull requests and its issues
+together, as the queue's milestone lines count them, the figures on hover -- then the milestone's
+title, clipped when it is long, and for a dated one when it is due, as the queue's milestone lines
+say it: *due in 3 days*, yellow within a week, a red badge once past, with the date on hover. On no
+milestone it is a yellow dot and *No milestone*: a nudge, in the dim of the rest of the head, and
+not the warning-coloured line it was. A pull request on no milestone in a repository with no open
+milestones has no line at all, since there is nothing to put it on. Pressing the line shows the
+viewer where the tabs' content is, with no tab lit and the line drawn as the one that is; pressing
+it again, or any tab, goes back. It is a line of the head and not a fifth tab because four tabs
+fill their row at the pane's default width, and a fifth would wrap them. The pie is drawn from the
+counts of the repository's open milestones, which are read when the pull request's repository
+changes -- from the server's last read of it, while that is a few minutes old -- and from GitHub
+again as the pointer or the focus reaches the line, so a milestone the list lacks, a closed one,
+has its title and no pie. The line was a picker that moved the pull request the moment a row was
+picked, and before that a chip after the repository's, which said nothing on a pull request with
+no milestone.
 
 The worktree line is under the milestone's, and only in a repository with more than one working
 copy: the main one and each that `git worktree add` made. It is a picker too, showing the
@@ -176,7 +175,7 @@ and as the pointer or the focus reaches the picker or its list opens, never on t
 
 ### Pickers
 
-The switcher in the pane's header and the milestone line are the same control: a button that shows
+The switcher in the pane's header, the milestone viewer's picker and the worktree line are the same control: a button that shows
 the current value and opens a list under it, with a search field over the rows and the caret in
 it. A click on the button opens the list, and so do ↓ and ↑ with the focus on it; no other key
 does anything to the closed button, and the wheel over it does nothing. In the open list ↑ and ↓
@@ -188,8 +187,10 @@ it the same way. After a pick or Escape the focus goes back to where it was when
 
 They were native selects, which act on `change`, and a closed select changes on a bare arrow on
 Linux and Windows and on a letter everywhere. For the switcher that was a checkout of another pull
-request under the coding agent from a key on its way to the terminal; for the milestone line it
-was a write to GitHub, held off by putting back any change that came within 300ms of a key (#188).
+request under the coding agent from a key on its way to the terminal; for the milestone line, as
+it then was, it was a write to GitHub, held off by putting back any change that came within 300ms
+of a key (#188). The milestone picker writes nothing now -- it chooses the milestone the viewer
+shows -- and is still this control for its search and its due dates.
 
 The button is its value as text, and can lead with one drawn thing about that value, as the
 switcher leads with its stack mark; what the drawing says is in the button's name in words.
@@ -373,6 +374,73 @@ tab is there only when the pull request has any, and a poll that empties the lis
 to *Detail* rather than leaving you on a tab that is no longer drawn. The checks are read on every
 poll and every ⟳, so a check that finishes shows within a minute even though nothing else on the
 pull request changed.
+
+### The milestone viewer
+
+The head's milestone line opens it where the tabs' content is: one milestone's open work, in the
+order to do it in, for choosing what to work on next. It is a viewer of any milestone, not only the
+pull request's own, and says how the pull request on screen stands to the one it is showing.
+
+At its top is a picker ([Pickers](#pickers)) of the milestone to look at: *No milestone*, for what
+is open on none, then the repository's open milestones in the order the queue's Issues tab groups
+them, each dated one with when it is due after it, and the pull request's own even when that one is
+closed. Choosing one moves nothing. The viewer opens on the pull request's own milestone; on a pull
+request with none it opens on the milestone last looked at in this page, or on *No milestone* --
+most pull requests in some repositories never get a milestone, and they are still somewhere to look
+for the next thing from. What was picked is kept while that pull request is on screen. The word
+*milestone* in front links to the milestone on GitHub.
+
+Under it, a dot and a line say where the pull request is: green, *#198 is on this milestone*; red,
+*#198 is on v1.2, due in 3 days*, with **Move it here**; yellow, *#198 is on no milestone*, with
+**Add it here**; and, looking at *No milestone* from a pull request that is on one, **Take it off
+v1.2**. That button is the one thing in the viewer that writes: it puts the pull request on the
+milestone being looked at, on GitHub, there and then, and says *Moving…*, disabled, through any
+redraw until GitHub answers; a refusal is a toast and the pull request stays where it was. The
+milestone has to be one the picker listed, as the queue's moves are held to their listings.
+
+Then what the milestone holds, as the queue's milestone lines have it: the pie, which opens the
+same breakdown, *5 of 15 done*, how many pull requests have merged into it, when it is due, and
+its description, clipped to two lines with the whole of it on hover.
+
+**PRs** and **Issues** are two buttons, each pressed or not, with how many of each the milestone
+has open: pull requests alone to begin with, since a pull request is work already under way and
+the thing to switch to. Pressing the last one off presses the other on. Which are pressed is
+remembered the way the pane sizes are, so a repository where the issues are what gets worked
+through can leave them on. Beside them is when the list was read, and ⟳ reads it again: it is read
+from GitHub as the viewer opens, from the server's last read of that milestone, while that is a
+few minutes old, as the picker changes, and again after a move.
+
+The rows are in groups, headed by priority and then effort -- *High · M* -- as the `Priority:` and
+`Effort:` labels on each issue and pull request say
+([LABELS.md](https://github.com/gaurav/milestones/blob/main/LABELS.md)): by priority from Urgent
+to Low, then by effort from XL to XS, with what nobody has judged after what somebody has, and the
+most recently updated first within a group. Each part of a heading is in the colour of its place
+in its scale -- red, orange, amber, green, and teal for the fifth, which only effort has, each
+LABELS.md's colour lightened for a dark ground -- and a part nobody has set is blue. The older ways
+of writing them are read too: `Priority: Critical` is Urgent, `Size: M` is M. A milestone where
+nothing is labelled is one list with no heading.
+
+A row is a card of two lines. A pull request's is `PR #N` in the tinted chip, the one link to it
+on GitHub, its title, and **Switch**, the checkout the Stack tab's rows have, disabled by
+uncommitted work for the same reason; the pull request on screen is marked *here* instead. Under
+that: whether it can merge in a word, as the PRs tab says it, the review decision when there is
+one, `~M` for an effort guessed from its size when none is recorded -- shown, never used to order
+the rows -- its other labels, and when it last moved. An issue's is `#N`, its title, and ▶, which
+types the issue with its link into the coding agent, not sent, as the Issues tab's ▶ does; under
+it its other labels, the open pull requests that close it as chips, and when it last moved. A
+priority or an effort read from an older label is on the row in italics, since the heading has the
+value and not where it came from. The priority and effort labels themselves are left off a row:
+its heading says them.
+
+A milestone with more open than the five pages of a hundred of each kind that are read says how
+many came. A read that fails says so where the list would be, keeps any list already shown, and ⟳
+tries again. A move to another pull request closes the viewer onto that pull request's *Detail*:
+that is where a **Switch** from it lands.
+
+It is in the pull request pane, where a table of the repository's pull requests was once too
+narrow to scan ([Design.md](Design.md#one-milestone-in-the-order-to-work-it) has why this is
+different), and the queue's **PRs** and **Issues** tabs are still the place for the whole
+repository, searched and sorted.
 
 ## Diff
 

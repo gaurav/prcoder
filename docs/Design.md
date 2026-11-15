@@ -44,8 +44,8 @@ goes through the same coercion the page's writes do; whether Claude should get a
 into prcoder is [#21](https://github.com/gaurav/prcoder/issues/21)'s question.
 
 **What else reaches GitHub, and only on a click or a drag:** ◎ files an item as a new issue, a file's checkbox
-marks it viewed, creating a pull request pushes the branch and opens GitHub's compare page, the PR
-pane's milestone picker moves the pull request on screen to another milestone, and
+marks it viewed, creating a pull request pushes the branch and opens GitHub's compare page, the
+milestone viewer's button moves the pull request on screen to the milestone being looked at, and
 dropping an issue on a milestone group in the Issues tab -- or choosing one in its opened row and
 clicking Move -- sets that issue's milestone, and a drop or a pick in the PRs tab does the
 same for a pull request, which is triage and not an edit: nothing in prcoder changes what an issue
@@ -64,7 +64,7 @@ in place -- so that the next thing to do is picked with the issue read, and hand
 with its link, rather than built from memory. On 2026-11-08 the mentions moved to the PR #N tab,
 so that each tab is about one thing: the repository, or the pull request on screen. What it still is not is a tracker: nothing here
 changes what an issue says, and the groups are GitHub's milestones, not a list of prcoder's own.
-Nothing asks which milestone to look at, because the ranking already says which group to open first. Pull requests
+Nothing on these tabs asks which milestone to look at, because the ranking already says which group to open first; looking at one milestone is the pull request pane's [milestone viewer](#one-milestone-in-the-order-to-work-it). Pull requests
 (2026-10-19) is the same shape for the other thing a repository holds, built for the repository
 with sixty open where the switcher's titles were not enough to pick from: grouped by the pull
 request's own milestone, sorted smallest first, with the facts the choice turns on in one line
@@ -84,9 +84,11 @@ the list away, and merging a branch put its unfinished items out of reach for go
 
 ## A choice that acts is made in an open list
 
-The pull request switcher and the milestone line are pickers of prcoder's own (`public/picker.js`,
-[Panes.md](Panes.md#pickers)), not native selects, because each acts the moment a value is chosen:
-one checks out another branch under the coding agent, the other writes to GitHub. A closed
+The pull request switcher and the milestone line were made pickers of prcoder's own (`public/picker.js`,
+[Panes.md](Panes.md#pickers)), not native selects, because each acted the moment a value was chosen:
+one checks out another branch under the coding agent, the other wrote to GitHub. (The milestone
+picker has since moved into the milestone viewer, where it chooses what to look at and a button
+beside it does the writing; it is still a picker, for its search and its due dates.) A closed
 `<select>` changes its value on a bare arrow on Linux and Windows and on a letter everywhere, and
 the page is this one's terminal with two panes of controls beside it, so a key meant for the agent
 lands on whatever was clicked last. The milestone line's first answer (#168) was to keep the select
@@ -111,6 +113,55 @@ around the one focused node (`replaceKeeping`, gone with them).
 
 A `<select>` stays where a change only redraws, as the Pull requests tab's order and grouping, or
 where a button beside it does the writing, as a queue row's milestone and **Move**.
+
+## One milestone, in the order to work it
+
+The pull request pane's milestone viewer ([Panes.md](Panes.md#the-milestone-viewer)) is one
+milestone's open issues and pull requests, ordered by their `Priority:` and `Effort:` labels, for
+choosing what to work on next from beside the work in hand. It is the single-milestone column of
+the [milestones](https://github.com/gaurav/milestones) board, which is where that choice was being
+made, brought to where the checkout is.
+
+**It reads a standard, and takes no code.** How priority and effort are written, and what order
+they put a milestone in, is
+[LABELS.md](https://github.com/gaurav/milestones/blob/main/LABELS.md); which milestones there are
+and what they mean is MILESTONES.md beside it. Both are written to be read by a person or an agent
+in any repository, and `public/milestone.js` is prcoder's reading of the first, as `rankMilestones`
+in `public/items.js` is of the second. The board is not a dependency: it is a Python server and a
+bundled front end, and what prcoder needs of it is two tables and a sort.
+
+**It looks at any milestone, and the choosing writes nothing.** The head's milestone line was a
+picker that moved the pull request the moment a row was picked, shown in the warning colour on
+every pull request without a milestone -- and most pull requests in a repository that uses
+milestones for some things never get one. Now the picker chooses what the viewer shows, the line
+under it says how the pull request stands to that, and one button moves it there. That is the
+[rule for a choice that acts](#a-choice-that-acts-is-made-in-an-open-list) turned the way a queue
+row's milestone already was: the control only redraws, and a button beside it does the writing,
+after what the milestone holds has been seen. A pull request with no milestone can look at any of
+them, which is what makes the viewer worth opening from one.
+
+**It is in the pull request pane, opened from the head's line.** The other places were weighed
+(2026-11-15). The queue is wide, but it is for the task in hand and the repository's own lists,
+and its PRs and Issues tabs already group by milestone. A fifth tab in the pull request pane does
+not fit: four fill their row at the pane's 375px, so a fifth wraps them, and making the row scroll
+hides part of a control. A sidebar on the right, closed most of the time, either narrows the
+terminal -- a resize of the PTY and a redraw by the agent each time it opens and shuts, for
+something opened briefly and often -- or covers it, and needs a third column, a gutter, a
+remembered size, a fold and a shortcut that the pane's body needs none of. So the line that
+already said which milestone the pull request is on opens the viewer where the tabs' content is,
+and any tab closes it. The viewer draws into whatever it is given (`milestoneView`), so moving it
+to a sidebar, if the pane proves too narrow, is a change of layout and not of the viewer.
+
+**Why this is not the table that was moved out.** The Pull requests tab replaced a table of the
+repository's pull requests in this same column ([#151](https://github.com/gaurav/prcoder/pull/151)),
+which was too narrow to scan and had put its slow call on the switcher's path. The viewer's rows
+are cards of two lines, which is what the board draws in a column about this wide, not a table's
+one line of facts; it lists one milestone, not the repository; and its read is its own, made as it
+opens (`POST /api/milestone`), unlocked, and kept a few minutes.
+
+**What it does not do yet:** change a row's milestone, priority or effort. Every row links to
+GitHub, where that is done. Setting a label would be a new kind of write for prcoder, which so far
+changes only where an issue or a pull request is filed, never what is on it.
 
 ## What it deliberately does not do
 
