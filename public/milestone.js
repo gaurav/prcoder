@@ -6,7 +6,7 @@
 
 import { h, btn, ext, mark, fraction } from './ui.js';
 import { picker } from './picker.js';
-import { dueLabel, sizeChip, rankMilestones, age, wordClass, forClaude, REVIEW_WORD } from './items.js';
+import { dueLabel, sizeChip, rankMilestones, age, forClaude, REVIEW_WORD } from './items.js';
 
 // How priority and effort are written on an issue or a pull request, as
 // LABELS.md in gaurav/milestones has it (read 2026-11-15, at d46781d): two
@@ -279,54 +279,66 @@ const oldLabels = (item) => Object.keys(LABEL_KINDS).map((kind) => (item[kind]?.
 const moved = (iso, now) => (iso ? h('span', { className: 'age', title: `updated ${new Date(iso).toLocaleString()}` }, age(iso, now)) : null);
 
 /**
+ * The end of a row's first line: what the row does -- Switch, `here`, ▶ --
+ * over when it last moved. The age is here and not on the line of facts, so a
+ * row with no facts to state, an unlabelled issue, is its title's two lines
+ * and not a third for the age alone.
+ */
+const aside = (act, iso, now) => h('span', { className: 'ms-aside' }, act, moved(iso, now));
+
+/**
  * One open pull request: the chip that is its link, its title, and Switch --
  * the checkout the Stack tab's rows have, under the same guard -- or `here`
  * on the one on screen. Under it, what the choice turns on: whether it can
  * merge in a word, the review decision when there is one, an effort guessed
- * from its size where none is recorded (`~M`), its other labels, and when it
- * last moved.
+ * from its size where none is recorded (`~M`), and its other labels. The word
+ * is `wordOf`'s, which is pullWord in items.js over what the pane knows of the
+ * stack: GitHub's `ready` on a pull request built on others is `stacked (N)`,
+ * as the queue's Pull requests tab has it, since it is ready to merge into the
+ * one under it and not into the default branch.
  */
-function pullItem({ row: p, ...item }, { pr, blocked, now }, { onSwitch }) {
+function pullItem({ row: p, ...item }, { pr, blocked, now, wordOf = (q) => ({ word: q.merge, cls: '' }) }, { onSwitch }) {
   const here = p.url === pr.url;
   const review = REVIEW_WORD[p.reviewDecision];
+  const { word, cls } = wordOf(p);
   return h('li', { className: here ? 'ms-row pull here' : 'ms-row pull', dataset: { number: String(p.number) }, ...(here ? { ariaCurrent: 'true' } : {}) },
     h('div', { className: 'ms-top' },
       ext(p.url, `PR #${p.number}`, { className: 'tag pull' }),
       h('span', { className: 'ms-title', title: p.title }, p.title),
-      here ? h('span', { className: 'tag here', title: 'the pull request this working copy is on' }, 'here')
+      aside(here ? h('span', { className: 'tag here', title: 'the pull request this working copy is on' }, 'here')
         : btn('Switch', () => onSwitch?.(p.url), {
           className: 'pr-go', disabled: !!blocked || !onSwitch,
           title: blocked ? 'Commit or stash your changes first' : `Check out #${p.number} here`,
-        })),
+        }), p.updatedAt, now)),
     h('div', { className: 'ms-facts' },
-      h('span', { className: `pr-merge ${wordClass(p.merge)}` }, p.merge),
+      h('span', { className: `pr-merge ${cls}`.trim() }, word),
       review ? h('span', { className: 'pr-review' }, review) : null,
       item.effort ? null : h('em', {
         className: 'ms-guess',
         title: `${p.lines} lines changed (+${p.additions} −${p.deletions}) in ${p.changedFiles} file${p.changedFiles === 1 ? '' : 's'}: an effort guessed from its size, since none is recorded`,
       }, `~${effortGuess(p.lines)}`),
-      ...oldLabels(item), ...otherLabels(p.labels), moved(p.updatedAt, now)));
+      ...oldLabels(item), ...otherLabels(p.labels)));
 }
 
 /**
  * One open issue: its chip, its title, and ▶, which types the issue and its
  * link into the coding agent as the Issues tab's ▶ does, for the turn to be
- * finished and sent by hand. Under it, its other labels, the open pull
- * requests that close it -- work already under way -- and when it last moved.
+ * finished and sent by hand. Under it, its other labels and the open pull
+ * requests that close it -- work already under way -- or, for an issue with
+ * neither, nothing: the line is not drawn.
  */
 function issueItem({ row: i, ...item }, { repo, home, now }, { onType }) {
   return h('li', { className: 'ms-row issue', dataset: { number: String(i.number) } },
     h('div', { className: 'ms-top' },
       ext(i.url, `#${i.number}`, { className: 'tag issue' }),
       h('span', { className: 'ms-title', title: i.title }, i.title),
-      btn('▶', () => onType?.(forClaude({ text: i.title, issue: i.number, repo: repo ?? null, kind: 'issue', issueUrl: i.url }, home)),
-        { className: 'ms-type', title: 'type into the coding agent, with the link' })),
+      aside(btn('▶', () => onType?.(forClaude({ text: i.title, issue: i.number, repo: repo ?? null, kind: 'issue', issueUrl: i.url }, home)),
+        { className: 'ms-type', title: 'type into the coding agent, with the link' }), i.updatedAt, now)),
     h('div', { className: 'ms-facts' },
       ...oldLabels(item), ...otherLabels(i.labels),
       ...i.pulls.map((p) => ext(p.url, `PR #${p.number}`, {
         className: 'tag pull', title: p.isDraft ? 'a draft pull request that closes this issue' : 'an open pull request that closes this issue',
-      })),
-      moved(i.updatedAt, now)));
+      }))));
 }
 
 /**
@@ -348,8 +360,9 @@ function issueItem({ row: i, ...item }, { repo, home, now }, { onType }) {
  * URL and name (`repoUrl`, `repo`), the picker's `milestones` (null until
  * read), `viewing` (a number, or null for none), `view` (the route's answer
  * for it, or null), `loading`, `error`, the `kinds` listed, `moving` while a
- * move is on its way, `blocked` when a checkout would be refused, `home`
- * (the clone's repository, which a typed issue is named against) and `now`.
+ * move is on its way, `blocked` when a checkout would be refused, `wordOf`
+ * (a pull request's merge word, pullItem), `home` (the clone's repository,
+ * which a typed issue is named against) and `now`.
  * `on` is what it can ask for: onView(number), onMove(url, number),
  * onSwitch(url), onType(text), onKinds(kinds), onRefresh() and onReach().
  */

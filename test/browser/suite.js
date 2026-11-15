@@ -964,6 +964,12 @@ test('the issues are listed when asked for, in the same groups, and the choice i
   assert.deepEqual(await viewerHeads(p), ['Urgent · No effort', 'High · XL', 'High · S', 'No priority · M', 'No priority · No effort']);
   assert.deepEqual(await viewerRows(p), [40, 30, 12, 32, 31, 41]);
   assert.equal(await p.evaluate(() => localStorage.getItem('prcoder:milestone-kinds')), 'pulls issues');
+  // When a row last moved is under its button, so an issue with nothing else
+  // to say -- its one label is its heading's -- has no third line.
+  const bare = p.locator('#pr-body .ms-row.issue[data-number="40"]');
+  assert.match(await bare.locator('.ms-aside .age').textContent(), / ago$/);
+  assert.equal(await bare.locator('.ms-facts').isVisible(), false);
+  assert.equal(await p.locator('#pr-body .ms-facts .age').count(), 0);
   // An issue with a pull request under way says so, by the chip that links to it.
   const under = p.locator('#pr-body .ms-row.issue[data-number="41"] .ms-facts .tag.pull');
   assert.equal(await under.textContent(), 'PR #31');
@@ -1032,6 +1038,52 @@ test('a move to another pull request closes the viewer onto its description', { 
   await p.locator('#pr-head .pr-title', { hasText: 'Another pull request' }).waitFor();
   assert.equal(await p.locator('#pr-body .ms-pick').count(), 0);
   assert.match(await p.locator('#pr-head .tab.on').textContent(), /^Detail/);
+  await p.close();
+});
+
+// GitHub's `ready` is ready to merge into the base, which for a pull request
+// built on another is that one and not the default branch. The viewer says so
+// as the Pull requests tab does, from the list the Stack tab reads.
+test('a pull request built on others reads stacked in the viewer, not ready', { skip }, async () => {
+  const listed = (number, base) => ({ number, title: `#${number}`, url: `${REPO}/pull/${number}`, isDraft: false, isCrossRepository: false,
+    headRefName: `branch-${number}`, baseRefName: base });
+  const p = await newPage({ st: onFour, prs: [listed(30, 'branch-32'), listed(32, 'branch-31'), listed(31, 'main')] });
+  const view = viewOf(4);
+  const based = { 30: 'branch-32', 32: 'branch-31' };
+  await p.route('**/api/milestone', (r) => r.fulfill({ json: { ...view,
+    pulls: view.pulls.map((q) => ({ ...q, merge: 'ready', baseRefName: based[q.number] ?? q.baseRefName })) } }));
+  await p.waitForSelector(`${ML}[data-listed]`);
+  await openViewer(p);
+  await p.waitForSelector('#pr-body .ms-row');
+  const word = (n) => p.$eval(`#pr-body .ms-row[data-number="${n}"] .pr-merge`, (w) => [w.textContent, w.className]);
+  assert.deepEqual(await word(30), ['stacked (2)', 'pr-merge stacked'], 'on #32, which is on #31');
+  assert.deepEqual(await word(32), ['stacked (1)', 'pr-merge stacked']);
+  assert.deepEqual(await word(31), ['ready', 'pr-merge ready'], 'into the default branch');
+  await p.close();
+});
+
+// The viewer has no way back but its line, so it does not outlive it: a pull
+// request on no milestone whose repository's last open milestone has gone.
+test('the viewer closes when its line goes, back to the tab it was opened over', { skip }, async () => {
+  const p = await newPage({ clock: true });
+  await p.waitForSelector(`${ML}[data-listed]`);
+  await p.locator('#pr-head .tab', { hasText: 'Files' }).click();
+  await openViewer(p);
+  await p.waitForSelector('#pr-body .ms-row');
+  // Off the line first: the pointer is still where it pressed it, and each
+  // redraw puts a new line under a pointer that has not moved, which the
+  // browser counts as reaching it -- whenever it gets round to saying so.
+  await p.mouse.move(0, 0);
+  await p.route('**/api/milestones', (r) => r.fulfill({ json: { ...MILESTONES, milestones: [] } }));
+  // Reaching for the line reads the list again, ten seconds after the last read.
+  await p.clock.fastForward(11_000);
+  const read = p.waitForResponse('**/api/milestones');
+  await p.locator(ML).hover();
+  await read;
+  await p.waitForSelector(ML, { state: 'detached' });
+  assert.equal(await p.locator('#pr-body .ms-pick').count(), 0);
+  assert.match(await p.locator('#pr-head .tab.on').textContent(), /^Files/);
+  assert.equal(await isPickerOpen(p, 'milestone'), false);
   await p.close();
 });
 

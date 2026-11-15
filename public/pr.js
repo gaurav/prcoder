@@ -2,7 +2,7 @@ import { withoutHtml, mention, unmarked, mdLink, bareUrl, opens, repoUrl, urlPat
 import { kids, h, btn, ext, debug, tabBtn, writeThrough, fraction, mark, stackMark, kept, fold } from './ui.js';
 import { picker, matchRows, closeOrphans } from './picker.js';
 import { fileTree, fileGroup, filesProgress, unlisted } from './filelist.js';
-import { refLabel, refClass, dueLabel } from './items.js';
+import { refLabel, refClass, dueLabel, pullWord } from './items.js';
 import { milestoneView, tally, tallyLabel, staleBreakdown } from './milestone.js';
 
 // Re-exported for the tests, which read the pane's view of a body through here.
@@ -1188,6 +1188,11 @@ function renderPrTab(pr, parsed, handlers) {
   host.replaceChildren(...kids(tab === 'milestone' ? milestoneView({
     pr, repoUrl: linkBase(pr).repo, milestones: handlers.milestones ?? null, moving: handlers.picking ?? null,
     blocked: handlers.blocked, ...looking,
+    // A row's merge word against the stack it is in, from the list the Stack
+    // tab reads and what git has already said. It asks git nothing: a bare
+    // branch nobody has asked about ends the walk there, and the count is of
+    // what is known.
+    wordOf: (p) => pullWord(p, stackUnder({ pr: p }, handlers.prs, handlers.below, handlers.defaultBranch)),
   }, { onMove: handlers.onMilestone, onSwitch: handlers.onSwitch, onReach: handlers.onMilestoneReach, onView, onType, onKinds, onRefresh }) : stack ? [
     tree
       ? h('div', { className: 'pr-into' },

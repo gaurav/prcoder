@@ -424,11 +424,15 @@ nothing is labelled is one list with no heading.
 A row is a card of two lines. A pull request's is `PR #N` in the tinted chip, the one link to it
 on GitHub, its title, and **Switch**, the checkout the Stack tab's rows have, disabled by
 uncommitted work for the same reason; the pull request on screen is marked *here* instead. Under
-that: whether it can merge in a word, as the PRs tab says it, the review decision when there is
+that: whether it can merge in a word, as the PRs tab says it -- `stacked (N)` for GitHub's `ready`
+on one built on N others, from the list the Stack tab reads and what git has already said about
+any bare branch under it -- the review decision when there is
 one, `~M` for an effort guessed from its size when none is recorded -- shown, never used to order
-the rows -- its other labels, and when it last moved. An issue's is `#N`, its title, and ▶, which
+the rows -- and its other labels. An issue's is `#N`, its title, and ▶, which
 types the issue with its link into the coding agent, not sent, as the Issues tab's ▶ does; under
-it its other labels, the open pull requests that close it as chips, and when it last moved. A
+it its other labels and the open pull requests that close it as chips. When a row last moved is
+under its button, beside the title, so an issue with nothing else to say is two lines and not
+three. A
 priority or an effort read from an older label is on the row in italics, since the heading has the
 value and not where it came from. The priority and effort labels themselves are left off a row:
 its heading says them.

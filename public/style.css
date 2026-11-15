@@ -652,13 +652,19 @@ a { color: var(--accent); }
 .ms-row .tag.label { color: var(--dim); border-style: dashed; }
 .ms-row .tag.here { color: var(--accent); border-color: var(--accent); }
 .ms-row .pr-go, .ms-row .ms-type { flex: none; }
+/* The row's end: its button over when it last moved, beside the title's two
+   lines, so the age costs no line of its own. */
+.ms-aside { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+.ms-aside .age { font-size: 11px; color: var(--dim); white-space: nowrap; }
 .ms-row .pr-merge.ready { color: var(--add); }
+/* `stacked (N)`, the `ready` of a pull request built on others: the accent,
+   as on the Pull requests tab, since it cannot land yet. */
+.ms-row .pr-merge.stacked { color: var(--accent); }
 .ms-row .pr-merge.conflicts { color: var(--fail); }
 .ms-row .pr-merge.checks-not-passing { color: var(--fail); background: #4d1f24; padding: 0 6px; border-radius: 9px; }
 .ms-row .pr-merge.behind-base, .ms-row .pr-merge.blocked { color: var(--warn); }
 /* A guess and an older record are both said in italics: neither is settled. */
 .ms-guess, .ms-old { font-style: italic; }
-.ms-row .age { margin-left: auto; white-space: nowrap; }
 
 /* The worktree line, under the milestone's and drawn the same way: the word,
    which links to what a worktree session is, and a picker taking the rest. */
