@@ -831,6 +831,15 @@ test('a milestone with more than a page of one kind reads on for that kind alone
   assert.ok(!paged.join('\n').includes('pullRequests(first:100'), 'the second page asks for issues only');
 });
 
+// The reading stops: a milestone that always has another page is read to five
+// of them, and what came is short of what is open, which the viewer says.
+test('a milestone is read to five pages of a kind and no further', { skip: unix }, async () => {
+  const always = milestonePage({ pageInfo: { hasNextPage: true, endCursor: 'I1' }, nodes: [VIEW_ISSUE] }, { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [] });
+  const { out, calls } = await ghCalls(`cat <<'JSON'\n${JSON.stringify(always)}\nJSON`, () => milestoneItems(os.tmpdir(), 'o', 'r', 1));
+  assert.equal(calls.length, 5);
+  assert.deepEqual([out.issues.length, out.listed, out.total], [5, 5, 102]);
+});
+
 test('a milestone GitHub does not have is an error, not an empty list', { skip: unix }, async () => {
   await assert.rejects(ghCalls(`echo '{"data":{"repository":{"milestone":null}}}'`, () => milestoneItems(os.tmpdir(), 'o', 'r', 99)),
     { message: 'o/r has no milestone #99' });

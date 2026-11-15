@@ -1035,6 +1035,51 @@ test('a move to another pull request closes the viewer onto its description', { 
   await p.close();
 });
 
+// The pie in the viewer is the queue lines' pie, and opens the same breakdown.
+test('the viewer\'s pie opens the milestone\'s breakdown, as a queue line\'s does', { skip }, async () => {
+  const p = await newPage({ st: onFour });
+  await p.waitForSelector(`${ML}[data-listed]`);
+  await openViewer(p);
+  const pie = p.locator('#pr-body .ms-sum .breakdown');
+  await pie.waitFor();
+  assert.equal(await pie.getAttribute('title'), '5 of 11 done: 2 pull requests merged, 3 issues closed');
+  await pie.click();
+  await p.waitForSelector('.milestone-pop:popover-open');
+  assert.match(await p.locator('.milestone-pop').innerText(), /5 of 11 done, leaving out the 1 pull request closed without merging/);
+  await p.keyboard.press('Escape');
+  await p.waitForSelector('.milestone-pop:popover-open', { state: 'detached' }).catch(() => {});
+  assert.equal(await p.locator('.milestone-pop:popover-open').count(), 0);
+  await p.close();
+});
+
+// Which milestone the viewer opens on: the pull request's own, and for one on
+// none the last one looked at in this page -- a pull request that will never
+// have a milestone is still somewhere to look for the next thing from.
+test('the viewer opens on the pull request\'s own milestone, or on the last one looked at for a pull request on none', { skip }, async () => {
+  const p = await newPage({ clock: true });
+  await p.waitForSelector(`${ML}[data-listed]`);
+  await openViewer(p);
+  assert.equal(await milestoneOn(p), '', 'nothing looked at yet: what is on none');
+  await pickRow(p, 'milestone', '4');
+  await p.waitForSelector(`${VP}[data-on="4"]`);
+  const move = async (to) => {
+    await p.route('**/api/status', (r) => r.fulfill({ json: { ...status, pr: to } }));
+    const polled = p.waitForResponse('**/api/status');
+    await p.clock.fastForward(61_000);
+    await polled;
+    await p.locator('#pr-head .pr-title', { hasText: to.title }).waitFor();
+    await openViewer(p);
+  };
+  await move({ ...pr, url: `${REPO}/pull/999`, number: 999, title: 'Another on none' });
+  assert.equal(await milestoneOn(p), '4', 'where the last look was');
+  assert.equal(await p.locator('#pr-body .ms-where').textContent(), '#999 is on no milestone');
+  assert.equal(await p.locator('#pr-body .ms-move').textContent(), 'Add it here');
+  await move({ ...pr, url: `${REPO}/pull/1000`, number: 1000, title: 'One on v1.0', milestone: { number: 1, title: 'v1.0', dueOn: '2026-11-01T00:00:00Z' } });
+  assert.equal(await milestoneOn(p), '1', 'its own, whatever was looked at before');
+  assert.equal(await p.locator('#pr-body .ms-standing').getAttribute('class'), 'ms-standing on');
+  await p.close();
+});
+
 // The picker chooses what to look at and writes nothing: the status line says
 // how the pull request stands to it, and its button is what moves it there.
 test('choosing a milestone to look at moves nothing, and the status line\'s button moves the pull request there', { skip }, async () => {
