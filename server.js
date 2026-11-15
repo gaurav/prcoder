@@ -402,16 +402,22 @@ async function pickerList(owner, name, fresh) {
 // and number (`owner/name#4`, `owner/name#none` for what is on no milestone):
 // `{ at, view }`. Kept as long as the picker's list is, so that looking from
 // one milestone to the next and back is not a GitHub call each time; the
-// viewer asks for a fresh one when it opens, and a move drops the repository's.
+// viewer asks for a fresh one when it opens, and a move drops the repository's
+// (forgetMilestoneViews). Both are exported for test/api.test.js.
 const milestoneViews = new Map();
 
-async function milestoneView(owner, name, number, fresh) {
+export async function milestoneView(owner, name, number, fresh) {
   const key = `${owner}/${name}#${number ?? 'none'}`;
   const held = milestoneViews.get(key);
   if (!fresh && held && Date.now() - held.at < PICKER_LIST_FOR) return held.view;
   const view = { repo: `${owner}/${name}`, number, read: Date.now(), ...await milestoneItems(repo, owner, name, number) };
   milestoneViews.set(key, { at: view.read, view });
   return view;
+}
+
+/** A move changes two of a repository's milestones by one each, so what was read of any of them goes. */
+export function forgetMilestoneViews(owner, name) {
+  for (const key of milestoneViews.keys()) if (key.startsWith(`${owner}/${name}#`)) milestoneViews.delete(key);
 }
 
 /** A milestone from the page, for gh's -F, which converts by shape: a positive integer or null, and nothing else. */
@@ -821,7 +827,7 @@ const routes = {
     const milestone = await setIssueMilestone(repo, where, pickerMove(listed, cur, number));
     cur.milestone = milestone;
     // The viewer's lists of where it was and where it is are both out of date.
-    for (const key of milestoneViews.keys()) if (key.startsWith(`${where.owner}/${where.repo}#`)) milestoneViews.delete(key);
+    forgetMilestoneViews(where.owner, where.repo);
     term.verbose(milestone ? `put PR #${cur.number} on ${quote(milestone.title)}` : `took PR #${cur.number} off its milestone`);
     return { milestone };
   },

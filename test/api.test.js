@@ -15,7 +15,8 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { WebSocket } from 'ws';
-import { server, sessionArgs, startedWith, missingVendor, keepPr, issueMove, pullMove, pickerMove, switchTarget, queuedRun } from '../server.js';
+import { server, sessionArgs, startedWith, missingVendor, keepPr, issueMove, pullMove, pickerMove, switchTarget, queuedRun, milestoneView, forgetMilestoneViews } from '../server.js';
+import { ghCalls, unix } from './stub-gh.js';
 import { grammars } from '../public/diff.js';
 import { VERSION } from '../cli.js';
 
@@ -378,6 +379,34 @@ test('a picker pick is refused unless it is none, the pull request\'s own, or on
   assert.throws(() => pickerMove(listed, pr, 7), { message: '#7 is not an open milestone the picker listed' });
   assert.throws(() => pickerMove(listed, { milestone: null }, 9), { message: '#9 is not an open milestone the picker listed' });
   assert.throws(() => pickerMove(null, { milestone: null }, 4), { message: '#4 is not an open milestone the picker listed' });
+});
+
+// The viewer's read of a milestone is kept, so looking from one to the next
+// and back is not a call to GitHub each time; a fresh read is one, and a move
+// forgets what was read of that repository's milestones, and of no other's.
+// The route itself needs a pull request behind a stub gh, which is #54.
+test('a milestone read for the viewer is kept until a fresh one is asked for or a move forgets it', { skip: unix }, async () => {
+  const n = (totalCount) => ({ totalCount });
+  const answer = { data: { repository: { milestone: { number: 4, title: 'Needed soon', dueOn: null, description: '', state: 'OPEN',
+    openPulls: n(0), mergedPulls: n(1), closedPulls: n(0), openIssues: n(0), closedIssues: n(0),
+    issues: { totalCount: 0, pageInfo: { hasNextPage: false, endCursor: null }, nodes: [] },
+    pullRequests: { totalCount: 0, pageInfo: { hasNextPage: false, endCursor: null }, nodes: [] } } } } };
+  const { out, calls } = await ghCalls(`cat <<'JSON'\n${JSON.stringify(answer)}\nJSON`, async () => {
+    const first = await milestoneView('o', 'kept', 4, false);
+    const again = await milestoneView('o', 'kept', 4, false);
+    const other = await milestoneView('o', 'elsewhere', 4, false);
+    const fresh = await milestoneView('o', 'kept', 4, true);
+    forgetMilestoneViews('o', 'kept');
+    const after = await milestoneView('o', 'kept', 4, false);
+    const stays = await milestoneView('o', 'elsewhere', 4, false);
+    return { first, again, other, fresh, after, stays };
+  });
+  assert.equal(out.again, out.first, 'the second look is the first read');
+  assert.notEqual(out.fresh, out.first, 'a fresh one is another');
+  assert.notEqual(out.after, out.fresh, 'and so is the read after a move');
+  assert.equal(out.stays, out.other, 'another repository\'s is not forgotten');
+  assert.equal(calls.length, 4, 'four reads: one per repository, the fresh one, and the one after the move');
+  assert.deepEqual([out.first.repo, out.first.number, out.first.milestone.title, typeof out.first.read], ['o/kept', 4, 'Needed soon', 'number']);
 });
 
 test('a choice is refused unless the last poll listed it for the branch', async () => {
