@@ -181,6 +181,10 @@ off with it.
   picker was offered -- the server keeps the last list it read for each repository (`pickerMove`) --
   or the milestone the pull request is already on, as the Issues and Pull requests tabs' moves are
   held to their listings, so a closed milestone or one a stale tab sends never reaches GitHub.
+  The milestone viewer's read, `/api/milestone`, takes its number under both rules, since it
+  reaches `-F` too. What is on no milestone it reads by GitHub's search, where the repository is
+  words in the query and not a variable, so `milestoneItems` in `github.js` refuses an owner or a
+  repository that is more than a name before it asks.
   The switcher's `/api/pr/switch` hands a URL to `gh pr view` and then a checkout, so `wholePrRepo`
   in `git.js` takes only the whole of a `https://github.com/owner/repo/pull/N` -- anchored, so a
   flag in front of one or another host with that path behind it is refused -- and the route takes

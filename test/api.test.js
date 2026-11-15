@@ -353,12 +353,15 @@ test('a switch by number is refused before gh unless it is a positive integer', 
 // JSON rather than text, so anything but a positive integer or null is
 // refused before the pull request is looked at.
 test('a milestone is refused before gh unless it is a number or none', async () => {
-  for (const number of ['4', 0, -1, 1.5, 'null', true, undefined]) {
-    const res = await fetch(`${base}/api/pr/milestone`, {
-      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ url: 'x', number }),
-    });
-    assert.equal(res.status, 500);
-    assert.deepEqual(await res.json(), { error: `not a milestone number: ${JSON.stringify(number)}` });
+  // The move, and the viewer's read of one, which reaches -F the same way.
+  for (const route of ['/api/pr/milestone', '/api/milestone']) {
+    for (const number of ['4', 0, -1, 1.5, 'null', true, undefined]) {
+      const res = await fetch(`${base}${route}`, {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ url: 'x', number }),
+      });
+      assert.equal(res.status, 500, route);
+      assert.deepEqual(await res.json(), { error: `not a milestone number: ${JSON.stringify(number)}` });
+    }
   }
 });
 
