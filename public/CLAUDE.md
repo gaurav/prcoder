@@ -1,6 +1,6 @@
 # public/ -- the page
 
-## Eight files here are the server's as well
+## Nine files here are the server's as well
 
 The server imports six files from here, and with them everything they import.
 `cli.js` imports `pr.js` for the status block (`syncPhrase` and the PR's
@@ -17,17 +17,17 @@ cannot drift apart. `server.js` imports `QUIT_CODE` from `ui.js`, the close
 code that tells every tab prcoder is quitting. `github.js` imports
 `filesProgress` from `filelist.js`, so a row on the Pull requests tab counts
 viewed files by the same rule as the Files tab. Through those six come
-`folds.js` and `picker.js`, which `pr.js` builds its switcher and milestone
-line with.
+`folds.js`, `picker.js` and `milestone.js`, which `pr.js` builds its switcher,
+its worktree line and its milestone viewer with.
 
-So all eight have to load in Node, and none of them may touch the DOM at
+So all nine have to load in Node, and none of them may touch the DOM at
 module scope. A `document.querySelector` beside the imports is ordinary in a
 browser file, but here it stops the *server* from starting, with a stack
 trace naming a file under `public/` and nothing about why the server was
 reading it. Put DOM work inside a function, the way `el()` in `diff.js` does.
 A syntax error in any of them breaks the server the same way; `node --check
 public/*.js` catches it, and `test/api.test.js` loads every one of them by
-importing the server. A new import in any of the eight adds to the list.
+importing the server. A new import in any of the nine adds to the list.
 
 ## The building blocks are in `ui.js`
 
@@ -38,8 +38,8 @@ pane to get a button.
 
 ## A choice that acts at once is a `picker`, not a `<select>`
 
-`picker()` in `picker.js` is the PR pane's switcher, its milestone line and
-its worktree line: a
+`picker()` in `picker.js` is the PR pane's switcher, its worktree line and
+the milestone viewer's choice of milestone: a
 button that opens a searchable list, where only Enter or a click in the open
 list picks. A native `<select>` acts on `change`, and a closed one changes on
 a bare arrow (Linux and Windows) or a letter (everywhere), so one whose change

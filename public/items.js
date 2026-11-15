@@ -144,9 +144,10 @@ export const dueDay = (dueOn) => new Date(Date.parse(dueOn) + DUE_ROUND).toISOSt
 /**
  * A milestone's due date as its line says it, `due 3 days ago`, with the date
  * in full on hover (`Tuesday, October 27, 2026`) and a class saying how near
- * it is: `overdue`, `soon`, or neither. Its day (dueDay) is compared with
- * today's on this clock, and all of it is counted in whole days: due today is
- * `due today` and soon, soon is within DUE_SOON of today, and overdue only
+ * it is, which is its colour: `overdue`, red; `soon`, within DUE_SOON of
+ * today, orange; `coming`, within DUE_COMING, yellow; and `far`, green. Its
+ * day (dueDay) is compared with today's on this clock, and all of it is
+ * counted in whole days: due today is `due today` and soon, and overdue only
  * once the day is over. With a time in any of it, a milestone was overdue for
  * most of its own day, `due in 19 hours` of tomorrow's, and soon or not by
  * the hour of the day it was set in.
@@ -159,8 +160,8 @@ export function dueLabel(dueOn, now = Date.now()) {
   const title = new Intl.DateTimeFormat('en', { dateStyle: 'full', timeZone: 'UTC' }).format(Date.parse(`${day}T00:00:00Z`));
   if (day === today) return { className: 'due soon', textContent: 'due today', title };
   const ahead = Date.parse(day) - Date.parse(today);
-  const near = day < today ? ' overdue' : ahead < DUE_SOON ? ' soon' : '';
-  return { className: `due${near}`, textContent: `due ${inDays(ahead / 86400_000)}`, title };
+  const near = day < today ? 'overdue' : ahead < DUE_SOON ? 'soon' : ahead < DUE_COMING ? 'coming' : 'far';
+  return { className: `due ${near}`, textContent: `due ${inDays(ahead / 86400_000)}`, title };
 }
 
 /**
@@ -184,14 +185,22 @@ const SIZES = [['XS', 50], ['S', 100], ['M', 200], ['L', 500], ['XL', 1000]];
 /** A pull request's size as a chip, `XS` to `XXL`, from its lines changed. */
 export const sizeChip = (lines) => SIZES.find(([, under]) => (lines ?? 0) < under)?.[0] ?? 'XXL';
 
+/** GitHub's reviewDecision as a row says it; null, the usual case, says nothing. */
+export const REVIEW_WORD = { APPROVED: 'approved', CHANGES_REQUESTED: 'changes requested', REVIEW_REQUIRED: 'review needed' };
+
 // A pull request opened within this long is `new`. One not updated for months
 // is not dimmed: an old one with conflicts is often the quickest to finish,
 // since the coding agent can fix them (2026-10-20).
 export const NEW_FOR = 7 * 86400_000;
 export const isNew = (p, now = Date.now()) => now - Date.parse(p.createdAt ?? '') < NEW_FOR;
-// A milestone due within this long is `soon`, its due date yellow, and one past
-// it is overdue, a red badge: the two to look at for rescheduling.
+// How near a milestone's due date is, which is what colours it wherever it is
+// said -- the queue's milestone lines, the PR pane's, the milestone picker's
+// rows: past it is overdue, red; within a week `soon`, orange; within two
+// `coming`, yellow; further off `far`, green. So the list of milestones reads
+// by colour from the one to reschedule to the ones with room (the owner's
+// scale, 2026-11-15; it was yellow within a week and nothing beyond).
 export const DUE_SOON = 7 * 86400_000;
+export const DUE_COMING = 14 * 86400_000;
 
 /**
  * The PRs tab's orders, each a comparator over pullRow's fields; the

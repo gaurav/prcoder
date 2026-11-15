@@ -1,7 +1,8 @@
 import { h, btn, ext, api, toast, pref, setPref, tabBtn, writeThrough, fold, kept, mark, fraction, actions } from './ui.js';
-import { TABS, refLabel, refClass, forClaude, rankMilestones, issueMatches, pullMatches, sortPulls, rootsInOrder, pullWord, sizeChip, age, dueLabel, isNew, PULL_SORTS } from './items.js';
+import { TABS, refLabel, refClass, forClaude, rankMilestones, issueMatches, pullMatches, sortPulls, rootsInOrder, pullWord, sizeChip, age, dueLabel, isNew, PULL_SORTS, REVIEW_WORD } from './items.js';
 import { refs, resolveRef, blocks } from './tasks.js';
 import { blockNode, inline, stackUnder, stackOrder } from './pr.js';
+import { tally, pieButton, staleBreakdown, several } from './milestone.js';
 import { LABEL as HISTORY_LABEL, historyList, historyCount, loadHistory, initHistory } from './history.js';
 
 // The client owns the list; every change persists the whole array. Single user,
@@ -729,26 +730,6 @@ const countBadge = (n, noun, searching) => badge(n,
 /** The badge itself: the digits, hollow at 0, with `title` saying what they count. */
 const badge = (n, title) => h('span', { className: n ? 'count' : 'count none', title }, String(n));
 
-/** `noun`, a plural, as one of them when `n` is 1: `issue`, `pull request`. */
-const several = (n, noun) => (n === 1 ? noun.replace(/s$/, '') : noun);
-
-/**
- * A milestone's counts (`counts` from milestoneRow in github.js) as its pie
- * draws them, or null when there is nothing to draw: no counts -- a pulls.json
- * older than them -- counts that are not whole numbers, as in one damaged, or
- * a milestone that has never held anything. The pie is the whole milestone,
- * pull requests and issues together, so it is the same on either tab. Done is
- * what merged or closed; a pull request closed without merging is in neither
- * figure, since it is not done and not still to do (the owner's call, 2026-10-24).
- */
-function tally(counts) {
-  const { open, merged, closed } = counts?.pulls ?? {};
-  const { open: issues, closed: shut } = counts?.issues ?? {};
-  if (![open, merged, closed, issues, shut].every((n) => Number.isInteger(n) && n >= 0)) return null;
-  const total = open + merged + issues + shut;
-  return total ? { pulls: { open, merged, closed }, issues: { open: issues, closed: shut }, done: merged + shut, total } : null;
-}
-
 /**
  * What follows a milestone's count on its line, from its tally: how many of
  * the other kind are open on it -- `9 issues` on the PRs tab, `2 PRs`
@@ -771,76 +752,6 @@ function milestoneExtra(m, noun) {
     ...(m.dueOn ? [h('span', dueLabel(m.dueOn))] : []),
     ...(m.closed ? [h('span', { className: 'closed-milestone', title: `closed on GitHub, with open ${noun} still on it` }, 'closed')] : []),
   ];
-}
-
-/**
- * A milestone's pie, as the button that opens its breakdown. The figure is
- * its tooltip, as a mark's is, and its name, with what a press does.
- */
-function pieButton(m, t) {
-  const label = `${t.done} of ${t.total} done: ${t.pulls.merged} ${several(t.pulls.merged, 'pull requests')} merged, `
-    + `${t.issues.closed} ${several(t.issues.closed, 'issues')} closed`;
-  const b = h('button', { type: 'button', className: 'breakdown', title: label }, mark(fraction(t)));
-  b.setAttribute('aria-label', `${label}; show the breakdown`);
-  b.setAttribute('aria-haspopup', 'dialog');
-  // A press while it is open for this pie closes it. The popover's light
-  // dismiss has already hidden it by the click, on pointerdown, so that is
-  // read there; a key press has no pointerdown and finds it still open.
-  let wasOpen = false;
-  b.onpointerdown = () => { wasOpen = popFor === b && pop.matches(':popover-open'); };
-  b.onclick = () => {
-    if (wasOpen || (popFor === b && pop.matches(':popover-open'))) { wasOpen = false; pop.hidePopover(); return; }
-    showBreakdown(m, t, b);
-  };
-  return b;
-}
-
-/** The one breakdown popover, made on first use, and the pie it was opened from. */
-let pop = null;
-let popFor = null;
-
-/**
- * Every figure the line draws a part of, as a table under the pie: pull
- * requests open, merged and closed without merging, and issues open and
- * closed, then the pie's figure, saying what it leaves out. A popover rather
- * than a longer line or a tooltip: the line is already as long as a narrow
- * pane allows, and a tooltip is one line of words, where this is a table to
- * read across. `auto`, so Escape and a click anywhere else close it. One on
- * <body> for every line, anchored by CSS to the pie it was opened from, which
- * alone carries the anchor's name (`.milestone-pop` in style.css); Firefox 153
- * and Chromium 151 both anchor (checked 2026-10-24). A button inside a
- * <summary> takes its own click and keys, so a press does not fold the group
- * (checked in both, the same day).
- */
-function showBreakdown(m, t, at) {
-  if (!pop) {
-    pop = document.body.appendChild(h('div', { className: 'milestone-pop', popover: 'auto' }));
-    pop.setAttribute('role', 'dialog');
-  }
-  const cells = (row, ...ns) => h('tr', {}, h('th', { scope: 'row' }, row), ...ns.map((n) => h('td', {}, n)));
-  const { open, merged, closed } = t.pulls;
-  pop.setAttribute('aria-label', `${m.title}: what it holds`);
-  pop.replaceChildren(
-    h('p', { className: 'head' }, m.title, m.dueOn ? ` · due ${dueLabel(m.dueOn).title}` : ''),
-    h('table', {},
-      h('thead', {}, h('tr', {}, h('td'), ...['open', 'merged', 'closed'].map((c) => h('th', { scope: 'col' }, c)))),
-      h('tbody', {}, cells('pull requests', String(open), String(merged), String(closed)),
-        cells('issues', String(t.issues.open), '–', String(t.issues.closed)))),
-    h('p', {}, `${t.done} of ${t.total} done`
-      + (closed ? `, leaving out the ${closed} ${several(closed, 'pull requests')} closed without merging` : '')));
-  popFor?.style.removeProperty('anchor-name');
-  popFor = at;
-  at.style.setProperty('anchor-name', '--milestone-pie');
-  pop.showPopover();
-}
-
-/**
- * Close the breakdown when a repaint -- a poll, a search, a new listing -- has
- * taken away the pie it hangs from, which would leave it anchored to nothing.
- * Each of the pane's three repaints calls this after it.
- */
-function staleBreakdown() {
-  if (popFor && !popFor.isConnected && pop.matches(':popover-open')) pop.hidePopover();
 }
 
 /**
@@ -1364,8 +1275,6 @@ function pullGroups() {
   return out;
 }
 
-/** GitHub's reviewDecision as the row says it; null, the usual case, says nothing. */
-const REVIEW = { APPROVED: 'approved', CHANGES_REQUESTED: 'changes requested', REVIEW_REQUIRED: 'review needed' };
 
 /**
  * What a listed pull request is built on (stackUnder in pr.js), for its row and
@@ -1424,7 +1333,7 @@ function pullRow(p, depth = 0) {
     // Not held, as an issue row's (issueRow): this is the user's own click.
     drawPulls();
   }, { className: 'disclose', title: open ? 'hide its milestone and ways out' : 'show its milestone and ways out', ariaExpanded: String(open) });
-  const review = REVIEW[p.reviewDecision];
+  const review = REVIEW_WORD[p.reviewDecision];
   // `p.milestone` is a number and an issue's is a title (pullRow in github.js).
   const mine = pullsListing.milestones.find((m) => m.number === p.milestone)?.title ?? null;
   const closes = (p.closes ?? []).length ? h('p', { className: 'pull-closes' }, 'Closes ', ...(p.closes).flatMap((i, n) => [

@@ -5,6 +5,7 @@ import { renderPr, renderNoPr, renderHeader, pageTitle, prRepo, WORKTREES_DOC } 
 import { openPicker } from './picker.js';
 import { fileFrom, nextUnviewed, revealFile } from './filelist.js';
 import { h, api, toast, notice, dismissNotice, pref, setPref, debug, QUIT_CODE } from './ui.js';
+import { viewingFor, kindsFrom, kindsText, KINDS_KEY } from './milestone.js';
 import { openDiff, closeDiff, selectedPath, setViewed, showViewed, canTickViewed, toggleViewed, toggleWrap, canWrap, openMention } from './diff.js';
 import { initQueue, addItem, setAddTo, setItems, paintPulls, setHistoryOn, primeIssues } from './queue.js';
 import { historyStale, lastPrompt } from './history.js';
@@ -816,6 +817,77 @@ function pickWorktree(where) {
       { link: { href: WORKTREES_DOC, text: 'About worktrees' }, kind: 'worktree' });
   }
 }
+// The milestone viewer (milestoneView in milestone.js), which the head's
+// milestone line opens in the PR pane's body: what is open on one milestone of
+// the pull request's repository, by `owner/name#4` (`#none` for what is on no
+// milestone), as POST /api/milestone answered. Which one it shows is
+// viewingFor's: `viewPicked` is what its picker was set to for the pull
+// request on screen (`viewPickedFor`), and `viewLast` the last milestone
+// picked at all, which a pull request on none opens on. `viewKinds` is which
+// of pull requests and issues it lists, remembered the way Wrap is.
+//
+// Read as the viewer opens, from GitHub, since that is when it is looked at;
+// as the picker changes, from the server's few minutes' memory; and after a
+// move. An answer is filed under its own milestone, so one that lands late
+// is kept rather than dropped, and only the last ask says what is loading. A
+// failed read keeps what was shown and says so in the viewer.
+const views = new Map();
+let viewPicked;
+let viewPickedFor = null;
+let viewLast;
+let viewAsks = 0;
+let viewLoading = null;
+let viewError = null;
+let viewKinds = kindsFrom(pref(KINDS_KEY));
+const viewKey = (repo, number) => `${repo}#${number ?? 'none'}`;
+const viewing = (pr) => viewingFor(pr, viewPickedFor === pr.url ? viewPicked : undefined, viewLast);
+function loadMilestone(why, number, { fresh = false } = {}) {
+  const repo = milestonesFor;
+  if (!repo) return;
+  const key = viewKey(repo, number);
+  const n = ++viewAsks;
+  viewLoading = key;
+  viewError = null;
+  debug('fetching a milestone:', why, key, fresh ? 'from GitHub' : '');
+  api('/api/milestone', { number, fresh }).then((v) => {
+    views.set(viewKey(v.repo, v.number), v);
+  }, (e) => {
+    debug('milestone failed:', why, key, e.message);
+    if (n === viewAsks) viewError = { key, message: e.message };
+  }).finally(() => {
+    if (n === viewAsks) viewLoading = null;
+    if (last) paint(last);
+  });
+}
+// What renderPr is handed as `milestone`: the viewer's state, and its asks.
+const milestoneHandlers = (pr) => {
+  const repo = prRepo(pr);
+  const number = viewing(pr);
+  const key = viewKey(repo, number);
+  return {
+    viewing: number, view: views.get(key) ?? null, loading: viewLoading === key,
+    error: viewError?.key === key ? viewError.message : null,
+    kinds: viewKinds, repo, home: last?.nameWithOwner,
+    // No repaint of its own: the press that opened the viewer is drawing it,
+    // and the answer repaints when it lands, as the Stack tab's list does.
+    onOpen: () => loadMilestone('viewer opened', viewing(pr), { fresh: true }),
+    onRefresh: () => { loadMilestone('asked again', viewing(pr), { fresh: true }); if (last) paint(last); },
+    onView: (picked) => {
+      viewPicked = picked;
+      viewPickedFor = pr.url;
+      if (picked != null) viewLast = picked;
+      loadMilestone('picked', picked);
+      if (last) paint(last);
+    },
+    onKinds: (kinds) => {
+      viewKinds = kinds;
+      setPref(KINDS_KEY, kindsText(kinds));
+      if (last) paint(last);
+    },
+    onType: (text) => { if (!sendToClaude(text, false)) toast('The coding agent is not connected — nothing was typed.', true); },
+  };
+};
+
 // What both views of the pane draw the line from.
 const worktreeHandlers = () => ({ worktrees, onWorktree: pickWorktree, onWorktreeReach: reachWorktrees });
 
@@ -839,6 +911,12 @@ async function pickMilestone(url, number) {
   try {
     const { milestone } = await api('/api/pr/milestone', { url, number });
     if (last?.pr?.url === url) last.pr.milestone = milestone;
+    // Where it was and where it is have each changed by one: the viewer's
+    // lists, if it has read any, and the counts the line's pie is drawn from.
+    const looked = views.size > 0;
+    views.clear();
+    if (looked && last?.pr?.url === url) loadMilestone('moved', viewing(last.pr), { fresh: true });
+    loadMilestones('moved', true);
   } catch (e) {
     toast(e.message, true);
   }
@@ -1014,9 +1092,15 @@ function paint(status) {
     if (milestonesFor !== prRepo(status.pr)) {
       milestonesFor = prRepo(status.pr);
       milestones = null;
+      // Another repository's milestones: nothing looked at there is here.
+      views.clear();
+      viewLast = undefined;
+      viewPicked = undefined;
       loadMilestones(`now on ${milestonesFor}`);
     }
-    const key = JSON.stringify([status.pr, stack, blocked, [...below.values()], status.remotes, milestones, picking, worktrees, new Date().toDateString()]);
+    const looking = milestoneHandlers(status.pr);
+    const key = JSON.stringify([status.pr, stack, blocked, [...below.values()], status.remotes, milestones, picking, worktrees, new Date().toDateString(),
+      looking.viewing, looking.view, looking.loading, looking.error, looking.kinds, status.nameWithOwner]);
     if (key !== drawn) {
       drawn = key;
       renderPr(status.pr, {
@@ -1035,6 +1119,7 @@ function paint(status) {
         picking: picking?.url === status.pr.url ? picking : null,
         onMilestone: pickMilestone,
         onMilestoneReach: reachMilestones,
+        milestone: looking,
         ...worktreeHandlers(),
       });
     }

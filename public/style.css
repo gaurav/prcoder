@@ -6,6 +6,9 @@
      pull request and an error toast are one red; anything still waiting is one
      yellow. Passed is --add -- green-for-done is the same green everywhere. */
   --fail: #f5a3a3; --warn: #f0dc9a;
+  /* Between the two: a due date within a week, which is nearer than yellow's
+     waiting and not yet red's past. */
+  --soon: #f3bd8a;
   /* Claude is working: the busy tab icon's fill (`data-busy` in index.html),
      which test/browser/suite.js holds these two to. A state, not a verdict, so
      deliberately not --fail; where it is drawn it is an octagon, like the icon,
@@ -549,26 +552,119 @@ a { color: var(--accent); }
 .meta { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; color: var(--dim); font-size: 12px; margin-bottom: 8px; }
 .add { color: var(--add); } .del { color: var(--del); }
 
-/* The milestone line: the word, the picker, and a dated milestone's due date.
-   The picker takes the rest of the line, so a long title ellipsizes rather
-   than wrapping under the word, and the due date keeps its width after it --
-   until the picker would be under 10em, where the due date goes onto a line
-   of its own instead: at a 240px pane it squeezed the picker to `PR…`.
-   Drawn like the switcher in the pane's header (`.picker`), at the line's own
-   12px. On no milestone the line is in the warning colour, picker and all,
-   since that pull request is waiting to be triaged. The due date's colours
-   are the queue's milestone lines' (dueLabel): yellow within a week, and past
-   it the round red badge of `.badge.fail`. */
-.pr-milestone a { color: inherit; }
-.pr-milestone .due { flex: none; white-space: nowrap; font-variant-numeric: tabular-nums; }
-.pr-milestone .due.soon { color: var(--warn); }
-.pr-milestone .due.overdue { color: var(--fail); background: #4d1f24; padding: 0 6px; border-radius: 9px; }
-.pr-milestone .picker { flex: 1 1 10em; padding: 1px 4px; font: inherit; }
-.pr-milestone .picker:disabled { opacity: .5; cursor: progress; }
-/* In every state of the button: its own hover and open rules would turn it back. */
-.pr-milestone.untriaged, .pr-milestone.untriaged button.picker,
-.pr-milestone.untriaged button.picker:hover:not(:disabled), .pr-milestone.untriaged button.picker[aria-expanded=true] { color: var(--warn); }
-.pr-milestone.untriaged .picker { border-color: color-mix(in srgb, var(--warn) 50%, transparent); }
+/* The milestone line: one line that says where the pull request stands -- a
+   pie of how much of its milestone is done, the title, when it is due -- and
+   is the button that opens the milestone viewer in the body and closes it.
+   Drawn as a tab is, since it does what one does, on a line of its own above
+   them: pressed, it wears a tab's `.on`. The title takes the room and
+   ellipsizes; the due date keeps its width. On no milestone it is a yellow
+   dot and dim words, a nudge and not the warning-coloured line it was. */
+.pr-milestone {
+  display: flex; align-items: center; gap: 6px; width: 100%; margin: 0 0 8px; padding: 2px 6px;
+  font: inherit; font-size: 12px; text-align: left; color: var(--dim); cursor: pointer;
+  background: none; border: 1px solid transparent; border-radius: 4px;
+}
+.pr-milestone:hover { color: var(--fg); }
+.pr-milestone.on { color: var(--fg); border-color: var(--line); background: var(--bg); }
+.pr-milestone .mark { width: 12px; height: 12px; flex: none; }
+.pr-milestone .ms-name { flex: 0 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.pr-milestone .caret { flex: none; font-size: 10px; margin-left: auto; }
+/* A due date, wherever it is said -- this pane's line, the viewer's status
+   and summary, the queue's milestone lines, the milestone picker's rows -- is
+   coloured by how near it is (dueLabel in items.js): orange within a week,
+   yellow within two, green further off. Past it, here, it is the round red
+   badge of `.badge.fail`, as the queue's milestone lines have it. */
+.due.soon, .picker-detail.soon { color: var(--soon); }
+.due.coming, .picker-detail.coming { color: var(--warn); }
+.due.far, .picker-detail.far { color: var(--add); }
+.pr-milestone .due, .ms-standing .due, .ms-sum .due { flex: none; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.pr-milestone .due.overdue, .ms-standing .due.overdue, .ms-sum .due.overdue { color: var(--fail); background: #4d1f24; padding: 0 6px; border-radius: 9px; }
+/* The dot that says how things stand, on the line and on the viewer's status:
+   yellow for a pull request on no milestone, green for one on the milestone
+   being looked at, red for one on another. */
+.ms-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--warn); }
+.ms-standing.on .ms-dot { background: var(--add); }
+.ms-standing.other .ms-dot { background: var(--fail); }
+
+/* The milestone viewer, in the pane's body (milestoneView in milestone.js).
+   Chrome at 12px like the Stack tab's rows, and each row a card of two lines:
+   the pane is 375px, where a table of the same facts was too narrow to scan
+   (#151) and a card is what the milestones board draws in a column this wide. */
+.ms-pick a { color: inherit; }
+.ms-pick .picker { flex: 1 1 10em; padding: 1px 4px; font: inherit; }
+.ms-standing { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 0 8px; font-size: 12px; }
+.ms-where { flex: 1 1 auto; min-width: 0; }
+.ms-move, .ms-kind, .ms-refresh, .ms-type {
+  font: inherit; font-size: 11px; padding: 0 6px; cursor: pointer;
+  color: var(--accent); background: none; border: 1px solid var(--line); border-radius: 3px;
+}
+.ms-move:hover:not(:disabled), .ms-kind:hover, .ms-refresh:hover:not(:disabled), .ms-type:hover { border-color: var(--accent); }
+.ms-move:disabled, .ms-refresh:disabled { color: var(--dim); cursor: progress; }
+.ms-sum { margin-bottom: 4px; }
+.ms-sum .merged { color: var(--add); font-variant-numeric: tabular-nums; }
+.ms-desc {
+  margin: 0 0 8px; font-size: 12px; color: var(--dim);
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden;
+}
+/* The two kinds, each pressed or not: a pressed one is filled the way a
+   pressed Wrap is, so which are listed is read without reading the words. */
+.ms-bar { display: flex; align-items: center; gap: 4px; margin: 0 0 8px; font-size: 12px; color: var(--dim); }
+.ms-kind { color: var(--dim); font-variant-numeric: tabular-nums; }
+.ms-kind[aria-pressed=true] { color: var(--fg); border-color: var(--pull-line); background: var(--pull-bg); }
+.ms-read { flex: 1; min-width: 0; text-align: right; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.ms-error { margin: 0 0 8px; font-size: 12px; color: var(--fail); }
+.ms-cut { margin: 8px 0 0; font-size: 12px; color: var(--dim); }
+/* A group's heading: its priority and its effort, each in the colour of its
+   place in its scale, with a bar down the group's left edge in the first
+   part's colour. The colours are LABELS.md's in gaurav/milestones (read
+   2026-11-15), each lightened for this dark ground as the board's dark theme
+   has them, hue kept: red, orange, amber, green, and teal for the fifth,
+   which only effort has. Blue is a value nobody has set. */
+.ms-groups { --level-0: #4e9dfc; --level-1: #fc5e56; --level-2: #d66a1f; --level-3: #dba632; --level-4: #4bc65a; --level-5: #48cdd6; }
+.ms-group { margin: 0 0 10px; }
+.ms-head {
+  display: flex; align-items: baseline; gap: 4px; margin: 0 0 2px; padding-left: 8px;
+  font-size: 12px; font-weight: 600; color: var(--dim); box-shadow: inset 3px 0 0 currentColor;
+}
+.ms-head .count { margin-left: 4px; font-weight: 400; color: var(--dim); font-variant-numeric: tabular-nums; }
+.ms-head.level-0 { box-shadow: inset 3px 0 0 var(--level-0); } .ms-head .level-0 { color: var(--level-0); }
+.ms-head.level-1 { box-shadow: inset 3px 0 0 var(--level-1); } .ms-head .level-1 { color: var(--level-1); }
+.ms-head.level-2 { box-shadow: inset 3px 0 0 var(--level-2); } .ms-head .level-2 { color: var(--level-2); }
+.ms-head.level-3 { box-shadow: inset 3px 0 0 var(--level-3); } .ms-head .level-3 { color: var(--level-3); }
+.ms-head.level-4 { box-shadow: inset 3px 0 0 var(--level-4); } .ms-head .level-4 { color: var(--level-4); }
+.ms-head.level-5 { box-shadow: inset 3px 0 0 var(--level-5); } .ms-head .level-5 { color: var(--level-5); }
+.ms-group ul { list-style: none; margin: 0; padding: 0; }
+.ms-row { padding: 3px 4px; border-radius: 4px; font-size: 12px; }
+.ms-row:hover { background: var(--bg); }
+.ms-row.here { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.ms-top { display: flex; align-items: baseline; gap: 6px; }
+/* Two lines of a title and then an ellipsis: a card, not a table's one line. */
+.ms-title {
+  flex: 1; min-width: 0; font-size: 13px; color: var(--fg);
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden;
+}
+.ms-row.here .ms-title { font-weight: 600; }
+.ms-facts { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 6px; margin-top: 1px; color: var(--dim); font-size: 11px; }
+.ms-facts:empty { display: none; }
+.ms-row .tag { flex: none; font-size: 11px; text-decoration: none; padding: 0 5px; border: 1px solid var(--line); border-radius: 8px; white-space: nowrap; }
+.ms-row .tag.pull { border-color: var(--pull-line); background: var(--pull-bg); }
+.ms-row .tag.issue { color: var(--fg); }
+.ms-row .tag.label { color: var(--dim); border-style: dashed; }
+.ms-row .tag.here { color: var(--accent); border-color: var(--accent); }
+.ms-row .pr-go, .ms-row .ms-type { flex: none; }
+/* The row's end: its button over when it last moved, beside the title's two
+   lines, so the age costs no line of its own. */
+.ms-aside { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+.ms-aside .age { font-size: 11px; color: var(--dim); white-space: nowrap; }
+.ms-row .pr-merge.ready { color: var(--add); }
+/* `stacked (N)`, the `ready` of a pull request built on others: the accent,
+   as on the Pull requests tab, since it cannot land yet. */
+.ms-row .pr-merge.stacked { color: var(--accent); }
+.ms-row .pr-merge.conflicts { color: var(--fail); }
+.ms-row .pr-merge.checks-not-passing { color: var(--fail); background: #4d1f24; padding: 0 6px; border-radius: 9px; }
+.ms-row .pr-merge.behind-base, .ms-row .pr-merge.blocked { color: var(--warn); }
+/* A guess and an older record are both said in italics: neither is settled. */
+.ms-guess, .ms-old { font-style: italic; }
 
 /* The worktree line, under the milestone's and drawn the same way: the word,
    which links to what a worktree session is, and a picker taking the rest. */
@@ -941,7 +1037,6 @@ main.diff-off #diff-wrap { display: none; }
 .fold.milestone > summary a { color: var(--accent); text-decoration: none; }
 .fold.milestone > summary a:hover { text-decoration: underline; }
 .fold.milestone > summary .due { font-variant-numeric: tabular-nums; }
-.fold.milestone > summary .due.soon { color: var(--warn); }
 .fold.milestone > summary .closed-milestone { font-style: italic; }
 /* The count as a badge straight after the title (countBadge in queue.js):
    pushed to the line's end it was too far off to read as the milestone's.
@@ -960,12 +1055,12 @@ main.diff-off #diff-wrap { display: none; }
 .fold.milestone > summary .other-kind, .fold.milestone > summary .merged { font-variant-numeric: tabular-nums; }
 .fold.milestone > summary .merged { color: var(--add); }
 /* The pie as the button that opens the milestone's breakdown (pieButton in
-   queue.js): nothing of a button's own drawn, so it is the fold's mark as
+   milestone.js): nothing of a button's own drawn, so it is the fold's mark as
    before, centred on the line as that is. */
-.fold.milestone > summary .breakdown {
+.fold.milestone > summary .breakdown, .ms-sum .breakdown {
   align-self: center; display: inline-flex; padding: 0; border: 0; background: none; cursor: pointer;
 }
-.fold.milestone > summary .breakdown:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; border-radius: 50%; }
+.fold.milestone > summary .breakdown:focus-visible, .ms-sum .breakdown:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; border-radius: 50%; }
 /* The breakdown itself: a small table of the milestone's counts, under the
    pie it was opened from (showBreakdown names that one the anchor), or over
    it where the pane's foot would cut it off. */
@@ -1256,7 +1351,6 @@ button.picker[hidden] { display: none; }
 .picker-row.unlisted { border-top: 1px solid var(--line); margin-top: 4px; padding-top: 4px; color: var(--accent); }
 .picker-text { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .picker-detail { flex: none; color: var(--dim); white-space: nowrap; font-variant-numeric: tabular-nums; }
-.picker-detail.soon { color: var(--warn); }
 .picker-detail.overdue { color: var(--fail); }
 .picker-group-label { padding: 4px 8px 0; font-size: 11px; letter-spacing: .05em; text-transform: uppercase; color: var(--dim); }
 .picker-group { border-bottom: 1px solid var(--line); padding-bottom: 4px; margin-bottom: 4px; }

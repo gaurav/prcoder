@@ -117,8 +117,8 @@ is new. A quit in a worktree can remove the worktree, after saying what would go
 deletes a branch ([docs/Worktrees.md](docs/Worktrees.md#quitting-in-a-worktree)).
 
 On GitHub, it writes only when you act on something that says it will: ticking a description
-checkbox flips that one line of the description, ticking a file marks it viewed, picking a milestone
-in the PR pane moves the pull request onto it, ◎ moves a queue item into a new issue, dragging an
+checkbox flips that one line of the description, ticking a file marks it viewed, the milestone
+viewer's **Move it here** moves the pull request onto the milestone it is showing, ◎ moves a queue item into a new issue, dragging an
 issue onto a milestone or clicking Move in its opened row sets its milestone, and creating a pull
 request pushes the branch and opens GitHub's compare page.
 

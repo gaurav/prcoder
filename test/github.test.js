@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { rollup, linkedIssues, linksFrom, parsePrUrl, run, issueNumber, lf, setViewed, listPrs, loadPr, prHeads, branchPrs, lookupPrs, ownPrs, SEARCH_EVERY, UNREAD_FOR, pickPr, lookupRef, issueLinks, createIssue, repoIssues, setIssueMilestone, pullRequestFor, repoMilestones, repoPulls, pullRow, MERGE_WORD } from '../github.js';
+import { rollup, linkedIssues, linksFrom, parsePrUrl, run, issueNumber, lf, setViewed, listPrs, loadPr, prHeads, branchPrs, lookupPrs, ownPrs, SEARCH_EVERY, UNREAD_FOR, pickPr, lookupRef, issueLinks, createIssue, repoIssues, setIssueMilestone, pullRequestFor, repoMilestones, repoPulls, pullRow, MERGE_WORD, milestoneItems } from '../github.js';
 import { taskLines } from '../public/tasks.js';
 import { withGh, ghArgs, ghCalls, unix } from './stub-gh.js';
 
@@ -750,11 +750,17 @@ test('a milestone GitHub did not change is an error, not an answer', { skip: uni
     /GitHub left #168 on no milestone/);
 });
 
-test('a repository\'s open milestones are their numbers, titles and due dates', { skip: unix }, async () => {
+test('a repository\'s open milestones are their numbers, titles, due dates and counts', { skip: unix }, async () => {
+  const n = (totalCount) => ({ totalCount });
   const answer = { data: { repository: { milestones: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [
-    { number: 1, title: 'v1.0', dueOn: '2026-10-14T00:00:00Z' }, { number: 4, title: 'Needed\u001bsoon', dueOn: null }] } } } };
+    { number: 1, title: 'v1.0', dueOn: '2026-10-14T00:00:00Z', openPulls: n(1), mergedPulls: n(2), closedPulls: n(0), openIssues: n(23), closedIssues: n(14) },
+    { number: 4, title: 'Needed\u001bsoon', dueOn: null }] } } } };
   const { out, calls } = await ghCalls(`cat <<'JSON'\n${JSON.stringify(answer)}\nJSON`, () => repoMilestones(os.tmpdir(), '123', 'r'));
-  assert.deepEqual(out, [{ number: 1, title: 'v1.0', dueOn: '2026-10-14T00:00:00Z' }, { number: 4, title: 'Needed soon', dueOn: null }]);
+  assert.deepEqual(out, [
+    { number: 1, title: 'v1.0', dueOn: '2026-10-14T00:00:00Z', counts: { pulls: { open: 1, merged: 2, closed: 0 }, issues: { open: 23, closed: 14 } } },
+    // One without all five counts has none, and the line draws no pie for it.
+    { number: 4, title: 'Needed soon', dueOn: null, counts: null }]);
+  assert.match(calls[0].join('\n'), /mergedPulls: pullRequests\(states:MERGED\)/, 'the counts the milestone line\'s pie is drawn from');
   assert.equal(calls[0][calls[0].indexOf('owner=123') - 1], '-f', 'an all-digit owner is a string');
   assert.match(calls[0].join('\n'), /orderBy:\{field:DUE_DATE,direction:ASC\}/, 'undated, then soonest due');
 });
@@ -772,6 +778,87 @@ test('the picker\'s milestones past the first page are read with their cursor', 
   assert.equal(calls.length, 2);
   const paged = calls.find((c) => c.includes('after=M1'));
   assert.equal(paged[paged.indexOf('after=M1') - 1], '-f');
+});
+
+// One milestone's open work, for the PR pane's milestone viewer. The shapes
+// are GitHub's answers for gaurav/prcoder on 2026-11-15, with a label, a
+// closing pull request and a second page put on them for the mapping to show.
+const COUNTS = { openPulls: { totalCount: 1 }, mergedPulls: { totalCount: 2 }, closedPulls: { totalCount: 0 }, openIssues: { totalCount: 101 }, closedIssues: { totalCount: 14 } };
+const VIEW_PR = { number: 191, title: 'Find a pull request by typing', url: 'https://github.com/gaurav/prcoder/pull/191', isDraft: true,
+  isCrossRepository: false, headRefName: 'pr-picker', baseRefName: 'notices-list', createdAt: '2026-11-14T03:38:56Z', updatedAt: '2026-11-15T03:27:59Z',
+  author: { login: 'gaurav' }, additions: 1313, deletions: 604, changedFiles: 18, mergeStateStatus: 'CLEAN', reviewDecision: null,
+  labels: { nodes: [{ name: 'Priority: High' }, { name: 'Effort: M' }] } };
+const VIEW_ISSUE = { number: 190, title: 'An arrow-key\u001bpicker', url: 'https://github.com/gaurav/prcoder/issues/190', createdAt: '2026-11-05T23:02:59Z',
+  updatedAt: '2026-11-15T03:27:57Z', labels: { nodes: [{ name: 'Priority: Low' }] },
+  closedByPullRequestsReferences: { nodes: [{ number: 191, url: 'https://github.com/gaurav/prcoder/pull/191', isDraft: true, state: 'OPEN' }, { number: 12, url: 'u', isDraft: false, state: 'MERGED' }] } };
+const milestonePage = (issues, pulls) => ({ data: { repository: { milestone: {
+  number: 1, title: 'PRCoder v1.0', dueOn: '2026-10-14T00:00:00Z', description: 'The first one.', state: 'OPEN', ...COUNTS,
+  ...(issues ? { issues: { totalCount: 101, ...issues } } : {}), ...(pulls ? { pullRequests: { totalCount: 1, ...pulls } } : {}) } } } });
+
+test('a milestone\'s open issues and pull requests are read in one call, by variables, and mapped to rows', { skip: unix }, async () => {
+  const answer = milestonePage({ pageInfo: { hasNextPage: false, endCursor: null }, nodes: [VIEW_ISSUE] }, { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [VIEW_PR] });
+  const { out, calls } = await ghCalls(`cat <<'JSON'\n${JSON.stringify(answer)}\nJSON`, () => milestoneItems(os.tmpdir(), '123', 'r', 1));
+  assert.equal(calls.length, 1);
+  const [call] = calls;
+  assert.equal(call[call.indexOf('owner=123') - 1], '-f', 'an all-digit owner is a string');
+  assert.equal(call[call.indexOf('n=1') - 1], '-F', 'and the number an Int');
+  const query = call.join('\n');
+  assert.match(query, /milestone\(number:\$n\)/);
+  assert.match(query, /issues\(first:100,after:\$ia,states:OPEN,orderBy:\{field:UPDATED_AT,direction:DESC\}\)/);
+  // GitHub fails the whole query on an orderBy here (2026-11-15).
+  assert.match(query, /pullRequests\(first:100,after:\$pa,states:OPEN\)\{/);
+  assert.ok(!/\bbody\b/.test(query) && !query.includes('files('), 'no bodies and no files: the rows are for choosing');
+  assert.deepEqual(out.milestone, { number: 1, title: 'PRCoder v1.0', dueOn: '2026-10-14T00:00:00Z', description: 'The first one.', closed: false,
+    counts: { pulls: { open: 1, merged: 2, closed: 0 }, issues: { open: 101, closed: 14 } } });
+  assert.deepEqual([out.total, out.listed], [102, 2]);
+  assert.deepEqual(out.issues, [{ number: 190, title: 'An arrow-key picker', url: VIEW_ISSUE.url, createdAt: VIEW_ISSUE.createdAt, updatedAt: VIEW_ISSUE.updatedAt,
+    labels: ['Priority: Low'], pulls: [{ number: 191, url: 'https://github.com/gaurav/prcoder/pull/191', isDraft: true }] }]);
+  const [p] = out.pulls;
+  assert.deepEqual([p.number, p.merge, p.lines, p.labels, p.author, p.headRefName, p.milestone, p.lead],
+    [191, 'ready', 1917, ['Priority: High', 'Effort: M'], 'gaurav', 'pr-picker', null, '']);
+});
+
+test('a milestone with more than a page of one kind reads on for that kind alone', { skip: unix }, async () => {
+  const first = milestonePage({ pageInfo: { hasNextPage: true, endCursor: 'I1' }, nodes: [VIEW_ISSUE] }, { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [VIEW_PR] });
+  const more = milestonePage({ pageInfo: { hasNextPage: false, endCursor: null }, nodes: [{ ...VIEW_ISSUE, number: 54 }] }, null);
+  const script = `case "$*" in\n*ia=I1*) cat <<'JSON'\n${JSON.stringify(more)}\nJSON\n;;\n*) cat <<'JSON'\n${JSON.stringify(first)}\nJSON\n;;\nesac`;
+  const { out, calls } = await ghCalls(script, () => milestoneItems(os.tmpdir(), 'o', 'r', 1));
+  assert.deepEqual(out.issues.map((i) => i.number), [190, 54]);
+  assert.equal(out.pulls.length, 1, 'the pull requests are not read, or counted, twice');
+  assert.equal(calls.length, 2);
+  const paged = calls.find((c) => c.includes('ia=I1'));
+  assert.equal(paged[paged.indexOf('ia=I1') - 1], '-f');
+  assert.ok(!paged.join('\n').includes('pullRequests(first:100'), 'the second page asks for issues only');
+});
+
+// The reading stops: a milestone that always has another page is read to five
+// of them, and what came is short of what is open, which the viewer says.
+test('a milestone is read to five pages of a kind and no further', { skip: unix }, async () => {
+  const always = milestonePage({ pageInfo: { hasNextPage: true, endCursor: 'I1' }, nodes: [VIEW_ISSUE] }, { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [] });
+  const { out, calls } = await ghCalls(`cat <<'JSON'\n${JSON.stringify(always)}\nJSON`, () => milestoneItems(os.tmpdir(), 'o', 'r', 1));
+  assert.equal(calls.length, 5);
+  assert.deepEqual([out.issues.length, out.listed, out.total], [5, 5, 102]);
+});
+
+test('a milestone GitHub does not have is an error, not an empty list', { skip: unix }, async () => {
+  await assert.rejects(ghCalls(`echo '{"data":{"repository":{"milestone":null}}}'`, () => milestoneItems(os.tmpdir(), 'o', 'r', 99)),
+    { message: 'o/r has no milestone #99' });
+});
+
+test('what is open on no milestone is one search, both kinds, with the repository in the query string', { skip: unix }, async () => {
+  const answer = { data: { search: { issueCount: 68, pageInfo: { hasNextPage: false, endCursor: 'Y3Vyc29yOjM=' }, nodes: [
+    { __typename: 'PullRequest', ...VIEW_PR }, { __typename: 'Issue', ...VIEW_ISSUE }, {}] } } };
+  const { out, calls } = await ghCalls(`cat <<'JSON'\n${JSON.stringify(answer)}\nJSON`, () => milestoneItems(os.tmpdir(), 'gaurav', 'prcoder', null));
+  const [call] = calls;
+  assert.equal(call[call.indexOf('q=repo:gaurav/prcoder is:open no:milestone sort:updated-desc') - 1], '-f');
+  assert.ok(!call.some((a) => a.startsWith('query=') && a.includes('gaurav')), 'the names are not in the query text');
+  assert.deepEqual([out.milestone, out.total, out.listed], [null, 68, 2]);
+  assert.deepEqual([out.pulls.map((p) => p.number), out.issues.map((i) => i.number)], [[191], [190]]);
+  assert.ok(!('__typename' in out.pulls[0]), 'a row is a row, whichever query it came by');
+  // The search takes its repository as words, so a name that is more than a
+  // name never reaches it.
+  const none = await ghCalls('echo "{}"', () => milestoneItems(os.tmpdir(), 'o', 'r is:closed', null).catch((e) => e.message));
+  assert.deepEqual([none.out, none.calls], ['o/r is:closed is not a repository\'s name', []]);
 });
 
 // The linked issues are read alongside the files, on GraphQL as well: a

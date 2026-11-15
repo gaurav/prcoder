@@ -1191,18 +1191,20 @@ export async function repoPulls(cwd, owner, repo) {
   return { milestones: await strayCounts(cwd, owner, repo, milestones), pulls, total, listed: pulls.length };
 }
 
-// Not MILESTONES_QUERY, which asks for each milestone's counts: the picker
-// shows none. By due date, so that past the last page what is missing is the
-// milestones due furthest off. GitHub puts the undated ones first on this order
-// (gaurav/prcoder's own, 2026-11-10), so a bucket like Critical is never cut.
+// Not MILESTONES_QUERY, which has no order. By due date, so that past the last
+// page what is missing is the milestones due furthest off. GitHub puts the
+// undated ones first on this order (gaurav/prcoder's own, 2026-11-10), so a
+// bucket like Critical is never cut. The counts are for the pie on the PR
+// pane's milestone line, which is drawn before the viewer has read anything.
 const PICKER_MILESTONES_QUERY = `query($owner:String!,$repo:String!,$after:String){
   repository(owner:$owner,name:$repo){
     milestones(first:100,after:$after,states:OPEN,orderBy:{field:DUE_DATE,direction:ASC}){
-      pageInfo{ hasNextPage endCursor } nodes{ number title dueOn } } } }`;
+      pageInfo{ hasNextPage endCursor } nodes{ number title dueOn ${MILESTONE_COUNTS} } } } }`;
 
 /**
  * The repository's open milestones, for the PR pane's milestone picker:
- * `[{ number, title, dueOn }]` (milestoneOf), undated then soonest due -- the
+ * `[{ number, title, dueOn, counts }]` (milestoneOf, and countsOf's
+ * MILESTONE_COUNTS or null), undated then soonest due -- the
  * page ranks them again. Every one, to openMilestones' five pages of a hundred, as
  * the queue's listings do: it took the first fifty in GitHub's own order at
  * first, which could leave out the one due soonest on a repository with more,
@@ -1220,7 +1222,113 @@ export async function repoMilestones(cwd, owner, repo) {
     if (!pageInfo?.hasNextPage || !pageInfo.endCursor) break;
     after = pageInfo.endCursor;
   }
-  return nodes.map(milestoneOf);
+  return nodes.map((m) => ({ ...milestoneOf(m), counts: countsOf(m) }));
+}
+
+// What the milestone viewer reads of a pull request and of an issue: enough
+// to order them and to choose one by, and no bodies. The pull request's fields
+// are a subset of PULLS_QUERY's under the same names, so pullRow maps both.
+const VIEW_PULL = 'number title url isDraft isCrossRepository headRefName baseRefName createdAt updatedAt author{ login } '
+  + 'additions deletions changedFiles mergeStateStatus reviewDecision labels(first:20){ nodes{ name } }';
+const VIEW_ISSUE = 'number title url createdAt updatedAt labels(first:20){ nodes{ name } } '
+  + 'closedByPullRequestsReferences(first:5){ nodes{ number url isDraft state } }';
+
+/**
+ * One milestone's open issues, its open pull requests, or both -- whichever
+ * still has a page to read, each by its own cursor. The pull requests take no
+ * `orderBy`: Milestone.pullRequests answered "Something went wrong while
+ * executing your query" to `orderBy:{field:UPDATED_AT,direction:DESC}` on
+ * gaurav/prcoder on 2026-11-15, where Milestone.issues took the same argument
+ * and the same connection without it answered. The page orders the rows
+ * itself, so the order only decides which are left out past the last page.
+ */
+const milestoneQuery = (issues, pulls) => `query($owner:String!,$repo:String!,$n:Int!${issues ? ',$ia:String' : ''}${pulls ? ',$pa:String' : ''}){
+  repository(owner:$owner,name:$repo){ milestone(number:$n){ number title dueOn description state ${MILESTONE_COUNTS}${
+  issues ? `
+    issues(first:100,after:$ia,states:OPEN,orderBy:{field:UPDATED_AT,direction:DESC}){ totalCount pageInfo{ hasNextPage endCursor } nodes{ ${VIEW_ISSUE} } }` : ''}${
+  pulls ? `
+    pullRequests(first:100,after:$pa,states:OPEN){ totalCount pageInfo{ hasNextPage endCursor } nodes{ ${VIEW_PULL} } }` : ''} } } }`;
+
+// What is open on no milestone, issues and pull requests in one list, which
+// only the search has: Repository.pullRequests cannot be asked for the ones
+// without a milestone. Read against gaurav/prcoder on 2026-11-15.
+const UNMILESTONED_QUERY = `query($q:String!,$after:String){
+  search(query:$q,type:ISSUE,first:100,after:$after){ issueCount pageInfo{ hasNextPage endCursor }
+    nodes{ __typename ... on Issue{ ${VIEW_ISSUE} } ... on PullRequest{ ${VIEW_PULL} } } } }`;
+
+/** An issue as the milestone viewer draws one; `pulls` is the open pull requests that close it. */
+const viewIssue = (i) => ({
+  number: i.number, title: printable(i.title ?? '').trim() || `#${i.number}`, url: i.url,
+  createdAt: i.createdAt ?? null, updatedAt: i.updatedAt ?? null,
+  labels: (i.labels?.nodes ?? []).map((l) => printable(l.name ?? '').trim()).filter(Boolean),
+  pulls: (i.closedByPullRequestsReferences?.nodes ?? []).filter((p) => p?.state === 'OPEN')
+    .map((p) => ({ number: p.number, url: p.url ?? null, isDraft: !!p.isDraft })),
+});
+
+// ponytail: five pages of a hundred of each kind; `listed` under `total` says so.
+const VIEW_PAGES = 5;
+
+/**
+ * What is open on one milestone, for the PR pane's milestone viewer:
+ * `{ milestone, pulls, issues, total, listed }`. `milestone` is as the
+ * listings have one (milestoneRow, with its counts), or null for `number`
+ * null, which reads what is open on no milestone instead. `pulls` are pullRow's
+ * rows without the fields that take a body or the files -- `lead` and `body`
+ * empty, `closes` empty, `viewed` of nothing -- and `issues` are viewIssue's.
+ * `total` is how many are open there and `listed` how many came, issues and
+ * pull requests together.
+ *
+ * A milestone is one call, or one per further page of whichever kind has more
+ * than a hundred; no milestone is the search, a hundred to a page of both
+ * kinds mixed. Owner and repo go as variables on a milestone (-f, the prFiles
+ * note) and the number as an Int (-F). The search has no variables for them --
+ * they are words in its query, itself a variable -- so a name that could not
+ * be a GitHub owner or repository is refused before it gets there. Throws when
+ * gh does, and for a milestone GitHub does not have.
+ */
+export async function milestoneItems(cwd, owner, repo, number) {
+  const pulls = [];
+  const issues = [];
+  if (number == null) {
+    if (!/^[\w.-]+$/.test(owner) || !/^[\w.-]+$/.test(repo)) throw new Error(`${owner}/${repo} is not a repository's name`);
+    let total = 0;
+    let after = null;
+    for (let page = 0; page < VIEW_PAGES; page++) {
+      const args = ['api', 'graphql', '-f', `query=${UNMILESTONED_QUERY}`, '-f', `q=repo:${owner}/${repo} is:open no:milestone sort:updated-desc`];
+      if (after) args.push('-f', `after=${after}`);
+      const { search } = JSON.parse(await gh(args, { cwd })).data;
+      total = search.issueCount;
+      for (const { __typename: kind, ...node } of search.nodes.filter(Boolean)) {
+        if (kind === 'PullRequest') pulls.push(pullRow(node));
+        else if (kind === 'Issue') issues.push(viewIssue(node));
+      }
+      after = search.pageInfo?.hasNextPage ? search.pageInfo.endCursor : null;
+      if (!after) break;
+    }
+    return { milestone: null, pulls, issues, total, listed: pulls.length + issues.length };
+  }
+  let milestone = null;
+  let total = 0;
+  // Each kind's cursor: undefined until its first page, null once it has no more.
+  const at = { issues: undefined, pulls: undefined };
+  for (let page = 0; page < VIEW_PAGES && (at.issues !== null || at.pulls !== null); page++) {
+    const args = ['api', 'graphql', '-f', `query=${milestoneQuery(at.issues !== null, at.pulls !== null)}`,
+      '-f', `owner=${owner}`, '-f', `repo=${repo}`, '-F', `n=${Number(number)}`];
+    if (at.issues) args.push('-f', `ia=${at.issues}`);
+    if (at.pulls) args.push('-f', `pa=${at.pulls}`);
+    const m = JSON.parse(await gh(args, { cwd })).data?.repository?.milestone;
+    if (!m) throw new Error(`${owner}/${repo} has no milestone #${number}`);
+    if (!milestone) {
+      milestone = milestoneRow(m, printable(m.description ?? '').trim());
+      total = (m.issues?.totalCount ?? 0) + (m.pullRequests?.totalCount ?? 0);
+    }
+    issues.push(...(m.issues?.nodes ?? []).map(viewIssue));
+    pulls.push(...(m.pullRequests?.nodes ?? []).map(pullRow));
+    const next = (c) => (c?.pageInfo?.hasNextPage && c.pageInfo.endCursor ? c.pageInfo.endCursor : null);
+    at.issues = next(m.issues);
+    at.pulls = next(m.pullRequests);
+  }
+  return { milestone, pulls, issues, total, listed: pulls.length + issues.length };
 }
 
 /**

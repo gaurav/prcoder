@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 import { text as readBody } from 'node:stream/consumers';
 import { spawn as ptySpawn } from 'node-pty';
 import { WebSocketServer } from 'ws';
-import { loadPr, pullRequestFor, prBody, parsePrUrl, listPrs, branchPrs, lookupPrs, ownPrs, pickPr, issueLinks, lookupRef, setViewed, setBody, createIssue, fetchPatches, runCount, repoIssues, repoMilestones, setIssueMilestone } from './github.js';
+import { loadPr, pullRequestFor, prBody, parsePrUrl, listPrs, branchPrs, lookupPrs, ownPrs, pickPr, issueLinks, lookupRef, setViewed, setBody, createIssue, fetchPatches, runCount, repoIssues, repoMilestones, setIssueMilestone, milestoneItems } from './github.js';
 import { notAWorkTree, snapshot, currentBranch, headCommit, commitsKnown, commitMemo, repoInfo, pushRepo, compareUrl, githubUrl, originOwner, wholePrRepo, startOnPr, trackedPr, workTreeTop, pushBranch, remoteBranchHead, trackingHead, localPatch, branchesBelow, worktrees, linkedWorktree, worktreeLoss, removeWorktree, worktreeFor, worktreeForPr, commitsOnlyHere } from './git.js';
 import { bucket, fileUrl, fileViews } from './files.js';
 import { readPort, writePort, readRunning, writeRunning, dropRunning, alive, claimStart, releaseStart, readPrs, writePrs, pick, useQueueFile, movedQueue, issueUrl, readPulls, markMade, madeHere } from './store.js';
@@ -343,7 +343,8 @@ const repaint = () => term.status(last
  * the lock -- so it does not hold up the poll, saves and ticks behind it. The
  * Issues tab's listing is the same and much longer: up to five pages of a
  * hundred issues with their bodies, on every visit to the tab. The PR pane's
- * list of milestones to pick from is the same and short. The Pull
+ * list of milestones to pick from is the same and short, and so is the
+ * milestone viewer's read of one milestone. The Pull
  * requests tab's listing is seconds long on a repository with many open;
  * what it writes, `.prcoder/pulls.json`, is its own file, replaced whole by
  * a rename (writePulls), and its fresh reads queue among themselves
@@ -353,7 +354,7 @@ const repaint = () => term.status(last
  * probe of each other working copy's prcoder, which can take its two seconds
  * over a port that never answers -- two seconds the poll should not wait out.
  */
-const UNLOCKED = new Set(['GET /api/whoami', 'GET /api/status', 'POST /api/queue/ref', 'GET /api/issues', 'POST /api/milestones', 'POST /api/pulls', 'POST /api/history', 'GET /api/worktrees']);
+const UNLOCKED = new Set(['GET /api/whoami', 'GET /api/status', 'POST /api/queue/ref', 'GET /api/issues', 'POST /api/milestones', 'POST /api/milestone', 'POST /api/pulls', 'POST /api/history', 'GET /api/worktrees']);
 
 /**
  * Status polls that arrive while one is still waiting for the lock share it:
@@ -397,8 +398,37 @@ async function pickerList(owner, name, fresh) {
   return list;
 }
 
+// What the milestone viewer was last shown of one milestone, by repository
+// and number (`owner/name#4`, `owner/name#none` for what is on no milestone):
+// `{ at, view }`. Kept as long as the picker's list is, so that looking from
+// one milestone to the next and back is not a GitHub call each time; the
+// viewer asks for a fresh one when it opens, and a move drops the repository's
+// (forgetMilestoneViews). Both are exported for test/api.test.js.
+const milestoneViews = new Map();
+
+export async function milestoneView(owner, name, number, fresh) {
+  const key = `${owner}/${name}#${number ?? 'none'}`;
+  const held = milestoneViews.get(key);
+  if (!fresh && held && Date.now() - held.at < PICKER_LIST_FOR) return held.view;
+  const view = { repo: `${owner}/${name}`, number, read: Date.now(), ...await milestoneItems(repo, owner, name, number) };
+  milestoneViews.set(key, { at: view.read, view });
+  return view;
+}
+
+/** A move changes two of a repository's milestones by one each, so what was read of any of them goes. */
+export function forgetMilestoneViews(owner, name) {
+  for (const key of milestoneViews.keys()) if (key.startsWith(`${owner}/${name}#`)) milestoneViews.delete(key);
+}
+
+/** A milestone from the page, for gh's -F, which converts by shape: a positive integer or null, and nothing else. */
+const milestoneNumber = (number) => {
+  if (number !== null && !(Number.isInteger(number) && number > 0)) throw new Error(`not a milestone number: ${JSON.stringify(number)}`);
+  return number;
+};
+
 /**
- * What /api/pr/milestone may put the pull request `pr` on: `number` if it is
+ * What /api/pr/milestone may put the pull request `pr` on, and what
+ * /api/milestone may show beside it: `number` if it is
  * null, the milestone the pull request is already on, or one of `listed`, the
  * open milestones the picker was offered for its repository. Anything else --
  * a closed milestone, one the picker never showed, a number from a stale tab
@@ -760,10 +790,28 @@ const routes = {
   },
 
   /**
+   * What is open on milestone `number` in the repository of the pull request
+   * on screen, or on no milestone for null, for the PR pane's milestone
+   * viewer: milestoneItems' answer with `repo`, `number` and `read`, when it
+   * was read in ms, so the page can tell an answer about a milestone or a
+   * repository it has since left. `number` is held as a move is (pickerMove):
+   * none, the pull request's own, or one the picker was offered -- the viewer
+   * looks only where the picker points. The last read while it is fresh enough
+   * (milestoneView), and GitHub's now with `fresh`. Unlocked (UNLOCKED).
+   */
+  'POST /api/milestone': async ({ number, fresh = false } = {}) => {
+    milestoneNumber(number);
+    const cur = requirePr();
+    const { owner, repo: name } = parsePrUrl(cur.url);
+    const listed = pickerLists.get(`${owner}/${name}`)?.list ?? await pickerList(owner, name, true);
+    return milestoneView(owner, name, pickerMove(listed, cur, number), fresh === true);
+  },
+
+  /**
    * The pull request on screen put on milestone `number`, or taken off one for
-   * null, from the PR pane's picker. `url` is the pull request the page drew
-   * the picker for: a poll can have moved the pane to another since, and the
-   * pick was not about that one. `number` is held to the list the picker was
+   * null, from the milestone viewer's button. `url` is the pull request the page drew
+   * the button for: a poll can have moved the pane to another since, and the
+   * press was not about that one. `number` is held to the list the picker was
    * offered (pickerMove), read now if this process has none for the
    * repository -- a page left open across a restart. The answer is the
    * milestone GitHub now has, which the cached pull request takes too: the page
@@ -771,15 +819,15 @@ const routes = {
    * request again.
    */
   'POST /api/pr/milestone': async ({ url, number } = {}) => {
-    // Reaches gh's -F, which converts by shape (setIssueMilestone): a positive
-    // integer or null, and nothing else.
-    if (number !== null && !(Number.isInteger(number) && number > 0)) throw new Error(`not a milestone number: ${JSON.stringify(number)}`);
+    milestoneNumber(number);
     const cur = requirePr();
     if (url !== cur.url) throw new Error(`${url ?? '(nothing)'} is no longer the pull request on screen`);
     const where = parsePrUrl(cur.url);
     const listed = pickerLists.get(`${where.owner}/${where.repo}`)?.list ?? await pickerList(where.owner, where.repo, true);
     const milestone = await setIssueMilestone(repo, where, pickerMove(listed, cur, number));
     cur.milestone = milestone;
+    // The viewer's lists of where it was and where it is are both out of date.
+    forgetMilestoneViews(where.owner, where.repo);
     term.verbose(milestone ? `put PR #${cur.number} on ${quote(milestone.title)}` : `took PR #${cur.number} off its milestone`);
     return { milestone };
   },
