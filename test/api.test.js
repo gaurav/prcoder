@@ -30,14 +30,28 @@ after(() => new Promise((res) => server.close(res)));
 // What a second prcoder asks the holder of its port. Answering from cache is
 // the contract: a probe that waited on gh would time out and the busy-port note
 // would name the wrong thing.
+// The History tab's two switches are cleared first: either one exported in
+// the shell that runs the suite (CLAUDE_CODE_SKIP_PROMPT_HISTORY is Claude
+// Code's documented privacy switch) would answer `history: false`.
 test('/api/whoami answers from cache, before any poll has run', async () => {
-  const res = await fetch(`${base}/api/whoami`);
-  assert.equal(res.status, 200);
-  assert.equal(res.headers.get('content-type'), 'application/json');
-  assert.deepEqual(await res.json(), {
-    prcoder: true, version: VERSION, repo: process.cwd(), top: process.cwd(), branch: null, nameWithOwner: null,
-    started: { model: '', effort: '' }, history: true,
-  });
+  const env = { ...process.env };
+  delete process.env.PRCODER_NO_HISTORY;
+  delete process.env.CLAUDE_CODE_SKIP_PROMPT_HISTORY;
+  try {
+    const res = await fetch(`${base}/api/whoami`);
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get('content-type'), 'application/json');
+    assert.deepEqual(await res.json(), {
+      prcoder: true, version: VERSION, repo: process.cwd(), top: process.cwd(), branch: null, nameWithOwner: null,
+      started: { model: '', effort: '' }, history: true,
+    });
+    process.env.PRCODER_NO_HISTORY = '1';
+    assert.equal((await (await fetch(`${base}/api/whoami`)).json()).history, false, 'PRCODER_NO_HISTORY turns the tab off');
+  } finally {
+    for (const k of ['PRCODER_NO_HISTORY', 'CLAUDE_CODE_SKIP_PROMPT_HISTORY']) {
+      if (env[k] === undefined) delete process.env[k]; else process.env[k] = env[k];
+    }
+  }
 });
 
 // The one route that reads outside the repo: Claude Code's own history file,
@@ -54,6 +68,7 @@ test('/api/history reads Claude Code\'s file for this working copy, and says whe
   const env = { ...process.env };
   process.env.CLAUDE_CONFIG_DIR = cfg;
   delete process.env.CLAUDE_CODE_SKIP_PROMPT_HISTORY;
+  delete process.env.PRCODER_NO_HISTORY;
   try {
     const h = await post({});
     assert.equal(h.enabled, true);
@@ -71,8 +86,9 @@ test('/api/history reads Claude Code\'s file for this working copy, and says whe
   } finally {
     process.env.CLAUDE_CONFIG_DIR = env.CLAUDE_CONFIG_DIR;
     if (env.CLAUDE_CONFIG_DIR === undefined) delete process.env.CLAUDE_CONFIG_DIR;
-    delete process.env.CLAUDE_CODE_SKIP_PROMPT_HISTORY;
-    if (env.CLAUDE_CODE_SKIP_PROMPT_HISTORY !== undefined) process.env.CLAUDE_CODE_SKIP_PROMPT_HISTORY = env.CLAUDE_CODE_SKIP_PROMPT_HISTORY;
+    for (const k of ['PRCODER_NO_HISTORY', 'CLAUDE_CODE_SKIP_PROMPT_HISTORY']) {
+      if (env[k] === undefined) delete process.env[k]; else process.env[k] = env[k];
+    }
   }
 });
 
