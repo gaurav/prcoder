@@ -30,7 +30,7 @@ test('the tab is named for the pull request, short URL first', () => {
 
 test('the short URL comes from the pull request, not the checkout', () => {
   const forked = pr({ url: 'https://github.com/someone/prcoder/pull/3', number: 3 });
-  assert.match(pageTitle(status({ pr: forked, scope: 'other-repo' })), /^someone\/prcoder#3 /);
+  assert.match(pageTitle(status({ pr: forked })), /^someone\/prcoder#3 /);
 });
 
 test('a long pull request title is cut to a tab-sized name', () => {

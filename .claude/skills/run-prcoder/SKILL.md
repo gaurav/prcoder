@@ -9,7 +9,12 @@ prcoder serves the repo it is started in, and will not start outside a git
 working tree (a scratch directory needs `git init` first): it reads the current branch's PR via
 `gh` and spawns a real `claude` PTY per websocket connection. Run it from a
 branch with an open PR -- most routes answer `no pull request for this branch`
-otherwise. Test against this repo's own PRs; another repo only when its owner
+otherwise. **Never hand it a pull request here** -- `node server.js 87`,
+`prcoder 87`, a URL or a branch name: prcoder checks out the pull request it
+is started on, and this directory is the owner's working copy. To see
+another pull request, use `onPullRequest` in `tools/driver.mjs`, which
+answers a worktree under `data/` on its branch; start `server.js` from this
+tree with that as `cwd`, and no argument. Test against this repo's own PRs; another repo only when its owner
 has said so (CLAUDE.md).
 
 ## Launch
@@ -19,6 +24,10 @@ port, and `curl -s localhost:<port>/api/whoami` says if it is live. A running
 server is the cheapest thing to verify against, and it serves `public/` from
 disk, so a reload shows a client change. A second server started in the same
 directory moves aside to another port rather than taking the recorded one.
+Each running server also records its pid and port in `.prcoder/running/` at
+the working copy's top level (from any subdirectory), which a `prcoder <pr>`
+reads to refuse a checkout under it. A record with `"port": null` is one still
+starting, and refuses a checkout too.
 
 Otherwise:
 
@@ -122,10 +131,12 @@ Two rules for them, and for any script after them:
   a real one back. Snapshot the body with `gh pr view <n> --json body -q
   .body` before, and diff after. Opening and closing a description's sections
   is not a write — the fold is browser state and never reaches GitHub — so the
-  driver clicks them freely. `prcoder choose` writes nothing until a pick: a
-  listed number is a `gh pr checkout` of the working copy it runs in, so
-  answer `q` here (`tools/choose.mjs` does), and see a pick through in a clone
-  under `data/`.
+  driver clicks them freely. A pull request named at startup is a checkout:
+  `server.js <n>`, `prcoder <url>` or `prcoder <branch>` runs `gh pr checkout`
+  in the working copy it starts in, as a `prcoder choose` pick does. So never
+  name one here; `prcoder choose` writes nothing until a pick, so answer `q`
+  here (`tools/choose.mjs` does), and see a pick or a named start through in a
+  clone under `data/`.
 
 If every PTY spawn dies with a bare `posix_spawnp failed`, the `postinstall`
 script was skipped: `npm install` again, and see `tools/postinstall.mjs` for why.

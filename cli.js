@@ -35,8 +35,8 @@ const OPTIONS = {
 export function usage() {
   return `usage: prcoder [<pr> | choose] [--port <n>] [--no-open] [--queue <file>] [-v] [--agent <name>] [-- <agent args>]
 
-  <pr>             a pull request number, URL or branch (default: the current branch's)
-  choose           list the open pull requests, pick one to check out, and start on it
+  <pr>             check out this pull request (number, URL or branch) and start on it
+  choose           list the open pull requests, and pick the one to check out
   --port <n>       listen on this port for this run          env PRCODER_PORT
   --no-open        print the URL, don't open a browser        env PRCODER_NO_OPEN=1
   --queue <file>   keep the queue here, not .prcoder/        env PRCODER_QUEUE

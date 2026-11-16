@@ -127,8 +127,8 @@ actually observed, is an id per item and a union by id.
 in [`cli.js`](../cli.js)); everything after it goes to the agent verbatim. So there is no list of
 Claude's flags to keep in step, and an agent flag written before `--` is an error that says where it
 goes, not a session started with the wrong pull request. The one positional is the pull request
-(its number, URL or branch, which gh tells apart, looked up once and refused if it names none),
-and `choose` is the one subcommand. [#99](https://github.com/gaurav/prcoder/pull/99) tried `prcoder open`,
+to check out and start on (its number, URL or branch, which gh tells apart; one that names none is
+refused), and `choose` is the one subcommand. [#99](https://github.com/gaurav/prcoder/pull/99) tried `prcoder open`,
 `new` and `gh`, and they were dropped. The running prcoder's keys (`o`, `g`) do the same job in
 fewer keystrokes, and a command word in front of the target clashes with a branch of that name, so
 the PR had to move behind a verb, which broke the CLI. `choose` settles the clash by taking the word
@@ -159,3 +159,17 @@ statusLine JSON contract that would answer
 block). Every mechanism that would close it — a `--settings` JSON carrying a hook, an MCP server,
 `--append-system-prompt` — means prcoder passing flags of its own to `claude`. So it is a decision
 to take rather than a patch to write.
+
+**The pane shows what is checked out.** The pull request pane only ever shows a pull request of
+the branch the working copy is on, and changes when the branch does: the switcher, `prcoder
+choose`, or `git` and `gh` run in the Claude session. So `prcoder <pr>` checks the pull request
+out before it starts (`startOnPr` in [`git.js`](../git.js)), and refuses to start when it cannot:
+over uncommitted work, for a pull request in a repository this clone does not track, or while
+another prcoder runs, or is starting, in the same working copy (any directory of it), whose agent
+the checkout would move. Everything
+else on screen acts on the working copy -- the agent edits it, the sync light and the quit prompt
+count its commits -- so a pane on another branch's pull request invites work on the wrong branch.
+`prcoder <pr>` used to do exactly that: it pinned the pull request without a checkout, under a
+"Not checked out" note, even one in another repository. That was removed on purpose. To read a pull
+request without moving the working copy, open it on GitHub or in the Pull requests tab, or start
+prcoder in a worktree on its branch, as the drivers do (`onPullRequest` in `tools/driver.mjs`).

@@ -300,26 +300,32 @@ test('a detached HEAD is no pull request, not an error', { skip: unix }, async (
   });
 });
 
-// gh's answers to `gh pr view <x> --json url`, verbatim from gh 2.x on
-// 2026-11-06. A branch is gh's to recognise, as a number and a URL are; what
-// prcoder adds is refusing an argument that names none.
-test('the command line\'s <pr> is pinned to its URL, and refused when it names no pull request', { skip: unix }, async () => {
-  const url = 'https://github.com/gaurav/prcoder/pull/177';
-  await withGh(() => `echo '{"url":"${url}"}'`, async () => {
-    for (const t of ['177', '#177', url, 'cli-improvements']) assert.equal(await pullRequestFor(os.tmpdir(), t), url);
+// gh's answers to `gh pr view <x>`, verbatim from gh 2.x on 2026-11-06. A
+// branch is gh's to recognise, as a number and a URL are; what prcoder adds is
+// refusing an argument that names none, or one it could not check out here.
+test('the command line\'s <pr> is looked up, and refused when it names no pull request here', { skip: unix }, async () => {
+  const repos = ['gaurav/prcoder'];
+  const found = { url: 'https://github.com/gaurav/prcoder/pull/177', number: 177, headRefName: 'cli-improvements', isCrossRepository: false };
+  await withGh(() => `echo '${JSON.stringify(found)}'`, async () => {
+    for (const t of ['177', '#177', found.url, 'cli-improvements']) assert.deepEqual(await pullRequestFor(os.tmpdir(), t, repos), found);
+    // Found, but in a repository this clone's pull requests are not looked for in.
+    await assert.rejects(pullRequestFor(os.tmpdir(), '177', ['someone/else']),
+      { message: 'https://github.com/gaurav/prcoder/pull/177 is in gaurav/prcoder, which this clone does not track; run prcoder in a clone of it' });
+    // A remote's URL may spell the repository otherwise than GitHub does.
+    assert.deepEqual(await pullRequestFor(os.tmpdir(), '177', ['Gaurav/PRCoder']), found);
   });
   await withGh(() => `echo 'no pull requests found for branch "no-such-branch"' >&2\nexit 1`, () =>
-    assert.rejects(pullRequestFor(os.tmpdir(), 'no-such-branch'),
+    assert.rejects(pullRequestFor(os.tmpdir(), 'no-such-branch', repos),
       { message: "no-such-branch is not a pull request's number or URL, or the branch of one" }));
   await withGh(() => `echo 'GraphQL: Could not resolve to a PullRequest with the number of 99999. (repository.pullRequest)' >&2\nexit 1`, () =>
-    assert.rejects(pullRequestFor(os.tmpdir(), '99999'), { message: 'there is no pull request 99999' }));
+    assert.rejects(pullRequestFor(os.tmpdir(), '99999', repos), { message: 'there is no pull request 99999' }));
   // gh failing for its own reasons is still a refusal, in gh's words.
   await withGh(() => `echo 'error connecting to api.github.com' >&2\nexit 1`, () =>
-    assert.rejects(pullRequestFor(os.tmpdir(), '177'), { message: 'could not look up 177: error connecting to api.github.com' }));
+    assert.rejects(pullRequestFor(os.tmpdir(), '177', repos), { message: 'could not look up 177: error connecting to api.github.com' }));
   // As is gh's setup, which viewPr takes for no pull request: through it, a
   // clone with no default remote said 42 named none.
   await withGh(() => `echo 'no default remote repository has been set' >&2\nexit 1`, () =>
-    assert.rejects(pullRequestFor(os.tmpdir(), '42'), { message: 'could not look up 42: no default remote repository has been set' }));
+    assert.rejects(pullRequestFor(os.tmpdir(), '42', repos), { message: 'could not look up 42: no default remote repository has been set' }));
 });
 
 // What gh printed for each: a found PR exits 0, and a missing number or repo
@@ -1069,6 +1075,83 @@ test('remembered pull requests are read by URL, with no search, until one is due
   }
 });
 
+// The pull request picked for the branch, in the switcher or on the command
+// line, is the branch's whatever the search by name finds or `own` says --
+// a fork's checked out to `owner/name`, a merged one beside an open one -- so
+// it is remembered and read by URL on every poll like the rest, rather than
+// read again by a second call each time. Once another is chosen, the rules
+// apply to it again and the next search lets it go.
+test('a chosen pull request is remembered and shown whatever the search finds or own says', { skip: unix }, async () => {
+  const fork = { ...HEADS[1], headRefName: 'main' };
+  const ownTopic = async (rows) => rows.filter((p) => p.headRefName === 'topic');
+  const look = (k, search, chosen, gh) => ghCalls(viewing(gh), () =>
+    lookupPrs(os.tmpdir(), ['up/repo'], k, search, { own: ownTopic, chosen, now: NOW }));
+  // A fork's, which the search by `owner/main` cannot find and own refuses.
+  const first = await look(null, searching([]), fork.url, [fork]);
+  assert.deepEqual(first.out.prs.map((p) => p.number), [2]);
+  assert.deepEqual(first.out.remember, { searched: NOW, prs: [{ url: fork.url, repo: 'up/repo', state: 'OPEN' }] });
+  // And then read by URL, with no search, as anything remembered is.
+  const search = searching([]);
+  const next = await look(first.out.remember, search, fork.url, [fork]);
+  assert.equal(search.runs, 0);
+  assert.deepEqual(next.out.prs.map((p) => p.number), [2]);
+  assert.equal(next.calls.length, 1);
+  // Chosen no longer, own's rules hold it again, and it is let go.
+  const after = await look(first.out.remember, searching([]), null, [fork]);
+  assert.deepEqual(after.out, { prs: [], remember: { searched: NOW, prs: [] } });
+  // A merged one beside an open one, which branchPrs leaves out once anything is open.
+  const open = { ...HEADS[0], headRefName: 'topic', repo: 'up/repo' };
+  const merged = { ...HEADS[2], headRefName: 'topic', state: 'MERGED' };
+  const both = await look(null, searching([open]), merged.url, [merged]);
+  assert.deepEqual(both.out.prs.map((p) => p.number).sort(), [1, 3]);
+  assert.deepEqual(both.out.remember.prs.map((k) => k.state).sort(), ['MERGED', 'OPEN']);
+  const kept = searching([open]);
+  const read = await look(both.out.remember, kept, merged.url, [open, merged]);
+  assert.equal(kept.runs, 0);
+  assert.deepEqual(read.out.prs.map((p) => p.number).sort(), [1, 3]);
+  // Chosen no longer, the merged one does not stand beside the open one.
+  const dropped = searching([open]);
+  const lone = await look(both.out.remember, dropped, null, [open, merged]);
+  assert.equal(dropped.runs, 1);
+  assert.deepEqual(lone.out.prs.map((p) => p.number), [1]);
+  assert.deepEqual(lone.out.remember.prs.map((k) => k.url), [open.url]);
+  // One in a repository this clone does not track is not read at all.
+  const elsewhere = await look(null, searching([]), 'https://github.com/else/repo/pull/9', []);
+  assert.deepEqual(elsewhere.out, { prs: [], remember: undefined });
+  assert.equal(elsewhere.calls.length, 0);
+});
+
+// A chosen pull request that cannot be read is given up on after UNREAD_FOR
+// like any other, and stays given up on while it is chosen: forgotten, it was
+// pinned again as new on the next poll and read on every one after, failing.
+// One never read is remembered too, with no state, so that it can lapse.
+test('a chosen pull request that stays unread is given up on, not read again on every poll', { skip: unix }, async () => {
+  const offline = `echo 'error connecting to api.github.com' >&2; exit 1`;
+  const url = HEADS[1].url;
+  const look = (k, opts) => ghCalls(offline, () => lookupPrs(os.tmpdir(), ['up/repo'], k, searching([]), { chosen: url, now: NOW, ...opts }));
+  const first = await look(null);
+  const stamped = { searched: NOW, prs: [{ url, repo: 'up/repo', state: null, unread: NOW }] };
+  assert.deepEqual(first.out, { prs: [], remember: stamped });
+  // Past UNREAD_FOR: not read, and kept as it is, so the next poll does not pin it again.
+  for (const at of [NOW + UNREAD_FOR, NOW + 2 * UNREAD_FOR]) {
+    const lapsed = await look(stamped, { now: at });
+    assert.deepEqual(lapsed.calls, [], 'not read again');
+    assert.deepEqual(lapsed.out, { prs: [], remember: undefined });
+  }
+  // Beside an open one remembered, the cached path keeps it too.
+  const open = { url: HEADS[0].url, repo: 'up/repo', state: 'OPEN' };
+  const beside = await ghCalls(viewing([HEADS[0]]), () => lookupPrs(os.tmpdir(), ['up/repo'],
+    { searched: NOW + UNREAD_FOR - 60_000, prs: [open, stamped.prs[0]] }, searching([]), { chosen: url, now: NOW + UNREAD_FOR }));
+  assert.deepEqual(beside.calls.map((c) => c[2]), [HEADS[0].url]);
+  assert.equal(beside.out.remember, undefined);
+  // A fresh lookup (r, g, a change of branch) tries it again.
+  const fresh = await look(stamped, { now: NOW + UNREAD_FOR, fresh: true });
+  assert.deepEqual(fresh.calls.map((c) => c[2]), [url]);
+  // Chosen no longer, it is let go.
+  const after = await ghCalls(offline, () => lookupPrs(os.tmpdir(), ['up/repo'], stamped, searching([]), { now: NOW + UNREAD_FOR }));
+  assert.deepEqual(after.out, { prs: [], remember: { searched: NOW + UNREAD_FOR, prs: [] } });
+});
+
 test('a search runs when nothing open is known, when asked, when one is due, and when one has moved', { skip: unix }, async () => {
   const merged = { ...HEADS[0], state: 'MERGED' };
   const cases = [
@@ -1258,3 +1341,4 @@ test('which of the branch\'s pull requests is shown: chosen, open, at HEAD, as b
   assert.equal(pickPr([open(1), open(2)], { head: 'aaa', chosen: open(1).url, repos }).number, 1);
   assert.equal(pickPr([open(1), open(2)], { head: 'aaa', chosen: 'https://github.com/up/repo/pull/7', repos }).number, 2);
 });
+

@@ -56,8 +56,8 @@ measures, with a comment at each check saying which regression the check catches
   not start.
 - **Written against this repo's PR #1**: its sections, file groups and issue chips. The server
   follows the branch, so a run from a feature branch fails on the section count; `PRCODER_PR=1`
-  pins it. Leave it unset on `initial-implementation`, since that run is the only one that covers
-  branch-following.
+  runs it in a worktree under `data/` on PR #1's branch instead (`onPullRequest` in
+  `tools/driver.mjs`), since prcoder checks out what it is started on and this tree must not move.
 - **What it cannot reach.** Every file in PR #1 is one the pull request adds, so the diff pane's
   DIFF and DELETED views, the hunk outline and a `.tsx` file are `tools/diff-views.mjs`'s, below.
   The queue pane is driven against a queue of its own, `data/browser-queue.json` through
@@ -118,7 +118,10 @@ already up with `PRCODER_VERBOSE=2`, or a `browser.mjs` run is already printing 
   prints the count on every poll, so a change that adds a call shows up.
   A branch's open pull requests, once found, are read by URL, one `gh pr view` each, from
   `.prcoder/prs.json` (`lookupPrs` in `github.js`), and held to the branch's push target (one
-  `for-each-ref`), so the eight holds however many repositories the clone has. The search by name
+  `for-each-ref`), so the eight holds however many repositories the clone has. The one chosen for
+  the branch (the switcher, `prcoder <pr>`) is remembered with them, so a fork's checked out to
+  `owner/name`, or a merged one beside an open one, is its one read like the rest, not a second
+  `gh pr view` on top of every poll. The search by name
   (`branchPrs`) runs on a branch with none open -- which is every poll there, and what the nine,
   ten and eight are -- and on a branch with one only after a change of branch, ⟳, `r`, `g`, ten
   minutes, a change of state, or a read of one that fails anew. It is one `gh pr list` per repository the

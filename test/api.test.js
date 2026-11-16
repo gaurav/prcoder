@@ -32,7 +32,7 @@ test('/api/whoami answers from cache, before any poll has run', async () => {
   assert.equal(res.status, 200);
   assert.equal(res.headers.get('content-type'), 'application/json');
   assert.deepEqual(await res.json(), {
-    prcoder: true, version: VERSION, repo: process.cwd(), branch: null, nameWithOwner: null,
+    prcoder: true, version: VERSION, repo: process.cwd(), top: process.cwd(), branch: null, nameWithOwner: null,
     started: { model: '', effort: '' },
   });
 });
