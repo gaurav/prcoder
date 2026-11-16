@@ -179,8 +179,9 @@ Some things were checked against the real thing rather than a stub, and the evid
 the code:
 
 - GitHub's diff-anchor scheme: pinned, with the date, in `test/files.test.js`.
-- The shape of Claude Code's `history.jsonl` and the `ai-title` line of a transcript, neither
-  documented: observed on 2026-11-07 (the header of `history.js` says what) and pinned as the
+- The shape of Claude Code's `history.jsonl` and the `ai-title` lines of a transcript, neither
+  documented: observed on 2026-11-07, and that the title changes partway through a session, so
+  the last line counts, on 2026-11-15 (the header of `history.js` says what); pinned as the
   reader's guards in `test/history.test.js`. The drivers and `test/browser/suite.js` never read the
   real file: `claudeConfig` in `tools/driver.mjs` writes a fixture under `data/claude-config/` and
   points `CLAUDE_CONFIG_DIR` at it, and the suite answers `/api/history` itself.

@@ -18,20 +18,22 @@
 // It would also know only the prompts sent after it was installed. The file
 // already holds every one.
 //
-// A session's title comes from one line of its transcript,
+// A session's title comes from its transcript,
 // `projects/<slug>/<sessionId>.jsonl`, whose format is documented as internal
 // (https://code.claude.com/docs/en/sessions.md): `{"type":"ai-title",
-// "aiTitle":…}`, written once Claude Code has named the session. Nothing else
-// in the transcript is read, and a transcript without that line, or without
-// a transcript at all (cleanupPeriodDays prunes them; the history file is not
+// "aiTitle":…}` lines. Claude Code writes one many times over a session, and
+// the title changes partway through -- on 2026-11-15 one 24 MB transcript
+// had 18 lines of one title and then 210 of another -- so the last line is
+// the session's title, not the first. No `custom-title` line, or any other
+// title line, turned up in that machine's 5,308 title lines. Nothing else in
+// the transcript is read, and a transcript without that line, or without a
+// transcript at all (cleanupPeriodDays prunes them; the history file is not
 // pruned), is a session with no title.
 //
 // `pastedContents` is never read. A paste is where a secret lands, and the
 // placeholder in `display` already says a paste was there.
 
 import fs from 'node:fs/promises';
-import { createReadStream } from 'node:fs';
-import { createInterface } from 'node:readline';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -104,41 +106,69 @@ export function parseHistory(text, roots, { limit = 1000 } = {}) {
   return { prompts: prompts.slice(0, limit), skipped };
 }
 
-// A transcript's title, remembered against the file's size and mtime, so a
-// refresh re-reads only a transcript that has grown -- a session still running
-// has, and may have been named since.
+// A transcript's title as of the last read, and the byte the read stopped at:
+// the start of the line after the last whole one, so a line still being
+// written is read again whole. A transcript is only appended to, so a refresh
+// reads just what was added -- a running session's transcript grows on every
+// turn, can run to tens of megabytes, and has a title line all the way
+// through. One that is smaller than the offset was replaced, and is read from
+// the start. Sessions no longer in the listing are dropped (sessionTitles).
 const titles = new Map();
 
+const TITLE_MARK = Buffer.from('"ai-title"');
+const NL = 0x0a;
+
+/** The title a transcript line gives, or null when it is not a title line. */
+function titleIn(line) {
+  let o;
+  try { o = JSON.parse(line); } catch { return null; }
+  return o?.type === 'ai-title' && typeof o.aiTitle === 'string' && o.aiTitle.trim() ? o.aiTitle.trim() : null;
+}
+
 /**
- * The `aiTitle` of one transcript, or null: the file is read a line at a time
- * and left as soon as the title line is found, since a transcript is every
- * turn and tool result of a session and can run to megabytes.
+ * The last `aiTitle` in one transcript, or null. Read in chunks from where the
+ * last read stopped; only a line holding the marker is decoded and parsed,
+ * since nearly every byte is a turn or a tool result.
  */
 async function titleOf(file) {
-  let stat;
-  try { stat = await fs.stat(file); } catch { return null; }
-  const held = titles.get(file);
-  if (held && held.size === stat.size && held.mtimeMs === stat.mtimeMs) return held.title;
-  let title = null;
-  const stream = createReadStream(file, { encoding: 'utf8' });
+  let fh;
+  try { fh = await fs.open(file, 'r'); } catch { return null; }
   try {
-    for await (const line of createInterface({ input: stream, crlfDelay: Infinity })) {
-      if (!line.includes('"ai-title"')) continue;
-      let o;
-      try { o = JSON.parse(line); } catch { continue; }
-      if (o?.type === 'ai-title' && typeof o.aiTitle === 'string' && o.aiTitle.trim()) {
-        title = o.aiTitle.trim();
-        break;
+    const { size } = await fh.stat();
+    let held = titles.get(file);
+    if (!held || size < held.offset) held = { offset: 0, title: null };
+    let { title } = held;
+    // `carry` is the start of a line that has not ended yet, and starts at a
+    // line's first byte; `pos` is the file offset just past it.
+    let carry = Buffer.alloc(0);
+    let pos = held.offset;
+    const buf = Buffer.alloc(1 << 20);
+    while (pos < size) {
+      const { bytesRead } = await fh.read(buf, 0, Math.min(buf.length, size - pos), pos);
+      if (!bytesRead) break;
+      pos += bytesRead;
+      const chunk = carry.length ? Buffer.concat([carry, buf.subarray(0, bytesRead)]) : buf.subarray(0, bytesRead);
+      let from = 0;
+      let open = -1;
+      for (let hit = chunk.indexOf(TITLE_MARK, from); hit >= 0; hit = chunk.indexOf(TITLE_MARK, from)) {
+        const begin = chunk.lastIndexOf(NL, hit) + 1;
+        const end = chunk.indexOf(NL, hit);
+        if (end < 0) { open = begin; break; }
+        title = titleIn(chunk.toString('utf8', begin, end)) ?? title;
+        from = end + 1;
       }
+      const cut = open >= 0 ? open : chunk.lastIndexOf(NL) + 1;
+      // Copied, since `buf` is overwritten by the next read.
+      carry = Buffer.from(chunk.subarray(cut));
     }
+    titles.set(file, { offset: pos - carry.length, title });
+    return title;
   } catch {
     // Unreadable partway: no title, and nothing cached, so the next read tries again.
     return null;
   } finally {
-    stream.destroy();
+    await fh.close();
   }
-  titles.set(file, { size: stat.size, mtimeMs: stat.mtimeMs, title });
-  return title;
 }
 
 /**
@@ -159,6 +189,10 @@ async function sessionTitles(dir, prompts) {
     }
   };
   await Promise.all(Array.from({ length: 4 }, worker));
+  // A transcript the listing no longer reaches is forgotten, so the cache is
+  // the size of the listing and not of every session seen while prcoder ran.
+  const wanted = new Set(files.values());
+  for (const file of titles.keys()) if (!wanted.has(file)) titles.delete(file);
   return out;
 }
 

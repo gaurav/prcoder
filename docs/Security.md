@@ -146,7 +146,7 @@ A modified file's diff is not highlighted at all, and
 One file, and one line of some others: Claude Code's `history.jsonl` in its config directory
 (`~/.claude`, or `$CLAUDE_CONFIG_DIR`, the same variable the `claude` child honours, so the file
 read is the file written), which records every prompt typed into any Claude Code session on the
-machine, with its project directory; and, for a session's title, the `ai-title` line of its
+machine, with its project directory; and, for a session's title, the `ai-title` lines of its
 transcript under `projects/`. That is every repository's prompts, so the reader keeps only the
 ones whose project is this working copy, or a worktree under its `data/`, and drops the rest before
 anything leaves the server (`whereIn` in [`history.js`](../history.js), `test/history.test.js`).
