@@ -8,7 +8,7 @@
 // nothing at module scope touches the DOM (public/CLAUDE.md).
 
 import { h, btn, api, toast, kept, fold } from './ui.js';
-import { byDay, dayKey, timeLabel, commandOf, historyMatches, age } from './items.js';
+import { byDay, dayKey, timeLabel, commandOf, hasPaste, historyMatches, age } from './items.js';
 
 export const LABEL = 'History';
 
@@ -192,10 +192,14 @@ function session(s) {
  * the prompt into the agent again, unsent, to edit and send -- the way back
  * into the task a session died on; ↓ copies it into Local, untagged, for a
  * prompt worth sending again later; ⧉ puts it on the clipboard. A slash
- * command is marked by its word.
+ * command is marked by its word. A prompt that held a paste has only the
+ * paste's placeholder (hasPaste), so ▶ and ↓ say so once they have done it:
+ * sent as it is, the agent would get `[Pasted text #1 +40 lines]` and none
+ * of the forty lines.
  */
 function row(p) {
   const key = `${p.session}:${p.at}`;
+  const paste = hasPaste(p.text);
   const command = commandOf(p.text);
   const rest = command ? p.text.trimStart().slice(command.length) : p.text;
   const text = h('div', { className: 'text', title: opened.has(key) ? 'show less' : 'show the whole prompt' },
@@ -204,8 +208,8 @@ function row(p) {
     h('span', { className: 'when', title: new Date(p.at).toLocaleString('en', { dateStyle: 'full', timeStyle: 'short' }) }, timeLabel(p.at)),
     text,
     h('span', { className: 'actions' },
-      btn('▶', () => ways.type?.(p.text), { title: 'type this prompt into the coding agent again, to edit and send', ariaLabel: 'type this prompt into the coding agent again, to edit and send' }),
-      btn('↓', () => ways.pull?.(p.text), { title: 'copy into your queue', ariaLabel: 'copy this prompt into your queue' }),
+      btn('▶', () => { if (ways.type?.(p.text) && paste) pasteMissing('Typed in'); }, { title: 'type this prompt into the coding agent again, to edit and send', ariaLabel: 'type this prompt into the coding agent again, to edit and send' }),
+      btn('↓', async () => { if (await ways.pull?.(p.text) && paste) pasteMissing('Added to your queue'); }, { title: 'copy into your queue', ariaLabel: 'copy this prompt into your queue' }),
       copyButton(p.text)));
   text.onclick = () => {
     if (!getSelection()?.isCollapsed) return;
@@ -215,6 +219,12 @@ function row(p) {
   };
   return li;
 }
+
+// After ▶ or ↓ on a prompt that held a paste, in place of what they would
+// have said: sticky, since it is about the prompt now waiting in the terminal
+// or the queue, until it is dealt with.
+const pasteMissing = (done) => toast(`${done}, but that prompt held a paste and the history keeps only its placeholder: `
+  + 'paste the text again in its place before sending.', false, true);
 
 // As the diff header's ⧉ (app.js): a ✓ for a moment to say it went, and a
 // toast when the browser refused the clipboard.

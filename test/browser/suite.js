@@ -2014,6 +2014,37 @@ test('the last-prompt notice stays down when a prompt is sent before it is read'
   await p.close();
 });
 
+// The history keeps a paste as its placeholder only, so a row that held one
+// says so after ▶ or ↓, and a row that did not says nothing more.
+test('▶ and ↓ on a history row that held a paste say the paste is missing', { skip }, async () => {
+  const at = Date.now() - 60_000;
+  const p = await newPage({ history: { prompts: [
+    { at, text: 'fix this [Pasted text #1 +40 lines]', session: null, where: '' },
+    { at: at - 1000, text: 'no paste here', session: null, where: '' },
+  ], sessions: {}, read: at, skipped: 0 } });
+  let queue = [];
+  await p.route('**/api/queue', (r) => {
+    if (r.request().method() === 'PUT') queue = r.request().postDataJSON().items;
+    return r.fulfill({ json: queue });
+  });
+  await p.waitForSelector('#toast:not([hidden])');
+  await p.locator('#toast').click();
+  await p.locator('#queue-body .tab', { hasText: /^History/ }).click();
+  const row = (text) => p.locator('#queue-body .item.history', { hasText: text }).locator('.actions button');
+  const toast = () => p.locator('#toast:not([hidden])').textContent();
+  await row('no paste').nth(0).click();
+  await p.waitForTimeout(200);
+  assert.equal(await p.locator('#toast').isHidden(), true, 'nothing to say for a prompt without a paste');
+  await row('fix this').nth(0).click();
+  await p.waitForSelector('#toast:not([hidden])');
+  assert.match(await toast(), /^Typed in, but that prompt held a paste/);
+  await p.locator('#toast').click();
+  await row('fix this').nth(1).click();
+  await p.waitForFunction(() => document.querySelector('#toast:not([hidden])')?.textContent.startsWith('Added to your queue, but'));
+  assert.deepEqual(queue.map((i) => i.text), ['fix this [Pasted text #1 +40 lines]']);
+  await p.close();
+});
+
 // A fold's progress is a pie, not `3/5`: one size at any count, and full is a
 // disc. The figure it gives up is its accessible name. A directory is needed
 // for a directory's pie, and the fixture has none, so this page adds two: one
