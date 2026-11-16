@@ -69,8 +69,10 @@ const repoFacts = async () => (info ??= await repoInfo(repo));
 let pinnedPort = Number(process.env.PRCODER_PORT) || 0;
 let noOpen = !!process.env.PRCODER_NO_OPEN;
 // --no-history, or PRCODER_NO_HISTORY: the History tab off. The agent's name
-// is held with it (cli.js, AGENTS): the history prcoder reads is Claude
-// Code's own file (history.js), so another agent has none to show.
+// is held with it, from --agent in main (cli.js, AGENTS): the history prcoder
+// reads is Claude Code's own file (history.js), so another agent has none to
+// show. PRCODER_AGENT_BIN does not change it: that names the named agent's
+// executable -- a wrapper, or the drivers' stub -- not another agent.
 let noHistory = !!process.env.PRCODER_NO_HISTORY;
 let agent = 'claude';
 // Whether the History tab is on. CLAUDE_CODE_SKIP_PROMPT_HISTORY is Claude
@@ -1431,7 +1433,7 @@ if (import.meta.main) {
     releaseStart(top);
     dropRunning(top);
   });
-  ({ agentArgs } = cli);
+  ({ agentArgs, agent } = cli);
   // Into the variables, never the env: see pinnedPort.
   if (cli.port) pinnedPort = cli.port;
   if (cli.noOpen) noOpen = true;
