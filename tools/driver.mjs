@@ -10,6 +10,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { historyFile, transcriptFile } from '../history.js';
 
 export const repo = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
@@ -49,7 +50,7 @@ export const serverEnv = (port, extra = {}, cwd = repo) => ({
   PRCODER_PORT: String(port),
   PRCODER_NO_OPEN: '1',
   PRCODER_AGENT_BIN: path.join(repo, 'tools', 'claude-stub.mjs'),
-  CLAUDE_CONFIG_DIR: claudeConfig(cwd),
+  CLAUDE_CONFIG_DIR: claudeConfig(cwd, port),
   ...extra,
 });
 
@@ -63,9 +64,16 @@ const killed = new Set();
  * three sessions over three days, one titled, one in a worktree, one slash
  * command, one paste placeholder, one line that is not a prompt. Written
  * afresh each call, relative to now, so the days read Today and Yesterday.
+ *
+ * One directory per server, by its port, and removed when the driver exits:
+ * the prompts are filed under `cwd`, and two drivers run at once from
+ * different places (browser.mjs from a pull request's worktree, no-pr.mjs from
+ * the repo) each rewrote the one shared file under the other's server. The
+ * paths are history.js's own, so the fixture is where the reader looks.
  */
-export function claudeConfig(cwd) {
-  const dir = path.join(repo, 'data', 'claude-config');
+export function claudeConfig(cwd, port) {
+  const dir = path.join(repo, 'data', 'claude-config', String(port));
+  process.on('exit', () => rmSync(dir, { recursive: true, force: true }));
   const titled = '6f1a2b3c-4d5e-4f60-8a9b-0c1d2e3f4a5b';
   const untitled = 'a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d';
   const earlier = 'b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e';
@@ -85,12 +93,11 @@ export function claudeConfig(cwd) {
     '{"not": "a prompt"}',
   ];
   mkdirSync(dir, { recursive: true });
-  writeFileSync(path.join(dir, 'history.jsonl'), prompts.join('\n') + '\n');
-  const slug = cwd.replace(/[^A-Za-z0-9]/g, '-');
-  mkdirSync(path.join(dir, 'projects', slug), { recursive: true });
-  writeFileSync(path.join(dir, 'projects', slug, `${titled}.jsonl`),
+  writeFileSync(historyFile(dir), prompts.join('\n') + '\n');
+  mkdirSync(path.dirname(transcriptFile(dir, cwd, titled)), { recursive: true });
+  writeFileSync(transcriptFile(dir, cwd, titled),
     JSON.stringify({ type: 'ai-title', aiTitle: 'History tab for the queue pane', sessionId: titled }) + '\n');
-  writeFileSync(path.join(dir, 'projects', slug, `${earlier}.jsonl`), JSON.stringify({ type: 'user' }) + '\n');
+  writeFileSync(transcriptFile(dir, cwd, earlier), JSON.stringify({ type: 'user' }) + '\n');
   return dir;
 }
 

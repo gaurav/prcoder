@@ -116,8 +116,9 @@ Two rules for them, and for any script after them:
   Claude pane's last-prompt notice read Claude Code's own `history.jsonl`,
   the owner's real prompts, and a screenshot would carry them. `serverEnv` in
   `tools/driver.mjs` sets the variable to a made-up history `claudeConfig`
-  writes under `data/claude-config/`; a server started by hand for the owner's
-  own look should read the real one, and `--no-history` turns the tab off.
+  writes under `data/claude-config/<port>/` and removes on exit; a server
+  started by hand for the owner's own look should read the real one, and
+  `--no-history` turns the tab off.
 - **No writes you do not undo.** The queue is safe. By default it writes only
   `.prcoder/`, which is gitignored and needs no cleanup, and `browser.mjs`
   leaves even that alone: it runs with `--queue data/browser-queue.json`, in the
