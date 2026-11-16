@@ -1977,6 +1977,23 @@ test('the History tab lists what was sent by day and session, and the last promp
   await p.close();
 });
 
+// The notice is for picking a task back up, so it skips the /exit that so
+// often ended the session, and a prompt sent in a worktree under data/, which
+// is another pull request's session and not this pane's.
+test('the last-prompt notice skips /exit and a worktree\'s prompts', { skip }, async () => {
+  const S = '6f1a2b3c-4d5e-4f60-8a9b-0c1d2e3f4a5b';
+  const at = Date.now() - 60_000;
+  const p = await newPage({ history: { prompts: [
+    { at, text: 'sent in a worktree', session: S, where: 'data/wt-1' },
+    { at: at - 1000, text: '/exit', session: S, where: '' },
+    { at: at - 2000, text: '/clear', session: S, where: '' },
+    { at: at - 3000, text: 'the task the session was on', session: S, where: '' },
+  ], sessions: {}, read: at, skipped: 0 } });
+  await p.waitForSelector('#toast:not([hidden])');
+  assert.match(await p.locator('#toast').textContent(), /: the task the session was on$/);
+  await p.close();
+});
+
 // A fold's progress is a pie, not `3/5`: one size at any count, and full is a
 // disc. The figure it gives up is its accessible name. A directory is needed
 // for a directory's pie, and the fixture has none, so this page adds two: one

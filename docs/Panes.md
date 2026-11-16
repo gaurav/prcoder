@@ -377,7 +377,9 @@ deliberate reload gets a shorter toast without the link.
 
 When the agent connects -- the page opened, or **Start coding agent** pressed in the bar below --
 a sticky toast says the last prompt sent from this working copy and when, `Last prompt, 2 hours
-ago (Today 21:14): …`, the first 140 characters of it, for the session that died mid-task. The
+ago (Today 21:14): …`, the first 140 characters of it, for the session that died mid-task. It
+skips `/exit`, `/quit`, `/clear` and `/resume`, which end or leave a session rather than say what it
+was doing, and a prompt sent in a worktree under `data/`, which was another pull request's. The
 next Enter in the terminal takes it down, since by then it has been read. It is drawn from the
 same record as the queue's History tab, which has the rest and, on each row, the ▶ that types a
 prompt back in; the notice itself has no button, since the text it shows is cut. It is put up only

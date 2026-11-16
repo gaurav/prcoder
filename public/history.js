@@ -72,16 +72,24 @@ export function loadHistory(force = false) {
   return loading;
 }
 
+// Slash commands that end, leave or wipe a session rather than ask for work:
+// the newest prompt is very often the /exit that ended the session, and
+// "Last prompt: /exit" says nothing about what you were doing.
+const LEAVING = new Set(['/exit', '/quit', '/clear', '/resume']);
+
 /**
- * The newest prompt, for the notice the Claude pane puts up when the agent
- * connects (lastPromptNotice in app.js): after a read, forced, since after
- * Start in the exit bar it is the prompt the session died on that is wanted,
- * and loadHistory(true) joins a read already out -- on opening the page,
- * setHistoryOn's. Null with nothing sent, or nothing readable.
+ * The prompt for the notice the Claude pane puts up when the agent connects
+ * (lastPromptNotice in app.js): the newest sent from the working copy itself,
+ * where this pane's agent runs -- not a worktree under data/, whose sessions
+ * are another pull request's -- that is not one of the commands above. After
+ * a read, forced, since after Start in the exit bar it is the prompt the
+ * session died on that is wanted, and loadHistory(true) joins a read already
+ * out -- on opening the page, setHistoryOn's. Null with nothing sent, or
+ * nothing readable.
  */
 export async function lastPrompt() {
   await loadHistory(true);
-  return listing?.prompts?.[0] ?? null;
+  return listing?.prompts?.find((p) => p.where === '' && !LEAVING.has(commandOf(p.text))) ?? null;
 }
 
 /**
