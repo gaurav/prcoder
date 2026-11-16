@@ -196,6 +196,13 @@ async function sessionTitles(dir, prompts) {
   return out;
 }
 
+// The last parse of the history file, by its size and mtime: the page asks
+// again a second after every Enter in the terminal (historyStale in
+// public/history.js), which is also every answer to a permission prompt and
+// every menu pick, and the file holds every prompt from every project and is
+// never pruned. An Enter that sent no prompt costs a stat.
+let parsed = null;
+
 /**
  * The working copy's prompt history: `{ prompts, sessions, skipped, read,
  * file }`, prompts as parseHistory gives them without `project`, `read` in
@@ -209,14 +216,16 @@ export async function readHistory(repo, { env = process.env, limit = 1000, now =
   let real = repo;
   try { real = await fs.realpath(repo); } catch { /* as given */ }
   const roots = [...new Set([repo, real])];
-  let text;
+  let stat;
   try {
-    text = await fs.readFile(file, 'utf8');
+    stat = await fs.stat(file);
   } catch (e) {
     if (e.code === 'ENOENT') return { prompts: [], sessions: {}, skipped: 0, read: now, file };
     throw e;
   }
-  const { prompts, skipped } = parseHistory(text, roots, { limit });
+  const key = JSON.stringify([file, stat.size, stat.mtimeMs, roots, limit]);
+  if (parsed?.key !== key) parsed = { key, ...parseHistory(await fs.readFile(file, 'utf8'), roots, { limit }) };
+  const { prompts, skipped } = parsed;
   const sessions = await sessionTitles(dir, prompts);
   return {
     prompts: prompts.map(({ project, ...p }) => p),

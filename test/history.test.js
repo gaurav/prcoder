@@ -191,3 +191,25 @@ test('readHistory counts the working copy under its resolved path as well', asyn
   const h = await readHistory(link, { env: { CLAUDE_CONFIG_DIR: cfg } });
   assert.deepEqual(h.prompts.map((p) => p.text), ['via real', 'via link']);
 });
+
+// The file is parsed again only when it has changed, so a prompt appended
+// since is in the next read and an unchanged file is not read at all.
+test('readHistory reads the file again only once it has changed', async () => {
+  const cfg = await scratch();
+  const repo = await scratch();
+  const env = { CLAUDE_CONFIG_DIR: cfg };
+  const file = historyFile(cfg);
+  await fs.writeFile(file, line({ display: 'one', timestamp: 1, project: repo }) + '\n');
+  assert.deepEqual((await readHistory(repo, { env })).prompts.map((p) => p.text), ['one']);
+  // Unreadable but unchanged in size and mtime: the parse held is answered.
+  const { mtime } = await fs.stat(file);
+  await fs.chmod(file, 0o000);
+  try {
+    assert.deepEqual((await readHistory(repo, { env })).prompts.map((p) => p.text), ['one']);
+  } finally {
+    await fs.chmod(file, 0o644);
+  }
+  await fs.appendFile(file, line({ display: 'two', timestamp: 2, project: repo }) + '\n');
+  await fs.utimes(file, mtime, new Date(mtime.getTime() + 1000));
+  assert.deepEqual((await readHistory(repo, { env })).prompts.map((p) => p.text), ['two', 'one']);
+});
