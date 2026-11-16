@@ -82,6 +82,9 @@ const PORTS_DOC = 'https://github.com/gaurav/prcoder/blob/main/docs/Ports.md#fin
 // Replaced, not reopened, by the exit panel's "Start coding agent": one
 // socket is one PTY.
 let ws;
+// Lines sent to the agent so far, for the last-prompt notice to tell whether
+// one went while it was reading (lastPromptNotice).
+let sends = 0;
 // `WebSocket.OPEN` is read off the global constructor, so a Playwright init
 // script that wraps `window.WebSocket` without copying its four state statics
 // makes it undefined. Every send then returns false, and the page silently
@@ -96,6 +99,7 @@ const send = (msg) => {
   if (msg.type === 'input' && msg.data.endsWith('\r')) {
     turn(true);
     historyStale();
+    sends++;
     dismissLastPrompt();
   }
   return true;
@@ -336,13 +340,16 @@ exitForm.onsubmit = (e) => {
 // listing (lastPrompt), not a read of its own. Only onto an empty slot:
 // a reload's notice, which is up by now, has the one slot there is, and this
 // one is not worth taking it over (#180 is the toast area that would hold
-// both).
+// both). Nor after a line has been sent while it read: that Enter came before
+// there was a notice to take down, and the notice would go up over the
+// session you had already moved on with, until the next one.
 async function lastPromptNotice() {
+  const before = sends;
   let on;
   try { ({ history: on } = await whoami); } catch { return; }
   if (!on) return;
   const p = await lastPrompt();
-  if (!p || !document.getElementById('toast').hidden) return;
+  if (!p || sends !== before || !document.getElementById('toast').hidden) return;
   const text = p.text.replace(/\s+/g, ' ').trim();
   const cut = text.length > 140 ? `${text.slice(0, 139)}…` : text;
   const when = `${age(new Date(p.at).toISOString())} (${dayLabel(p.at)} ${timeLabel(p.at)})`;

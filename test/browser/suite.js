@@ -1994,6 +1994,26 @@ test('the last-prompt notice skips /exit and a worktree\'s prompts', { skip }, a
   await p.close();
 });
 
+// A read that lands after a prompt was sent puts nothing up: the Enter came
+// before there was a notice to take down, and one put up now would sit over
+// the session until the next.
+test('the last-prompt notice stays down when a prompt is sent before it is read', { skip }, async () => {
+  let answer;
+  const held = new Promise((res) => { answer = res; });
+  const at = Date.now() - 60_000;
+  const p = await newPage({ history: async (r) => {
+    await held;
+    return r.fulfill({ json: { enabled: true, prompts: [{ at, text: 'an old prompt', session: null, where: '' }], sessions: {}, read: at, skipped: 0 } });
+  } });
+  await p.waitForFunction(() => document.querySelector('#term-host textarea'));
+  await p.locator('#term-host textarea').press('Enter');
+  answer();
+  await p.waitForFunction(() => /History \(\d+\)/.test(document.querySelector('#queue-body .tab[data-tab="history"]')?.textContent ?? ''));
+  await p.waitForTimeout(200);
+  assert.equal(await p.locator('#toast').isHidden(), true);
+  await p.close();
+});
+
 // A fold's progress is a pie, not `3/5`: one size at any count, and full is a
 // disc. The figure it gives up is its accessible name. A directory is needed
 // for a directory's pie, and the fixture has none, so this page adds two: one
