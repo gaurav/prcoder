@@ -59,7 +59,7 @@ export function setItems(next, prOnScreen = null) {
   // reads `…` (mentionRow). After `pr` is the new one, since fetchIssues
   // records what it asks about from `pr`: asked before, it recorded the pull
   // request just left, and the next poll read all five pages again.
-  if ((tab === 'issues' || tab === 'pr') && listingStale()) loadIssues(true);
+  if (drawsIssues() && listingStale()) loadIssues(true);
   // Most polls bring the list already on screen, and a rebuild for nothing
   // costs every row and listener. `items` is kept, not swapped for the equal
   // copy: the rows on screen hold its objects, and a tick on a row whose item
@@ -467,7 +467,7 @@ function loadIssues(again = false) {
     if (tab === 'issues') loadIssues();
   });
   // And now, so the line says `updating…` while it is.
-  if (listing && (tab === 'issues' || tab === 'pr')) paintGroups();
+  if (listing && drawsIssues()) paintGroups();
 }
 
 /**
@@ -477,7 +477,7 @@ function loadIssues(again = false) {
  * under a query being typed; drawn whole otherwise.
  */
 function paintAfterRead() {
-  if (tab !== 'issues' && tab !== 'pr') return paintCounts();
+  if (!drawsIssues()) return paintCounts();
   if (document.querySelector('#queue-body :is(.issue-groups, .pr-parts)')) paintIssues(); else render();
 }
 let issuesLoading = null;
@@ -520,7 +520,7 @@ async function fetchIssues() {
   } catch (e) {
     // The toast is for a read someone is waiting on; a read behind another
     // tab (primeIssues) leaves `?` on the strip and keeps quiet.
-    if (tab === 'issues' || tab === 'pr') toast(e.message, true);
+    if (drawsIssues()) toast(e.message, true);
     if (!listing) issuesFailed = e.message;
   }
 }
@@ -675,6 +675,14 @@ let groupsOwed = false;
 // What each tab that draws from the Issues listing paints its groups into,
 // and with what: the Issues tab its milestone groups, the PR #N tab its parts.
 const GROUPS = { issues: ['.issue-groups', issueGroups], pr: ['.pr-parts', prParts] };
+/**
+ * Whether the tab showing draws from the Issues listing, so a read of it is
+ * one someone is looking at: what its painting, its toasts and its re-reads
+ * ask. Read from GROUPS, so a new tab that draws the listing is one entry
+ * there and not a check to find in every caller -- written out by hand, the
+ * stale re-read was the copy that missed the PR #N tab.
+ */
+const drawsIssues = () => tab in GROUPS;
 const drawGroups = () => {
   groupsOwed = false;
   const [host, groups] = GROUPS[tab] ?? [];
@@ -692,10 +700,7 @@ const groupsList = (className, groups) => {
   list.addEventListener('focusout', () => setTimeout(payGroups));
   return list;
 };
-const payGroups = () => {
-  // The PR #N tab's rows move through the Issues listing's MOVES.
-  if (groupsOwed) (tab === 'pr' ? MOVES.issues : MOVES[tab])?.paint();
-};
+const payGroups = () => { if (groupsOwed) MOVES[tab]?.paint(); };
 
 /**
  * The groups of whichever tab draws from the Issues listing, and both tabs'
@@ -1157,6 +1162,9 @@ const MOVES = {
     searching: () => pullQuery.trim(),
   },
 };
+// The PR #N tab's rows are the Issues listing's, and move through its entry:
+// MOVES[tab] is how a painter or a Move finds the kind the tab showing draws.
+MOVES.pr = MOVES.issues;
 
 /**
  * A row onto a milestone, or off one with null, on a drop or Move: the one write
