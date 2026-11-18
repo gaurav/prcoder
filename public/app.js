@@ -10,6 +10,7 @@ import { openDiff, closeDiff, selectedPath, setViewed, showViewed, canTickViewed
 import { initQueue, addItem, setAddTo, setItems, paintPulls, setHistoryOn, primeIssues } from './queue.js';
 import { historyStale, lastPrompt } from './history.js';
 import { age, dayLabel, timeLabel } from './items.js';
+import { opensUnasked } from './tasks.js';
 import { bindKeys, keyLabel, isTyping } from './keys.js';
 import { printable } from './tasks.js';
 import { fold, folded, canFold } from './folds.js';
@@ -20,6 +21,19 @@ const term = new Terminal({
   fontSize: 14,   // one step up from the default, matching the panes' 14px body
   cursorBlink: true,
   theme: { background: '#1c1f26', foreground: '#d5d9e0' },
+  // OSC 8 hyperlinks, which Claude Code prints its PR links as. Without this
+  // xterm confirm()s every one; opensUnasked in tasks.js says which skip that.
+  // xterm drops non-http(s) targets before they get here.
+  linkHandler: {
+    activate(_e, uri, { start, end }) {
+      // The range is 1-based and inclusive, one line of it: a link that wraps
+      // arrives a line at a time, and each part asks.
+      const shown = term.buffer.active.getLine(start.y - 1)?.translateToString(true, start.x - 1, end.x) ?? '';
+      if (opensUnasked(uri, shown) || confirm(`Open ${uri}?\n\nThe link is shown as "${shown}", which is not where it goes.`)) {
+        window.open(uri, '_blank', 'noopener');
+      }
+    },
+  },
 });
 const fit = new FitAddon();
 term.loadAddon(fit);

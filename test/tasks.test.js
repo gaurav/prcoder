@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  toggleTask, taskLines, refs, wholeRef, resolveRef, printable, fences, TASK, HEADING, blocks, sectionize,
+  toggleTask, taskLines, refs, wholeRef, resolveRef, printable, fences, TASK, HEADING, blocks, sectionize, opensUnasked,
 } from '../public/tasks.js';
 
 // --- checkboxes in the description ---
@@ -520,4 +520,21 @@ test('the short form is only this repo, once the repo is known', () => {
 test('printable makes every run of control characters one space', () => {
   assert.equal(printable('a\r\nb\u001b[2Jc\u009bd\u007fe'), 'a b [2Jc d e');
   assert.equal(printable('plain — text'), 'plain — text');
+});
+
+// --- terminal hyperlinks ---
+
+test('a terminal link opens unasked when it shows its target or is a github.com page without a query', () => {
+  const pr = 'https://github.com/NCATSTranslator/Babel/pull/1161';
+  assert.equal(opensUnasked(pr, '#1161'), true);
+  assert.equal(opensUnasked(`${pr}#issuecomment-1`, 'a comment'), true);
+  assert.equal(opensUnasked('https://example.com/x', 'https://example.com/x '), true);
+  // Asks: another host behind other text, a query, http, a lookalike host, userinfo.
+  assert.equal(opensUnasked('https://example.com/x', '#1161'), false);
+  assert.equal(opensUnasked('https://github.com/login/oauth/authorize?client_id=x', 'docs'), false);
+  assert.equal(opensUnasked('http://github.com/a/b', 'b'), false);
+  assert.equal(opensUnasked('https://github.com.evil.example/a', 'a'), false);
+  assert.equal(opensUnasked('https://github.com:8443/a', 'a'), false);
+  assert.equal(opensUnasked('https://u@github.com/a', 'a'), false);
+  assert.equal(opensUnasked('not a url', 'x'), false);
 });
