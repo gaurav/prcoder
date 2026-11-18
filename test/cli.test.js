@@ -56,6 +56,8 @@ test('prcoder\'s own flags', () => {
   assert.equal(parseCli(['-vv']).verbose, 2);
   assert.equal(parseCli(['--verbose', '--verbose']).verbose, 2);
   assert.equal(parseCli(['--no-open']).noOpen, true);
+  assert.equal(parseCli(['--no-history']).noHistory, true);
+  assert.equal(parseCli([]).noHistory, false);
   assert.equal(parseCli(['--queue', 'data/q.json']).queue, 'data/q.json');
   assert.equal(parseCli([]).queue, undefined);
   assert.equal(parseCli(['-h']).help, true);
@@ -75,8 +77,8 @@ test('bad input is an error that names the problem', () => {
 // environment variable has to be in it.
 test('the help names every flag, env var and agent', () => {
   const text = usage();
-  for (const s of ['--port', '--no-open', '--verbose', '--agent', '--help', '--version', '-- ',
-    '--queue', 'PRCODER_QUEUE', 'PRCODER_PORT', 'PRCODER_NO_OPEN', 'PRCODER_VERBOSE', 'PRCODER_BROWSER', 'PRCODER_AGENT_BIN', ...AGENTS,
+  for (const s of ['--port', '--no-open', '--no-history', '--verbose', '--agent', '--help', '--version', '-- ',
+    '--queue', 'PRCODER_QUEUE', 'PRCODER_PORT', 'PRCODER_NO_OPEN', 'PRCODER_NO_HISTORY', 'PRCODER_VERBOSE', 'PRCODER_BROWSER', 'PRCODER_AGENT_BIN', ...AGENTS,
     ...Object.values(OPEN_REPO_VARS)]) {
     assert.ok(text.includes(s), `help mentions ${s}`);
   }

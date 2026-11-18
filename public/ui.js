@@ -138,6 +138,13 @@ export const debug = (...args) => {
  * that reports something already finished -- it waits to be clicked instead of
  * timing out. Every toast is click-to-dismiss, and says so with the ✕ its CSS
  * adds; a sticky one also has a border of its own.
+ *
+ * `link` is `{ href, text }` for a link out. A button form (`{ text, label,
+ * onclick }`) was here for the last-prompt notice's ▶ and went with it: a
+ * toast is for reading, and the thing to act on is a row. The element comes
+ * back, for a caller that needs to know later whether its toast is still
+ * the one up (the Claude pane's last-prompt notice marks `dataset.kind`,
+ * which every toast clears).
  */
 let toastTimer;
 export function toast(msg, bad = false, sticky = false, link = null) {
@@ -145,6 +152,7 @@ export function toast(msg, bad = false, sticky = false, link = null) {
   // textContent, never innerHTML: msg is often a server error. A link is the
   // one thing a message can carry past that, so it is a separate argument.
   el.textContent = msg;
+  delete el.dataset.kind;
   if (link) {
     el.append(' ', Object.assign(document.createElement('a'),
       { href: link.href, textContent: link.text, target: '_blank', rel: 'noopener' }));
@@ -156,6 +164,7 @@ export function toast(msg, bad = false, sticky = false, link = null) {
   el.onclick = () => { el.hidden = true; };
   clearTimeout(toastTimer);
   if (!sticky) toastTimer = setTimeout(() => { el.hidden = true; }, bad ? 8000 : 4000);
+  return el;
 }
 
 /**

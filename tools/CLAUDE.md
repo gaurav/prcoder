@@ -2,7 +2,9 @@
 
 This also applies to a one-off Playwright script under `data/`. Start any new
 driver from `driver.mjs`. It has the port check, the stubbed server
-environment, kill-on-exit, `firefoxEnv()` and `launchBrowser()`, and every one
+environment (the agent stubbed, and `CLAUDE_CONFIG_DIR` pointed at a made-up
+prompt history, so no screenshot carries the owner's real prompts), kill-on-exit,
+`firefoxEnv()` and `launchBrowser()`, and every one
 of them fixes a bug that cost a run. `docs/Verifying.md` covers what each driver reaches.
 
 ## Launching browsers

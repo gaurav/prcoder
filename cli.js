@@ -28,17 +28,19 @@ const OPTIONS = {
   agent: { type: 'string', default: 'claude' },
   port: { type: 'string' },
   'no-open': { type: 'boolean' },
+  'no-history': { type: 'boolean' },
   queue: { type: 'string' },
   verbose: { type: 'boolean', short: 'v', multiple: true },
 };
 
 export function usage() {
-  return `usage: prcoder [<pr> | choose] [--port <n>] [--no-open] [--queue <file>] [-v] [--agent <name>] [-- <agent args>]
+  return `usage: prcoder [<pr> | choose] [--port <n>] [--no-open] [--no-history] [--queue <file>] [-v] [--agent <name>] [-- <agent args>]
 
   <pr>             check out this pull request (number, URL or branch) and start on it
   choose           list the open pull requests, and pick the one to check out
   --port <n>       listen on this port for this run          env PRCODER_PORT
   --no-open        print the URL, don't open a browser        env PRCODER_NO_OPEN=1
+  --no-history     don't read the agent's prompt history     env PRCODER_NO_HISTORY=1
   --queue <file>   keep the queue here, not .prcoder/        env PRCODER_QUEUE
   -v, --verbose    narrate; -vv for debug                     env PRCODER_VERBOSE=1|2
   --agent <name>   the coding agent: ${AGENTS.join(', ')}              env PRCODER_AGENT_BIN names the executable
@@ -88,6 +90,7 @@ export function parseCli(argv) {
     agentArgs,
     port,
     noOpen: !!values['no-open'],
+    noHistory: !!values['no-history'],
     queue: values.queue,
     verbose: values.verbose?.length ?? 0,
     help: !!values.help,

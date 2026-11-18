@@ -133,7 +133,7 @@ refused), and `choose` is the one subcommand. [#99](https://github.com/gaurav/pr
 fewer keystrokes, and a command word in front of the target clashes with a branch of that name, so
 the PR had to move behind a verb, which broke the CLI. `choose` settles the clash by taking the word
 from the branch: a branch called `choose` is still reachable by its pull request's number or URL.
-`prcoder queue` (#95) or `status` (#96) would have to do the same. `--port`, `--no-open`, `--queue` and `-v`
+`prcoder queue` (#95) or `status` (#96) would have to do the same. `--port`, `--no-open`, `--no-history`, `--queue` and `-v`
 each have an environment variable of the same meaning, which the flag overrides; `--agent` has none
 yet, and `PRCODER_BROWSER`, `PRCODER_TERMINAL`, `PRCODER_FILE_MANAGER` and `PRCODER_AGENT_BIN`
 have no flag.
@@ -159,6 +159,24 @@ statusLine JSON contract that would answer
 block). Every mechanism that would close it — a `--settings` JSON carrying a hook, an MCP server,
 `--append-system-prompt` — means prcoder passing flags of its own to `claude`. So it is a decision
 to take rather than a patch to write.
+
+**What prcoder reads of Claude Code's own files, and why it reads rather than records.** The queue
+pane's History tab -- what you sent the agent, with when -- is for coming back after a break and
+not knowing whether the tests are written or `/code-review` has been run, and Claude Code has no
+scrollbar to find out with. The first design was for prcoder to capture it: a `UserPromptSubmit`
+hook through `--settings`, or the keystrokes into the PTY reassembled into lines. Neither was
+needed. Claude Code already writes every typed prompt, with its time, directory and session, to
+`history.jsonl` in its config directory, for its own up-arrow and Ctrl+R, so prcoder reads that
+([`history.js`](../history.js)) and records nothing. That keeps the line above intact -- no flag of
+prcoder's on `claude`'s command line -- and sees every prompt rather than the ones sent after a
+hook went in; what it gives up is a documented contract, since the file's fields are observed and
+not published, so the reader checks each and skips what it does not recognise. It is on by
+default because it makes no new record: the file is already on the machine, written by the agent
+the user chose to run, and prcoder shows it to the same user on the same machine, less the pasted
+text. `--no-history` and `PRCODER_NO_HISTORY` are for anyone who would rather it did not, and
+Claude Code's own `CLAUDE_CODE_SKIP_PROMPT_HISTORY` hides the tab too, since under it the file
+stops. The agent's name is the other switch: the file is Claude Code's, so another agent (#30) has
+no tab until it has a record of its own to read.
 
 **The pane shows what is checked out.** The pull request pane only ever shows a pull request of
 the branch the working copy is on, and changes when the branch does: the switcher, `prcoder

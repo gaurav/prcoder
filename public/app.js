@@ -5,7 +5,9 @@ import { renderPr, renderNoPr, renderHeader, pageTitle, prRepo } from './pr.js';
 import { fileFrom, nextUnviewed, revealFile } from './filelist.js';
 import { h, api, toast, pref, setPref, debug, QUIT_CODE } from './ui.js';
 import { openDiff, closeDiff, selectedPath, setViewed, showViewed, canTickViewed, toggleViewed, toggleWrap, canWrap, openMention } from './diff.js';
-import { initQueue, addItem, setItems, paintPulls } from './queue.js';
+import { initQueue, addItem, setItems, paintPulls, setHistoryOn } from './queue.js';
+import { historyStale, lastPrompt } from './history.js';
+import { age, dayLabel, timeLabel } from './items.js';
 import { bindKeys, keyLabel, isTyping } from './keys.js';
 import { printable } from './tasks.js';
 import { fold, folded, canFold } from './folds.js';
@@ -80,6 +82,9 @@ const PORTS_DOC = 'https://github.com/gaurav/prcoder/blob/main/docs/Ports.md#fin
 // Replaced, not reopened, by the exit panel's "Start coding agent": one
 // socket is one PTY.
 let ws;
+// Lines sent to the agent so far, for the last-prompt notice to tell whether
+// one went while it was reading (lastPromptNotice).
+let sends = 0;
 // `WebSocket.OPEN` is read off the global constructor, so a Playwright init
 // script that wraps `window.WebSocket` without copying its four state statics
 // makes it undefined. Every send then returns false, and the page silently
@@ -88,8 +93,15 @@ const send = (msg) => {
   if (ws.readyState !== WebSocket.OPEN) return false;
   ws.send(JSON.stringify(msg));
   // A line sent is the start of a turn -- Enter in the terminal, or an item
-  // sent from the queue, which appends its own. See the tab icon below.
-  if (msg.type === 'input' && msg.data.endsWith('\r')) turn(true);
+  // sent from the queue, which appends its own. See the tab icon below. It is
+  // also a prompt the History tab does not have yet, and the end of what the
+  // last-prompt notice was for.
+  if (msg.type === 'input' && msg.data.endsWith('\r')) {
+    turn(true);
+    historyStale();
+    sends++;
+    dismissLastPrompt();
+  }
   return true;
 };
 
@@ -238,6 +250,7 @@ function connect(query = '') {
       }
       sessionStorage.setItem(PTY_SEEN, '1');
     } catch { /* private mode: no memory, so no claim about a previous session */ }
+    lastPromptNotice();
   };
   // 1008 is the server refusing before the spawn (sameOrigin, sessionArgs), so
   // no agent ever ran: say why, since after a start-again with a model it would
@@ -298,8 +311,12 @@ const exitForm = document.getElementById('term-exit');
 // from the bar, and a reply landing late must not take it back. An effort the
 // select has no option for (`--effort extreme`) gets one: setting a select to
 // a value it lacks blanks it, which shows "as started" rather than the value.
-api('/api/whoami', undefined, 'GET').then(({ started, version }) => {
+// Kept, not only awaited: the last-prompt notice asks it whether there is a
+// history to read at all.
+const whoami = api('/api/whoami', undefined, 'GET');
+whoami.then(({ started, version, history }) => {
   document.getElementById('menu-version').textContent = version ? `prcoder ${version}` : '';
+  setHistoryOn(history);
   const { model, effort } = exitForm.elements;
   if (!model.value) model.value = started.model;
   if (effort.value || !started.effort) return;
@@ -311,6 +328,36 @@ exitForm.onsubmit = (e) => {
   exitForm.hidden = true;
   term.reset();
   connect(new URLSearchParams(new FormData(exitForm)).toString());
+};
+
+// The last prompt sent from this working copy, when the agent connects: on
+// opening the page after a break, what you were doing; after Start in the
+// exit bar, the prompt the session died on. Text only: the History tab's
+// rows have ▶ to type one back in, and a button here was the one thing on
+// the page that typed text the user could not see whole. Sticky, since it
+// waits to be read; the next Enter in the terminal takes it down
+// (dismissLastPrompt), since by then it has been. From the History tab's own
+// listing (lastPrompt), not a read of its own. Only onto an empty slot:
+// a reload's notice, which is up by now, has the one slot there is, and this
+// one is not worth taking it over (#180 is the toast area that would hold
+// both). Nor after a line has been sent while it read: that Enter came before
+// there was a notice to take down, and the notice would go up over the
+// session you had already moved on with, until the next one.
+async function lastPromptNotice() {
+  const before = sends;
+  let on;
+  try { ({ history: on } = await whoami); } catch { return; }
+  if (!on) return;
+  const p = await lastPrompt();
+  if (!p || sends !== before || !document.getElementById('toast').hidden) return;
+  const text = p.text.replace(/\s+/g, ' ').trim();
+  const cut = text.length > 140 ? `${text.slice(0, 139)}…` : text;
+  const when = `${age(new Date(p.at).toISOString())} (${dayLabel(p.at)} ${timeLabel(p.at)})`;
+  toast(`Last prompt, ${when}: ${cut}`, false, true).dataset.kind = 'last-prompt';
+}
+const dismissLastPrompt = () => {
+  const el = document.getElementById('toast');
+  if (el.dataset.kind === 'last-prompt') el.hidden = true;
 };
 // prcoder is gone, and with it everything on the page: the pull request pane,
 // the queue and the terminal all talk to the server, so none of it works and
