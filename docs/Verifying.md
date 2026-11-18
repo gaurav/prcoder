@@ -25,6 +25,14 @@ fixture, which is shaped by hand from what `/api/status` answers today, so a fie
 renames and the client follows still passes. A stub `gh` ([#54](https://github.com/gaurav/prcoder/issues/54))
 is what closes that.
 
+One browser test is `node --test --test-name-pattern="<part of its name>" test/browser/chromium.test.js`
+(add `firefox.test.js` for both engines), but **a pattern that matches no test hangs instead of
+failing**. `before()` still starts the server and launches the browser, the `after()` that closes
+them never runs, and the run sat with a live browser and no output for 43 minutes until it was
+killed (2026-11-17). That was a pattern run while the test it named was stashed away. Check the
+pattern against a test's name before running it, and treat a filtered run that prints nothing for a
+minute as this hang, not a slow test.
+
 ## Reading the CSS is not verification
 
 Three UI changes shipped in this repo "verified" by reading the stylesheet, and none of them worked.
