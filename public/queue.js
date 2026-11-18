@@ -977,9 +977,11 @@ function moveControl(name, number, current, ariaLabel) {
     await kind.settled();
     // The repaint took the focus with it, and the row may have gone to a folded
     // group: the keyboard follows it there, unless it has since gone elsewhere.
-    // A list with no groups (one of the PRs tab's) has only the row.
+    // A list with no groups (one of the PRs tab's) has only the row. On the
+    // tab showing a row of this kind: an issue's Move is on the PR #N tab too
+    // (MOVES.pr), where `tab !== name` dropped the focus on the floor.
     const now = kind.row(number);
-    if (tab !== name || !now || (document.activeElement && document.activeElement !== document.body)) return;
+    if (MOVES[tab] !== kind || !now || (document.activeElement && document.activeElement !== document.body)) return;
     const to = from && kind.group(now.milestone, from);
     if (to && !kind.searching() && closedGroups.delete(to)) kind.draw();
     document.querySelector(`#queue-body ${to ? `[data-group="${to}"]` : ''} select.milestone[data-move="${number}"]`)?.focus();
@@ -1019,8 +1021,9 @@ function mentionRow(i) {
   const found = mentions?.get(i.number);
   const repo = mentionRepo(i);
   const own = listedAs(i);
-  // Dragged only on the Issues tab, where a milestone's line is a drop target.
-  if (own) return issueRow(own, { drag: tab === 'issues' });
+  // Never dragged: mentions are drawn only on the PR #N tab (prParts), which
+  // has no milestone lines to drop on. Move in the opened row is the way.
+  if (own) return issueRow(own, { drag: false });
   const title = found?.title;
   const open = found?.state === 'OPEN';
   // Not in the lookup is not looked up yet: every mention it was asked
@@ -1148,10 +1151,10 @@ const MOVES = {
     draw: () => drawGroups(),
     read: () => loadIssues(true),
     settled: async () => { while (issuesLoading) await issuesLoading; },
-    // The PR #N tab's mentions are drawn wherever a row's milestone says, so
-    // a row moved from there is still in that group; from a milestone's
+    // The PR #N tab's parts -- Mentions, Closes -- hold a row whatever its
+    // milestone, so a row moved from one is still there; from a milestone's
     // group on the Issues tab, it has gone.
-    group: (milestone, from) => (from === 'mentioned' ? from : `m:${milestone ?? NONE}`),
+    group: (milestone, from) => (tab === 'pr' ? from : `m:${milestone ?? NONE}`),
     searching: () => query.trim(),
   },
   pulls: {

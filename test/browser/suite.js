@@ -3124,6 +3124,27 @@ test('a Move on the PR #N tab while the issues are being read is read again afte
   await fresh.close();
 });
 
+// The keyboard follows a Move on the PR #N tab as on the Issues tab, and the
+// row is still in its part, which holds it whatever its milestone. Until
+// 2026-11-17 the follow returned at once there, since the tab was not
+// `issues`, and focus fell to the page.
+test('the keyboard follows a Move on the PR #N tab, in Mentions and in Closes', { skip }, async () => {
+  const fiftyEight = ISSUES.issues.find((i) => i.number === 58);
+  const { fresh } = await issuesPage({ ...ISSUES, mentions: [SIXTY_SIX] },
+    [...MENTIONS_66, { number: 58, url: fiftyEight.url, closes: true, title: fiftyEight.title }]);
+  await fresh.route('**/api/issue/milestone', (r) => r.fulfill({ json: { ok: true } }));
+  await fresh.route('**/api/issues', (r) => r.fulfill({ json: with66On(4) }));
+  await fresh.locator('#queue-body .tab[data-tab="pr"]').click();
+  for (const [part, number, to] of [['mentioned', 66, 'Needed soon'], ['closes', 58, 'Not urgent']]) {
+    await fresh.locator(`[data-group="${part}"] .item[data-issue="${number}"] .disclose`).click();
+    const pick = `[data-group="${part}"] select.milestone[data-move="${number}"]`;
+    await fresh.locator(pick).selectOption(to);
+    await fresh.locator(`[data-group="${part}"] .issue-body .move-to button`).click();
+    await fresh.waitForFunction((s) => document.activeElement?.matches?.(s), pick, { timeout: 5000 });
+  }
+  await fresh.close();
+});
+
 // A mention is the pull request's repository's, and the listing is the one
 // prcoder is in; with the two different, upstream's #66 is not the listing's
 // #66 -- including before the page knows its own repository's name.
