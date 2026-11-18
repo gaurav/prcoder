@@ -3079,6 +3079,51 @@ test('a switch to another pull request reads the issues once, for the one switch
   await fresh.close();
 });
 
+// A listed mention on the PR #N tab, for the tests of its Move: the listing's
+// #66, which the description mentions without closing.
+const SIXTY_SIX = { number: 66, url: 'https://github.com/gaurav/prcoder/issues/66', title: 'Show whether each linked issue is still open', kind: 'issue', state: 'OPEN', updatedAt: '2026-10-09T00:00:00Z' };
+const MENTIONS_66 = [{ number: 66, url: SIXTY_SIX.url, closes: false, title: SIXTY_SIX.title }];
+/** ISSUES with #66 on milestone `to`, and `mentions` looked up. */
+const with66On = (to, mentions = [SIXTY_SIX]) => ({ ...ISSUES, mentions, issues: ISSUES.issues.map((i) => (i.number === 66 ? { ...i, milestone: to } : i)) });
+
+// A Move asks for the listing again, and one already out was asked for
+// before the write; the PR #N tab draws the listing too, so it gets the read
+// after as the Issues tab does. Until 2026-11-17 only the Issues tab did, and
+// the row kept its old milestone.
+test('a Move on the PR #N tab while the issues are being read is read again after', { skip }, async () => {
+  const { fresh } = await issuesPage({ ...ISSUES, mentions: [SIXTY_SIX] }, MENTIONS_66);
+  await fresh.route('**/api/issue/milestone', (r) => r.fulfill({ json: { ok: true } }));
+  await fresh.locator('#queue-body .tab[data-tab="pr"]').click();
+  await fresh.locator('[data-group="mentioned"] .item[data-issue="66"] .disclose').click();
+  // A read out, held: a poll whose description mentions something new asks.
+  const nine = { number: 9, url: `${REPO}/issues/9`, closes: false, title: 'Newly mentioned' };
+  let release;
+  const held = new Promise((r) => { release = r; });
+  let reads = 0;
+  let second;
+  const readAgain = new Promise((r) => { second = r; });
+  await fresh.route('**/api/issues', async (r) => {
+    const n = ++reads;
+    if (n === 1) await held;
+    if (n === 2) second();
+    return r.fulfill({ json: n === 1 ? with66On(2, [SIXTY_SIX, { number: 9 }]) : with66On(4, [SIXTY_SIX, { number: 9 }]) });
+  });
+  await fresh.route('**/api/status', (r) => r.fulfill({ json: { ...status, nameWithOwner: 'gaurav/prcoder', pr: { ...pr, issues: [...MENTIONS_66, nine] } } }));
+  const asked = fresh.waitForRequest('**/api/issues');
+  await fresh.click('#pr-refresh');
+  await asked;
+  const pick = fresh.locator('[data-group="mentioned"] select.milestone[data-move="66"]');
+  await pick.selectOption('Needed soon');
+  await fresh.locator('[data-group="mentioned"] .move-to button').click();
+  release();
+  // The select shows the pick before any repaint, so what tells is the read.
+  const late = new Promise((r) => { setTimeout(() => r('no read after the Move'), 5000); });
+  assert.equal(await Promise.race([readAgain.then(() => 'read again'), late]), 'read again');
+  await fresh.waitForFunction(() => document.querySelector('[data-group="mentioned"] select.milestone[data-move="66"]')?.value === 'Needed soon');
+  assert.equal(reads, 2, 'the one out, and one after the Move');
+  await fresh.close();
+});
+
 // A mention is the pull request's repository's, and the listing is the one
 // prcoder is in; with the two different, upstream's #66 is not the listing's
 // #66 -- including before the page knows its own repository's name.

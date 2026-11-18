@@ -464,7 +464,11 @@ function loadIssues(again = false) {
     paintAfterRead();
     if (!issuesStale) return;
     issuesStale = false;
-    if (tab === 'issues') loadIssues();
+    // Whatever tab shows, as loadPulls does: the read that landed was asked
+    // for before a write or a switch, and a visit to PR #N reads only when
+    // listingStale(), which a Move does not make it. Held to the Issues tab,
+    // a Move on PR #N while a read was out kept the row's old milestone.
+    loadIssues();
   });
   // And now, so the line says `updating…` while it is.
   if (listing && drawsIssues()) paintGroups();
