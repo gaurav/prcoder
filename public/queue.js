@@ -48,16 +48,18 @@ export function setItems(next, prOnScreen = null) {
   // PR #N tab without changing the list, so it has to count as news too.
   const source = (p) => (p ? JSON.stringify([p.number, p.body, p.issues]) : '');
   const samePr = source(prOnScreen) === source(pr);
+  // A different pull request is a different checklist: its tab starts at the top.
+  if (prOnScreen?.url !== pr?.url) scrolled.pr = 0;
+  pr = prOnScreen;
   // The mentions' titles and states come with the listing, looked up for the
   // pull request on screen when it was asked for (askedFor). A different one,
   // or a description that mentions something new -- or the first poll's,
   // after a visit to the tab before it -- needs them asked for again while a
   // tab that draws them is up, and until they land a mention not looked up
-  // reads `…` (mentionRow).
-  if ((tab === 'issues' || tab === 'pr') && asks(prOnScreen) !== askedFor) loadIssues(true);
-  // A different pull request is a different checklist: its tab starts at the top.
-  if (prOnScreen?.url !== pr?.url) scrolled.pr = 0;
-  pr = prOnScreen;
+  // reads `…` (mentionRow). After `pr` is the new one, since fetchIssues
+  // records what it asks about from `pr`: asked before, it recorded the pull
+  // request just left, and the next poll read all five pages again.
+  if ((tab === 'issues' || tab === 'pr') && listingStale()) loadIssues(true);
   // Most polls bring the list already on screen, and a rebuild for nothing
   // costs every row and listener. `items` is kept, not swapped for the equal
   // copy: the rows on screen hold its objects, and a tick on a row whose item

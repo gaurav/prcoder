@@ -3054,6 +3054,31 @@ test('a mention the description gains while the PR #N tab is open is looked up',
   await fresh.close();
 });
 
+// A switch to another pull request reads the listing once, for the one
+// switched to. Until 2026-11-17 the read was recorded as asked about the one
+// just left, so the next poll read all five pages again.
+test('a switch to another pull request reads the issues once, for the one switched to', { skip }, async () => {
+  const { fresh } = await issuesPage();
+  const asked = [];
+  await fresh.route('**/api/issues', (r) => { asked.push(1); return r.fulfill({ json: ISSUES }); });
+  const other = { ...pr, number: 13, url: `${REPO}/pull/13`, issues: [{ number: 9, url: `${REPO}/issues/9`, closes: false, title: 'Elsewhere' }] };
+  await fresh.route('**/api/status', (r) => r.fulfill({ json: { ...status, nameWithOwner: 'gaurav/prcoder', pr: other } }));
+  const read = fresh.waitForResponse('**/api/issues');
+  await fresh.click('#pr-refresh');
+  await read;
+  await fresh.waitForFunction(() => !document.querySelector('#queue-body .issue-groups .pull-note')?.textContent.includes('updating'));
+  for (let n = 0; n < 2; n++) {
+    const polled = fresh.waitForResponse('**/api/status');
+    await fresh.click('#pr-refresh');
+    await polled;
+  }
+  assert.deepEqual(asked, [1], 'one read for the switch, none for the polls after it');
+  await fresh.locator('#queue-body .tab[data-tab="pr"]').click();
+  await fresh.waitForSelector('[data-group="mentioned"] .item');
+  assert.deepEqual(asked, [1], 'nor for a visit to PR #13');
+  await fresh.close();
+});
+
 // A mention is the pull request's repository's, and the listing is the one
 // prcoder is in; with the two different, upstream's #66 is not the listing's
 // #66 -- including before the page knows its own repository's name.
