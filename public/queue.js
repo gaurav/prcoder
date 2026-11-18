@@ -250,8 +250,19 @@ export function stripFor(list, active, sources = []) {
   return { strip, tab: strip.includes(active) ? active : 'local' };
 }
 
-/** The PR description's checklist, in the order a tick counts it. */
-const prTasks = () => (pr ? blocks(pr.body).filter((b) => b.kind === 'task') : []);
+/**
+ * The PR description's checklist, in the order a tick counts it. Kept per
+ * body: render(), every paintCounts after a listing read, and prParts all
+ * ask, several times a repaint, and each parsed the whole of a description
+ * an agent may have written at length. A tick (or a poll) brings a new body
+ * string, which misses the cache by itself.
+ */
+const prTasks = () => {
+  if (!pr) return [];
+  if (!tasksOf || tasksOf.body !== pr.body) tasksOf = { body: pr.body, tasks: blocks(pr.body).filter((b) => b.kind === 'task') };
+  return tasksOf.tasks;
+};
+let tasksOf = null;
 
 /**
  * The PR #N tab's count: what the pull request still points at that is open
