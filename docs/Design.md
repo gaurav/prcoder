@@ -64,8 +64,8 @@ in place -- so that the next thing to do is picked with the issue read, and hand
 with its link, rather than built from memory. On 2026-11-08 the mentions moved to the PR #N tab,
 so that each tab is about one thing: the repository, or the pull request on screen. What it still is not is a tracker: nothing here
 changes what an issue says, and the groups are GitHub's milestones, not a list of prcoder's own.
-Nothing asks which milestone to look at, because the ranking already says which group to open first. Pull requests
-(2026-10-19) is the same shape for the other thing a repository holds, built for the repository
+Nothing asks which milestone to look at, because the ranking already says which group to open first. The PRs tab
+(2026-10-19, called Pull requests until 2026-11-08) is the same shape for the other thing a repository holds, built for the repository
 with sixty open where the switcher's titles were not enough to pick from: grouped by the pull
 request's own milestone, sorted smallest first, with the facts the choice turns on in one line
 each, and its slow listing cached in `.prcoder/pulls.json` so the tab opens at once. It replaced

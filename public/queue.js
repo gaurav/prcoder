@@ -38,8 +38,8 @@ export function setItems(next, prOnScreen = null) {
   // caret: its text is kept and put back, but the caret and a composition
   // mid-word are not. Safe to hold on by the same argument as the text above
   // -- focus leaves it with the next click anywhere else -- where a tab is not.
-  // So is a row's milestone select and Move (groupsInUse), and the Pull
-  // requests tab's order and grouping selects, which a repaint would close
+  // So is a row's milestone select and Move (groupsInUse), and the PRs
+  // tab's order and grouping selects, which a repaint would close
   // mid-choice. Not the rest of the row's ways: a pull request's has Switch,
   // and focus left on it must not keep the checkout's poll from landing.
   if (saving || document.activeElement?.closest?.('#queue-body .text[contenteditable], #queue-search, #queue-pull-search, #queue-body .move-to, #queue-body .pull-controls select')) return;
@@ -1028,7 +1028,7 @@ function moveControl(name, number, current, ariaLabel) {
 /**
  * A group's summary as somewhere to drop a row: lit while one is over it, and
  * the drop is `mover(number, milestone)`. Only a grip's drag of `type` counts --
- * ISSUE on the Issues tab, PULL on Pull requests -- so a link or a text selection dragged across the pane is not a row, nor is a row from the
+ * ISSUE on the Issues tab, PULL on the PRs tab -- so a link or a text selection dragged across the pane is not a row, nor is a row from the
  * other tab.
  */
 function dropTarget(summary, milestone, type = ISSUE, mover = move) {

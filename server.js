@@ -340,8 +340,8 @@ const repaint = () => term.status(last
  * the lock -- so it does not hold up the poll, saves and ticks behind it. The
  * Issues tab's listing is the same and much longer: up to five pages of a
  * hundred issues with their bodies, on every visit to the tab. The PR pane's
- * list of milestones to pick from is the same and short. The Pull
- * requests tab's listing is seconds long on a repository with many open;
+ * list of milestones to pick from is the same and short. The PRs
+ * tab's listing is seconds long on a repository with many open;
  * what it writes, `.prcoder/pulls.json`, is its own file, replaced whole by
  * a rename (writePulls), and its fresh reads queue among themselves
  * (freshPulls) rather than behind everything else. The History tab's read
@@ -556,8 +556,8 @@ const routes = {
   },
 
   /**
-   * The repository's open pull requests and milestones for the queue's Pull
-   * requests tab (repoPulls), with `read`, when the listing was read, in ms.
+   * The repository's open pull requests and milestones for the queue's PRs
+   * tab (repoPulls), with `read`, when the listing was read, in ms.
    * Without `fresh` it is the last listing -- the one on hand, or the one
    * `.prcoder/pulls.json` holds from an earlier run -- so the tab opens at
    * once; GitHub is read only when there is none. With `fresh` it is read now

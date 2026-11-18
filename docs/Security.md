@@ -179,7 +179,7 @@ off with it.
   (`null`, `true`, a number, a leading `@` as a file to read), so `/api/pr/milestone` takes only a
   positive integer or null, before it looks at anything else. Then the number has to be one the
   picker was offered -- the server keeps the last list it read for each repository (`pickerMove`) --
-  or the milestone the pull request is already on, as the Issues and Pull requests tabs' moves are
+  or the milestone the pull request is already on, as the Issues and PRs tabs' moves are
   held to their listings, so a closed milestone or one a stale tab sends never reaches GitHub.
   The switcher's `/api/pr/switch` hands a URL to `gh pr checkout`, so `wholePrRepo` in `git.js`
   takes only the whole of a `https://github.com/owner/repo/pull/N` -- anchored, so a flag in front

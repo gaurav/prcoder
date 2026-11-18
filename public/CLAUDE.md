@@ -15,7 +15,7 @@ counts. `server.js`, `github.js`, `git.js` and `files.js` at the root all
 import it, so the server and the pane read a description by the same rules and
 cannot drift apart. `server.js` imports `QUIT_CODE` from `ui.js`, the close
 code that tells every tab prcoder is quitting. `github.js` imports
-`filesProgress` from `filelist.js`, so a row on the Pull requests tab counts
+`filesProgress` from `filelist.js`, so a row on the PRs tab counts
 viewed files by the same rule as the Files tab. Through those six comes
 `folds.js`.
 
