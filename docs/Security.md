@@ -113,6 +113,18 @@ status row and the quit question keep neither, so a new caller that needs one ro
 row, and the window's title -- are applied after the text has been pictured, so neither can be
 made from text. `test/term.test.js` pins it.
 
+## Links in the coding agent's pane
+
+The agent prints links two ways. A bare URL is its own text, and `WebLinksAddon` opens it on a
+click. An OSC 8 hyperlink — how Claude Code prints a PR link — draws one text and goes to another
+URL, and the text can be anything the agent echoed, a PR body included: `#1161` could go anywhere.
+xterm drops a target that is not http(s) and, left alone, asks before opening any of them. The
+`linkHandler` in [`public/app.js`](../public/app.js) asks only when `opensUnasked` in
+[`public/tasks.js`](../public/tasks.js) says no: a link whose text is its target, or a github.com
+page with no query string, opens straight away. A GET on GitHub changes nothing except OAuth's
+`authorize`, which needs a query; the comment on `opensUnasked` has the rest, and
+`test/tasks.test.js` pins it.
+
 ## Static files
 
 Everything outside `/api/` and the `vendor` paths — xterm's four files, Prism's core and one file

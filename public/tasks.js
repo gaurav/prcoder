@@ -63,6 +63,27 @@ export const opens = (href) =>
   /^https?:\/\//.test(href) || !(/^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith('#'));
 
 /**
+ * Whether a terminal hyperlink (OSC 8) to `uri`, drawn as the text `shown`,
+ * opens on a click without asking first. An OSC 8 link's text need not be its
+ * target, which is why xterm asks before opening one; app.js asks the same
+ * question for any link this turns down.
+ *
+ * Two kinds go straight through. A link that shows its own target hides
+ * nothing. And a page on github.com: a GET there changes nothing, so the
+ * worst a misleading link does is open the wrong page. Not with a query,
+ * though: `/login/oauth/authorize?client_id=…` is the one GitHub GET with an
+ * effect, sending a code to an app you have authorized before. A `#fragment`
+ * is never sent to the server, so `#issuecomment-…` links still go through.
+ */
+export function opensUnasked(uri, shown) {
+  if (shown.trim() === uri) return true;
+  try {
+    const u = new URL(uri);
+    return u.protocol === 'https:' && u.host === 'github.com' && !u.username && !u.search;
+  } catch { return false; }
+}
+
+/**
  * A reference to an issue or pull request in any repo, the four ways people
  * type one: `#91`, `owner/name#91`, `name#91`, and a github.com `/issues/` or
  * `/pull/` URL, whatever follows its number. Wider than mention(), which stays
