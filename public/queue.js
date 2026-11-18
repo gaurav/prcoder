@@ -109,6 +109,9 @@ let pullsLoading = null;
 let pullsStale = false;
 // A visit to the tab arrived while a read was out, and is owed its age check.
 let pullsVisit = false;
+// Why there is no listing at all, as the Issues tab's issuesFailed: the tab
+// says it, and its count reads `?`, rather than `…` as if still reading.
+let pullsFailed = null;
 let pullQuery = '';
 const pullsSeen = new Set();
 // Its order and grouping, remembered as the add-to arrow is (below).
@@ -288,7 +291,7 @@ const matching = () => {
 let matched = { listing: null, query: null, issues: [] };
 
 /** The PRs tab's count, on the same rule as the Issues tab's. */
-const pullCount = () => (!pullsListing ? '…' : pullQuery.trim() ? matchingPulls().length : pullsListing.total);
+const pullCount = () => (!pullsListing ? (pullsFailed ? '?' : '…') : pullQuery.trim() ? matchingPulls().length : pullsListing.total);
 
 /** The listed pull requests the tab's search lets through, by the state word each row shows. */
 const matchingPulls = () => (pullsListing?.pulls ?? []).filter((p) => pullMatches(p, pullQuery, pullWord(p, underOf(p)).word));
@@ -1248,9 +1251,18 @@ async function readPulls(force, visit) {
   pullsReading = true;
   try {
     if (!pullsListing) {
+      // A try after a failure says it is reading again.
+      if (pullsFailed) { pullsFailed = null; paintPulls(); }
       // With nothing to open from, the server reads GitHub itself, and a
-      // listing it answers is as fresh as the read below would be.
-      try { pullsListing = await api('/api/pulls', { fresh: false }); } catch (e) { return toast(e.message, true); }
+      // listing it answers is as fresh as the read below would be. A failure
+      // is toasted only on the tab, as fetchIssues' is: the page-open read
+      // is behind another tab, and leaves `?` on the strip and keeps quiet
+      // until a visit, whose own read says why.
+      try { pullsListing = await api('/api/pulls', { fresh: false }); } catch (e) {
+        pullsFailed = e.message;
+        if (tab === 'pulls') toast(e.message, true);
+        return;
+      }
       paintPulls();
     }
     if (force || (visit && Date.now() - pullsListing.read >= PULLS_FRESH_FOR)) {
@@ -1312,6 +1324,10 @@ function pullList() {
 }
 
 function pullGroups() {
+  if (!pullsListing && pullsFailed) {
+    return [h('p', { className: 'empty' }, `Could not read the repository's pull requests: ${pullsFailed} `,
+      btn('try again', () => loadPulls(), { title: 'ask GitHub for the pull requests again' }))];
+  }
   if (!pullsListing) return [h('p', { className: 'empty' }, 'Reading the repository\'s pull requests…')];
   const searching = !!pullQuery.trim();
   const rows = sortPulls(matchingPulls(), pullSort);

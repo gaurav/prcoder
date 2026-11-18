@@ -2706,6 +2706,32 @@ test('the Issues count is read once a few seconds after the first status, and a 
   await fresh.close();
 });
 
+// The page-open read of the pull requests keeps the same rule: nobody opened
+// the tab, so a failure is `?` on the strip, and the visit's read says why.
+// Until 2026-11-17 it toasted on load.
+test('a PRs read that fails as the page opens leaves ? and says nothing until a visit asks', { skip }, async () => {
+  const fresh = await newPage();
+  let fail = true;
+  await fresh.route('**/api/pulls', (r) => (fail
+    ? r.fulfill({ status: 500, json: { error: 'gh: API rate limit exceeded' } }) : r.fulfill({ json: EMPTY_PULLS })));
+  const read = fresh.waitForResponse('**/api/pulls');
+  await fresh.reload();
+  await read;
+  await fresh.waitForFunction(() => document.querySelector('#queue-body .tab[data-tab="pulls"]')?.textContent === 'PRs (?)');
+  const toasted = () => fresh.evaluate(() => (document.getElementById('toast').hidden ? '' : document.getElementById('toast').textContent));
+  assert.doesNotMatch(await toasted(), /rate limit/, 'nobody asked, so no toast');
+  const again = fresh.waitForResponse('**/api/pulls');
+  await fresh.locator('#queue-body .tab[data-tab="pulls"]').click();
+  await again;
+  await fresh.waitForFunction(() => !document.getElementById('toast').hidden && document.getElementById('toast').textContent.includes('rate limit'));
+  const note = fresh.locator('#queue-body .pull-groups .empty');
+  assert.match(await note.textContent(), /Could not read the repository's pull requests: gh: API rate limit exceeded/);
+  fail = false;
+  await note.locator('button', { hasText: 'try again' }).click();
+  await fresh.waitForFunction(() => document.querySelector('#queue-body .tab[data-tab="pulls"]')?.textContent === 'PRs (0)');
+  await fresh.close();
+});
+
 test('an Issues read that fails behind another tab leaves ? and says nothing until a visit asks', { skip }, async () => {
   const fresh = await newPage({ clock: true });
   const asked = [];
