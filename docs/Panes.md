@@ -377,7 +377,9 @@ deliberate reload gets a shorter toast without the link.
 
 When the agent connects -- the page opened, or **Start coding agent** pressed in the bar below --
 a sticky toast says the last prompt sent from this working copy and when, `Last prompt, 2 hours
-ago (Today 21:14): …`, the first 140 characters of it, for the session that died mid-task. The
+ago (Today 21:14): …`, the first 140 characters of it, for the session that died mid-task. It
+skips `/exit`, `/quit`, `/clear` and `/resume`, which end or leave a session rather than say what it
+was doing, and a prompt sent in a worktree under `data/`, which was another pull request's. The
 next Enter in the terminal takes it down, since by then it has been read. It is drawn from the
 same record as the queue's History tab, which has the rest and, on each row, the ▶ that types a
 prompt back in; the notice itself has no button, since the text it shows is cut. It is put up only
@@ -622,7 +624,7 @@ Claude Code's own switch, under which the file would stop at the day it was set.
 -- *Today*, *Yesterday*, the weekday within the week, then the date -- newest first, with the day's
 count in a badge; the first two days start open and the rest folded, and a fold you change stays
 so until the page is reloaded. Under a day, one block per session, headed by the title Claude
-Code gave the session, or by the time its first prompt of the day was sent when it has none (a
+Code gave the session (the latest, since it retitles a session as it goes), or by the time its first prompt of the day was sent when it has none (a
 transcript pruned by `cleanupPeriodDays` has none; the history file is not pruned), and by the
 worktree it ran in when that was one under `data/` rather than the working copy itself. A session
 that ran past midnight is under both days. Each row is the time, on a 24-hour clock, with the date
@@ -632,7 +634,8 @@ placeholder Claude Code records and nothing of its contents; a prompt that start
 command has the command in the accent colour; and at the end, on hover as on every row, ▶ types
 the prompt into the coding agent again, unsent, to edit and send -- the way back into the task a
 session died on -- ↓ copies it into Local, untagged, and ⧉ copies it to the clipboard, turning to
-✓ for a moment. The box above searches the
+✓ for a moment. ▶ or ↓ on a prompt that held a paste then says, in a sticky toast, that only the
+placeholder came with it and the text has to be pasted again before sending. The box above searches the
 prompts' text, leaving out a day without a match, and the tab's count is the prompts sent today,
 or the matches while searching. The file is read when the page opens, so the count is on the tab
 before a visit, and again a second after a prompt is sent from this page, whichever tab is

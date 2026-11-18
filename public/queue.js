@@ -552,18 +552,20 @@ const pullBtn = (text, issue = null, kind = null, repo = null) => btn('↓', () 
  * Copied into your queue, and left where it was: a checkbox in the description
  * is the PR's record and an issue is the project's, so pulling an item is taking
  * it on, not taking it away. Something already on Local is not added twice.
+ * Whether it was added, for a caller with more to say once it has been.
  */
 async function pull(text, issue = null, kind = null, repo = null) {
   if (items.some((i) => TABS.local(i) && i.text === text)) {
     toast('already in your queue');
-    return;
+    return false;
   }
   const item = { text, done: false, issue, repo, kind, deleted: false };
   if (addTo === 'top') items.unshift(item); else items.push(item);
   // A refusal has already taken it back out.
-  if (!await save()) return;
+  if (!await save()) return false;
   toast(`added to your queue: ${text}`);
   flashLocal();
+  return true;
 }
 
 /**

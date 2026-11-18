@@ -324,6 +324,15 @@ export function byDay(prompts, now = Date.now()) {
  */
 export const commandOf = (text) => /^\/[A-Za-z][\w:-]*/.exec(String(text ?? '').trimStart())?.[0] ?? null;
 
+/**
+ * Whether a prompt held a paste: Claude Code's history keeps it as a
+ * placeholder, `[Pasted text #1 +40 lines]` or, for a short one, `[Pasted
+ * text #2]` (the two forms in one machine's file on 2026-11-15), and the text
+ * itself only in `pastedContents`, which the server never reads (history.js
+ * says why). So the prompt typed back in or copied out lacks what was pasted.
+ */
+export const hasPaste = (text) => /\[Pasted text #\d+(?: \+\d+ lines)?\]/.test(String(text ?? ''));
+
 /** Whether the History tab's search matches a prompt: case-blind, over its text. */
 export const historyMatches = (p, query) => {
   const q = (query ?? '').trim().toLowerCase();

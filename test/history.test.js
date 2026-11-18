@@ -114,8 +114,9 @@ test('readHistory reads the file for this working copy and titles the sessions t
   await fs.mkdir(path.dirname(transcript), { recursive: true });
   await fs.writeFile(transcript, [
     JSON.stringify({ type: 'user', message: { content: 'titled session' } }),
+    JSON.stringify({ type: 'ai-title', aiTitle: 'a first title, since replaced', sessionId: SESSION }),
     JSON.stringify({ type: 'ai-title', aiTitle: '  Title the agent gave  ', sessionId: SESSION }),
-    JSON.stringify({ type: 'ai-title', aiTitle: 'a later one, not read' }),
+    JSON.stringify({ type: 'ai-title', aiTitle: '   ' }),
   ].join('\n') + '\n');
   // OTHER's transcript has no title line at all.
   await fs.writeFile(transcriptFile(cfg, repo, OTHER), JSON.stringify({ type: 'user' }) + '\n');
@@ -128,9 +129,36 @@ test('readHistory reads the file for this working copy and titles the sessions t
   assert.deepEqual(h.sessions, { [SESSION]: { title: 'Title the agent gave' } });
   assert.deepEqual([h.skipped, h.read, h.file], [0, 99, historyFile(cfg)]);
 
-  // A title given since is seen on the next read: the cache is by size and mtime.
+  // A title given since is seen on the next read, which reads on from where
+  // the last stopped.
   await fs.appendFile(transcriptFile(cfg, repo, OTHER), JSON.stringify({ type: 'ai-title', aiTitle: 'Named now' }) + '\n');
   assert.equal((await readHistory(repo, { env })).sessions[OTHER].title, 'Named now');
+});
+
+// Claude Code writes the title line again and again over a session, and
+// changes it partway (history.js says what was seen), so the last one counts.
+// A line caught half written is read again whole; a transcript that shrank was
+// replaced, and is read from the start.
+test('a session\'s title is its last title line, read on from where the last read stopped', async () => {
+  const cfg = await scratch();
+  const repo = await scratch();
+  const env = { CLAUDE_CONFIG_DIR: cfg };
+  await fs.writeFile(historyFile(cfg), line({ project: repo }) + '\n');
+  const file = transcriptFile(cfg, repo, SESSION);
+  await fs.mkdir(path.dirname(file), { recursive: true });
+  const title = (aiTitle) => JSON.stringify({ type: 'ai-title', aiTitle, sessionId: SESSION });
+  const titleNow = async () => (await readHistory(repo, { env })).sessions[SESSION]?.title;
+  // Past a read's 1 MB chunk, so a line runs across two of them.
+  const filler = JSON.stringify({ type: 'assistant', text: 'x'.repeat(1.5 * 2 ** 20) });
+  await fs.writeFile(file, [title('First'), filler, title('Second')].join('\n') + '\n');
+  assert.equal(await titleNow(), 'Second');
+  const half = title('Third');
+  await fs.appendFile(file, half.slice(0, 20));
+  assert.equal(await titleNow(), 'Second', 'a line not yet ended is not read');
+  await fs.appendFile(file, half.slice(20) + '\n' + filler + '\n');
+  assert.equal(await titleNow(), 'Third', 'and is read whole once it has');
+  await fs.writeFile(file, title('Replaced') + '\n');
+  assert.equal(await titleNow(), 'Replaced');
 });
 
 // A fresh install, or CLAUDE_CODE_SKIP_PROMPT_HISTORY in the shell claude
@@ -162,4 +190,26 @@ test('readHistory counts the working copy under its resolved path as well', asyn
   ].join('\n') + '\n');
   const h = await readHistory(link, { env: { CLAUDE_CONFIG_DIR: cfg } });
   assert.deepEqual(h.prompts.map((p) => p.text), ['via real', 'via link']);
+});
+
+// The file is parsed again only when it has changed, so a prompt appended
+// since is in the next read and an unchanged file is not read at all.
+test('readHistory reads the file again only once it has changed', async () => {
+  const cfg = await scratch();
+  const repo = await scratch();
+  const env = { CLAUDE_CONFIG_DIR: cfg };
+  const file = historyFile(cfg);
+  await fs.writeFile(file, line({ display: 'one', timestamp: 1, project: repo }) + '\n');
+  assert.deepEqual((await readHistory(repo, { env })).prompts.map((p) => p.text), ['one']);
+  // Unreadable but unchanged in size and mtime: the parse held is answered.
+  const { mtime } = await fs.stat(file);
+  await fs.chmod(file, 0o000);
+  try {
+    assert.deepEqual((await readHistory(repo, { env })).prompts.map((p) => p.text), ['one']);
+  } finally {
+    await fs.chmod(file, 0o644);
+  }
+  await fs.appendFile(file, line({ display: 'two', timestamp: 2, project: repo }) + '\n');
+  await fs.utimes(file, mtime, new Date(mtime.getTime() + 1000));
+  assert.deepEqual((await readHistory(repo, { env })).prompts.map((p) => p.text), ['two', 'one']);
 });

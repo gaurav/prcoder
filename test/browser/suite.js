@@ -2037,6 +2037,74 @@ test('the History tab lists what was sent by day and session, and the last promp
   await p.close();
 });
 
+// The notice is for picking a task back up, so it skips the /exit that so
+// often ended the session, and a prompt sent in a worktree under data/, which
+// is another pull request's session and not this pane's.
+test('the last-prompt notice skips /exit and a worktree\'s prompts', { skip }, async () => {
+  const S = '6f1a2b3c-4d5e-4f60-8a9b-0c1d2e3f4a5b';
+  const at = Date.now() - 60_000;
+  const p = await newPage({ history: { prompts: [
+    { at, text: 'sent in a worktree', session: S, where: 'data/wt-1' },
+    { at: at - 1000, text: '/exit', session: S, where: '' },
+    { at: at - 2000, text: '/clear', session: S, where: '' },
+    { at: at - 3000, text: 'the task the session was on', session: S, where: '' },
+  ], sessions: {}, read: at, skipped: 0 } });
+  await p.waitForSelector('#toast:not([hidden])');
+  assert.match(await p.locator('#toast').textContent(), /: the task the session was on$/);
+  await p.close();
+});
+
+// A read that lands after a prompt was sent puts nothing up: the Enter came
+// before there was a notice to take down, and one put up now would sit over
+// the session until the next.
+test('the last-prompt notice stays down when a prompt is sent before it is read', { skip }, async () => {
+  let answer;
+  const held = new Promise((res) => { answer = res; });
+  const at = Date.now() - 60_000;
+  const p = await newPage({ history: async (r) => {
+    await held;
+    return r.fulfill({ json: { enabled: true, prompts: [{ at, text: 'an old prompt', session: null, where: '' }], sessions: {}, read: at, skipped: 0 } });
+  } });
+  await p.waitForFunction(() => document.querySelector('#term-host textarea'));
+  await p.locator('#term-host textarea').press('Enter');
+  answer();
+  await p.waitForFunction(() => /History \(\d+\)/.test(document.querySelector('#queue-body .tab[data-tab="history"]')?.textContent ?? ''));
+  await p.waitForTimeout(200);
+  assert.equal(await p.locator('#toast').isHidden(), true);
+  await p.close();
+});
+
+// The history keeps a paste as its placeholder only, so a row that held one
+// says so after ▶ or ↓, and a row that did not says nothing more.
+test('▶ and ↓ on a history row that held a paste say the paste is missing', { skip }, async () => {
+  const at = Date.now() - 60_000;
+  const p = await newPage({ history: { prompts: [
+    { at, text: 'fix this [Pasted text #1 +40 lines]', session: null, where: '' },
+    { at: at - 1000, text: 'no paste here', session: null, where: '' },
+  ], sessions: {}, read: at, skipped: 0 } });
+  let queue = [];
+  await p.route('**/api/queue', (r) => {
+    if (r.request().method() === 'PUT') queue = r.request().postDataJSON().items;
+    return r.fulfill({ json: queue });
+  });
+  await p.waitForSelector('#toast:not([hidden])');
+  await p.locator('#toast').click();
+  await p.locator('#queue-body .tab', { hasText: /^History/ }).click();
+  const row = (text) => p.locator('#queue-body .item.history', { hasText: text }).locator('.actions button');
+  const toast = () => p.locator('#toast:not([hidden])').textContent();
+  await row('no paste').nth(0).click();
+  await p.waitForTimeout(200);
+  assert.equal(await p.locator('#toast').isHidden(), true, 'nothing to say for a prompt without a paste');
+  await row('fix this').nth(0).click();
+  await p.waitForSelector('#toast:not([hidden])');
+  assert.match(await toast(), /^Typed in, but that prompt held a paste/);
+  await p.locator('#toast').click();
+  await row('fix this').nth(1).click();
+  await p.waitForFunction(() => document.querySelector('#toast:not([hidden])')?.textContent.startsWith('Added to your queue, but'));
+  assert.deepEqual(queue.map((i) => i.text), ['fix this [Pasted text #1 +40 lines]']);
+  await p.close();
+});
+
 // A fold's progress is a pie, not `3/5`: one size at any count, and full is a
 // disc. The figure it gives up is its accessible name. A directory is needed
 // for a directory's pie, and the fixture has none, so this page adds two: one

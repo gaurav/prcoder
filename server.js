@@ -69,15 +69,20 @@ const repoFacts = async () => (info ??= await repoInfo(repo));
 let pinnedPort = Number(process.env.PRCODER_PORT) || 0;
 let noOpen = !!process.env.PRCODER_NO_OPEN;
 // --no-history, or PRCODER_NO_HISTORY: the History tab off. The agent's name
-// is held with it (cli.js, AGENTS): the history prcoder reads is Claude
-// Code's own file (history.js), so another agent has none to show.
-let noHistory = !!process.env.PRCODER_NO_HISTORY;
+// is held with it, from --agent in main (cli.js, AGENTS): the history prcoder
+// reads is Claude Code's own file (history.js), so another agent has none to
+// show. PRCODER_AGENT_BIN does not change it: that names the named agent's
+// executable -- a wrapper, or the drivers' stub -- not another agent.
+let noHistory = false;
 let agent = 'claude';
 // Whether the History tab is on. CLAUDE_CODE_SKIP_PROMPT_HISTORY is Claude
 // Code's own switch: set in the environment the `claude` child inherits, it
 // writes no history, so the tab would show the prompts from before it was set
-// and nothing after -- better hidden than half there.
-const historyOn = () => !noHistory && agent === 'claude' && !process.env.CLAUDE_CODE_SKIP_PROMPT_HISTORY;
+// and nothing after -- better hidden than half there. Both variables are read
+// here, on each ask, rather than when the module loads, so a test that
+// imports the server can clear them first whatever the shell exported.
+const historyOn = () => !noHistory && !process.env.PRCODER_NO_HISTORY && agent === 'claude'
+  && !process.env.CLAUDE_CODE_SKIP_PROMPT_HISTORY;
 
 // ponytail: patches fetched lazily on the first diff click, keyed by head oid
 // so a push or PR switch invalidates for free. Eager prefetch in refreshPr if
@@ -1431,7 +1436,7 @@ if (import.meta.main) {
     releaseStart(top);
     dropRunning(top);
   });
-  ({ agentArgs } = cli);
+  ({ agentArgs, agent } = cli);
   // Into the variables, never the env: see pinnedPort.
   if (cli.port) pinnedPort = cli.port;
   if (cli.noOpen) noOpen = true;
