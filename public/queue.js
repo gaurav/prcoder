@@ -165,6 +165,7 @@ export async function initQueue(d) {
   // browser, so the module stays importable by a node test that has no
   // localStorage to touch.
   addTo = readAddTo();
+  sizes = new ResizeObserver(() => { if (owedScroll) placeScroll(document.getElementById('queue-list'), owedScroll.top); });
   pullSort = PULL_SORTS[pref(PULL_SORT_KEY)] ? pref(PULL_SORT_KEY) : 'smallest';
   pullGroup = ['none', 'stack'].includes(pref(PULL_GROUP_KEY)) ? pref(PULL_GROUP_KEY) : 'milestone';
   document.getElementById('queue-where').onclick = () => {
@@ -312,6 +313,20 @@ const matchingPulls = () => (pullsListing?.pulls ?? []).filter((p) => pullMatche
 // land you at the top of Local, nor a switch to Issues at the offset you had
 // on the PRs tab. As the pull request pane's (renderPrTab in pr.js).
 const scrolled = {};
+// The offset a tab was drawn wanting and could not have yet, because what it
+// drew was shorter than when it was left: `top` is the offset, `at` where the
+// clamp left it. Kept until the content grows tall enough (`sizes`, which
+// watches the tab's content) or the user scrolls. Defensive: no tab draws
+// short and fills in later with an offset saved as of 2026-11-17 -- each draws
+// from what it has on hand -- but one that did would open near its top, and
+// the clamp's own scroll event would overwrite the offset for good.
+let owedScroll = null;
+let sizes = null;
+function placeScroll(list, top) {
+  // Assigning forces layout, so this lands against the content as it is now.
+  list.scrollTop = top;
+  owedScroll = list.scrollTop < top - 1 ? { top, at: list.scrollTop } : null;
+}
 
 function render() {
   const head = document.getElementById('queue-head');
@@ -319,7 +334,12 @@ function render() {
   // Recorded as it happens, not read before the replace: queueTab sets `tab`
   // to the tab being switched to before this runs, so a read here would file
   // the outgoing tab's offset under the incoming one (pr.js has the same note).
-  list.onscroll = () => { scrolled[tab] = list.scrollTop; };
+  list.onscroll = () => {
+    // The clamp's own scroll event, which is not the user moving.
+    if (owedScroll && Math.abs(list.scrollTop - owedScroll.at) < 1) return;
+    owedScroll = null;
+    scrolled[tab] = list.scrollTop;
+  };
   // PRs and Issues are always there -- a repository has both whatever is
   // checked out -- and PR #N only with a pull request on screen (sourcesFor).
   const { strip, tab: active } = stripFor(items, tab, sourcesFor(pr, historyOn));
@@ -353,8 +373,9 @@ function render() {
           : tab === 'history' ? historyList()
             : h('ul', { className: 'items' }, ...shown.map((i, n) => row(i, shown[n - 1], shown[n + 1]))),
   );
-  // Assigning forces layout, so this lands against the new content.
-  list.scrollTop = scrolled[tab] ?? 0;
+  placeScroll(list, scrolled[tab] ?? 0);
+  sizes?.disconnect();
+  sizes?.observe(list.firstElementChild);
   staleBreakdown();
 }
 

@@ -2200,6 +2200,28 @@ test('the queue\'s tabs stay above a list that scrolls, each tab at its own offs
   await fresh.close();
 });
 
+// A tab drawn shorter than when it was left has its offset clamped; once its
+// content grows, the offset it wanted comes back. No tab does this as of
+// 2026-11-17, so the groups are hidden by hand while the tab is drawn, and
+// shown again as a painter filling them in would.
+test('a tab whose content grows after it is drawn gets its offset back', { skip }, async () => {
+  const many = Array.from({ length: 40 }, (_, n) => ({ number: 200 + n, title: `issue ${n}`, url: `https://github.com/gaurav/prcoder/issues/${200 + n}`,
+    updatedAt: '2026-10-01T00:00:00Z', body: '', milestone: null, labels: [] }));
+  const { fresh } = await issuesPage({ ...ISSUES, issues: many, total: 40, listed: 40 });
+  const top = () => fresh.evaluate(() => document.getElementById('queue-list').scrollTop);
+  await fresh.evaluate(() => { document.getElementById('queue-list').scrollTop = 600; });
+  await fresh.waitForFunction(() => document.getElementById('queue-list').scrollTop === 600);
+  await fresh.locator('#queue-body .tab[data-tab="local"]').click();
+  await fresh.addStyleTag({ content: '#queue-list .issue-groups { display: none }' });
+  await fresh.locator('#queue-body .tab[data-tab="issues"]').click();
+  assert.ok(await top() < 600, 'clamped while the groups are not there');
+  // Past the clamp's own scroll event, which must not take the offset with it.
+  await fresh.evaluate(() => new Promise((r) => { requestAnimationFrame(() => requestAnimationFrame(r)); }));
+  await fresh.evaluate(() => { for (const s of document.querySelectorAll('style')) if (s.textContent.includes('.issue-groups { display: none }')) s.remove(); });
+  await fresh.waitForFunction(() => document.getElementById('queue-list').scrollTop === 600, null, { timeout: 5000 });
+  await fresh.close();
+});
+
 // A tab's controls stay at the top of the list as the groups scroll under
 // them: the Issues tab's search here, which is in the same row the PRs and
 // History tabs have. The box is the row's first control, so a search typed
