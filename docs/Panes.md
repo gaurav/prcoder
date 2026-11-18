@@ -607,7 +607,10 @@ clone with neither reads GitHub once and keeps that -- and the tab's count is on
 visit. A visit opens the tab from that listing and reads GitHub behind it, unless the listing is
 under a minute old. The line under the groups says
 when the listing was read and `updating…` while the read is out; ⟳ beside the search reads
-whatever the age. A read that fails leaves the list as it was and says so in a toast.
+whatever the age. A read that fails leaves the list as it was and says so in a toast. With no
+listing at all, the count is `?` and the tab says why, with a way to try again, as the Issues
+tab does; the read as the page opens is behind another tab, so its failure is that `?` alone,
+and the toast waits for a visit's own read.
 A row dragged by its grip (⠿) onto a milestone's line, or the pick in its opened row, sets the pull request's
 milestone on GitHub through the same call as an issue's, with the same hold: the number and the
 title both come from the listing the tab was shown. The opened row's select waits for **Move**, focus
