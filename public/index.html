@@ -162,7 +162,15 @@
         <textarea id="queue-input" rows="1" placeholder="Add to Local…" autocomplete="off"></textarea>
         <button id="queue-where" class="where" title="new items go to the bottom — click for the top">↓</button>
       </header>
-      <div id="queue-body" class="scroll"></div>
+      <!-- The strip stays put and the list scrolls under it, as the pull
+           request pane's #pr-head and #pr-body do (style.css says why not a
+           sticky strip in one scroller). One wrapper, so the fold button's
+           aria-controls and every "#queue-body .tab" still name the pane's
+           whole body. -->
+      <div id="queue-body">
+        <div id="queue-head"></div>
+        <div id="queue-list" class="scroll"></div>
+      </div>
     </section>
   </main>
   <div id="toast" hidden></div>

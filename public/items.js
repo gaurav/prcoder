@@ -194,7 +194,7 @@ export const isNew = (p, now = Date.now()) => now - Date.parse(p.createdAt ?? ''
 export const DUE_SOON = 7 * 86400_000;
 
 /**
- * The Pull requests tab's orders, each a comparator over pullRow's fields; the
+ * The PRs tab's orders, each a comparator over pullRow's fields; the
  * ISO dates compare as they read. `smallest` is the default, since the next
  * one to take on is usually the one that is nearly done.
  */
@@ -215,7 +215,7 @@ export const sortPulls = (list, how) => [...list].sort((a, b) => (PULL_SORTS[how
  * `sorted`'s order of their roots, each stack kept whole. stackOrder lists the
  * roots base by base, as the switcher wants them -- so a sort of `smallest
  * first` put a 30-line pull request on main before a 20-line one on another
- * base -- while the Pull requests tab's by-stack view is in the chosen order.
+ * base -- while the PRs tab's by-stack view is in the chosen order.
  */
 export function rootsInOrder(walk, sorted) {
   const at = new Map(sorted.map((p, i) => [p.number, i]));
@@ -243,7 +243,7 @@ export const pullWord = (p, under) => (p.merge === 'ready' && under.nodes.length
   : { word: p.merge, cls: p.merge ? wordClass(p.merge) : '' });
 
 /**
- * Whether the Pull requests tab's search matches a pull request: case-blind,
+ * Whether the PRs tab's search matches a pull request: case-blind,
  * over `#N`, the title, the author, the head and base branches, the labels,
  * the body, the issues it closes by `#N` and title, and `word`, the state the
  * row shows -- so a base branch finds the stack on it, an issue finds the pull

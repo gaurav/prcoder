@@ -7,7 +7,7 @@
 // Imported by queue.js, which test/queue-pane.test.js loads in Node, so
 // nothing at module scope touches the DOM (public/CLAUDE.md).
 
-import { h, btn, api, toast, kept, fold } from './ui.js';
+import { h, btn, api, toast, kept, fold, actions } from './ui.js';
 import { byDay, dayKey, timeLabel, commandOf, hasPaste, historyMatches, age } from './items.js';
 
 export const LABEL = 'History';
@@ -161,7 +161,7 @@ function historyGroups() {
       ...state(d.key),
     }, d.sessions.map((s) => session(s)));
   });
-  // When the file was read, and that a read is out, as the Pull requests tab
+  // When the file was read, and that a read is out, as the PRs tab
   // says under its groups: the three tabs that read something answer "how
   // old is this?" the same way.
   out.push(h('p', { className: 'pull-note' }, `Read ${age(new Date(listing.read).toISOString())}${loading ? ' · updating…' : ''}`));
@@ -207,7 +207,7 @@ function row(p) {
   const li = h('li', { className: `item history${command ? ' command' : ''}${opened.has(key) ? ' open' : ''}` },
     h('span', { className: 'when', title: new Date(p.at).toLocaleString('en', { dateStyle: 'full', timeStyle: 'short' }) }, timeLabel(p.at)),
     text,
-    h('span', { className: 'actions' },
+    actions(
       btn('▶', () => { if (ways.type?.(p.text) && paste) pasteMissing('Typed in'); }, { title: 'type this prompt into the coding agent again, to edit and send', ariaLabel: 'type this prompt into the coding agent again, to edit and send' }),
       btn('↓', async () => { if (await ways.pull?.(p.text) && paste) pasteMissing('Added to your queue'); }, { title: 'copy into your queue', ariaLabel: 'copy this prompt into your queue' }),
       copyButton(p.text)));

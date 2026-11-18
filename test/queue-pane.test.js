@@ -5,7 +5,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { stackOrder } from '../public/pr.js';
 import { TABS, counts, forClaude, refLabel, rankMilestones, issueMatches, sizeChip, sortPulls, rootsInOrder, pullMatches, age, dueLabel, dueDay, isNew, PULL_SORTS } from '../public/items.js';
-import { stripFor } from '../public/queue.js';
+import { stripFor, sourcesFor } from '../public/queue.js';
 
 const item = (over = {}) => ({ text: 't', done: false, issue: null, deleted: false, ...over });
 
@@ -67,7 +67,7 @@ test('Deleted is drawn only when it holds something', () => {
 });
 
 // The sources sit between Local and your list's other tabs, and only when they
-// exist: no PR on screen, no PR tab. Standing on one that goes away -- a switch
+// exist: no PR on screen, no PR #N tab. Standing on one that goes away -- a switch
 // to a branch with no PR -- lands you back on Local like any emptied tab.
 test('source tabs sit after Local, and only the available ones are drawn', () => {
   assert.deepEqual(stripFor([LOCAL, GONE], 'local', ['pr', 'issues']).strip,
@@ -75,6 +75,15 @@ test('source tabs sit after Local, and only the available ones are drawn', () =>
   assert.deepEqual(stripFor([], 'local', ['issues']).strip, ['local', 'issues', 'done']);
   assert.equal(stripFor([], 'pr', ['pr', 'issues']).tab, 'pr');
   assert.equal(stripFor([], 'pr', ['issues']).tab, 'local');
+});
+
+// PRs first, since picking the next pull request is what the queue is most
+// often opened for; PR #N only with one on screen; History only with a file.
+test('the source tabs come as PRs, Issues, PR #N, History, each when it exists', () => {
+  assert.deepEqual(sourcesFor({ number: 12 }, true), ['pulls', 'issues', 'pr', 'history']);
+  assert.deepEqual(sourcesFor(null, true), ['pulls', 'issues', 'history']);
+  assert.deepEqual(sourcesFor({ number: 12 }, false), ['pulls', 'issues', 'pr']);
+  assert.deepEqual(stripFor([], 'local', sourcesFor(null, false)).strip, ['local', 'pulls', 'issues', 'done']);
 });
 
 // Restoring the last tombstone empties Deleted while you are standing on it.
@@ -152,7 +161,7 @@ test('the issue search is case-blind over the number, title, labels and body', (
   assert.ok(issueMatches({ number: 1 }, '#1'), 'an issue with nothing but a number');
 });
 
-// The Pull requests tab's vocabulary: a size in its band,
+// The PRs tab's vocabulary: a size in its band,
 // the orders the tab offers, its search, and the ages a row says.
 test('a pull request\'s size chip is a size label, on lines changed', () => {
   assert.deepEqual([0, 49, 50, 99, 100, 199, 200, 499, 500, 999, 1000, 5000].map(sizeChip),
