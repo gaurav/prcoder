@@ -3033,11 +3033,28 @@ test('⤓ and Alt+Q add the terminal\'s selection to the queue, and the agent ge
   assert.match(await fresh.getAttribute('#queue-selection', 'title'), /\(Alt\+Q\)$/, 'the button says its key');
   sock.send('> fix the clamp');
   await fresh.waitForFunction(() => document.getElementById('term-host').textContent.includes('fix the clamp'));
-  const select = async () => {
+  // Right to left, so that `outside` can carry the drag on past the
+  // terminal's left edge and let go over the next pane. xterm clamps it to the
+  // first column, so the range is the one just taken, which it reports no
+  // change for: only a mouseup heard on the window, not on #term-host, can
+  // wake the button. Not off the right edge, where in Firefox's window the
+  // terminal reaches the viewport's and a release reaches no listener at all,
+  // nor above it, where xterm's drag-scroll ends the range at column 0.
+  const select = async ({ outside = false } = {}) => {
     const box = await fresh.locator('#term-host .xterm-rows > div').first().boundingBox();
-    await fresh.mouse.move(box.x + 1, box.y + box.height / 2);
+    const y = box.y + box.height / 2;
+    await fresh.mouse.move(box.x + box.width - 1, y);
     await fresh.mouse.down();
-    await fresh.mouse.move(box.x + box.width - 1, box.y + box.height / 2, { steps: 5 });
+    await fresh.mouse.move(box.x + 1, y, { steps: 5 });
+    if (outside) {
+      const host = await fresh.locator('#term-host').boundingBox();
+      const x = host.x - 30;
+      assert.equal(await fresh.evaluate(([x, y]) => {
+        const at = document.elementFromPoint(x, y);
+        return !!at && !at.closest('#term-host');
+      }, [x, y]), true, 'the release is on the page, outside the terminal');
+      await fresh.mouse.move(x, y, { steps: 5 });
+    }
     await fresh.mouse.up();
     await fresh.waitForFunction(() => !document.getElementById('queue-selection').disabled);
   };
@@ -3047,18 +3064,22 @@ test('⤓ and Alt+Q add the terminal\'s selection to the queue, and the agent ge
   assert.deepEqual(queue.map((i) => i.text), ['fix the clamp'], 'the prompt marker dropped, the text kept');
   assert.equal(await fresh.locator('#queue-selection').isDisabled(), true, 'taken: the selection is cleared');
   assert.ok(await fresh.evaluate(() => !!document.activeElement?.closest('#term-host')), 'focus back in the terminal');
+  // The same range again, let go of over another pane.
+  await select({ outside: true });
+  await fresh.click('#queue-selection');
+  await fresh.waitForFunction(() => document.querySelectorAll('#queue-body .item').length === 2);
   // The same by the key, pressed in the terminal.
   await select();
   await fresh.keyboard.press('Alt+KeyQ');
-  await fresh.waitForFunction(() => document.querySelectorAll('#queue-body .item').length === 2);
-  assert.deepEqual(queue.map((i) => i.text), ['fix the clamp', 'fix the clamp']);
+  await fresh.waitForFunction(() => document.querySelectorAll('#queue-body .item').length === 3);
+  assert.deepEqual(queue.map((i) => i.text), ['fix the clamp', 'fix the clamp', 'fix the clamp']);
   await settle(fresh);
   assert.equal(typed().length, 0, 'the agent saw neither the click nor the key');
   // Nothing selected: the agent's key, as if it were not bound.
   await fresh.keyboard.press('Alt+KeyQ');
   for (let i = 0; !typed().length && i < 100; i++) await fresh.waitForTimeout(50);
   assert.deepEqual(typed(), [{ type: 'input', data: '\x1bq' }]);
-  assert.equal(queue.length, 2, 'and nothing added');
+  assert.equal(queue.length, 3, 'and nothing added');
   await fresh.close();
 });
 

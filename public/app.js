@@ -559,8 +559,10 @@ term.onSelectionChange(syncStash);
 // prompt -- compares equal to the last one and fires nothing, and the button
 // stayed dimmed over a live selection. Seen in @xterm/xterm 6.0.0. The mouse is
 // the only way to select in xterm, so its release is the other moment to look,
-// after xterm's own mouseup handler, which runs on the window.
-document.getElementById('term-host').addEventListener('mouseup', () => setTimeout(syncStash));
+// after xterm's own mouseup handler. That handler is on the window, because a
+// drag begun in the terminal can end anywhere -- over the queue, the diff --
+// and so is this one: on #term-host it missed every such drag.
+window.addEventListener('mouseup', () => setTimeout(syncStash));
 
 // The diff header's ⧉: the open file's path from the repository root, the way
 // the bar and GitHub name it, onto the clipboard, with a ✓ for a moment to say
