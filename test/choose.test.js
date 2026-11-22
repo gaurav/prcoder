@@ -6,7 +6,7 @@ import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { PassThrough } from 'node:stream';
-import { listLines, choosePr, printPulls, parseFilter } from '../choose.js';
+import { listLines, choosePr, printPulls, parseFilter, treeLines } from '../choose.js';
 import { writePulls } from '../store.js';
 import { startOnPr } from '../git.js';
 import { plain, styled, sink } from '../term.js';
@@ -48,8 +48,8 @@ test('the list is the tab\'s by-stack order, most recently updated first, and En
   // Indented a step under what it is built on, the title last and in one
   // column, the state in the tab's words: `stacked (N)` for a ready one built on N.
   assert.match(text[2], /^ {2}#159 +XXL +ready +1 day ago +Title of 159$/);
-  assert.match(text[3], /^› {3}#163 +L +stacked \(1\) +just now +Title of 163$/);
-  assert.match(text[4], /^ {6}#170 +XS +stacked \(2\) +4 days ago +Title of 170$/);
+  assert.match(text[3], /^› └#163 +L +stacked \(1\) +just now +Title of 163$/);
+  assert.match(text[4], /^ {3}└#170 +XS +stacked \(2\) +4 days ago +Title of 170$/);
   assert.match(text[6], /^ {2}#200 +S +conflicts/);
   // A root on a bare branch says so, as far as it knows without git; one on
   // the default branch says nothing.
@@ -105,9 +105,9 @@ test('on a tty the size and the state are coloured, and a narrow terminal cuts o
   assert.match(drawn, /\x1b\[36mstacked \(2\)\x1b\[39m/);    // cyan: ready once what is under it merges
   const bare = drawn.replaceAll(/\x1b\[\d+m/g, '');
   assert.equal(bare.length, 50);
-  assert.match(bare, /Title $/);
+  assert.match(bare, /Title of$/);
   // The base note outlives the title's tail, since it is the part that says what the row is built on.
-  assert.match(plain(lines({ width: 76 }).lines[7]), /Title on fixture\/diff-views-base$/);
+  assert.match(plain(lines({ width: 74 }).lines[7]), /Title on fixture\/diff-views-base$/);
   assert.match(styled(lines().lines[6]), /\x1b\[31mconflicts/);
   assert.match(styled(lines().lines[2]), /\x1b\[31mXXL/);
 });
@@ -229,7 +229,7 @@ test('filters narrow the list, any of a filter\'s values and all of the filters'
   assert.equal(text[1], '2 of 6 with effort=XS,S.');
   // #163's base, #159, is left out, so #163 is a root and says it is built on it.
   assert.match(text[4], /^ {2}#163 +L +S +stacked \(1\) .*Title of 163 on #159$/);
-  assert.match(text[5], /^ {4}#170 /);
+  assert.match(text[5], /^ {2}└#170 /);
   assert.equal(plain(at('author=nobody').lines.at(-1)), 'none');
 });
 
@@ -264,6 +264,29 @@ test('a filter not known, or a closed value not in its set, is refused naming th
   assert.throws(() => parseFilter('effort=huge'), /--filter effort takes XS, S, M, L, XL, none; not huge/);
   assert.throws(() => parseFilter('state=merged'), /--filter state takes ready, stacked, .*; not merged/);
   assert.throws(() => parseFilter('label=,'), /--filter label takes a value; not ,/);
+});
+
+// The tree is drawn as `tree` draws one, a column a step: `├` for a pull
+// request with another built on the same one after it, `└` for the last,
+// and `│` carrying a sibling still to come past a deeper row.
+test('a stack is drawn as a tree, a column a step', () => {
+  const walk = [[1, 0], [2, 1], [3, 2], [4, 3], [5, 2], [6, 1], [7, 2], [8, 0], [9, 1]].map(([n, depth]) => ({ pr: { number: n }, depth }));
+  const trees = treeLines(walk);
+  assert.deepEqual(walk.map((r) => `${trees.get(r)}#${r.pr.number}`), [
+    '#1',
+    '├#2',
+    '│├#3',
+    '││└#4',
+    '│└#5',
+    '└#6',
+    ' └#7',
+    '#8',
+    '└#9',
+  ]);
+  // Dim, so the number stays the thing that stands out.
+  const out = { isTTY: true, columns: 200, rows: 24, text: '', write(x) { this.text += x; return true; } };
+  sink(out);
+  assert.match(styled(lines().lines[3]), /\x1b\[2m└\x1b\[22m\x1b\[1m#163/);
 });
 
 // A throwaway repo on `branch` with an uncommitted change, and choosePr run

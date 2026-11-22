@@ -99,16 +99,19 @@ or a browser opens:
 ```
 Open pull requests in gaurav/prcoder, by stack, most recently updated first, read just now:
 
-  #159      XXL  ready        2 days ago   Add a PRs tab to the queue: every open pull…
-›   #163    L    stacked (1)  2 days ago   Let a description's checklist text be selected without…
-  #173      XS   ready        15 days ago  Colour a new Snakefile, .smk or .snakefile in the diff…
-  #87       XS   ready        1 month ago  [fixture] A modified, a deleted and a .tsx file on fixture/diff-views-base
+  #159   XXL  ready        2 days ago   Add a PRs tab to the queue: every open pull request…
+› └#163  L    stacked (1)  2 days ago   Let a description's checklist text be selected without…
+  #173   XS   ready        15 days ago  Colour a new Snakefile, .smk or .snakefile in the diff…
+  #87    XS   ready        1 month ago  [fixture] A modified, a deleted and a .tsx file on fixture/diff-views-base
 PR number [163, the deepest], or q:
 ```
 
 The order is the PRs tab's *by stack* ([Panes.md](Panes.md)): each pull request
 followed by the ones built on it, a step further in, with roots and siblings most recently
-updated first. The columns are the tab's facts that a pick turns on -- the size in the tab's
+updated first. The steps are drawn as a tree, a column each, as `tree` draws one: `├` for a
+pull request with another built on the same one after it, `└` for the last, and `│` carrying the
+line past a deeper row. A column a step keeps a deep stack from pushing the titles off the
+right edge, and the glyphs keep a one-column step readable. The columns are the tab's facts that a pick turns on -- the size in the tab's
 bands and colours, green for `XS` to red for `XXL`; the state in the tab's words, `stacked (N)`
 for one that is ready once the N under it merge; and how long since it last moved -- and then
 the title. A root on a branch that is not the default says what it is built on after its title,

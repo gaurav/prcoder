@@ -192,6 +192,33 @@ const builtOn = (under, depth) => {
 };
 
 /**
+ * The tree drawn before each row's number, by stack: `├` or `└` for a pull
+ * request built on the one it is listed under -- `└` for the last built on
+ * it -- and `│` or a space for each step further out, as `tree` draws one.
+ * A root has none. One column a step, where the indent was two spaces: the
+ * glyphs say what is under what, which a one-space step did not, and this
+ * repository's eight-deep stack took eighteen columns from every row's title
+ * (#210). `rows` is a walk as stackOrder gives it, each row's parent the
+ * nearest row before it one step out, so a row is last among its siblings
+ * when no row at its depth comes before the walk next steps out past it.
+ */
+export function treeLines(rows) {
+  const last = rows.map((r, i) => {
+    for (let j = i + 1; j < rows.length && rows[j].depth >= r.depth; j++) if (rows[j].depth === r.depth) return false;
+    return true;
+  });
+  const out = new Map();
+  const outer = [];   // for each depth, whether the row open at it was the last of its siblings
+  rows.forEach((r, i) => {
+    outer.length = r.depth;
+    const lead = r.depth ? `${outer.slice(1).map((done) => (done ? ' ' : '│')).join('')}${last[i] ? '└' : '├'}` : '';
+    outer[r.depth] = last[i];
+    out.set(r, lead);
+  });
+  return out;
+}
+
+/**
  * One row as `prcoder list --json` gives it: the facts the columns show, by
  * the names --filter takes (`state` is the word's class, `stacked` for a
  * ready one built on others; `stateText` the word as shown), and enough to
@@ -225,7 +252,8 @@ function record(p, depth, under, milestones, here) {
  * over the pull requests with its stacks in their roots' order (rootsInOrder,
  * as the tab's by-stack view puts them), in `view.sort`'s order (sortFor;
  * most recently updated first unless asked) among roots and among siblings,
- * each followed by what is built on it a step further in. stackOrder alone
+ * each followed by what is built on it a step further in, drawn as a tree
+ * (treeLines). stackOrder alone
  * groups the roots base by base, so an older root on main came before a newer
  * one on another base. `view.group` of `milestone` or `none` lists them by
  * milestone, under a heading for each, or in one list, as the tab can
@@ -286,14 +314,14 @@ export function listLines(listing, { nameWithOwner, branch, tracked = null, defa
   // Effort and priority are there only when some row has one recorded, so a
   // repository that does not label them pays no columns for it; an older
   // spelling of the label is dim, as the viewer marks it unsettled.
-  const number = ({ pr, depth }) => `${'  '.repeat(depth)}#${pr.number}`;
+  const trees = treeLines(rows);
   const labelled = (kind) => rows.some(({ pr }) => labelValue(kind, pr.labels ?? []));
   const label = (kind, style) => ({ pr }) => {
     const v = labelValue(kind, pr.labels ?? []);
     return { text: v?.value ?? '', style: v?.old ? 'dim' : style(v?.value) };
   };
   const columns = [
-    ['#', (r) => ({ text: number(r), style: 'bold' })],
+    ['#', (r) => ({ lead: trees.get(r), text: `${trees.get(r)}#${r.pr.number}`, style: 'bold' })],
     ['size', ({ pr }) => ({ text: sizeChip(pr.lines), style: SIZE_STYLE[sizeChip(pr.lines)] })],
     ...(labelled('effort') ? [['effort', label('effort', (v) => SIZE_STYLE[v])]] : []),
     ...(labelled('priority') ? [['priority', label('priority', (v) => PRIORITY_STYLE[v])]] : []),
@@ -320,7 +348,9 @@ export function listLines(listing, { nameWithOwner, branch, tracked = null, defa
     const head = [
       here(p) ? { text: '›', style: ['bold', 'cyan'] } : ' ',
       ' ',
-      ...cells.get(r).flatMap(({ text, style }, i) => [{ text: pad(text, i), style }, '  ']),
+      // A cell's `lead` is drawn dim before the rest: the tree before a number.
+      ...cells.get(r).flatMap(({ lead = '', text, style }, i) => [
+        ...(lead ? [{ text: lead, style: 'dim' }] : []), { text: pad(text, i).slice(lead.length), style }, '  ']),
     ];
     const room = width - head.reduce((n, seg) => n + span(seg.text ?? seg), 0) - span(base);
     return [...head, clip(p.title, Math.max(room, 0)), { text: base, style: 'dim' }];
