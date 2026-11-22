@@ -245,7 +245,14 @@ are checked when the flags are parsed, so a misspelt effort is refused before gh
 than answered with an empty list. For anything the filters do not reach, `--json` is the interface
 to pipe from, not the text: the columns change as the list gets better (effort and priority come
 and go by whether anything is labelled), and a script reading them would break with it. The text
-still pipes cleanly for a person's grep or fzf, since the heading goes to stderr. `--worktree <branch|pr>` is a
+still pipes cleanly for a person's grep or fzf, since the heading goes to stderr.
+
+The PRs tab need not keep up with them. `list` and `choose` are for picking and piping at the
+command line, and the tab for working through the pull requests beside a session; the tab lacks
+the `effort` and `priority` orders on purpose (the owner, 2026-11-22), until using it shows it
+needs them. It is also the half most likely to drift into what the milestones app
+(gaurav/milestones) already does -- planning a milestone's work by priority and effort -- and
+prcoder should not duplicate that: someone who wants it can use milestones. `--worktree <branch|pr>` is a
 flag for that reason, where `prcoder worktree <branch>` was the first thought: its value is the
 target, so it takes the positional's place and is refused beside one. It tells a pull request
 from a branch by its shape -- digits or a URL -- and does not ask gh, as the positional does,
