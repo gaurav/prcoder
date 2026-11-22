@@ -19,7 +19,7 @@ import { readPort, writePort, readRunning, writeRunning, dropRunning, alive, cla
 import { readQueue, writeQueue, quote } from './queue.js';
 import { readHistory } from './history.js';
 import { parseCli, usage, VERSION, portCandidates, statusLines, openRepoArgs, OPEN_REPO_VARS, REPO_ENV, queueSummary, quitRisks, worktreeLosses, leaveQuestion, worktreeDir, agentWorktree } from './cli.js';
-import { choosePr, githubPulls } from './choose.js';
+import { choosePr, printPulls, githubPulls } from './choose.js';
 import * as term from './term.js';
 import { toggleTask, refs, wholeRef, resolveRef } from './public/tasks.js';
 import { grammars } from './public/diff.js';
@@ -1671,7 +1671,7 @@ if (import.meta.main) {
   try {
     cli = parseCli(process.argv.slice(2));
   } catch (e) {
-    console.error(`prcoder: ${e.message}\n${usage().split('\n')[0]}`);
+    console.error(`prcoder: ${e.message}\n${usage().split('\n\n')[0]}`);
     process.exit(2);
   }
   if (cli.help) { console.log(usage()); process.exit(0); }
@@ -1691,6 +1691,22 @@ if (import.meta.main) {
   if (why) {
     console.error(`prcoder: ${repo} is not inside a git checkout\n  ${why}\nrun prcoder from inside a repository's working tree`);
     process.exit(2);
+  }
+  // `prcoder list`: the list and nothing else, so before the running record
+  // and the start lock below, which are for a start -- a list beside a
+  // running prcoder, or one starting, waits on neither. The exit waits for
+  // both streams to drain: on macOS a pipe is written asynchronously, and an
+  // exit straight after a long --json would cut it off.
+  if (cli.list) {
+    const drained = (s) => new Promise((resolve) => s.write('', resolve));
+    try {
+      await printPulls(repo, await repoFacts(), { view: cli.view, json: cli.json });
+      await Promise.all([drained(process.stdout), drained(process.stderr)]);
+      process.exit(0);
+    } catch (e) {
+      console.error(`prcoder: ${e.message}`);
+      process.exit(2);
+    }
   }
   top = await workTreeTop(repo).catch((e) => (term.debug(`top level not read, so ${repo} stands for it: ${e.message}`), repo));
   linked = await linkedWorktree(repo).catch((e) => (term.debug(`not read whether this is a worktree: ${e.message}`), null));
@@ -1731,7 +1747,7 @@ if (import.meta.main) {
       // choosePr runs this on each pick, and asks again after a refusal.
       const start = async (pr) => startOnPr(repo, pr, { inUse: claim }).finally(() => releaseStart(top));
       const started = cli.choose
-        ? await choosePr(repo, facts, { start })
+        ? await choosePr(repo, facts, { start, view: cli.view })
         : await Promise.resolve(named ?? pullRequestFor(repo, cli.target, facts.repos)).then(async (pr) => ({ pr, ...(await start(pr)) }));
       if (!started) process.exit(0);
       if (started.said) console.log(started.said);

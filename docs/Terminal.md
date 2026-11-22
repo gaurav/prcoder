@@ -136,7 +136,65 @@ branch it switched to.
 
 The list is the tab's listing, read from GitHub unless `.prcoder/pulls.json` is under a minute
 old, and written there, so the tab opens from the same read. `prcoder choose` takes the other
-flags as ever, and the agent's after `--`.
+flags as ever, and the agent's after `--`, and the ones below that say how to list.
+
+## Listing pull requests
+
+`prcoder list` prints the same list and asks nothing. It starts nothing either, so it does not
+wait on, or count as, a prcoder running in the working copy, and the flags only a start reads
+(`--port`, `--no-open`, `--no-history`, `--queue`, `--worktree`, `--agent`, anything after
+`--`) are refused rather than ignored.
+
+Both commands take four flags that say how to list:
+
+- **`--sort <order>`**: the PRs tab's orders, `updated` (the default), `stale`, `smallest`,
+  `largest`, `newest` and `oldest`, and two from the labels, `effort` (least first) and
+  `priority` (most pressing first), read as the milestone viewer reads them, older spellings
+  too. A pull request no label places goes last either way, by size among its kind. Stacks stay
+  whole: the order places each stack by its bottom pull request and orders the siblings within.
+- **`--reverse`**: the order the other way round, the unlabelled still last.
+- **`--group <how>`**: `stack` (the default), `milestone` -- the tab's grouping, **No
+  milestone** first and then the owner's order, each under a line with its due date coloured as
+  the page colours it -- or `none`, one list. The last two are flat, and a pull request built on
+  another says which after its title: `on #203`, the nearest only, since `stacked (7)` says how
+  deep.
+- **`--filter <key>=<value>[,<value>…]`**: only the pull requests with one of the values, and
+  given again, only those that pass all of them. The keys are `milestone` (its title, its number,
+  or `none`), `label`, `author`, `state` (the word the row shows, so a ready one built on others
+  is `stacked`), `effort` and `priority` (a value or `none`) and `size` (`XS` to `XXL`), without
+  case. A key, or a state, effort, priority or size, that is not one of these is refused naming
+  the ones there are. One built on a pull request filtered out is listed as a root, `on #N`.
+
+With an order or a grouping asked for, Enter in `prcoder choose` takes the first row -- that is
+what `prcoder choose --sort=effort` is for -- and says so (`[182, the first listed]`); with neither,
+it keeps to the deepest. Over uncommitted work it still offers only the branch's own.
+
+Two columns appear when some listed pull request has the label for them: **effort** and
+**priority**, after the size, an older spelling of the label dim. With them the columns are named
+in a dim line over the rows, since size and effort share the bands `XS` to `XL` and are not the
+same thing: the size is lines changed, the effort somebody's judgement.
+
+```
+Open pull requests in gaurav/prcoder, by milestone, least effort first, read just now:
+
+  #     size  effort  priority  state        updated      title
+No milestone  (8)
+  #87   XS                      stacked (1)  1 month ago  [fixture] A modified, a deleted on fixture/diff-views-base › main
+  #173  XS                      ready        1 month ago  Colour a new Snakefile, .smk or .snakefile in the diff pane
+  ...
+
+PRCoder v0.2  (5)
+  #186  S     XS      Low       stacked (3)  6 days ago   Experiment: 5px channels between the panes on #185
+  #182  M     S       Medium    conflicts    4 days ago   Park a half-written prompt on the queue: ⤓ and Alt+Q add…
+```
+
+`prcoder list` writes the heading, its notes and the column names to stderr and the rows to
+stdout, so `prcoder list | fzf` or `| wc -l` sees rows alone; on a terminal the two read as one.
+Piped, a title is not cut to a width, and neither stream is coloured unless it is a terminal
+itself. For a script, **`--json`** prints the rows as a JSON array in the order listed, each with
+the fields `--filter` names and the rest a script would act on (`url`, `headRefName`, `here`,
+`builtOn`, the dates): `prcoder list --json | jq -r '.[] | select(.effort == "S") | .url'`.
+Read that rather than the text, whose columns change as the list gets better.
 
 ## Without a terminal
 

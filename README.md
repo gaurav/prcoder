@@ -14,6 +14,7 @@ prcoder 123                # check out PR 123 and start on it
 prcoder <pr-url>           # ...by its URL
 prcoder some-branch        # ...or its branch
 prcoder choose             # pick one of the repo's open PRs to check out and start on
+prcoder list               # ...or just list them; --sort=effort, --group=milestone, --filter, --json
 prcoder --worktree 123     # PR 123 in a git worktree of its own; this checkout stays put
 prcoder -w some-branch     # ...or a branch, made from the default branch if it is new
 prcoder -- --model opus    # ...with flags for the Claude session, after --
@@ -66,7 +67,9 @@ grouping, and what every control does.
 The first argument, if it isn't a flag, is prcoder's: the PR to check out and start on, by its
 number, its URL or its branch, or `choose`, which lists the repository's open pull requests by stack
 and asks which to check out and start on
-([docs/Terminal.md](docs/Terminal.md#choosing-a-pull-request)). Everything after `--` is handed to
+([docs/Terminal.md](docs/Terminal.md#choosing-a-pull-request)), or `list`, which lists them and
+asks nothing ([docs/Terminal.md](docs/Terminal.md#listing-pull-requests)). Both take `--sort`,
+`--reverse`, `--group` and `--filter`, and `list` takes `--json`. Everything after `--` is handed to
 `claude` untouched, so `prcoder 123 -- --effort high --model opus` opens PR 123 with that session.
 prcoder only ever shows the checked-out branch's PR, so it stops with the reason, rather than start,
 when the argument names no pull request (a typo, a branch with none, an issue's URL), when the PR is

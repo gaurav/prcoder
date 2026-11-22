@@ -702,7 +702,8 @@ dragged as a link. Milestones themselves are not made, renamed or closed from pr
 
 **PRs** is always there too: the repository's open pull requests, for picking the next
 one to work on (`prcoder choose` is the same pick at the command line, before a browser opens:
-[Terminal.md](Terminal.md#choosing-a-pull-request)), in the same groups as the issues -- **No milestone** first, then one per open milestone in the
+[Terminal.md](Terminal.md#choosing-a-pull-request), and `prcoder list` the same list with its
+orders and groupings: [Terminal.md](Terminal.md#listing-pull-requests)), in the same groups as the issues -- **No milestone** first, then one per open milestone in the
 owner's order, each line drawn as the Issues tab's, its badge counting pull requests -- or, with the second select over them set to *one list*, as one list, or
 to *by stack*, as one list with each pull request a step in under the one it is built on, each
 stack placed in the chosen order by its bottom pull request -- not the switcher's order, which goes base by base. A stack can run across milestones, which is why that is a grouping of its own and
