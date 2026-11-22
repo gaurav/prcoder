@@ -294,8 +294,12 @@ export const historyMatches = (p, query) => {
  * its long lines on its own, so a wrapped prompt arrives as several lines;
  * they stay, since an item may be several lines, and ▶ types a newline as a
  * space (`printable`), which is what an Ink-wrapped line wants. The one shape
- * assumed of the TUI is its prompt marker, `> ` at the start of the input box,
- * which a triple-click (xterm's whole-row select) takes along: it is dropped
- * from the first line only. Empty once trimmed is ''.
+ * assumed of the TUI is its prompt marker at the start of the input box, which
+ * a triple-click (xterm's whole-row select) takes along: it is dropped from the
+ * first line only. Claude Code 2.1.330 draws it as `❯` and a no-break space,
+ * which xterm's `getSelection()` hands over as a plain space (read from a real
+ * session's PTY output, 2026-11-22); `> ` is what earlier versions drew. The
+ * start is trimmed first, so a drag begun a cell to the left of the marker
+ * still loses it. Empty once trimmed is ''.
  */
-export const fromTerminal = (text) => String(text ?? '').replace(/^> /, '').trim();
+export const fromTerminal = (text) => String(text ?? '').trimStart().replace(/^[❯>][ \u00a0]/, '').trim();

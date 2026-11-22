@@ -101,10 +101,10 @@ match against the prompt box.
 The one thing read back out of the pane is a selection the user drew there, for the queue's ⤓
 (`fromTerminal` in [`public/items.js`](../public/items.js)): xterm's own `getSelection()`, on a
 click or a key, and only the characters selected. Nothing is scanned for it, and the one shape of
-the TUI it assumes is the `> ` a triple-click on the prompt line takes along, which it drops. The
-need was a half-written prompt to park before doing something else in the session, which the
-history below cannot give: Claude Code writes a prompt there when it is sent, not while it is
-typed.
+the TUI it assumes is the prompt marker (`❯ `, `> ` before) a triple-click on the prompt line takes
+along, which it drops. The need was a half-written prompt to park before doing something else in
+the session, which the history below cannot give: Claude Code writes a prompt there when it is
+sent, not while it is typed.
 
 **The description renderer is an allowlist and stays one.** It handles headings, fences, inline
 code, emphasis, strikethrough, links — including the two kinds that mean nothing without a

@@ -241,10 +241,16 @@ test('a milestone is due some time ago or in some time, with its date in full on
 });
 
 // What a selection in the coding agent's pane becomes as an item: xterm's
-// rows kept as lines, the prompt's own `> ` dropped from the first one only.
+// rows kept as lines, the prompt marker (`❯ `, or `> ` before) dropped from the first one only.
 test('a terminal selection keeps its lines and loses the prompt marker', () => {
   assert.equal(fromTerminal('> fix the clamp'), 'fix the clamp');
   assert.equal(fromTerminal('fix the clamp'), 'fix the clamp');
+  // Claude Code 2.1.330's marker, as xterm hands it over and as it is drawn.
+  assert.equal(fromTerminal('❯ fix the clamp'), 'fix the clamp');
+  assert.equal(fromTerminal('❯\u00a0fix the clamp'), 'fix the clamp');
+  // A drag begun a cell early, or a whole row with blanks before the marker.
+  assert.equal(fromTerminal(' ❯ fix the clamp'), 'fix the clamp');
+  assert.equal(fromTerminal('  > fix the clamp'), 'fix the clamp');
   assert.equal(fromTerminal('> fix the clamp:\n  a click that selected text toggled the row'),
     'fix the clamp:\n  a click that selected text toggled the row');
   // A `> ` on a later line is the text's: a quoted line, not the prompt.
