@@ -36,6 +36,16 @@ test('prcoder choose is a subcommand, not a pull request target', () => {
   assert.ok(usage().includes('choose'));
 });
 
+// The order is checked before gh is asked, and only a listing takes one: a
+// start lists nothing, so an order there would be taken and ignored.
+test('--sort and --reverse are choose\'s, and an order not known is refused by name', () => {
+  assert.deepEqual(parseCli(['choose', '--sort', 'effort', '--reverse']).view, { sort: 'effort', reverse: true });
+  assert.deepEqual(parseCli(['choose']).view, {});
+  assert.throws(() => parseCli(['choose', '--sort=size']), /--sort takes one of updated, .*effort, priority; not size/);
+  assert.throws(() => parseCli(['42', '--sort', 'effort']), /--sort is for prcoder choose/);
+  assert.throws(() => parseCli(['--reverse']), /--reverse is for prcoder choose/);
+});
+
 // --worktree says what to start on, in place of the positional: a pull
 // request by number or URL, or a branch by name, with or without one. Its
 // value reaches git and gh, so nothing that could be a flag of theirs is one.

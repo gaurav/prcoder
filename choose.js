@@ -14,6 +14,7 @@
 import readline from 'node:readline/promises';
 import { stackOrder, stackUnder } from './public/pr.js';
 import { sortPulls, rootsInOrder, pullWord, sizeChip, age } from './public/items.js';
+import { labelValue, LABEL_KINDS } from './public/milestone.js';
 import { repoPulls } from './github.js';
 import { readPulls, writePulls } from './store.js';
 import { currentBranch, dirtyFiles, branchesBelow, trackedPr, branchOwns, uncommitted } from './git.js';
@@ -34,6 +35,53 @@ const SIZE_STYLE = { XS: 'green', S: 'green', M: 'yellow', L: 'yellow', XL: 'red
 const STATE_STYLE = { ready: 'green', stacked: 'cyan', conflicts: 'red', 'checks-not-passing': 'red', 'behind-base': 'yellow', blocked: 'yellow' };
 
 /**
+ * The orders `--sort` takes, each with what the heading says of it and of it
+ * reversed (`--reverse`): the PRs tab's (PULL_SORTS in public/items.js, under
+ * the same names) and two the labels give, `effort` and `priority`, read as
+ * the milestone viewer reads them (labelValue), older spellings too. Each
+ * order's first direction is the one worth taking first: least effort, most
+ * pressing.
+ */
+export const SORTS = {
+  updated: ['most recently updated first', 'least recently updated first'],
+  stale: ['least recently updated first', 'most recently updated first'],
+  smallest: ['smallest first', 'largest first'],
+  largest: ['largest first', 'smallest first'],
+  newest: ['newest first', 'oldest first'],
+  oldest: ['oldest first', 'newest first'],
+  effort: ['least effort first', 'most effort first'],
+  priority: ['most pressing first', 'least pressing first'],
+};
+
+// Each label order's scale, the first to take first: XS before XL, Urgent
+// before Low. LABEL_KINDS lists effort the other way, largest first, which is
+// the order a milestone is worked in rather than the one picked from.
+const SCALES = { effort: [...LABEL_KINDS.effort.options].reverse(), priority: LABEL_KINDS.priority.options };
+
+/**
+ * The pull requests in `sort`'s order (SORTS), or its reverse. By a label,
+ * the ones no label places go last whichever way it runs, by size among
+ * themselves (smallest first, or largest under `reverse`): no label is not
+ * the smallest effort or the lowest priority, and a guess at one from the
+ * size never places a row (effortGuess in public/milestone.js). Ties go to
+ * the most recently updated, then the lower number.
+ */
+export function sortFor(pulls, sort = 'updated', reverse = false) {
+  const scale = SCALES[sort];
+  if (!scale) {
+    const sorted = sortPulls(pulls, sort);
+    return reverse ? sorted.reverse() : sorted;
+  }
+  const at = (p) => scale.indexOf(labelValue(sort, p.labels ?? [])?.value);
+  const by = (a, b) => {
+    const [x, y] = [at(a), at(b)];
+    if (x < 0 || y < 0) return (x < 0) - (y < 0) || (reverse ? b.lines - a.lines : a.lines - b.lines);
+    return reverse ? y - x : x - y;
+  };
+  return [...pulls].sort((a, b) => by(a, b) || (b.updatedAt ?? '').localeCompare(a.updatedAt ?? '') || a.number - b.number);
+}
+
+/**
  * What a root is built on when that is not the default branch, as the tab's
  * row says it: `on fixture-base › main`, nearest first, down to the default
  * branch where git has said (`below`), and as far as it goes where it has
@@ -44,17 +92,23 @@ const builtOn = (under, depth) => (!depth && under.nodes.length
   : '');
 
 /**
- * What `prcoder choose` prints and offers, from a listing as readPulls or
- * repoPulls has it: `{ lines, rows, pick }`. `lines` are term.js lines
- * (styled() renders them); `rows` is stackOrder over the pull requests with
- * its stacks in their roots' order (rootsInOrder, as the tab's by-stack view
- * puts them), most recently updated first among roots and among siblings,
+ * What `prcoder list` prints, and `prcoder choose` prints and offers, from a
+ * listing as readPulls or repoPulls has it: `{ lines, rows, pick, why }`.
+ * `lines` are term.js lines (styled() renders them); `rows` is stackOrder
+ * over the pull requests with its stacks in their roots' order (rootsInOrder,
+ * as the tab's by-stack view puts them), in `view.sort`'s order (sortFor;
+ * most recently updated first unless asked) among roots and among siblings,
  * each followed by what is built on it a step further in. stackOrder alone
  * groups the roots base by base, so an older root on main came before a newer
- * one on another base. `pick` is the row Enter takes, the deepest one and the
- * most recently updated of those, since the deepest is usually where the last
- * session was -- not the first of them in the walk, which is the one under
- * the newest root and can be days staler than another. Null with nothing open.
+ * one on another base.
+ *
+ * `pick` is the row Enter takes, and `why` says why. In the default order it
+ * is the deepest one and the most recently updated of those, since the
+ * deepest is usually where the last session was -- not the first of them in
+ * the walk, which is the one under the newest root and can be days staler
+ * than another. With an order asked for it is the first row: `choose
+ * --sort=effort` is asked so that Enter takes the least effort. Null with
+ * nothing open.
  *
  * A row is the number, the size (sizeChip, coloured by band), the state in a
  * word, how long since it last moved, and the title -- last, so a narrow
@@ -68,17 +122,19 @@ const builtOn = (under, depth) => (!depth && under.nodes.length
  * by, so a wide character in a base branch's name cuts the title, not the
  * note after it.
  */
-export function listLines(listing, { nameWithOwner, branch, tracked = null, defaultBranch, below = [], now = Date.now(), width = Infinity } = {}) {
-  const sorted = sortPulls(listing.pulls ?? [], 'updated');
+export function listLines(listing, { nameWithOwner, branch, tracked = null, defaultBranch, below = [], now = Date.now(), width = Infinity, view = {} } = {}) {
+  const { sort = 'updated', reverse = false } = view;
+  const ordered = Boolean(view.sort || reverse);
+  const sorted = sortFor(listing.pulls ?? [], sort, reverse);
   const rows = rootsInOrder(stackOrder(sorted), sorted);
   const here = (p) => branchOwns(p, branch, tracked);
   const read = listing.read ? `, read ${age(new Date(listing.read).toISOString(), now)}` : '';
   const lines = [
-    `Open pull requests in ${nameWithOwner}, by stack, most recently updated first${read}:`,
+    `Open pull requests in ${nameWithOwner}, by stack, ${SORTS[sort][reverse ? 1 : 0]}${read}:`,
     listing.listed < listing.total && `The ${listing.listed} most recently updated of ${listing.total}.`,
     '',
   ].filter((l) => l !== false);
-  if (!rows.length) return { lines: [...lines, 'none'], rows, pick: null };
+  if (!rows.length) return { lines: [...lines, 'none'], rows, pick: null, why: '' };
   // Column widths from the rows, so the title starts in one column whatever
   // the indent; a number cut to fit would be a wrong number that looks right.
   const number = ({ pr, depth }) => `${'  '.repeat(depth)}#${pr.number}`;
@@ -110,8 +166,9 @@ export function listLines(listing, { nameWithOwner, branch, tracked = null, defa
     lines.push([...head, clip(p.title, Math.max(room, 0)), { text: base, style: 'dim' }]);
   }
   const newer = (a, b) => Date.parse(a.pr.updatedAt) > Date.parse(b.pr.updatedAt);
-  const pick = rows.reduce((best, r) => (r.depth > best.depth || (r.depth === best.depth && newer(r, best)) ? r : best), rows[0]);
-  return { lines, rows, pick };
+  const pick = ordered ? rows[0] : rows.reduce((best, r) => (r.depth > best.depth || (r.depth === best.depth && newer(r, best)) ? r : best), rows[0]);
+  const why = ordered ? 'the first listed' : pick.depth ? 'the deepest' : 'the most recently updated';
+  return { lines, rows, pick, why };
 }
 
 /**
@@ -176,13 +233,13 @@ async function bareBases(repo, pulls, defaultBranch) {
  *
  * `facts` is repoInfo's answer, which server.js has already paid for.
  */
-export async function choosePr(repo, facts, { start, input = process.stdin, output = process.stdout } = {}) {
+export async function choosePr(repo, facts, { start, view = {}, input = process.stdin, output = process.stdout } = {}) {
   const { nameWithOwner, defaultBranch } = facts;
   const width = (output.columns || 80) - 1;
   const [branch, dirty, read] = await Promise.all([currentBranch(repo), dirtyFiles(repo), listing(repo, nameWithOwner)]);
   const tracked = await trackedPr(repo, branch, facts.repos).catch(() => null);
   const below = await bareBases(repo, read.pulls, defaultBranch);
-  const { lines, rows, pick } = listLines(read, { nameWithOwner, branch, tracked, defaultBranch, below, width });
+  const { lines, rows, pick, why: picked } = listLines(read, { nameWithOwner, branch, tracked, defaultBranch, below, width, view });
   for (const l of lines) console.log(styled(l, width));
   if (!pick) return null;
   // What Enter takes: listLines's pick, or over uncommitted work this
@@ -196,7 +253,7 @@ export async function choosePr(repo, facts, { start, input = process.stdin, outp
       ? `${uncommitted(dirty, branch)}: only this branch's pull request, #${own.pr.number}, can be picked ${until}`
       : `${uncommitted(dirty, branch)}: no pull request listed is this branch's, and another's cannot be checked out ${until}`);
   }
-  const why = !offer ? '' : dirty.length ? "this branch's" : offer.depth ? 'the deepest' : 'the most recently updated';
+  const why = !offer ? '' : dirty.length ? "this branch's" : picked;
   const prompt = offer ? `PR number [${offer.pr.number}, ${why}], or q: ` : 'PR number, or q: ';
   const rl = readline.createInterface({ input, output });
   // End of input settles nothing in readline/promises: the interface closes

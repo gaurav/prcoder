@@ -146,6 +146,35 @@ test('a state is coloured as the tab colours its class', () => {
   assert.match(draft, /\x1b\[2mdraft/);        // dim, the tab's default
 });
 
+// --sort's label orders put what no label places last whichever way they
+// run, so `--reverse` is the most effort first, not the unjudged first.
+test('a label order puts the unlabelled last both ways, and an order asked for makes Enter take the first row', () => {
+  const listing = { read: NOW, total: 5, listed: 5, pulls: [
+    pull(1, 'a', 'main', 10, 'ready', 0),
+    pull(2, 'b', 'main', 900, 'ready', 1, { labels: ['Effort: L', 'Priority: Low'] }),
+    pull(3, 'c', 'main', 30, 'ready', 2, { labels: ['Effort: XS'] }),
+    pull(4, 'd', 'main', 400, 'ready', 3, { labels: ['Size: M', 'Priority: Critical'] }),
+    pull(5, 'e', 'main', 70, 'ready', 4),
+    pull(6, 'f', 'a', 5, 'ready', 5, { labels: ['Effort: XS'] }),
+  ] };
+  const at = (view) => listLines(listing, { nameWithOwner: 'o/r', defaultBranch: 'main', now: NOW, view });
+  const order = (view) => at(view).rows.map((r) => r.pr.number);
+  // #6 is built on #1, so it follows it, a step in, wherever #1 sorts.
+  assert.deepEqual(order({ sort: 'effort' }), [3, 4, 2, 1, 6, 5]);
+  assert.deepEqual(order({ sort: 'effort', reverse: true }), [2, 4, 3, 5, 1, 6]);
+  // `Priority: Critical` is the old spelling of Urgent.
+  assert.deepEqual(order({ sort: 'priority' }), [4, 2, 1, 6, 3, 5]);
+  assert.deepEqual(order({ reverse: true }), [5, 4, 3, 2, 1, 6]);
+  const sorted = at({ sort: 'effort' });
+  assert.equal(sorted.pick.pr.number, 3);
+  assert.equal(sorted.why, 'the first listed');
+  assert.match(plain(sorted.lines[0]), /^Open pull requests in o\/r, by stack, least effort first, read just now:$/);
+  assert.match(plain(at({ sort: 'effort', reverse: true }).lines[0]), /most effort first/);
+  // With no order asked for, Enter keeps to the deepest.
+  assert.equal(at({}).pick.pr.number, 6);
+  assert.equal(at({}).why, 'the deepest');
+});
+
 // A throwaway repo on `branch` with an uncommitted change, and choosePr run
 // over `pulls` with `answers` typed at each question: what it picked, what it
 // said, and the questions it asked.

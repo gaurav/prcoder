@@ -1731,7 +1731,7 @@ if (import.meta.main) {
       // choosePr runs this on each pick, and asks again after a refusal.
       const start = async (pr) => startOnPr(repo, pr, { inUse: claim }).finally(() => releaseStart(top));
       const started = cli.choose
-        ? await choosePr(repo, facts, { start })
+        ? await choosePr(repo, facts, { start, view: cli.view })
         : await Promise.resolve(named ?? pullRequestFor(repo, cli.target, facts.repos)).then(async (pr) => ({ pr, ...(await start(pr)) }));
       if (!started) process.exit(0);
       if (started.said) console.log(started.said);
