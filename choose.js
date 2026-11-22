@@ -8,7 +8,7 @@
 // Switch is the same checkout once prcoder is up; this is for picking before
 // a browser tab opens on the wrong pull request.
 //
-// chooseLines is pure, so test/choose.test.js reads it without gh; choosePr is
+// listLines is pure, so test/choose.test.js reads it without gh; choosePr is
 // the gh, git and readline around it, run from server.js before term.init().
 
 import readline from 'node:readline/promises';
@@ -68,7 +68,7 @@ const builtOn = (under, depth) => (!depth && under.nodes.length
  * by, so a wide character in a base branch's name cuts the title, not the
  * note after it.
  */
-export function chooseLines(listing, { nameWithOwner, branch, tracked = null, defaultBranch, below = [], now = Date.now(), width = Infinity } = {}) {
+export function listLines(listing, { nameWithOwner, branch, tracked = null, defaultBranch, below = [], now = Date.now(), width = Infinity } = {}) {
   const sorted = sortPulls(listing.pulls ?? [], 'updated');
   const rows = rootsInOrder(stackOrder(sorted), sorted);
   const here = (p) => branchOwns(p, branch, tracked);
@@ -182,10 +182,10 @@ export async function choosePr(repo, facts, { start, input = process.stdin, outp
   const [branch, dirty, read] = await Promise.all([currentBranch(repo), dirtyFiles(repo), listing(repo, nameWithOwner)]);
   const tracked = await trackedPr(repo, branch, facts.repos).catch(() => null);
   const below = await bareBases(repo, read.pulls, defaultBranch);
-  const { lines, rows, pick } = chooseLines(read, { nameWithOwner, branch, tracked, defaultBranch, below, width });
+  const { lines, rows, pick } = listLines(read, { nameWithOwner, branch, tracked, defaultBranch, below, width });
   for (const l of lines) console.log(styled(l, width));
   if (!pick) return null;
-  // What Enter takes: chooseLines's pick, or over uncommitted work this
+  // What Enter takes: listLines's pick, or over uncommitted work this
   // branch's pull request -- the deepest elsewhere would only be refused.
   // A `pr-<n>` or a fork's branch is found by its config, as the mark is.
   const own = rows.find((r) => branchOwns(r.pr, branch, tracked));

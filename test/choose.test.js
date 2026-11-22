@@ -6,7 +6,7 @@ import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { PassThrough } from 'node:stream';
-import { chooseLines, choosePr } from '../choose.js';
+import { listLines, choosePr } from '../choose.js';
 import { writePulls } from '../store.js';
 import { startOnPr } from '../git.js';
 import { plain, styled, sink } from '../term.js';
@@ -36,7 +36,7 @@ const LISTING = {
     pull(173, 'snakemake-highlight', 'main', 35, 'ready', 5),
   ],
 };
-const lines = (over = {}) => chooseLines(LISTING, { nameWithOwner: 'gaurav/prcoder', branch: 'description-checklist-text', defaultBranch: 'main', now: NOW, ...over });
+const lines = (over = {}) => listLines(LISTING, { nameWithOwner: 'gaurav/prcoder', branch: 'description-checklist-text', defaultBranch: 'main', now: NOW, ...over });
 
 test('the list is the tab\'s by-stack order, most recently updated first, and Enter takes the deepest', () => {
   const { lines: out, rows, pick } = lines();
@@ -69,7 +69,7 @@ test('the marker follows the checked-out branch, and the default is the newest r
   // But the branch gh checked it out to says which it is in its config.
   const fork = lines({ branch: 'someone/main', tracked: 'https://github.com/Gaurav/Prcoder/pull/200' }).lines.map(plain);
   assert.deepEqual(fork.filter((l) => l.startsWith('›')).map((l) => l.match(/#\d+/)[0]), ['#200']);
-  const flat = chooseLines({ ...LISTING, pulls: LISTING.pulls.filter((p) => p.number === 173 || p.number === 87) }, { nameWithOwner: 'o/r', defaultBranch: 'main', now: NOW });
+  const flat = listLines({ ...LISTING, pulls: LISTING.pulls.filter((p) => p.number === 173 || p.number === 87) }, { nameWithOwner: 'o/r', defaultBranch: 'main', now: NOW });
   assert.equal(flat.pick.pr.number, 173);
   assert.equal(flat.pick.depth, 0);
 });
@@ -79,18 +79,18 @@ test('the marker follows the checked-out branch, and the default is the newest r
 test('git\'s word on a bare base is drawn under the root and counted in its state', () => {
   const below = [{ branch: 'fixture/diff-views-base', names: ['older-base'], toDefault: true }];
   const ready = { ...LISTING, pulls: LISTING.pulls.map((p) => (p.number === 87 ? { ...p, merge: 'ready' } : p)) };
-  const text = chooseLines(ready, { nameWithOwner: 'o/r', defaultBranch: 'main', now: NOW, below }).lines.map(plain);
+  const text = listLines(ready, { nameWithOwner: 'o/r', defaultBranch: 'main', now: NOW, below }).lines.map(plain);
   assert.match(text[7], /^ {2}#87 +XS +stacked \(2\) .*Title of 87 on fixture\/diff-views-base › older-base › main$/);
   // Without git's answer the count is what the list alone shows.
-  assert.match(chooseLines(ready, { nameWithOwner: 'o/r', defaultBranch: 'main', now: NOW }).lines.map(plain)[7], /stacked \(1\) .* on fixture\/diff-views-base$/);
+  assert.match(listLines(ready, { nameWithOwner: 'o/r', defaultBranch: 'main', now: NOW }).lines.map(plain)[7], /stacked \(1\) .* on fixture\/diff-views-base$/);
   // A stacked pull request is still counted by the list, with nothing to ask git.
   assert.match(text[4], /stacked \(2\)/);
 });
 
 test('a short listing says so, and an empty one offers nothing', () => {
-  const { lines: out } = chooseLines({ ...LISTING, total: 90, listed: 6 }, { nameWithOwner: 'o/r', defaultBranch: 'main', now: NOW });
+  const { lines: out } = listLines({ ...LISTING, total: 90, listed: 6 }, { nameWithOwner: 'o/r', defaultBranch: 'main', now: NOW });
   assert.equal(plain(out[1]), 'The 6 most recently updated of 90.');
-  const none = chooseLines({ read: NOW, total: 0, listed: 0, pulls: [] }, { nameWithOwner: 'o/r', defaultBranch: 'main', now: NOW });
+  const none = listLines({ read: NOW, total: 0, listed: 0, pulls: [] }, { nameWithOwner: 'o/r', defaultBranch: 'main', now: NOW });
   assert.equal(none.pick, null);
   assert.deepEqual(none.rows, []);
   assert.equal(plain(none.lines.at(-1)), 'none');
@@ -123,7 +123,7 @@ test('roots on different bases are in update order, and Enter takes the newest o
     pull(5, 'five', 'three', 10, 'ready', 6),
     pull(4, 'four', 'one', 10, 'ready', 1),
   ] };
-  const { rows, pick } = chooseLines(listing, { nameWithOwner: 'o/r', defaultBranch: 'main', now: NOW });
+  const { rows, pick } = listLines(listing, { nameWithOwner: 'o/r', defaultBranch: 'main', now: NOW });
   assert.deepEqual(rows.map((r) => [r.pr.number, r.depth]), [[3, 0], [5, 1], [2, 0], [1, 0], [4, 1]]);
   assert.equal(pick.pr.number, 4);
 });
@@ -132,7 +132,7 @@ test('roots on different bases are in update order, and Enter takes the newest o
 // its length, each CJK character counted one and the note lost its tail.
 test('a wide base branch name cuts the title, not the note', () => {
   const listing = { read: NOW, total: 1, listed: 1, pulls: [pull(1, 'a', '機能-基盤', 10, 'draft', 0, { title: 'A title long enough to cut' })] };
-  const [line] = chooseLines(listing, { nameWithOwner: 'o/r', defaultBranch: 'main', now: NOW, width: 50 }).lines.slice(-1);
+  const [line] = listLines(listing, { nameWithOwner: 'o/r', defaultBranch: 'main', now: NOW, width: 50 }).lines.slice(-1);
   const drawn = styled(line, 50).replaceAll(/\x1b\[\d+m/g, '');
   assert.match(drawn, / on 機能-基盤$/);
 });
@@ -141,7 +141,7 @@ test('a state is coloured as the tab colours its class', () => {
   const out = { isTTY: true, columns: 200, rows: 24, text: '', write(s) { this.text += s; return true; } };
   sink(out);
   const listing = { read: NOW, total: 2, listed: 2, pulls: [pull(1, 'a', 'main', 10, 'blocked', 0), pull(2, 'b', 'main', 10, 'draft', 1)] };
-  const [blocked, draft] = chooseLines(listing, { nameWithOwner: 'o/r', defaultBranch: 'main', now: NOW }).lines.slice(-2).map((l) => styled(l, 200));
+  const [blocked, draft] = listLines(listing, { nameWithOwner: 'o/r', defaultBranch: 'main', now: NOW }).lines.slice(-2).map((l) => styled(l, 200));
   assert.match(blocked, /\x1b\[33mblocked/);   // yellow, the tab's --warn
   assert.match(draft, /\x1b\[2mdraft/);        // dim, the tab's default
 });
