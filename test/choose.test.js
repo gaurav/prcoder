@@ -175,6 +175,35 @@ test('a label order puts the unlabelled last both ways, and an order asked for m
   assert.equal(at({}).why, 'the deepest');
 });
 
+// The tab's other two groupings: by milestone, No milestone first and the
+// rest in the owner's order, and one list. Both are flat, so a pull request
+// built on another says so after its title as a root does.
+test('by milestone and in one list, the rows are flat, and a stacked one says what it is on', () => {
+  const listing = { ...LISTING,
+    milestones: [{ number: 9, title: 'Not urgent', dueOn: null }, { number: 7, title: 'Release', dueOn: '2026-11-08T00:00:00Z' }],
+    pulls: LISTING.pulls.map((p) => ({ ...p, milestone: { 163: 9, 170: 7, 173: 7 }[p.number] ?? null })) };
+  const at = (view) => listLines(listing, { nameWithOwner: 'o/r', branch: 'x', defaultBranch: 'main', now: NOW, view });
+  const by = at({ group: 'milestone' });
+  const text = by.lines.map(plain);
+  assert.equal(text[0], 'Open pull requests in o/r, by milestone, most recently updated first, read 3 minutes ago:');
+  assert.deepEqual(text.slice(2).map((l) => (l.match(/^[ ›] +#\d+/)?.[0] ?? l).trim()), [
+    'No milestone  (3)', '#159', '#200', '#87', '',
+    'Release  due in 3 days  (2)', '› #170', '#173', '',
+    'Not urgent  (1)', '#163',
+  ]);
+  assert.ok(by.rows.every((r) => r.depth === 0));
+  assert.match(text.find((l) => l.includes('#170')), /stacked \(2\) .*Title of 170 on #163 › #159 › main$/);
+  // An order or a grouping asked for: Enter takes the first row listed.
+  assert.equal(by.pick.pr.number, 159);
+  const one = at({ group: 'none' });
+  assert.equal(plain(one.lines[0]), 'Open pull requests in o/r, in one list, most recently updated first, read 3 minutes ago:');
+  assert.deepEqual(one.rows.map((r) => r.pr.number), [163, 159, 170, 173, 200, 87]);
+  // Due-date colours follow the page's: within a week is the nearest band short of overdue.
+  const out = { isTTY: true, columns: 200, rows: 24, text: '', write(x) { this.text += x; return true; } };
+  sink(out);
+  assert.match(styled(by.lines.find((l) => plain(l).startsWith('Release'))), /\x1b\[33mdue in 3 days/);
+});
+
 // A throwaway repo on `branch` with an uncommitted change, and choosePr run
 // over `pulls` with `answers` typed at each question: what it picked, what it
 // said, and the questions it asked.

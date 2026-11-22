@@ -13,7 +13,7 @@
 
 import readline from 'node:readline/promises';
 import { stackOrder, stackUnder } from './public/pr.js';
-import { sortPulls, rootsInOrder, pullWord, sizeChip, age } from './public/items.js';
+import { sortPulls, rootsInOrder, pullWord, sizeChip, age, rankMilestones, dueLabel } from './public/items.js';
 import { labelValue, LABEL_KINDS } from './public/milestone.js';
 import { repoPulls } from './github.js';
 import { readPulls, writePulls } from './store.js';
@@ -81,6 +81,53 @@ export function sortFor(pulls, sort = 'updated', reverse = false) {
   return [...pulls].sort((a, b) => by(a, b) || (b.updatedAt ?? '').localeCompare(a.updatedAt ?? '') || a.number - b.number);
 }
 
+// The groupings `--group` takes, the PRs tab's three, as the heading says each.
+export const GROUPS = { stack: 'by stack', milestone: 'by milestone', none: 'in one list' };
+
+// A milestone's due date coloured by how near it is, as dueLabel's class
+// colours it on the page: red past it, orange within a week (bold yellow
+// here, the terminal having no orange), yellow within two, green beyond.
+const DUE_STYLE = { overdue: 'red', soon: ['bold', 'yellow'], coming: 'yellow', far: 'green' };
+
+/**
+ * The rows in `group`'s sections: `[{ milestone, rows }]`, `rows` as
+ * stackOrder has them (`{ pr, depth }`). By stack and in one list there is
+ * one section, its milestone undefined; by milestone there is one per
+ * milestone with a pull request in it, No milestone (null) first and the rest
+ * in the owner's order (rankMilestones), as the PRs tab groups them, and flat
+ * within, since a stack cannot nest across milestones (pullGroups in
+ * public/queue.js). `sorted` is already in the order asked for.
+ */
+function sections(sorted, group, milestones = []) {
+  if (group === 'none') return [{ milestone: undefined, rows: sorted.map((pr) => ({ pr, depth: 0 })) }];
+  if (group !== 'milestone') return [{ milestone: undefined, rows: rootsInOrder(stackOrder(sorted), sorted) }];
+  const by = new Map();
+  for (const pr of sorted) {
+    const key = pr.milestone ?? null;
+    if (!by.has(key)) by.set(key, []);
+    by.get(key).push({ pr, depth: 0 });
+  }
+  const ranked = rankMilestones(milestones);
+  // One the listing's milestones lack is placed last, by its number, rather
+  // than dropped with its pull requests.
+  const keys = [null, ...ranked.map((m) => m.number), ...[...by.keys()].filter((k) => k !== null && !ranked.some((m) => m.number === k))];
+  return keys.filter((k) => by.has(k)).map((k) => ({
+    milestone: k === null ? null : ranked.find((m) => m.number === k) ?? { number: k, title: `milestone ${k}`, dueOn: null },
+    rows: by.get(k),
+  }));
+}
+
+/** A milestone section's heading line: its title, when it is due, and how many are listed under it. */
+function sectionHead({ milestone, rows }, now) {
+  const due = milestone?.dueOn ? dueLabel(milestone.dueOn, now) : null;
+  return [
+    { text: milestone ? milestone.title : 'No milestone', style: 'bold' },
+    ...(due ? ['  ', { text: due.textContent, style: DUE_STYLE[due.className.split(' ')[1]] }] : []),
+    '  ',
+    { text: `(${rows.length})`, style: 'dim' },
+  ];
+}
+
 /**
  * What a root is built on when that is not the default branch, as the tab's
  * row says it: `on fixture-base › main`, nearest first, down to the default
@@ -100,13 +147,16 @@ const builtOn = (under, depth) => (!depth && under.nodes.length
  * most recently updated first unless asked) among roots and among siblings,
  * each followed by what is built on it a step further in. stackOrder alone
  * groups the roots base by base, so an older root on main came before a newer
- * one on another base.
+ * one on another base. `view.group` of `milestone` or `none` lists them by
+ * milestone, under a heading for each, or in one list, as the tab can
+ * (sections); either way flat, each root that is not on the default branch
+ * saying what it is built on.
  *
  * `pick` is the row Enter takes, and `why` says why. In the default order it
  * is the deepest one and the most recently updated of those, since the
  * deepest is usually where the last session was -- not the first of them in
  * the walk, which is the one under the newest root and can be days staler
- * than another. With an order asked for it is the first row: `choose
+ * than another. With an order or a grouping asked for it is the first row: `choose
  * --sort=effort` is asked so that Enter takes the least effort. Null with
  * nothing open.
  *
@@ -123,27 +173,29 @@ const builtOn = (under, depth) => (!depth && under.nodes.length
  * note after it.
  */
 export function listLines(listing, { nameWithOwner, branch, tracked = null, defaultBranch, below = [], now = Date.now(), width = Infinity, view = {} } = {}) {
-  const { sort = 'updated', reverse = false } = view;
-  const ordered = Boolean(view.sort || reverse);
+  const { sort = 'updated', reverse = false, group = 'stack' } = view;
+  const ordered = Boolean(view.sort || reverse || view.group);
   const sorted = sortFor(listing.pulls ?? [], sort, reverse);
-  const rows = rootsInOrder(stackOrder(sorted), sorted);
+  const parts = sections(sorted, group, listing.milestones);
+  const rows = parts.flatMap((part) => part.rows);
   const here = (p) => branchOwns(p, branch, tracked);
   const read = listing.read ? `, read ${age(new Date(listing.read).toISOString(), now)}` : '';
   const lines = [
-    `Open pull requests in ${nameWithOwner}, by stack, ${SORTS[sort][reverse ? 1 : 0]}${read}:`,
+    `Open pull requests in ${nameWithOwner}, ${GROUPS[group]}, ${SORTS[sort][reverse ? 1 : 0]}${read}:`,
     listing.listed < listing.total && `The ${listing.listed} most recently updated of ${listing.total}.`,
     '',
   ].filter((l) => l !== false);
   if (!rows.length) return { lines: [...lines, 'none'], rows, pick: null, why: '' };
-  // Column widths from the rows, so the title starts in one column whatever
-  // the indent; a number cut to fit would be a wrong number that looks right.
+  // Column widths from every row, so the title starts in one column whatever
+  // the indent or the section; a number cut to fit would be a wrong number
+  // that looks right.
   const number = ({ pr, depth }) => `${'  '.repeat(depth)}#${pr.number}`;
   const wide = (f) => Math.max(...rows.map((r) => f(r).length));
   const numbers = wide(number);
   const unders = new Map(rows.map(({ pr }) => [pr.number, stackUnder({ pr }, listing.pulls, below, defaultBranch)]));
   const states = wide(({ pr }) => pullWord(pr, unders.get(pr.number)).word ?? '');
   const ages = wide(({ pr }) => age(pr.updatedAt, now));
-  for (const r of rows) {
+  const row = (r) => {
     const { pr: p, depth } = r;
     const size = sizeChip(p.lines);
     const under = unders.get(p.number);
@@ -163,8 +215,12 @@ export function listLines(listing, { nameWithOwner, branch, tracked = null, defa
       '  ',
     ];
     const room = width - head.reduce((n, seg) => n + span(seg.text ?? seg), 0) - span(base);
-    lines.push([...head, clip(p.title, Math.max(room, 0)), { text: base, style: 'dim' }]);
-  }
+    return [...head, clip(p.title, Math.max(room, 0)), { text: base, style: 'dim' }];
+  };
+  parts.forEach((part, i) => {
+    if (part.milestone !== undefined) lines.push(...(i ? [''] : []), sectionHead(part, now));
+    lines.push(...part.rows.map(row));
+  });
   const newer = (a, b) => Date.parse(a.pr.updatedAt) > Date.parse(b.pr.updatedAt);
   const pick = ordered ? rows[0] : rows.reduce((best, r) => (r.depth > best.depth || (r.depth === best.depth && newer(r, best)) ? r : best), rows[0]);
   const why = ordered ? 'the first listed' : pick.depth ? 'the deepest' : 'the most recently updated';

@@ -15,7 +15,7 @@ import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { syncPhrase, sides, prRepo } from './public/pr.js';
 import { counts, TABS } from './public/items.js';
-import { SORTS } from './choose.js';
+import { SORTS, GROUPS } from './choose.js';
 
 export const VERSION = createRequire(import.meta.url)('./package.json').version;
 
@@ -36,12 +36,13 @@ const OPTIONS = {
   verbose: { type: 'boolean', short: 'v', multiple: true },
   sort: { type: 'string' },
   reverse: { type: 'boolean' },
+  group: { type: 'string' },
 };
 
 // The flags that say how `list` and `choose` show the open pull requests,
 // and nothing else: refused without one of them, rather than taken and
 // ignored by a start that lists nothing.
-const VIEW_FLAGS = ['sort', 'reverse'];
+const VIEW_FLAGS = ['sort', 'reverse', 'group'];
 
 export function usage() {
   return `usage: prcoder [<pr> | choose | --worktree <branch|pr>] [--port <n>] [--no-open] [--no-history] [--queue <file>] [-v] [--agent <name>] [-- <agent args>]
@@ -51,6 +52,7 @@ export function usage() {
     --sort <order> list them in this order, and Enter takes the first: updated (the
                    default), stale, smallest, largest, newest, oldest, effort, priority
     --reverse      the other way round
+    --group <how>  stack (the default), milestone, or none for one list
   -w, --worktree <branch|pr>
                    start in a git worktree on this branch, or this pull request (number
                    or URL), made if there is none; this working copy stays as it is.
@@ -136,7 +138,7 @@ export function parseCli(argv) {
 
 /**
  * How `list` or `choose` is to show the open pull requests, from the flags:
- * `{ sort, reverse }`, each left out when not given, so listLines can tell an
+ * `{ sort, reverse, group }`, each left out when not given, so listLines can tell an
  * order asked for from its default. Checked here, before any gh call, so a
  * misspelt order fails at once and names the ones there are.
  */
@@ -149,7 +151,10 @@ function viewOf(values, listing) {
   if (values.sort !== undefined && !Object.hasOwn(SORTS, values.sort)) {
     throw new Error(`--sort takes one of ${Object.keys(SORTS).join(', ')}; not ${values.sort}`);
   }
-  return Object.fromEntries([['sort', values.sort], ['reverse', values.reverse]].filter(([, v]) => v !== undefined));
+  if (values.group !== undefined && !Object.hasOwn(GROUPS, values.group)) {
+    throw new Error(`--group takes one of ${Object.keys(GROUPS).join(', ')}; not ${values.group}`);
+  }
+  return Object.fromEntries(VIEW_FLAGS.map((f) => [f, values[f]]).filter(([, v]) => v !== undefined));
 }
 
 /**
