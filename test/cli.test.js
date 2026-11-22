@@ -42,14 +42,35 @@ test('--sort, --reverse, --group and --filter are choose\'s, and an order not kn
   assert.deepEqual(parseCli(['choose', '--sort', 'effort', '--reverse']).view, { sort: 'effort', reverse: true });
   assert.deepEqual(parseCli(['choose']).view, {});
   assert.throws(() => parseCli(['choose', '--sort=size']), /--sort takes one of updated, .*effort, priority; not size/);
-  assert.throws(() => parseCli(['42', '--sort', 'effort']), /--sort is for prcoder choose/);
-  assert.throws(() => parseCli(['--reverse']), /--reverse is for prcoder choose/);
+  assert.throws(() => parseCli(['42', '--sort', 'effort']), /--sort is for prcoder list and choose/);
+  assert.throws(() => parseCli(['--reverse']), /--reverse is for prcoder list and choose/);
   assert.deepEqual(parseCli(['choose', '--group=milestone']).view, { group: 'milestone' });
   assert.throws(() => parseCli(['choose', '--group', 'author']), /--group takes one of stack, milestone, none; not author/);
   assert.deepEqual(parseCli(['choose', '--filter', 'effort=S', '--filter=state=ready']).view,
     { filters: [{ key: 'effort', values: ['S'] }, { key: 'state', values: ['ready'] }] });
   assert.throws(() => parseCli(['choose', '--filter', 'effort=huge']), /--filter effort takes/);
-  assert.throws(() => parseCli(['--filter', 'effort=S']), /--filter is for prcoder choose/);
+  assert.throws(() => parseCli(['--filter', 'effort=S']), /--filter is for prcoder list and choose/);
+});
+
+// `list` is the other subcommand word, and starts nothing: a flag only a
+// start reads is refused rather than ignored, and --json is its alone.
+test('prcoder list is a subcommand that takes the view flags and --json, and refuses a start\'s', () => {
+  const l = parseCli(['list', '--json', '--sort', 'effort', '-v']);
+  assert.equal(l.list, true);
+  assert.equal(l.choose, false);
+  assert.equal(l.target, undefined);
+  assert.equal(l.json, true);
+  assert.deepEqual(l.view, { sort: 'effort' });
+  assert.equal(parseCli(['42']).list, false);
+  assert.equal(parseCli([]).agent, 'claude');
+  assert.throws(() => parseCli(['choose', '--json']), /--json is for prcoder list/);
+  assert.throws(() => parseCli(['--json']), /--json is for prcoder list/);
+  for (const flag of [['--port', '4000'], ['--no-open'], ['--no-history'], ['--queue', 'q.json'], ['--worktree', 'topic'], ['--agent', 'claude']]) {
+    assert.throws(() => parseCli(['list', ...flag]), new RegExp(`list starts nothing; ${flag[0]} is for a start`));
+  }
+  assert.throws(() => parseCli(['list', '--', '--effort', 'high']), /list starts no agent; nothing goes after --/);
+  assert.throws(() => parseCli(['list', '42']), /unexpected argument 42/);
+  assert.ok(usage().includes('prcoder list [--json]'));
 });
 
 // --worktree says what to start on, in place of the positional: a pull

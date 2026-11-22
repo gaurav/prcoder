@@ -6,7 +6,7 @@ import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { PassThrough } from 'node:stream';
-import { listLines, choosePr, parseFilter } from '../choose.js';
+import { listLines, choosePr, printPulls, parseFilter } from '../choose.js';
 import { writePulls } from '../store.js';
 import { startOnPr } from '../git.js';
 import { plain, styled, sink } from '../term.js';
@@ -362,4 +362,46 @@ test('a pick refused for another prcoder running here is asked again', { skip: p
   assert.equal(got, null);
   assert.equal(asked, 1);
   assert.ok(said.some((l) => l.startsWith('#5 is on elsewhere, and another prcoder is running in this directory;')), said.join('\n'));
+});
+
+// `prcoder list` in a throwaway repo, its listing fresh in .prcoder/ so gh is
+// never asked: the heading to stderr and the rows to stdout, so a pipe gets
+// rows alone; whole titles when piped; and --json as records in list order.
+test('prcoder list puts the heading on stderr and the rows on stdout, cuts nothing piped, and gives JSON', { skip: process.platform === 'win32' && 'sh' }, async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'prcoder-list-'));
+  try {
+    await git('git', ['init', '-q', '-b', 'snakemake-highlight', dir]);
+    const long = 'A title long enough that a terminal eighty columns wide would have cut it short of its end';
+    const pulls = LISTING.pulls.map((p) => ({ ...p, title: p.number === 159 ? long : p.title, labels: p.number === 173 ? ['Effort: S'] : [] }));
+    await writePulls(dir, 'gaurav/prcoder', { total: pulls.length, milestones: [], pulls });
+    const stream = (isTTY) => ({ isTTY, columns: 80, text: '', write(x) { this.text += x; return true; } });
+    const facts = { nameWithOwner: 'gaurav/prcoder', defaultBranch: 'main' };
+    const [output, errors] = [stream(false), stream(false)];
+    await printPulls(dir, facts, { output, errors });
+    assert.match(errors.text, /^Open pull requests in gaurav\/prcoder, by stack, most recently updated first, read just now:\n\n {2}# +size +effort +state/);
+    const rows = output.text.trimEnd().split('\n');
+    assert.deepEqual(rows.map((l) => Number(l.match(/#(\d+)/)[1])), [159, 163, 170, 173, 200, 87]);
+    assert.ok(rows[0].endsWith(long), 'not cut when piped');
+    assert.match(rows[3], /^› #173 +XS +S +ready/);
+    // On a terminal the title is cut to its width.
+    const tty = stream(true);
+    await printPulls(dir, facts, { output: tty, errors: stream(false) });
+    assert.ok(tty.text.split('\n').every((l) => l.replaceAll(/\x1b\[\d+m/g, '').length <= 79));
+    const json = stream(false);
+    await printPulls(dir, facts, { json: true, view: { sort: 'effort' }, output: json, errors: stream(false) });
+    const got = JSON.parse(json.text);
+    // The one labelled first; the rest by size, each stack whole.
+    assert.deepEqual(got.map((r) => r.number), [173, 87, 200, 159, 163, 170]);
+    assert.deepEqual(got[0], {
+      number: 173, title: 'Title of 173', url: 'https://github.com/gaurav/prcoder/pull/173', author: null,
+      headRefName: 'snakemake-highlight', baseRefName: 'main', isDraft: false, here: true, depth: 0, builtOn: [],
+      state: 'ready', stateText: 'ready', size: 'XS', lines: 35, additions: 0, deletions: 0,
+      effort: 'S', priority: null, milestone: null, labels: ['Effort: S'], reviewDecision: null, createdAt: null,
+      updatedAt: day(5),
+    });
+    assert.deepEqual(got.find((r) => r.number === 170).builtOn, ['#163', '#159', 'main']);
+    assert.equal(got.find((r) => r.number === 170).state, 'stacked');
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
 });

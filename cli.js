@@ -27,7 +27,8 @@ export const AGENTS = ['claude'];
 const OPTIONS = {
   help: { type: 'boolean', short: 'h' },
   version: { type: 'boolean', short: 'V' },
-  agent: { type: 'string', default: 'claude' },
+  // No parseArgs default, so `list` can tell an --agent given from none.
+  agent: { type: 'string' },
   port: { type: 'string' },
   'no-open': { type: 'boolean' },
   'no-history': { type: 'boolean' },
@@ -38,6 +39,7 @@ const OPTIONS = {
   reverse: { type: 'boolean' },
   group: { type: 'string' },
   filter: { type: 'string', multiple: true },
+  json: { type: 'boolean' },
 };
 
 // The flags that say how `list` and `choose` show the open pull requests,
@@ -47,17 +49,22 @@ const VIEW_FLAGS = ['sort', 'reverse', 'group', 'filter'];
 
 export function usage() {
   return `usage: prcoder [<pr> | choose | --worktree <branch|pr>] [--port <n>] [--no-open] [--no-history] [--queue <file>] [-v] [--agent <name>] [-- <agent args>]
+       prcoder list [--json] [--sort <order>] [--reverse] [--group <how>] [--filter <key>=<value>]…
 
   <pr>             check out this pull request (number, URL or branch) and start on it
   choose           list the open pull requests, and pick the one to check out
+  list             list them, and pick none; the heading on stderr, the rows on stdout
+    --json         list them as JSON, the fields --filter names and more, for jq and the like
+  list and choose take:
     --sort <order> list them in this order, and Enter takes the first: updated (the
                    default), stale, smallest, largest, newest, oldest, effort, priority
     --reverse      the other way round
     --group <how>  stack (the default), milestone, or none for one list
     --filter <key>=<value>[,<value>…]
                    only those with one of the values; again for all of several. Keys:
-                   milestone (title, number or none), label, author, state, effort,
-                   priority (both XS… or Urgent… or none), size (XS to XXL)
+                   milestone (title, number or none), label, author, state (ready,
+                   stacked, draft, conflicts…), effort (XS to XL, or none), priority
+                   (Urgent, High, Medium, Low, or none), size (XS to XXL)
   -w, --worktree <branch|pr>
                    start in a git worktree on this branch, or this pull request (number
                    or URL), made if there is none; this working copy stays as it is.
@@ -103,11 +110,20 @@ export function parseCli(argv) {
   if (positionals.length > 1) {
     throw new Error(`unexpected argument ${positionals[1]}; one pull request at most, and flags for the agent go after --`);
   }
-  // The one word that is a subcommand and not a pull request. A branch called
-  // `choose` is still reachable by its pull request's number or URL.
+  // The two words that are subcommands and not pull requests. A branch called
+  // `choose` or `list` is still reachable by its pull request's number or URL.
   const choose = positionals[0] === 'choose';
-  const view = viewOf(values, choose);
-  if (!AGENTS.includes(values.agent)) throw new Error(`unknown agent ${values.agent}; supported: ${AGENTS.join(', ')}`);
+  const list = positionals[0] === 'list';
+  const view = viewOf(values, choose || list);
+  if (values.json && !list) throw new Error('--json is for prcoder list');
+  // `list` starts nothing, so a flag for a start would be taken and ignored;
+  // refused, as a misplaced flag is everywhere else here.
+  const starting = [['port', '--port'], ['no-open', '--no-open'], ['no-history', '--no-history'], ['queue', '--queue'],
+    ['worktree', '--worktree'], ['agent', '--agent']].find(([k]) => values[k] !== undefined);
+  if (list && starting) throw new Error(`list starts nothing; ${starting[1]} is for a start`);
+  if (list && cut >= 0) throw new Error('list starts no agent; nothing goes after --');
+  const agent = values.agent ?? 'claude';
+  if (!AGENTS.includes(agent)) throw new Error(`unknown agent ${agent}; supported: ${AGENTS.join(', ')}`);
   const port = values.port === undefined ? undefined : Number(values.port);
   if (port !== undefined && !(Number.isInteger(port) && port > 0 && port < 65536)) {
     throw new Error(`--port wants a port number, not ${values.port}`);
@@ -125,10 +141,12 @@ export function parseCli(argv) {
     throw new Error(`--worktree ${values.worktree} already says what to start on; ${positionals[0]} is one too many`);
   }
   return {
-    target: choose ? undefined : positionals[0],
+    target: choose || list ? undefined : positionals[0],
     choose,
+    list,
+    json: !!values.json,
     view,
-    agent: values.agent,
+    agent,
     agentArgs,
     port,
     noOpen: !!values['no-open'],
@@ -150,7 +168,7 @@ export function parseCli(argv) {
 function viewOf(values, listing) {
   const given = VIEW_FLAGS.filter((f) => values[f] !== undefined);
   if (!listing) {
-    if (given.length) throw new Error(`--${given[0]} is for prcoder choose`);
+    if (given.length) throw new Error(`--${given[0]} is for prcoder list and choose`);
     return {};
   }
   if (values.sort !== undefined && !Object.hasOwn(SORTS, values.sort)) {
