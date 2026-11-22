@@ -396,10 +396,10 @@ it stays dimmed until something there is selected. This is how a half-written pr
 when something else has to happen first -- another prompt, a `/model` -- since Claude Code writes
 its history only when a prompt is sent, and an unsent one is nowhere else prcoder can read. The
 item goes where the arrow says, is tagged like a typed one, and keeps the selection's lines; the
-prompt's own marker (`❯ `, or `> ` in older versions of Claude Code) is dropped from the first.
-Nothing is sent to the agent, so the prompt is still in its box afterwards: clear it there
-yourself. The selection is cleared instead, to say it was taken, and the focus goes back to the
-terminal.
+prompt's own marker (`❯ `, or `> ` in older versions of Claude Code) is dropped from the first,
+and the two-column indent Claude Code puts a wrapped line in is dropped from the rest. Nothing is
+sent to the agent, so the prompt is still in its box afterwards: clear it there yourself. The
+selection is cleared instead, to say it was taken, and the focus goes back to the terminal.
 
 An item can be about an issue or a pull request, in this repo or any other `gh` can read. Type
 `#91`, `prcoder#91`, `owner/repo#91` or a github.com link on its own and the item is added under

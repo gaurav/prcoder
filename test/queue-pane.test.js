@@ -241,8 +241,9 @@ test('a milestone is due some time ago or in some time, with its date in full on
 });
 
 // What a selection in the coding agent's pane becomes as an item: xterm's
-// rows kept as lines, the prompt marker (`❯ `, or `> ` before) dropped from the first one only.
-test('a terminal selection keeps its lines and loses the prompt marker', () => {
+// rows kept as lines, the prompt marker (`❯ `, or `> ` before) dropped from the first one only,
+// and the TUI's two-column gutter from the rest.
+test('a terminal selection keeps its lines and loses the prompt marker and the gutter', () => {
   assert.equal(fromTerminal('> fix the clamp'), 'fix the clamp');
   assert.equal(fromTerminal('fix the clamp'), 'fix the clamp');
   // Claude Code 2.1.330's marker, as xterm hands it over and as it is drawn.
@@ -251,8 +252,13 @@ test('a terminal selection keeps its lines and loses the prompt marker', () => {
   // A drag begun a cell early, or a whole row with blanks before the marker.
   assert.equal(fromTerminal(' ❯ fix the clamp'), 'fix the clamp');
   assert.equal(fromTerminal('  > fix the clamp'), 'fix the clamp');
-  assert.equal(fromTerminal('> fix the clamp:\n  a click that selected text toggled the row'),
-    'fix the clamp:\n  a click that selected text toggled the row');
+  // A wrapped prompt: the later row's two-column gutter comes off, as it is
+  // drawn (`  the edge`) and on Windows, where xterm joins rows with \r\n.
+  assert.equal(fromTerminal('❯ fix the clamp:\n  a click that selected text toggled the row'),
+    'fix the clamp:\na click that selected text toggled the row');
+  assert.equal(fromTerminal('fix the\r\n  clamp'), 'fix the\nclamp');
+  // Only the gutter: indentation past it is the text's.
+  assert.equal(fromTerminal('steps:\n    - one\n    - two'), 'steps:\n  - one\n  - two');
   // A `> ` on a later line is the text's: a quoted line, not the prompt.
   assert.equal(fromTerminal('see\n> this quote'), 'see\n> this quote');
   // `>` without the space is text too -- `>= 3` -- as is one mid-line.
