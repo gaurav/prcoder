@@ -3124,6 +3124,36 @@ test('a second Alt+Q while a selection\'s reference is looked up adds nothing', 
   await fresh.close();
 });
 
+// Claude Code's fullscreen view turns mouse reporting on, which hands a plain
+// drag to the agent. On a Mac only Option-drag selects past that, and only
+// because the page sets macOptionClickForcesSelection; without it nothing
+// there could be selected for ⤓ at all.
+test('with the agent reporting the mouse, Option-drag on a Mac still selects for ⤓', { skip }, async () => {
+  let sock;
+  const fresh = await newPage({
+    init: () => Object.defineProperty(Navigator.prototype, 'platform', { get: () => 'MacIntel' }),
+    pty: (ws) => { sock = ws; },
+  });
+  // The modes 2.1.330 sets, then its prompt.
+  sock.send('\x1b[?1000h\x1b[?1002h\x1b[?1003h\x1b[?1006h❯ fix the clamp');
+  await fresh.waitForFunction(() => document.getElementById('term-host').textContent.includes('fix the clamp'));
+  const box = await fresh.locator('#term-host .xterm-rows > div').first().boundingBox();
+  const drag = async () => {
+    await fresh.mouse.move(box.x + 1, box.y + box.height / 2);
+    await fresh.mouse.down();
+    await fresh.mouse.move(box.x + box.width - 1, box.y + box.height / 2, { steps: 5 });
+    await fresh.mouse.up();
+    await settle(fresh);
+  };
+  await drag();
+  assert.equal(await fresh.locator('#queue-selection').isDisabled(), true, 'a plain drag is the agent\'s');
+  await fresh.keyboard.down('Alt');
+  await drag();
+  await fresh.keyboard.up('Alt');
+  assert.equal(await fresh.locator('#queue-selection').isDisabled(), false, 'Option-drag selects');
+  await fresh.close();
+});
+
 // Alt+V is the diff pane's box pressed, so everything the box moves follows:
 // the row, the tab's count, and the box itself -- both ways. From the
 // terminal too, where the agent does not get it while a file is open and does

@@ -401,6 +401,10 @@ and the two-column indent Claude Code puts a wrapped line in is dropped from the
 sent to the agent, so the prompt is still in its box afterwards: clear it there yourself. The
 selection is cleared instead, to say it was taken, and the focus goes back to the terminal.
 
+Claude Code's fullscreen view takes the mouse for itself, so a plain drag in the pane goes to it
+and selects nothing ⤓ can take. Drag with Option held on a Mac, or Shift elsewhere; a triple-click
+on the prompt's row needs the same key.
+
 An item can be about an issue or a pull request, in this repo or any other `gh` can read. Type
 `#91`, `prcoder#91`, `owner/repo#91` or a github.com link on its own and the item is added under
 that issue's title; the same thing inside longer text, `Fix #93`, keeps your text. The `name#91`

@@ -18,6 +18,13 @@ const term = new Terminal({
   fontSize: 14,   // one step up from the default, matching the panes' 14px body
   cursorBlink: true,
   theme: { background: '#1c1f26', foreground: '#d5d9e0' },
+  // Claude Code's fullscreen view turns on mouse reporting (?1000h, ?1002h,
+  // ?1003h, ?1006h, read from 2.1.330's output on 2026-11-22), and then a drag
+  // goes to the agent, not to xterm's selection. xterm forces a selection with
+  // Shift-drag, except on a Mac, where it is Option-drag and only with this
+  // set: without it nothing in the pane could be selected there, and the
+  // queue's ⤓ had nothing to take.
+  macOptionClickForcesSelection: true,
 });
 const fit = new FitAddon();
 term.loadAddon(fit);
@@ -573,8 +580,9 @@ term.onSelectionChange(syncStash);
 // the next selection of the *same* range -- ⤓, then another drag over the same
 // prompt -- compares equal to the last one and fires nothing, and the button
 // stayed dimmed over a live selection. Seen in @xterm/xterm 6.0.0. The mouse is
-// the only way to select in xterm, so its release is the other moment to look,
-// after xterm's own mouseup handler. That handler is on the window, because a
+// the only way to select in xterm -- with Option or Shift held, while the agent
+// has mouse reporting on (macOptionClickForcesSelection above) -- so its
+// release is the other moment to look, after xterm's own mouseup handler. That handler is on the window, because a
 // drag begun in the terminal can end anywhere -- over the queue, the diff --
 // and so is this one: on #term-host it missed every such drag.
 window.addEventListener('mouseup', () => setTimeout(syncStash));
