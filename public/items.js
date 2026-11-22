@@ -296,7 +296,8 @@ export const historyMatches = (p, query) => {
  * space (`printable`), which is what an Ink-wrapped line wants.
  *
  * Two shapes of the TUI are assumed, both read from a real Claude Code 2.1.330
- * session's PTY output on 2026-11-22. The prompt marker at the start of the
+ * session's PTY output on 2026-11-22; `node tools/tui-probe.mjs` checks them
+ * against the installed version. The prompt marker at the start of the
  * input box, which a triple-click (xterm's whole-row select) takes along, is
  * dropped from the first line only: that version draws it as `❯` and a
  * no-break space, which `getSelection()` hands over as a plain space, and

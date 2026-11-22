@@ -19,7 +19,8 @@ const term = new Terminal({
   cursorBlink: true,
   theme: { background: '#1c1f26', foreground: '#d5d9e0' },
   // Claude Code's fullscreen view turns on mouse reporting (?1000h, ?1002h,
-  // ?1003h, ?1006h, read from 2.1.330's output on 2026-11-22), and then a drag
+  // ?1003h, ?1006h, read from 2.1.330's output on 2026-11-22, and
+  // tools/tui-probe.mjs notes whether it still does), and then a drag
   // goes to the agent, not to xterm's selection. xterm forces a selection with
   // Shift-drag, except on a Mac, where it is Option-drag and only with this
   // set: without it nothing in the pane could be selected there, and the
