@@ -100,6 +100,14 @@ anything on this machine can start Firefox, with and without the workaround, and
 after a macOS, Firefox or Playwright update; [its README](../tools/firefox-runner/README.md) says
 how to read it.
 
+**`node tools/tui-probe.mjs`** is not a driver either, and is the one check here that runs the real
+agent: `claude`, logged in as you, in this repository. It types a line into the prompt box without
+sending it, draws the output in a headless xterm, and checks what the queue's ⤓ assumes of Claude
+Code's screen -- the prompt marker, the gutter a wrapped line sits in, the two through
+`fromTerminal` giving back the line typed -- and notes whether the mouse is reported. Run it after
+a Claude Code update; a FAIL prints the prompt's rows, and `--screen` the whole screen. The suite
+cannot see these, since its agent is a stub that draws what the test tells it to.
+
 ## Figures worth re-measuring
 
 Each figure here names the commit and date it was measured on; when you re-measure one, write the

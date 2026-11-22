@@ -3703,6 +3703,149 @@ test('Alt+R says in one toast which half failed', { skip }, async () => {
   await fresh.close();
 });
 
+// ⤓ on the queue header and Alt+Q: the text selected in the terminal becomes
+// a Local item, through addItem like a typed one, with the prompt's own `> `
+// dropped. The button is dimmed until there is a selection and again once it
+// is taken, the focus comes back to the terminal, and nothing goes to the
+// agent -- except that with nothing selected the key is the agent's, as ESC q.
+// The text comes in as PTY output, since a real session echoes what is typed.
+test('⤓ and Alt+Q add the terminal\'s selection to the queue, and the agent gets the key with none', { skip }, async () => {
+  const frames = [];
+  let sock;
+  const fresh = await newPage({ init: onLinux, pty: (ws) => { sock = ws; ws.onMessage((m) => frames.push(JSON.parse(m))); } });
+  const typed = () => frames.filter((f) => f.type === 'input');
+  let queue = [];
+  // Both routes, as the other queue tests: the status poll replaces the list.
+  await fresh.route('**/api/status', (r) => r.fulfill({ json: { ...status, queue } }));
+  await fresh.route('**/api/queue', (r) => {
+    if (r.request().method() === 'PUT') queue = r.request().postDataJSON().items;
+    return r.fulfill({ json: queue });
+  });
+  assert.equal(await fresh.locator('#queue-selection').isDisabled(), true, 'nothing selected yet');
+  assert.match(await fresh.getAttribute('#queue-selection', 'title'), /\(Alt\+Q\)$/, 'the button says its key');
+  sock.send('> fix the clamp');
+  await fresh.waitForFunction(() => document.getElementById('term-host').textContent.includes('fix the clamp'));
+  // Right to left, so that `outside` can carry the drag on past the
+  // terminal's left edge and let go over the next pane. xterm clamps it to the
+  // first column, so the range is the one just taken, which it reports no
+  // change for: only a mouseup heard on the window, not on #term-host, can
+  // wake the button. Not off the right edge, where in Firefox's window the
+  // terminal reaches the viewport's and a release reaches no listener at all,
+  // nor above it, where xterm's drag-scroll ends the range at column 0.
+  const select = async ({ outside = false } = {}) => {
+    const box = await fresh.locator('#term-host .xterm-rows > div').first().boundingBox();
+    const y = box.y + box.height / 2;
+    await fresh.mouse.move(box.x + box.width - 1, y);
+    await fresh.mouse.down();
+    await fresh.mouse.move(box.x + 1, y, { steps: 5 });
+    if (outside) {
+      const host = await fresh.locator('#term-host').boundingBox();
+      const x = host.x - 30;
+      assert.equal(await fresh.evaluate(([x, y]) => {
+        const at = document.elementFromPoint(x, y);
+        return !!at && !at.closest('#term-host');
+      }, [x, y]), true, 'the release is on the page, outside the terminal');
+      await fresh.mouse.move(x, y, { steps: 5 });
+    }
+    await fresh.mouse.up();
+    await fresh.waitForFunction(() => !document.getElementById('queue-selection').disabled);
+  };
+  await select();
+  await fresh.click('#queue-selection');
+  await fresh.waitForFunction(() => document.querySelectorAll('#queue-body .item').length === 1);
+  assert.deepEqual(queue.map((i) => i.text), ['fix the clamp'], 'the prompt marker dropped, the text kept');
+  assert.equal(await fresh.locator('#queue-selection').isDisabled(), true, 'taken: the selection is cleared');
+  assert.ok(await fresh.evaluate(() => !!document.activeElement?.closest('#term-host')), 'focus back in the terminal');
+  // The same range again, let go of over another pane.
+  await select({ outside: true });
+  await fresh.click('#queue-selection');
+  await fresh.waitForFunction(() => document.querySelectorAll('#queue-body .item').length === 2);
+  // The same by the key, pressed in the terminal.
+  await select();
+  await fresh.keyboard.press('Alt+KeyQ');
+  await fresh.waitForFunction(() => document.querySelectorAll('#queue-body .item').length === 3);
+  assert.deepEqual(queue.map((i) => i.text), ['fix the clamp', 'fix the clamp', 'fix the clamp']);
+  await settle(fresh);
+  assert.equal(typed().length, 0, 'the agent saw neither the click nor the key');
+  // Nothing selected: the agent's key, as if it were not bound.
+  await fresh.keyboard.press('Alt+KeyQ');
+  for (let i = 0; !typed().length && i < 100; i++) await fresh.waitForTimeout(50);
+  assert.deepEqual(typed(), [{ type: 'input', data: '\x1bq' }]);
+  assert.equal(queue.length, 3, 'and nothing added');
+  await fresh.close();
+});
+
+// A selection with a reference in it waits on GitHub before it is added, and
+// a second Alt+Q in that wait is ignored rather than adding it twice; ⤓ is
+// dimmed for the wait. The lookup is held open until both keys are pressed.
+test('a second Alt+Q while a selection\'s reference is looked up adds nothing', { skip }, async () => {
+  let sock;
+  const fresh = await newPage({ init: onLinux, pty: (ws) => { sock = ws; } });
+  let queue = [];
+  await fresh.route('**/api/status', (r) => r.fulfill({ json: { ...status, queue } }));
+  await fresh.route('**/api/queue', (r) => {
+    if (r.request().method() === 'PUT') queue = r.request().postDataJSON().items;
+    return r.fulfill({ json: queue });
+  });
+  let answer;
+  const asked = [];
+  const held = new Promise((resolve) => { answer = resolve; });
+  await fresh.route('**/api/queue/ref', async (r) => {
+    asked.push(r.request().postDataJSON().text);
+    await held;
+    await r.fulfill({ json: { ref: null } });
+  });
+  sock.send('❯ Fix #93');
+  await fresh.waitForFunction(() => document.getElementById('term-host').textContent.includes('Fix #93'));
+  const box = await fresh.locator('#term-host .xterm-rows > div').first().boundingBox();
+  await fresh.mouse.move(box.x + 1, box.y + box.height / 2);
+  await fresh.mouse.down();
+  await fresh.mouse.move(box.x + box.width - 1, box.y + box.height / 2, { steps: 5 });
+  await fresh.mouse.up();
+  await fresh.waitForFunction(() => !document.getElementById('queue-selection').disabled);
+  await fresh.keyboard.press('Alt+KeyQ');
+  for (let i = 0; !asked.length && i < 100; i++) await fresh.waitForTimeout(50);
+  assert.equal(await fresh.locator('#queue-selection').isDisabled(), true, 'dimmed while it is looked up');
+  await fresh.keyboard.press('Alt+KeyQ');
+  await settle(fresh);
+  answer();
+  await fresh.waitForFunction(() => document.querySelectorAll('#queue-body .item').length === 1);
+  await settle(fresh);
+  assert.deepEqual(asked, ['Fix #93'], 'looked up once');
+  assert.deepEqual(queue.map((i) => i.text), ['Fix #93'], 'added once');
+  await fresh.close();
+});
+
+// Claude Code's fullscreen view turns mouse reporting on, which hands a plain
+// drag to the agent. On a Mac only Option-drag selects past that, and only
+// because the page sets macOptionClickForcesSelection; without it nothing
+// there could be selected for ⤓ at all.
+test('with the agent reporting the mouse, Option-drag on a Mac still selects for ⤓', { skip }, async () => {
+  let sock;
+  const fresh = await newPage({
+    init: () => Object.defineProperty(Navigator.prototype, 'platform', { get: () => 'MacIntel' }),
+    pty: (ws) => { sock = ws; },
+  });
+  // The modes 2.1.330 sets, then its prompt.
+  sock.send('\x1b[?1000h\x1b[?1002h\x1b[?1003h\x1b[?1006h❯ fix the clamp');
+  await fresh.waitForFunction(() => document.getElementById('term-host').textContent.includes('fix the clamp'));
+  const box = await fresh.locator('#term-host .xterm-rows > div').first().boundingBox();
+  const drag = async () => {
+    await fresh.mouse.move(box.x + 1, box.y + box.height / 2);
+    await fresh.mouse.down();
+    await fresh.mouse.move(box.x + box.width - 1, box.y + box.height / 2, { steps: 5 });
+    await fresh.mouse.up();
+    await settle(fresh);
+  };
+  await drag();
+  assert.equal(await fresh.locator('#queue-selection').isDisabled(), true, 'a plain drag is the agent\'s');
+  await fresh.keyboard.down('Alt');
+  await drag();
+  await fresh.keyboard.up('Alt');
+  assert.equal(await fresh.locator('#queue-selection').isDisabled(), false, 'Option-drag selects');
+  await fresh.close();
+});
+
 // Alt+V is the diff pane's box pressed, so everything the box moves follows:
 // the row, the tab's count, and the box itself -- both ways. From the
 // terminal too, where the agent does not get it while a file is open and does

@@ -27,6 +27,7 @@
     "fsevents": false
   },
   "devDependencies": {
+    "@xterm/headless": "^6.0.0",
     "playwright": "^1.62.1"
   }
 }
