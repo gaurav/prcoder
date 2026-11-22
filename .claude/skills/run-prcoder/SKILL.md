@@ -90,7 +90,8 @@ node tools/browser.mjs highlighting               # the UI, PNGs to data/shots/h
                                                   # back to Chromium if it will not start
 PRCODER_PLAYWRIGHT=chromium node tools/browser.mjs   # compare engines
 node tools/cli.mjs                                # the terminal half, in a real PTY
-node tools/choose.mjs                             # `prcoder choose` in a PTY; answers q, never a pick
+node tools/choose.mjs                             # `prcoder choose` in a PTY; answers q, never a pick;
+                                                  # then `prcoder list`, in the PTY and piped
 node tools/no-pr.mjs                              # the pane with no pull request, in a clone
 node tools/diff-views.mjs                         # the diff pane's DIFF, DELETED, renames, outline and .tsx, on fixture PR #87
 ```
@@ -149,7 +150,8 @@ Two rules for them, and for any script after them:
   `server.js <n>`, `prcoder <url>` or `prcoder <branch>` runs `gh pr checkout`
   in the working copy it starts in, as a `prcoder choose` pick does. So never
   name one here; `prcoder choose` writes nothing until a pick, so answer `q`
-  here (`tools/choose.mjs` does), and see a pick or a named start through in a
+  here (`tools/choose.mjs` does). `prcoder list` checks nothing out and writes
+  only `.prcoder/pulls.json`, the listing cache, so run it freely. See a pick or a named start through in a
   clone under `data/`. Clone the remote's URL for that, as `tools/no-pr.mjs`
   does, or point the clone's `origin` at it: a `git clone .` has this
   directory as its origin, and gh then finds no repository to ask.

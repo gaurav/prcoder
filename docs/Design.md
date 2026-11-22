@@ -228,12 +228,24 @@ in [`cli.js`](../cli.js)); everything after it goes to the agent verbatim. So th
 Claude's flags to keep in step, and an agent flag written before `--` is an error that says where it
 goes, not a session started with the wrong pull request. The one positional is the pull request
 to check out and start on (its number, URL or branch, which gh tells apart; one that names none is
-refused), and `choose` is the one subcommand. [#99](https://github.com/gaurav/prcoder/pull/99) tried `prcoder open`,
+refused), and `choose` and `list` are the two subcommands. [#99](https://github.com/gaurav/prcoder/pull/99) tried `prcoder open`,
 `new` and `gh`, and they were dropped. The running prcoder's keys (`o`, `g`) do the same job in
 fewer keystrokes, and a command word in front of the target clashes with a branch of that name, so
 the PR had to move behind a verb, which broke the CLI. `choose` settles the clash by taking the word
 from the branch: a branch called `choose` is still reachable by its pull request's number or URL.
-`prcoder queue` (#95) or `status` (#96) would have to do the same. `--worktree <branch|pr>` is a
+`list` took its word the same way, and `prcoder queue` (#95) or `status` (#96) would have to do the
+same.
+
+**`list` and `choose` share one way to say what to list.** `--sort`, `--reverse`, `--group` and
+`--filter` are parsed once (`viewOf` in `cli.js`) and drawn once (`listLines` in `choose.js`), so
+an order that helps pick also lists, and the reverse. Filtering is one flag with a key,
+`--filter effort=S,XS`, rather than a flag per field: the keys are the field names `list --json`
+gives, so the flag and the JSON are one vocabulary, and a new key costs no new flag. Closed sets
+are checked when the flags are parsed, so a misspelt effort is refused before gh is asked rather
+than answered with an empty list. For anything the filters do not reach, `--json` is the interface
+to pipe from, not the text: the columns change as the list gets better (effort and priority come
+and go by whether anything is labelled), and a script reading them would break with it. The text
+still pipes cleanly for a person's grep or fzf, since the heading goes to stderr. `--worktree <branch|pr>` is a
 flag for that reason, where `prcoder worktree <branch>` was the first thought: its value is the
 target, so it takes the positional's place and is refused beside one. It tells a pull request
 from a branch by its shape -- digits or a URL -- and does not ask gh, as the positional does,

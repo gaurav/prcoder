@@ -93,7 +93,10 @@ driver that presses either key without those set opens a real window on the mach
 **`node tools/choose.mjs`** drives `prcoder choose` in a PTY: the list this repo's open pull requests
 make, a number that is not listed, then `q`. Never a number that is listed, since that is a `gh pr
 checkout` of your working copy; a pick is seen through by hand, in a clone under `data/` when it
-is not the branch you are on.
+is not the branch you are on. Its `prompt shown` reads false with uncommitted work on a branch no
+pull request is open for, since the question then offers nothing in brackets. It then runs `prcoder
+list`, which checks nothing out and is safe here: by effort and milestone in the PTY, then piped,
+checking that stdout has rows alone, uncut and uncoloured, and that `--json` gives one record a row.
 
 **`node tools/firefox-runner/probe.mjs`** is not a driver and boots no server. It asks only whether
 anything on this machine can start Firefox, with and without the workaround, and is worth running
