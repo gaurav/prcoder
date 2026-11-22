@@ -192,7 +192,7 @@ test('by milestone and in one list, the rows are flat, and a stacked one says wh
     'Not urgent  (1)', '#163',
   ]);
   assert.ok(by.rows.every((r) => r.depth === 0));
-  assert.match(text.find((l) => l.includes('#170')), /stacked \(2\) .*Title of 170 on #163 › #159 › main$/);
+  assert.match(text.find((l) => l.includes('#170')), /stacked \(2\) .*Title of 170 on #163$/);
   // An order or a grouping asked for: Enter takes the first row listed.
   assert.equal(by.pick.pr.number, 159);
   const one = at({ group: 'none' });
@@ -228,7 +228,7 @@ test('filters narrow the list, any of a filter\'s values and all of the filters'
   const text = at('effort=XS,S').lines.map(plain);
   assert.equal(text[1], '2 of 6 with effort=XS,S.');
   // #163's base, #159, is left out, so #163 is a root and says it is built on it.
-  assert.match(text[4], /^ {2}#163 +L +S +stacked \(1\) .*Title of 163 on #159 › main$/);
+  assert.match(text[4], /^ {2}#163 +L +S +stacked \(1\) .*Title of 163 on #159$/);
   assert.match(text[5], /^ {4}#170 /);
   assert.equal(plain(at('author=nobody').lines.at(-1)), 'none');
 });

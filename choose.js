@@ -176,10 +176,18 @@ function sectionHead({ milestone, rows }, now) {
  * row says it: `on fixture-base › main`, nearest first, down to the default
  * branch where git has said (`below`), and as far as it goes where it has
  * not. Nothing at a depth, since the indent says it, and nothing on main.
+ *
+ * On a pull request, only that one: `on #203`. A root is on one only where
+ * the list is flat (--group) or its base is filtered out, and there the whole
+ * chain of a deep stack -- eight pull requests on this repository, 2026-11-22
+ * -- left the title a word or two; `stacked (N)` already says how deep.
  */
-const builtOn = (under, depth) => (!depth && under.nodes.length
-  ? ` on ${[...under.nodes.slice().reverse().map((n) => (n.pr ? `#${n.pr.number}` : n.branch)), ...(under.into ? [under.into] : [])].join(' › ')}`
-  : '');
+const builtOn = (under, depth) => {
+  if (depth || !under.nodes.length) return '';
+  const nearest = under.nodes.at(-1);
+  if (nearest.pr) return ` on #${nearest.pr.number}`;
+  return ` on ${[...under.nodes.slice().reverse().map((n) => (n.pr ? `#${n.pr.number}` : n.branch)), ...(under.into ? [under.into] : [])].join(' › ')}`;
+};
 
 /**
  * What `prcoder list` prints, and `prcoder choose` prints and offers, from a
