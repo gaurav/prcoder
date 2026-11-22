@@ -3083,6 +3083,47 @@ test('⤓ and Alt+Q add the terminal\'s selection to the queue, and the agent ge
   await fresh.close();
 });
 
+// A selection with a reference in it waits on GitHub before it is added, and
+// a second Alt+Q in that wait is ignored rather than adding it twice; ⤓ is
+// dimmed for the wait. The lookup is held open until both keys are pressed.
+test('a second Alt+Q while a selection\'s reference is looked up adds nothing', { skip }, async () => {
+  let sock;
+  const fresh = await newPage({ init: onLinux, pty: (ws) => { sock = ws; } });
+  let queue = [];
+  await fresh.route('**/api/status', (r) => r.fulfill({ json: { ...status, queue } }));
+  await fresh.route('**/api/queue', (r) => {
+    if (r.request().method() === 'PUT') queue = r.request().postDataJSON().items;
+    return r.fulfill({ json: queue });
+  });
+  let answer;
+  const asked = [];
+  const held = new Promise((resolve) => { answer = resolve; });
+  await fresh.route('**/api/queue/ref', async (r) => {
+    asked.push(r.request().postDataJSON().text);
+    await held;
+    await r.fulfill({ json: { ref: null } });
+  });
+  sock.send('❯ Fix #93');
+  await fresh.waitForFunction(() => document.getElementById('term-host').textContent.includes('Fix #93'));
+  const box = await fresh.locator('#term-host .xterm-rows > div').first().boundingBox();
+  await fresh.mouse.move(box.x + 1, box.y + box.height / 2);
+  await fresh.mouse.down();
+  await fresh.mouse.move(box.x + box.width - 1, box.y + box.height / 2, { steps: 5 });
+  await fresh.mouse.up();
+  await fresh.waitForFunction(() => !document.getElementById('queue-selection').disabled);
+  await fresh.keyboard.press('Alt+KeyQ');
+  for (let i = 0; !asked.length && i < 100; i++) await fresh.waitForTimeout(50);
+  assert.equal(await fresh.locator('#queue-selection').isDisabled(), true, 'dimmed while it is looked up');
+  await fresh.keyboard.press('Alt+KeyQ');
+  await settle(fresh);
+  answer();
+  await fresh.waitForFunction(() => document.querySelectorAll('#queue-body .item').length === 1);
+  await settle(fresh);
+  assert.deepEqual(asked, ['Fix #93'], 'looked up once');
+  assert.deepEqual(queue.map((i) => i.text), ['Fix #93'], 'added once');
+  await fresh.close();
+});
+
 // Alt+V is the diff pane's box pressed, so everything the box moves follows:
 // the row, the tab's count, and the box itself -- both ways. From the
 // terminal too, where the agent does not get it while a file is open and does

@@ -540,17 +540,32 @@ async function mentionPr() {
 // which key does that is Claude Code's to decide. Clearing the selection is
 // the sign it was taken, and it disables the button again; the focus goes
 // back to the terminal, where the next thing to do is that clearing.
+//
+// One at a time: addItem can wait a second on GitHub for a reference (`Fix
+// #93`), and a second click or Alt+Q meanwhile read the same selection and
+// added it twice, as Enter in the input would without its read-only guard.
+// The button is dimmed for the wait. And the selection is cleared only if it
+// is still the one taken, since the user may have drawn another meanwhile.
+let stashing = false;
 async function stashSelection() {
-  const text = fromTerminal(term.getSelection());
+  if (stashing) return;
+  const taken = term.getSelection();
+  const text = fromTerminal(taken);
   if (!text) return;
-  if (await addItem(text)) {
-    term.clearSelection();
+  stashing = true;
+  syncStash();
+  try {
+    if (!await addItem(text)) return;
+    if (term.getSelection() === taken) term.clearSelection();
     term.focus();
+  } finally {
+    stashing = false;
+    syncStash();
   }
 }
 const stashButton = document.getElementById('queue-selection');
 stashButton.onclick = stashSelection;
-const syncStash = () => { stashButton.disabled = !term.hasSelection(); };
+function syncStash() { stashButton.disabled = stashing || !term.hasSelection(); }
 term.onSelectionChange(syncStash);
 // onSelectionChange alone is not enough. xterm's clearSelection() fires it
 // without recording that the selection is gone (its SelectionService keeps the
