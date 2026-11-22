@@ -32,6 +32,9 @@ const SIZE_STYLE = { XS: 'green', S: 'green', M: 'yellow', L: 'yellow', XL: 'red
 // gives it and the tab's stylesheet colours (`.pr-merge.<cls>` in
 // public/style.css): green, the accent, red, and yellow for its --warn. A
 // class not here -- draft, checking -- is dim, as the tab's default is.
+// A priority's colour, by how pressing: the viewer's headings run from red
+// to plain the same way.
+const PRIORITY_STYLE = { Urgent: ['bold', 'red'], High: 'red', Medium: 'yellow', Low: 'dim' };
 const STATE_STYLE = { ready: 'green', stacked: 'cyan', conflicts: 'red', 'checks-not-passing': 'red', 'behind-base': 'yellow', blocked: 'yellow' };
 
 /**
@@ -235,32 +238,44 @@ export function listLines(listing, { nameWithOwner, branch, tracked = null, defa
     '',
   ].filter((l) => l !== false);
   if (!rows.length) return { lines: [...lines, 'none'], rows, pick: null, why: '' };
-  // Column widths from every row, so the title starts in one column whatever
-  // the indent or the section; a number cut to fit would be a wrong number
-  // that looks right.
+  // The columns before the title, each `[label, cell(row) -> { text, style }]`.
+  // Effort and priority are there only when some row has one recorded, so a
+  // repository that does not label them pays no columns for it; an older
+  // spelling of the label is dim, as the viewer marks it unsettled.
   const number = ({ pr, depth }) => `${'  '.repeat(depth)}#${pr.number}`;
-  const wide = (f) => Math.max(...rows.map((r) => f(r).length));
-  const numbers = wide(number);
-  const states = wide(({ pr }) => pullWord(pr, unders.get(pr.number)).word ?? '');
-  const ages = wide(({ pr }) => age(pr.updatedAt, now));
+  const labelled = (kind) => rows.some(({ pr }) => labelValue(kind, pr.labels ?? []));
+  const label = (kind, style) => ({ pr }) => {
+    const v = labelValue(kind, pr.labels ?? []);
+    return { text: v?.value ?? '', style: v?.old ? 'dim' : style(v?.value) };
+  };
+  const columns = [
+    ['#', (r) => ({ text: number(r), style: 'bold' })],
+    ['size', ({ pr }) => ({ text: sizeChip(pr.lines), style: SIZE_STYLE[sizeChip(pr.lines)] })],
+    ...(labelled('effort') ? [['effort', label('effort', (v) => SIZE_STYLE[v])]] : []),
+    ...(labelled('priority') ? [['priority', label('priority', (v) => PRIORITY_STYLE[v])]] : []),
+    ['state', ({ pr }) => {
+      const { word, cls } = pullWord(pr, unders.get(pr.number));
+      return { text: word ?? '', style: STATE_STYLE[cls] ?? 'dim' };
+    }],
+    ['updated', ({ pr }) => ({ text: age(pr.updatedAt, now), style: 'dim' })],
+  ];
+  // With more than the usual columns they are named, in a dim line over the
+  // rows, since size and effort are both XS to XL and could be read for each
+  // other. Widths from every row, and the names when they are shown, so the
+  // title starts in one column whatever the indent or the section; a number
+  // cut to fit would be a wrong number that looks right.
+  const named = columns.length > 4;
+  const cells = new Map(rows.map((r) => [r, columns.map(([, cell]) => cell(r))]));
+  const widths = columns.map(([name], i) => Math.max(named ? name.length : 0, ...rows.map((r) => span(cells.get(r)[i].text))));
+  const pad = (text, i) => text + ' '.repeat(widths[i] - span(text));
+  if (named) lines.push({ text: `  ${columns.map(([name], i) => `${pad(name, i)}  `).join('')}title`, style: 'dim' });
   const row = (r) => {
     const { pr: p, depth } = r;
-    const size = sizeChip(p.lines);
-    const under = unders.get(p.number);
-    const { word, cls } = pullWord(p, under);
-    const state = word ?? '';
-    const base = builtOn(under, depth);
+    const base = builtOn(unders.get(p.number), depth);
     const head = [
       here(p) ? { text: '›', style: ['bold', 'cyan'] } : ' ',
       ' ',
-      { text: number(r).padEnd(numbers), style: 'bold' },
-      '  ',
-      { text: size.padEnd(3), style: SIZE_STYLE[size] },
-      '  ',
-      { text: state.padEnd(states), style: STATE_STYLE[cls] ?? 'dim' },
-      '  ',
-      { text: age(p.updatedAt, now).padEnd(ages), style: 'dim' },
-      '  ',
+      ...cells.get(r).flatMap(({ text, style }, i) => [{ text: pad(text, i), style }, '  ']),
     ];
     const room = width - head.reduce((n, seg) => n + span(seg.text ?? seg), 0) - span(base);
     return [...head, clip(p.title, Math.max(room, 0)), { text: base, style: 'dim' }];

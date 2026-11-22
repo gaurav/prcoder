@@ -228,9 +228,33 @@ test('filters narrow the list, any of a filter\'s values and all of the filters'
   const text = at('effort=XS,S').lines.map(plain);
   assert.equal(text[1], '2 of 6 with effort=XS,S.');
   // #163's base, #159, is left out, so #163 is a root and says it is built on it.
-  assert.match(text[3], /^ {2}#163 +L +stacked \(1\) .*Title of 163 on #159 › main$/);
-  assert.match(text[4], /^ {4}#170 /);
+  assert.match(text[4], /^ {2}#163 +L +S +stacked \(1\) .*Title of 163 on #159 › main$/);
+  assert.match(text[5], /^ {4}#170 /);
   assert.equal(plain(at('author=nobody').lines.at(-1)), 'none');
+});
+
+// Effort and priority get a column each only where some row has one, and
+// the columns are then named, since size and effort share their bands.
+test('effort and priority are columns when some row has one, named over the rows, an old spelling dim', () => {
+  const out = { isTTY: true, columns: 200, rows: 24, text: '', write(x) { this.text += x; return true; } };
+  sink(out);
+  const listing = { read: NOW, total: 3, listed: 3, pulls: [
+    pull(1, 'a', 'main', 900, 'ready', 0, { labels: ['Effort: XS', 'Priority: Urgent'] }),
+    pull(2, 'b', 'main', 10, 'draft', 1, { labels: ['size: l'] }),
+    pull(3, 'c', 'main', 10, 'ready', 2),
+  ] };
+  const { lines: out3 } = listLines(listing, { nameWithOwner: 'o/r', defaultBranch: 'main', now: NOW });
+  const text = out3.map(plain);
+  assert.equal(text[2], '  #   size  effort  priority  state  updated     title');
+  assert.match(text[3], /^ {2}#1 +XL +XS +Urgent +ready +just now +Title of 1$/);
+  assert.match(text[4], /^ {2}#2 +XS +L +draft +1 day ago +Title of 2$/);
+  assert.equal(new Set(text.slice(2).map((l) => l.search(/title|Title/))).size, 1);
+  assert.match(styled(out3[3]), /\x1b\[32mXS/);                // a small effort is green, as a small size is
+  assert.match(styled(out3[3]), /\x1b\[31mUrgent/);
+  assert.match(styled(out3[4]), /\x1b\[2mL /);                  // `size: l` is an older spelling of Effort: L
+  // Without a label to show, no columns for them and no line naming the rest.
+  const bare = listLines({ ...listing, pulls: [listing.pulls[2]] }, { nameWithOwner: 'o/r', defaultBranch: 'main', now: NOW }).lines.map(plain);
+  assert.match(bare[2], /^ {2}#3 +XS +ready/);
 });
 
 test('a filter not known, or a closed value not in its set, is refused naming the ones there are', () => {
