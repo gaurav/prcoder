@@ -105,7 +105,7 @@ busy or idle as the tab is, and the name, as a menu. The pane needs no label the
 says which pull request it is. The menu holds the keyboard shortcuts (the sheet Alt+/ opens, built
 from the same table the keys are bound from, so it can only list keys the page has), the
 documentation, an issue to report and the repository on GitHub, **Quit prcoder…**, which asks what
-the exit bar's Quit asks ([Claude Code](#claude-code)) and is greyed out once prcoder has quit, and
+the exit bar's Quit asks ([Claude Code](#claude-code)), and
 the version on its last line. It closes on a pick, a click anywhere else, or Escape -- outside a
 text field, so not in the terminal, where Escape is the agent's, nor in the queue's input or the
 pull request switcher. Nothing done in the shortcut sheet closes it, so with the sheet opened over
@@ -118,7 +118,7 @@ it was on is hidden.
 Which pull request you are in stays at the top, in the order it is used: the title; then the way
 out of the window, with this pull request on GitHub drawn as a button beside plain links to the
 repository's issues, pulls and milestones, and the repository they are all in at the end of that
-row; then the state and the branch it targets, with the pull request that branch belongs to
+row; then the milestone the pull request is on; then the state and the branch it targets, with the pull request that branch belongs to
 beside it as `#N` when it is another open one's head, since that is the one you want next.
 
 Each side of `head → base` is labelled the way GitHub labels a branch in another repository: a
@@ -135,6 +135,27 @@ four stay where they are either way. On a line of its own it truncates rather th
 owner is clipped and the repository's own name kept, since that is the half that says which
 checkout you are in. It is drawn as a chip rather than a fifth link: the links are places to go,
 and the chip is the one thing in the head that answers which checkout this is.
+
+The milestone has a line of its own, on every pull request, because one on no milestone is the one
+that needs something done: it still has to be triaged, so its line is in the warning colour and
+reads *no milestone — needs triage*. The line is a picker, as wide as the line leaves it. It offers
+none, then the repository's open milestones in the order the queue's Issues tab groups them, so the
+dated ones soonest first, and the pull request's own milestone even when that one is closed; each is
+its title, with its due date on hover where the browser shows an option's tooltip. Picking one puts
+the pull request on it on GitHub there and then, and picking none takes it off; until GitHub
+answers the picker shows the pick, disabled, through any redraw. A letter or an arrow on the closed
+picker changes nothing, since a change there is a write to GitHub -- whether the browser sends that
+change with the key, a moment after it, or as the picker loses the focus; to pick by keyboard is to
+open the dropdown first. The word *milestone*
+in front links to the milestone on GitHub while there is one, and a dated milestone says when it is
+due after the picker, as the queue's milestone lines do: *due in 3 days*, yellow within a week, a
+red badge once past, with the date on hover. The list is every open milestone, as the queue's tabs
+have, and is read when the pull request's repository changes -- from the server's last read of it,
+while that is a few minutes old -- and from GitHub again as the pointer or the focus reaches the
+picker, so a milestone made on GitHub since is there to pick. A poll that lands while the picker has the focus redraws the rest of the
+head around it and brings the picker's options up to date in place, so an open dropdown is not
+redrawn shut and the head is still current; only a move to another pull request replaces the picker. It was a chip after the repository's to begin with, which
+said nothing on a pull request with no milestone and had nowhere to put a picker.
 
 ### Moving between pull requests
 
@@ -183,7 +204,10 @@ the question that branch is interesting for, with each one's stack nested under 
 opens that pull request on GitHub, so you can compare a few in other tabs; its **Switch** checks it
 out, the same way the switcher does. Uncommitted work disables Switch for the same reason it hides
 the switcher, and leaves the links alone. A local branch that has diverged from the pull request's
-head is still switched to, just not fast-forwarded, and the sync light says `diverged`.
+head is still switched to, just not fast-forwarded, and the sync light says `diverged`. A switch is
+the same checkout `prcoder <n>` makes: a merged pull request whose branch GitHub deleted is checked
+out from its head on GitHub, and a switch is refused while another prcoder runs in the same working
+copy, whose agent it would move.
 
 On any other branch it also shows what the branch is built on, since that is where its pull
 request will go. A branch with no pull request has no base on GitHub, so prcoder asks git: the
@@ -354,12 +378,15 @@ deliberate reload gets a shorter toast without the link.
 
 When the agent connects -- the page opened, or **Start coding agent** pressed in the bar below --
 a sticky toast says the last prompt sent from this working copy and when, `Last prompt, 2 hours
-ago (Today 21:14): …`, the first 140 characters of it, with a ▶ that types it into the agent's
-prompt again, typed and not sent as the queue's ▶ types, for the session that died mid-task. The
+ago (Today 21:14): …`, the first 140 characters of it, for the session that died mid-task. It
+skips `/exit`, `/quit`, `/clear` and `/resume`, which end or leave a session rather than say what it
+was doing, and a prompt sent in a worktree under `data/`, which was another pull request's. The
 next Enter in the terminal takes it down, since by then it has been read. It is drawn from the
-same record as the queue's History tab, which has the rest, and only when nothing else is in the
-toast's one slot: after a reload the reload's own notice is already there, and
-[#180](https://github.com/gaurav/prcoder/issues/180) is the list of notices that would hold both.
+same record as the queue's History tab, which has the rest and, on each row, the ▶ that types a
+prompt back in; the notice itself has no button, since the text it shows is cut. It is put up only
+when nothing else is in the toast's one slot: after a reload the reload's own notice is already
+there, and [#180](https://github.com/gaurav/prcoder/issues/180) is the list of notices that would
+hold both.
 
 When Claude exits, a bar under its last output offers to start it again, optionally with a
 different model or effort, or to quit prcoder. Left to right: **Quit prcoder**, outlined in red
@@ -377,6 +404,21 @@ a deliberate switch of model than a slip. A setting the server will not take is 
 anything starts, and the terminal says so -- except the command line's own, which is kept as it
 was given even when the bar would refuse it typed in. Quit asks what the terminal's quit asks
 ([Terminal.md](Terminal.md)).
+
+Once prcoder itself has gone, nothing on the page works -- the pull request pane, the queue and
+the terminal all talk to it -- so the whole window says so: a box over the panes, which are dimmed
+behind it and take no click or key, and a tab titled `prcoder (not running)`. It comes up after a
+Quit from the page, and also however else prcoder stopped -- quit from its own terminal or another
+tab, its terminal closed: on the way out it closes every tab's connection with a code of its own,
+and waits for each tab to have it. A tab whose agent had already exited has no connection to be
+told on. A prcoder that crashes may not get the code out, and one killed outright (`kill -9`)
+sends none, so its tabs show the exit bar as if only the agent had gone. All of these find out from
+the page's next poll of prcoder, which gets no answer: at once on a Start that cannot connect,
+otherwise within the minute or on coming back to the tab. The terminal's last line says `[prcoder quit]` rather than
+`[coding agent exited]`.
+The box's ✕, or Escape, closes it so the terminal's last screen can be selected and copied; the
+panes stay dimmed and the title stays. The way on is to close the tab, or start prcoder again, where
+`/resume` or `-- --continue` picks the coding agent's session back up.
 
 ## Queue
 
@@ -503,8 +545,8 @@ from prcoder.
 one to work on (`prcoder choose` is the same pick at the command line, before a browser opens:
 [Terminal.md](Terminal.md#choosing-a-pull-request)), in the same groups as the issues -- **No milestone** first, then one per open milestone in the
 owner's order, each line drawn as the Issues tab's, its badge counting pull requests -- or, with the second select over them set to *one list*, as one list, or
-to *by stack*, as one list in the switcher's order, each pull request a step in under the one it
-is built on. A stack can run across milestones, which is why that is a grouping of its own and
+to *by stack*, as one list with each pull request a step in under the one it is built on, each
+stack placed in the chosen order by its bottom pull request -- not the switcher's order, which goes base by base. A stack can run across milestones, which is why that is a grouping of its own and
 not a way of nesting the milestone groups.
 Within a group they are smallest first, since the next one to take on is usually the one that is
 nearly done; the first select over them changes that to largest first, newest, oldest, most or
@@ -572,16 +614,21 @@ Claude Code's own switch, under which the file would stop at the day it was set.
 -- *Today*, *Yesterday*, the weekday within the week, then the date -- newest first, with the day's
 count in a badge; the first two days start open and the rest folded, and a fold you change stays
 so until the page is reloaded. Under a day, one block per session, headed by the title Claude
-Code gave the session, or by the time its first prompt of the day was sent when it has none (a
+Code gave the session (the latest, since it retitles a session as it goes), or by the time its first prompt of the day was sent when it has none (a
 transcript pruned by `cleanupPeriodDays` has none; the history file is not pruned), and by the
 worktree it ran in when that was one under `data/` rather than the working copy itself. A session
 that ran past midnight is under both days. Each row is the time, on a 24-hour clock, with the date
 in full on hover, then the prompt as typed, its lines kept, clamped to three until clicked (a
 click that selected text is a selection), with a paste shown as the `[Pasted text #1 +12 lines]`
 placeholder Claude Code records and nothing of its contents; a prompt that starts with a slash
-command has the command in the accent colour; and ⧉ at the end copies the prompt to the clipboard,
-turning to ✓ for a moment. Nothing on a row sends: ▶ is the queue's. The box above searches the
+command has the command in the accent colour; and at the end, on hover as on every row, ▶ types
+the prompt into the coding agent again, unsent, to edit and send -- the way back into the task a
+session died on -- ↓ copies it into Local, untagged, and ⧉ copies it to the clipboard, turning to
+✓ for a moment. ▶ or ↓ on a prompt that held a paste then says, in a sticky toast, that only the
+placeholder came with it and the text has to be pasted again before sending. The box above searches the
 prompts' text, leaving out a day without a match, and the tab's count is the prompts sent today,
-or the matches while searching. ⟳ reads the file again, and so does a prompt sent from this page
-while the tab is showing, a second later, so the list keeps up with the terminal beside it. A read
-that fails says so, with a way to try again, and leaves the list as it was.
+or the matches while searching. The file is read when the page opens, so the count is on the tab
+before a visit, and again a second after a prompt is sent from this page, whichever tab is
+showing, so the count and the list keep up with the terminal beside them; ⟳ reads it again by
+hand, and the line under the days says when it was last read, as the Pull requests tab's does. A read that
+fails says so, with a way to try again, and leaves the list as it was.

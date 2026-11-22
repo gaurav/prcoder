@@ -107,7 +107,7 @@ export function clip(line, width) {
 }
 
 /** The terminal columns `line` takes, as clip() counts them. */
-const span = (line) => [...line].reduce((n, ch) => n + columns(ch), 0);
+export const span = (line) => [...line].reduce((n, ch) => n + columns(ch), 0);
 
 /**
  * A line is a string, or an array of segments, each a string or
@@ -272,14 +272,15 @@ function restore() {
  * server.js. The eleven are not the problem -- a twelfth added later is, and it
  * would smear the block at exactly the moment something had gone wrong.
  */
-export function init() {
+export function init({ leave = process.exit } = {}) {
   console.log = (...a) => log(format(...a));
   console.error = (...a) => log(format(...a), QUIET, true);
   // `exit` covers a normal return, process.exit() and an uncaught exception
   // (node prints the stack, then fires it). A signal with a default action
-  // never runs exit handlers at all, hence the three below.
+  // never runs exit handlers at all, hence the three below, which go through
+  // `leave` so the server can tell its tabs first (server.js).
   process.on('exit', restore);
-  for (const sig of ['SIGTERM', 'SIGHUP', 'SIGINT']) process.on(sig, () => process.exit(130));
+  for (const sig of ['SIGTERM', 'SIGHUP', 'SIGINT']) process.on(sig, () => leave(130));
   // A shrink can reflow the block and leave `painted` a line or two out. The
   // smear is one-off and the next log line clears it; reflow accounting is not
   // worth what it costs to get right.

@@ -1,7 +1,21 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { chooseLines } from '../choose.js';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { PassThrough } from 'node:stream';
+import { chooseLines, choosePr } from '../choose.js';
+import { writePulls } from '../store.js';
+import { startOnPr } from '../git.js';
 import { plain, styled, sink } from '../term.js';
+import { withGh } from './stub-gh.js';
+
+// The one test here that runs git does it in a throwaway repo, and a git
+// hook's GIT_DIR would aim it at the clone the suite runs in (test/CLAUDE.md).
+for (const k of Object.keys(process.env)) if (k.startsWith('GIT_')) delete process.env[k];
+const git = promisify(execFile);
 
 const NOW = Date.parse('2026-11-05T12:00:00Z');
 const day = (n) => new Date(NOW - n * 86400_000).toISOString();
@@ -52,6 +66,9 @@ test('the marker follows the checked-out branch, and the default is the newest r
   assert.ok(!out.map(plain)[3].startsWith('›'));
   // A fork's head is in the fork, whatever it is called.
   assert.ok(!lines({ branch: 'main' }).lines.map(plain).some((l) => l.startsWith('›')));
+  // But the branch gh checked it out to says which it is in its config.
+  const fork = lines({ branch: 'someone/main', tracked: 'https://github.com/Gaurav/Prcoder/pull/200' }).lines.map(plain);
+  assert.deepEqual(fork.filter((l) => l.startsWith('›')).map((l) => l.match(/#\d+/)[0]), ['#200']);
   const flat = chooseLines({ ...LISTING, pulls: LISTING.pulls.filter((p) => p.number === 173 || p.number === 87) }, { nameWithOwner: 'o/r', defaultBranch: 'main', now: NOW });
   assert.equal(flat.pick.pr.number, 173);
   assert.equal(flat.pick.depth, 0);
@@ -93,4 +110,136 @@ test('on a tty the size and the state are coloured, and a narrow terminal cuts o
   assert.match(plain(lines({ width: 76 }).lines[7]), /Title on fixture\/diff-views-base$/);
   assert.match(styled(lines().lines[6]), /\x1b\[31mconflicts/);
   assert.match(styled(lines().lines[2]), /\x1b\[31mXXL/);
+});
+
+// stackOrder alone lists the roots base by base, so #1 on main came before
+// the newer #2 on another base; and Enter took the deepest row first in the
+// walk, #5 under the newest root, over #4, five days newer, under an older one.
+test('roots on different bases are in update order, and Enter takes the newest of the deepest', () => {
+  const listing = { read: NOW, total: 5, listed: 5, pulls: [
+    pull(3, 'three', 'main', 10, 'ready', 0),
+    pull(2, 'two', 'release', 10, 'ready', 4),
+    pull(1, 'one', 'main', 10, 'ready', 8),
+    pull(5, 'five', 'three', 10, 'ready', 6),
+    pull(4, 'four', 'one', 10, 'ready', 1),
+  ] };
+  const { rows, pick } = chooseLines(listing, { nameWithOwner: 'o/r', defaultBranch: 'main', now: NOW });
+  assert.deepEqual(rows.map((r) => [r.pr.number, r.depth]), [[3, 0], [5, 1], [2, 0], [1, 0], [4, 1]]);
+  assert.equal(pick.pr.number, 4);
+});
+
+// A base branch's name is measured in terminal columns, as styled() cuts: by
+// its length, each CJK character counted one and the note lost its tail.
+test('a wide base branch name cuts the title, not the note', () => {
+  const listing = { read: NOW, total: 1, listed: 1, pulls: [pull(1, 'a', '機能-基盤', 10, 'draft', 0, { title: 'A title long enough to cut' })] };
+  const [line] = chooseLines(listing, { nameWithOwner: 'o/r', defaultBranch: 'main', now: NOW, width: 50 }).lines.slice(-1);
+  const drawn = styled(line, 50).replaceAll(/\x1b\[\d+m/g, '');
+  assert.match(drawn, / on 機能-基盤$/);
+});
+
+test('a state is coloured as the tab colours its class', () => {
+  const out = { isTTY: true, columns: 200, rows: 24, text: '', write(s) { this.text += s; return true; } };
+  sink(out);
+  const listing = { read: NOW, total: 2, listed: 2, pulls: [pull(1, 'a', 'main', 10, 'blocked', 0), pull(2, 'b', 'main', 10, 'draft', 1)] };
+  const [blocked, draft] = chooseLines(listing, { nameWithOwner: 'o/r', defaultBranch: 'main', now: NOW }).lines.slice(-2).map((l) => styled(l, 200));
+  assert.match(blocked, /\x1b\[33mblocked/);   // yellow, the tab's --warn
+  assert.match(draft, /\x1b\[2mdraft/);        // dim, the tab's default
+});
+
+// A throwaway repo on `branch` with an uncommitted change, and choosePr run
+// over `pulls` with `answers` typed at each question: what it picked, what it
+// said, and the questions it asked.
+async function chooseOver(branch, pulls, answers, { setup = async () => {}, dirty = true, inUse } = {}) {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'prcoder-choose-'));
+  const said = [];
+  const asked = [];
+  const log = console.log;
+  try {
+    const run = (...args) => git('git', ['-c', 'user.name=t', '-c', 'user.email=t@t.invalid', '-c', 'commit.gpgsign=false', ...args], { cwd: dir });
+    await git('git', ['init', '-q', '-b', 'main', dir]);
+    await fs.writeFile(path.join(dir, 'a.txt'), 'a\n');
+    await run('add', 'a.txt');
+    await run('commit', '-q', '-m', 'x');
+    if (branch !== 'main') await run('checkout', '-q', '-b', branch);
+    await setup(run);
+    if (dirty) await fs.writeFile(path.join(dir, 'a.txt'), 'changed\n');
+    await writePulls(dir, 'gaurav/prcoder', { total: pulls.length, milestones: [], pulls });
+    const input = new PassThrough();
+    const output = new PassThrough();
+    output.on('data', (d) => {
+      const q = String(d);
+      if (!/PR number/.test(q)) return;
+      asked.push(q);
+      input.write(`${answers.shift() ?? 'q'}\n`);
+    });
+    console.log = (...a) => said.push(plain(a.join(' ')));
+    // The start server.js passes, less its claim: a refusal is startOnPr's own.
+    const start = (p) => startOnPr(dir, p, { inUse });
+    const got = await choosePr(dir, { nameWithOwner: 'gaurav/prcoder', defaultBranch: 'main' }, { start, input, output });
+    return { got, said, asked };
+  } finally {
+    console.log = log;
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+}
+
+// Uncommitted work refuses a checkout, so `prcoder choose` says so before the
+// question, offers this branch's pull request on Enter rather than the newest
+// (which would only be refused), and asks again after a pick of another
+// branch's rather than ending the run after the list has been read.
+test('with uncommitted work, Enter offers this branch\'s, and a pick on another is asked again', { skip: process.platform === 'win32' && 'sh' }, async () => {
+  const { got, said, asked } = await chooseOver('topic',
+    [pull(5, 'elsewhere', 'main', 10, 'ready', 1), pull(6, 'topic', 'main', 10, 'ready', 2)], ['5', '']);
+  assert.equal(got.pr.number, 6);
+  assert.equal(asked[0], "PR number [6, this branch's], or q: ");
+  assert.ok(said.includes("1 uncommitted file on topic: only this branch's pull request, #6, can be picked until it is committed or stashed"), said.join('\n'));
+  assert.ok(said.includes('#5 is on elsewhere, and 1 uncommitted file on topic is in the way; commit or stash it first'), said.join('\n'));
+});
+
+// With none of the listed on this branch, nothing is offered on Enter, and a
+// fork's pull request -- whose head's name says nothing about this clone -- is
+// asked of gh (isHere), and asked again when it is not this branch's, as a
+// pull request from this repository's own branch is.
+test('with uncommitted work and nothing of this branch\'s, Enter offers nothing and a fork is asked again', { skip: process.platform === 'win32' && 'sh' }, async () => {
+  const fork = pull(7, 'main', 'main', 10, 'ready', 2, { isCrossRepository: true });
+  const { got, said, asked } = await withGh(() => `echo '{"url":"https://github.com/gaurav/prcoder/pull/1"}'`,
+    () => chooseOver('main', [pull(5, 'elsewhere', 'main', 10, 'ready', 1), fork], ['', '7', 'q']));
+  assert.equal(got, null);
+  assert.equal(asked[0], 'PR number, or q: ');
+  assert.ok(said.includes("1 uncommitted file on main: no pull request listed is this branch's, and another's cannot be checked out until it is committed or stashed"), said.join('\n'));
+  assert.ok(said.includes("commit or stash first to pick another branch's pull request, or q to quit"), said.join('\n'));
+  assert.ok(said.includes('#7 is on main, and 1 uncommitted file on main is in the way; commit or stash it first'), said.join('\n'));
+  assert.equal(asked.length, 3);
+  // The fork's own pull request checked out here is no checkout, and is taken.
+  const here = await withGh(() => `echo '{"url":"${fork.url}"}'`,
+    () => chooseOver('someone/main', [fork], ['7']));
+  assert.equal(here.got.pr.number, 7);
+});
+
+// A `pr-<n>` made for a pull request whose branch is gone has not the head's
+// name, but its config says which pull request it is, and Enter offers that
+// one over uncommitted work rather than telling you to stash for nothing.
+test('with uncommitted work on a pr-<n> branch, Enter offers the pull request it tracks', { skip: process.platform === 'win32' && 'sh' }, async () => {
+  const { got, said, asked } = await chooseOver('pr-6',
+    [pull(5, 'elsewhere', 'main', 10, 'ready', 1), pull(6, 'topic', 'main', 10, 'ready', 2)], [''], { setup: async (run) => {
+      await run('remote', 'add', 'origin', 'https://github.com/gaurav/prcoder.git');
+      await run('config', 'branch.pr-6.remote', 'origin');
+      await run('config', 'branch.pr-6.merge', 'refs/pull/6/head');
+    } });
+  assert.equal(got.pr.number, 6);
+  assert.equal(asked[0], "PR number [6, this branch's], or q: ");
+  assert.ok(said.includes("1 uncommitted file on pr-6: only this branch's pull request, #6, can be picked until it is committed or stashed"), said.join('\n'));
+});
+
+// A pick refused for another prcoder in the working copy is asked again, as
+// one refused over uncommitted work is: both are startOnPr's refusals, which
+// change nothing. Before, choose repeated only the uncommitted-work check, and
+// this one ended the run with exit 2 after the list had been read.
+test('a pick refused for another prcoder running here is asked again', { skip: process.platform === 'win32' && 'sh' }, async () => {
+  let asked = 0;
+  const inUse = async () => (asked++, 'another prcoder is running in this directory');
+  const { got, said } = await chooseOver('main', [pull(5, 'elsewhere', 'main', 10, 'ready', 1)], ['5', 'q'], { dirty: false, inUse });
+  assert.equal(got, null);
+  assert.equal(asked, 1);
+  assert.ok(said.some((l) => l.startsWith('#5 is on elsewhere, and another prcoder is running in this directory;')), said.join('\n'));
 });

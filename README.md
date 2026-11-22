@@ -68,8 +68,13 @@ and asks which to check out and start on
 `claude` untouched, so `prcoder 123 -- --effort high --model opus` opens PR 123 with that session.
 prcoder only ever shows the checked-out branch's PR, so it stops with the reason, rather than start,
 when the argument names no pull request (a typo, a branch with none, an issue's URL), when the PR is
-in a repository this clone does not track, or when uncommitted changes are in the way of the
-checkout. Before `--` a flag is prcoder's, and one it does not know is an error that says where it
+in a repository this clone does not track, or when uncommitted changes or another prcoder running
+in the same working copy are in the way of the checkout. A merged pull request whose branch GitHub has
+since deleted is still checked out, from the pull request's head on GitHub: onto the local branch of
+that name when it has the head or is behind it, onto a new branch of that name when there is none,
+and onto `pr-<n>` when the local one is other work under the same name. `pr-<n>` tracks
+`refs/pull/<n>/head`, as gh's checkout of a fork's pull request does, so a later prcoder on it
+knows which pull request it is. Before `--` a flag is prcoder's, and one it does not know is an error that says where it
 goes, rather than a guess at which of the two it was for. `prcoder --help` lists the flags.
 
 Most settings are a flag with an environment variable of the same meaning; the flag wins when both
@@ -97,9 +102,10 @@ working copy's port, and `prs.json` remembers which pull requests each branch ha
 ask GitHub about them directly instead of searching. It is a cache; deleting it costs a search.
 
 On GitHub, it writes only when you act on something that says it will: ticking a description
-checkbox flips that one line of the description, ticking a file marks it viewed, ◎ moves a queue
-item into a new issue, dragging an issue onto a milestone or clicking Move in its opened row sets
-its milestone, and creating a pull request pushes the branch and opens GitHub's compare page.
+checkbox flips that one line of the description, ticking a file marks it viewed, picking a milestone
+in the PR pane moves the pull request onto it, ◎ moves a queue item into a new issue, dragging an
+issue onto a milestone or clicking Move in its opened row sets its milestone, and creating a pull
+request pushes the branch and opens GitHub's compare page.
 
 The queue is one list per working copy, whatever branch is checked out, and it stays on this
 machine. `queue.json` is safe for something else to edit, but while prcoder is running the server

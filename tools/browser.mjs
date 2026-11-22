@@ -112,11 +112,12 @@ for (const pane of ['pr', 'queue']) {
   await page.locator(`#${pane}`).screenshot({ path: path.join(out, `${pane}.png`) });
 }
 // The last prompt sent, as the Claude pane says it on connecting -- from the
-// fixture claudeConfig wrote, not the owner's history -- with ▶ to type it back
-// in. Sticky, so dismissed here rather than left over the queue for the run.
+// fixture claudeConfig wrote, not the owner's history. Sticky, so dismissed
+// here rather than left over the queue for the run.
 const lastPrompt = page.locator('#toast:not([hidden])');
 console.log('last:   ', (await lastPrompt.count()) ? await lastPrompt.innerText() : '(no toast)',
-  '\n  (want "Last prompt, 50 minutes ago (Today hh:mm): Check that the pull request\'s milestone line…" with a ▶)');
+  '\n  (want "Last prompt, 2 hours ago (Today hh:mm): Fix the two findings, then run the browser suite…", no button:'
+  + ' the 50-minute-old prompt was sent in data/wt-1, so it is not this pane\'s)');
 if (await lastPrompt.count()) {
   await lastPrompt.screenshot({ path: path.join(out, 'toast-last-prompt.png') });
   await lastPrompt.click();
@@ -367,17 +368,25 @@ await page.locator('#queue').screenshot({ path: path.join(out, 'queue-pulls.png'
 
 // History is what was sent to the coding agent from this working copy, read
 // from the fixture: three days, the first two open, a titled session, a
-// worktree's, a slash command marked, and ⧉ on every row.
+// worktree's, a slash command marked, and ▶ ↓ ⧉ on every row -- ▶ types the
+// prompt back into the stub, which echoes it.
+console.log('history:', await page.locator('#queue-body .tab', { hasText: /^History/ }).innerText(), '(want History (3) before any click: the file is read when the page opens)');
 await page.locator('#queue-body .tab', { hasText: /^History/ }).click();
 await page.waitForSelector('#queue-body .fold.day');
-console.log('history:', await page.locator('#queue-body .tab', { hasText: /^History/ }).innerText(), '|',
+console.log('  days:  ', await page.locator('#queue-body .tab', { hasText: /^History/ }).innerText(), '|',
   (await page.$$eval('#queue-body .fold.day', (gs) => gs.map((g) =>
     `${g.querySelector('h3').textContent.replace(/\s+/g, ' ').trim()}${g.open ? ' (open)' : ''}: ${[...g.querySelectorAll('.session h4')].map((h) => h.textContent).join(', ')}`))).join(' | '),
   '\n  (want History (3), Today and Yesterday open with the titled session and a "Session from" one in a worktree, a third day folded)');
 console.log('  rows:  ', (await page.$$eval('#queue-body .item.history', (ls) => ls.map((l) =>
-  `${l.querySelector('.when').textContent} ${l.classList.contains('command') ? '[cmd] ' : ''}${l.querySelector('.text').textContent.slice(0, 50)}`))).join('\n          '),
-  '\n  (want a time on every row, the /code-review and /simplify rows marked [cmd])');
+  `${l.querySelector('.when').textContent} ${l.classList.contains('command') ? '[cmd] ' : ''}${l.querySelector('.text').textContent.slice(0, 50)} [${[...l.querySelectorAll('.actions button')].map((b) => b.textContent).join(' ')}]`))).join('\n          '),
+  '\n  (want a time on every row, the /code-review and /simplify rows marked [cmd], and [▶ ↓ ⧉] on each)');
 await page.locator('#queue').screenshot({ path: path.join(out, 'queue-history.png') });
+// ▶ on the newest row types its prompt into the stub, unsent: the stub echoes
+// it, so the terminal is the evidence, as for the Local row's ▶ above.
+const HISTORY_SENT = 'milestone line says when it is due';
+await page.locator('#queue-body .item.history', { hasText: HISTORY_SENT }).locator('.actions button').first().click();
+await page.waitForTimeout(400);   // the stub echoes on the PTY's own schedule
+console.log('  row ▶: ', `terminal echoed it: ${(await page.locator('#term-host').innerText()).includes(HISTORY_SENT)}`, ' (want true, and the row still on the tab)');
 await page.locator('#queue-history-search').fill('milestone');
 await page.waitForTimeout(150);
 console.log('  search:', await page.locator('#queue-body .tab', { hasText: /^History/ }).innerText(),
@@ -463,6 +472,21 @@ const headRow = () => page.evaluate(() => {
 console.log('head:   ', await headRow(), ' (want the two lefts the same, and the repo on the same line)');
 console.log('out:    ', await page.evaluate(() =>
   [...document.querySelectorAll('#pr-head .pr-links a')].map((a) => a.href).join(' ')));
+// The milestone line, under the links and over the state, on every pull
+// request. Read only: a pick is a write to the real pull request.
+// Waits for the list to land (`data-listed`), not for a second option: a
+// repository with no open milestones never has one, and that wait ran its
+// full thirty seconds.
+await page.waitForSelector('#pr-head .pr-milestone select[data-listed]', { state: 'attached', timeout: 30_000 })
+  .catch(() => {});
+console.log('milestone:', await page.evaluate(() => {
+  const line = document.querySelector('#pr-head .pr-milestone');
+  if (!line) return 'no line';
+  const next = line.nextElementSibling?.classList.contains('pr-state') ? 'over the state' : 'NOT over the state';
+  const sel = line.querySelector('select');
+  const listed = sel.hasAttribute('data-listed') ? '' : ' (THE LIST NEVER CAME)';
+  return `${line.classList.contains('untriaged') ? 'untriaged' : 'on one'}, "${sel.selectedOptions[0]?.textContent}", ${sel.options.length - 1} to pick from${listed}, ${next}`;
+}), ' (want "untriaged" exactly when the PR is on no milestone, the open milestones to pick from, over the state)');
 // The repository ends that row because it is the one link with no bound on its
 // width: where it does not fit it wraps whole onto a line of its own, and clips
 // only there.

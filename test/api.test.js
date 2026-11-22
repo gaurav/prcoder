@@ -15,7 +15,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { WebSocket } from 'ws';
-import { server, sessionArgs, startedWith, missingVendor, keepPr, issueMove, pullMove, queuedRun } from '../server.js';
+import { server, sessionArgs, startedWith, missingVendor, keepPr, issueMove, pullMove, pickerMove, queuedRun } from '../server.js';
 import { grammars } from '../public/diff.js';
 import { VERSION } from '../cli.js';
 
@@ -30,14 +30,28 @@ after(() => new Promise((res) => server.close(res)));
 // What a second prcoder asks the holder of its port. Answering from cache is
 // the contract: a probe that waited on gh would time out and the busy-port note
 // would name the wrong thing.
+// The History tab's two switches are cleared first: either one exported in
+// the shell that runs the suite (CLAUDE_CODE_SKIP_PROMPT_HISTORY is Claude
+// Code's documented privacy switch) would answer `history: false`.
 test('/api/whoami answers from cache, before any poll has run', async () => {
-  const res = await fetch(`${base}/api/whoami`);
-  assert.equal(res.status, 200);
-  assert.equal(res.headers.get('content-type'), 'application/json');
-  assert.deepEqual(await res.json(), {
-    prcoder: true, version: VERSION, repo: process.cwd(), branch: null, nameWithOwner: null,
-    started: { model: '', effort: '' }, history: true,
-  });
+  const env = { ...process.env };
+  delete process.env.PRCODER_NO_HISTORY;
+  delete process.env.CLAUDE_CODE_SKIP_PROMPT_HISTORY;
+  try {
+    const res = await fetch(`${base}/api/whoami`);
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get('content-type'), 'application/json');
+    assert.deepEqual(await res.json(), {
+      prcoder: true, version: VERSION, repo: process.cwd(), top: process.cwd(), branch: null, nameWithOwner: null,
+      started: { model: '', effort: '' }, history: true,
+    });
+    process.env.PRCODER_NO_HISTORY = '1';
+    assert.equal((await (await fetch(`${base}/api/whoami`)).json()).history, false, 'PRCODER_NO_HISTORY turns the tab off');
+  } finally {
+    for (const k of ['PRCODER_NO_HISTORY', 'CLAUDE_CODE_SKIP_PROMPT_HISTORY']) {
+      if (env[k] === undefined) delete process.env[k]; else process.env[k] = env[k];
+    }
+  }
 });
 
 // The one route that reads outside the repo: Claude Code's own history file,
@@ -54,6 +68,7 @@ test('/api/history reads Claude Code\'s file for this working copy, and says whe
   const env = { ...process.env };
   process.env.CLAUDE_CONFIG_DIR = cfg;
   delete process.env.CLAUDE_CODE_SKIP_PROMPT_HISTORY;
+  delete process.env.PRCODER_NO_HISTORY;
   try {
     const h = await post({});
     assert.equal(h.enabled, true);
@@ -71,8 +86,9 @@ test('/api/history reads Claude Code\'s file for this working copy, and says whe
   } finally {
     process.env.CLAUDE_CONFIG_DIR = env.CLAUDE_CONFIG_DIR;
     if (env.CLAUDE_CONFIG_DIR === undefined) delete process.env.CLAUDE_CONFIG_DIR;
-    delete process.env.CLAUDE_CODE_SKIP_PROMPT_HISTORY;
-    if (env.CLAUDE_CODE_SKIP_PROMPT_HISTORY !== undefined) process.env.CLAUDE_CODE_SKIP_PROMPT_HISTORY = env.CLAUDE_CODE_SKIP_PROMPT_HISTORY;
+    for (const k of ['PRCODER_NO_HISTORY', 'CLAUDE_CODE_SKIP_PROMPT_HISTORY']) {
+      if (env[k] === undefined) delete process.env[k]; else process.env[k] = env[k];
+    }
   }
 });
 
@@ -329,6 +345,34 @@ test('a switch is refused before gh unless it names a pull request', async () =>
   }
 });
 
+// The milestone goes to gh's -F, which reads `null`, `true` and a number as
+// JSON rather than text, so anything but a positive integer or null is
+// refused before the pull request is looked at.
+test('a milestone is refused before gh unless it is a number or none', async () => {
+  for (const number of ['4', 0, -1, 1.5, 'null', true, undefined]) {
+    const res = await fetch(`${base}/api/pr/milestone`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ url: 'x', number }),
+    });
+    assert.equal(res.status, 500);
+    assert.deepEqual(await res.json(), { error: `not a milestone number: ${JSON.stringify(number)}` });
+  }
+});
+
+// The two tabs' moves are held to what the tab listed; the picker's are held
+// to what it was offered, so a closed milestone, or a number a stale tab or a
+// script sends, never reaches GitHub. The pull request's own is allowed, as
+// a pick of where it already is, and so is none.
+test('a picker pick is refused unless it is none, the pull request\'s own, or one the picker listed', () => {
+  const listed = [{ number: 4, title: 'Needed soon', dueOn: null }, { number: 1, title: 'v1.0', dueOn: null }];
+  const pr = { milestone: { number: 9, title: 'v0.1', dueOn: null } };
+  assert.equal(pickerMove(listed, pr, 4), 4);
+  assert.equal(pickerMove(listed, pr, null), null);
+  assert.equal(pickerMove(listed, pr, 9), 9, 'where it is, closed or past the list');
+  assert.throws(() => pickerMove(listed, pr, 7), { message: '#7 is not an open milestone the picker listed' });
+  assert.throws(() => pickerMove(listed, { milestone: null }, 9), { message: '#9 is not an open milestone the picker listed' });
+  assert.throws(() => pickerMove(null, { milestone: null }, 4), { message: '#4 is not an open milestone the picker listed' });
+});
+
 test('a choice is refused unless the last poll listed it for the branch', async () => {
   const res = await fetch(`${base}/api/pr/choose`, {
     method: 'POST', headers: { 'content-type': 'application/json' },
@@ -382,8 +426,20 @@ test('a queued run is shared while it waits, and run again for a call that arriv
   await assert.rejects(first, { message: 'gh failed' });
   await tick();
   assert.equal(runs.length, 2, 'a failure does not stop the next');
+  // pending() is any read out, for a caller that does not need a new one.
+  const shared = queued.pending();
+  await tick();
+  assert.equal(runs.length, 2, 'it starts nothing');
   runs[1].resolve('listing');
+  assert.equal(await shared, 'listing', 'it is the run under way');
   assert.equal(await second, 'listing');
+  await tick();
+  assert.equal(queued.pending(), null, 'nothing out');
+  const waitingOne = queued();
+  assert.equal(queued.pending(), waitingOne, 'or the one waiting to start');
+  await tick();
+  runs[2].resolve('again');
+  assert.equal(await waitingOne, 'again');
 });
 
 // The Pull requests tab's one write is held the same way, to the listing that
@@ -394,7 +450,8 @@ test('/api/pull/milestone refuses a pull request or a milestone the tab was not 
     body: JSON.stringify({ number: 151, milestone: 'Needed soon' }),
   });
   assert.equal(res.status, 500);
-  assert.deepEqual(await res.json(), { error: '#151 is not an open pull request the Pull requests tab listed' });
+  // Held to a listing read from GitHub, never pulls.json's, and here there is none.
+  assert.deepEqual(await res.json(), { error: 'The Pull requests tab has not read GitHub yet: press ⟳, then move it again' });
 
   const listing = { pulls: [{ number: 151 }, { number: 153 }], milestones: [{ number: 4, title: 'Needed soon' }] };
   assert.deepEqual(pullMove(listing, { number: 151, milestone: 'Needed soon' }), { number: 151, milestone: 4, title: 'Needed soon' });

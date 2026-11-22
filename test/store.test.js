@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { normalise, pick, toDisk, readStore, writeStore, readPort, writePort, readPrs, writePrs, readPulls, writePulls, replaceItems, useQueueFile } from '../store.js';
+import { normalise, pick, toDisk, readStore, writeStore, readPort, writePort, readRunning, writeRunning, dropRunning, claimStart, releaseStart, readPrs, writePrs, readPulls, writePulls, replaceItems, useQueueFile } from '../store.js';
 
 const repo = () => fs.mkdtemp(path.join(os.tmpdir(), 'prcoder-store-'));
 const item = (over = {}) =>
@@ -224,6 +224,57 @@ test('a port file we cannot use reads as no port at all', async () => {
   assert.equal(await write('{"port":2602}'), 2602, 'an old bookmarked port is still the user\'s to pin');
 });
 
+// Each running prcoder's own record, which runningHere in server.js reads to
+// find one on a port port.json does not name. Read whatever its process is
+// doing; a file that is not one is left out, not thrown over.
+test('a running prcoder\'s record comes back by pid, and goes when dropped', async () => {
+  const dir = await repo();
+  assert.deepEqual(await readRunning(dir), [], 'nothing running yet');
+  await writeRunning(dir, 17433);
+  assert.deepEqual(await readRunning(dir), [{ pid: process.pid, port: 17433 }]);
+  assert.equal(await fs.readFile(path.join(dir, '.prcoder', '.gitignore'), 'utf8'), '*\n');
+  const other = path.join(dir, '.prcoder', 'running');
+  await fs.writeFile(path.join(other, '42.json'), '{"version":1,"port":12001}');
+  await fs.writeFile(path.join(other, '43.json'), '{');
+  await fs.writeFile(path.join(other, '44.json'), '{"port":"12001"}');
+  await fs.writeFile(path.join(other, '45.json'), '{"version":99,"port":12001}');
+  await fs.writeFile(path.join(other, '46.json.123.tmp'), '{"port":12001}');
+  const byPid = (a, b) => a.pid - b.pid;
+  assert.deepEqual((await readRunning(dir)).sort(byPid), [{ pid: 42, port: 12001 }, { pid: process.pid, port: 17433 }].sort(byPid));
+  dropRunning(dir);
+  dropRunning(dir, 42);
+  dropRunning(dir, 42);   // twice is no failure
+  assert.deepEqual(await readRunning(dir), []);
+  // One still starting has no port yet.
+  await writeRunning(dir, null);
+  assert.deepEqual(await readRunning(dir), [{ pid: process.pid, port: null }]);
+  dropRunning(dir);
+});
+
+// The lock a start holds over its check and its checkout (claim in
+// server.js), so two starts at once cannot both find the other unrecorded.
+test('the start lock is one process\'s at a time, and a gone holder\'s is taken', { skip: process.platform === 'win32' && 'kill(0)' }, async () => {
+  const dir = await repo();
+  const lock = path.join(dir, '.prcoder', 'running', 'start.lock');
+  assert.equal(await claimStart(dir), null);
+  assert.equal((await fs.readFile(lock, 'utf8')).trim(), String(process.pid));
+  assert.deepEqual(await readRunning(dir), [], 'the lock is no record');
+  // Held by another live process: its pid, and the lock is left as it is.
+  await fs.writeFile(lock, `${process.ppid}\n`);
+  assert.equal(await claimStart(dir), process.ppid);
+  releaseStart(dir);
+  assert.equal((await fs.readFile(lock, 'utf8')).trim(), String(process.ppid), 'not ours to release');
+  // Held by one that has gone, or by nothing readable: taken.
+  const { spawnSync } = await import('node:child_process');
+  const gone = spawnSync('node', ['-e', 'console.log(process.pid)'], { encoding: 'utf8' }).stdout.trim();
+  for (const held of [`${gone}\n`, 'garbage']) {
+    await fs.writeFile(lock, held);
+    assert.equal(await claimStart(dir), null, held);
+  }
+  releaseStart(dir);
+  await assert.rejects(fs.access(lock));
+});
+
 // The queue and the port are separate files: writing one must not conjure the
 // other, or a repo that never ran gets a port and a repo mid-write gets a queue.
 test('the queue and the port are written independently', async () => {
@@ -276,6 +327,10 @@ test('a branch\'s pull requests come back as written, and an empty list removes 
   // A pull request whose reads have failed since a time, which comes back too.
   await writePrs(dir, 'unread', { searched: now, prs: [{ ...PR, unread: now - 60_000 }] }, now);
   assert.deepEqual(await readPrs(dir, 'unread'), { searched: now, prs: [{ ...PR, unread: now - 60_000 }] });
+  // A chosen one never read has no state, and is kept only beside its unread time.
+  const never = { ...PR, state: null, unread: now - 60_000 };
+  await writePrs(dir, 'unread', { searched: now, prs: [never, { ...PR, url: 'https://github.com/o/r/pull/9', state: null }] }, now);
+  assert.deepEqual(await readPrs(dir, 'unread'), { searched: now, prs: [never] });
   await writePrs(dir, 'unread', { searched: now, prs: [] }, now);
   assert.deepEqual((await fs.readdir(path.join(dir, '.prcoder'))).sort(), ['.gitignore', 'prs.json']);
 });
@@ -342,7 +397,10 @@ test('a remembered pull request that is not one is left out, and a file we canno
 // .prcoder/pulls.json: the Pull requests tab's listing as last read, so the
 // tab opens from it. A cache, read as none when it is not this repository's
 // or cannot be used, and held to the rows the move's hold can trust.
-const PULL = { number: 7, url: 'https://github.com/o/r/pull/7', title: 'seven', milestone: 4, lines: 12 };
+const PULL = { number: 7, url: 'https://github.com/o/r/pull/7', title: 'seven', isDraft: false, isCrossRepository: false,
+  headRefName: 'seven', baseRefName: 'main', createdAt: '2026-10-18T12:00:00Z', updatedAt: '2026-10-19T11:00:00Z', author: 'gaurav',
+  additions: 10, deletions: 2, changedFiles: 1, lines: 12, viewed: { p: 0, full: false, label: '0 of 1 files viewed' },
+  merge: 'ready', reviewDecision: null, milestone: 4, labels: ['bug'], lead: 'Seven.', body: 'Seven.', closes: [] };
 const LISTING = { milestones: [{ number: 4, title: 'Needed soon', dueOn: null, description: '', closed: false }], pulls: [PULL], total: 1, listed: 1 };
 
 test('the pull request listing comes back as written, stamped with when it was read', async () => {
@@ -350,7 +408,7 @@ test('the pull request listing comes back as written, stamped with when it was r
   assert.equal(await readPulls(dir, 'o/r'), null, 'nothing read yet');
   const now = Date.parse('2026-10-19T12:00:00Z');
   await writePulls(dir, 'o/r', LISTING, now);
-  const back = { ...LISTING, pulls: [{ ...PULL, closes: [] }], read: now };
+  const back = { ...LISTING, pulls: [PULL], read: now };
   assert.deepEqual(await readPulls(dir, 'o/r'), back);
   assert.deepEqual(await readPulls(dir, 'O/R'), back, 'the repository compares case-blind');
   assert.equal(await readPulls(dir, 'o/other'), null, 'another repository\'s list is not this one\'s');
@@ -379,15 +437,34 @@ test('a listing we cannot use reads as none, and a row the hold cannot trust is 
   // The number and the URL have to agree, and both have to be this repository's.
   await write({ version: 1, nameWithOwner: 'o/r', read: '2026-10-19T12:00:00Z', total: 9, milestones: [
     { number: 4, title: 'Needed soon' }, { number: '5', title: 'x' }, { number: 6, title: '' }, { number: 7 }, null,
+    { number: 8, title: 'Soon', dueOn: 'next week' }, { number: 9, title: 'Later', dueOn: '2026-10-27T07:00:00Z' },
   ], pulls: [
     PULL, { ...PULL, number: '7' }, { ...PULL, number: 8 }, { ...PULL, url: 'https://github.com/o/r/issues/7' },
     { ...PULL, url: 'https://github.com/o/other/pull/7' }, { ...PULL, url: '--repo=x https://github.com/o/r/pull/7' }, { number: 9 },
     null, 'seven',
   ] });
   const got = await readPulls(dir, 'o/r');
-  assert.deepEqual(got.pulls, [{ ...PULL, closes: [] }], 'a null or a string among the rows is left out, not thrown on');
-  assert.deepEqual(got.milestones, [{ number: 4, title: 'Needed soon' }]);
+  assert.deepEqual(got.pulls, [PULL], 'a null or a string among the rows is left out, not thrown on');
+  assert.deepEqual(got.milestones, [{ number: 4, title: 'Needed soon', dueOn: null }, { number: 8, title: 'Soon', dueOn: null },
+    { number: 9, title: 'Later', dueOn: '2026-10-27T07:00:00Z' }], 'a due date that is not one is none');
   assert.deepEqual([got.total, got.listed, got.read], [9, 1, now]);
+});
+
+// A hand-edit or a damaged file can put anything in a row's fields, and the
+// tab draws a row by calling string and array methods on them: one that threw
+// there left the tab undrawn.
+test('a cached row\'s fields are held to the types the tab draws them by', async () => {
+  const dir = await repo();
+  const file = path.join(dir, '.prcoder', 'pulls.json');
+  await fs.mkdir(path.dirname(file), { recursive: true });
+  const bad = { number: 7, url: PULL.url, title: 7, isDraft: 'yes', headRefName: {}, author: ['x'], additions: '10', lines: null,
+    viewed: { p: 'half' }, merge: 3, reviewDecision: 1, milestone: '4', labels: 'bug', lead: [], body: 9,
+    closes: [{ number: 1, title: 1, milestone: {} }], extra: 'kept' };
+  await fs.writeFile(file, JSON.stringify({ version: 1, nameWithOwner: 'o/r', read: '2026-10-19T12:00:00Z', milestones: [], pulls: [bad] }));
+  assert.deepEqual((await readPulls(dir, 'o/r')).pulls[0], { number: 7, url: PULL.url, title: '#7', isDraft: false, isCrossRepository: false,
+    headRefName: '', baseRefName: '', createdAt: null, updatedAt: null, author: null, additions: 0, deletions: 0, changedFiles: 0, lines: 0,
+    viewed: null, merge: 'checking…', reviewDecision: null, milestone: null, labels: [], lead: '', body: '',
+    closes: [{ number: 1, title: '#1', url: null, milestone: null }], extra: 'kept' });
 });
 
 test('an issue a cached row closes keeps its URL only when it is that issue\'s GitHub link', async () => {

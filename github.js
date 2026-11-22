@@ -83,6 +83,9 @@ const PR_FIELDS = [
   // headRefOid is asked for all the same, as the commit the checks above are
   // for, and loadPr keeps it apart from the one the files are at.
   'headRefOid',
+  // The milestone the pull request is on, for the head's milestone line:
+  // { number, title, description, dueOn }, or null.
+  'milestone',
 ].join(',');
 
 /** The head repository as the page reads it: its slug, or null, and its owner. */
@@ -110,8 +113,13 @@ async function viewPr(cwd, target, fields) {
   }
 }
 
-/** The PR's url and nothing else, which is all the `g` key needs. */
-export const prUrl = async (cwd, target) => (await viewPr(cwd, target, 'url'))?.url;
+/**
+ * The URL of the pull request gh finds for the checked-out branch, or null:
+ * `gh pr view` with no argument, which reads the branch config `gh pr
+ * checkout` writes -- so a fork's pull request is found on the branch it was
+ * checked out to, whatever that is called (isHere in git.js).
+ */
+export const branchPrUrl = async (cwd) => (await viewPr(cwd, undefined, 'url'))?.url ?? null;
 
 /**
  * The pull request the command line's `<pr>` names, with what startOnPr (git.js)
@@ -126,21 +134,28 @@ export const prUrl = async (cwd, target) => (await viewPr(cwd, target, 'url'))?.
  * only the checked-out branch's (docs/Design.md).
  *
  * gh's two noes, verbatim from gh 2.x on 2026-11-06: `no pull requests found
- * for branch "x"` (viewPr's null), and `GraphQL: Could not resolve to a
- * PullRequest with the number of 99999. (repository.pullRequest)`, for a number
- * or a URL. Anything else -- offline, signed out -- is gh's own words.
+ * for branch "x"`, and `GraphQL: Could not resolve to a PullRequest with the
+ * number of 99999. (repository.pullRequest)`, for a number or a URL. Anything
+ * else -- offline, signed out, no default remote -- is gh's own words.
+ *
+ * gh directly, not viewPr: viewPr's null also covers `no default remote` and
+ * `not a git repo`, which are gh's setup to fix, not a wrong argument -- and
+ * through it they came out as "42 is not a pull request's number".
  */
 export async function pullRequestFor(cwd, target, repos) {
   let found;
   try {
-    found = await viewPr(cwd, target, 'url,number,headRefName,isCrossRepository');
+    found = JSON.parse(await gh(['pr', 'view', target, '--json', 'url,number,headRefName,isCrossRepository'], { cwd }));
   } catch (e) {
-    if (/could not resolve to a pullrequest/i.test(e.stderr ?? '')) throw new Error(`there is no pull request ${target}`);
+    const said = e.stderr ?? '';
+    if (/no pull requests found/i.test(said)) throw new Error(`${target} is not a pull request's number or URL, or the branch of one`);
+    if (/could not resolve to a pullrequest/i.test(said)) throw new Error(`there is no pull request ${target}`);
     throw new Error(`could not look up ${target}: ${e.message}`);
   }
-  if (!found) throw new Error(`${target} is not a pull request's number or URL, or the branch of one`);
   const { owner, repo } = parsePrUrl(found.url);
-  if (!repos.includes(`${owner}/${repo}`)) {
+  // Case-blind: the URL is spelled as GitHub spells the repository, and
+  // `repos` as each remote's URL spells it (lookupPrs's `held` is the same).
+  if (!inRepos(repos, `${owner}/${repo}`)) {
     throw new Error(`${found.url} is in ${owner}/${repo}, which this clone does not track; run prcoder in a clone of it`);
   }
   return found;
@@ -264,6 +279,19 @@ export async function branchPrs(cwd, repos, branch, { has = async () => new Set(
   return open.length ? open : list('all', BRANCH_FIELDS);
 }
 
+/** `name` (`owner/repo`) as `repos` spells it, matched case-blind, or undefined. */
+const inRepos = (repos, name) => repos.find((r) => r.toLowerCase() === name.toLowerCase());
+
+/** The entry of `repos` pull request `url` is in, as `repos` spells it, or undefined. */
+function repoOfUrl(repos, url) {
+  try {
+    const { owner, repo } = parsePrUrl(url);
+    return inRepos(repos, `${owner}/${repo}`);
+  } catch {
+    return undefined;
+  }
+}
+
 /** The row with its checks from prHeads, for one read without them; as it was if that fails. */
 async function headChecks(cwd, p) {
   const heads = await prHeads(cwd, p.url);
@@ -347,13 +375,33 @@ async function viewKnown(cwd, { url, repo, state }, checks) {
  * clone given a push target after its `main` was handed the parent's), and
  * nothing else would ever let go of it.
  *
+ * `chosen` is the URL of the pull request picked for this branch -- in the
+ * switcher, or on the command line, or named by the branch's own config
+ * (choiceFor in server.js) -- which is the branch's whatever the
+ * search says, and is remembered with the rest, so that it is read by URL on
+ * every poll as they are. Two the search cannot find need it: a fork's pull
+ * request gh checked out to `owner/name` (`gh pr list --head owner/name`
+ * matches nothing, and `own` holds a head to the branch's name), and a merged
+ * or closed one on a branch that also has an open one, which branchPrs leaves
+ * out once anything is open. So it is added the first time, kept past `own`,
+ * and shown beside open ones whatever its state. Only one in `repos`, as for
+ * the rest. One that stays unread for UNREAD_FOR is given up on, as the rest
+ * are, but kept in the file, marked, while it is chosen: forgotten, it would
+ * be added again as new and read on every poll. Once another is chosen, the rules apply to it again, and the next
+ * search lets it go.
+ *
  * Answers `{ prs, remember }`. `remember` is the new `known` after a search --
  * with no pull requests in it when there are none, which removes the branch's
  * entry -- and undefined when there is nothing to write: on a branch with none
  * known and none found, or none open and the same ones found, which is every
  * poll there, it would rewrite the file to say what it already says.
  */
-export async function lookupPrs(cwd, repos, known, search, { own = async (rows) => rows, fresh = false, checks = true, now = Date.now() } = {}) {
+export async function lookupPrs(cwd, repos, known, search, { own: ownRows = async (rows) => rows, chosen = null, fresh = false, checks = true, now = Date.now() } = {}) {
+  // The chosen one is the branch's whatever `own` says of it (above).
+  const own = async (rows) => {
+    const mine = new Set((await ownRows(rows.filter((p) => p.url !== chosen))).map((p) => p.url));
+    return rows.filter((p) => p.url === chosen || mine.has(p.url));
+  };
   // The row, null for one that is gone, or the entry marked unread since the
   // first read of it that failed.
   const read = (k) => viewKnown(cwd, k, checks).catch((e) => {
@@ -363,7 +411,19 @@ export async function lookupPrs(cwd, repos, known, search, { own = async (rows) 
   // Case-blind, since `repo` is spelled as a remote's URL spells it, and the
   // URL as GitHub does; readPrs holds the two together the same way.
   const held = (k) => repos.includes(k.repo) && k.url.toLowerCase().startsWith(`https://github.com/${k.repo}/pull/`.toLowerCase());
-  const prs = (known?.prs ?? []).filter((k) => held(k) && !(k.unread && now - k.unread >= UNREAD_FOR));
+  const lapsed = (k) => k.unread && now - k.unread >= UNREAD_FOR;
+  const prs = (known?.prs ?? []).filter((k) => held(k) && !lapsed(k));
+  // The chosen one, given up on: unread for UNREAD_FOR, as anything else is
+  // forgotten after. Forgotten, it would be pinned again below and read on
+  // every poll for as long as it is chosen, so it is carried, unread and
+  // unshown, in what is remembered instead -- until another is chosen, or a
+  // fresh lookup (`r`, `g`, a change of branch) tries it again.
+  const gaveUp = !fresh && chosen ? (known?.prs ?? []).find((k) => held(k) && k.url === chosen && lapsed(k)) : undefined;
+  const carried = gaveUp ? [gaveUp] : [];
+  // The chosen one, the first time: in no state yet, so the first read of it
+  // is news and searches, and remembers it.
+  const pin = chosen && !gaveUp && !prs.some((k) => k.url === chosen) && repoOfUrl(repos, chosen);
+  if (pin) prs.push({ url: chosen, repo: pin, state: null });
   const seen = new Map();
   const age = now - known?.searched;
   if (prs.some((k) => k.state === 'OPEN') && !fresh && age >= 0 && age < SEARCH_EVERY) {
@@ -371,9 +431,12 @@ export async function lookupPrs(cwd, repos, known, search, { own = async (rows) 
     // Each as it was: in the state it was remembered in, or still unread; and
     // still the branch's, by the rules a search would hold it to.
     const shown = rows.filter((p) => p && !p.unread);
+    // A closed one beside an open one stands only while it is chosen.
+    const stray = shown.some((p) => p.state !== 'OPEN' && p.url !== chosen) && shown.some((p) => p.state === 'OPEN');
     if (rows.every((p, i) => p && (prs[i].unread ? p.unread : !p.unread && p.state === prs[i].state))
-      && (await own(shown)).length === shown.length) {
-      return { prs: shown, remember: prs.length === known.prs.length ? undefined : { ...known, prs } };
+      && !stray && (await own(shown)).length === shown.length) {
+      const next = [...prs, ...carried];
+      return { prs: shown, remember: next.length === known.prs.length ? undefined : { ...known, prs: next } };
     }
     prs.forEach((k, i) => seen.set(k.url, rows[i]));
   }
@@ -392,12 +455,12 @@ export async function lookupPrs(cwd, repos, known, search, { own = async (rows) 
   // In the repositories' order, as branchPrs answers, which pickPr ranks by.
   const all = [...found, ...mine]
     .sort((a, b) => repos.indexOf(a.repo) - repos.indexOf(b.repo));
-  const open = all.filter((p) => p.state === 'OPEN');
-  const shown = open.length ? open : all;
+  const open = all.filter((p) => p.state === 'OPEN' || p.url === chosen);
+  const shown = open.some((p) => p.state === 'OPEN') ? open : all;
   // One whose URL is in a repository other than the one it was found in --
   // renamed on GitHub since the remote's URL was set -- would be dropped on
   // the next read, and written again by the search that follows, every poll.
-  const entries = [...shown, ...unread].map(({ url, repo, state, unread: since }) =>
+  const entries = [...shown, ...unread, ...carried].map(({ url, repo, state, unread: since }) =>
     ({ url, repo, state, ...(since && { unread: since }) })).filter((k) => {
     if (!held(k)) debug(`${k.url} not remembered: not in ${k.repo}, which may have been renamed`);
     return held(k);
@@ -498,7 +561,10 @@ export async function loadPr(cwd, target, { pause } = {}) {
   ]);
   // The raw lists are summarised here and not sent on: every poll carries this
   // object to every tab, and nothing reads them past this point.
-  const { closingIssuesReferences, comments, reviews, ...rest } = withChecks(headSide(pr));
+  const { closingIssuesReferences, comments, reviews, milestone, ...rest } = withChecks(headSide(pr));
+  // Its number, title and due date only: the description can be long, and this
+  // goes to every tab on every poll.
+  rest.milestone = milestoneOf(milestone);
   // A push between `gh pr view` and the file pages leaves the checks the old
   // head's, beside the new head's files and sync light. They are read again at
   // the files' head; past one more push the next poll has it, since updatedAt
@@ -886,17 +952,38 @@ const MILESTONE_COUNTS = 'openPulls: pullRequests(states:OPEN){ totalCount } mer
  * { open, closed } }`, or null for a node without all five -- a pulls.json
  * written before they were read.
  */
-const milestoneRow = (m, description = '') => {
-  const n = (alias) => m[alias]?.totalCount;
+const milestoneRow = (m, description = '') => ({ ...milestoneOf(m), description, closed: m.state === 'CLOSED', counts: countsOf(m) });
+
+const countsOf = (m) => {
+  const n = (alias) => m?.[alias]?.totalCount;
   const counts = {
     pulls: { open: n('openPulls'), merged: n('mergedPulls'), closed: n('closedPulls') },
     issues: { open: n('openIssues'), closed: n('closedIssues') },
   };
-  return {
-    ...milestoneOf(m), description, closed: m.state === 'CLOSED',
-    counts: [...Object.values(counts.pulls), ...Object.values(counts.issues)].every(Number.isInteger) ? counts : null,
-  };
+  return [...Object.values(counts.pulls), ...Object.values(counts.issues)].every(Number.isInteger) ? counts : null;
 };
+
+/**
+ * The listing's milestones with MILESTONE_COUNTS read for the ones a row
+ * brought along -- closed, or past openMilestones' pages -- in one call after
+ * the listing. The listings' queries do not ask for them on each row's
+ * milestone: that was five count connections on every issue and pull request,
+ * up to 2,500 a listing, for the few milestones not among the open ones.
+ * Numbers only are interpolated. The pie is the only thing the counts draw,
+ * so a call that fails leaves those milestones without one rather than
+ * failing the listing.
+ */
+async function strayCounts(cwd, owner, repo, milestones) {
+  const missing = milestones.filter((m) => !m.counts && Number.isInteger(m.number));
+  if (!missing.length) return milestones;
+  const query = `query($owner:String!,$repo:String!){ repository(owner:$owner,name:$repo){ ${
+    missing.map((m) => `m${m.number}: milestone(number:${m.number}){ ${MILESTONE_COUNTS} }`).join(' ')} } }`;
+  let got;
+  try {
+    got = JSON.parse(await gh(['api', 'graphql', '-f', `query=${query}`, '-f', `owner=${owner}`, '-f', `repo=${repo}`], { cwd })).data?.repository;
+  } catch { return milestones; }
+  return milestones.map((m) => (m.counts ? m : { ...m, counts: countsOf(got?.[`m${m.number}`]) }));
+}
 
 // Milestones come on every page, since the query is one text; repoIssues keeps
 // the first page's. `issueFieldValues` -- GitHub's per-issue custom fields,
@@ -908,7 +995,7 @@ const ISSUES_QUERY = `query($owner:String!,$repo:String!,$after:String){
     milestones(first:100,states:OPEN){ pageInfo{ hasNextPage endCursor } nodes{ number title dueOn description ${MILESTONE_COUNTS} } }
     issues(first:100,after:$after,states:OPEN,orderBy:{field:UPDATED_AT,direction:DESC}){
       totalCount pageInfo{ hasNextPage endCursor }
-      nodes{ number title url updatedAt body milestone{ number title dueOn state ${MILESTONE_COUNTS} } labels(first:10){ nodes{ name } } } } } }`;
+      nodes{ number title url updatedAt body milestone{ number title dueOn state } labels(first:10){ nodes{ name } } } } } }`;
 
 // The rest of the open milestones, for a repository with more than ISSUES_QUERY
 // or PULLS_QUERY read: the opened row's select offers every one, so they cannot
@@ -942,7 +1029,8 @@ async function openMilestones(cwd, owner, repo, first) {
  * milestone an open issue is on but that is not among the open ones read --
  * closed with the issue still open, or past openMilestones' pages -- is added
  * from the issue, `closed` if it is, so that every listed issue has a group to
- * be drawn in; it has no description. The body
+ * be drawn in; it has no description, and its counts are read after the
+ * listing (strayCounts). The body
  * comes too, LF-ended like a description (lf), so the tab can show one and
  * search them; the pane renders it through the same allowlist as a
  * description (docs/Security.md).
@@ -979,7 +1067,7 @@ export async function repoIssues(cwd, owner, repo) {
     after = hasNextPage ? endCursor : null;
     if (!after) break;
   }
-  return { milestones, issues, total, listed: issues.length };
+  return { milestones: await strayCounts(cwd, owner, repo, milestones), issues, total, listed: issues.length };
 }
 
 const PULLS_QUERY = `query($owner:String!,$repo:String!,$after:String){
@@ -989,7 +1077,7 @@ const PULLS_QUERY = `query($owner:String!,$repo:String!,$after:String){
       totalCount pageInfo{ hasNextPage endCursor }
       nodes{ number title url isDraft isCrossRepository headRefName baseRefName createdAt updatedAt
         author{ login } additions deletions changedFiles mergeStateStatus reviewDecision body
-        milestone{ number title dueOn state ${MILESTONE_COUNTS} } labels(first:10){ nodes{ name } }
+        milestone{ number title dueOn state } labels(first:10){ nodes{ name } }
         closingIssuesReferences(first:10){ nodes{ number title url milestone{ title } } }
         files(first:100){ nodes{ additions deletions viewerViewedState } } } } } }`;
 
@@ -1023,7 +1111,7 @@ const LEAD_MAX = 300;
  * (filesProgress, the Files tab's own pie, over the first hundred files and
  * counted against changedFiles as that tab counts), whether it can merge
  * (MERGE_WORD), whether it was reviewed, its milestone by number as an issue's
- * is, its labels by name, its first paragraph for the row and its whole body
+ * is, its labels by name (rid of control characters, as repoIssues has them), its first paragraph for the row and its whole body
  * for the opened row and the search, and the issues it closes with each one's
  * milestone -- the hint for a pull request on none.
  */
@@ -1045,7 +1133,7 @@ export function pullRow(node) {
     merge: MERGE_WORD[mergeStateStatus] ?? MERGE_WORD.UNKNOWN,
     reviewDecision: pr.reviewDecision ?? null,
     milestone: milestone?.number ?? null,
-    labels: (labels?.nodes ?? []).map((l) => l.name),
+    labels: (labels?.nodes ?? []).map((l) => printable(l.name ?? '').trim()).filter(Boolean),
     lead: printable(lead.replace(/\s+/g, ' ')).trim().slice(0, LEAD_MAX),
     body: text,
     closes: (closingIssuesReferences?.nodes ?? []).map((i) => ({
@@ -1100,7 +1188,39 @@ export async function repoPulls(cwd, owner, repo) {
     after = hasNextPage ? endCursor : null;
     if (!after) break;
   }
-  return { milestones, pulls, total, listed: pulls.length };
+  return { milestones: await strayCounts(cwd, owner, repo, milestones), pulls, total, listed: pulls.length };
+}
+
+// Not MILESTONES_QUERY, which asks for each milestone's counts: the picker
+// shows none. By due date, so that past the last page what is missing is the
+// milestones due furthest off. GitHub puts the undated ones first on this order
+// (gaurav/prcoder's own, 2026-11-10), so a bucket like Critical is never cut.
+const PICKER_MILESTONES_QUERY = `query($owner:String!,$repo:String!,$after:String){
+  repository(owner:$owner,name:$repo){
+    milestones(first:100,after:$after,states:OPEN,orderBy:{field:DUE_DATE,direction:ASC}){
+      pageInfo{ hasNextPage endCursor } nodes{ number title dueOn } } } }`;
+
+/**
+ * The repository's open milestones, for the PR pane's milestone picker:
+ * `[{ number, title, dueOn }]` (milestoneOf), undated then soonest due -- the
+ * page ranks them again. Every one, to openMilestones' five pages of a hundred, as
+ * the queue's listings do: it took the first fifty in GitHub's own order at
+ * first, which could leave out the one due soonest on a repository with more,
+ * and the pane could not offer what the Issues and Pull requests tabs did. A
+ * repository with more still has the pull request's own added by the pane.
+ */
+export async function repoMilestones(cwd, owner, repo) {
+  const nodes = [];
+  let after = null;
+  for (let page = 0; page < 5; page++) {
+    const { data } = JSON.parse(await gh(['api', 'graphql', '-f', `query=${PICKER_MILESTONES_QUERY}`,
+      '-f', `owner=${owner}`, '-f', `repo=${repo}`, ...(after ? ['-f', `after=${after}`] : [])], { cwd }));
+    const { nodes: got, pageInfo } = data.repository.milestones;
+    nodes.push(...got);
+    if (!pageInfo?.hasNextPage || !pageInfo.endCursor) break;
+    after = pageInfo.endCursor;
+  }
+  return nodes.map(milestoneOf);
 }
 
 /**

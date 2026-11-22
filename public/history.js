@@ -8,9 +8,16 @@
 // nothing at module scope touches the DOM (public/CLAUDE.md).
 
 import { h, btn, api, toast, kept, fold } from './ui.js';
-import { byDay, dayKey, timeLabel, commandOf, historyMatches } from './items.js';
+import { byDay, dayKey, timeLabel, commandOf, hasPaste, historyMatches, age } from './items.js';
 
 export const LABEL = 'History';
+
+// The queue's two ways out of a row, handed over by initQueue (queue.js): `type`
+// puts text into the coding agent's prompt, unsent, and says whether it went;
+// `pull` copies text into Local. Through a hook rather than an import, since
+// queue.js imports this file and the reverse would be a cycle.
+let ways = {};
+export function initHistory(w) { ways = w; }
 
 // /api/history's answer -- prompts newest first, the sessions' titles, and
 // `read`, when, in ms -- or null before the first; `failed` is why the last
@@ -65,30 +72,54 @@ export function loadHistory(force = false) {
   return loading;
 }
 
+// Slash commands that end, leave or wipe a session rather than ask for work:
+// the newest prompt is very often the /exit that ended the session, and
+// "Last prompt: /exit" says nothing about what you were doing.
+const LEAVING = new Set(['/exit', '/quit', '/clear', '/resume']);
+
 /**
- * A prompt was just sent from this page: once Claude Code has written it,
- * a tab that is showing reads again, so the list does not lag behind the
- * terminal beside it. A second, since the file is written as the turn starts.
+ * The prompt for the notice the Claude pane puts up when the agent connects
+ * (lastPromptNotice in app.js): the newest sent from the working copy itself,
+ * where this pane's agent runs -- not a worktree under data/, whose sessions
+ * are another pull request's -- that is not one of the commands above. After
+ * a read, forced, since after Start in the exit bar it is the prompt the
+ * session died on that is wanted, and loadHistory(true) joins a read already
+ * out -- on opening the page, setHistoryOn's. Null with nothing sent, or
+ * nothing readable.
  */
-export function historyStale() {
-  if (!document.querySelector('#queue-body .history-pane')) return;
-  setTimeout(() => { if (document.querySelector('#queue-body .history-pane')) loadHistory(true); }, 1000);
+export async function lastPrompt() {
+  await loadHistory(true);
+  return listing?.prompts?.find((p) => p.where === '' && !LEAVING.has(commandOf(p.text))) ?? null;
 }
 
-/** The groups and the tab's count repainted on their own, so the search box keeps its focus. */
+/**
+ * A prompt was just sent from this page: once Claude Code has written it,
+ * the file is read again, so the tab's count and, when it is showing, its
+ * list do not lag behind the terminal beside them. A second, since the file
+ * is written as the turn starts. Nothing when nothing has ever been read:
+ * the tab is off, and there is no count to keep.
+ */
+export function historyStale() {
+  if (!listing && !failed && !loading) return;
+  setTimeout(() => loadHistory(true), 1000);
+}
+
+/**
+ * The tab's count, and the groups when the tab is showing, repainted on
+ * their own, so the search box keeps its focus. The count whatever tab
+ * shows: the file is read before a visit (setHistoryOn in queue.js).
+ */
 export function paintHistory() {
-  const pane = document.querySelector('#queue-body .history-pane');
-  if (!pane) return;
-  pane.querySelector('.history-groups')?.replaceChildren(...historyGroups());
-  const t = document.querySelector(`#queue-body .tab[data-tab="history"]`);
+  const t = document.querySelector('#queue-body .tab[data-tab="history"]');
   if (t) t.textContent = `${LABEL} (${historyCount()})`;
+  document.querySelector('#queue-body .history-pane .history-groups')?.replaceChildren(...historyGroups());
 }
 
 /**
  * The tab: a search over the prompts' text, ⟳, and the days, each a fold of
- * its sessions, each session its prompts. Nothing here types into the agent:
- * a row is copied, not sent (docs/Security.md, "Nothing sends to Claude
- * without a click" -- the queue's ▶ is that click).
+ * its sessions, each session its prompts. A row's ▶ types its prompt back into
+ * the agent, unsent, as every queue row's ▶ types (docs/Security.md, "Nothing
+ * sends to Claude without a click"): the prompt is one the user already sent.
  */
 export function historyList() {
   const search = h('input', {
@@ -130,6 +161,10 @@ function historyGroups() {
       ...state(d.key),
     }, d.sessions.map((s) => session(s)));
   });
+  // When the file was read, and that a read is out, as the Pull requests tab
+  // says under its groups: the three tabs that read something answer "how
+  // old is this?" the same way.
+  out.push(h('p', { className: 'pull-note' }, `Read ${age(new Date(listing.read).toISOString())}${loading ? ' · updating…' : ''}`));
   if (listing.skipped) {
     out.push(h('p', { className: 'pr-note' }, `${listing.skipped} line${listing.skipped === 1 ? '' : 's'} of the history file could not be read as a prompt.`));
   }
@@ -153,10 +188,18 @@ function session(s) {
 /**
  * A prompt: when, then its text as typed, clamped to three lines until
  * clicked (a click that selected something is a selection, not a toggle),
- * and ⧉ to put it on the clipboard. A slash command is marked by its word.
+ * then the row's ways out in the order every queue row keeps them: ▶ types
+ * the prompt into the agent again, unsent, to edit and send -- the way back
+ * into the task a session died on; ↓ copies it into Local, untagged, for a
+ * prompt worth sending again later; ⧉ puts it on the clipboard. A slash
+ * command is marked by its word. A prompt that held a paste has only the
+ * paste's placeholder (hasPaste), so ▶ and ↓ say so once they have done it:
+ * sent as it is, the agent would get `[Pasted text #1 +40 lines]` and none
+ * of the forty lines.
  */
 function row(p) {
   const key = `${p.session}:${p.at}`;
+  const paste = hasPaste(p.text);
   const command = commandOf(p.text);
   const rest = command ? p.text.trimStart().slice(command.length) : p.text;
   const text = h('div', { className: 'text', title: opened.has(key) ? 'show less' : 'show the whole prompt' },
@@ -164,7 +207,10 @@ function row(p) {
   const li = h('li', { className: `item history${command ? ' command' : ''}${opened.has(key) ? ' open' : ''}` },
     h('span', { className: 'when', title: new Date(p.at).toLocaleString('en', { dateStyle: 'full', timeStyle: 'short' }) }, timeLabel(p.at)),
     text,
-    copyButton(p.text));
+    h('span', { className: 'actions' },
+      btn('▶', () => { if (ways.type?.(p.text) && paste) pasteMissing('Typed in'); }, { title: 'type this prompt into the coding agent again, to edit and send', ariaLabel: 'type this prompt into the coding agent again, to edit and send' }),
+      btn('↓', async () => { if (await ways.pull?.(p.text) && paste) pasteMissing('Added to your queue'); }, { title: 'copy into your queue', ariaLabel: 'copy this prompt into your queue' }),
+      copyButton(p.text)));
   text.onclick = () => {
     if (!getSelection()?.isCollapsed) return;
     if (opened.has(key)) opened.delete(key); else opened.add(key);
@@ -173,6 +219,12 @@ function row(p) {
   };
   return li;
 }
+
+// After ▶ or ↓ on a prompt that held a paste, in place of what they would
+// have said: sticky, since it is about the prompt now waiting in the terminal
+// or the queue, until it is dealt with.
+const pasteMissing = (done) => toast(`${done}, but that prompt held a paste and the history keeps only its placeholder: `
+  + 'paste the text again in its place before sending.', false, true);
 
 // As the diff header's ⧉ (app.js): a ✓ for a moment to say it went, and a
 // toast when the browser refused the clipboard.

@@ -13,11 +13,11 @@
 
 import readline from 'node:readline/promises';
 import { stackOrder, stackUnder } from './public/pr.js';
-import { sortPulls, sizeChip, age } from './public/items.js';
+import { sortPulls, rootsInOrder, pullWord, sizeChip, age } from './public/items.js';
 import { repoPulls } from './github.js';
 import { readPulls, writePulls } from './store.js';
-import { currentBranch, branchesBelow } from './git.js';
-import { styled, clip } from './term.js';
+import { currentBranch, dirtyFiles, branchesBelow, trackedPr, branchOwns, uncommitted } from './git.js';
+import { styled, clip, span, debug } from './term.js';
 
 // A listing younger than this is printed as it is, as the Pull requests tab
 // opens from one (POST /api/pulls); older, GitHub is asked first, since the
@@ -27,17 +27,11 @@ export const FRESH_FOR = 60_000;
 // The tab's bands and colours: green at the small end, since a small one is
 // usually the next to take, red at the large.
 const SIZE_STYLE = { XS: 'green', S: 'green', M: 'yellow', L: 'yellow', XL: 'red', XXL: 'red' };
-// The tab's words for a state (MERGE_WORD in github.js) in the tab's colours;
-// a word not here is printed plain.
-const STATE_STYLE = { ready: 'green', conflicts: 'red', 'checks not passing': 'red', blocked: 'red', draft: 'dim' };
-
-/**
- * The tab's word for a row's state: GitHub's `ready` on a pull request built
- * on others is `stacked (N)`, ready to merge into the one under it and not
- * the default branch (pullWord in public/queue.js). N counts what stackUnder
- * found under it, pull requests and bare branches alike, as the tab counts.
- */
-const stateWord = (p, under) => (p.merge === 'ready' && under.nodes.length ? `stacked (${under.nodes.length})` : p.merge ?? '');
+// The tab's colour for each state word, by the class pullWord (public/items.js)
+// gives it and the tab's stylesheet colours (`.pr-merge.<cls>` in
+// public/style.css): green, the accent, red, and yellow for its --warn. A
+// class not here -- draft, checking -- is dim, as the tab's default is.
+const STATE_STYLE = { ready: 'green', stacked: 'cyan', conflicts: 'red', 'checks-not-passing': 'red', 'behind-base': 'yellow', blocked: 'yellow' };
 
 /**
  * What a root is built on when that is not the default branch, as the tab's
@@ -52,11 +46,15 @@ const builtOn = (under, depth) => (!depth && under.nodes.length
 /**
  * What `prcoder choose` prints and offers, from a listing as readPulls or
  * repoPulls has it: `{ lines, rows, pick }`. `lines` are term.js lines
- * (styled() renders them); `rows` is stackOrder over the pull requests, most
- * recently updated first among roots and among siblings, each followed by
- * what is built on it a step further in; `pick` is the row Enter takes, the
- * deepest one and the most recently updated of those, since the deepest is
- * usually where the last session was. Null with nothing open.
+ * (styled() renders them); `rows` is stackOrder over the pull requests with
+ * its stacks in their roots' order (rootsInOrder, as the tab's by-stack view
+ * puts them), most recently updated first among roots and among siblings,
+ * each followed by what is built on it a step further in. stackOrder alone
+ * groups the roots base by base, so an older root on main came before a newer
+ * one on another base. `pick` is the row Enter takes, the deepest one and the
+ * most recently updated of those, since the deepest is usually where the last
+ * session was -- not the first of them in the walk, which is the one under
+ * the newest root and can be days staler than another. Null with nothing open.
  *
  * A row is the number, the size (sizeChip, coloured by band), the state in a
  * word, how long since it last moved, and the title -- last, so a narrow
@@ -64,11 +62,16 @@ const builtOn = (under, depth) => (!depth && under.nodes.length
  * base is not the default branch says what it is built on after the title,
  * dim, and the title gives way to it (builtOn); `below` is git's word on
  * such bare branches, as branchesBelow gives it and the tab's rows take it.
- * `›` marks the one on the checked-out branch, as the tab marks it `here`.
+ * `›` marks the one on the checked-out branch, as the tab marks it `here`
+ * (branchOwns, with `tracked` the URL its config names).
+ * Widths are terminal columns (span in term.js), the measure styled() cuts
+ * by, so a wide character in a base branch's name cuts the title, not the
+ * note after it.
  */
-export function chooseLines(listing, { nameWithOwner, branch, defaultBranch, below = [], now = Date.now(), width = Infinity } = {}) {
-  const rows = stackOrder(sortPulls(listing.pulls ?? [], 'updated'));
-  const here = (p) => !p.isCrossRepository && p.headRefName === branch;
+export function chooseLines(listing, { nameWithOwner, branch, tracked = null, defaultBranch, below = [], now = Date.now(), width = Infinity } = {}) {
+  const sorted = sortPulls(listing.pulls ?? [], 'updated');
+  const rows = rootsInOrder(stackOrder(sorted), sorted);
+  const here = (p) => branchOwns(p, branch, tracked);
   const read = listing.read ? `, read ${age(new Date(listing.read).toISOString(), now)}` : '';
   const lines = [
     `Open pull requests in ${nameWithOwner}, by stack, most recently updated first${read}:`,
@@ -82,13 +85,14 @@ export function chooseLines(listing, { nameWithOwner, branch, defaultBranch, bel
   const wide = (f) => Math.max(...rows.map((r) => f(r).length));
   const numbers = wide(number);
   const unders = new Map(rows.map(({ pr }) => [pr.number, stackUnder({ pr }, listing.pulls, below, defaultBranch)]));
-  const states = wide(({ pr }) => stateWord(pr, unders.get(pr.number)));
+  const states = wide(({ pr }) => pullWord(pr, unders.get(pr.number)).word ?? '');
   const ages = wide(({ pr }) => age(pr.updatedAt, now));
   for (const r of rows) {
     const { pr: p, depth } = r;
     const size = sizeChip(p.lines);
     const under = unders.get(p.number);
-    const state = stateWord(p, under);
+    const { word, cls } = pullWord(p, under);
+    const state = word ?? '';
     const base = builtOn(under, depth);
     const head = [
       here(p) ? { text: '›', style: ['bold', 'cyan'] } : ' ',
@@ -97,32 +101,44 @@ export function chooseLines(listing, { nameWithOwner, branch, defaultBranch, bel
       '  ',
       { text: size.padEnd(3), style: SIZE_STYLE[size] },
       '  ',
-      { text: state.padEnd(states), style: STATE_STYLE[state] ?? (state.startsWith('stacked') ? 'cyan' : undefined) },
+      { text: state.padEnd(states), style: STATE_STYLE[cls] ?? 'dim' },
       '  ',
       { text: age(p.updatedAt, now).padEnd(ages), style: 'dim' },
       '  ',
     ];
-    const room = width - head.reduce((n, seg) => n + (seg.text ?? seg).length, 0) - base.length;
+    const room = width - head.reduce((n, seg) => n + span(seg.text ?? seg), 0) - span(base);
     lines.push([...head, clip(p.title, Math.max(room, 0)), { text: base, style: 'dim' }]);
   }
-  const pick = rows.reduce((best, r) => (r.depth > best.depth ? r : best), rows[0]);
+  const newer = (a, b) => Date.parse(a.pr.updatedAt) > Date.parse(b.pr.updatedAt);
+  const pick = rows.reduce((best, r) => (r.depth > best.depth || (r.depth === best.depth && newer(r, best)) ? r : best), rows[0]);
   return { lines, rows, pick };
 }
 
 /**
+ * GitHub's listing of the open pull requests (repoPulls), with `read` in ms,
+ * written to `.prcoder/pulls.json` so the next reader can open from it. The
+ * one way the listing is read fresh: the Pull requests tab's (freshPulls in
+ * server.js) and `prcoder choose`'s, so the two write the same file the same
+ * way. A cache: a write that fails costs a read on the next start, not now.
+ */
+export async function githubPulls(repo, nameWithOwner) {
+  const [owner, name] = nameWithOwner.split('/');
+  const got = await repoPulls(repo, owner, name);
+  const now = Date.now();
+  await writePulls(repo, nameWithOwner, got, now).catch((e) => debug(`pulls.json not written: ${e.message}`));
+  return { ...got, read: now };
+}
+
+/**
  * The listing to print: `.prcoder/pulls.json` when it is under FRESH_FOR old,
- * else GitHub's, written there so the Pull requests tab opens from this read
- * (a write that fails costs a read on the next start, as in server.js).
+ * else GitHub's (githubPulls), written there so the Pull requests tab opens
+ * from this read.
  */
 async function listing(repo, nameWithOwner) {
   const held = await readPulls(repo, nameWithOwner);
   if (held && Date.now() - held.read < FRESH_FOR) return held;
   console.log(`reading the open pull requests in ${nameWithOwner}…`);
-  const [owner, name] = nameWithOwner.split('/');
-  const got = await repoPulls(repo, owner, name);
-  const now = Date.now();
-  await writePulls(repo, nameWithOwner, got, now).catch(() => {});
-  return { ...got, read: now };
+  return githubPulls(repo, nameWithOwner);
 }
 
 /**
@@ -139,36 +155,73 @@ async function bareBases(repo, pulls, defaultBranch) {
 }
 
 /**
- * The list and the question: the pull request picked, as the listing has it
- * (`url`, `number`, `headRefName`, `isCrossRepository` are what the start
- * reads), or null when nothing was picked (`q`, end of input, or nothing
- * open), which the caller takes as nothing to start. The checkout is the
- * caller's (startOnPr in git.js), the same one `prcoder <pr>` makes.
+ * The list, the question and the start: `{ pr, ...start(pr) }`, the pull
+ * request picked as the listing has it (`url`, `number`, `headRefName`,
+ * `isCrossRepository` are what the start reads) with what `start` resolved,
+ * or null when nothing was picked (`q`, end of input, or nothing open), which
+ * the caller takes as nothing to start. `start` is the caller's checkout --
+ * startOnPr in git.js, the same one `prcoder <pr>` makes -- run on each pick
+ * as it is answered, against the tree as it is then: the question can wait
+ * any length of time.
+ *
+ * Uncommitted work refuses a checkout (startOnPr), so it is said before the
+ * question rather than after the pick; Enter then offers this branch's pull
+ * request, the one pick that needs none, or nothing when it has none listed.
+ * A pick `start` refuses -- uncommitted work, or another prcoder in the
+ * working copy -- is said and asked again rather than ending the run; any
+ * other failure is thrown. Before, this repeated startOnPr's check of the
+ * uncommitted work alone, so a pick refused for another prcoder ended the
+ * run, and a fork's pick over uncommitted work asked gh which branch it was
+ * twice.
  *
  * `facts` is repoInfo's answer, which server.js has already paid for.
  */
-export async function choosePr(repo, facts, { input = process.stdin, output = process.stdout } = {}) {
+export async function choosePr(repo, facts, { start, input = process.stdin, output = process.stdout } = {}) {
   const { nameWithOwner, defaultBranch } = facts;
-  const branch = await currentBranch(repo);
   const width = (output.columns || 80) - 1;
-  const read = await listing(repo, nameWithOwner);
+  const [branch, dirty, read] = await Promise.all([currentBranch(repo), dirtyFiles(repo), listing(repo, nameWithOwner)]);
+  const tracked = await trackedPr(repo, branch, facts.repos).catch(() => null);
   const below = await bareBases(repo, read.pulls, defaultBranch);
-  const { lines, rows, pick } = chooseLines(read, { nameWithOwner, branch, defaultBranch, below, width });
+  const { lines, rows, pick } = chooseLines(read, { nameWithOwner, branch, tracked, defaultBranch, below, width });
   for (const l of lines) console.log(styled(l, width));
   if (!pick) return null;
+  // What Enter takes: chooseLines's pick, or over uncommitted work this
+  // branch's pull request -- the deepest elsewhere would only be refused.
+  // A `pr-<n>` or a fork's branch is found by its config, as the mark is.
+  const own = rows.find((r) => branchOwns(r.pr, branch, tracked));
+  const offer = dirty.length ? own : pick;
+  if (dirty.length) {
+    const until = `until ${dirty.length > 1 ? 'they are' : 'it is'} committed or stashed`;
+    console.log(own
+      ? `${uncommitted(dirty, branch)}: only this branch's pull request, #${own.pr.number}, can be picked ${until}`
+      : `${uncommitted(dirty, branch)}: no pull request listed is this branch's, and another's cannot be checked out ${until}`);
+  }
+  const why = !offer ? '' : dirty.length ? "this branch's" : offer.depth ? 'the deepest' : 'the most recently updated';
+  const prompt = offer ? `PR number [${offer.pr.number}, ${why}], or q: ` : 'PR number, or q: ';
   const rl = readline.createInterface({ input, output });
   // End of input settles nothing in readline/promises: the interface closes
   // and the question's promise is left hanging, so the close is the answer.
   const closed = new Promise((resolve) => rl.once('close', () => resolve(null)));
   try {
     for (;;) {
-      const why = pick.depth ? 'the deepest' : 'the most recently updated';
-      const answer = await Promise.race([rl.question(`PR number [${pick.pr.number}, ${why}], or q: `), closed]);
+      const answer = await Promise.race([rl.question(prompt), closed]);
       if (answer === null || /^q$/i.test(answer.trim())) return null;
-      const n = answer.trim() === '' ? pick.pr.number : Number(answer.trim().replace(/^#/, ''));
+      if (answer.trim() === '' && !offer) {
+        console.log('commit or stash first to pick another branch\'s pull request, or q to quit');
+        continue;
+      }
+      const n = answer.trim() === '' ? offer.pr.number : Number(answer.trim().replace(/^#/, ''));
       const row = rows.find((r) => r.pr.number === n);
-      if (row) return row.pr;
-      console.log(`${answer.trim()} is not one of the open pull requests listed`);
+      if (!row) {
+        console.log(`${answer.trim()} is not one of the open pull requests listed`);
+        continue;
+      }
+      try {
+        return { pr: row.pr, ...(await start(row.pr)) };
+      } catch (e) {
+        if (!e.refused) throw e;
+        console.log(e.message);
+      }
     }
   } finally {
     rl.close();

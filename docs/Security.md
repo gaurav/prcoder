@@ -84,7 +84,9 @@ item's ▶ sends its text verbatim, and an item can arrive by ↓ from the PR ta
 checklist line of the description, or from the Issues tab, which copies an issue's title (`pull` in
 [`public/queue.js`](../public/queue.js)); the Issues tab's own ▶ types an issue's title and link
 straight in, unsent — so whoever can edit that description or that issue can
-write the words. Commit sends a message built from the names of the working tree's uncommitted files.
+write the words. The History tab's ▶ types a prompt back in, unsent, and its ↓ copies one into
+Local: text the user already sent once, read from Claude Code's own record (below). Commit sends a
+message built from the names of the working tree's uncommitted files.
 
 The Issues tab also draws an issue's body, which is anyone's text, into the page with `innerHTML`,
 and the Pull requests tab the first paragraph of a pull request's under its row:
@@ -144,17 +146,18 @@ A modified file's diff is not highlighted at all, and
 One file, and one line of some others: Claude Code's `history.jsonl` in its config directory
 (`~/.claude`, or `$CLAUDE_CONFIG_DIR`, the same variable the `claude` child honours, so the file
 read is the file written), which records every prompt typed into any Claude Code session on the
-machine, with its project directory; and, for a session's title, the `ai-title` line of its
+machine, with its project directory; and, for a session's title, the `ai-title` lines of its
 transcript under `projects/`. That is every repository's prompts, so the reader keeps only the
 ones whose project is this working copy, or a worktree under its `data/`, and drops the rest before
 anything leaves the server (`whereIn` in [`history.js`](../history.js), `test/history.test.js`).
 A prompt's pasted text is in the same file, under `pastedContents`; it is never read, since a paste
 is where a secret lands, and the `[Pasted text #1 +N lines]` placeholder in the prompt is all the tab
 shows. The session id names the transcript to open, so only a UUID is taken as one. Both files are
-read and never written, and nothing read from them goes anywhere but this page, over the same
-origin as everything else: the route is `POST /api/history`, under `handleApi` like the rest.
-The prompts are drawn with `h()` and text nodes, and the one thing that acts on one -- the Claude
-pane's ▶ on the last prompt -- goes through `sendToClaude`, typed and not submitted. The file's
+read and never written -- when the page opens, after each prompt sent from it, and on the tab's
+⟳ -- and nothing read from them goes anywhere but this page, over the same origin as everything
+else: the route is `POST /api/history`, under `handleApi` like the rest.
+The prompts are drawn with `h()` and text nodes, and the one thing that acts on one -- the History
+tab's ▶ on a row -- goes through `sendToClaude`, typed and not submitted. The file's
 format is Claude Code's and undocumented, so each line is held to the shape observed before it
 counts, and a line that does not fit is skipped. `--no-history` or `PRCODER_NO_HISTORY` turns the
 read off, and `CLAUDE_CODE_SKIP_PROMPT_HISTORY`, which stops Claude Code writing the file, turns it
@@ -172,6 +175,12 @@ off with it.
   value -- a model has to be a name, so `--model --dangerously-skip-permissions` never becomes two
   flags. The one exception is a value equal to what prcoder's command line already gave, which is
   dropped as a repeat rather than checked: it came from whoever started prcoder, not the page.
+  The milestone picker's number goes to `gh api -F`, which reads a value by its shape
+  (`null`, `true`, a number, a leading `@` as a file to read), so `/api/pr/milestone` takes only a
+  positive integer or null, before it looks at anything else. Then the number has to be one the
+  picker was offered -- the server keeps the last list it read for each repository (`pickerMove`) --
+  or the milestone the pull request is already on, as the Issues and Pull requests tabs' moves are
+  held to their listings, so a closed milestone or one a stale tab sends never reaches GitHub.
   The switcher's `/api/pr/switch` hands a URL to `gh pr checkout`, so `wholePrRepo` in `git.js`
   takes only the whole of a `https://github.com/owner/repo/pull/N` -- anchored, so a flag in front
   of one or another host with that path behind it is refused -- and the route takes it only in one
@@ -188,11 +197,12 @@ off with it.
   from the page and hands gh neither: `issueMove` in `server.js` looks both up in the listing the
   tab was last shown, and the listing's own numbers go to `gh api -F` (`setIssueMilestone` in
   `github.js`). `test/api.test.js` pins the refusals. The Pull requests tab's `/api/pull/milestone`
-  is the same hold (`pullMove`) on the listing that tab was last shown, which may have come from
-  `.prcoder/pulls.json` rather than GitHub -- so `readPulls` in `store.js` keeps a row only with an
-  integer number and the whole of a pull request link in this repository, and a milestone only with
-  an integer number and a string title, before anything from the file can be held to
-  (`test/store.test.js`). A row's other href, each issue it closes, is kept only as the whole of a
+  is the same hold (`pullMove`), on the last listing the server read from GitHub -- never on
+  `.prcoder/pulls.json`, which the tab may be showing, and where a pull request merged since the file
+  was written is still open; a move made before that read waits for it. The file is still held
+  before it is drawn: `readPulls` in `store.js` keeps a row only with an integer number and the
+  whole of a pull request link in this repository, and a milestone only with an integer number and
+  a string title (`test/store.test.js`). A row's other href, each issue it closes, is kept only as the whole of a
   GitHub issue link (`closesOf`), so a hand-edit cannot put a `javascript:` link in the tab.
 - **Text from GitHub** — descriptions, titles, issue bodies, file names — is built into the page with
   `h()` and text nodes. `innerHTML` only through `inline()`, and a new kind of link only through
