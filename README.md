@@ -161,6 +161,9 @@ level adds, and what a busy port looks like.
 
 ## License
 
+Copyright (C) 2026 Gaurav Vaidya (Renaissance Computing Institute, Univ of North Carolina at
+Chapel Hill)
+
 prcoder is free software: you can redistribute it and/or modify it under the terms of the GNU
 General Public License as published by the Free Software Foundation, either version 3 of the
 License, or (at your option) any later version. It is distributed in the hope that it will be
