@@ -81,6 +81,46 @@ export function sortFor(pulls, sort = 'updated', reverse = false) {
   return [...pulls].sort((a, b) => by(a, b) || (b.updatedAt ?? '').localeCompare(a.updatedAt ?? '') || a.number - b.number);
 }
 
+/**
+ * What `--filter key=value` can ask of a pull request: for each key, the
+ * values a pull request has under it (`of`, given the row's state class),
+ * and, where the values are a closed set, that set, so a misspelt one is
+ * refused rather than matching nothing. The keys are the names `list --json`
+ * gives the same facts. Compared without case.
+ */
+export const FILTERS = {
+  milestone: { of: (p, m) => (p.milestone == null ? ['none'] : [String(p.milestone), m.get(p.milestone)?.title ?? '']) },
+  label: { of: (p) => p.labels ?? [] },
+  author: { of: (p) => [p.author ?? ''] },
+  state: { values: ['ready', 'stacked', 'draft', 'conflicts', 'behind-base', 'blocked', 'checks-not-passing', 'checking'], of: (p, m, cls) => [cls] },
+  effort: { values: [...SCALES.effort, 'none'], of: (p) => [labelValue('effort', p.labels ?? [])?.value ?? 'none'] },
+  priority: { values: [...SCALES.priority, 'none'], of: (p) => [labelValue('priority', p.labels ?? [])?.value ?? 'none'] },
+  size: { values: ['XS', 'S', 'M', 'L', 'XL', 'XXL'], of: (p) => [sizeChip(p.lines)] },
+};
+
+/**
+ * One `--filter` as written, `key=value[,value…]`, as `{ key, values }`:
+ * any of the values matches, and every filter given has to (matches). Pure,
+ * and called by parseCli, so a key or a closed value not known fails before
+ * gh is asked, naming the ones there are.
+ */
+export function parseFilter(text) {
+  const [, key, list] = /^([a-z]+)=(.+)$/i.exec(text.trim()) ?? [];
+  if (!key) throw new Error(`--filter wants key=value, as in effort=S,XS; not ${text}`);
+  const known = FILTERS[key.toLowerCase()];
+  if (!known) throw new Error(`--filter takes ${Object.keys(FILTERS).join(', ')}; not ${key}`);
+  const values = list.split(',').map((v) => v.trim()).filter(Boolean);
+  const bad = known.values && values.find((v) => !known.values.some((k) => k.toLowerCase() === v.toLowerCase()));
+  if (bad || !values.length) throw new Error(`--filter ${key.toLowerCase()} takes ${known.values ? known.values.join(', ') : 'a value'}; not ${bad ?? list}`);
+  return { key: key.toLowerCase(), values };
+}
+
+/** Whether a pull request passes every filter: one of each filter's values among what it has under that key. */
+const matches = (p, filters, milestones, cls) => filters.every(({ key, values }) => {
+  const has = FILTERS[key].of(p, milestones, cls).map((v) => v.toLowerCase());
+  return values.some((v) => has.includes(v.toLowerCase()));
+});
+
 // The groupings `--group` takes, the PRs tab's three, as the heading says each.
 export const GROUPS = { stack: 'by stack', milestone: 'by milestone', none: 'in one list' };
 
@@ -150,7 +190,9 @@ const builtOn = (under, depth) => (!depth && under.nodes.length
  * one on another base. `view.group` of `milestone` or `none` lists them by
  * milestone, under a heading for each, or in one list, as the tab can
  * (sections); either way flat, each root that is not on the default branch
- * saying what it is built on.
+ * saying what it is built on. `view.filters` (parseFilter's) leaves out what
+ * does not match them, before the walk: a pull request whose base is left out
+ * is a root, and says what it is built on as any root does.
  *
  * `pick` is the row Enter takes, and `why` says why. In the default order it
  * is the deepest one and the most recently updated of those, since the
@@ -173,9 +215,15 @@ const builtOn = (under, depth) => (!depth && under.nodes.length
  * note after it.
  */
 export function listLines(listing, { nameWithOwner, branch, tracked = null, defaultBranch, below = [], now = Date.now(), width = Infinity, view = {} } = {}) {
-  const { sort = 'updated', reverse = false, group = 'stack' } = view;
+  const { sort = 'updated', reverse = false, group = 'stack', filters = [] } = view;
   const ordered = Boolean(view.sort || reverse || view.group);
-  const sorted = sortFor(listing.pulls ?? [], sort, reverse);
+  const all = listing.pulls ?? [];
+  // What is under each, from the whole listing: a pull request whose base a
+  // filter leaves out is still built on it, and says so.
+  const unders = new Map(all.map((pr) => [pr.number, stackUnder({ pr }, all, below, defaultBranch)]));
+  const byNumber = new Map((listing.milestones ?? []).map((m) => [m.number, m]));
+  const shown = all.filter((p) => matches(p, filters, byNumber, pullWord(p, unders.get(p.number)).cls));
+  const sorted = sortFor(shown, sort, reverse);
   const parts = sections(sorted, group, listing.milestones);
   const rows = parts.flatMap((part) => part.rows);
   const here = (p) => branchOwns(p, branch, tracked);
@@ -183,6 +231,7 @@ export function listLines(listing, { nameWithOwner, branch, tracked = null, defa
   const lines = [
     `Open pull requests in ${nameWithOwner}, ${GROUPS[group]}, ${SORTS[sort][reverse ? 1 : 0]}${read}:`,
     listing.listed < listing.total && `The ${listing.listed} most recently updated of ${listing.total}.`,
+    filters.length > 0 && `${shown.length} of ${all.length} with ${filters.map((f) => `${f.key}=${f.values.join(',')}`).join(' ')}.`,
     '',
   ].filter((l) => l !== false);
   if (!rows.length) return { lines: [...lines, 'none'], rows, pick: null, why: '' };
@@ -192,7 +241,6 @@ export function listLines(listing, { nameWithOwner, branch, tracked = null, defa
   const number = ({ pr, depth }) => `${'  '.repeat(depth)}#${pr.number}`;
   const wide = (f) => Math.max(...rows.map((r) => f(r).length));
   const numbers = wide(number);
-  const unders = new Map(rows.map(({ pr }) => [pr.number, stackUnder({ pr }, listing.pulls, below, defaultBranch)]));
   const states = wide(({ pr }) => pullWord(pr, unders.get(pr.number)).word ?? '');
   const ages = wide(({ pr }) => age(pr.updatedAt, now));
   const row = (r) => {

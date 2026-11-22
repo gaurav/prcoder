@@ -15,7 +15,7 @@ import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { syncPhrase, sides, prRepo } from './public/pr.js';
 import { counts, TABS } from './public/items.js';
-import { SORTS, GROUPS } from './choose.js';
+import { SORTS, GROUPS, parseFilter } from './choose.js';
 
 export const VERSION = createRequire(import.meta.url)('./package.json').version;
 
@@ -37,12 +37,13 @@ const OPTIONS = {
   sort: { type: 'string' },
   reverse: { type: 'boolean' },
   group: { type: 'string' },
+  filter: { type: 'string', multiple: true },
 };
 
 // The flags that say how `list` and `choose` show the open pull requests,
 // and nothing else: refused without one of them, rather than taken and
 // ignored by a start that lists nothing.
-const VIEW_FLAGS = ['sort', 'reverse', 'group'];
+const VIEW_FLAGS = ['sort', 'reverse', 'group', 'filter'];
 
 export function usage() {
   return `usage: prcoder [<pr> | choose | --worktree <branch|pr>] [--port <n>] [--no-open] [--no-history] [--queue <file>] [-v] [--agent <name>] [-- <agent args>]
@@ -53,6 +54,10 @@ export function usage() {
                    default), stale, smallest, largest, newest, oldest, effort, priority
     --reverse      the other way round
     --group <how>  stack (the default), milestone, or none for one list
+    --filter <key>=<value>[,<value>…]
+                   only those with one of the values; again for all of several. Keys:
+                   milestone (title, number or none), label, author, state, effort,
+                   priority (both XS… or Urgent… or none), size (XS to XXL)
   -w, --worktree <branch|pr>
                    start in a git worktree on this branch, or this pull request (number
                    or URL), made if there is none; this working copy stays as it is.
@@ -138,7 +143,7 @@ export function parseCli(argv) {
 
 /**
  * How `list` or `choose` is to show the open pull requests, from the flags:
- * `{ sort, reverse, group }`, each left out when not given, so listLines can tell an
+ * `{ sort, reverse, group, filters }`, each left out when not given, so listLines can tell an
  * order asked for from its default. Checked here, before any gh call, so a
  * misspelt order fails at once and names the ones there are.
  */
@@ -154,7 +159,8 @@ function viewOf(values, listing) {
   if (values.group !== undefined && !Object.hasOwn(GROUPS, values.group)) {
     throw new Error(`--group takes one of ${Object.keys(GROUPS).join(', ')}; not ${values.group}`);
   }
-  return Object.fromEntries(VIEW_FLAGS.map((f) => [f, values[f]]).filter(([, v]) => v !== undefined));
+  return Object.fromEntries([['sort', values.sort], ['reverse', values.reverse], ['group', values.group],
+    ['filters', values.filter?.map(parseFilter)]].filter(([, v]) => v !== undefined));
 }
 
 /**

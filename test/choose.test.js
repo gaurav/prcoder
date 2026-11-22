@@ -6,7 +6,7 @@ import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { PassThrough } from 'node:stream';
-import { listLines, choosePr } from '../choose.js';
+import { listLines, choosePr, parseFilter } from '../choose.js';
 import { writePulls } from '../store.js';
 import { startOnPr } from '../git.js';
 import { plain, styled, sink } from '../term.js';
@@ -202,6 +202,44 @@ test('by milestone and in one list, the rows are flat, and a stacked one says wh
   const out = { isTTY: true, columns: 200, rows: 24, text: '', write(x) { this.text += x; return true; } };
   sink(out);
   assert.match(styled(by.lines.find((l) => plain(l).startsWith('Release'))), /\x1b\[33mdue in 3 days/);
+});
+
+// A filter's values are any of; filters given together are all of. A pull
+// request whose base is filtered out becomes a root that says what it is on.
+test('filters narrow the list, any of a filter\'s values and all of the filters', () => {
+  const listing = { ...LISTING, milestones: [{ number: 7, title: 'Release', dueOn: null }],
+    pulls: LISTING.pulls.map((p) => ({ ...p, author: p.number === 200 ? 'someone' : 'gaurav', milestone: p.number === 173 ? 7 : null,
+      labels: { 163: ['Effort: S'], 170: ['Effort: XS', 'bug'], 173: ['effort: high'] }[p.number] ?? [] })) };
+  const at = (...filters) => listLines(listing, { nameWithOwner: 'o/r', defaultBranch: 'main', now: NOW, view: { filters: filters.map(parseFilter) } });
+  const numbers = (...f) => at(...f).rows.map((r) => r.pr.number);
+  // `effort: high` is the old spelling of L.
+  assert.deepEqual(numbers('effort=xs,S'), [163, 170]);
+  assert.deepEqual(numbers('effort=XS,S', 'label=bug'), [170]);
+  // The state is the word the row shows: #163 is GitHub's ready, but stacked.
+  assert.deepEqual(numbers('effort=XS,S', 'state=ready'), []);
+  assert.deepEqual(numbers('effort=none'), [159, 200, 87]);
+  assert.deepEqual(numbers('effort=L'), [173]);
+  assert.deepEqual(numbers('state=stacked'), [163, 170]);
+  assert.deepEqual(numbers('author=Someone'), [200]);
+  assert.deepEqual(numbers('label=BUG'), [170]);
+  assert.deepEqual(numbers('milestone=release'), [173]);
+  assert.deepEqual(numbers('milestone=7'), [173]);
+  assert.deepEqual(numbers('size=XS', 'milestone=none'), [170, 87]);
+  const text = at('effort=XS,S').lines.map(plain);
+  assert.equal(text[1], '2 of 6 with effort=XS,S.');
+  // #163's base, #159, is left out, so #163 is a root and says it is built on it.
+  assert.match(text[3], /^ {2}#163 +L +stacked \(1\) .*Title of 163 on #159 › main$/);
+  assert.match(text[4], /^ {4}#170 /);
+  assert.equal(plain(at('author=nobody').lines.at(-1)), 'none');
+});
+
+test('a filter not known, or a closed value not in its set, is refused naming the ones there are', () => {
+  assert.deepEqual(parseFilter('Effort=xs, S'), { key: 'effort', values: ['xs', 'S'] });
+  assert.throws(() => parseFilter('effort'), /--filter wants key=value, as in effort=S,XS; not effort/);
+  assert.throws(() => parseFilter('colour=red'), /--filter takes milestone, label, author, state, effort, priority, size; not colour/);
+  assert.throws(() => parseFilter('effort=huge'), /--filter effort takes XS, S, M, L, XL, none; not huge/);
+  assert.throws(() => parseFilter('state=merged'), /--filter state takes ready, stacked, .*; not merged/);
+  assert.throws(() => parseFilter('label=,'), /--filter label takes a value; not ,/);
 });
 
 // A throwaway repo on `branch` with an uncommitted change, and choosePr run
