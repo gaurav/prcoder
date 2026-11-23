@@ -329,8 +329,11 @@ test('the queue\'s PR tab names each box by its line', { skip }, async () => {
 
 // The poll repaints the whole description whenever anything on the pull request
 // moved, and the text of a line is there to be copied.
+// On Playwright's clock: a return to the tab polls no sooner than ten seconds
+// after the last poll (visibilitychange in app.js), and the fast-forward is
+// those ten seconds, which on the wall clock were most of this test's time.
 test('a selection in the description survives a repaint, unless its text moved', { skip }, async () => {
-  const fresh = await newPage();
+  const fresh = await newPage({ clock: true });
   const select = () => fresh.evaluate(() => {
     const [from, to] = [...document.querySelectorAll('#pr-body .md > p, #pr-body .md blockquote')].map((n) => n.firstChild);
     getSelection().setBaseAndExtent(from, 3, to, 2);
@@ -341,7 +344,8 @@ test('a selection in the description survives a repaint, unless its text moved',
     await fresh.unroute('**/api/status');
     await fresh.route('**/api/status', (r) => r.fulfill({ json: next }));
     await fresh.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
-    await fresh.waitForSelector('#pr-body .md:not([data-old])', { timeout: 15000 });
+    await fresh.clock.fastForward(10_000);
+    await fresh.waitForSelector('#pr-body .md:not([data-old])');
   };
   const selected = await select();
   assert.ok(selected.length > 5, selected);
@@ -4175,9 +4179,10 @@ test('a separator moves only on the arrows along its own axis', { skip }, async 
 // A folded pane still says when Claude is working, from the same bracketed turn
 // as the tab icon -- so it appears on Enter and goes after 5s of quiet, and the
 // mocked /pty here sends nothing to hold the turn open. Only folded: open, the
-// terminal shows the turn itself.
+// terminal shows the turn itself. The 5s are Playwright's clock's, so the test
+// does not spend them.
 test('a folded terminal says it is working while a turn runs, and not after', { skip }, async () => {
-  const fresh = await newPage();
+  const fresh = await newPage({ clock: true });
   const busy = () => fresh.locator('#term-busy').isVisible();
   await fresh.click('#term-host');
   await fresh.keyboard.press('Enter');
@@ -4188,7 +4193,8 @@ test('a folded terminal says it is working while a turn runs, and not after', { 
   // Folding must not make the header a different height from the open one.
   assert.equal(await fresh.$eval('#term', (el) => el.getBoundingClientRect().height),
     await fresh.$eval('#term > header', (el) => el.getBoundingClientRect().height));
-  await fresh.waitForFunction(() => document.getElementById('term-busy').hidden, null, { timeout: 10000 });
+  await fresh.clock.fastForward(5_000);
+  await fresh.waitForFunction(() => document.getElementById('term-busy').hidden);
   assert.equal(await busy(), false, 'gone when the turn ends');
   await fresh.close();
 });
@@ -4197,8 +4203,9 @@ test('a folded terminal says it is working while a turn runs, and not after', { 
 // style.css (`--busy`), for the folded header's octagon. Nothing else would
 // notice the attribute going missing -- the icon would turn into a fetch of
 // /undefined while #term-busy above stayed right -- or the two reds parting.
+// On Playwright's clock, like the test above, for the 5s of quiet.
 test('a turn swaps the tab icon for the busy one, in the folded header\'s red', { skip }, async () => {
-  const fresh = await newPage();
+  const fresh = await newPage({ clock: true });
   const icon = () => fresh.evaluate(() => {
     const link = document.querySelector('link[rel=icon]');
     return { href: link.getAttribute('href'), busy: link.dataset.busy };
@@ -4215,8 +4222,9 @@ test('a turn swaps the tab icon for the busy one, in the folded header\'s red', 
   const token = await fresh.evaluate(() =>
     getComputedStyle(document.documentElement).getPropertyValue('--busy').trim());
   assert.equal(fill?.toLowerCase(), token.toLowerCase(), 'data-busy and --busy are one red');
+  await fresh.clock.fastForward(5_000);
   await fresh.waitForFunction((busy) => document.querySelector('link[rel=icon]').getAttribute('href') !== busy,
-    idle.busy, { timeout: 10000 });
+    idle.busy);
   assert.equal((await icon()).href, idle.href, 'idle again once the turn ends');
   assert.equal(await logo(), idle.href, 'the tile too');
   await fresh.close();
