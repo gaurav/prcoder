@@ -368,7 +368,9 @@ test('a selection in the description survives a repaint, unless its text moved',
     await fresh.route('**/api/status', (r) => r.fulfill({ json: next }));
     await fresh.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
     await fresh.clock.fastForward(10_000);
-    await fresh.waitForSelector('#pr-body .md:not([data-old])');
+    // The fast-forward is already past the timer, so a wait longer than this
+    // is a repaint that is not coming, not a slow one.
+    await fresh.waitForSelector('#pr-body .md:not([data-old])', { timeout: 10_000 });
   };
   const selected = await select();
   assert.ok(selected.length > 5, selected);
@@ -4222,7 +4224,8 @@ test('a folded terminal says it is working while a turn runs, and not after', { 
   assert.equal(await fresh.$eval('#term', (el) => el.getBoundingClientRect().height),
     await fresh.$eval('#term > header', (el) => el.getBoundingClientRect().height));
   await fresh.clock.fastForward(5_000);
-  await fresh.waitForFunction(() => document.getElementById('term-busy').hidden);
+  // Short, as in the repaint test: past the fast-forward, longer is a miss.
+  await fresh.waitForFunction(() => document.getElementById('term-busy').hidden, null, { timeout: 10_000 });
   assert.equal(await busy(), false, 'gone when the turn ends');
   await fresh.close();
 });
@@ -4252,7 +4255,7 @@ test('a turn swaps the tab icon for the busy one, in the folded header\'s red', 
   assert.equal(fill?.toLowerCase(), token.toLowerCase(), 'data-busy and --busy are one red');
   await fresh.clock.fastForward(5_000);
   await fresh.waitForFunction((busy) => document.querySelector('link[rel=icon]').getAttribute('href') !== busy,
-    idle.busy);
+    idle.busy, { timeout: 10_000 });
   assert.equal((await icon()).href, idle.href, 'idle again once the turn ends');
   assert.equal(await logo(), idle.href, 'the tile too');
   await fresh.close();
