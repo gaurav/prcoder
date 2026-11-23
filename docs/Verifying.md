@@ -16,8 +16,10 @@ load-bearing:
 - **`--test-concurrency=4`,** because the browser suite runs as four files, a half per engine, and
   Node's default of one fewer than the CPUs is three on CI's four-vCPU runner: one half waited
   for another, and the step took 124s where its slowest half took 85s
-  ([#213](https://github.com/gaurav/prcoder/issues/213)). It costs nothing locally on twelve
-  cores. **Before the glob, not after:** a flag after it is silently ignored (`npm test --
+  ([#213](https://github.com/gaurav/prcoder/issues/213)). It replaces the default everywhere, and
+  locally that costs nothing: on twelve cores the whole suite took 54s at 4 and 55-56s at the
+  default of 11, two runs each (2026-11-22), since the slowest browser half sets the pace either
+  way. **Before the glob, not after:** a flag after it is silently ignored (`npm test --
   --test-concurrency=4` changes nothing), and `NODE_OPTIONS` refuses this one outright.
 
 [test/CLAUDE.md](../test/CLAUDE.md) has what discovery picks up and why that keeps the drivers in
