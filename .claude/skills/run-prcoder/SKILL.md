@@ -57,8 +57,8 @@ where `GET` reads the ones `.prcoder/prs.json` remembers by URL.
 ## Verifying a change
 
 ```bash
-npm test                   # node --test "test/**/*.test.js"; docs/Verifying.md says why it is quoted.
-                           # Includes test/browser/, one suite run in Chromium and in Firefox;
+npm test                   # node --test --test-concurrency=4 "test/**/*.test.js"; docs/Verifying.md says why.
+                           # Includes test/browser/, one suite run in Chromium and in Firefox, in two halves each;
                            # each run skips with a note when its browser is missing
                            # (npx playwright install chromium firefox)
 node --check public/*.js   # the client files the tests do not import
