@@ -192,6 +192,11 @@ export const isNew = (p, now = Date.now()) => now - Date.parse(p.createdAt ?? ''
 // A milestone due within this long is `soon`, its due date yellow, and one past
 // it is overdue, a red badge: the two to look at for rescheduling.
 export const DUE_SOON = 7 * 86400_000;
+// A listing of the open pull requests younger than this is used as it is: a
+// visit to the PRs tab does not read GitHub again (⟳ always does), and
+// `prcoder choose` prints it without asking. One rule for both, since both
+// read `.prcoder/pulls.json` and either may have written it.
+export const PULLS_FRESH_FOR = 60_000;
 
 /**
  * The PRs tab's orders, each a comparator over pullRow's fields; the
@@ -324,8 +329,46 @@ export function byDay(prompts, now = Date.now()) {
  */
 export const commandOf = (text) => /^\/[A-Za-z][\w:-]*/.exec(String(text ?? '').trimStart())?.[0] ?? null;
 
+/**
+ * Whether a prompt held a paste: Claude Code's history keeps it as a
+ * placeholder, `[Pasted text #1 +40 lines]` or, for a short one, `[Pasted
+ * text #2]` (the two forms in one machine's file on 2026-11-15), and the text
+ * itself only in `pastedContents`, which the server never reads (history.js
+ * says why). So the prompt typed back in or copied out lacks what was pasted.
+ */
+export const hasPaste = (text) => /\[Pasted text #\d+(?: \+\d+ lines)?\]/.test(String(text ?? ''));
+
 /** Whether the History tab's search matches a prompt: case-blind, over its text. */
 export const historyMatches = (p, query) => {
   const q = (query ?? '').trim().toLowerCase();
   return !q || String(p.text ?? '').toLowerCase().includes(q);
+};
+
+/**
+ * The queue text for a selection made in the coding agent's terminal, from
+ * xterm's `getSelection()`: the one thing prcoder reads back out of that pane,
+ * and only because the user drew it (Design.md, "nothing parses the terminal").
+ * xterm has already cut each row's trailing blanks and joined the rows with
+ * newlines, gluing back the ones it wrapped itself. Claude Code's TUI breaks
+ * its long lines on its own, so a wrapped prompt arrives as several lines;
+ * they stay, since an item may be several lines, and ▶ types a newline as a
+ * space (`printable`), which is what an Ink-wrapped line wants.
+ *
+ * Two shapes of the TUI are assumed, both read from a real Claude Code 2.1.330
+ * session's PTY output on 2026-11-22; `node tools/tui-probe.mjs` checks them
+ * against the installed version. The prompt marker at the start of the
+ * input box, which a triple-click (xterm's whole-row select) takes along, is
+ * dropped from the first line only: that version draws it as `❯` and a
+ * no-break space, which `getSelection()` hands over as a plain space, and
+ * earlier ones drew `> `. The start is trimmed first, so a drag begun a cell to
+ * the left of the marker still loses it. And every row after the first starts
+ * in a two-column gutter, the width of that marker, which lines a wrapped row
+ * up under the text: up to two leading spaces come off each later line, or ▶
+ * would type them as a run of blanks mid-prompt. Deeper indentation is the
+ * text's and stays. Empty once trimmed is ''.
+ */
+export const fromTerminal = (text) => {
+  const [first, ...rest] = String(text ?? '').split(/\r?\n/);
+  return [first.trimStart().replace(/^[❯>][ \u00a0]/, ''), ...rest.map((line) => line.replace(/^ {1,2}/, ''))]
+    .join('\n').trim();
 };

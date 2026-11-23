@@ -4,7 +4,7 @@
 // public/items.js so it runs here without a DOM.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { dayKey, dayLabel, timeLabel, byDay, commandOf, historyMatches } from '../public/items.js';
+import { dayKey, dayLabel, timeLabel, byDay, commandOf, hasPaste, historyMatches } from '../public/items.js';
 
 // Local times, built with the Date constructor so the test means the same
 // in every zone: a Saturday noon, and prompts around it.
@@ -72,6 +72,14 @@ test('a prompt that starts with a slash command is marked by that command', () =
   assert.equal(commandOf('//comment'), null);
   assert.equal(commandOf(''), null);
   assert.equal(commandOf(undefined), null);
+});
+
+test('a prompt that held a paste is told by the placeholder Claude Code keeps in its place', () => {
+  assert.equal(hasPaste('fix this [Pasted text #1 +40 lines]'), true);
+  assert.equal(hasPaste('[Pasted text #2] and more'), true);
+  assert.equal(hasPaste('no paste here'), false);
+  assert.equal(hasPaste('[Pasted text] without a number'), false);
+  assert.equal(hasPaste(undefined), false);
 });
 
 test('the search is case-blind over the text, and nothing matches everything', () => {

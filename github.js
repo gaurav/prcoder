@@ -1082,7 +1082,7 @@ const PULLS_QUERY = `query($owner:String!,$repo:String!,$after:String){
         files(first:100){ nodes{ additions deletions viewerViewedState } } } } } }`;
 
 /**
- * GitHub's mergeStateStatus as the one word the Pull requests tab shows.
+ * GitHub's mergeStateStatus as the one word the PRs tab shows.
  * `mergeable` is not asked for: DIRTY already says conflicts. HAS_HOOKS is a
  * CLEAN that waits on a pre-receive hook, which reads as ready here. UNKNOWN
  * is GitHub still working it out, which a fresh read a minute later settles.
@@ -1102,7 +1102,7 @@ export const MERGE_WORD = {
 const LEAD_MAX = 300;
 
 /**
- * One node of PULLS_QUERY as the row the Pull requests tab draws. The first
+ * One node of PULLS_QUERY as the row the PRs tab draws. The first
  * seven fields are the ones `gh pr list` gives the switcher, under the same
  * names, so a row here can stand in for one there. The rest is what picking
  * the next pull request turns on: when it was opened and last moved, whose it
@@ -1146,7 +1146,7 @@ export function pullRow(node) {
 
 /**
  * The repository's open pull requests and open milestones, for the queue's
- * Pull requests tab: `{ milestones, pulls, total, listed }`, the milestones as
+ * PRs tab: `{ milestones, pulls, total, listed }`, the milestones as
  * repoIssues has them and each pull request as pullRow has it, most recently
  * updated first. A milestone a pull request is on that is not among the open
  * ones read is added from it, `closed` if it is, as repoIssues adds one.
@@ -1206,7 +1206,7 @@ const PICKER_MILESTONES_QUERY = `query($owner:String!,$repo:String!,$after:Strin
  * page ranks them again. Every one, to openMilestones' five pages of a hundred, as
  * the queue's listings do: it took the first fifty in GitHub's own order at
  * first, which could leave out the one due soonest on a repository with more,
- * and the pane could not offer what the Issues and Pull requests tabs did. A
+ * and the pane could not offer what the Issues and PRs tabs did. A
  * repository with more still has the pull request's own added by the pane.
  */
 export async function repoMilestones(cwd, owner, repo) {

@@ -122,7 +122,8 @@ for (const pane of ['pr', 'queue']) {
 // here rather than left over the queue for the run.
 const lastPrompt = page.locator('#toast:not([hidden])');
 console.log('last:   ', (await lastPrompt.count()) ? await lastPrompt.innerText() : '(no toast)',
-  '\n  (want "Last prompt, 50 minutes ago (Today hh:mm): Check that the pull request\'s milestone line…", no button)');
+  '\n  (want "Last prompt, 2 hours ago (Today hh:mm): Fix the two findings, then run the browser suite…", no button:'
+  + ' the 50-minute-old prompt was sent in data/wt-1, so it is not this pane\'s)');
 if (await lastPrompt.count()) {
   await lastPrompt.screenshot({ path: path.join(out, 'toast-last-prompt.png') });
   await lastPrompt.click();
