@@ -1173,8 +1173,11 @@ input.addEventListener('keydown', async (e) => {
   // bindings never fire while the input is being typed into -- and this one
   // only means anything there. It takes the textarea's own
   // extend-the-selection-by-a-paragraph on a Mac, which a queue item rarely
-  // has enough of to miss.
-  if (e.altKey && e.shiftKey && !e.ctrlKey && !e.metaKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+  // has enough of to miss. Of keys.js's rules it keeps the one that matters
+  // here, leaving a key mid-composition to the IME; a held key repeats, which
+  // only sets the same end again. On Windows Alt+Shift also switches keyboard
+  // layout, which nobody has checked against this yet (#218).
+  if (!e.isComposing && e.altKey && e.shiftKey && !e.ctrlKey && !e.metaKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
     e.preventDefault();
     setAddTo(e.key === 'ArrowUp' ? 'top' : 'bottom');
     return;

@@ -59,6 +59,13 @@ sheet lists the same keys in the same order. Add a row there with the
 binding, and argue the letter in the comment above the table (what each one steers round: browser tab switching, Firefox's menu
 letters, a Mac's dead keys, Claude Code's own Alt bindings).
 
+The one exception is a key that only means something while typing, which
+`bindKeys` would never fire: Alt+Shift+↑ / ↓ in the queue's input, which
+chooses the end the item goes to. It is a keydown listener on the input in
+`app.js`, it is not on the sheet (`docs/Panes.md` says so beside it), and it
+checks `isComposing` itself. A second key of that kind is the point at which
+`bindKeys` should learn a binding that fires only in a named input.
+
 ## The Claude pane is not prcoder's to draw on
 
 `term.write()` in `app.js` puts bytes into xterm's buffer without them ever
