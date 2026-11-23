@@ -13,16 +13,11 @@
 
 import readline from 'node:readline/promises';
 import { stackOrder, stackUnder } from './public/pr.js';
-import { sortPulls, rootsInOrder, pullWord, sizeChip, age } from './public/items.js';
+import { sortPulls, rootsInOrder, pullWord, sizeChip, age, PULLS_FRESH_FOR } from './public/items.js';
 import { repoPulls } from './github.js';
 import { readPulls, writePulls } from './store.js';
 import { currentBranch, dirtyFiles, branchesBelow, trackedPr, branchOwns, uncommitted } from './git.js';
 import { styled, clip, span, debug } from './term.js';
-
-// A listing younger than this is printed as it is, as the PRs tab
-// opens from one (POST /api/pulls); older, GitHub is asked first, since the
-// read takes seconds only where there are many open.
-export const FRESH_FOR = 60_000;
 
 // The tab's bands and colours: green at the small end, since a small one is
 // usually the next to take, red at the large.
@@ -130,13 +125,13 @@ export async function githubPulls(repo, nameWithOwner) {
 }
 
 /**
- * The listing to print: `.prcoder/pulls.json` when it is under FRESH_FOR old,
- * else GitHub's (githubPulls), written there so the PRs tab opens
- * from this read.
+ * The listing to print: `.prcoder/pulls.json` when it is under PULLS_FRESH_FOR
+ * old, as the PRs tab opens from one (POST /api/pulls), else GitHub's
+ * (githubPulls), written there so the PRs tab opens from this read.
  */
 async function listing(repo, nameWithOwner) {
   const held = await readPulls(repo, nameWithOwner);
-  if (held && Date.now() - held.read < FRESH_FOR) return held;
+  if (held && Date.now() - held.read < PULLS_FRESH_FOR) return held;
   console.log(`reading the open pull requests in ${nameWithOwner}…`);
   return githubPulls(repo, nameWithOwner);
 }

@@ -192,6 +192,11 @@ export const isNew = (p, now = Date.now()) => now - Date.parse(p.createdAt ?? ''
 // A milestone due within this long is `soon`, its due date yellow, and one past
 // it is overdue, a red badge: the two to look at for rescheduling.
 export const DUE_SOON = 7 * 86400_000;
+// A listing of the open pull requests younger than this is used as it is: a
+// visit to the PRs tab does not read GitHub again (⟳ always does), and
+// `prcoder choose` prints it without asking. One rule for both, since both
+// read `.prcoder/pulls.json` and either may have written it.
+export const PULLS_FRESH_FOR = 60_000;
 
 /**
  * The PRs tab's orders, each a comparator over pullRow's fields; the

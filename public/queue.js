@@ -1,5 +1,5 @@
 import { h, btn, ext, api, toast, pref, setPref, tabBtn, writeThrough, fold, kept, mark, fraction, actions } from './ui.js';
-import { TABS, refLabel, refClass, forClaude, rankMilestones, issueMatches, pullMatches, sortPulls, rootsInOrder, pullWord, sizeChip, age, dueLabel, isNew, PULL_SORTS } from './items.js';
+import { TABS, refLabel, refClass, forClaude, rankMilestones, issueMatches, pullMatches, sortPulls, rootsInOrder, pullWord, sizeChip, age, dueLabel, isNew, PULL_SORTS, PULLS_FRESH_FOR } from './items.js';
 import { refs, resolveRef, blocks } from './tasks.js';
 import { blockNode, inline, stackUnder, stackOrder } from './pr.js';
 import { LABEL as HISTORY_LABEL, historyList, historyCount, loadHistory, initHistory } from './history.js';
@@ -126,8 +126,6 @@ const PULL_SORT_KEY = 'prcoder:pull-sort';
 const PULL_GROUP_KEY = 'prcoder:pull-group';
 let pullSort = 'smallest';
 let pullGroup = 'milestone';
-// A listing younger than this is not read again on a visit to the tab; ⟳ always reads.
-const PULLS_FRESH_FOR = 60_000;
 // How long after the page's first status the issues are read for the Issues
 // tab's count (primeIssues): past the page-load `gh pr list` and a clone's
 // first pull request read, so the one GitHub call that is up to five pages

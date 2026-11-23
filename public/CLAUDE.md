@@ -4,7 +4,9 @@
 
 The server imports six files from here, and with them everything they import.
 `cli.js` imports `pr.js` for the status block (`syncPhrase` and the PR's
-labels) and `items.js` for the queue's counts. `server.js` imports `grammars`
+labels) and `items.js` for the queue's counts; `choose.js` imports both for
+`prcoder choose`'s listing -- the stack order, the sort, each row's words, and
+how long a listing stays fresh. `server.js` imports `grammars`
 from `diff.js` to build the Prism half of the vendor map, so the list of
 grammars is written once, in the page that loads them. `tasks.js` is the
 description's grammar -- what a description shows (`withoutHtml`), its
