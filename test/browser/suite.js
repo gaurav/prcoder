@@ -69,6 +69,11 @@ const skip = !engine ? 'playwright is not installed (npm ci without --omit=dev)'
 // the suite runs its tests one after another and Firefox's run was the whole
 // of CI's `npm test` (#213).
 const half = process.env.PRCODER_TEST_HALF;
+// Anything else would match neither half, and the file would pass with no
+// tests in it.
+if (half !== undefined && half !== '1' && half !== '2') {
+  throw new Error(`PRCODER_TEST_HALF is ${JSON.stringify(half)}: it has to be '1', '2' or unset`);
+}
 let inHalf = '1';
 /** Starts the second half: every test after this call is the second process's. */
 const secondHalf = () => { inHalf = '2'; };
@@ -270,9 +275,12 @@ before(async () => {
   browser = await engine.launch(engineName === 'firefox'
     ? { env: { ...process.env, ...firefoxEnv(half ? `half-${half}` : '') } } : {});
   // The shared page is the first half's: a test after secondHalf() that
-  // reaches for it fails on `page` being undefined, rather than passing on
-  // a page none of the tests before it has touched.
-  if (half !== '2') page = await newPage();
+  // reaches for it fails, saying where it has to go, rather than passing on
+  // a page none of the tests before it has touched. Such a test passes in a
+  // run of the whole file, so the message is all that points at the split.
+  page = half === '2'
+    ? new Proxy({}, { get(_, key) { throw new Error(`page.${String(key)}: the shared page is the first half's; move this test above secondHalf(), or open a page of its own with newPage()`); } })
+    : await newPage();
 });
 
 // Without both, `node --test` never exits.
