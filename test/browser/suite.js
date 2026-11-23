@@ -33,10 +33,11 @@
 // 2026-09-19, where /api/pr/task answers with the new body and the old mock's
 // `{queue: null}` assigned undefined over it.
 //
-// One suite, run once per engine: chromium.test.js and firefox.test.js beside
-// this file each set PRCODER_TEST_BROWSER and import it, and `node --test` runs
-// each in a process of its own. Not itself a .test.js, so the glob in `npm test`
-// never runs it bare. Both engines, because a test written against one engine's
+// One suite, run once per engine and in two halves: chromium-1.test.js,
+// chromium-2.test.js and the same for firefox beside this file each set
+// PRCODER_TEST_BROWSER and PRCODER_TEST_HALF and import it, and `node --test`
+// runs each in a process of its own, so the halves run side by side. Not
+// itself a .test.js, so the glob in `npm test` never runs it bare. Both engines, because a test written against one engine's
 // layout has been wrong in the other. Skipped rather than failed when
 // Playwright or the engine is missing: `npm test` on a machine without either
 // stays green with a note, and CI, which installs both, is where this is
@@ -62,8 +63,22 @@ try { engine = (await import('playwright'))[engineName]; } catch { /* not instal
 const skip = !engine ? 'playwright is not installed (npm ci without --omit=dev)'
   : !existsSync(engine.executablePath()) ? `${engineName} is not installed: npx playwright install ${engineName}`
     : false;
+// Which half of the file this process registers: '1', '2', or unset for all
+// of it. The halves are split by `secondHalf()` below, not by a count, so
+// each keeps the file's order. Halves rather than one file per engine because
+// the suite runs its tests one after another and Firefox's run was the whole
+// of CI's `npm test` (#213).
+const half = process.env.PRCODER_TEST_HALF;
+// Anything else would match neither half, and the file would pass with no
+// tests in it.
+if (half !== undefined && half !== '1' && half !== '2') {
+  throw new Error(`PRCODER_TEST_HALF is ${JSON.stringify(half)}: it has to be '1', '2' or unset`);
+}
+let inHalf = '1';
+/** Starts the second half: every test after this call is the second process's. */
+const secondHalf = () => { inHalf = '2'; };
 // Each run's names carry its engine, so a CI log says which one broke.
-const test = (name, ...rest) => nodeTest(`${name} [${engineName}]`, ...rest);
+const test = (name, ...rest) => (!half || half === inHalf) && nodeTest(`${name} [${engineName}]`, ...rest);
 
 // Each line here is a regression: `_for_` showed its underscores, `~struck~`
 // its tildes, HTML comments showed as text, `##` rendered literally, and a
@@ -257,7 +272,13 @@ before(async () => {
   // The drivers' way round macOS 27 keeping a terminal-launched Firefox out of
   // its own app data (tools/driver.mjs); #80 is when it comes out.
   browser = await engine.launch(engineName === 'firefox' ? { env: { ...process.env, ...firefoxEnv() } } : {});
-  page = await newPage();
+  // The shared page is the first half's: a test after secondHalf() that
+  // reaches for it fails, saying where it has to go, rather than passing on
+  // a page none of the tests before it has touched. Such a test passes in a
+  // run of the whole file, so the message is all that points at the split.
+  page = half === '2'
+    ? new Proxy({}, { get(_, key) { throw new Error(`page.${String(key)}: the shared page is the first half's; move this test above secondHalf(), or open a page of its own with newPage()`); } })
+    : await newPage();
 });
 
 // Without both, `node --test` never exits.
@@ -329,8 +350,11 @@ test('the queue\'s PR tab names each box by its line', { skip }, async () => {
 
 // The poll repaints the whole description whenever anything on the pull request
 // moved, and the text of a line is there to be copied.
+// On Playwright's clock: a return to the tab polls no sooner than ten seconds
+// after the last poll (visibilitychange in app.js), and the fast-forward is
+// those ten seconds, which on the wall clock were most of this test's time.
 test('a selection in the description survives a repaint, unless its text moved', { skip }, async () => {
-  const fresh = await newPage();
+  const fresh = await newPage({ clock: true });
   const select = () => fresh.evaluate(() => {
     const [from, to] = [...document.querySelectorAll('#pr-body .md > p, #pr-body .md blockquote')].map((n) => n.firstChild);
     getSelection().setBaseAndExtent(from, 3, to, 2);
@@ -341,7 +365,10 @@ test('a selection in the description survives a repaint, unless its text moved',
     await fresh.unroute('**/api/status');
     await fresh.route('**/api/status', (r) => r.fulfill({ json: next }));
     await fresh.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
-    await fresh.waitForSelector('#pr-body .md:not([data-old])', { timeout: 15000 });
+    await fresh.clock.fastForward(10_000);
+    // The fast-forward is already past the timer, so a wait longer than this
+    // is a repaint that is not coming, not a slow one.
+    await fresh.waitForSelector('#pr-body .md:not([data-old])', { timeout: 10_000 });
   };
   const selected = await select();
   assert.ok(selected.length > 5, selected);
@@ -2863,6 +2890,11 @@ test('a mention from another repository is not drawn as the listed issue of the 
   await fresh.close();
 });
 
+// The halves' split, where the Pull requests tab's tests begin: about half of
+// Firefox's time on CI either side (#213). Every test that uses the shared
+// `page` has to stay above it.
+secondHalf();
+
 // The Pull requests tab: the repository's open pull requests, grouped by
 // milestone as the issues are, each row carrying what picking the next one
 // turns on. The listing is the fixture repository's, with the pull request on
@@ -4175,9 +4207,10 @@ test('a separator moves only on the arrows along its own axis', { skip }, async 
 // A folded pane still says when Claude is working, from the same bracketed turn
 // as the tab icon -- so it appears on Enter and goes after 5s of quiet, and the
 // mocked /pty here sends nothing to hold the turn open. Only folded: open, the
-// terminal shows the turn itself.
+// terminal shows the turn itself. The 5s are Playwright's clock's, so the test
+// does not spend them.
 test('a folded terminal says it is working while a turn runs, and not after', { skip }, async () => {
-  const fresh = await newPage();
+  const fresh = await newPage({ clock: true });
   const busy = () => fresh.locator('#term-busy').isVisible();
   await fresh.click('#term-host');
   await fresh.keyboard.press('Enter');
@@ -4188,7 +4221,9 @@ test('a folded terminal says it is working while a turn runs, and not after', { 
   // Folding must not make the header a different height from the open one.
   assert.equal(await fresh.$eval('#term', (el) => el.getBoundingClientRect().height),
     await fresh.$eval('#term > header', (el) => el.getBoundingClientRect().height));
-  await fresh.waitForFunction(() => document.getElementById('term-busy').hidden, null, { timeout: 10000 });
+  await fresh.clock.fastForward(5_000);
+  // Short, as in the repaint test: past the fast-forward, longer is a miss.
+  await fresh.waitForFunction(() => document.getElementById('term-busy').hidden, null, { timeout: 10_000 });
   assert.equal(await busy(), false, 'gone when the turn ends');
   await fresh.close();
 });
@@ -4197,8 +4232,9 @@ test('a folded terminal says it is working while a turn runs, and not after', { 
 // style.css (`--busy`), for the folded header's octagon. Nothing else would
 // notice the attribute going missing -- the icon would turn into a fetch of
 // /undefined while #term-busy above stayed right -- or the two reds parting.
+// On Playwright's clock, like the test above, for the 5s of quiet.
 test('a turn swaps the tab icon for the busy one, in the folded header\'s red', { skip }, async () => {
-  const fresh = await newPage();
+  const fresh = await newPage({ clock: true });
   const icon = () => fresh.evaluate(() => {
     const link = document.querySelector('link[rel=icon]');
     return { href: link.getAttribute('href'), busy: link.dataset.busy };
@@ -4215,8 +4251,9 @@ test('a turn swaps the tab icon for the busy one, in the folded header\'s red', 
   const token = await fresh.evaluate(() =>
     getComputedStyle(document.documentElement).getPropertyValue('--busy').trim());
   assert.equal(fill?.toLowerCase(), token.toLowerCase(), 'data-busy and --busy are one red');
+  await fresh.clock.fastForward(5_000);
   await fresh.waitForFunction((busy) => document.querySelector('link[rel=icon]').getAttribute('href') !== busy,
-    idle.busy, { timeout: 10000 });
+    idle.busy, { timeout: 10_000 });
   assert.equal((await icon()).href, idle.href, 'idle again once the turn ends');
   assert.equal(await logo(), idle.href, 'the tile too');
   await fresh.close();

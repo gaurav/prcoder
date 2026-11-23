@@ -193,6 +193,13 @@ export async function launchBrowser() {
  * data it hangs until the timeout, with nothing in the output to say why
  * (tools/firefox-runner). Harmless elsewhere. Firefox 158 fixes this upstream;
  * #80 is when to take this out, and this is the one place it lives.
+ *
+ * One directory for every launch, the browser suite's two Firefox halves
+ * included, though they start together. A directory per half was tried and
+ * taken out: Playwright's Firefox runs on a -profile of its own and wrote
+ * nothing here across five suite runs (2026-11-22), so two launches have
+ * nothing to race over. A Firefox half that stalls at launch would be the sign
+ * that has changed.
  */
 export function firefoxEnv() {
   const appData = path.join(repo, 'data', 'firefox-appdata');
