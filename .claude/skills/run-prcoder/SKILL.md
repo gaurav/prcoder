@@ -60,8 +60,8 @@ for the tabs' counts; a `PRCODER_VERBOSE=2` log shows all three.
 ## Verifying a change
 
 ```bash
-npm test                   # node --test "test/**/*.test.js"; docs/Verifying.md says why it is quoted.
-                           # Includes test/browser/, one suite run in Chromium and in Firefox;
+npm test                   # node --test --test-concurrency=4 "test/**/*.test.js"; docs/Verifying.md says why.
+                           # Includes test/browser/, one suite run in Chromium and in Firefox, in two halves each;
                            # each run skips with a note when its browser is missing
                            # (npx playwright install chromium firefox)
 node --check public/*.js   # the client files the tests do not import
@@ -122,6 +122,11 @@ Two rules for them, and for any script after them:
   writes under `data/claude-config/<port>/` and removes on exit; a server
   started by hand for the owner's own look should read the real one, and
   `--no-history` turns the tab off.
+
+  `tools/tui-probe.mjs` breaks both on purpose: what it checks is the real
+  agent's screen, which needs your login. It starts no server, kills its one
+  session, never presses Enter, and prints the screen only with `--screen`.
+  Keep it that way rather than stubbing it.
 - **No writes you do not undo.** The queue is safe. By default it writes only
   `.prcoder/`, which is gitignored and needs no cleanup, and `browser.mjs`
   leaves even that alone: it runs with `--queue data/browser-queue.json`, in the

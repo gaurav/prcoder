@@ -33,10 +33,11 @@
 // 2026-09-19, where /api/pr/task answers with the new body and the old mock's
 // `{queue: null}` assigned undefined over it.
 //
-// One suite, run once per engine: chromium.test.js and firefox.test.js beside
-// this file each set PRCODER_TEST_BROWSER and import it, and `node --test` runs
-// each in a process of its own. Not itself a .test.js, so the glob in `npm test`
-// never runs it bare. Both engines, because a test written against one engine's
+// One suite, run once per engine and in two halves: chromium-1.test.js,
+// chromium-2.test.js and the same for firefox beside this file each set
+// PRCODER_TEST_BROWSER and PRCODER_TEST_HALF and import it, and `node --test`
+// runs each in a process of its own, so the halves run side by side. Not
+// itself a .test.js, so the glob in `npm test` never runs it bare. Both engines, because a test written against one engine's
 // layout has been wrong in the other. Skipped rather than failed when
 // Playwright or the engine is missing: `npm test` on a machine without either
 // stays green with a note, and CI, which installs both, is where this is
@@ -62,8 +63,22 @@ try { engine = (await import('playwright'))[engineName]; } catch { /* not instal
 const skip = !engine ? 'playwright is not installed (npm ci without --omit=dev)'
   : !existsSync(engine.executablePath()) ? `${engineName} is not installed: npx playwright install ${engineName}`
     : false;
+// Which half of the file this process registers: '1', '2', or unset for all
+// of it. The halves are split by `secondHalf()` below, not by a count, so
+// each keeps the file's order. Halves rather than one file per engine because
+// the suite runs its tests one after another and Firefox's run was the whole
+// of CI's `npm test` (#213).
+const half = process.env.PRCODER_TEST_HALF;
+// Anything else would match neither half, and the file would pass with no
+// tests in it.
+if (half !== undefined && half !== '1' && half !== '2') {
+  throw new Error(`PRCODER_TEST_HALF is ${JSON.stringify(half)}: it has to be '1', '2' or unset`);
+}
+let inHalf = '1';
+/** Starts the second half: every test after this call is the second process's. */
+const secondHalf = () => { inHalf = '2'; };
 // Each run's names carry its engine, so a CI log says which one broke.
-const test = (name, ...rest) => nodeTest(`${name} [${engineName}]`, ...rest);
+const test = (name, ...rest) => (!half || half === inHalf) && nodeTest(`${name} [${engineName}]`, ...rest);
 
 // Each line here is a regression: `_for_` showed its underscores, `~struck~`
 // its tildes, HTML comments showed as text, `##` rendered literally, and a
@@ -258,7 +273,13 @@ before(async () => {
   // The drivers' way round macOS 27 keeping a terminal-launched Firefox out of
   // its own app data (tools/driver.mjs); #80 is when it comes out.
   browser = await engine.launch(engineName === 'firefox' ? { env: { ...process.env, ...firefoxEnv() } } : {});
-  page = await newPage();
+  // The shared page is the first half's: a test after secondHalf() that
+  // reaches for it fails, saying where it has to go, rather than passing on
+  // a page none of the tests before it has touched. Such a test passes in a
+  // run of the whole file, so the message is all that points at the split.
+  page = half === '2'
+    ? new Proxy({}, { get(_, key) { throw new Error(`page.${String(key)}: the shared page is the first half's; move this test above secondHalf(), or open a page of its own with newPage()`); } })
+    : await newPage();
 });
 
 // Without both, `node --test` never exits.
@@ -389,8 +410,11 @@ test('the PR #N tab holds the checklist, the mentions and what it closes, and co
 
 // The poll repaints the whole description whenever anything on the pull request
 // moved, and the text of a line is there to be copied.
+// On Playwright's clock: a return to the tab polls no sooner than ten seconds
+// after the last poll (visibilitychange in app.js), and the fast-forward is
+// those ten seconds, which on the wall clock were most of this test's time.
 test('a selection in the description survives a repaint, unless its text moved', { skip }, async () => {
-  const fresh = await newPage();
+  const fresh = await newPage({ clock: true });
   const select = () => fresh.evaluate(() => {
     const [from, to] = [...document.querySelectorAll('#pr-body .md > p, #pr-body .md blockquote')].map((n) => n.firstChild);
     getSelection().setBaseAndExtent(from, 3, to, 2);
@@ -401,7 +425,10 @@ test('a selection in the description survives a repaint, unless its text moved',
     await fresh.unroute('**/api/status');
     await fresh.route('**/api/status', (r) => r.fulfill({ json: next }));
     await fresh.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
-    await fresh.waitForSelector('#pr-body .md:not([data-old])', { timeout: 15000 });
+    await fresh.clock.fastForward(10_000);
+    // The fast-forward is already past the timer, so a wait longer than this
+    // is a repaint that is not coming, not a slow one.
+    await fresh.waitForSelector('#pr-body .md:not([data-old])', { timeout: 10_000 });
   };
   const selected = await select();
   assert.ok(selected.length > 5, selected);
@@ -3209,6 +3236,11 @@ test('a mention from another repository is not drawn as the listed issue of the 
   await fresh.close();
 });
 
+// The halves' split, where the PRs tab's tests begin: about half of
+// Firefox's time on CI either side (#213). Every test that uses the shared
+// `page` has to stay above it.
+secondHalf();
+
 // The PRs tab: the repository's open pull requests, grouped by
 // milestone as the issues are, each row carrying what picking the next one
 // turns on. The listing is the fixture repository's, with the pull request on
@@ -4082,6 +4114,149 @@ test('Alt+R says in one toast which half failed', { skip }, async () => {
   await fresh.close();
 });
 
+// ⤓ on the queue header and Alt+Q: the text selected in the terminal becomes
+// a Local item, through addItem like a typed one, with the prompt's own `> `
+// dropped. The button is dimmed until there is a selection and again once it
+// is taken, the focus comes back to the terminal, and nothing goes to the
+// agent -- except that with nothing selected the key is the agent's, as ESC q.
+// The text comes in as PTY output, since a real session echoes what is typed.
+test('⤓ and Alt+Q add the terminal\'s selection to the queue, and the agent gets the key with none', { skip }, async () => {
+  const frames = [];
+  let sock;
+  const fresh = await newPage({ init: onLinux, pty: (ws) => { sock = ws; ws.onMessage((m) => frames.push(JSON.parse(m))); } });
+  const typed = () => frames.filter((f) => f.type === 'input');
+  let queue = [];
+  // Both routes, as the other queue tests: the status poll replaces the list.
+  await fresh.route('**/api/status', (r) => r.fulfill({ json: { ...status, queue } }));
+  await fresh.route('**/api/queue', (r) => {
+    if (r.request().method() === 'PUT') queue = r.request().postDataJSON().items;
+    return r.fulfill({ json: queue });
+  });
+  assert.equal(await fresh.locator('#queue-selection').isDisabled(), true, 'nothing selected yet');
+  assert.match(await fresh.getAttribute('#queue-selection', 'title'), /\(Alt\+Q\)$/, 'the button says its key');
+  sock.send('> fix the clamp');
+  await fresh.waitForFunction(() => document.getElementById('term-host').textContent.includes('fix the clamp'));
+  // Right to left, so that `outside` can carry the drag on past the
+  // terminal's left edge and let go over the next pane. xterm clamps it to the
+  // first column, so the range is the one just taken, which it reports no
+  // change for: only a mouseup heard on the window, not on #term-host, can
+  // wake the button. Not off the right edge, where in Firefox's window the
+  // terminal reaches the viewport's and a release reaches no listener at all,
+  // nor above it, where xterm's drag-scroll ends the range at column 0.
+  const select = async ({ outside = false } = {}) => {
+    const box = await fresh.locator('#term-host .xterm-rows > div').first().boundingBox();
+    const y = box.y + box.height / 2;
+    await fresh.mouse.move(box.x + box.width - 1, y);
+    await fresh.mouse.down();
+    await fresh.mouse.move(box.x + 1, y, { steps: 5 });
+    if (outside) {
+      const host = await fresh.locator('#term-host').boundingBox();
+      const x = host.x - 30;
+      assert.equal(await fresh.evaluate(([x, y]) => {
+        const at = document.elementFromPoint(x, y);
+        return !!at && !at.closest('#term-host');
+      }, [x, y]), true, 'the release is on the page, outside the terminal');
+      await fresh.mouse.move(x, y, { steps: 5 });
+    }
+    await fresh.mouse.up();
+    await fresh.waitForFunction(() => !document.getElementById('queue-selection').disabled);
+  };
+  await select();
+  await fresh.click('#queue-selection');
+  await fresh.waitForFunction(() => document.querySelectorAll('#queue-body .item').length === 1);
+  assert.deepEqual(queue.map((i) => i.text), ['fix the clamp'], 'the prompt marker dropped, the text kept');
+  assert.equal(await fresh.locator('#queue-selection').isDisabled(), true, 'taken: the selection is cleared');
+  assert.ok(await fresh.evaluate(() => !!document.activeElement?.closest('#term-host')), 'focus back in the terminal');
+  // The same range again, let go of over another pane.
+  await select({ outside: true });
+  await fresh.click('#queue-selection');
+  await fresh.waitForFunction(() => document.querySelectorAll('#queue-body .item').length === 2);
+  // The same by the key, pressed in the terminal.
+  await select();
+  await fresh.keyboard.press('Alt+KeyQ');
+  await fresh.waitForFunction(() => document.querySelectorAll('#queue-body .item').length === 3);
+  assert.deepEqual(queue.map((i) => i.text), ['fix the clamp', 'fix the clamp', 'fix the clamp']);
+  await settle(fresh);
+  assert.equal(typed().length, 0, 'the agent saw neither the click nor the key');
+  // Nothing selected: the agent's key, as if it were not bound.
+  await fresh.keyboard.press('Alt+KeyQ');
+  for (let i = 0; !typed().length && i < 100; i++) await fresh.waitForTimeout(50);
+  assert.deepEqual(typed(), [{ type: 'input', data: '\x1bq' }]);
+  assert.equal(queue.length, 3, 'and nothing added');
+  await fresh.close();
+});
+
+// A selection with a reference in it waits on GitHub before it is added, and
+// a second Alt+Q in that wait is ignored rather than adding it twice; ⤓ is
+// dimmed for the wait. The lookup is held open until both keys are pressed.
+test('a second Alt+Q while a selection\'s reference is looked up adds nothing', { skip }, async () => {
+  let sock;
+  const fresh = await newPage({ init: onLinux, pty: (ws) => { sock = ws; } });
+  let queue = [];
+  await fresh.route('**/api/status', (r) => r.fulfill({ json: { ...status, queue } }));
+  await fresh.route('**/api/queue', (r) => {
+    if (r.request().method() === 'PUT') queue = r.request().postDataJSON().items;
+    return r.fulfill({ json: queue });
+  });
+  let answer;
+  const asked = [];
+  const held = new Promise((resolve) => { answer = resolve; });
+  await fresh.route('**/api/queue/ref', async (r) => {
+    asked.push(r.request().postDataJSON().text);
+    await held;
+    await r.fulfill({ json: { ref: null } });
+  });
+  sock.send('❯ Fix #93');
+  await fresh.waitForFunction(() => document.getElementById('term-host').textContent.includes('Fix #93'));
+  const box = await fresh.locator('#term-host .xterm-rows > div').first().boundingBox();
+  await fresh.mouse.move(box.x + 1, box.y + box.height / 2);
+  await fresh.mouse.down();
+  await fresh.mouse.move(box.x + box.width - 1, box.y + box.height / 2, { steps: 5 });
+  await fresh.mouse.up();
+  await fresh.waitForFunction(() => !document.getElementById('queue-selection').disabled);
+  await fresh.keyboard.press('Alt+KeyQ');
+  for (let i = 0; !asked.length && i < 100; i++) await fresh.waitForTimeout(50);
+  assert.equal(await fresh.locator('#queue-selection').isDisabled(), true, 'dimmed while it is looked up');
+  await fresh.keyboard.press('Alt+KeyQ');
+  await settle(fresh);
+  answer();
+  await fresh.waitForFunction(() => document.querySelectorAll('#queue-body .item').length === 1);
+  await settle(fresh);
+  assert.deepEqual(asked, ['Fix #93'], 'looked up once');
+  assert.deepEqual(queue.map((i) => i.text), ['Fix #93'], 'added once');
+  await fresh.close();
+});
+
+// Claude Code's fullscreen view turns mouse reporting on, which hands a plain
+// drag to the agent. On a Mac only Option-drag selects past that, and only
+// because the page sets macOptionClickForcesSelection; without it nothing
+// there could be selected for ⤓ at all.
+test('with the agent reporting the mouse, Option-drag on a Mac still selects for ⤓', { skip }, async () => {
+  let sock;
+  const fresh = await newPage({
+    init: () => Object.defineProperty(Navigator.prototype, 'platform', { get: () => 'MacIntel' }),
+    pty: (ws) => { sock = ws; },
+  });
+  // The modes 2.1.330 sets, then its prompt.
+  sock.send('\x1b[?1000h\x1b[?1002h\x1b[?1003h\x1b[?1006h❯ fix the clamp');
+  await fresh.waitForFunction(() => document.getElementById('term-host').textContent.includes('fix the clamp'));
+  const box = await fresh.locator('#term-host .xterm-rows > div').first().boundingBox();
+  const drag = async () => {
+    await fresh.mouse.move(box.x + 1, box.y + box.height / 2);
+    await fresh.mouse.down();
+    await fresh.mouse.move(box.x + box.width - 1, box.y + box.height / 2, { steps: 5 });
+    await fresh.mouse.up();
+    await settle(fresh);
+  };
+  await drag();
+  assert.equal(await fresh.locator('#queue-selection').isDisabled(), true, 'a plain drag is the agent\'s');
+  await fresh.keyboard.down('Alt');
+  await drag();
+  await fresh.keyboard.up('Alt');
+  assert.equal(await fresh.locator('#queue-selection').isDisabled(), false, 'Option-drag selects');
+  await fresh.close();
+});
+
 // Alt+V is the diff pane's box pressed, so everything the box moves follows:
 // the row, the tab's count, and the box itself -- both ways. From the
 // terminal too, where the agent does not get it while a file is open and does
@@ -4411,9 +4586,10 @@ test('a separator moves only on the arrows along its own axis', { skip }, async 
 // A folded pane still says when Claude is working, from the same bracketed turn
 // as the tab icon -- so it appears on Enter and goes after 5s of quiet, and the
 // mocked /pty here sends nothing to hold the turn open. Only folded: open, the
-// terminal shows the turn itself.
+// terminal shows the turn itself. The 5s are Playwright's clock's, so the test
+// does not spend them.
 test('a folded terminal says it is working while a turn runs, and not after', { skip }, async () => {
-  const fresh = await newPage();
+  const fresh = await newPage({ clock: true });
   const busy = () => fresh.locator('#term-busy').isVisible();
   await fresh.click('#term-host');
   await fresh.keyboard.press('Enter');
@@ -4424,7 +4600,9 @@ test('a folded terminal says it is working while a turn runs, and not after', { 
   // Folding must not make the header a different height from the open one.
   assert.equal(await fresh.$eval('#term', (el) => el.getBoundingClientRect().height),
     await fresh.$eval('#term > header', (el) => el.getBoundingClientRect().height));
-  await fresh.waitForFunction(() => document.getElementById('term-busy').hidden, null, { timeout: 10000 });
+  await fresh.clock.fastForward(5_000);
+  // Short, as in the repaint test: past the fast-forward, longer is a miss.
+  await fresh.waitForFunction(() => document.getElementById('term-busy').hidden, null, { timeout: 10_000 });
   assert.equal(await busy(), false, 'gone when the turn ends');
   await fresh.close();
 });
@@ -4433,8 +4611,9 @@ test('a folded terminal says it is working while a turn runs, and not after', { 
 // style.css (`--busy`), for the folded header's octagon. Nothing else would
 // notice the attribute going missing -- the icon would turn into a fetch of
 // /undefined while #term-busy above stayed right -- or the two reds parting.
+// On Playwright's clock, like the test above, for the 5s of quiet.
 test('a turn swaps the tab icon for the busy one, in the folded header\'s red', { skip }, async () => {
-  const fresh = await newPage();
+  const fresh = await newPage({ clock: true });
   const icon = () => fresh.evaluate(() => {
     const link = document.querySelector('link[rel=icon]');
     return { href: link.getAttribute('href'), busy: link.dataset.busy };
@@ -4451,8 +4630,9 @@ test('a turn swaps the tab icon for the busy one, in the folded header\'s red', 
   const token = await fresh.evaluate(() =>
     getComputedStyle(document.documentElement).getPropertyValue('--busy').trim());
   assert.equal(fill?.toLowerCase(), token.toLowerCase(), 'data-busy and --busy are one red');
+  await fresh.clock.fastForward(5_000);
   await fresh.waitForFunction((busy) => document.querySelector('link[rel=icon]').getAttribute('href') !== busy,
-    idle.busy, { timeout: 10000 });
+    idle.busy, { timeout: 10_000 });
   assert.equal((await icon()).href, idle.href, 'idle again once the turn ends');
   assert.equal(await logo(), idle.href, 'the tile too');
   await fresh.close();

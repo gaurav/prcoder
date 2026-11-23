@@ -1,6 +1,7 @@
 # How this repo checks itself
 
-`npm test` is `node --test "test/**/*.test.js"`, and every part of that is load-bearing:
+`npm test` is `node --test --test-concurrency=4 "test/**/*.test.js"`, and every part of that is
+load-bearing:
 
 - **Not `node --test test/`.** On Node 26 a directory argument is resolved as a module and dies
   with `Cannot find module`.
@@ -12,6 +13,14 @@
   collapses to whatever one directory it matches; that run reported 1 test and passed.
 - **Double quotes,** for the same reason the `postinstall` script is Node: single quotes are not
   quotes to cmd.exe.
+- **`--test-concurrency=4`,** because the browser suite runs as four files, a half per engine, and
+  Node's default of one fewer than the CPUs is three on CI's four-vCPU runner: one half waited
+  for another, and the step took 124s where its slowest half took 85s
+  ([#213](https://github.com/gaurav/prcoder/issues/213)). It replaces the default everywhere, and
+  locally that costs nothing: on twelve cores the whole suite took 54s at 4 and 55-56s at the
+  default of 11, two runs each (2026-11-22), since the slowest browser half sets the pace either
+  way. **Before the glob, not after:** a flag after it is silently ignored (`npm test --
+  --test-concurrency=4` changes nothing), and `NODE_OPTIONS` refuses this one outright.
 
 [test/CLAUDE.md](../test/CLAUDE.md) has what discovery picks up and why that keeps the drivers in
 `tools/`.
@@ -19,8 +28,12 @@
 The suite covers everything that can be checked without a browser or a tty, and one thing that
 needs a browser: `test/browser/suite.js` opens the real page from a server started in-process, with
 the API routes and the `/pty` socket answered by Playwright from a fixture, so it needs no `gh`, no
-`claude` and no PTY. It runs once per engine, from `chromium.test.js` and `firefox.test.js`, and
-skips with a note when Playwright or that engine is missing; CI installs both. Its blind spot is the
+`claude` and no PTY. It runs once per engine and in two halves, from `chromium-1.test.js`,
+`chromium-2.test.js`, `firefox-1.test.js` and `firefox-2.test.js`, so that the halves run side by
+side ([#213](https://github.com/gaurav/prcoder/issues/213)): `secondHalf()` in the suite is the
+split, and a test on the shared `page` has to sit above it. It skips with a note when Playwright
+or that engine is missing; CI installs both. A `--test-name-pattern` run finds a test only in
+the file for its half. Its blind spot is the
 fixture, which is shaped by hand from what `/api/status` answers today, so a field the server
 renames and the client follows still passes. A stub `gh` ([#54](https://github.com/gaurav/prcoder/issues/54))
 is what closes that.
@@ -107,6 +120,14 @@ is not the branch you are on.
 anything on this machine can start Firefox, with and without the workaround, and is worth running
 after a macOS, Firefox or Playwright update; [its README](../tools/firefox-runner/README.md) says
 how to read it.
+
+**`node tools/tui-probe.mjs`** is not a driver either, and is the one check here that runs the real
+agent: `claude`, logged in as you, in this repository. It types a line into the prompt box without
+sending it, draws the output in a headless xterm, and checks what the queue's ⤓ assumes of Claude
+Code's screen -- the prompt marker, the gutter a wrapped line sits in, the two through
+`fromTerminal` giving back the line typed -- and notes whether the mouse is reported. Run it after
+a Claude Code update; a FAIL prints the prompt's rows, and `--screen` the whole screen. The suite
+cannot see these, since its agent is a stub that draws what the test tells it to.
 
 ## Figures worth re-measuring
 
