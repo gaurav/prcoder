@@ -404,7 +404,7 @@ a { color: var(--accent); }
    prcoder windows open, which repository this one is in is the first question,
    and a faint outline did not answer it at a glance. So the fill is now strong
    enough to be a filled shape, and the name -- the half that says which
-   checkout -- is bold and `--fg` on it, with the owner left `--accent`. It
+   checkout -- is bold and `--fg` on it, with the owner a paler `--accent`. It
    still stops short of `.primary`'s solid accent with dark text, so the pull
    request stays the one button in the row, and of the `.badge`s' uppercase. A
    brighter grey ring was the other candidate, and it read as one more `.tab`.
@@ -498,7 +498,10 @@ a { color: var(--accent); }
   border-color: var(--accent);
   background: color-mix(in srgb, var(--accent) 34%, transparent);
 }
-.pr-repo .owner { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The owner is the accent pulled 60% toward --fg. Plain --accent on the 24%
+   fill was about 4.2:1, and 3.4:1 on hover -- under 4.5:1 for 12px text, and
+   on the half that is clipped first. This is about 6:1, and 4.9:1 on hover. */
+.pr-repo .owner { color: color-mix(in srgb, var(--accent) 40%, var(--fg)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pr-repo .name { color: var(--fg); font-weight: 600; flex: none; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* Serif, like the description under it: the title is the first sentence of the
