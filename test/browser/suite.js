@@ -2806,6 +2806,60 @@ test('an Issues read that fails behind another tab leaves ? and says nothing unt
   await fresh.close();
 });
 
+// A poll is not a visit: once a visit's read has failed with no listing to
+// keep, the minute's poll and every return to the browser tab left it alone.
+// Until 2026-11-23 each one read up to five pages again and toasted the same
+// error, for as long as the tab stayed up.
+test('a failed Issues read is not tried again by every poll', { skip }, async () => {
+  const fresh = await newPage({ clock: true });
+  await fresh.waitForSelector('#queue-body .tab[data-tab="local"]');
+  await fresh.clock.pauseAt(Date.now() + 500);
+  const asked = [];
+  await fresh.route('**/api/issues', (r) => { asked.push(1); return r.fulfill({ status: 500, json: { error: 'gh: API rate limit exceeded' } }); });
+  const failed = fresh.waitForResponse('**/api/issues');
+  await fresh.locator('#queue-body .tab[data-tab="issues"]').click();
+  await failed;
+  await fresh.waitForFunction(() => document.querySelector('#queue-body .tab[data-tab="issues"]')?.textContent === 'Issues (?)');
+  for (const tab of ['issues', 'pr']) {
+    if (tab === 'pr') {
+      // The PR #N tab's visit is a visit, and tries again.
+      const again = fresh.waitForResponse('**/api/issues');
+      await fresh.locator('#queue-body .tab[data-tab="pr"]').click();
+      await again;
+    }
+    const before = asked.length;
+    const polled = fresh.waitForResponse('**/api/status');
+    await fresh.clock.runFor(60_000);
+    await polled;
+    await fresh.waitForTimeout(200);
+    assert.equal(asked.length, before, `the poll on the ${tab} tab left the failure for a visit`);
+  }
+  await fresh.close();
+});
+
+// A poll that lands while a visit's read is out does not queue a second read
+// behind it: the one out was asked about the same pull request.
+test('a poll during the first Issues read does not ask for a second', { skip }, async () => {
+  const fresh = await newPage({ clock: true });
+  await fresh.waitForSelector('#queue-body .tab[data-tab="local"]');
+  await fresh.clock.pauseAt(Date.now() + 500);
+  let release;
+  const held = new Promise((r) => { release = r; });
+  const asked = [];
+  await fresh.route('**/api/issues', async (r) => { asked.push(1); await held; return r.fulfill({ json: ISSUES }); });
+  await fresh.locator('#queue-body .tab[data-tab="issues"]').click();
+  await fresh.waitForFunction(() => document.querySelector('#queue-body .issue-groups') !== null);
+  const polled = fresh.waitForResponse('**/api/status');
+  await fresh.clock.runFor(60_000);
+  await polled;
+  await fresh.waitForTimeout(200);
+  release();
+  await fresh.waitForSelector('#queue-body .fold.milestone');
+  await fresh.waitForTimeout(200);
+  assert.deepEqual(asked, [1]);
+  await fresh.close();
+});
+
 // A first listing that fails says so on the tab once the toast has gone,
 // rather than reading as if it were still loading, and can be asked for again.
 test('a first listing that fails says so on the tab, and tries again', { skip }, async () => {

@@ -59,7 +59,11 @@ export function setItems(next, prOnScreen = null) {
   // reads `…` (mentionRow). After `pr` is the new one, since fetchIssues
   // records what it asks about from `pr`: asked before, it recorded the pull
   // request just left, and the next poll read all five pages again.
-  if (drawsIssues() && listingStale()) loadIssues(true);
+  // Not after a failure with no listing to keep: the poll comes every minute
+  // and on every return to the browser tab, and each read up to five pages
+  // and toasted the same error again. That waits for a visit or ⟳, as the
+  // page-open read's failure does.
+  if (drawsIssues() && !issuesFailed && listingStale()) loadIssues(true);
   // Most polls bring the list already on screen, and a rebuild for nothing
   // costs every row and listener. `items` is kept, not swapped for the equal
   // copy: the rows on screen hold its objects, and a tick on a row whose item
@@ -88,7 +92,10 @@ let listed = new Map();
 // the mentions reads again when the one on screen asks something else.
 let askedFor = null;
 const asks = (p) => JSON.stringify([p?.url ?? null, mentioned(p).map((i) => i.number)]);
-const listingStale = () => !listing || askedFor !== asks(pr);
+// No listing is stale too, unless a read is out to bring one: a read out
+// already asked about this pull request, and a poll that took no listing for a
+// reason to ask again queued a second read of every page behind it.
+const listingStale = () => askedFor !== asks(pr) || (!listing && !issuesLoading);
 // The Issues tab's own state, kept across the repaint every poll causes and
 // not across a reload, like the file groups' folds: the search, which groups
 // are closed, which rows are open, and which groups a listing has had, so a
