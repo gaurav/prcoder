@@ -429,7 +429,10 @@ the issue is where it lives from then on.
 
 The tabs sit in a strip of their own above the list, which scrolls under it, so a tab is always a
 click away however long the listing below it runs; a strip that does not fit the pane's width wraps
-whole tabs onto a second row rather than running off the edge. Each tab keeps its own scroll
+whole tabs onto a second row rather than running off the edge. From the left: Local, then the
+tabs that read from elsewhere -- PRs, Issues, PR #N while a pull request is on screen, and History
+while there is one to read -- then Completed and Deleted (`sourcesFor` and `stripFor` in
+`public/queue.js`). Each tab keeps its own scroll
 offset while the page is open: back from Issues, Local is where you left it, as the pull request
 pane's tabs are. A tab's own row of controls -- the search box, and the selects and ⟳ where it has
 them -- stays in sight at the top of the list as the groups scroll under it.
@@ -478,8 +481,8 @@ unticking one puts it back on Local, which is the way back if Claude did not do 
 a slip. **Deleted** holds tombstones, the latest on top, until you empty it, and hides when it holds
 nothing. Every item is on exactly one of those.
 
-Two more tabs read GitHub rather than your queue, and ↓ on either copies an item into Local and
-leaves it where it was. **PR #N**, named by the pull request on screen and there only with one,
+Three more tabs read GitHub rather than your queue -- PR #N, Issues and PRs -- and ↓ on any of
+them copies an item into Local and leaves it where it was. **PR #N**, named by the pull request on screen and there only with one,
 is everything its description points at, in three folds. *Checklist* is the description's own
 boxes, ticked through to GitHub like the boxes in the PR pane, with a pie of how many are done;
 ▶ on a line types it into the coding agent and ticks nothing, since the box is GitHub's. *Mentions*
