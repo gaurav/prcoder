@@ -4713,6 +4713,17 @@ test('a row gutter carries a grip, and its line lights up under the pointer', { 
   assert.equal((await style('::after')).image, 'none');
   await fresh.locator('#gut-queue').hover();
   assert.match((await style('::after')).image, /gradient/);
+  // And it stays lit through a drag that runs past the gutter's clamp, where
+  // the pointer is no longer over it. Under pointer capture :hover alone
+  // passes this too, in both engines (2026-11-23), so it guards the behaviour,
+  // not the .dragging class that style.css puts it on.
+  const box = await fresh.locator('#gut-queue').boundingBox();
+  await fresh.mouse.down();
+  await fresh.mouse.move(box.x + box.width / 2, 2, { steps: 4 });
+  assert.match((await style('::after')).image, /gradient/, 'lit while dragged past the clamp');
+  await fresh.mouse.up();
+  await fresh.mouse.move(box.x + box.width / 2, box.y - 300);
+  assert.equal((await style('::after')).image, 'none', 'dark again once released');
   await fresh.close();
 });
 

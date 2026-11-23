@@ -185,10 +185,16 @@ main.diff-open:not(.term-off, .diff-off) #gut-diff { display: block; }
    fourth pixel of the row gutters' ten. focus-visible, because a gutter you
    have just dragged should not keep it. */
 .gut:focus { outline: none; }
-.gut.col:is(:hover, :active, :focus-visible)::after {
+/* .dragging, not :active: panes.js's pointerdown calls preventDefault(), which
+   in Firefox can keep :active from being set. panes.js holds the class from
+   pointerdown until the capture is lost. Today :hover alone holds through a
+   drag past the gutter's clamp in both engines, because the gutter has the
+   pointer captured (the browser suite's grip test, 2026-11-23); the class
+   keeps the line lit without leaning on that. */
+.gut.col:is(:hover, .dragging, :focus-visible)::after {
   background: linear-gradient(var(--accent), var(--accent)) center / 3px 100% no-repeat;
 }
-.gut.row:is(:hover, :active, :focus-visible)::after {
+.gut.row:is(:hover, .dragging, :focus-visible)::after {
   background: linear-gradient(var(--accent), var(--accent)) 0 4px / 100% 3px no-repeat;
 }
 
