@@ -50,9 +50,12 @@ stdout. For a look with the user's own eyes, leave it running and hand them that
 API shape: the `routes` table in `server.js`, keyed `"METHOD /path"`, JSON
 in/out, errors as 500 `{error}`. Every handler but the few in `UNLOCKED` --
 whoami, the `GET` status poll, the queue's reference lookup, the Issues and
-Pull requests tabs' listings, the PR pane's list of milestones -- is serialised, so one slow call delays the rest. `POST /api/status`
+PRs tabs' listings, the PR pane's list of milestones -- is serialised, so one slow call delays the rest. `POST /api/status`
 is the page's ⟳: a poll that also searches for the branch's pull requests,
-where `GET` reads the ones `.prcoder/prs.json` remembers by URL.
+where `GET` reads the ones `.prcoder/prs.json` remembers by URL. A page load
+also reads, with no tab clicked, `/api/history` and the last `/api/pulls`
+listing at once and `/api/issues` about three seconds after the first status,
+for the tabs' counts; a `PRCODER_VERBOSE=2` log shows all three.
 
 ## Verifying a change
 
@@ -130,14 +133,14 @@ Two rules for them, and for any script after them:
   gitignored scratch directory. A script of your own that writes the queue
   should do the same -- `--queue` makes no `.gitignore`, so a path outside
   `data/` or `.prcoder/` would show up in `git status`. The PR is not — ticking a
-  description checkbox — in the PR pane or the queue's PR tab — edits the
+  description checkbox — in the PR pane or the queue's PR #N tab — edits the
   description on GitHub, and picking in the PR pane's milestone line moves the
   pull request to that milestone (pick the old one back, or none, to undo; the
   pull request's timeline keeps both events). To check `/api/pr/milestone`
   without a write, send a number the picker never listed: it is refused
   before gh. Filing a queue item with ◎
   writes to GitHub too, and one-way: putting the queue back does not close the
-  issue. Dropping an Issues or Pull requests row on a milestone line, or Move in
+  issue. Dropping an Issues or PRs row on a milestone line, or Move in
   its opened row, sets that milestone on GitHub, so route `/api/issue/milestone`
   and `/api/pull/milestone` in a driver unless a real move is the point, and put
   a real one back. Snapshot the body with `gh pr view <n> --json body -q

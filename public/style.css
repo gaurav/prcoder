@@ -825,6 +825,16 @@ main.diff-off #diff-wrap { display: none; }
 
 /* --- Queue pane --- */
 
+/* The strip above the list, which scrolls under it: the pull request pane's
+   #pr-head and #pr-body (above, with the argument against a sticky strip in
+   one scroller -- two views sharing one scrollTop). The strip wraps whole
+   tabs rather than overflowing: seven tabs with counts do not fit a narrow
+   pane on one row, and a tab off the edge is one that cannot be clicked. */
+#queue-body { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+#queue-head { flex: none; padding: 10px 10px 8px; border-bottom: 1px solid var(--line); }
+#queue-head .tabs { margin-bottom: 0; flex-wrap: wrap; row-gap: 4px; }
+#queue-head .tab { white-space: nowrap; }
+
 .items { list-style: none; margin: 0; padding: 0; }
 /* 15px, the description's size (.md): a row at the terminal's 14px read a step
    smaller than it, since sans at a size is smaller to the eye than mono at it.
@@ -848,14 +858,14 @@ main.diff-off #diff-wrap { display: none; }
    and a group of five PR mentions would be five of them beside each row's
    buttons. */
 .item .tag.pull { border-color: var(--pull-line); background: var(--pull-bg); }
-/* A mention on the Issues tab that is no longer open: a closed issue, or a
-   merged or closed PR. */
-.item.source.closed .text { color: var(--dim); }
+/* A mention that is no longer open -- a closed issue, or a merged or closed
+   PR -- and, on the PR #N tab, an issue this pull request closes. */
+.item.source:is(.closed, .closes) .text { color: var(--dim); }
 /* The Issues tab: the search, the milestone groups (the file list's folds,
    in the directory fold's face), a label as a dashed chip with no colour of
    its own (#66), and an opened row's body in the description's face. */
 #queue-search {
-  display: block; width: 100%; box-sizing: border-box; margin: 0 0 6px; padding: 3px 6px;
+  box-sizing: border-box; padding: 3px 6px;
   font: inherit; font-size: 12px; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 4px;
 }
 #queue-search:focus { outline: 1px solid var(--accent); }
@@ -938,7 +948,7 @@ li.issue-body select.milestone {
   font: inherit; font-size: 13px; padding: 1px 4px; color: var(--fg); background: var(--bg);
   border: 1px solid var(--line); border-radius: 4px;
 }
-/* The Pull requests tab: the Issues tab's face, with a control row over the
+/* The PRs tab: the Issues tab's face, with a control row over the
    groups -- the search, the order, the grouping and ⟳ -- and a row of three
    or four lines: the title with Switch, the facts under it, the description's
    first paragraph under those, clamped to two lines, in the serif the
@@ -946,8 +956,20 @@ li.issue-body select.milestone {
    pull request's tag is the tinted `PR #N` chip (`.tag.pull` above), as the
    queue's rows wear it; the size chip is a size label in a plain outline; the
    merge word takes the file list's colours. */
-.pull-controls { display: flex; gap: 6px; align-items: center; margin: 0 0 6px; }
-.pull-controls #queue-pull-search, .pull-controls #queue-history-search { flex: 1; margin: 0; }
+/* The row of controls at the top of each tab that reads something -- Issues,
+   PRs and History: the search, and on two of them the selects and ⟳. It
+   stays in sight while the groups scroll under it: sticky inside the list
+   rather than in the strip's head, since it belongs to one tab, and the head
+   keeps one height whichever tab shows. Stuck, it sits 10px down -- both
+   engines keep it inside the scroller's padding (2026-11-08) -- so ::before
+   paints that band in the panel's colour and takes the clicks in it; the gap
+   under it is padding, not margin, so no row shows through there either. */
+.pull-controls {
+  display: flex; gap: 6px; align-items: center; position: sticky; top: 0; z-index: 1;
+  margin: 0; padding: 0 0 6px; background: var(--panel);
+}
+.pull-controls::before { content: ''; position: absolute; left: 0; right: 0; top: -10px; height: 10px; background: var(--panel); }
+.pull-controls #queue-search, .pull-controls #queue-pull-search, .pull-controls #queue-history-search { flex: 1; margin: 0; }
 .pull-controls select {
   font: inherit; font-size: 12px; padding: 2px 4px; color: var(--fg); background: var(--bg);
   border: 1px solid var(--line); border-radius: 4px;

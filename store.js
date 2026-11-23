@@ -432,7 +432,7 @@ export async function writePrs(repo, branch, entry, now = Date.now()) {
 
 /**
  * `.prcoder/pulls.json`: the repository's open pull requests and milestones as
- * the queue's Pull requests tab last read them (repoPulls in github.js), and
+ * the queue's PRs tab last read them (repoPulls in github.js), and
  * when. The read takes seconds on a repository with many open -- the figure is
  * in docs/Verifying.md -- so the tab opens from this file at once and reads
  * GitHub behind it. One repository's list, named in the file, so a working copy

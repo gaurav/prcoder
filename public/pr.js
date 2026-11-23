@@ -1158,7 +1158,7 @@ function renderPrTab(pr, parsed, handlers) {
  * copy could vanish before the copy.
  *
  * Put back rather than holding the repaint until the selection ends, as the
- * Pull requests tab holds its own during a drag: that is over in a moment, and a
+ * PRs tab holds its own during a drag: that is over in a moment, and a
  * selection can sit there for as long as nobody clicks, with the description and
  * a line just ticked left stale behind it.
  */
@@ -1318,7 +1318,7 @@ function description(parsed, onTask) {
  *
  * The row is a div, not a <label>: in a label a click anywhere on the text
  * ticks the box, so a line could not be selected to copy without writing a
- * tick to GitHub. Only the box ticks, as in the queue's PR tab.
+ * tick to GitHub. Only the box ticks, as in the queue's PR #N tab.
  *
  * So the box has to be given the name the label gave it, or a screen reader says
  * `tick this on GitHub` for every line of a list and each tick is a guess. From
