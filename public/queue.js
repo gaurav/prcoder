@@ -172,7 +172,7 @@ export async function initQueue(d) {
   // browser, so the module stays importable by a node test that has no
   // localStorage to touch.
   addTo = readAddTo();
-  sizes = new ResizeObserver(() => { if (owedScroll) placeScroll(document.getElementById('queue-list'), owedScroll.top); });
+  sizes = new ResizeObserver(() => { if (owedScroll) placeScroll(document.getElementById('queue-list'), owedScroll.top, owedScroll); });
   pullSort = PULL_SORTS[pref(PULL_SORT_KEY)] ? pref(PULL_SORT_KEY) : 'smallest';
   pullGroup = ['none', 'stack'].includes(pref(PULL_GROUP_KEY)) ? pref(PULL_GROUP_KEY) : 'milestone';
   document.getElementById('queue-where').onclick = () => {
@@ -327,12 +327,21 @@ const scrolled = {};
 // short and fills in later with an offset saved as of 2026-11-17 -- each draws
 // from what it has on hand -- but one that did would open near its top, and
 // the clamp's own scroll event would overwrite the offset for good.
+// `heard` is that event: only the first one at `at` is the clamp's. Firefox
+// can deliver a scroll away and back as one late event that reads `at` again,
+// and matched on position alone, that ignored the user, kept the old offset,
+// and the list jumped to it when the content grew.
 let owedScroll = null;
 let sizes = null;
-function placeScroll(list, top) {
+function placeScroll(list, top, was = null) {
   // Assigning forces layout, so this lands against the content as it is now.
   list.scrollTop = top;
-  owedScroll = list.scrollTop < top - 1 ? { top, at: list.scrollTop } : null;
+  const at = list.scrollTop;
+  // Placed again where it already was -- the observer's first callback, which
+  // comes on observe() whether or not anything grew -- the list did not move
+  // and no event is coming, so one already heard stays heard.
+  const heard = !!was?.heard && Math.abs(at - was.at) < 1;
+  owedScroll = at < top - 1 ? { top, at, heard } : null;
 }
 
 function render() {
@@ -343,7 +352,10 @@ function render() {
   // the outgoing tab's offset under the incoming one (pr.js has the same note).
   list.onscroll = () => {
     // The clamp's own scroll event, which is not the user moving.
-    if (owedScroll && Math.abs(list.scrollTop - owedScroll.at) < 1) return;
+    if (owedScroll && !owedScroll.heard && Math.abs(list.scrollTop - owedScroll.at) < 1) {
+      owedScroll.heard = true;
+      return;
+    }
     owedScroll = null;
     scrolled[tab] = list.scrollTop;
   };

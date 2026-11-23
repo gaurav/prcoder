@@ -2249,6 +2249,44 @@ test('a tab whose content grows after it is drawn gets its offset back', { skip 
   await fresh.close();
 });
 
+// The clamp's own scroll event is ignored, and only that one. Firefox can
+// deliver a scroll away and back as one late event that reads the clamped
+// offset again; until 2026-11-23 that was ignored too, so the list jumped to
+// the old offset once the content grew. Played here as one task, which
+// gives one event every time -- with two, the bug showed only when Firefox
+// was late. The groups are cut short rather than hidden, so there is
+// somewhere to scroll away to.
+test('a scroll back to where the clamp left a tab is the user\'s', { skip }, async () => {
+  const many = Array.from({ length: 40 }, (_, n) => ({ number: 200 + n, title: `issue ${n}`, url: `https://github.com/gaurav/prcoder/issues/${200 + n}`,
+    updatedAt: '2026-10-01T00:00:00Z', body: '', milestone: null, labels: [] }));
+  const { fresh } = await issuesPage({ ...ISSUES, issues: many, total: 40, listed: 40 });
+  const top = () => fresh.evaluate(() => document.getElementById('queue-list').scrollTop);
+  const frames = () => fresh.evaluate(() => new Promise((r) => { requestAnimationFrame(() => requestAnimationFrame(r)); }));
+  await fresh.evaluate(() => { document.getElementById('queue-list').scrollTop = 600; });
+  await fresh.waitForFunction(() => document.getElementById('queue-list').scrollTop === 600);
+  await fresh.locator('#queue-body .tab[data-tab="local"]').click();
+  const height = await fresh.evaluate(() => document.getElementById('queue-list').clientHeight);
+  await fresh.addStyleTag({ content: `#queue-list .issue-groups { max-height: ${height + 200}px; overflow: hidden }` });
+  // The clamp's own event, once it has been delivered.
+  await fresh.evaluate(() => { window.clampHeard = new Promise((r) => document.getElementById('queue-list').addEventListener('scroll', r, { once: true })); });
+  await fresh.locator('#queue-body .tab[data-tab="issues"]').click();
+  const at = await top();
+  assert.ok(at > 50 && at < 600, `clamped short of 600, with room to scroll away (${at})`);
+  await fresh.evaluate(() => window.clampHeard);
+  await frames();
+  await fresh.evaluate((a) => {
+    const list = document.getElementById('queue-list');
+    list.scrollTop = a - 50;
+    list.scrollTop = a;
+  }, at);
+  await frames();
+  await fresh.evaluate(() => { for (const s of document.querySelectorAll('style')) if (s.textContent.includes('.issue-groups { max-height')) s.remove(); });
+  await frames();
+  await fresh.waitForTimeout(300);
+  assert.equal(await top(), at, 'where the user left it, not the offset owed');
+  await fresh.close();
+});
+
 // A tab's controls stay at the top of the list as the groups scroll under
 // them: the Issues tab's search here, which is in the same row the PRs and
 // History tabs have. The box is the row's first control, so a search typed
