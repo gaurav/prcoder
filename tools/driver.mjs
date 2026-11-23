@@ -194,14 +194,15 @@ export async function launchBrowser() {
  * (tools/firefox-runner). Harmless elsewhere. Firefox 158 fixes this upstream;
  * #80 is when to take this out, and this is the one place it lives.
  *
- * `name` gives a launch a directory of its own under data/firefox-appdata/,
- * for Firefoxes that start at the same moment: the browser suite's two
- * Firefox halves run side by side, and two instances writing one app-data
- * directory's profiles.ini and installs.ini is a race nobody needs to find
- * out about.
+ * One directory for every launch, the browser suite's two Firefox halves
+ * included, though they start together. A directory per half was tried and
+ * taken out: Playwright's Firefox runs on a -profile of its own and wrote
+ * nothing here across five suite runs (2026-11-22), so two launches have
+ * nothing to race over. A Firefox half that stalls at launch would be the sign
+ * that has changed.
  */
-export function firefoxEnv(name = '') {
-  const appData = path.join(repo, 'data', 'firefox-appdata', name);
+export function firefoxEnv() {
+  const appData = path.join(repo, 'data', 'firefox-appdata');
   const env = { MOZ_APP_DATA: path.join(appData, 'roaming'), MOZ_LOCAL_APP_DATA: path.join(appData, 'local') };
   for (const dir of Object.values(env)) mkdirSync(dir, { recursive: true });
   return env;

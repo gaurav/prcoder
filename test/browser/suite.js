@@ -271,9 +271,7 @@ before(async () => {
   await new Promise((res) => server.listen(0, '127.0.0.1', res));
   // The drivers' way round macOS 27 keeping a terminal-launched Firefox out of
   // its own app data (tools/driver.mjs); #80 is when it comes out.
-  // A directory per half, since the two Firefox halves start together.
-  browser = await engine.launch(engineName === 'firefox'
-    ? { env: { ...process.env, ...firefoxEnv(half ? `half-${half}` : '') } } : {});
+  browser = await engine.launch(engineName === 'firefox' ? { env: { ...process.env, ...firefoxEnv() } } : {});
   // The shared page is the first half's: a test after secondHalf() that
   // reaches for it fails, saying where it has to go, rather than passing on
   // a page none of the tests before it has touched. Such a test passes in a
