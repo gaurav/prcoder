@@ -19,8 +19,12 @@
 The suite covers everything that can be checked without a browser or a tty, and one thing that
 needs a browser: `test/browser/suite.js` opens the real page from a server started in-process, with
 the API routes and the `/pty` socket answered by Playwright from a fixture, so it needs no `gh`, no
-`claude` and no PTY. It runs once per engine, from `chromium.test.js` and `firefox.test.js`, and
-skips with a note when Playwright or that engine is missing; CI installs both. Its blind spot is the
+`claude` and no PTY. It runs once per engine and in two halves, from `chromium-1.test.js`,
+`chromium-2.test.js`, `firefox-1.test.js` and `firefox-2.test.js`, so that the halves run side by
+side ([#213](https://github.com/gaurav/prcoder/issues/213)): `secondHalf()` in the suite is the
+split, and a test on the shared `page` has to sit above it. It skips with a note when Playwright
+or that engine is missing; CI installs both. A `--test-name-pattern` run finds a test only in
+the file for its half. Its blind spot is the
 fixture, which is shaped by hand from what `/api/status` answers today, so a field the server
 renames and the client follows still passes. A stub `gh` ([#54](https://github.com/gaurav/prcoder/issues/54))
 is what closes that.

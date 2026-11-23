@@ -33,10 +33,11 @@
 // 2026-09-19, where /api/pr/task answers with the new body and the old mock's
 // `{queue: null}` assigned undefined over it.
 //
-// One suite, run once per engine: chromium.test.js and firefox.test.js beside
-// this file each set PRCODER_TEST_BROWSER and import it, and `node --test` runs
-// each in a process of its own. Not itself a .test.js, so the glob in `npm test`
-// never runs it bare. Both engines, because a test written against one engine's
+// One suite, run once per engine and in two halves: chromium-1.test.js,
+// chromium-2.test.js and the same for firefox beside this file each set
+// PRCODER_TEST_BROWSER and PRCODER_TEST_HALF and import it, and `node --test`
+// runs each in a process of its own, so the halves run side by side. Not
+// itself a .test.js, so the glob in `npm test` never runs it bare. Both engines, because a test written against one engine's
 // layout has been wrong in the other. Skipped rather than failed when
 // Playwright or the engine is missing: `npm test` on a machine without either
 // stays green with a note, and CI, which installs both, is where this is
@@ -62,8 +63,17 @@ try { engine = (await import('playwright'))[engineName]; } catch { /* not instal
 const skip = !engine ? 'playwright is not installed (npm ci without --omit=dev)'
   : !existsSync(engine.executablePath()) ? `${engineName} is not installed: npx playwright install ${engineName}`
     : false;
+// Which half of the file this process registers: '1', '2', or unset for all
+// of it. The halves are split by `secondHalf()` below, not by a count, so
+// each keeps the file's order. Halves rather than one file per engine because
+// the suite runs its tests one after another and Firefox's run was the whole
+// of CI's `npm test` (#213).
+const half = process.env.PRCODER_TEST_HALF;
+let inHalf = '1';
+/** Starts the second half: every test after this call is the second process's. */
+const secondHalf = () => { inHalf = '2'; };
 // Each run's names carry its engine, so a CI log says which one broke.
-const test = (name, ...rest) => nodeTest(`${name} [${engineName}]`, ...rest);
+const test = (name, ...rest) => (!half || half === inHalf) && nodeTest(`${name} [${engineName}]`, ...rest);
 
 // Each line here is a regression: `_for_` showed its underscores, `~struck~`
 // its tildes, HTML comments showed as text, `##` rendered literally, and a
@@ -257,7 +267,10 @@ before(async () => {
   // The drivers' way round macOS 27 keeping a terminal-launched Firefox out of
   // its own app data (tools/driver.mjs); #80 is when it comes out.
   browser = await engine.launch(engineName === 'firefox' ? { env: { ...process.env, ...firefoxEnv() } } : {});
-  page = await newPage();
+  // The shared page is the first half's: a test after secondHalf() that
+  // reaches for it fails on `page` being undefined, rather than passing on
+  // a page none of the tests before it has touched.
+  if (half !== '2') page = await newPage();
 });
 
 // Without both, `node --test` never exits.
@@ -2866,6 +2879,11 @@ test('a mention from another repository is not drawn as the listed issue of the 
   assert.equal(await row.locator('button.disclose').count(), 0, 'no body: it is not the listed #66');
   await fresh.close();
 });
+
+// The halves' split, where the Pull requests tab's tests begin: about half of
+// Firefox's time on CI either side (#213). Every test that uses the shared
+// `page` has to stay above it.
+secondHalf();
 
 // The Pull requests tab: the repository's open pull requests, grouped by
 // milestone as the issues are, each row carrying what picking the next one
