@@ -23,7 +23,20 @@ const save = () => setPref(KEY, main.style.cssText);
 // The right-hand column starts under the notices list (ui.js) while it has a
 // line in it, so a height measured from the top is measured from there: from
 // <main>'s own top, the diff came out too tall by the list's height.
-const lead = () => document.getElementById('notices').offsetHeight;
+const notices = document.getElementById('notices');
+// Unrounded: the list's cap is 7.5em, 97.5px at its 13px, and offsetHeight's
+// 98 left the terminal half a pixel over its floor and the queue that short.
+const lead = () => notices.getBoundingClientRect().height;
+
+// The list's height again, for the stylesheet: --queue-max takes it off what
+// the queue may have, or a queue dragged to its limit kept its height and the
+// terminal paid for the list. On <html>, not <main>, because <main>'s inline
+// style is the saved layout and this is not something anyone chose. Border
+// box, so the line under the list counts; the observer also fires as the list
+// goes to and from `display: none`.
+const leadVar = () => document.documentElement.style.setProperty('--notices-h', `${lead()}px`);
+leadVar();
+new ResizeObserver(leadVar).observe(notices, { box: 'border-box' });
 
 /** Pointer position as a distance from the edge of <main> the pane grows from. */
 const px = (r, from, e) => ({

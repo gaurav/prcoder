@@ -4256,9 +4256,34 @@ test('the queue drags up until the terminal is at its 120px floor, with or witho
   const height = (sel) => fresh.$eval(sel, (el) => Math.round(el.getBoundingClientRect().height));
   assert.equal(await height('#term'), 120);
   assert.ok(await height('#queue') > 800, `the queue is ${await height('#queue')}px of 1000`);
+  // The notices list, as full as it gets, comes out of the queue too: the
+  // limit was measured without it, and a queue at that limit left the
+  // terminal 120px less the list -- shorter than its own header.
+  const queueAlone = await height('#queue');
+  await fresh.evaluate(async () => {
+    const { notice } = await import('/ui.js');
+    for (const n of [1, 2, 3, 4, 5, 6]) notice(`notice ${n}`);
+  });
+  const frame = () => fresh.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+  await frame();   // the ResizeObserver that sets --notices-h runs before a paint, not at once
+  const list = await height('#notices');
+  assert.ok(list > 80, `the list is ${list}px, at its cap`);
+  assert.equal(await height('#term'), 120, 'the list\'s height comes out of the queue, not the terminal');
+  const shrunk = queueAlone - await height('#queue');
+  assert.ok(Math.abs(shrunk - list) <= 1, `the queue gave up ${shrunk}px for a ${list}px list (each rounded)`);
   await openFile(fresh);
   assert.equal(await height('#term'), 120, 'the diff\'s share comes out of the queue, not the terminal');
   assert.ok(await height('#diff') >= 140);
+  await fresh.locator('#diff-fold').click();   // folded to its bar: the third --queue-max
+  await frame();
+  // >=, not ==: this --queue-max rounds the bar up to 40px, so the terminal
+  // keeps a pixel or two over its floor here.
+  const folded = await height('#term');
+  assert.ok(folded >= 120 && folded < 125, `the terminal is ${folded}px with the diff folded`);
+  await fresh.evaluate(() => document.getElementById('notices').replaceChildren());
+  await frame();
+  assert.equal(await height('#notices'), 0, 'an empty list takes no room');
+  assert.equal(await height('#term'), folded, 'and its room goes back to the queue, not the terminal');
   await fresh.close();
 });
 
