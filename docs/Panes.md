@@ -386,17 +386,20 @@ foot of the window and goes after four seconds, eight for an error, or on a clic
 something that stays true until you have dealt with it -- the session is new, the branch was
 switched under the agent, a popup was blocked -- and it is a line in a list
 across the top of the right-hand panes, which is not there while it is empty. Each line has a box
-on its left and a ✕ on its right, and either takes it away. Any number can be up at once, and
-a second notice about the same thing replaces the first. The list pushes the panes down rather
-than covering them.
+on its left and a ✕ on its right, and either takes it away; from the keyboard, the focus moves to
+the same control on the next line, and to the terminal once the list is empty. Any number can be
+up at once, and a second notice about the same thing replaces the first. The list pushes the panes
+down rather than covering them, and it never takes the coding agent below its 120px: a queue
+dragged to its limit gives up the room instead.
 
 When the agent connects -- the page opened, or **Start coding agent** pressed in the bar below --
 a notice says the last prompt sent from this working copy and when, `Last prompt, 2 hours
 ago (Today 21:14): …`, the first 140 characters of it, for the session that died mid-task. The
 next Enter in the terminal takes it down, since by then it has been read. It is drawn from the
 same record as the queue's History tab, which has the rest and, on each row, the ▶ that types a
-prompt back in; the notice itself has no button, since the text it shows is cut. After a
-reload it sits beside the reload's own notice.
+prompt back in; the notice itself has no button, since the text it shows is cut. It is up
+together with whatever the reconnect said: a deliberate reload's toast, or the notice that a
+restored, revisited or duplicated tab gets.
 
 When Claude exits, a bar under its last output offers to start it again, optionally with a
 different model or effort, or to quit prcoder. Left to right: **Quit prcoder**, outlined in red

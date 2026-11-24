@@ -333,8 +333,10 @@ exitForm.onsubmit = (e) => {
 // the page that typed text the user could not see whole. A notice, since it
 // waits to be read; the next Enter in the terminal takes it down
 // (dismissLastPrompt), since by then it has been. From the History tab's own
-// listing (lastPrompt), not a read of its own. It goes up beside a reload's
-// notice, which it used to give way to when the two shared the toast's slot.
+// listing (lastPrompt), not a read of its own. It goes up beside whatever
+// ws.onopen said about the reconnect -- a reload's toast, or the notice a
+// restored or duplicated tab gets -- which it used to give way to when the two
+// shared the toast's slot.
 async function lastPromptNotice() {
   let on;
   try { ({ history: on } = await whoami); } catch { return; }
