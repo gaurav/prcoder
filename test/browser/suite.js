@@ -4287,6 +4287,28 @@ test('the queue drags up until the terminal is at its 120px floor, with or witho
   await fresh.close();
 });
 
+// A gutter's aria-valuenow is said again when the notices list changes, which
+// touches nothing on <main> that the other observers watch. A queue at its
+// limit is the case where the number moves: the list comes out of the queue.
+test('a notice that moves the queue\'s gutter has it say its new place', { skip }, async () => {
+  const fresh = await newPage();
+  await fresh.evaluate(() => document.querySelector('main').style.setProperty('--h-queue', '2000px'));
+  const said = () => fresh.getAttribute('#gut-queue', 'aria-valuenow');
+  const now = () => fresh.$eval('#gut-queue', (g) => {
+    const r = document.querySelector('main').getBoundingClientRect();
+    return String(Math.round(((r.bottom - g.getBoundingClientRect().bottom) / r.height) * 100));
+  });
+  const before = await said();
+  await fresh.evaluate(async () => {
+    const { notice } = await import('/ui.js');
+    for (const n of [1, 2, 3, 4, 5, 6]) notice(`notice ${n}`);
+  });
+  await fresh.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+  assert.notEqual(await now(), before, 'the list moved the gutter');
+  assert.equal(await said(), await now());
+  await fresh.close();
+});
+
 // The line between two panes is a pixel of one grey between two of another,
 // so it says where it is: a grip at rest on the two across the right-hand
 // column, and its own colour under the pointer.

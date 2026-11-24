@@ -132,8 +132,13 @@ for (const g of document.querySelectorAll('.gut')) {
 // the number where the page load put it. A gutter moves when <main>'s custom
 // properties change (every drag, key and reset writes one), when its grid
 // template changes (the diff pane opening), or when the window does -- and any
-// of those can move the other gutters too, so all of them report.
+// of those can move the other gutters too, so all of them report. The notices
+// list is a fourth, which changes nothing on <main>: a row gutter's number is
+// measured from under the list or from the bottom, so the list moving the
+// column leaves it alone, but the list comes off --queue-max, and a queue at
+// its limit gives up the list's height when a line comes up.
 const reportAll = () => reports.forEach((report) => report());
 reportAll();
 new MutationObserver(reportAll).observe(main, { attributeFilter: ['style', 'class'] });
 new ResizeObserver(reportAll).observe(main);
+new ResizeObserver(reportAll).observe(notices, { box: 'border-box' });
