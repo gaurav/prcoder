@@ -1925,6 +1925,35 @@ test('notices that wait are lines over the right-hand panes, one per kind, dismi
   await fresh.close();
 });
 
+// Dismissed from the keyboard, a line hands the focus on rather than dropping
+// it to <body>: to the same control on the next line, and with none left, to
+// the terminal.
+test('dismissing a notice from the keyboard keeps the focus in the list, then gives it to the terminal', { skip }, async () => {
+  const fresh = await newPage();
+  await fresh.evaluate(async () => {
+    const { notice } = await import('/ui.js');
+    notice('one');
+    notice('two');
+    notice('three');
+  });
+  const focus = () => fresh.evaluate(() => {
+    const a = document.activeElement;
+    const line = a.closest('#notices > li');
+    if (line) return `${a.tagName.toLowerCase()} on ${line.querySelector('.text').textContent}`;
+    return a.classList.contains('xterm-helper-textarea') ? 'terminal' : a.tagName.toLowerCase();
+  });
+  await fresh.locator('#notices > li', { hasText: 'one' }).locator('button').focus();
+  await fresh.keyboard.press('Enter');
+  assert.equal(await focus(), 'button on two', 'the next line\'s ✕');
+  await fresh.locator('#notices > li', { hasText: 'three' }).locator('input').focus();
+  await fresh.keyboard.press('Space');
+  assert.equal(await focus(), 'input on two', 'the last line goes back to the one before');
+  await fresh.keyboard.press('Space');
+  assert.equal(await fresh.locator('#notices > li').count(), 0);
+  assert.equal(await focus(), 'terminal');
+  await fresh.close();
+});
+
 // A tab that had a PTY and loads again has a new session, and the page says
 // which kind of load it was (ws.onopen in app.js): a toast for a reload, and
 // for the others a notice that waits. The link to keeping tab

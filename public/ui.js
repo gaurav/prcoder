@@ -173,7 +173,7 @@ export function toast(msg, bad = false) {
 export function notice(msg, { bad = false, link = null, kind = null } = {}) {
   if (kind) dismissNotice(kind);
   const line = h('li', { className: bad ? 'bad' : '', dataset: kind ? { kind } : {} });
-  const gone = () => line.remove();
+  const gone = () => drop(line);
   const box = h('input', { type: 'checkbox', title: 'noted — dismiss this notice', ariaLabel: 'noted — dismiss this notice' });
   box.onchange = gone;
   line.append(box,
@@ -183,8 +183,27 @@ export function notice(msg, { bad = false, link = null, kind = null } = {}) {
   return line;
 }
 export const dismissNotice = (kind) => {
-  for (const line of document.querySelectorAll('#notices > li')) if (line.dataset.kind === kind) line.remove();
+  for (const line of document.querySelectorAll('#notices > li')) if (line.dataset.kind === kind) drop(line);
 };
+
+/**
+ * Takes a notice's line away without taking the keyboard's focus with it. A
+ * line is mostly dismissed from its own box or ✕, which has the focus as it
+ * goes, and a removed element hands the focus to <body>, so the next Tab
+ * started again from the top of the page. It goes to the same control on the
+ * next line (the previous one, for the last), so a list can be cleared from the
+ * keyboard one key at a time, and with no line left, to the terminal, where
+ * the loop the notices interrupt goes on. The terminal by its xterm textarea,
+ * since `term` is app.js's and app.js imports this file.
+ */
+function drop(line) {
+  const at = document.activeElement;
+  const next = line.nextElementSibling ?? line.previousElementSibling;
+  line.remove();
+  if (!line.contains(at)) return;
+  const same = at.matches('input') ? ':scope > input' : ':scope > button';
+  (next?.querySelector(same) ?? document.querySelector('#term .xterm-helper-textarea'))?.focus();
+}
 
 /**
  * localStorage, best effort. A browser can refuse the store outright -- Safari's
