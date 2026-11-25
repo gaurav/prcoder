@@ -4316,6 +4316,27 @@ test('the queue drags up until the terminal is at its 120px floor, with or witho
   await fresh.close();
 });
 
+// The diff's cap was half of <main> with the list inside it, so in a short
+// window a diff at its cap and a full list left the queue at its floor and the
+// terminal paid the rest: 80px of a 600px <main>. Half of <main> less the list
+// keeps the floor to the same window height it held to before there was a list.
+test('a diff at its cap and a full notices list still leave the terminal its 120px in a short window', { skip }, async () => {
+  const fresh = await newPage();
+  await fresh.setViewportSize({ width: 1280, height: 600 });
+  await openFile(fresh);
+  await fresh.evaluate(async () => {
+    document.querySelector('main').style.setProperty('--h-diff', '2000px');
+    const { notice } = await import('/ui.js');
+    for (const n of [1, 2, 3, 4, 5, 6]) notice(`notice ${n}`);
+  });
+  await fresh.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+  const height = (sel) => fresh.$eval(sel, (el) => el.getBoundingClientRect().height);
+  assert.ok(await height('#notices') > 80, 'the list is at its cap');
+  const term = await height('#term');
+  assert.ok(term >= 119.5, `the terminal is ${term}px`);
+  await fresh.close();
+});
+
 // A gutter's aria-valuenow is said again when the notices list changes, which
 // touches nothing on <main> that the other observers watch. A queue at its
 // limit is the case where the number moves: the list comes out of the queue.

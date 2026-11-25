@@ -390,7 +390,8 @@ on its left and a ✕ on its right, and either takes it away; from the keyboard,
 the same control on the next line, and to the terminal once the list is empty. Any number can be
 up at once, and a second notice about the same thing replaces the first. The list pushes the panes
 down rather than covering them, and it never takes the coding agent below its 120px: a queue
-dragged to its limit gives up the room instead.
+dragged to its limit gives up the room instead, and so does a diff at its cap, which is half the
+column less the list.
 
 When the agent connects -- the page opened, or **Start coding agent** pressed in the bar below --
 a notice says the last prompt sent from this working copy and when, `Last prompt, 2 hours

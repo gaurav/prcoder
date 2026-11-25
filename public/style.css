@@ -49,7 +49,11 @@ body {
    queue the whole column, so the cap only stopped a drag from doing what a
    fold did. In a window too short
    for both floors clamp() lets the queue's minimum win, as it always has. The
-   diff keeps its 50%: that is what bounds the sum.
+   diff keeps its 50% less the notices list: that is what bounds the sum. Half
+   of all of <main>, list included, left a queue at its floor nothing to give,
+   so a full list came out of the terminal -- 80px of a 600px window. Less the
+   whole list, the terminal keeps 120px down to the same 484px <main> it did
+   before there was a list.
 
    The defaults for the PR and queue panes are pixels, not percentages. The PR
    pane holds prose set to a fixed measure and the queue holds rows of a fixed
@@ -70,7 +74,7 @@ main {
      grew with every pane that learned to fold. */
   /* The diff's dragged size apart from its row, because --queue-max subtracts
      it and the folds rewrite the row to `auto` and `1fr`, which calc() cannot. */
-  --diff-size: clamp(140px, var(--h-diff, 40%), 50%);
+  --diff-size: clamp(140px, var(--h-diff, 40%), calc(50% - var(--notices-h, 0px)));
   --r-diff: var(--diff-size);
   --r-term: 1fr;
   /* The floor, the 1px line over the queue, and the notices list over all of
@@ -1271,7 +1275,8 @@ main.dead { opacity: .45; filter: grayscale(1); }
    and scrolls past that, so the list never takes more than that from the
    panes. --queue-max subtracts what it does take (--notices-h), or a queue
    dragged to its limit kept its height and the terminal paid for the list,
-   down to less than its own header. */
+   down to less than its own header; so does the diff's cap (--diff-size), for
+   a queue already at its floor. */
 #notices {
   grid-area: notices; margin: 0; padding: 0; list-style: none;
   max-height: 7.5em; overflow-y: auto;
