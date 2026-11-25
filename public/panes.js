@@ -71,10 +71,13 @@ for (const g of document.querySelectorAll('.gut')) {
   // What a screen reader can say about a line that has no text: how far along
   // <main> it sits. The clamp() bounds are a percentage and two pixel values in
   // the stylesheet, so the honest pair to publish is 0 and 100 of the container
-  // and let valuenow be the position within it.
+  // and let valuenow be the position within it. For a line measured from the
+  // top, the container is what is under the notices list, as it is in at():
+  // over all of <main> the number could not reach 100 and moved with the list.
   const report = () => {
     const r = main.getBoundingClientRect();
-    g.setAttribute('aria-valuenow', String(Math.round((at(r, from, g) / r[along]) * 100)));
+    const span = from === 'top' ? r.height - lead() : r[along];
+    g.setAttribute('aria-valuenow', String(Math.round((at(r, from, g) / span) * 100)));
   };
   reports.push(report);
 

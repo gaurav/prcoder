@@ -4372,6 +4372,28 @@ test('a diff at its cap and a full notices list still leave the terminal its 120
   await fresh.close();
 });
 
+// The diff's gutter is placed by its distance under the list, but its
+// aria-valuenow divided that by all of <main>, list included: 50 for a line
+// halfway down the room the diff can have, and a number that moved with the list.
+test('the diff gutter says its place in the room under the notices list', { skip }, async () => {
+  const fresh = await newPage();
+  await openFile(fresh);
+  await fresh.evaluate(async () => {
+    document.querySelector('main').style.setProperty('--h-diff', '300px');
+    const { notice } = await import('/ui.js');
+    for (const n of [1, 2, 3, 4]) notice(`notice ${n}`);
+  });
+  await fresh.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+  const want = await fresh.evaluate(() => {
+    const r = document.querySelector('main').getBoundingClientRect();
+    const list = document.getElementById('notices').getBoundingClientRect().height;
+    const g = document.getElementById('gut-diff').getBoundingClientRect();
+    return String(Math.round(((g.top - r.top - list) / (r.height - list)) * 100));
+  });
+  assert.equal(await fresh.getAttribute('#gut-diff', 'aria-valuenow'), want);
+  await fresh.close();
+});
+
 // A gutter's aria-valuenow is said again when the notices list changes, which
 // touches nothing on <main> that the other observers watch. A queue at its
 // limit is the case where the number moves: the list comes out of the queue.
