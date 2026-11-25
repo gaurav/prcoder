@@ -384,14 +384,14 @@ deliberate reload gets a shorter toast without the link.
 A toast and a notice are two things. A toast reports something that has happened: it sits over the
 foot of the window and goes after four seconds, eight for an error, or on a click. A notice is
 something that stays true until you have dealt with it -- the session is new, the branch was
-switched under the agent, a popup was blocked -- and it is a line in a list
-across the top of the right-hand panes, which is not there while it is empty. Each line has a box
-on its left and a ✕ on its right, and either takes it away; from the keyboard, the focus moves to
-the same control on the next line, and to the terminal once the list is empty (to its ▼, while it
-is folded). Any number can be up at once, and a second notice about the same thing replaces the
-first, taking over its focus if it had it. The list pushes the panes down rather than covering them, and it never takes the coding agent below its 120px: a queue
-dragged to its limit gives up the room instead, and so does a diff at its cap, which is half the
-column less the list.
+switched under the agent, a popup was blocked -- and it is a line in a list across the top of the
+right-hand panes, which is not there while it is empty. Each line has a box on its left and a ✕ on
+its right, and either takes it away; from the keyboard, the focus moves to the same control on the
+next line (the line before, for the last), and to the terminal once the list is empty (to its ▼,
+while it is folded). Any number can be up at once, and a second notice about the same thing replaces
+the first, taking over its focus if it had it. The list pushes the panes down rather than covering
+them, and it never takes the coding agent below its 120px: a queue dragged to its limit gives up the
+room instead, and so does a diff at its cap, which is half the column less the list.
 
 When the agent connects -- the page opened, or **Start coding agent** pressed in the bar below --
 a notice says the last prompt sent from this working copy and when, `Last prompt, 2 hours
