@@ -194,16 +194,30 @@ export const dismissNotice = (kind) => {
  * next line (the previous one, for the last), so a list can be cleared from the
  * keyboard one key at a time, and with no line left, to the terminal, where
  * the loop the notices interrupt goes on. The terminal by its xterm textarea,
- * since `term` is app.js's and app.js imports this file.
+ * since `term` is app.js's and app.js imports this file, or by its ▼ while it
+ * is folded.
  */
 function drop(line) {
   const at = document.activeElement;
   const next = line.nextElementSibling ?? line.previousElementSibling;
   line.remove();
   if (!line.contains(at)) return;
-  const same = at.matches('input') ? ':scope > input' : ':scope > button';
-  (next?.querySelector(same) ?? document.querySelector('#term .xterm-helper-textarea'))?.focus();
+  (next?.querySelector(control(at)) ?? terminal())?.focus();
 }
+
+/** Which of a line's two controls `at` is, as a selector for the same one on another line. */
+const control = (at) => (at.matches('input') ? ':scope > input' : ':scope > button');
+
+/**
+ * Where the focus goes when it has nowhere left in the list. A folded terminal
+ * hides its textarea with the rest of #term-host, and focus() on an element
+ * that is not rendered does nothing, so the focus still fell to <body>; its
+ * header's ▼ is the terminal's one control left on screen.
+ */
+const terminal = () => {
+  const area = document.querySelector('#term .xterm-helper-textarea');
+  return area?.checkVisibility() ? area : document.getElementById('term-fold');
+};
 
 /**
  * localStorage, best effort. A browser can refuse the store outright -- Safari's

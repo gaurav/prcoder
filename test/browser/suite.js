@@ -1954,6 +1954,19 @@ test('dismissing a notice from the keyboard keeps the focus in the list, then gi
   await fresh.close();
 });
 
+// A folded terminal hides the textarea the focus went to, and focus() on it
+// did nothing, so the last line's dismissal dropped the focus to <body>.
+test('dismissing the last notice with the terminal folded gives the focus to its ▼', { skip }, async () => {
+  const fresh = await newPage();
+  await fresh.locator('#term-fold').click();
+  await fresh.evaluate(async () => (await import('/ui.js')).notice('only'));
+  await fresh.locator('#notices > li input').focus();
+  await fresh.keyboard.press('Space');
+  assert.equal(await fresh.locator('#notices > li').count(), 0);
+  assert.equal(await fresh.evaluate(() => document.activeElement.id), 'term-fold');
+  await fresh.close();
+});
+
 // A tab that had a PTY and loads again has a new session, and the page says
 // which kind of load it was (ws.onopen in app.js): a toast for a reload, and
 // for the others a notice that waits. The link to keeping tab
