@@ -1967,6 +1967,28 @@ test('dismissing the last notice with the terminal folded gives the focus to its
   await fresh.close();
 });
 
+// A notice of a kind already up replaced it through the dismissal, which moved
+// a focus it found on the old line to another line, or into the terminal where
+// the next key went to the agent. It stays on the same control of the new line.
+test('a notice that replaces one of its kind keeps the focus on the same control', { skip }, async () => {
+  const fresh = await newPage();
+  const say = (msg, kind) => fresh.evaluate(async ([msg, kind]) => { (await import('/ui.js')).notice(msg, { kind }); }, [msg, kind]);
+  await say('other', 'other');
+  await say('switched to a', 'switched');
+  await fresh.locator('#notices > li[data-kind="switched"] button').focus();
+  await say('switched to b', 'switched');
+  assert.deepEqual(await fresh.$$eval('#notices > li .text', (ts) => ts.map((t) => t.textContent)), ['other', 'switched to b']);
+  assert.equal(await fresh.evaluate(() => {
+    const a = document.activeElement;
+    return `${a.tagName.toLowerCase()} on ${a.closest('#notices > li')?.dataset.kind}`;
+  }), 'button on switched');
+  // And a replacement leaves a focus that was elsewhere alone.
+  await fresh.locator('#notices > li[data-kind="other"] input').focus();
+  await say('switched to c', 'switched');
+  assert.equal(await fresh.evaluate(() => document.activeElement.closest('#notices > li')?.dataset.kind), 'other');
+  await fresh.close();
+});
+
 // A tab that had a PTY and loads again has a new session, and the page says
 // which kind of load it was (ws.onopen in app.js): a toast for a reload, and
 // for the others a notice that waits. The link to keeping tab

@@ -171,7 +171,14 @@ export function toast(msg, bad = false) {
  * that needs one adds it.
  */
 export function notice(msg, { bad = false, link = null, kind = null } = {}) {
-  if (kind) dismissNotice(kind);
+  // Not dismissNotice(kind): drop() moves a focus it finds on the old line to
+  // another line or into the terminal, so a switch made from the keyboard sent
+  // the next key to the agent. The new line is the old one's successor, so the
+  // focus goes to the same control on it.
+  const at = document.activeElement;
+  const old = kind ? [...document.querySelectorAll('#notices > li')].filter((l) => l.dataset.kind === kind) : [];
+  const held = old.some((l) => l.contains(at)) ? control(at) : null;
+  for (const l of old) l.remove();
   const line = h('li', { className: bad ? 'bad' : '', dataset: kind ? { kind } : {} });
   const gone = () => drop(line);
   const box = h('input', { type: 'checkbox', title: 'noted — dismiss this notice', ariaLabel: 'noted — dismiss this notice' });
@@ -180,6 +187,7 @@ export function notice(msg, { bad = false, link = null, kind = null } = {}) {
     h('span', { className: 'text' }, msg, link ? ' ' : null, link ? ext(link.href, link.text) : null),
     btn('✕', gone, { title: 'dismiss this notice', ariaLabel: 'dismiss this notice' }));
   document.getElementById('notices').append(line);
+  if (held) line.querySelector(held).focus();
   return line;
 }
 export const dismissNotice = (kind) => {
