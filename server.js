@@ -1572,6 +1572,9 @@ async function askToQuit() {
     listQueue();
     const risk = quitRisk();
     const wt = await leaving();
+    // And again: leaving() takes seconds (runningHere's probes), and a quit
+    // from the page in that time is already removing or keeping the worktree.
+    if (quitting) return;
     // Listed again on yes: the queue can change while the question waits, and
     // an item added from a tab in that time would otherwise go unprinted.
     const go = (opts) => () => { listQueue(); quit(opts); };
