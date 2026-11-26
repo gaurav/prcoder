@@ -45,6 +45,9 @@ test('--worktree takes a branch or a pull request, and stands in for the positio
   assert.deepEqual(parseCli(['-w', '12', '--', '--model', 'opus']).worktree, { pr: '12' });
   assert.deepEqual(parseCli(['--worktree=https://github.com/o/r/pull/3']).worktree, { pr: 'https://github.com/o/r/pull/3' });
   assert.deepEqual(worktreeTarget('12a'), { branch: '12a' });
+  // As GitHub writes it; git would take it as a new branch's name.
+  assert.deepEqual(parseCli(['-w', '#12']).worktree, { pr: '12' });
+  assert.deepEqual(worktreeTarget('#12a'), { branch: '#12a' });
   assert.equal(parseCli(['-w', 'topic']).target, undefined);
   assert.throws(() => parseCli(['--worktree', 'topic', '7']), /--worktree topic already says what to start on; 7 is one too many/);
   assert.throws(() => parseCli(['choose', '--worktree', 'topic']), /already says what to start on; choose is one too many/);

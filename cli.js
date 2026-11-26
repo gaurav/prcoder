@@ -128,8 +128,12 @@ export function parseCli(argv) {
  * start a worktree on, and "gh found none" and "gh could not be asked" must
  * not both end as a new branch of that name. A branch named in digits is the
  * one this cannot reach; its pull request's URL does.
+ *
+ * `#12` is pull request 12, as GitHub writes it. git allows it as a branch's
+ * name, so it used to become a new branch called `#12` off the default branch.
  */
-export const worktreeTarget = (value) => (/^\d+$/.test(value) || /^https?:\/\//.test(value) ? { pr: value } : { branch: value });
+export const worktreeTarget = (value) => (/^#\d+$/.test(value) ? { pr: value.slice(1) }
+  : /^\d+$/.test(value) || /^https?:\/\//.test(value) ? { pr: value } : { branch: value });
 
 /**
  * What to say at startup when `--worktree` (or `-w`) is among the agent's

@@ -9,7 +9,7 @@ the first.
 
 ```
 prcoder --worktree topic      # a branch
-prcoder --worktree 123        # a pull request, by number or URL
+prcoder --worktree 123        # a pull request, by number (or #123) or URL
 ```
 
 Either starts a prcoder in a worktree on what was named, and leaves the working copy you ran it in
