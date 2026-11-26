@@ -5096,12 +5096,12 @@ test('a poll that brings nothing new leaves the panes as they were', { skip }, a
   await fresh.close();
 });
 
-// The fixture PR, one built on its branch, and one built on that. The switcher
-// and the Stack tab both have to show the chain as a chain, and a row's #N has
-// to be a link out while its Switch is the checkout -- one control each.
 // The switcher's stack mark, as the classes of its bars from the bottom up.
 const stackBars = (page) => page.locator('#pr-switch .stack-mark i').evaluateAll((bars) => bars.map((b) => b.className));
 
+// The fixture PR, one built on its branch, and one built on that. The switcher
+// and the Stack tab both have to show the chain as a chain, and a row's #N has
+// to be a link out while its Switch is the checkout -- one control each.
 const STACK = [
   { number: 12, title: pr.title, headRefName: 'topic', baseRefName: 'main', isDraft: false, url: pr.url },
   { number: 13, title: 'Built on the fixture', headRefName: 'topic-2', baseRefName: 'topic', isDraft: true, url: `${REPO}/pull/13` },
