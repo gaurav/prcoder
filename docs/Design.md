@@ -82,6 +82,36 @@ That is gone too, and [#48](https://github.com/gaurav/prcoder/issues/48) holds w
 to the checkout hid items rather than organising them. Moving to an unrelated branch mid-task took
 the list away, and merging a branch put its unfinished items out of reach for good.
 
+## A choice that acts is made in an open list
+
+The pull request switcher and the milestone line are pickers of prcoder's own (`public/picker.js`,
+[Panes.md](Panes.md#pickers)), not native selects, because each acts the moment a value is chosen:
+one checks out another branch under the coding agent, the other writes to GitHub. A closed
+`<select>` changes its value on a bare arrow on Linux and Windows and on a letter everywhere, and
+the page is this one's terminal with two panes of controls beside it, so a key meant for the agent
+lands on whatever was clicked last. The milestone line's first answer (#168) was to keep the select
+and put back a change that came within 300ms of a key, or after one once the focus had left. That
+guessed at intent from timing, said nothing about the wheel, and could not be driven by a test,
+since a headless browser opens no native dropdown; the switcher had no guard at all (#188).
+
+A text field with a `<datalist>` was the other way to type a number, and was not taken: what a
+datalist shows, how it matches and whether it opens at all are the browser's, it cannot disable a
+row or group them, and picking from it is still only text in a field that something has to decide
+to act on. A field for the number alone, beside the select, would have left the select as it was.
+
+So there is one control, and its rule is that only Enter or a click in the open list picks. That
+is also what makes search safe: typing narrows the list and never chooses from it. The search is
+what the switcher was missing for a repository with dozens open, where the Pull requests tab is
+for choosing by what a pull request is, and the switcher for going to one already in mind.
+
+The list is a popover on `<body>`, not a child of the pane that draws its button. Both panes are
+redrawn by the poll, and a list inside one was shut by it; the selects needed the page to guess
+that a dropdown was open from the focus, and to hold the options (the switcher) or redraw the head
+around the one focused node (`replaceKeeping`, gone with them).
+
+A `<select>` stays where a change only redraws, as the Pull requests tab's order and grouping, or
+where a button beside it does the writing, as a queue row's milestone and **Move**.
+
 ## What it deliberately does not do
 
 Review comment threads (counts and a link only), syntax highlighting of a modified file's diff (a

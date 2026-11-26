@@ -45,7 +45,10 @@
             <span id="menu-version"></span>
           </div>
         </details>
-        <select id="pr-switch" title="switch to another open pull request"></select>
+        <!-- The switcher: a button that opens a list with a search field over
+             it (picker.js), not a <select>, whose value an arrow or a letter
+             changes while it is closed. renderHeader in pr.js fills it. -->
+        <button type="button" id="pr-switch" class="picker" aria-haspopup="listbox"></button>
         <button id="pr-commit" class="commit" hidden title="uncommitted changes block a branch switch">Commit…</button>
         <span id="pr-sync" class="light"></span>
         <button id="pr-refresh" title="reload from GitHub" aria-label="reload from GitHub">⟳</button>

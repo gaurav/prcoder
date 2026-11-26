@@ -32,7 +32,7 @@ is no token to configure.
 
 - **Pull request** -- the pull request for the checked-out branch: its description, with checkboxes
   that write back to GitHub, its changed files, with GitHub's own "viewed" checkbox, its CI checks,
-  and the pull requests stacked on it. A switcher checks out another pull request, and a light says whether the
+  and the pull requests stacked on it. A switcher finds another pull request by number or title and checks it out, and a light says whether the
   branch needs a push or a pull.
 - **Diff** -- the file you clicked, as GitHub shows it, with links out to GitHub for comments,
   blame and history.

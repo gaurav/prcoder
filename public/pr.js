@@ -1,7 +1,8 @@
 import { withoutHtml, mention, unmarked, mdLink, bareUrl, opens, repoUrl, urlPath, blocks, sectionize } from './tasks.js';
-import { kids, h, btn, ext, debug, tabBtn, writeThrough, fraction, mark, kept, fold, replaceKeeping } from './ui.js';
+import { kids, h, btn, ext, debug, tabBtn, writeThrough, fraction, mark, kept, fold } from './ui.js';
+import { picker, matchRows, closeOrphans } from './picker.js';
 import { fileTree, fileGroup, filesProgress, unlisted } from './filelist.js';
-import { refLabel, refClass, rankMilestones, dueLabel, dueDay } from './items.js';
+import { refLabel, refClass, rankMilestones, dueLabel } from './items.js';
 
 // Re-exported for the tests, which read the pane's view of a body through here.
 export { withoutHtml };
@@ -53,84 +54,123 @@ function clamp(head, tail) {
 }
 
 /**
- * The header is the one part of this pane that is never blown away, so the
- * switcher and the light live there — a poll landing mid-click would otherwise
- * close an open dropdown.
+ * The switcher's rows for the picker (picker.js), top to bottom.
+ *
+ * Stacked pull requests sit under the one they build on (`depth`). A branch
+ * with more than one pull request -- into its fork's main and into the
+ * parent, say -- leads with them in a group of their own, **On this branch**,
+ * each with what is stacked on it, and the rest of the list follows without
+ * them. Picking one of the branch's own (`own`) changes what the pane shows
+ * and checks nothing out, since the branch is already this one; every other
+ * row is a checkout.
+ *
+ * Uncommitted work would make that checkout fail, so with any (`blocked`)
+ * every row but the branch's own is disabled, and says why on hover.
+ *
+ * A row is found by its number, its title, its branch and its repository
+ * (`search`), and says the repository in front of the number when it is not
+ * this checkout's, as the tab's title writes it: `owner/repo#N`. Keyed by
+ * URL: the pull request on screen can be in another repository with a number
+ * the list has.
  */
-export function renderHeader(status, prs, handlers) {
-  const { onSwitch, onChoose, onCommit } = handlers;
-  const sel = document.getElementById('pr-switch');
-  const commit = document.getElementById('pr-commit');
-
-  // Rebuilt only when the set of PRs changes, so the open list survives a poll.
-  //
-  // Stacked PRs sit under the one they build on. An <option> cannot nest and an
-  // <optgroup> cannot be chosen, so the indent is in the label, in non-breaking
-  // spaces because a plain leading one is collapsed.
-  //
-  // `prs` is null until app.js has a list, and the placeholder says so rather
-  // than "no open pull requests" -- the pane below says there is no list yet,
-  // and the two sat one above the other disagreeing. The `?` in the keys
-  // rebuilds the options when a list lands, even an empty one.
-  //
-  // A branch with more than one pull request -- into its fork's main and into
-  // the parent, say -- leads with them in a group of their own, each with what
-  // is stacked on it, and the rest of the list follows without them. Picking
-  // one of the branch's own changes what the pane shows and checks nothing
-  // out, since the branch is already this one (`choose`); every other option
-  // is the checkout it always was.
+export function switcherChoices(status, prs) {
+  const blocked = status.dirtyFiles.length > 0;
   const group = branchGroup(status.branchPrs ?? [], prs ?? [], status.pr, status.nameWithOwner);
   const grouped = new Set(group.map(({ pr }) => pr.url));
   const shown = switcherRows(prs ?? [], status.pr, status.nameWithOwner).filter(({ pr }) => !grouped.has(pr.url));
-  // The repository in front of the number when it is not this checkout's, as
-  // the tab's title writes it: `owner/repo#N`.
-  const label = (p, depth) => `${depth ? `${'  '.repeat(depth)}└ ` : ''}`
-    + `${prRepo(p) === status.nameWithOwner ? '' : prRepo(p)}#${p.number} ${p.isDraft ? '(draft) ' : ''}${p.title}`;
-
-  // By URL, as the options are valued: the pull request on screen can be in
-  // another repository with a number the list has, and by number the options
-  // would never be rebuilt for it.
-  const keys = (prs ? '' : '?') + (status.dirtyFiles.length ? '~' : '') + [...group.map((r) => `${r.pr.url}:${r.depth}${r.own ? '!' : ''}`), '|',
-    ...shown.map(({ pr, depth }) => `${pr.url}:${depth}`)].join(',');
-  // Nor while it has focus, the one sign a page gets that its dropdown may be
-  // open: a list landing then replaced the options under the open dropdown,
-  // which closed it or moved the pick. It is rebuilt as it loses focus, from
-  // the status painted last -- each call here replaces the one before.
-  // Uncommitted work would make `gh pr checkout` fail, so offer the fix instead
-  // of the switch. Claude is right there in the next pane. The branch's own
-  // pull requests are the exception: picking one checks nothing out, so with
-  // a group to pick from the switcher stays, beside Commit, with every option
-  // but the group's own disabled.
-  const blocked = status.dirtyFiles.length > 0;
-  const stale = sel.dataset.keys !== keys;
-  const open = document.activeElement === sel;
-  sel.onblur = stale && open ? () => renderHeader(status, prs, handlers) : null;
-  if (stale && open) debug('switcher options held while it has focus:', keys);
-  else if (stale) {
-    debug('switcher options rebuilt:', sel.dataset.keys ?? '(none)', '->', keys);
-    sel.dataset.keys = keys;
-    sel.replaceChildren(
-      h('option', { value: '' }, shown.length || group.length ? 'no pull request' : prs ? 'no open pull requests' : 'no list of pull requests yet'),
-      // Spread, not a null: replaceChildren is the DOM's, which has no `kids()`
-      // and makes a "null" text node of one inside the select.
-      ...(group.length ? [h('optgroup', { label: 'On this branch' },
-        ...group.map(({ pr: p, depth, own }) => h('option', { value: p.url, disabled: blocked && !own, ...(own ? { dataset: { choose: '1' } } : {}) }, label(p, depth))))] : []),
-      ...shown.map(({ pr: p, depth }) => h('option', { value: p.url, disabled: blocked }, label(p, depth))),
-    );
-    sel.onchange = () => {
-      const own = sel.selectedOptions[0]?.dataset.choose;
-      debug('switcher picked', sel.value || '(none)', own ? '(this branch)' : '');
-      if (!sel.value) return;
-      if (own) onChoose(sel.value);
-      else onSwitch(sel.value);
+  const row = ({ pr: p, depth, own = false }, inGroup) => {
+    const here = prRepo(p) === status.nameWithOwner;
+    const text = `${here ? '' : prRepo(p)}#${p.number} ${p.isDraft ? '(draft) ' : ''}${p.title}`;
+    const disabled = blocked && !own;
+    return {
+      key: p.url, text, depth, number: p.number, here, own, disabled,
+      search: `${text} ${p.headRefName ?? ''} ${prRepo(p)}`,
+      ...(inGroup ? { group: 'On this branch' } : {}),
+      ...(disabled ? { title: 'commit or stash your changes to check this out' } : {}),
     };
-  }
-  // Always re-assert: a failed switch has to snap back to the real branch.
-  sel.value = status.pr?.url ?? '';
+  };
+  return [...group.map((r) => row(r, true)), ...shown.map((r) => row(r, false))];
+}
 
-  sel.hidden = blocked && !group.length;
-  sel.title = blocked ? 'pick one of this branch\'s pull requests; commit or stash to check out another'
-    : 'switch to another open pull request';
+// More digits than any pull request has, and well inside a safe integer.
+const PR_NUMBER = /^#?([1-9]\d{0,8})$/;
+
+/**
+ * The switcher's rows for what is typed. A number, with or without its `#`,
+ * finds by number: the pull request with exactly that one first, then those
+ * whose number starts with it, then anything else the digits are in. Other
+ * text is matchRows': every word, in the number, title, branch or repository.
+ * Either way the matches are flat, since a match's parent may not be one.
+ *
+ * A whole number that no pull request in this repository's list has gets a
+ * last row offering to check it out anyway (`unlisted`): the list is the open
+ * ones, and the one wanted may be merged or closed. Disabled with uncommitted
+ * work (`blocked`), as every checkout is.
+ */
+export function switcherFilter(rows, query, blocked = false) {
+  const q = query.trim();
+  if (!q) return rows;
+  const n = PR_NUMBER.exec(q)?.[1];
+  if (!n) return matchRows(rows, q);
+  const flat = (r) => ({ ...r, depth: 0, group: undefined });
+  const by = (test) => rows.filter(test).map(flat);
+  const exact = by((r) => String(r.number) === n);
+  const starts = by((r) => String(r.number) !== n && String(r.number).startsWith(n));
+  const taken = new Set([...exact, ...starts].map((r) => r.key));
+  const rest = matchRows(rows, n).filter((r) => !taken.has(r.key));
+  const listed = rows.some((r) => r.here && String(r.number) === n);
+  return [...exact, ...starts, ...rest, ...(listed ? [] : [{
+    key: `#${n}`, number: Number(n), unlisted: true, disabled: blocked, cls: 'unlisted',
+    text: `Check out #${n} (not in the open list)`,
+    title: blocked ? 'commit or stash your changes to check this out' : 'look this number up on GitHub and check it out: a merged or closed pull request, or one opened since the list was read',
+  }])];
+}
+
+/**
+ * The header is the one part of this pane that is never blown away, so the
+ * switcher and the light live there. The switcher is a picker of our own
+ * (picker.js): it was a native <select> until #188, which checked out another
+ * pull request on a bare arrow or a letter while it had the focus.
+ *
+ * `prs` is null until app.js has a list, and the button and the empty list
+ * say so rather than "no open pull requests" -- the pane below says there is
+ * no list yet, and the two sat one above the other disagreeing.
+ */
+export function renderHeader(status, prs, handlers) {
+  const { onSwitch, onSwitchNumber, onChoose, onCommit, onReach } = handlers;
+  const commit = document.getElementById('pr-commit');
+  const rows = switcherChoices(status, prs);
+  const blocked = status.dirtyFiles.length > 0;
+  const none = rows.length ? 'no pull request' : prs ? 'no open pull requests' : 'no list of pull requests yet';
+  const on = status.pr && rows.find((r) => r.key === status.pr.url);
+  const sel = picker('pr-switch', {
+    button: document.getElementById('pr-switch'),
+    label: 'pull request', text: on ? on.text : none,
+    rows, current: status.pr?.url ?? null,
+    // `listed` once there is a list, and how many rows, for a driver to wait
+    // on: the rows themselves are drawn only as the list opens.
+    dataset: { rows: String(rows.length), ...(prs ? { listed: '' } : {}) },
+    filter: (list, query) => switcherFilter(list, query, blocked),
+    placeholder: 'number, title or branch',
+    empty: prs ? 'no open pull requests — type a number to check one out' : 'no list of pull requests yet — type a number to check one out',
+    none: 'no open pull request matches',
+    title: blocked ? 'pick one of this branch\'s pull requests; commit or stash to check out another'
+      : 'switch to another pull request: open the list and pick, or type a number or some of a title',
+    onOpen: () => onReach?.('switcher opened'),
+    onPick: (row) => {
+      debug('switcher picked', row.key, row.own ? '(this branch)' : row.unlisted ? '(by number)' : '');
+      if (row.unlisted) onSwitchNumber(row.number);
+      else if (row.own) onChoose(row.key);
+      else onSwitch(row.key);
+    },
+  });
+
+  // Uncommitted work would make `gh pr checkout` fail, so offer the fix instead
+  // of the switch. The coding agent is right there in the next pane. The
+  // branch's own pull requests are the exception: picking one checks nothing
+  // out, so with a group to pick from the switcher stays, beside Commit.
+  sel.hidden = blocked && !rows.some((r) => r.own);
+  closeOrphans();
   commit.hidden = !blocked;
   commit.onclick = () => onCommit(status.dirtyFiles);
   commit.textContent = `Commit ${status.dirtyFiles.length} file${status.dirtyFiles.length === 1 ? '' : 's'}…`;
@@ -784,55 +824,33 @@ function renderPrHead(pr, parsed, handlers) {
 }
 
 /**
- * The milestone picker's options: none first, then the repository's open
+ * The milestone picker's rows: none first, then the repository's open
  * milestones in the order the Issues tab groups them (rankMilestones), so the
- * dated ones come soonest first. Each is its title alone, with its due date
- * as `title`, the option's tooltip: in the text it was said twice on the line
- * once picked, beside the due date after the picker, and took the width a
- * long title needs. The pull request's own milestone is
+ * dated ones come soonest first. Each is its title, with when it is due after
+ * it as the line says it (dueLabel: `due in 3 days`, yellow within a week, red
+ * once past, the date on hover) -- in a native select's option that was a
+ * tooltip, which not every browser shows. The pull request's own milestone is
  * always among them, last when the list lacks it -- closed, past the fifty
  * read, or no list yet (`list` is null until the page has one) -- so the
- * picker can show where the pull request is whatever was read.
+ * picker can show where the pull request is whatever was read. Keyed by the
+ * milestone's number as a string, and `''` for none.
  *
  * "None" says the pull request wants triage while it is on none, since that
  * is the state it should not be left in; once it is on one, picking none is
  * taking it off, and says so plainly.
  */
-export const milestoneChoices = (current, list) => {
+export const milestoneChoices = (current, list, now = Date.now()) => {
   const open = rankMilestones(list ?? []);
   const all = current && !open.some((m) => m.number === current.number) ? [...open, current] : open;
+  const due = (m) => {
+    if (!m.dueOn) return {};
+    const { className, textContent, title } = dueLabel(m.dueOn, now);
+    return { detail: { text: textContent, cls: className, title } };
+  };
   return [
-    { value: '', text: current ? 'no milestone' : 'no milestone — needs triage' },
-    ...all.map((m) => ({ value: String(m.number), text: m.title, ...(m.dueOn ? { title: `due ${dueDay(m.dueOn)}` } : {}) })),
+    { key: '', text: current ? 'no milestone' : 'no milestone — needs triage' },
+    ...all.map((m) => ({ key: String(m.number), text: m.title, ...due(m) })),
   ];
-};
-
-/**
- * A kept picker brought up to what `fresh` says, in place. An option already
- * there stays the same node, and only what differs is touched, so an open
- * dropdown gets a new milestone rather than closing or losing its highlight.
- * The value is set only when the pull request's own milestone has moved, since
- * the select's may be what a keyboard is browsing in an open dropdown.
- */
-const updatePicker = (live, fresh) => {
-  live.title = fresh.title;
-  live.disabled = fresh.disabled;
-  live.toggleAttribute('data-listed', 'listed' in fresh.dataset);
-  const have = new Map([...live.options].map((o) => [o.value, o]));
-  [...fresh.options].forEach((want, i) => {
-    const o = have.get(want.value) ?? want;
-    have.delete(want.value);
-    if (o !== want) {
-      if (o.textContent !== want.textContent) o.textContent = want.textContent;
-      o.title = want.title;
-    }
-    if (live.options[i] !== o) live.insertBefore(o, live.options[i] ?? null);
-  });
-  have.forEach((o) => o.remove());
-  if (live.dataset.on !== fresh.dataset.on) {
-    live.dataset.on = fresh.dataset.on;
-    live.value = fresh.dataset.on;
-  }
 };
 
 /**
@@ -849,87 +867,39 @@ const updatePicker = (live, fresh) => {
  *
  * The word in front links to the milestone on GitHub while there is one, and
  * a dated milestone has its due date after the picker as the queue's
- * milestone lines say it (dueLabel): `due in 3 days`, yellow within a week,
- * a red badge once past, the date on hover. The picker takes the rest of the
- * line, so a long title has the room before it ellipsizes. The
- * options are milestoneChoices over `handlers.milestones`, which app.js reads
- * when the pull request's repository changes and again as the pointer or the
- * focus reaches the picker (`onMilestoneReach`), as the switcher's list is. A
- * pick goes to `onMilestone` with this pull request's URL and the number, or null for none; the picker
- * gives up the focus as it does, so the answer redraws it too (paintHead).
- * Until GitHub answers it shows the pick, disabled (`handlers.picking`).
+ * milestone lines say it (dueLabel). The picker takes the rest of the line,
+ * so a long title has the room before it ellipsizes. Its rows are
+ * milestoneChoices over `handlers.milestones`, which app.js reads when the
+ * pull request's repository changes and again as the pointer or the focus
+ * reaches the picker or its list opens (`onMilestoneReach`), as the
+ * switcher's list is. A pick goes to `onMilestone` with this pull request's
+ * URL and the number, or null for none. Until GitHub answers it shows the
+ * pick, disabled (`handlers.picking`).
+ *
+ * A picker of our own (picker.js), so a pick is Enter or a click in the open
+ * list and nothing else. It was a native select at first (#168), whose
+ * `change` is a write to GitHub and comes on a bare arrow or letter while it
+ * is closed; that one put back any change within 300ms of a browsing key, or
+ * after one once the focus had left, which guessed at intent from timing and
+ * still left the wheel unguarded (#188). The picker names its pull request as
+ * its `scope`, so a move to another one shuts an open list: a pick there
+ * would be about one no longer on screen, which the server would refuse.
  */
-// What moves a closed select's value: an arrow, a page or end key, or a letter to
-// find by. Space is not one: it opens the dropdown.
-const BROWSING_KEY = /^(Arrow.*|Page.*|Home|End|[^ ])$/;
-// How long after a browsing key a change is still that key's. Long enough for a
-// browser that sends the change after the key rather than while handling it,
-// and short beside the time a person takes to pick from a menu the key opened.
-const BROWSE_MS = 300;
-
 const milestoneRow = (pr, { milestones = null, picking = null, onMilestone, onMilestoneReach } = {}) => {
   const m = pr.milestone;
-  const on = (picking ? picking.number : m?.number) ?? '';
-  const sel = h('select', {
+  const on = String((picking ? picking.number : m?.number) ?? '');
+  const rows = milestoneChoices(m, milestones);
+  const sel = picker('milestone', {
+    label: 'milestone', text: rows.find((r) => r.key === on)?.text ?? `milestone #${on}`,
+    rows, current: on, scope: pr.url, disabled: !onMilestone || !!picking,
     // `listed` once the repository's list is in, for a driver to wait on: the
-    // options alone cannot say, as a repository with none open has none.
-    ariaLabel: 'milestone', disabled: !onMilestone || !!picking,
-    dataset: { pr: pr.url, keep: `milestone ${pr.url}`, on: String(on), ...(milestones ? { listed: '' } : {}) },
+    // rows alone cannot say, as a repository with none open has none.
+    dataset: { pr: pr.url, on, ...(milestones ? { listed: '' } : {}) },
     title: m ? 'move this pull request to another milestone' : 'not on a milestone: pick one to triage it',
-  }, ...milestoneChoices(m, milestones).map((c) => h('option', { value: c.value, ...(c.title ? { title: c.title } : {}) }, c.text)));
-  sel.value = sel.dataset.on;
-  // Held through a redraw while it has the focus (paintHead), and brought up to
-  // the picker that redraw drew.
-  sel.refresh = (fresh) => updatePicker(sel, fresh);
-  // A closed select changes on a bare key, and a change here is a write to
-  // GitHub: a letter on its way to the terminal moved the pull request, and an
-  // arrow did on Windows and Linux. A page cannot ask whether a dropdown is
-  // open, but a choice from an open dropdown comes on Enter or a click, and a
-  // key that browses changes the value as it is handled. So a change within
-  // BROWSE_MS of a browsing key is put back, unless an Enter came between, and
-  // to pick by keyboard is to open the dropdown first. keypress too, as that is
-  // where type-ahead happens.
-  //
-  // A time from the key rather than a flag a zero-delay timer clears, as this
-  // was at first: that held only while the change came before the timer, and
-  // browsers do not promise the order -- one that sends the change a task later
-  // let the key write. Not cleared on keyup either: on a Mac an arrow opens a
-  // native menu that keeps the keyup, and the mouse pick from that menu, a
-  // person's time later, would then be put back. And some browsers have sent
-  // the change for a key only as the select loses the focus: a browsing key
-  // means the select had the focus, so a change after one that comes with the
-  // focus already elsewhere is put back, and a value a key moved is put back at
-  // the blur, before a change sent after it. All this goes when #174's picker
-  // of our own replaces the select.
-  let browsedAt = -Infinity;
-  let keyed = false;
-  const browse = (e) => {
-    if (e.key === 'Enter') {
-      browsedAt = -Infinity;
-      keyed = false;
-      return;
-    }
-    if (e.ctrlKey || e.metaKey || e.altKey || !BROWSING_KEY.test(e.key)) return;
-    browsedAt = performance.now();
-    keyed = true;
-  };
-  sel.onkeydown = browse;
-  sel.onkeypress = browse;
-  sel.onblur = () => {
-    if (keyed && sel.value !== sel.dataset.on) sel.value = sel.dataset.on;
-    keyed = false;
-  };
-  sel.onchange = () => {
-    const left = keyed && document.activeElement !== sel;
-    keyed = false;
-    if (left || performance.now() - browsedAt < BROWSE_MS || sel.value === sel.dataset.on) {
-      sel.value = sel.dataset.on;
-      return;
-    }
-    const number = sel.value ? Number(sel.value) : null;
-    sel.blur();
-    onMilestone(pr.url, number);
-  };
+    placeholder: 'find a milestone', none: 'no open milestone matches',
+    onOpen: () => onMilestoneReach?.(),
+    onPick: (row) => onMilestone(pr.url, row.key ? Number(row.key) : null),
+  });
   sel.onpointerenter = () => onMilestoneReach?.();
   sel.onfocus = () => onMilestoneReach?.();
   return h('div', { className: `meta pr-milestone${m ? '' : ' untriaged'}` },
@@ -951,13 +921,15 @@ const milestoneRow = (pr, { milestones = null, picking = null, onMilestone, onMi
 const HEAD_ORDER = ['title', 'note', 'links', 'milestone', 'state', 'tabs'];
 
 /**
- * The head, redrawn whole but for a milestone picker that has the focus, whose
- * open dropdown a redraw would shut (replaceKeeping). The picker names its pull
- * request in `data-keep`, so a move to another one replaces it: a pick there is
- * about one no longer on screen, which the server would refuse.
+ * The head, redrawn whole. The milestone picker's open list is not in it
+ * (picker.js keeps it on <body>), so a redraw neither shuts it nor takes the
+ * focus from its search field; one whose button this redraw did not draw
+ * again -- the pane has turned to a branch with no pull request -- is shut.
  */
-const paintHead = (rows) =>
-  replaceKeeping(document.getElementById('pr-head'), kids(HEAD_ORDER.map((k) => rows[k])));
+const paintHead = (rows) => {
+  document.getElementById('pr-head').replaceChildren(...kids(HEAD_ORDER.map((k) => rows[k])));
+  closeOrphans();
+};
 
 /**
  * The count each tab carries is what it can tell you while you are on the other
