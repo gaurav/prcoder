@@ -146,7 +146,7 @@ A modified file's diff is not highlighted at all, and
 One file, and one line of some others: Claude Code's `history.jsonl` in its config directory
 (`~/.claude`, or `$CLAUDE_CONFIG_DIR`, the same variable the `claude` child honours, so the file
 read is the file written), which records every prompt typed into any Claude Code session on the
-machine, with its project directory; and, for a session's title, the `ai-title` line of its
+machine, with its project directory; and, for a session's title, the `ai-title` lines of its
 transcript under `projects/`. That is every repository's prompts, so the reader keeps only the
 ones whose project is this working copy, or a worktree under its `data/`, and drops the rest before
 anything leaves the server (`whereIn` in [`history.js`](../history.js), `test/history.test.js`).
@@ -179,7 +179,7 @@ off with it.
   (`null`, `true`, a number, a leading `@` as a file to read), so `/api/pr/milestone` takes only a
   positive integer or null, before it looks at anything else. Then the number has to be one the
   picker was offered -- the server keeps the last list it read for each repository (`pickerMove`) --
-  or the milestone the pull request is already on, as the Issues and Pull requests tabs' moves are
+  or the milestone the pull request is already on, as the Issues and PRs tabs' moves are
   held to their listings, so a closed milestone or one a stale tab sends never reaches GitHub.
   The switcher's `/api/pr/switch` hands a URL to `gh pr checkout`, so `wholePrRepo` in `git.js`
   takes only the whole of a `https://github.com/owner/repo/pull/N` -- anchored, so a flag in front
@@ -215,7 +215,9 @@ off with it.
   `app.js` turns control characters into spaces (`printable` in `tasks.js`) whatever the text's
   source, and the link ▶ adds is built from the repo name and number the row's tag shows. New text
   from GitHub or a file goes to the agent through `sendToClaude`, not straight to `typeIntoAgent`.
-  `linksFrom` in `github.js` cleans titles too, so they are stored and shown without them.
+  `linksFrom` in `github.js` cleans titles too, so they are stored and shown without them. The
+  other direction, the queue's ⤓ taking text *out* of the terminal, is a click or key too, on a
+  selection the user drew, and it sends the agent nothing.
 - **A route that reads outside the repository** reads only, keeps only what is this working copy's
   before answering, holds what it reads to a shape, and has a switch that turns it off; and the
   drivers point it at a fixture (`claudeConfig` in `tools/driver.mjs`), so no screenshot carries

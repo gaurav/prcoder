@@ -7,7 +7,7 @@ import { h, api, toast, notice, dismissNotice, pref, setPref, debug, QUIT_CODE }
 import { openDiff, closeDiff, selectedPath, setViewed, showViewed, canTickViewed, toggleViewed, toggleWrap, canWrap, openMention } from './diff.js';
 import { initQueue, addItem, setAddTo, setItems, paintPulls, setHistoryOn, primeIssues } from './queue.js';
 import { historyStale, lastPrompt } from './history.js';
-import { age, dayLabel, timeLabel } from './items.js';
+import { age, dayLabel, timeLabel, fromTerminal } from './items.js';
 import { bindKeys, keyLabel, isTyping } from './keys.js';
 import { printable } from './tasks.js';
 import { fold, folded, canFold } from './folds.js';
@@ -18,6 +18,14 @@ const term = new Terminal({
   fontSize: 14,   // one step up from the default, matching the panes' 14px body
   cursorBlink: true,
   theme: { background: '#1c1f26', foreground: '#d5d9e0' },
+  // Claude Code's fullscreen view turns on mouse reporting (?1000h, ?1002h,
+  // ?1003h, ?1006h, read from 2.1.330's output on 2026-11-22, and
+  // tools/tui-probe.mjs notes whether it still does), and then a drag
+  // goes to the agent, not to xterm's selection. xterm forces a selection with
+  // Shift-drag, except on a Mac, where it is Option-drag and only with this
+  // set: without it nothing in the pane could be selected there, and the
+  // queue's ⤓ had nothing to take.
+  macOptionClickForcesSelection: true,
 });
 const fit = new FitAddon();
 term.loadAddon(fit);
@@ -58,7 +66,11 @@ term.open(document.getElementById('term-host'));
 // Ω and Polish ż. G over R for "go to the agent", which unfolding does. R
 // types the pull request's URL and copies it: the owner asked for P, Claude
 // Code's model switch, then U, a dead key, and took R, whose ® nobody types
-// into a prompt either.
+// into a prompt either. Q adds the terminal's selection to the queue: Q for
+// queue, free in every browser and in Claude Code, no dead key. Option+Q types
+// œ on a Mac, which French does type, but the key is the page's only while the
+// terminal has a selection, and typing into xterm clears one, so a prompt
+// being typed never loses it.
 //
 // Each binding's `label` is its row on the shortcut sheet (Alt+/ below), which
 // is built from this table and so can only list keys the page has. The
@@ -71,6 +83,7 @@ const KEYS = {
   'Alt+KeyM': { fn: mentionOpenFile, terminal: () => openMention('') != null, label: 'mention the open file to the coding agent' },
   'Alt+KeyW': { fn: toggleWrap, terminal: canWrap, label: 'wrap long lines in the diff' },
   'Alt+KeyR': { fn: mentionPr, terminal: () => last?.pr?.url != null, label: 'type the pull request\'s URL into the coding agent and copy it' },
+  'Alt+KeyQ': { fn: stashSelection, terminal: () => term.hasSelection(), label: 'add the text selected in the coding agent pane to the queue' },
   'Alt+KeyG': { fn: toggleTerm, terminal: () => canFold('term'), label: 'fold or unfold the coding agent pane' },
   'Alt+Slash': { fn: toggleKeys, terminal: () => true, modal: true, label: 'show these shortcuts' },
 };
@@ -82,6 +95,9 @@ const PORTS_DOC = 'https://github.com/gaurav/prcoder/blob/main/docs/Ports.md#fin
 // Replaced, not reopened, by the exit panel's "Start coding agent": one
 // socket is one PTY.
 let ws;
+// Lines sent to the agent so far, for the last-prompt notice to tell whether
+// one went while it was reading (lastPromptNotice).
+let sends = 0;
 // `WebSocket.OPEN` is read off the global constructor, so a Playwright init
 // script that wraps `window.WebSocket` without copying its four state statics
 // makes it undefined. Every send then returns false, and the page silently
@@ -96,6 +112,7 @@ const send = (msg) => {
   if (msg.type === 'input' && msg.data.endsWith('\r')) {
     turn(true);
     historyStale();
+    sends++;
     dismissLastPrompt();
   }
   return true;
@@ -336,13 +353,16 @@ exitForm.onsubmit = (e) => {
 // listing (lastPrompt), not a read of its own. It goes up beside whatever
 // ws.onopen said about the reconnect -- a reload's toast, or the notice a
 // restored or duplicated tab gets -- which it used to give way to when the two
-// shared the toast's slot.
+// shared the toast's slot. Not after a line has been sent while it read: that
+// Enter came before there was a notice to take down, and the notice would go
+// up over the session you had already moved on with, until the next one.
 async function lastPromptNotice() {
+  const before = sends;
   let on;
   try { ({ history: on } = await whoami); } catch { return; }
   if (!on) return;
   const p = await lastPrompt();
-  if (!p) return;
+  if (!p || sends !== before) return;
   const text = p.text.replace(/\s+/g, ' ').trim();
   const cut = text.length > 140 ? `${text.slice(0, 139)}…` : text;
   const when = `${age(new Date(p.at).toISOString())} (${dayLabel(p.at)} ${timeLabel(p.at)})`;
@@ -577,6 +597,58 @@ async function mentionPr() {
     : !typed ? 'The coding agent is not connected — nothing was typed, but the URL is on the clipboard.'
     : 'The browser refused the clipboard — the URL was not copied.', true);
 }
+
+// The queue header's ⤓ and Alt+Q: the text selected in the terminal, onto
+// Local, which is how a half-written prompt is parked while something else is
+// done in the session (another prompt, a /model). Claude Code writes its
+// history only on submit, so a draft is nowhere else prcoder could read it;
+// this reads the selection the user drew, through xterm's own API, and nothing
+// more of the screen (Design.md, "nothing parses the terminal"). addItem does
+// the rest as for a typed item: the ↓/↑ end, the reference tag, the refusal
+// toast, the flash of Local from another tab. Nothing is sent to the agent, so
+// the prompt is still in its box afterwards, to be cleared there by hand:
+// which key does that is Claude Code's to decide. Clearing the selection is
+// the sign it was taken, and it disables the button again; the focus goes
+// back to the terminal, where the next thing to do is that clearing.
+//
+// One at a time: addItem can wait a second on GitHub for a reference (`Fix
+// #93`), and a second click or Alt+Q meanwhile read the same selection and
+// added it twice, as Enter in the input would without its read-only guard.
+// The button is dimmed for the wait. And the selection is cleared only if it
+// is still the one taken, since the user may have drawn another meanwhile.
+let stashing = false;
+async function stashSelection() {
+  if (stashing) return;
+  const taken = term.getSelection();
+  const text = fromTerminal(taken);
+  if (!text) return;
+  stashing = true;
+  syncStash();
+  try {
+    if (!await addItem(text)) return;
+    if (term.getSelection() === taken) term.clearSelection();
+    term.focus();
+  } finally {
+    stashing = false;
+    syncStash();
+  }
+}
+const stashButton = document.getElementById('queue-selection');
+stashButton.onclick = stashSelection;
+function syncStash() { stashButton.disabled = stashing || !term.hasSelection(); }
+term.onSelectionChange(syncStash);
+// onSelectionChange alone is not enough. xterm's clearSelection() fires it
+// without recording that the selection is gone (its SelectionService keeps the
+// last range only in _fireOnSelectionChange, which clearSelection skips), so
+// the next selection of the *same* range -- ⤓, then another drag over the same
+// prompt -- compares equal to the last one and fires nothing, and the button
+// stayed dimmed over a live selection. Seen in @xterm/xterm 6.0.0. The mouse is
+// the only way to select in xterm -- with Option or Shift held, while the agent
+// has mouse reporting on (macOptionClickForcesSelection above) -- so its
+// release is the other moment to look, after xterm's own mouseup handler. That handler is on the window, because a
+// drag begun in the terminal can end anywhere -- over the queue, the diff --
+// and so is this one: on #term-host it missed every such drag.
+window.addEventListener('mouseup', () => setTimeout(syncStash));
 
 // The diff header's ⧉: the open file's path from the repository root, the way
 // the bar and GitHub name it, onto the clipboard, with a ✓ for a moment to say
@@ -1097,8 +1169,11 @@ input.addEventListener('keydown', async (e) => {
   // bindings never fire while the input is being typed into -- and this one
   // only means anything there. It takes the textarea's own
   // extend-the-selection-by-a-paragraph on a Mac, which a queue item rarely
-  // has enough of to miss.
-  if (e.altKey && e.shiftKey && !e.ctrlKey && !e.metaKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+  // has enough of to miss. Of keys.js's rules it keeps the one that matters
+  // here, leaving a key mid-composition to the IME; a held key repeats, which
+  // only sets the same end again. On Windows Alt+Shift also switches keyboard
+  // layout, which nobody has checked against this yet (#218).
+  if (!e.isComposing && e.altKey && e.shiftKey && !e.ctrlKey && !e.metaKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
     e.preventDefault();
     setAddTo(e.key === 'ArrowUp' ? 'top' : 'bottom');
     return;

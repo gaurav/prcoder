@@ -88,9 +88,13 @@ for (const g of document.querySelectorAll('.gut')) {
     const move = (m) => main.style.setProperty(name, `${Math.round(px(r, from, m))}px`);
     g.setPointerCapture(e.pointerId);
     g.addEventListener('pointermove', move);
+    // What keeps the line lit for the whole drag (style.css, .gut says why
+    // :active and :hover are not trusted with it).
+    g.classList.add('dragging');
     // Fires for a cancelled drag as well as a released one, so the move
     // listener is never left attached to a gutter nobody is holding.
     g.addEventListener('lostpointercapture', () => {
+      g.classList.remove('dragging');
       g.removeEventListener('pointermove', move);
       save();
     }, { once: true });

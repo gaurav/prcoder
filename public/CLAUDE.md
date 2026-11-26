@@ -4,7 +4,9 @@
 
 The server imports six files from here, and with them everything they import.
 `cli.js` imports `pr.js` for the status block (`syncPhrase` and the PR's
-labels) and `items.js` for the queue's counts. `server.js` imports `grammars`
+labels) and `items.js` for the queue's counts; `choose.js` imports both for
+`prcoder choose`'s listing -- the stack order, the sort, each row's words, and
+how long a listing stays fresh. `server.js` imports `grammars`
 from `diff.js` to build the Prism half of the vendor map, so the list of
 grammars is written once, in the page that loads them. `tasks.js` is the
 description's grammar -- what a description shows (`withoutHtml`), its
@@ -15,7 +17,7 @@ counts. `server.js`, `github.js`, `git.js` and `files.js` at the root all
 import it, so the server and the pane read a description by the same rules and
 cannot drift apart. `server.js` imports `QUIT_CODE` from `ui.js`, the close
 code that tells every tab prcoder is quitting. `github.js` imports
-`filesProgress` from `filelist.js`, so a row on the Pull requests tab counts
+`filesProgress` from `filelist.js`, so a row on the PRs tab counts
 viewed files by the same rule as the Files tab. Through those six comes
 `folds.js`.
 
@@ -56,6 +58,13 @@ the browser suite reads the table in `docs/Panes.md` and fails unless the
 sheet lists the same keys in the same order. Add a row there with the
 binding, and argue the letter in the comment above the table (what each one steers round: browser tab switching, Firefox's menu
 letters, a Mac's dead keys, Claude Code's own Alt bindings).
+
+The one exception is a key that only means something while typing, which
+`bindKeys` would never fire: Alt+Shift+↑ / ↓ in the queue's input, which
+chooses the end the item goes to. It is a keydown listener on the input in
+`app.js`, it is not on the sheet (`docs/Panes.md` says so beside it), and it
+checks `isComposing` itself. A second key of that kind is the point at which
+`bindKeys` should learn a binding that fires only in a named input.
 
 ## The Claude pane is not prcoder's to draw on
 

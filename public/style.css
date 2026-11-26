@@ -197,10 +197,16 @@ main.diff-open:not(.term-off, .diff-off) #gut-diff { display: block; }
    fourth pixel of the row gutters' ten. focus-visible, because a gutter you
    have just dragged should not keep it. */
 .gut:focus { outline: none; }
-.gut.col:is(:hover, :active, :focus-visible)::after {
+/* .dragging, not :active: panes.js's pointerdown calls preventDefault(), which
+   in Firefox can keep :active from being set. panes.js holds the class from
+   pointerdown until the capture is lost. Today :hover alone holds through a
+   drag past the gutter's clamp in both engines, because the gutter has the
+   pointer captured (the browser suite's grip test, 2026-11-23); the class
+   keeps the line lit without leaning on that. */
+.gut.col:is(:hover, .dragging, :focus-visible)::after {
   background: linear-gradient(var(--accent), var(--accent)) center / 3px 100% no-repeat;
 }
-.gut.row:is(:hover, :active, :focus-visible)::after {
+.gut.row:is(:hover, .dragging, :focus-visible)::after {
   background: linear-gradient(var(--accent), var(--accent)) 0 4px / 100% 3px no-repeat;
 }
 
@@ -416,7 +422,7 @@ a { color: var(--accent); }
    prcoder windows open, which repository this one is in is the first question,
    and a faint outline did not answer it at a glance. So the fill is now strong
    enough to be a filled shape, and the name -- the half that says which
-   checkout -- is bold and `--fg` on it, with the owner left `--accent`. It
+   checkout -- is bold and `--fg` on it, with the owner a paler `--accent`. It
    still stops short of `.primary`'s solid accent with dark text, so the pull
    request stays the one button in the row, and of the `.badge`s' uppercase. A
    brighter grey ring was the other candidate, and it read as one more `.tab`.
@@ -510,7 +516,10 @@ a { color: var(--accent); }
   border-color: var(--accent);
   background: color-mix(in srgb, var(--accent) 34%, transparent);
 }
-.pr-repo .owner { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The owner is the accent pulled 60% toward --fg. Plain --accent on the 24%
+   fill was about 4.2:1, and 3.4:1 on hover -- under 4.5:1 for 12px text, and
+   on the half that is clipped first. This is about 6:1, and 4.9:1 on hover. */
+.pr-repo .owner { color: color-mix(in srgb, var(--accent) 40%, var(--fg)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pr-repo .name { color: var(--fg); font-weight: 600; flex: none; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* Serif, like the description under it: the title is the first sentence of the
@@ -1220,6 +1229,9 @@ main.dead { opacity: .45; filter: grayscale(1); }
 }
 .pane > header button.where:hover { color: var(--accent); border-color: var(--accent); }
 .pane > header button.where.top { color: var(--accent); border-color: var(--accent); }
+/* The selection button sits dimmed until the terminal has a selection, so
+   "nothing to add" reads at a glance; disabled, it takes no hover colour. */
+.pane > header button.where:disabled { color: var(--dim); border-color: var(--line); cursor: default; }
 
 /* The dot carries the state; the text next to it says what to do about it.
    The PR pane's is about the branch and the remote. */
