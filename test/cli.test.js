@@ -573,6 +573,15 @@ test('--worktree starts in a worktree it makes, on the branch or pull request, a
         assert.equal(git('symbolic-ref --short HEAD'), 'main', 'the working copy it was started in has not moved');
         assert.equal(typeof JSON.parse(await fs.readFile(path.join(wt, '.prcoder', 'worktree.json'), 'utf8')).made, 'string');
         assert.deepEqual((await ask(s.base, '/api/worktrees')).map((w) => [w.name, w.branch, w.here]), [['main', 'main', false], ['topic', 'topic', true]]);
+        // A queue item is something git lacks, though no status poll has
+        // worked here to report it (gh fails them all): the quit reads the
+        // file, and asks. Before, it counted the last poll's copy, found
+        // nothing, and removed the worktree with the item in it.
+        const queue = (items) => fetch(`http://${s.base}/api/queue`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ items }) })
+          .then((r) => assert.ok(r.ok, `queue write: ${r.status}`));
+        await queue([{ text: 'still to do' }]);
+        assert.deepEqual(await ask(s.base, '/api/quit', {}), { risk: [], worktree: { name: 'topic', path: wt, lose: ['1 queue item'], unpushed: 0 } });
+        await queue([]);
         // prcoder's own, and nothing in it git lacks: gone with the quit, unasked.
         assert.deepEqual(await ask(s.base, '/api/quit', {}), { quit: true, removed: wt });
         assert.equal((await s.exited)[0], 0);

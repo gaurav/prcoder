@@ -1503,8 +1503,12 @@ function quit({ remove = null } = {}) {
  * branch, but worth the question. `made` is whether prcoder made it.
  *
  * The queue is in `lose` only while its file is in the worktree: one moved
- * with --queue stays where it is. A failure to read any of this is no offer,
- * said at debug: a quit must not fail on the way to asking about a removal.
+ * with --queue stays where it is. It is read from the file, not from the last
+ * poll's copy: that copy is empty until a status poll has worked (gh offline,
+ * or failing) and stale after a change since the last one, and either way a
+ * quit counted nothing to lose and removed the queue without asking. A
+ * failure to read any of this is no offer, said at debug: a quit must not
+ * fail on the way to asking about a removal.
  */
 async function leaving() {
   if (!linked) return null;
@@ -1515,7 +1519,7 @@ async function leaving() {
     const { unpushed, orphaned } = await commitsOnlyHere(top);
     return {
       name: path.basename(top), path: top, force: loss.changed + loss.untracked > 0,
-      lose: worktreeLosses({ ...loss, orphaned, queue: movedQueue() ? [] : last?.queue ?? [] }),
+      lose: worktreeLosses({ ...loss, orphaned, queue: movedQueue() ? [] : await readQueue(repo, info?.nameWithOwner) }),
       // Not said twice: ahead of its pull request, they are among the risks.
       unpushed: last?.ahead ? 0 : unpushed,
       made: await madeHere(top),
