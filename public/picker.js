@@ -231,18 +231,23 @@ function make(id) {
  *   label    the control's name, for a screen reader; `placeholder` the
  *            search field's; `empty` and `none` what the list says with no
  *            rows at all and with none matching.
+ *   lead     a node drawn on the button in front of the value, for something
+ *            about the value that is a shape and not words (the switcher's
+ *            stack mark). The button is otherwise text, and its name is
+ *            written here and not read from its children, so what the shape
+ *            says goes in `leadLabel`, which ends that name.
  */
-export function picker(id, { button = null, text, title = null, label, cls = '', disabled = false, scope = '', dataset = {}, placeholder = 'search', ...opts }) {
+export function picker(id, { button = null, text, title = null, label, lead = null, leadLabel = '', cls = '', disabled = false, scope = '', dataset = {}, placeholder = 'search', ...opts }) {
   const p = pickers.get(id) ?? make(id);
   const b = button ?? h('button', { type: 'button' });
   b.className = `picker${cls ? ` ${cls}` : ''}`;
   const caret = h('span', { className: 'caret' }, '▾');
   caret.setAttribute('aria-hidden', 'true');
-  b.replaceChildren(h('span', { className: 'picker-value' }, text), caret);
+  b.replaceChildren(...(lead ? [lead] : []), h('span', { className: 'picker-value' }, text), caret);
   b.title = title ?? '';
   b.disabled = disabled;
   b.setAttribute('aria-haspopup', 'listbox');
-  b.setAttribute('aria-label', `${label}: ${text}`);
+  b.setAttribute('aria-label', `${label}: ${text}${leadLabel ? `, ${leadLabel}` : ''}`);
   [...Object.keys(b.dataset)].forEach((k) => delete b.dataset[k]);
   Object.assign(b.dataset, dataset, { picker: id });
   b.style.setProperty('anchor-name', `--picker-${id}`);
