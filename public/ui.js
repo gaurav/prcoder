@@ -113,19 +113,60 @@ export function toast(msg, bad = false) {
  * that needs one adds it.
  */
 export function notice(msg, { bad = false, link = null, kind = null } = {}) {
-  if (kind) dismissNotice(kind);
+  // Not dismissNotice(kind): drop() moves a focus it finds on the old line to
+  // another line or into the terminal, so a switch made from the keyboard sent
+  // the next key to the agent. The new line is the old one's successor, so the
+  // focus goes to the same control on it.
+  const at = document.activeElement;
+  const old = kind ? [...document.querySelectorAll('#notices > li')].filter((l) => l.dataset.kind === kind) : [];
+  const held = old.some((l) => l.contains(at)) ? control(at) : null;
+  for (const l of old) l.remove();
   const line = h('li', { className: bad ? 'bad' : '', dataset: kind ? { kind } : {} });
-  const gone = () => line.remove();
+  const gone = () => drop(line);
   const box = h('input', { type: 'checkbox', title: 'noted — dismiss this notice', ariaLabel: 'noted — dismiss this notice' });
   box.onchange = gone;
   line.append(box,
     h('span', { className: 'text' }, msg, link ? ' ' : null, link ? ext(link.href, link.text) : null),
     btn('✕', gone, { title: 'dismiss this notice', ariaLabel: 'dismiss this notice' }));
   document.getElementById('notices').append(line);
+  if (held) line.querySelector(held).focus();
   return line;
 }
 export const dismissNotice = (kind) => {
-  for (const line of document.querySelectorAll('#notices > li')) if (line.dataset.kind === kind) line.remove();
+  for (const line of document.querySelectorAll('#notices > li')) if (line.dataset.kind === kind) drop(line);
+};
+
+/**
+ * Takes a notice's line away without taking the keyboard's focus with it. A
+ * line is mostly dismissed from its own box or ✕, which has the focus as it
+ * goes, and a removed element hands the focus to <body>, so the next Tab
+ * started again from the top of the page. It goes to the same control on the
+ * next line (the previous one, for the last), so a list can be cleared from the
+ * keyboard one key at a time, and with no line left, to the terminal, where
+ * the loop the notices interrupt goes on. The terminal by its xterm textarea,
+ * since `term` is app.js's and app.js imports this file, or by its ▼ while it
+ * is folded.
+ */
+function drop(line) {
+  const at = document.activeElement;
+  const next = line.nextElementSibling ?? line.previousElementSibling;
+  line.remove();
+  if (!line.contains(at)) return;
+  (next?.querySelector(control(at)) ?? terminal())?.focus();
+}
+
+/** Which of a line's two controls `at` is, as a selector for the same one on another line. */
+const control = (at) => (at.matches('input') ? ':scope > input' : ':scope > button');
+
+/**
+ * Where the focus goes when it has nowhere left in the list. A folded terminal
+ * hides its textarea with the rest of #term-host, and focus() on an element
+ * that is not rendered does nothing, so the focus still fell to <body>; its
+ * header's ▼ is the terminal's one control left on screen.
+ */
+const terminal = () => {
+  const area = document.querySelector('#term .xterm-helper-textarea');
+  return area?.checkVisibility() ? area : document.getElementById('term-fold');
 };
 
 /**

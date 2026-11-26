@@ -1199,8 +1199,11 @@ function renderPrTab(pr, parsed, handlers) {
   const selected = selectionIn(host);
 
   const stack = tab === 'stack' ? stackOn(pr, handlers.prs) : null;
-  // Only an open tab asks git: most pull requests are on the default branch,
-  // and the ones that aren't mostly sit on another PR, which the list has.
+  // The switcher's stack mark (renderHeader) asks git the same thing on every
+  // paint, so this ask is normally already made and `loadBelow` drops it as a
+  // repeat; it stays so the tab does not depend on the header to be drawn. Few
+  // pull requests ask at all: most are on the default branch, and the ones
+  // that aren't mostly sit on another PR, which the list has.
   const under = stack && stackUnder({ pr }, handlers.prs, handlers.below, handlers.defaultBranch);
   if (under?.ask) handlers.onBelow?.(under.ask);
   const tree = under && stackTree({ pr }, handlers.prs, under);

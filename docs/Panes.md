@@ -71,6 +71,7 @@ Mac Alt is Option, and on another layout Alt+/ is whatever key sits where a US k
 | Alt+M | presses **@** in the diff pane                                                   | a file that has one is open                      |
 | Alt+W | presses *Wrap* in the diff pane                                                  | a file is open and the pane is not folded        |
 | Alt+R | types the pull request's URL into the coding agent's prompt, unsent; copies it   | the branch has a pull request                    |
+| Alt+Q | presses the queue's ⤓: adds the text selected in the coding agent pane to Local | the coding agent pane has text selected          |
 | Alt+. | opens the pull request switcher with the caret in its search field               | the switcher is there: no uncommitted work, or the branch has pull requests of its own to pick between |
 | Alt+G | presses the coding agent pane's ▼: folds it, or unfolds it and puts the focus back in the terminal | always                         |
 | Alt+/ | shows these shortcuts, or hides them                                             | always                                           |
@@ -444,19 +445,25 @@ deliberate reload gets a shorter toast without the link.
 A toast and a notice are two things. A toast reports something that has happened: it sits over the
 foot of the window and goes after four seconds, eight for an error, or on a click. A notice is
 something that stays true until you have dealt with it -- the session is new, the branch was
-switched under the agent, a popup was blocked -- and it is a line in a list
-across the top of the right-hand panes, which is not there while it is empty. Each line has a box
-on its left and a ✕ on its right, and either takes it away. Any number can be up at once, and
-a second notice about the same thing replaces the first. The list pushes the panes down rather
-than covering them.
+switched under the agent, a popup was blocked -- and it is a line in a list across the top of the
+right-hand panes, which is not there while it is empty. Each line has a box on its left and a ✕ on
+its right, and either takes it away; from the keyboard, the focus moves to the same control on the
+next line (the line before, for the last), and to the terminal once the list is empty (to its ▼,
+while it is folded). Any number can be up at once, and a second notice about the same thing replaces
+the first, taking over its focus if it had it. The list pushes the panes down rather than covering
+them, and it never takes the coding agent below its 120px: a queue dragged to its limit gives up the
+room instead, and so does a diff at its cap, which is half the column less the list.
 
 When the agent connects -- the page opened, or **Start coding agent** pressed in the bar below --
 a notice says the last prompt sent from this working copy and when, `Last prompt, 2 hours
-ago (Today 21:14): …`, the first 140 characters of it, for the session that died mid-task. The
+ago (Today 21:14): …`, the first 140 characters of it, for the session that died mid-task. It
+skips `/exit`, `/quit`, `/clear` and `/resume`, which end or leave a session rather than say what it
+was doing, and a prompt sent in a worktree under `data/`, which was another pull request's. The
 next Enter in the terminal takes it down, since by then it has been read. It is drawn from the
 same record as the queue's History tab, which has the rest and, on each row, the ▶ that types a
-prompt back in; the notice itself has no button, since the text it shows is cut. After a
-reload it sits beside the reload's own notice.
+prompt back in; the notice itself has no button, since the text it shows is cut. It is up
+together with whatever the reconnect said: a deliberate reload's toast, or the notice that a
+restored, revisited or duplicated tab gets.
 
 When Claude exits, a bar under its last output offers to start it again, optionally with a
 different model or effort, or to quit prcoder. Left to right: **Quit prcoder**, outlined in red
@@ -502,7 +509,10 @@ the issue is where it lives from then on.
 
 The tabs sit in a strip of their own above the list, which scrolls under it, so a tab is always a
 click away however long the listing below it runs; a strip that does not fit the pane's width wraps
-whole tabs onto a second row rather than running off the edge. Each tab keeps its own scroll
+whole tabs onto a second row rather than running off the edge. From the left: Local, then the
+tabs that read from elsewhere -- PRs, Issues, PR #N while a pull request is on screen, and History
+while there is one to read -- then Completed and Deleted (`sourcesFor` and `stripFor` in
+`public/queue.js`). Each tab keeps its own scroll
 offset while the page is open: back from Issues, Local is where you left it, as the pull request
 pane's tabs are. A tab's own row of controls -- the search box, and the selects and ⟳ where it has
 them -- stays in sight at the top of the list as the groups scroll under it.
@@ -522,6 +532,20 @@ whose keys are the ones that work everywhere but there. They always go on Local,
 is showing -- the input's placeholder says so -- and adding one from another tab leaves you there
 and flashes the Local tab instead.
 
+The ⤓ after the arrow adds whatever is selected in the coding agent pane, and Alt+Q presses it;
+it stays dimmed until something there is selected. This is how a half-written prompt is parked
+when something else has to happen first -- another prompt, a `/model` -- since Claude Code writes
+its history only when a prompt is sent, and an unsent one is nowhere else prcoder can read. The
+item goes where the arrow says, is tagged like a typed one, and keeps the selection's lines; the
+prompt's own marker (`❯ `, or `> ` in older versions of Claude Code) is dropped from the first,
+and the two-column indent Claude Code puts a wrapped line in is dropped from the rest. Nothing is
+sent to the agent, so the prompt is still in its box afterwards: clear it there yourself. The
+selection is cleared instead, to say it was taken, and the focus goes back to the terminal.
+
+Claude Code's fullscreen view takes the mouse for itself, so a plain drag in the pane goes to it
+and selects nothing ⤓ can take. Drag with Option held on a Mac, or Shift elsewhere; a triple-click
+on the prompt's row needs the same key.
+
 An item can be about an issue or a pull request, in this repo or any other `gh` can read. Type
 `#91`, `prcoder#91`, `owner/repo#91` or a github.com link on its own and the item is added under
 that issue's title; the same thing inside longer text, `Fix #93`, keeps your text. The `name#91`
@@ -540,8 +564,8 @@ unticking one puts it back on Local, which is the way back if Claude did not do 
 a slip. **Deleted** holds tombstones, the latest on top, until you empty it, and hides when it holds
 nothing. Every item is on exactly one of those.
 
-Two more tabs read GitHub rather than your queue, and ↓ on either copies an item into Local and
-leaves it where it was. **PR #N**, named by the pull request on screen and there only with one,
+Three more tabs read GitHub rather than your queue -- PR #N, Issues and PRs -- and ↓ on any of
+them copies an item into Local and leaves it where it was. **PR #N**, named by the pull request on screen and there only with one,
 is everything its description points at, in three folds. *Checklist* is the description's own
 boxes, ticked through to GitHub like the boxes in the PR pane, with a pie of how many are done;
 ▶ on a line types it into the coding agent and ticks nothing, since the box is GitHub's. *Mentions*
@@ -684,7 +708,10 @@ clone with neither reads GitHub once and keeps that -- and the tab's count is on
 visit. A visit opens the tab from that listing and reads GitHub behind it, unless the listing is
 under a minute old. The line under the groups says
 when the listing was read and `updating…` while the read is out; ⟳ beside the search reads
-whatever the age. A read that fails leaves the list as it was and says so in a toast.
+whatever the age. A read that fails leaves the list as it was and says so in a toast. With no
+listing at all, the count is `?` and the tab says why, with a way to try again, as the Issues
+tab does; the read as the page opens is behind another tab, so its failure is that `?` alone,
+and the toast waits for a visit's own read.
 A row dragged by its grip (⠿) onto a milestone's line, or the pick in its opened row, sets the pull request's
 milestone on GitHub through the same call as an issue's, with the same hold: the number and the
 title both come from the listing the tab was shown. The opened row's select waits for **Move**, focus
@@ -701,7 +728,7 @@ Claude Code's own switch, under which the file would stop at the day it was set.
 -- *Today*, *Yesterday*, the weekday within the week, then the date -- newest first, with the day's
 count in a badge; the first two days start open and the rest folded, and a fold you change stays
 so until the page is reloaded. Under a day, one block per session, headed by the title Claude
-Code gave the session, or by the time its first prompt of the day was sent when it has none (a
+Code gave the session (the latest, since it retitles a session as it goes), or by the time its first prompt of the day was sent when it has none (a
 transcript pruned by `cleanupPeriodDays` has none; the history file is not pruned), and by the
 worktree it ran in when that was one under `data/` rather than the working copy itself. A session
 that ran past midnight is under both days. Each row is the time, on a 24-hour clock, with the date
@@ -711,7 +738,8 @@ placeholder Claude Code records and nothing of its contents; a prompt that start
 command has the command in the accent colour; and at the end, on hover as on every row, ▶ types
 the prompt into the coding agent again, unsent, to edit and send -- the way back into the task a
 session died on -- ↓ copies it into Local, untagged, and ⧉ copies it to the clipboard, turning to
-✓ for a moment. The box above searches the
+✓ for a moment. ▶ or ↓ on a prompt that held a paste then says, in a notice, that only the
+placeholder came with it and the text has to be pasted again before sending. The box above searches the
 prompts' text, leaving out a day without a match, and the tab's count is the prompts sent today,
 or the matches while searching. The file is read when the page opens, so the count is on the tab
 before a visit, and again a second after a prompt is sent from this page, whichever tab is

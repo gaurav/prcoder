@@ -52,7 +52,7 @@ stdout. For a look with the user's own eyes, leave it running and hand them that
 API shape: the `routes` table in `server.js`, keyed `"METHOD /path"`, JSON
 in/out, errors as 500 `{error}`. Every handler but the few in `UNLOCKED` --
 whoami, the `GET` status poll, the queue's reference lookup, the Issues and
-Pull requests tabs' listings, the PR pane's list of milestones and of the repository's working copies -- is serialised, so one slow call delays the rest. `POST /api/status`
+PRs tabs' listings, the PR pane's list of milestones and of the repository's working copies -- is serialised, so one slow call delays the rest. `POST /api/status`
 is the page's ⟳: a poll that also searches for the branch's pull requests,
 where `GET` reads the ones `.prcoder/prs.json` remembers by URL. A page load
 also reads, with no tab clicked, `/api/history`, the last `/api/pulls`
@@ -63,8 +63,8 @@ all four.
 ## Verifying a change
 
 ```bash
-npm test                   # node --test "test/**/*.test.js"; docs/Verifying.md says why it is quoted.
-                           # Includes test/browser/, one suite run in Chromium and in Firefox;
+npm test                   # node --test --test-concurrency=4 "test/**/*.test.js"; docs/Verifying.md says why.
+                           # Includes test/browser/, one suite run in Chromium and in Firefox, in two halves each;
                            # each run skips with a note when its browser is missing
                            # (npx playwright install chromium firefox)
 node --check public/*.js   # the client files the tests do not import
@@ -122,8 +122,14 @@ Two rules for them, and for any script after them:
   Claude pane's last-prompt notice read Claude Code's own `history.jsonl`,
   the owner's real prompts, and a screenshot would carry them. `serverEnv` in
   `tools/driver.mjs` sets the variable to a made-up history `claudeConfig`
-  writes under `data/claude-config/`; a server started by hand for the owner's
-  own look should read the real one, and `--no-history` turns the tab off.
+  writes under `data/claude-config/<port>/` and removes on exit; a server
+  started by hand for the owner's own look should read the real one, and
+  `--no-history` turns the tab off.
+
+  `tools/tui-probe.mjs` breaks both on purpose: what it checks is the real
+  agent's screen, which needs your login. It starts no server, kills its one
+  session, never presses Enter, and prints the screen only with `--screen`.
+  Keep it that way rather than stubbing it.
 - **No writes you do not undo.** The queue is safe. By default it writes only
   `.prcoder/`, which is gitignored and needs no cleanup, and `browser.mjs`
   leaves even that alone: it runs with `--queue data/browser-queue.json`, in the
@@ -137,7 +143,7 @@ Two rules for them, and for any script after them:
   without a write, send a number the picker never listed: it is refused
   before gh. Filing a queue item with ◎
   writes to GitHub too, and one-way: putting the queue back does not close the
-  issue. Dropping an Issues or Pull requests row on a milestone line, or Move in
+  issue. Dropping an Issues or PRs row on a milestone line, or Move in
   its opened row, sets that milestone on GitHub, so route `/api/issue/milestone`
   and `/api/pull/milestone` in a driver unless a real move is the point, and put
   a real one back. Snapshot the body with `gh pr view <n> --json body -q

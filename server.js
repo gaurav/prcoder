@@ -77,15 +77,20 @@ const repoFacts = async () => (info ??= await repoInfo(repo));
 let pinnedPort = Number(process.env.PRCODER_PORT) || 0;
 let noOpen = !!process.env.PRCODER_NO_OPEN;
 // --no-history, or PRCODER_NO_HISTORY: the History tab off. The agent's name
-// is held with it (cli.js, AGENTS): the history prcoder reads is Claude
-// Code's own file (history.js), so another agent has none to show.
-let noHistory = !!process.env.PRCODER_NO_HISTORY;
+// is held with it, from --agent in main (cli.js, AGENTS): the history prcoder
+// reads is Claude Code's own file (history.js), so another agent has none to
+// show. PRCODER_AGENT_BIN does not change it: that names the named agent's
+// executable -- a wrapper, or the drivers' stub -- not another agent.
+let noHistory = false;
 let agent = 'claude';
 // Whether the History tab is on. CLAUDE_CODE_SKIP_PROMPT_HISTORY is Claude
 // Code's own switch: set in the environment the `claude` child inherits, it
 // writes no history, so the tab would show the prompts from before it was set
-// and nothing after -- better hidden than half there.
-const historyOn = () => !noHistory && agent === 'claude' && !process.env.CLAUDE_CODE_SKIP_PROMPT_HISTORY;
+// and nothing after -- better hidden than half there. Both variables are read
+// here, on each ask, rather than when the module loads, so a test that
+// imports the server can clear them first whatever the shell exported.
+const historyOn = () => !noHistory && !process.env.PRCODER_NO_HISTORY && agent === 'claude'
+  && !process.env.CLAUDE_CODE_SKIP_PROMPT_HISTORY;
 
 // ponytail: patches fetched lazily on the first diff click, keyed by head oid
 // so a push or PR switch invalidates for free. Eager prefetch in refreshPr if
@@ -343,8 +348,8 @@ const repaint = () => term.status(last
  * the lock -- so it does not hold up the poll, saves and ticks behind it. The
  * Issues tab's listing is the same and much longer: up to five pages of a
  * hundred issues with their bodies, on every visit to the tab. The PR pane's
- * list of milestones to pick from is the same and short. The Pull
- * requests tab's listing is seconds long on a repository with many open;
+ * list of milestones to pick from is the same and short. The PRs
+ * tab's listing is seconds long on a repository with many open;
  * what it writes, `.prcoder/pulls.json`, is its own file, replaced whole by
  * a rename (writePulls), and its fresh reads queue among themselves
  * (freshPulls) rather than behind everything else. The History tab's read
@@ -596,8 +601,8 @@ const routes = {
   },
 
   /**
-   * The repository's open pull requests and milestones for the queue's Pull
-   * requests tab (repoPulls), with `read`, when the listing was read, in ms.
+   * The repository's open pull requests and milestones for the queue's PRs
+   * tab (repoPulls), with `read`, when the listing was read, in ms.
    * Without `fresh` it is the last listing -- the one on hand, or the one
    * `.prcoder/pulls.json` holds from an earlier run -- so the tab opens at
    * once; GitHub is read only when there is none. With `fresh` it is read now
@@ -1653,7 +1658,7 @@ if (import.meta.main) {
     releaseStart(top);
     dropRunning(top);
   });
-  ({ agentArgs } = cli);
+  ({ agentArgs, agent } = cli);
   // Into the variables, never the env: see pinnedPort.
   if (cli.port) pinnedPort = cli.port;
   if (cli.noOpen) noOpen = true;

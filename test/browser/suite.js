@@ -33,10 +33,11 @@
 // 2026-09-19, where /api/pr/task answers with the new body and the old mock's
 // `{queue: null}` assigned undefined over it.
 //
-// One suite, run once per engine: chromium.test.js and firefox.test.js beside
-// this file each set PRCODER_TEST_BROWSER and import it, and `node --test` runs
-// each in a process of its own. Not itself a .test.js, so the glob in `npm test`
-// never runs it bare. Both engines, because a test written against one engine's
+// One suite, run once per engine and in two halves: chromium-1.test.js,
+// chromium-2.test.js and the same for firefox beside this file each set
+// PRCODER_TEST_BROWSER and PRCODER_TEST_HALF and import it, and `node --test`
+// runs each in a process of its own, so the halves run side by side. Not
+// itself a .test.js, so the glob in `npm test` never runs it bare. Both engines, because a test written against one engine's
 // layout has been wrong in the other. Skipped rather than failed when
 // Playwright or the engine is missing: `npm test` on a machine without either
 // stays green with a note, and CI, which installs both, is where this is
@@ -62,8 +63,22 @@ try { engine = (await import('playwright'))[engineName]; } catch { /* not instal
 const skip = !engine ? 'playwright is not installed (npm ci without --omit=dev)'
   : !existsSync(engine.executablePath()) ? `${engineName} is not installed: npx playwright install ${engineName}`
     : false;
+// Which half of the file this process registers: '1', '2', or unset for all
+// of it. The halves are split by `secondHalf()` below, not by a count, so
+// each keeps the file's order. Halves rather than one file per engine because
+// the suite runs its tests one after another and Firefox's run was the whole
+// of CI's `npm test` (#213).
+const half = process.env.PRCODER_TEST_HALF;
+// Anything else would match neither half, and the file would pass with no
+// tests in it.
+if (half !== undefined && half !== '1' && half !== '2') {
+  throw new Error(`PRCODER_TEST_HALF is ${JSON.stringify(half)}: it has to be '1', '2' or unset`);
+}
+let inHalf = '1';
+/** Starts the second half: every test after this call is the second process's. */
+const secondHalf = () => { inHalf = '2'; };
 // Each run's names carry its engine, so a CI log says which one broke.
-const test = (name, ...rest) => nodeTest(`${name} [${engineName}]`, ...rest);
+const test = (name, ...rest) => (!half || half === inHalf) && nodeTest(`${name} [${engineName}]`, ...rest);
 
 // Each line here is a regression: `_for_` showed its underscores, `~struck~`
 // its tildes, HTML comments showed as text, `##` rendered literally, and a
@@ -262,7 +277,13 @@ before(async () => {
   // The drivers' way round macOS 27 keeping a terminal-launched Firefox out of
   // its own app data (tools/driver.mjs); #80 is when it comes out.
   browser = await engine.launch(engineName === 'firefox' ? { env: { ...process.env, ...firefoxEnv() } } : {});
-  page = await newPage();
+  // The shared page is the first half's: a test after secondHalf() that
+  // reaches for it fails, saying where it has to go, rather than passing on
+  // a page none of the tests before it has touched. Such a test passes in a
+  // run of the whole file, so the message is all that points at the split.
+  page = half === '2'
+    ? new Proxy({}, { get(_, key) { throw new Error(`page.${String(key)}: the shared page is the first half's; move this test above secondHalf(), or open a page of its own with newPage()`); } })
+    : await newPage();
 });
 
 // Without both, `node --test` never exits.
@@ -393,8 +414,11 @@ test('the PR #N tab holds the checklist, the mentions and what it closes, and co
 
 // The poll repaints the whole description whenever anything on the pull request
 // moved, and the text of a line is there to be copied.
+// On Playwright's clock: a return to the tab polls no sooner than ten seconds
+// after the last poll (visibilitychange in app.js), and the fast-forward is
+// those ten seconds, which on the wall clock were most of this test's time.
 test('a selection in the description survives a repaint, unless its text moved', { skip }, async () => {
-  const fresh = await newPage();
+  const fresh = await newPage({ clock: true });
   const select = () => fresh.evaluate(() => {
     const [from, to] = [...document.querySelectorAll('#pr-body .md > p, #pr-body .md blockquote')].map((n) => n.firstChild);
     getSelection().setBaseAndExtent(from, 3, to, 2);
@@ -405,7 +429,10 @@ test('a selection in the description survives a repaint, unless its text moved',
     await fresh.unroute('**/api/status');
     await fresh.route('**/api/status', (r) => r.fulfill({ json: next }));
     await fresh.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
-    await fresh.waitForSelector('#pr-body .md:not([data-old])', { timeout: 15000 });
+    await fresh.clock.fastForward(10_000);
+    // The fast-forward is already past the timer, so a wait longer than this
+    // is a repaint that is not coming, not a slow one.
+    await fresh.waitForSelector('#pr-body .md:not([data-old])', { timeout: 10_000 });
   };
   const selected = await select();
   assert.ok(selected.length > 5, selected);
@@ -2018,6 +2045,70 @@ test('notices that wait are lines over the right-hand panes, one per kind, dismi
   await fresh.close();
 });
 
+// Dismissed from the keyboard, a line hands the focus on rather than dropping
+// it to <body>: to the same control on the next line, and with none left, to
+// the terminal.
+test('dismissing a notice from the keyboard keeps the focus in the list, then gives it to the terminal', { skip }, async () => {
+  const fresh = await newPage();
+  await fresh.evaluate(async () => {
+    const { notice } = await import('/ui.js');
+    notice('one');
+    notice('two');
+    notice('three');
+  });
+  const focus = () => fresh.evaluate(() => {
+    const a = document.activeElement;
+    const line = a.closest('#notices > li');
+    if (line) return `${a.tagName.toLowerCase()} on ${line.querySelector('.text').textContent}`;
+    return a.classList.contains('xterm-helper-textarea') ? 'terminal' : a.tagName.toLowerCase();
+  });
+  await fresh.locator('#notices > li', { hasText: 'one' }).locator('button').focus();
+  await fresh.keyboard.press('Enter');
+  assert.equal(await focus(), 'button on two', 'the next line\'s ✕');
+  await fresh.locator('#notices > li', { hasText: 'three' }).locator('input').focus();
+  await fresh.keyboard.press('Space');
+  assert.equal(await focus(), 'input on two', 'the last line goes back to the one before');
+  await fresh.keyboard.press('Space');
+  assert.equal(await fresh.locator('#notices > li').count(), 0);
+  assert.equal(await focus(), 'terminal');
+  await fresh.close();
+});
+
+// A folded terminal hides the textarea the focus went to, and focus() on it
+// did nothing, so the last line's dismissal dropped the focus to <body>.
+test('dismissing the last notice with the terminal folded gives the focus to its ▼', { skip }, async () => {
+  const fresh = await newPage();
+  await fresh.locator('#term-fold').click();
+  await fresh.evaluate(async () => (await import('/ui.js')).notice('only'));
+  await fresh.locator('#notices > li input').focus();
+  await fresh.keyboard.press('Space');
+  assert.equal(await fresh.locator('#notices > li').count(), 0);
+  assert.equal(await fresh.evaluate(() => document.activeElement.id), 'term-fold');
+  await fresh.close();
+});
+
+// A notice of a kind already up replaced it through the dismissal, which moved
+// a focus it found on the old line to another line, or into the terminal where
+// the next key went to the agent. It stays on the same control of the new line.
+test('a notice that replaces one of its kind keeps the focus on the same control', { skip }, async () => {
+  const fresh = await newPage();
+  const say = (msg, kind) => fresh.evaluate(async ([msg, kind]) => { (await import('/ui.js')).notice(msg, { kind }); }, [msg, kind]);
+  await say('other', 'other');
+  await say('switched to a', 'switched');
+  await fresh.locator('#notices > li[data-kind="switched"] button').focus();
+  await say('switched to b', 'switched');
+  assert.deepEqual(await fresh.$$eval('#notices > li .text', (ts) => ts.map((t) => t.textContent)), ['other', 'switched to b']);
+  assert.equal(await fresh.evaluate(() => {
+    const a = document.activeElement;
+    return `${a.tagName.toLowerCase()} on ${a.closest('#notices > li')?.dataset.kind}`;
+  }), 'button on switched');
+  // And a replacement leaves a focus that was elsewhere alone.
+  await fresh.locator('#notices > li[data-kind="other"] input').focus();
+  await say('switched to c', 'switched');
+  assert.equal(await fresh.evaluate(() => document.activeElement.closest('#notices > li')?.dataset.kind), 'other');
+  await fresh.close();
+});
+
 // A tab that had a PTY and loads again has a new session, and the page says
 // which kind of load it was (ws.onopen in app.js): a toast for a reload, and
 // for the others a notice that waits. The link to keeping tab
@@ -2168,6 +2259,72 @@ test('the History tab lists what was sent by day and session, and the last promp
   await p.close();
 });
 
+// The notice is for picking a task back up, so it skips the /exit that so
+// often ended the session, and a prompt sent in a worktree under data/, which
+// is another pull request's session and not this pane's.
+test('the last-prompt notice skips /exit and a worktree\'s prompts', { skip }, async () => {
+  const S = '6f1a2b3c-4d5e-4f60-8a9b-0c1d2e3f4a5b';
+  const at = Date.now() - 60_000;
+  const p = await newPage({ history: { prompts: [
+    { at, text: 'sent in a worktree', session: S, where: 'data/wt-1' },
+    { at: at - 1000, text: '/exit', session: S, where: '' },
+    { at: at - 2000, text: '/clear', session: S, where: '' },
+    { at: at - 3000, text: 'the task the session was on', session: S, where: '' },
+  ], sessions: {}, read: at, skipped: 0 } });
+  assert.match(await p.locator('#notices > li[data-kind="last-prompt"] .text').textContent(), /: the task the session was on$/);
+  await p.close();
+});
+
+// A read that lands after a prompt was sent puts nothing up: the Enter came
+// before there was a notice to take down, and one put up now would sit over
+// the session until the next.
+test('the last-prompt notice stays down when a prompt is sent before it is read', { skip }, async () => {
+  let answer;
+  const held = new Promise((res) => { answer = res; });
+  const at = Date.now() - 60_000;
+  const p = await newPage({ history: async (r) => {
+    await held;
+    return r.fulfill({ json: { enabled: true, prompts: [{ at, text: 'an old prompt', session: null, where: '' }], sessions: {}, read: at, skipped: 0 } });
+  } });
+  await p.waitForFunction(() => document.querySelector('#term-host textarea'));
+  await p.locator('#term-host textarea').press('Enter');
+  answer();
+  await p.waitForFunction(() => /History \(\d+\)/.test(document.querySelector('#queue-body .tab[data-tab="history"]')?.textContent ?? ''));
+  await p.waitForTimeout(200);
+  assert.equal(await p.locator('#notices > li[data-kind="last-prompt"]').count(), 0);
+  await p.close();
+});
+
+// The history keeps a paste as its placeholder only, so a row that held one
+// says so after ▶ or ↓, and a row that did not says nothing more.
+test('▶ and ↓ on a history row that held a paste say the paste is missing', { skip }, async () => {
+  const at = Date.now() - 60_000;
+  const p = await newPage({ history: { prompts: [
+    { at, text: 'fix this [Pasted text #1 +40 lines]', session: null, where: '' },
+    { at: at - 1000, text: 'no paste here', session: null, where: '' },
+  ], sessions: {}, read: at, skipped: 0 } });
+  let queue = [];
+  await p.route('**/api/queue', (r) => {
+    if (r.request().method() === 'PUT') queue = r.request().postDataJSON().items;
+    return r.fulfill({ json: queue });
+  });
+  await p.waitForSelector('#notices > li[data-kind="last-prompt"]');
+  await p.locator('#queue-body .tab', { hasText: /^History/ }).click();
+  const row = (text) => p.locator('#queue-body .item.history', { hasText: text }).locator('.actions button');
+  const missing = '#notices > li[data-kind="paste-missing"]';
+  await row('no paste').nth(0).click();
+  await p.waitForTimeout(200);
+  assert.equal(await p.locator(missing).count(), 0, 'nothing to say for a prompt without a paste');
+  assert.equal(await p.locator('#toast').isHidden(), true);
+  await row('fix this').nth(0).click();
+  assert.match(await p.locator(`${missing} .text`).textContent(), /^Typed in, but that prompt held a paste/);
+  await row('fix this').nth(1).click();
+  await p.waitForFunction((sel) => document.querySelector(sel)?.textContent.startsWith('Added to your queue, but'), `${missing} .text`);
+  assert.equal(await p.locator(missing).count(), 1, 'the second replaces the first');
+  assert.deepEqual(queue.map((i) => i.text), ['fix this [Pasted text #1 +40 lines]']);
+  await p.close();
+});
+
 // A fold's progress is a pie, not `3/5`: one size at any count, and full is a
 // disc. The figure it gives up is its accessible name. A directory is needed
 // for a directory's pie, and the fixture has none, so this page adds two: one
@@ -2260,6 +2417,66 @@ test('the queue\'s tabs stay above a list that scrolls, each tab at its own offs
   assert.equal((await where()).top, 150, 'Local is where it was');
   await fresh.locator('#queue-body .tab', { hasText: 'Completed' }).click();
   assert.equal((await where()).top, 60, 'and so is Completed');
+  await fresh.close();
+});
+
+// A tab drawn shorter than when it was left has its offset clamped; once its
+// content grows, the offset it wanted comes back. No tab does this as of
+// 2026-11-17, so the groups are hidden by hand while the tab is drawn, and
+// shown again as a painter filling them in would.
+test('a tab whose content grows after it is drawn gets its offset back', { skip }, async () => {
+  const many = Array.from({ length: 40 }, (_, n) => ({ number: 200 + n, title: `issue ${n}`, url: `https://github.com/gaurav/prcoder/issues/${200 + n}`,
+    updatedAt: '2026-10-01T00:00:00Z', body: '', milestone: null, labels: [] }));
+  const { fresh } = await issuesPage({ ...ISSUES, issues: many, total: 40, listed: 40 });
+  const top = () => fresh.evaluate(() => document.getElementById('queue-list').scrollTop);
+  await fresh.evaluate(() => { document.getElementById('queue-list').scrollTop = 600; });
+  await fresh.waitForFunction(() => document.getElementById('queue-list').scrollTop === 600);
+  await fresh.locator('#queue-body .tab[data-tab="local"]').click();
+  await fresh.addStyleTag({ content: '#queue-list .issue-groups { display: none }' });
+  await fresh.locator('#queue-body .tab[data-tab="issues"]').click();
+  assert.ok(await top() < 600, 'clamped while the groups are not there');
+  // Past the clamp's own scroll event, which must not take the offset with it.
+  await fresh.evaluate(() => new Promise((r) => { requestAnimationFrame(() => requestAnimationFrame(r)); }));
+  await fresh.evaluate(() => { for (const s of document.querySelectorAll('style')) if (s.textContent.includes('.issue-groups { display: none }')) s.remove(); });
+  await fresh.waitForFunction(() => document.getElementById('queue-list').scrollTop === 600, null, { timeout: 5000 });
+  await fresh.close();
+});
+
+// The clamp's own scroll event is ignored, and only that one. Firefox can
+// deliver a scroll away and back as one late event that reads the clamped
+// offset again; until 2026-11-23 that was ignored too, so the list jumped to
+// the old offset once the content grew. Played here as one task, which
+// gives one event every time -- with two, the bug showed only when Firefox
+// was late. The groups are cut short rather than hidden, so there is
+// somewhere to scroll away to.
+test('a scroll back to where the clamp left a tab is the user\'s', { skip }, async () => {
+  const many = Array.from({ length: 40 }, (_, n) => ({ number: 200 + n, title: `issue ${n}`, url: `https://github.com/gaurav/prcoder/issues/${200 + n}`,
+    updatedAt: '2026-10-01T00:00:00Z', body: '', milestone: null, labels: [] }));
+  const { fresh } = await issuesPage({ ...ISSUES, issues: many, total: 40, listed: 40 });
+  const top = () => fresh.evaluate(() => document.getElementById('queue-list').scrollTop);
+  const frames = () => fresh.evaluate(() => new Promise((r) => { requestAnimationFrame(() => requestAnimationFrame(r)); }));
+  await fresh.evaluate(() => { document.getElementById('queue-list').scrollTop = 600; });
+  await fresh.waitForFunction(() => document.getElementById('queue-list').scrollTop === 600);
+  await fresh.locator('#queue-body .tab[data-tab="local"]').click();
+  const height = await fresh.evaluate(() => document.getElementById('queue-list').clientHeight);
+  await fresh.addStyleTag({ content: `#queue-list .issue-groups { max-height: ${height + 200}px; overflow: hidden }` });
+  // The clamp's own event, once it has been delivered.
+  await fresh.evaluate(() => { window.clampHeard = new Promise((r) => document.getElementById('queue-list').addEventListener('scroll', r, { once: true })); });
+  await fresh.locator('#queue-body .tab[data-tab="issues"]').click();
+  const at = await top();
+  assert.ok(at > 50 && at < 600, `clamped short of 600, with room to scroll away (${at})`);
+  await fresh.evaluate(() => window.clampHeard);
+  await frames();
+  await fresh.evaluate((a) => {
+    const list = document.getElementById('queue-list');
+    list.scrollTop = a - 50;
+    list.scrollTop = a;
+  }, at);
+  await frames();
+  await fresh.evaluate(() => { for (const s of document.querySelectorAll('style')) if (s.textContent.includes('.issue-groups { max-height')) s.remove(); });
+  await frames();
+  await fresh.waitForTimeout(300);
+  assert.equal(await top(), at, 'where the user left it, not the offset owed');
   await fresh.close();
 });
 
@@ -2790,6 +3007,32 @@ test('the Issues count is read once a few seconds after the first status, and a 
   await fresh.close();
 });
 
+// The page-open read of the pull requests keeps the same rule: nobody opened
+// the tab, so a failure is `?` on the strip, and the visit's read says why.
+// Until 2026-11-17 it toasted on load.
+test('a PRs read that fails as the page opens leaves ? and says nothing until a visit asks', { skip }, async () => {
+  const fresh = await newPage();
+  let fail = true;
+  await fresh.route('**/api/pulls', (r) => (fail
+    ? r.fulfill({ status: 500, json: { error: 'gh: API rate limit exceeded' } }) : r.fulfill({ json: EMPTY_PULLS })));
+  const read = fresh.waitForResponse('**/api/pulls');
+  await fresh.reload();
+  await read;
+  await fresh.waitForFunction(() => document.querySelector('#queue-body .tab[data-tab="pulls"]')?.textContent === 'PRs (?)');
+  const toasted = () => fresh.evaluate(() => (document.getElementById('toast').hidden ? '' : document.getElementById('toast').textContent));
+  assert.doesNotMatch(await toasted(), /rate limit/, 'nobody asked, so no toast');
+  const again = fresh.waitForResponse('**/api/pulls');
+  await fresh.locator('#queue-body .tab[data-tab="pulls"]').click();
+  await again;
+  await fresh.waitForFunction(() => !document.getElementById('toast').hidden && document.getElementById('toast').textContent.includes('rate limit'));
+  const note = fresh.locator('#queue-body .pull-groups .empty');
+  assert.match(await note.textContent(), /Could not read the repository's pull requests: gh: API rate limit exceeded/);
+  fail = false;
+  await note.locator('button', { hasText: 'try again' }).click();
+  await fresh.waitForFunction(() => document.querySelector('#queue-body .tab[data-tab="pulls"]')?.textContent === 'PRs (0)');
+  await fresh.close();
+});
+
 test('an Issues read that fails behind another tab leaves ? and says nothing until a visit asks', { skip }, async () => {
   const fresh = await newPage({ clock: true });
   const asked = [];
@@ -2812,6 +3055,60 @@ test('an Issues read that fails behind another tab leaves ? and says nothing unt
   await again;
   await fresh.waitForFunction(() => !document.getElementById('toast').hidden);
   assert.match(await fresh.locator('#toast').textContent(), /rate limit/, 'the visit\'s own read says why');
+  await fresh.close();
+});
+
+// A poll is not a visit: once a visit's read has failed with no listing to
+// keep, the minute's poll and every return to the browser tab left it alone.
+// Until 2026-11-23 each one read up to five pages again and toasted the same
+// error, for as long as the tab stayed up.
+test('a failed Issues read is not tried again by every poll', { skip }, async () => {
+  const fresh = await newPage({ clock: true });
+  await fresh.waitForSelector('#queue-body .tab[data-tab="local"]');
+  await fresh.clock.pauseAt(Date.now() + 500);
+  const asked = [];
+  await fresh.route('**/api/issues', (r) => { asked.push(1); return r.fulfill({ status: 500, json: { error: 'gh: API rate limit exceeded' } }); });
+  const failed = fresh.waitForResponse('**/api/issues');
+  await fresh.locator('#queue-body .tab[data-tab="issues"]').click();
+  await failed;
+  await fresh.waitForFunction(() => document.querySelector('#queue-body .tab[data-tab="issues"]')?.textContent === 'Issues (?)');
+  for (const tab of ['issues', 'pr']) {
+    if (tab === 'pr') {
+      // The PR #N tab's visit is a visit, and tries again.
+      const again = fresh.waitForResponse('**/api/issues');
+      await fresh.locator('#queue-body .tab[data-tab="pr"]').click();
+      await again;
+    }
+    const before = asked.length;
+    const polled = fresh.waitForResponse('**/api/status');
+    await fresh.clock.runFor(60_000);
+    await polled;
+    await fresh.waitForTimeout(200);
+    assert.equal(asked.length, before, `the poll on the ${tab} tab left the failure for a visit`);
+  }
+  await fresh.close();
+});
+
+// A poll that lands while a visit's read is out does not queue a second read
+// behind it: the one out was asked about the same pull request.
+test('a poll during the first Issues read does not ask for a second', { skip }, async () => {
+  const fresh = await newPage({ clock: true });
+  await fresh.waitForSelector('#queue-body .tab[data-tab="local"]');
+  await fresh.clock.pauseAt(Date.now() + 500);
+  let release;
+  const held = new Promise((r) => { release = r; });
+  const asked = [];
+  await fresh.route('**/api/issues', async (r) => { asked.push(1); await held; return r.fulfill({ json: ISSUES }); });
+  await fresh.locator('#queue-body .tab[data-tab="issues"]').click();
+  await fresh.waitForFunction(() => document.querySelector('#queue-body .issue-groups') !== null);
+  const polled = fresh.waitForResponse('**/api/status');
+  await fresh.clock.runFor(60_000);
+  await polled;
+  await fresh.waitForTimeout(200);
+  release();
+  await fresh.waitForSelector('#queue-body .fold.milestone');
+  await fresh.waitForTimeout(200);
+  assert.deepEqual(asked, [1]);
   await fresh.close();
 });
 
@@ -3138,6 +3435,97 @@ test('a mention the description gains while the PR #N tab is open is looked up',
   await fresh.close();
 });
 
+// A switch to another pull request reads the listing once, for the one
+// switched to. Until 2026-11-17 the read was recorded as asked about the one
+// just left, so the next poll read all five pages again.
+test('a switch to another pull request reads the issues once, for the one switched to', { skip }, async () => {
+  const { fresh } = await issuesPage();
+  const asked = [];
+  await fresh.route('**/api/issues', (r) => { asked.push(1); return r.fulfill({ json: ISSUES }); });
+  const other = { ...pr, number: 13, url: `${REPO}/pull/13`, issues: [{ number: 9, url: `${REPO}/issues/9`, closes: false, title: 'Elsewhere' }] };
+  await fresh.route('**/api/status', (r) => r.fulfill({ json: { ...status, nameWithOwner: 'gaurav/prcoder', pr: other } }));
+  const read = fresh.waitForResponse('**/api/issues');
+  await fresh.click('#pr-refresh');
+  await read;
+  await fresh.waitForFunction(() => !document.querySelector('#queue-body .issue-groups .pull-note')?.textContent.includes('updating'));
+  for (let n = 0; n < 2; n++) {
+    const polled = fresh.waitForResponse('**/api/status');
+    await fresh.click('#pr-refresh');
+    await polled;
+  }
+  assert.deepEqual(asked, [1], 'one read for the switch, none for the polls after it');
+  await fresh.locator('#queue-body .tab[data-tab="pr"]').click();
+  await fresh.waitForSelector('[data-group="mentioned"] .item');
+  assert.deepEqual(asked, [1], 'nor for a visit to PR #13');
+  await fresh.close();
+});
+
+// A listed mention on the PR #N tab, for the tests of its Move: the listing's
+// #66, which the description mentions without closing.
+const SIXTY_SIX = { number: 66, url: 'https://github.com/gaurav/prcoder/issues/66', title: 'Show whether each linked issue is still open', kind: 'issue', state: 'OPEN', updatedAt: '2026-10-09T00:00:00Z' };
+const MENTIONS_66 = [{ number: 66, url: SIXTY_SIX.url, closes: false, title: SIXTY_SIX.title }];
+/** ISSUES with #66 on milestone `to`, and `mentions` looked up. */
+const with66On = (to, mentions = [SIXTY_SIX]) => ({ ...ISSUES, mentions, issues: ISSUES.issues.map((i) => (i.number === 66 ? { ...i, milestone: to } : i)) });
+
+// A Move asks for the listing again, and one already out was asked for
+// before the write; the PR #N tab draws the listing too, so it gets the read
+// after as the Issues tab does. Until 2026-11-17 only the Issues tab did, and
+// the row kept its old milestone.
+test('a Move on the PR #N tab while the issues are being read is read again after', { skip }, async () => {
+  const { fresh } = await issuesPage({ ...ISSUES, mentions: [SIXTY_SIX] }, MENTIONS_66);
+  await fresh.route('**/api/issue/milestone', (r) => r.fulfill({ json: { ok: true } }));
+  await fresh.locator('#queue-body .tab[data-tab="pr"]').click();
+  await fresh.locator('[data-group="mentioned"] .item[data-issue="66"] .disclose').click();
+  // A read out, held: a poll whose description mentions something new asks.
+  const nine = { number: 9, url: `${REPO}/issues/9`, closes: false, title: 'Newly mentioned' };
+  let release;
+  const held = new Promise((r) => { release = r; });
+  let reads = 0;
+  let second;
+  const readAgain = new Promise((r) => { second = r; });
+  await fresh.route('**/api/issues', async (r) => {
+    const n = ++reads;
+    if (n === 1) await held;
+    if (n === 2) second();
+    return r.fulfill({ json: n === 1 ? with66On(2, [SIXTY_SIX, { number: 9 }]) : with66On(4, [SIXTY_SIX, { number: 9 }]) });
+  });
+  await fresh.route('**/api/status', (r) => r.fulfill({ json: { ...status, nameWithOwner: 'gaurav/prcoder', pr: { ...pr, issues: [...MENTIONS_66, nine] } } }));
+  const asked = fresh.waitForRequest('**/api/issues');
+  await fresh.click('#pr-refresh');
+  await asked;
+  const pick = fresh.locator('[data-group="mentioned"] select.milestone[data-move="66"]');
+  await pick.selectOption('Needed soon');
+  await fresh.locator('[data-group="mentioned"] .move-to button').click();
+  release();
+  // The select shows the pick before any repaint, so what tells is the read.
+  const late = new Promise((r) => { setTimeout(() => r('no read after the Move'), 5000); });
+  assert.equal(await Promise.race([readAgain.then(() => 'read again'), late]), 'read again');
+  await fresh.waitForFunction(() => document.querySelector('[data-group="mentioned"] select.milestone[data-move="66"]')?.value === 'Needed soon');
+  assert.equal(reads, 2, 'the one out, and one after the Move');
+  await fresh.close();
+});
+
+// The keyboard follows a Move on the PR #N tab as on the Issues tab, and the
+// row is still in its part, which holds it whatever its milestone. Until
+// 2026-11-17 the follow returned at once there, since the tab was not
+// `issues`, and focus fell to the page.
+test('the keyboard follows a Move on the PR #N tab, in Mentions and in Closes', { skip }, async () => {
+  const fiftyEight = ISSUES.issues.find((i) => i.number === 58);
+  const { fresh } = await issuesPage({ ...ISSUES, mentions: [SIXTY_SIX] },
+    [...MENTIONS_66, { number: 58, url: fiftyEight.url, closes: true, title: fiftyEight.title }]);
+  await fresh.route('**/api/issue/milestone', (r) => r.fulfill({ json: { ok: true } }));
+  await fresh.route('**/api/issues', (r) => r.fulfill({ json: with66On(4) }));
+  await fresh.locator('#queue-body .tab[data-tab="pr"]').click();
+  for (const [part, number, to] of [['mentioned', 66, 'Needed soon'], ['closes', 58, 'Not urgent']]) {
+    await fresh.locator(`[data-group="${part}"] .item[data-issue="${number}"] .disclose`).click();
+    const pick = `[data-group="${part}"] select.milestone[data-move="${number}"]`;
+    await fresh.locator(pick).selectOption(to);
+    await fresh.locator(`[data-group="${part}"] .issue-body .move-to button`).click();
+    await fresh.waitForFunction((s) => document.activeElement?.matches?.(s), pick, { timeout: 5000 });
+  }
+  await fresh.close();
+});
+
 // A mention is the pull request's repository's, and the listing is the one
 // prcoder is in; with the two different, upstream's #66 is not the listing's
 // #66 -- including before the page knows its own repository's name.
@@ -3153,6 +3541,11 @@ test('a mention from another repository is not drawn as the listed issue of the 
   assert.equal(await row.locator('button.disclose').count(), 0, 'no body: it is not the listed #66');
   await fresh.close();
 });
+
+// The halves' split, where the PRs tab's tests begin: about half of
+// Firefox's time on CI either side (#213). Every test that uses the shared
+// `page` has to stay above it.
+secondHalf();
 
 // The PRs tab: the repository's open pull requests, grouped by
 // milestone as the issues are, each row carrying what picking the next one
@@ -4027,6 +4420,149 @@ test('Alt+R says in one toast which half failed', { skip }, async () => {
   await fresh.close();
 });
 
+// ⤓ on the queue header and Alt+Q: the text selected in the terminal becomes
+// a Local item, through addItem like a typed one, with the prompt's own `> `
+// dropped. The button is dimmed until there is a selection and again once it
+// is taken, the focus comes back to the terminal, and nothing goes to the
+// agent -- except that with nothing selected the key is the agent's, as ESC q.
+// The text comes in as PTY output, since a real session echoes what is typed.
+test('⤓ and Alt+Q add the terminal\'s selection to the queue, and the agent gets the key with none', { skip }, async () => {
+  const frames = [];
+  let sock;
+  const fresh = await newPage({ init: onLinux, pty: (ws) => { sock = ws; ws.onMessage((m) => frames.push(JSON.parse(m))); } });
+  const typed = () => frames.filter((f) => f.type === 'input');
+  let queue = [];
+  // Both routes, as the other queue tests: the status poll replaces the list.
+  await fresh.route('**/api/status', (r) => r.fulfill({ json: { ...status, queue } }));
+  await fresh.route('**/api/queue', (r) => {
+    if (r.request().method() === 'PUT') queue = r.request().postDataJSON().items;
+    return r.fulfill({ json: queue });
+  });
+  assert.equal(await fresh.locator('#queue-selection').isDisabled(), true, 'nothing selected yet');
+  assert.match(await fresh.getAttribute('#queue-selection', 'title'), /\(Alt\+Q\)$/, 'the button says its key');
+  sock.send('> fix the clamp');
+  await fresh.waitForFunction(() => document.getElementById('term-host').textContent.includes('fix the clamp'));
+  // Right to left, so that `outside` can carry the drag on past the
+  // terminal's left edge and let go over the next pane. xterm clamps it to the
+  // first column, so the range is the one just taken, which it reports no
+  // change for: only a mouseup heard on the window, not on #term-host, can
+  // wake the button. Not off the right edge, where in Firefox's window the
+  // terminal reaches the viewport's and a release reaches no listener at all,
+  // nor above it, where xterm's drag-scroll ends the range at column 0.
+  const select = async ({ outside = false } = {}) => {
+    const box = await fresh.locator('#term-host .xterm-rows > div').first().boundingBox();
+    const y = box.y + box.height / 2;
+    await fresh.mouse.move(box.x + box.width - 1, y);
+    await fresh.mouse.down();
+    await fresh.mouse.move(box.x + 1, y, { steps: 5 });
+    if (outside) {
+      const host = await fresh.locator('#term-host').boundingBox();
+      const x = host.x - 30;
+      assert.equal(await fresh.evaluate(([x, y]) => {
+        const at = document.elementFromPoint(x, y);
+        return !!at && !at.closest('#term-host');
+      }, [x, y]), true, 'the release is on the page, outside the terminal');
+      await fresh.mouse.move(x, y, { steps: 5 });
+    }
+    await fresh.mouse.up();
+    await fresh.waitForFunction(() => !document.getElementById('queue-selection').disabled);
+  };
+  await select();
+  await fresh.click('#queue-selection');
+  await fresh.waitForFunction(() => document.querySelectorAll('#queue-body .item').length === 1);
+  assert.deepEqual(queue.map((i) => i.text), ['fix the clamp'], 'the prompt marker dropped, the text kept');
+  assert.equal(await fresh.locator('#queue-selection').isDisabled(), true, 'taken: the selection is cleared');
+  assert.ok(await fresh.evaluate(() => !!document.activeElement?.closest('#term-host')), 'focus back in the terminal');
+  // The same range again, let go of over another pane.
+  await select({ outside: true });
+  await fresh.click('#queue-selection');
+  await fresh.waitForFunction(() => document.querySelectorAll('#queue-body .item').length === 2);
+  // The same by the key, pressed in the terminal.
+  await select();
+  await fresh.keyboard.press('Alt+KeyQ');
+  await fresh.waitForFunction(() => document.querySelectorAll('#queue-body .item').length === 3);
+  assert.deepEqual(queue.map((i) => i.text), ['fix the clamp', 'fix the clamp', 'fix the clamp']);
+  await settle(fresh);
+  assert.equal(typed().length, 0, 'the agent saw neither the click nor the key');
+  // Nothing selected: the agent's key, as if it were not bound.
+  await fresh.keyboard.press('Alt+KeyQ');
+  for (let i = 0; !typed().length && i < 100; i++) await fresh.waitForTimeout(50);
+  assert.deepEqual(typed(), [{ type: 'input', data: '\x1bq' }]);
+  assert.equal(queue.length, 3, 'and nothing added');
+  await fresh.close();
+});
+
+// A selection with a reference in it waits on GitHub before it is added, and
+// a second Alt+Q in that wait is ignored rather than adding it twice; ⤓ is
+// dimmed for the wait. The lookup is held open until both keys are pressed.
+test('a second Alt+Q while a selection\'s reference is looked up adds nothing', { skip }, async () => {
+  let sock;
+  const fresh = await newPage({ init: onLinux, pty: (ws) => { sock = ws; } });
+  let queue = [];
+  await fresh.route('**/api/status', (r) => r.fulfill({ json: { ...status, queue } }));
+  await fresh.route('**/api/queue', (r) => {
+    if (r.request().method() === 'PUT') queue = r.request().postDataJSON().items;
+    return r.fulfill({ json: queue });
+  });
+  let answer;
+  const asked = [];
+  const held = new Promise((resolve) => { answer = resolve; });
+  await fresh.route('**/api/queue/ref', async (r) => {
+    asked.push(r.request().postDataJSON().text);
+    await held;
+    await r.fulfill({ json: { ref: null } });
+  });
+  sock.send('❯ Fix #93');
+  await fresh.waitForFunction(() => document.getElementById('term-host').textContent.includes('Fix #93'));
+  const box = await fresh.locator('#term-host .xterm-rows > div').first().boundingBox();
+  await fresh.mouse.move(box.x + 1, box.y + box.height / 2);
+  await fresh.mouse.down();
+  await fresh.mouse.move(box.x + box.width - 1, box.y + box.height / 2, { steps: 5 });
+  await fresh.mouse.up();
+  await fresh.waitForFunction(() => !document.getElementById('queue-selection').disabled);
+  await fresh.keyboard.press('Alt+KeyQ');
+  for (let i = 0; !asked.length && i < 100; i++) await fresh.waitForTimeout(50);
+  assert.equal(await fresh.locator('#queue-selection').isDisabled(), true, 'dimmed while it is looked up');
+  await fresh.keyboard.press('Alt+KeyQ');
+  await settle(fresh);
+  answer();
+  await fresh.waitForFunction(() => document.querySelectorAll('#queue-body .item').length === 1);
+  await settle(fresh);
+  assert.deepEqual(asked, ['Fix #93'], 'looked up once');
+  assert.deepEqual(queue.map((i) => i.text), ['Fix #93'], 'added once');
+  await fresh.close();
+});
+
+// Claude Code's fullscreen view turns mouse reporting on, which hands a plain
+// drag to the agent. On a Mac only Option-drag selects past that, and only
+// because the page sets macOptionClickForcesSelection; without it nothing
+// there could be selected for ⤓ at all.
+test('with the agent reporting the mouse, Option-drag on a Mac still selects for ⤓', { skip }, async () => {
+  let sock;
+  const fresh = await newPage({
+    init: () => Object.defineProperty(Navigator.prototype, 'platform', { get: () => 'MacIntel' }),
+    pty: (ws) => { sock = ws; },
+  });
+  // The modes 2.1.330 sets, then its prompt.
+  sock.send('\x1b[?1000h\x1b[?1002h\x1b[?1003h\x1b[?1006h❯ fix the clamp');
+  await fresh.waitForFunction(() => document.getElementById('term-host').textContent.includes('fix the clamp'));
+  const box = await fresh.locator('#term-host .xterm-rows > div').first().boundingBox();
+  const drag = async () => {
+    await fresh.mouse.move(box.x + 1, box.y + box.height / 2);
+    await fresh.mouse.down();
+    await fresh.mouse.move(box.x + box.width - 1, box.y + box.height / 2, { steps: 5 });
+    await fresh.mouse.up();
+    await settle(fresh);
+  };
+  await drag();
+  assert.equal(await fresh.locator('#queue-selection').isDisabled(), true, 'a plain drag is the agent\'s');
+  await fresh.keyboard.down('Alt');
+  await drag();
+  await fresh.keyboard.up('Alt');
+  assert.equal(await fresh.locator('#queue-selection').isDisabled(), false, 'Option-drag selects');
+  await fresh.close();
+});
+
 // Alt+V is the diff pane's box pressed, so everything the box moves follows:
 // the row, the tab's count, and the box itself -- both ways. From the
 // terminal too, where the agent does not get it while a file is open and does
@@ -4349,9 +4885,99 @@ test('the queue drags up until the terminal is at its 120px floor, with or witho
   const height = (sel) => fresh.$eval(sel, (el) => Math.round(el.getBoundingClientRect().height));
   assert.equal(await height('#term'), 120);
   assert.ok(await height('#queue') > 800, `the queue is ${await height('#queue')}px of 1000`);
+  // The notices list, as full as it gets, comes out of the queue too: the
+  // limit was measured without it, and a queue at that limit left the
+  // terminal 120px less the list -- shorter than its own header.
+  const queueAlone = await height('#queue');
+  await fresh.evaluate(async () => {
+    const { notice } = await import('/ui.js');
+    for (const n of [1, 2, 3, 4, 5, 6]) notice(`notice ${n}`);
+  });
+  const frame = () => fresh.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+  await frame();   // the ResizeObserver that sets --notices-h runs before a paint, not at once
+  const list = await height('#notices');
+  assert.ok(list > 80, `the list is ${list}px, at its cap`);
+  assert.equal(await height('#term'), 120, 'the list\'s height comes out of the queue, not the terminal');
+  const shrunk = queueAlone - await height('#queue');
+  assert.ok(Math.abs(shrunk - list) <= 1, `the queue gave up ${shrunk}px for a ${list}px list (each rounded)`);
   await openFile(fresh);
   assert.equal(await height('#term'), 120, 'the diff\'s share comes out of the queue, not the terminal');
   assert.ok(await height('#diff') >= 140);
+  await fresh.locator('#diff-fold').click();   // folded to its bar: the third --queue-max
+  await frame();
+  // >=, not ==: this --queue-max rounds the bar up to 40px, so the terminal
+  // keeps a pixel or two over its floor here.
+  const folded = await height('#term');
+  assert.ok(folded >= 120 && folded < 125, `the terminal is ${folded}px with the diff folded`);
+  await fresh.evaluate(() => document.getElementById('notices').replaceChildren());
+  await frame();
+  assert.equal(await height('#notices'), 0, 'an empty list takes no room');
+  assert.equal(await height('#term'), folded, 'and its room goes back to the queue, not the terminal');
+  await fresh.close();
+});
+
+// The diff's cap was half of <main> with the list inside it, so in a short
+// window a diff at its cap and a full list left the queue at its floor and the
+// terminal paid the rest: 80px of a 600px <main>. Half of <main> less the list
+// keeps the floor to the same window height it held to before there was a list.
+test('a diff at its cap and a full notices list still leave the terminal its 120px in a short window', { skip }, async () => {
+  const fresh = await newPage();
+  await fresh.setViewportSize({ width: 1280, height: 600 });
+  await openFile(fresh);
+  await fresh.evaluate(async () => {
+    document.querySelector('main').style.setProperty('--h-diff', '2000px');
+    const { notice } = await import('/ui.js');
+    for (const n of [1, 2, 3, 4, 5, 6]) notice(`notice ${n}`);
+  });
+  await fresh.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+  const height = (sel) => fresh.$eval(sel, (el) => el.getBoundingClientRect().height);
+  assert.ok(await height('#notices') > 80, 'the list is at its cap');
+  const term = await height('#term');
+  assert.ok(term >= 119.5, `the terminal is ${term}px`);
+  await fresh.close();
+});
+
+// The diff's gutter is placed by its distance under the list, but its
+// aria-valuenow divided that by all of <main>, list included: 50 for a line
+// halfway down the room the diff can have, and a number that moved with the list.
+test('the diff gutter says its place in the room under the notices list', { skip }, async () => {
+  const fresh = await newPage();
+  await openFile(fresh);
+  await fresh.evaluate(async () => {
+    document.querySelector('main').style.setProperty('--h-diff', '300px');
+    const { notice } = await import('/ui.js');
+    for (const n of [1, 2, 3, 4]) notice(`notice ${n}`);
+  });
+  await fresh.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+  const want = await fresh.evaluate(() => {
+    const r = document.querySelector('main').getBoundingClientRect();
+    const list = document.getElementById('notices').getBoundingClientRect().height;
+    const g = document.getElementById('gut-diff').getBoundingClientRect();
+    return String(Math.round(((g.top - r.top - list) / (r.height - list)) * 100));
+  });
+  assert.equal(await fresh.getAttribute('#gut-diff', 'aria-valuenow'), want);
+  await fresh.close();
+});
+
+// A gutter's aria-valuenow is said again when the notices list changes, which
+// touches nothing on <main> that the other observers watch. A queue at its
+// limit is the case where the number moves: the list comes out of the queue.
+test('a notice that moves the queue\'s gutter has it say its new place', { skip }, async () => {
+  const fresh = await newPage();
+  await fresh.evaluate(() => document.querySelector('main').style.setProperty('--h-queue', '2000px'));
+  const said = () => fresh.getAttribute('#gut-queue', 'aria-valuenow');
+  const now = () => fresh.$eval('#gut-queue', (g) => {
+    const r = document.querySelector('main').getBoundingClientRect();
+    return String(Math.round(((r.bottom - g.getBoundingClientRect().bottom) / r.height) * 100));
+  });
+  const before = await said();
+  await fresh.evaluate(async () => {
+    const { notice } = await import('/ui.js');
+    for (const n of [1, 2, 3, 4, 5, 6]) notice(`notice ${n}`);
+  });
+  await fresh.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+  assert.notEqual(await now(), before, 'the list moved the gutter');
+  assert.equal(await said(), await now());
   await fresh.close();
 });
 
@@ -4370,6 +4996,17 @@ test('a row gutter carries a grip, and its line lights up under the pointer', { 
   assert.equal((await style('::after')).image, 'none');
   await fresh.locator('#gut-queue').hover();
   assert.match((await style('::after')).image, /gradient/);
+  // And it stays lit through a drag that runs past the gutter's clamp, where
+  // the pointer is no longer over it. Under pointer capture :hover alone
+  // passes this too, in both engines (2026-11-23), so it guards the behaviour,
+  // not the .dragging class that style.css puts it on.
+  const box = await fresh.locator('#gut-queue').boundingBox();
+  await fresh.mouse.down();
+  await fresh.mouse.move(box.x + box.width / 2, 2, { steps: 4 });
+  assert.match((await style('::after')).image, /gradient/, 'lit while dragged past the clamp');
+  await fresh.mouse.up();
+  await fresh.mouse.move(box.x + box.width / 2, box.y - 300);
+  assert.equal((await style('::after')).image, 'none', 'dark again once released');
   await fresh.close();
 });
 
@@ -4389,9 +5026,10 @@ test('a separator moves only on the arrows along its own axis', { skip }, async 
 // A folded pane still says when Claude is working, from the same bracketed turn
 // as the tab icon -- so it appears on Enter and goes after 5s of quiet, and the
 // mocked /pty here sends nothing to hold the turn open. Only folded: open, the
-// terminal shows the turn itself.
+// terminal shows the turn itself. The 5s are Playwright's clock's, so the test
+// does not spend them.
 test('a folded terminal says it is working while a turn runs, and not after', { skip }, async () => {
-  const fresh = await newPage();
+  const fresh = await newPage({ clock: true });
   const busy = () => fresh.locator('#term-busy').isVisible();
   await fresh.click('#term-host');
   await fresh.keyboard.press('Enter');
@@ -4402,7 +5040,9 @@ test('a folded terminal says it is working while a turn runs, and not after', { 
   // Folding must not make the header a different height from the open one.
   assert.equal(await fresh.$eval('#term', (el) => el.getBoundingClientRect().height),
     await fresh.$eval('#term > header', (el) => el.getBoundingClientRect().height));
-  await fresh.waitForFunction(() => document.getElementById('term-busy').hidden, null, { timeout: 10000 });
+  await fresh.clock.fastForward(5_000);
+  // Short, as in the repaint test: past the fast-forward, longer is a miss.
+  await fresh.waitForFunction(() => document.getElementById('term-busy').hidden, null, { timeout: 10_000 });
   assert.equal(await busy(), false, 'gone when the turn ends');
   await fresh.close();
 });
@@ -4411,8 +5051,9 @@ test('a folded terminal says it is working while a turn runs, and not after', { 
 // style.css (`--busy`), for the folded header's octagon. Nothing else would
 // notice the attribute going missing -- the icon would turn into a fetch of
 // /undefined while #term-busy above stayed right -- or the two reds parting.
+// On Playwright's clock, like the test above, for the 5s of quiet.
 test('a turn swaps the tab icon for the busy one, in the folded header\'s red', { skip }, async () => {
-  const fresh = await newPage();
+  const fresh = await newPage({ clock: true });
   const icon = () => fresh.evaluate(() => {
     const link = document.querySelector('link[rel=icon]');
     return { href: link.getAttribute('href'), busy: link.dataset.busy };
@@ -4429,8 +5070,9 @@ test('a turn swaps the tab icon for the busy one, in the folded header\'s red', 
   const token = await fresh.evaluate(() =>
     getComputedStyle(document.documentElement).getPropertyValue('--busy').trim());
   assert.equal(fill?.toLowerCase(), token.toLowerCase(), 'data-busy and --busy are one red');
+  await fresh.clock.fastForward(5_000);
   await fresh.waitForFunction((busy) => document.querySelector('link[rel=icon]').getAttribute('href') !== busy,
-    idle.busy, { timeout: 10000 });
+    idle.busy, { timeout: 10_000 });
   assert.equal((await icon()).href, idle.href, 'idle again once the turn ends');
   assert.equal(await logo(), idle.href, 'the tile too');
   await fresh.close();
@@ -4528,12 +5170,12 @@ test('a poll that brings nothing new leaves the panes as they were', { skip }, a
   await fresh.close();
 });
 
-// The fixture PR, one built on its branch, and one built on that. The switcher
-// and the Stack tab both have to show the chain as a chain, and a row's #N has
-// to be a link out while its Switch is the checkout -- one control each.
 // The switcher's stack mark, as the classes of its bars from the bottom up.
 const stackBars = (page) => page.locator('#pr-switch .stack-mark i').evaluateAll((bars) => bars.map((b) => b.className));
 
+// The fixture PR, one built on its branch, and one built on that. The switcher
+// and the Stack tab both have to show the chain as a chain, and a row's #N has
+// to be a link out while its Switch is the checkout -- one control each.
 const STACK = [
   { number: 12, title: pr.title, headRefName: 'topic', baseRefName: 'main', isDraft: false, url: pr.url },
   { number: 13, title: 'Built on the fixture', headRefName: 'topic-2', baseRefName: 'topic', isDraft: true, url: `${REPO}/pull/13` },
@@ -5176,7 +5818,11 @@ test('the stack mark asks git about a bare branch under its pull request, and dr
   const untold = await newPage({ prs: onBare, st });
   await untold.waitForSelector('#pr-switch[data-listed] .stack-mark');
   assert.deepEqual(await stackBars(untold), ['bare', 'here']);
-  assert.equal(untold.belowAsked.branch, 'merged-topic');
+  // `belowAsked` is set in the route handler, which runs in Node after the
+  // paint that drew the mark sent the ask, so the mark can be there first.
+  // The stub aborts, so nothing on the page changes to wait for: poll here.
+  for (let i = 0; i < 40 && !untold.belowAsked; i++) await untold.waitForTimeout(50);
+  assert.equal(untold.belowAsked?.branch, 'merged-topic', 'the header asked git about the bare branch');
   await untold.close();
 
   const told = await newPage({ prs: onBare, st, below: { branch: 'merged-topic', names: [], toDefault: true } });

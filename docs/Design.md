@@ -64,8 +64,8 @@ in place -- so that the next thing to do is picked with the issue read, and hand
 with its link, rather than built from memory. On 2026-11-08 the mentions moved to the PR #N tab,
 so that each tab is about one thing: the repository, or the pull request on screen. What it still is not is a tracker: nothing here
 changes what an issue says, and the groups are GitHub's milestones, not a list of prcoder's own.
-Nothing asks which milestone to look at, because the ranking already says which group to open first. Pull requests
-(2026-10-19) is the same shape for the other thing a repository holds, built for the repository
+Nothing asks which milestone to look at, because the ranking already says which group to open first. The PRs tab
+(2026-10-19, called Pull requests until 2026-11-08) is the same shape for the other thing a repository holds, built for the repository
 with sixty open where the switcher's titles were not enough to pick from: grouped by the pull
 request's own milestone, sorted smallest first, with the facts the choice turns on in one line
 each, and its slow listing cached in `.prcoder/pulls.json` so the tab opens at once. It replaced
@@ -130,6 +130,14 @@ is skipped. It is still not reading the TUI: it is a question addressed to the t
 terminal answers by itself, and nothing Claude drew is looked at. Anything that *is* drawn stays
 off limits — which is why the third state, "stopped to ask you something", is issue #51 and not a
 match against the prompt box.
+
+The one thing read back out of the pane is a selection the user drew there, for the queue's ⤓
+(`fromTerminal` in [`public/items.js`](../public/items.js)): xterm's own `getSelection()`, on a
+click or a key, and only the characters selected. Nothing is scanned for it, and the one shape of
+the TUI it assumes is the prompt marker (`❯ `, `> ` before) a triple-click on the prompt line takes
+along, which it drops. The need was a half-written prompt to park before doing something else in
+the session, which the history below cannot give: Claude Code writes a prompt there when it is
+sent, not while it is typed.
 
 **One prcoder is one working copy, and several working copies are several prcoders.** "Multi-session
 and worktree management" stood in the list above until 2026-11-14, and half of it still does: one

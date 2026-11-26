@@ -46,7 +46,8 @@ is no token to configure.
   open issues by milestone, searchable, each one readable in place, typed into Claude with its
   link, and movable to another milestone; a PRs tab reads its open pull requests the same way, with each one's size,
   merge state, age, reviewer's pie and what it is stacked on in the row, to pick the next one to work on and switch to
-  it; with a pull request on screen a PR #N tab reads its description's checklist.
+  it; with a pull request on screen a PR #N tab holds what its description points at -- its
+  checklist, the issues and pull requests it mentions, and the issues it closes.
 
 prcoder follows the branch. It works out the pull request for whatever is checked out, and does
 it again every 60 seconds, so a `git checkout` in another terminal -- or by Claude in the middle
@@ -176,3 +177,13 @@ level adds, and what a busy port looks like.
   that close it.
 - [docs/Verifying.md](docs/Verifying.md) -- for working on prcoder: the tests, the browser and
   terminal drivers, and the Playwright browsers they need.
+
+## License
+
+Copyright (C) 2026 Gaurav Vaidya (Renaissance Computing Institute, UNC Chapel Hill)
+
+prcoder is free software: you can redistribute it and/or modify it under the terms of the GNU
+General Public License as published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version. It is distributed in the hope that it will be
+useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE. [LICENSE](LICENSE) has the full text of the license.

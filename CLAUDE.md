@@ -59,10 +59,12 @@ dead setup, but without it every PTY spawn fails with a bare `posix_spawnp
 failed`, which looks like a Node ABI problem and isn't. Its header says why,
 and why `npm install-scripts approve node-pty` does not replace it.
 
-**Don't simplify `npm test`.** It is `node --test "test/**/*.test.js"`, and the
-double quotes, the glob and the absence of a directory argument each prevent a
-different failure: a crash, a second copy of the suite, or a run that reports
-one test and passes. `docs/Verifying.md` has all three.
+**Don't simplify `npm test`.** It is
+`node --test --test-concurrency=4 "test/**/*.test.js"`, and the double quotes,
+the glob and the absence of a directory argument each prevent a different
+failure: a crash, a second copy of the suite, or a run that reports one test
+and passes. The concurrency is what lets CI run all four browser halves at
+once, and it has to stay before the glob. `docs/Verifying.md` has all of it.
 
 ## Subprocess errors are quieter than they look
 

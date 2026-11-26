@@ -122,7 +122,8 @@ for (const pane of ['pr', 'queue']) {
 // so dismissed here rather than left over the panes for the run.
 const lastPrompt = page.locator('#notices > li[data-kind="last-prompt"]');
 console.log('last:   ', (await lastPrompt.count()) ? await lastPrompt.locator('.text').innerText() : '(no notice)',
-  '\n  (want "Last prompt, 50 minutes ago (Today hh:mm): Check that the pull request\'s milestone line…", no button)');
+  '\n  (want "Last prompt, 2 hours ago (Today hh:mm): Fix the two findings, then run the browser suite…", no button:'
+  + ' the 50-minute-old prompt was sent in data/wt-1, so it is not this pane\'s)');
 if (await lastPrompt.count()) {
   await lastPrompt.screenshot({ path: path.join(out, 'notice-last-prompt.png') });
   await lastPrompt.locator('button').click();
@@ -864,19 +865,26 @@ await page.locator('#toast').screenshot({ path: path.join(out, 'toast.png') }).c
 await page.waitForTimeout(4500);
 console.log('faded:  ', JSON.stringify(await toastText()), '  (want null -- the 4s timeout)');
 
+// The reload put the last-prompt notice up again, beside its toast, and it
+// is still up: the list starts empty here, or the two below are not the only
+// lines in it and every locator after them finds one too many. Each line is
+// then reached by its kind, never by position, for the same reason.
 const noticeText = () => page.locator('#notices > li .text').allTextContents();
+const line = (kind) => page.locator(`#notices > li[data-kind="${kind}"]`);
+console.log('before: ', JSON.stringify(await noticeText()), '  (want the last prompt again, from the reload)');
+while (await page.locator('#notices > li').count()) await page.locator('#notices > li > button').first().click();
 await page.evaluate(async () => {
   const { notice } = await import('/ui.js');
   notice("Switched to add-retries (#123). Claude still has the old branch's files in mind — tell it to re-read anything it had open.", { kind: 'switched' });
-  notice('Popup blocked — the compare page is at', { bad: true, link: { href: 'https://example.com/compare', text: 'https://example.com/compare' } });
+  notice('Popup blocked — the compare page is at', { bad: true, link: { href: 'https://example.com/compare', text: 'https://example.com/compare' }, kind: 'popup' });
 });
 await page.waitForTimeout(100);
 await page.locator('#notices').screenshot({ path: path.join(out, 'notices.png') });
 await page.screenshot({ path: path.join(out, 'full-notices.png') });   // and the panes it pushes down
 await page.waitForTimeout(4500);   // past the 4s a toast dies at
-console.log('notices:', JSON.stringify(await noticeText()), '  (want both still up)');
-await page.locator('#notices > li button').first().click();
-await page.locator('#notices > li input').click();
+console.log('notices:', JSON.stringify(await noticeText()), '  (want the switch and the popup, and nothing else)');
+await line('switched').locator('button').click();
+await line('popup').locator('input').click();
 console.log('cleared:', JSON.stringify(await noticeText()), '  (want [])');
 
 // The caret check needs a row on the Local tab to click into, and this repo's
