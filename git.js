@@ -174,13 +174,23 @@ export async function linkedWorktree(cwd) {
  *
  * `--no-renames`, so a rename is a deletion and an addition, one record each:
  * with `-z` a rename's old name is a record of its own with no status on it.
+ *
+ * Untracked files are counted by `ls-files --others`, one each, not from the
+ * status: that names an untracked directory once (`scratch/`), and a
+ * directory of fifty new files was "1 untracked file" in the question. Not by
+ * `--untracked-files=all` either, which with `--ignored` lists every file
+ * inside an ignored directory too -- all of `node_modules`. `:/` is the whole
+ * working copy, as the status is, wherever in it `cwd` is.
  */
 export async function worktreeLoss(cwd) {
-  const out = await git(['status', '--porcelain', '-z', '--ignored', '--no-renames'], cwd);
+  const [out, others] = await Promise.all([
+    git(['status', '--porcelain', '-z', '--ignored', '--no-renames'], cwd),
+    git(['ls-files', '-z', '--others', '--exclude-standard', '--', ':/'], cwd),
+  ]);
   const entries = out.split('\0').filter(Boolean).map((e) => ({ status: e.slice(0, 2), path: e.slice(3) }));
   return {
     changed: entries.filter((e) => e.status !== '??' && e.status !== '!!').length,
-    untracked: entries.filter((e) => e.status === '??').length,
+    untracked: others.split('\0').filter(Boolean).length,
     ignored: entries.filter((e) => e.status === '!!' && e.path !== '.prcoder/').map((e) => e.path),
   };
 }

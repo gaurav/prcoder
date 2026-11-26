@@ -203,15 +203,22 @@ test('removing a worktree deletes its ignored files without asking, and its bran
     await fs.writeFile(path.join(wt, 'node_modules', 'x.js'), '');
     await fs.writeFile(path.join(wt, '.env'), 'SECRET=1\n');
     await fs.writeFile(path.join(wt, 'new one.txt'), '');
+    // An untracked directory is each of its files, not the one line the
+    // status gives it: the question said "1 untracked file" over fifty.
+    await fs.mkdir(path.join(wt, 'scratch', 'deeper'), { recursive: true });
+    for (const f of ['one', 'two', 'deeper/three']) await fs.writeFile(path.join(wt, 'scratch', f), '');
     await fs.writeFile(path.join(wt, 'a.txt'), 'changed\n');
     // A rename is two records, a deletion and an addition, not one and a half.
     await testGit(wt, 'mv', 'b.txt', 'c.txt');
-    assert.deepEqual(await worktreeLoss(wt), { changed: 3, untracked: 1, ignored: ['.env', 'node_modules/'] });
+    assert.deepEqual(await worktreeLoss(wt), { changed: 3, untracked: 4, ignored: ['.env', 'node_modules/'] });
+    // The same from a subdirectory: the whole working copy, as the removal is.
+    assert.deepEqual(await worktreeLoss(path.join(wt, 'scratch')), { changed: 3, untracked: 4, ignored: ['.env', 'node_modules/'] });
     await assert.rejects(removeWorktree(common, wt), /contains modified or untracked files, use --force to delete it/);
     assert.ok(await exists(wt));
     // With only ignored files in it, nothing is refused and nothing is said.
     await testGit(wt, 'reset', '-q', '--hard');
     await fs.rm(path.join(wt, 'new one.txt'));
+    await fs.rm(path.join(wt, 'scratch'), { recursive: true });
     assert.deepEqual(await worktreeLoss(wt), { changed: 0, untracked: 0, ignored: ['.env', 'node_modules/'] });
     assert.equal(await removeWorktree(common, wt), '');
     assert.equal(await exists(wt), false, '.env, node_modules and .prcoder/queue.json went with it');
