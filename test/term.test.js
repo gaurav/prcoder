@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { sink, status, log, paint, verbose, debug, cycleVerbosity, setVerbosity, confirm, clip, styled, plain, title } from '../term.js';
+import { sink, status, log, paint, verbose, debug, cycleVerbosity, setVerbosity, confirm, ask, press, clip, styled, plain, title } from '../term.js';
 
 /** A stand-in for process.stdout, so the tty path can be exercised anywhere. */
 function fake(isTTY, columns = 40, rows = 24) {
@@ -108,6 +108,50 @@ test('a confirm adds to the block rather than being written past it', () => {
   // Rule + status line + blank + prompt: the next erase must walk up all four.
   log('x');
   assert.match(out.text, /\x1b\[4F\x1b\[0Jx\n/);
+});
+
+// A question with more than one way to say yes is the same two lines of the
+// block as a confirm, which is one of these with `y` alone.
+test('a question with several answers is asked in the block, as a confirm is', () => {
+  const out = fake(true);
+  status(['a']);
+  out.text = '';
+  ask('quit, and [r]emove or [k]eep? [N] ', { r: () => {}, k: () => {} });
+  assert.match(out.text, /quit, and \[r\]emove or \[k\]eep\? \[N\]/);
+  log('x');
+  assert.match(out.text, /\x1b\[4F\x1b\[0Jx\n/);
+});
+
+// Which key does what, at a question and without one. A quit in a worktree
+// asks with two ways to say yes, and one of them deletes the worktree, so:
+// each letter does its own thing in either case, every other key is no, and
+// the question is gone after any answer, so the next key is an ordinary one.
+test('a key at a question is that letter\'s answer or a no, and the question is asked once', () => {
+  fake(true);
+  const did = [];
+  const handlers = { quit: () => did.push('quit'), key: (ch) => did.push(`key ${ch}`) };
+  const question = () => ask('quit, and [r]emove or [k]eep? [N] ', { r: () => did.push('remove'), k: () => did.push('keep') });
+  const type = (text) => { for (const ch of text) press(ch.charCodeAt(0), handlers); };
+  question();
+  type('r');
+  question();
+  type('K');
+  assert.deepEqual(did, ['remove', 'keep']);
+  // Anything else is no: y is not an answer here, nor Enter, nor q.
+  for (const other of ['y', 'n', '\r', 'q', ' ']) {
+    question();
+    type(other);
+  }
+  assert.deepEqual(did, ['remove', 'keep']);
+  // With no question up, r and k are ordinary keys, and q asks to quit.
+  type('rkq');
+  assert.deepEqual(did, ['remove', 'keep', 'key r', 'key k', 'quit']);
+  // A confirm is the same with y alone.
+  confirm('quit? [y/N] ', () => did.push('yes'));
+  type('r');
+  confirm('quit? [y/N] ', () => did.push('yes'));
+  type('Y');
+  assert.deepEqual(did.slice(5), ['yes']);
 });
 
 // The timer that keeps the age honest repaints every 30s. If an unchanged block

@@ -387,7 +387,7 @@ const headOf = (n) => (n.pr ? n.pr.headRefName : n.branch);
  * milestones are how you choose what to work on next. The head does not
  * scroll, so it is always there.
  */
-export function renderNoPr(status, prs, { onCreate, onSwitch, onBelow, below = [], creating = false }) {
+export function renderNoPr(status, prs, { onCreate, onSwitch, onBelow, below = [], creating = false, ...handlers }) {
   const host = document.getElementById('pr-body');
   tab = 'detail';
   shownFor = null;
@@ -422,6 +422,7 @@ export function renderNoPr(status, prs, { onCreate, onSwitch, onBelow, below = [
     title: h('h2', { className: 'pr-branch-name' }, status.detached ? 'Detached HEAD' : status.branch),
     note: h('p', { className: 'pr-note' }, why),
     links: create.length || out.links.length ? linkRow([...create, ...out.links], 'meta pr-ways pr-links', out.repo) : null,
+    worktree: worktreeRow(handlers),
   });
 
   // What the branch is built on only git can say, so it is asked for here --
@@ -810,6 +811,7 @@ function renderPrHead(pr, parsed, handlers) {
     // measures the row by, so it is not dead CSS to clean up.
     links: linkRow(ways.links, 'meta pr-ways pr-links', ways.repo),
     milestone: milestoneRow(pr, handlers),
+    worktree: worktreeRow(handlers),
     state: h('div', { className: 'meta pr-state' },
       badge(state, state),
       h('span', {}, `${arrow.head} → ${arrow.base}`, under ? ' (' : null,
@@ -920,22 +922,77 @@ const milestoneRow = (pr, { milestones = null, picking = null, onMilestone, onMi
     m?.dueOn ? h('span', dueLabel(m.dueOn)) : null);
 };
 
+// The server serves only public/, so the docs are linked where they live.
+export const WORKTREES_DOC = 'https://github.com/gaurav/prcoder/blob/main/docs/Worktrees.md';
+
+/**
+ * The worktree picker's rows, one for each of the repository's working copies
+ * as `GET /api/worktrees` lists them: its directory's name, then the branch it
+ * is on and whether a prcoder is running there. Found by the path too, since
+ * two can share a name.
+ */
+export const worktreeChoices = (list) => list.map((w) => ({
+  key: w.path,
+  text: w.main ? `${w.name} (main working copy)` : w.name,
+  detail: {
+    text: `${w.branch ?? 'detached HEAD'} · ${w.here ? 'here' : w.prunable ? 'directory gone'
+      : w.url ? 'prcoder running' : 'no prcoder running'}`,
+  },
+  search: `${w.name} ${w.branch ?? ''} ${w.path}`,
+  title: w.path,
+}));
+
+/**
+ * The worktree line: which of the repository's working copies this prcoder
+ * is in, and the others. There only when there is more than one -- a
+ * repository nobody has run `git worktree add` in has no line.
+ *
+ * A prcoder is one working copy's for as long as it runs: its coding agent
+ * was started in that directory, and its queue, port and running record are
+ * kept there. So a pick does not move this one. It goes to `onWorktree`,
+ * which says where that working copy's prcoder is, or how to start one
+ * (docs/Worktrees.md, which the word links to). The list is app.js's, read
+ * when the page loads and again as the line is reached (`onWorktreeReach`).
+ */
+const worktreeRow = ({ worktrees = null, onWorktree, onWorktreeReach } = {}) => {
+  if (!worktrees || worktrees.length < 2) return null;
+  const rows = worktreeChoices(worktrees);
+  const here = worktrees.find((w) => w.here);
+  const sel = picker('worktree', {
+    label: 'working copy', text: rows.find((r) => r.key === here?.path)?.text ?? 'not one git lists',
+    rows, current: here?.path ?? null,
+    // For a driver to wait on: how many there are, and how many have a prcoder.
+    dataset: { copies: String(worktrees.length), running: String(worktrees.filter((w) => w.url).length) },
+    title: 'the working copies of this repository: pick another to find its prcoder',
+    placeholder: 'find a working copy', none: 'no working copy matches',
+    onOpen: () => onWorktreeReach?.(),
+    onPick: (row) => onWorktree?.(row.key),
+  });
+  sel.onpointerenter = () => onWorktreeReach?.();
+  sel.onfocus = () => onWorktreeReach?.();
+  return h('div', { className: 'meta pr-worktree' },
+    ext(WORKTREES_DOC, 'worktree', { title: 'each working copy has a prcoder of its own: what that means, on GitHub' }),
+    sel);
+};
+
 /**
  * The head, top to bottom, in the order it is read: what this is, the way to
  * it on GitHub with the lists beside it and the repository they are in, the
- * milestone it is on, whether it is open, and what it changes. Rearranging
- * the head is reordering this.
+ * milestone it is on, which working copy this is when the repository has
+ * more than one, whether it is open, and what it changes. Rearranging the
+ * head is reordering this.
  *
  * Both views of the pane draw their head through it. The one with no pull
  * request has no milestone, state or tabs, and those rows fall out.
  */
-const HEAD_ORDER = ['title', 'note', 'links', 'milestone', 'state', 'tabs'];
+const HEAD_ORDER = ['title', 'note', 'links', 'milestone', 'worktree', 'state', 'tabs'];
 
 /**
- * The head, redrawn whole. The milestone picker's open list is not in it
- * (picker.js keeps it on <body>), so a redraw neither shuts it nor takes the
- * focus from its search field; one whose button this redraw did not draw
- * again -- the pane has turned to a branch with no pull request -- is shut.
+ * The head, redrawn whole. The milestone and worktree pickers' open lists are
+ * not in it (picker.js keeps them on <body>), so a redraw neither shuts one
+ * nor takes the focus from its search field; one whose button this redraw did
+ * not draw again -- the pane has turned to a branch with no pull request, or
+ * the last other worktree was removed -- is shut.
  */
 const paintHead = (rows) => {
   document.getElementById('pr-head').replaceChildren(...kids(HEAD_ORDER.map((k) => rows[k])));

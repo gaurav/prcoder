@@ -74,6 +74,13 @@ the scrollback after prcoder has gone: to copy something into an issue, or to se
 again for. Declining and asking again doesn't print the same list twice; it prints again only once the
 queue has changed.
 
+In a git worktree the question has a third answer, since quitting is the moment to take the
+worktree away as well: `r` removes it and quits, `k` quits and keeps it, and anything else is no.
+It is asked on every quit there, with or without anything else to lose, and says what removing the
+worktree would delete that git does not have. The answers come first on the line, because the
+block clips a line to the terminal's width. [Worktrees.md](Worktrees.md#quitting-in-a-worktree)
+has what is and is not deleted.
+
 ## A busy port
 
 If the port this repo usually uses was busy, prcoder takes a free one, and the block says so for

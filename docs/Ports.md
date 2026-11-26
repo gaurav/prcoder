@@ -9,7 +9,8 @@ The first run in a repo picks a port -- seeded from a hash of the path, and step
 one is busy -- and records it in `.prcoder/port.json`. Every run after that reads the file, so a
 repo keeps the same URL: one you can bookmark, add to the Dock or open in an IDE pane (below), and
 one that survives renaming the directory. Different repos, and different worktrees, get different
-ports, so several prcoders can run at once.
+ports, so several prcoders can run at once; `prcoder --worktree <branch|pr>` starts one in a
+worktree of this repository ([Worktrees.md](Worktrees.md)).
 
 If that port is busy when prcoder starts -- most often because a second prcoder is already running
 in the same repo -- it takes a free one for this run and says so, both on stderr and in the status
@@ -73,4 +74,7 @@ Untested; the terminal's key handling inside JCEF is where to expect trouble.
 
 There is no single instance with a repo switcher. The server is one repo per process all the way
 down, and the Claude session dies with its tab, so a switcher would mean keeping sessions alive
-out of view -- the multi-session management [Design.md](Design.md) lists as deliberately not built.
+out of view, which [Design.md](Design.md) lists as deliberately not built. For a second branch of
+the same repository, the pull request pane's worktree line lists its working copies and where
+each one's prcoder is ([Worktrees.md](Worktrees.md)); that is a list of prcoders, not a switch
+inside one.

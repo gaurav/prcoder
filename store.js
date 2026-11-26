@@ -197,6 +197,18 @@ async function writeIgnore(repo) {
 }
 
 /**
+ * `.prcoder/worktree.json`, in a worktree `prcoder --worktree` made: the mark
+ * that it is prcoder's own, with when. A quit reads it (madeHere): a worktree
+ * prcoder made, with nothing in it that git lacks, is removed without a
+ * question, and one somebody made by hand is always asked about. In the
+ * worktree's own directory, so it goes when the worktree does and is never
+ * left saying something about a directory made again by hand.
+ */
+const madeFile = (repo) => path.join(dir(repo), 'worktree.json');
+export const markMade = (repo) => writeJson(repo, madeFile(repo), { version: VERSION, made: new Date().toISOString() });
+export const madeHere = (repo) => fs.readFile(madeFile(repo), 'utf8').then((t) => typeof JSON.parse(t)?.made === 'string', () => false);
+
+/**
  * `.prcoder/running/<pid>.json`: one file for each prcoder running in this
  * working copy, `{ version, port }`, written as it starts -- with no port yet
  * -- again once it listens, and removed as it exits. What startOnPr's guard
