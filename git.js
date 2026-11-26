@@ -6,7 +6,7 @@
 import { run, parsePrUrl, branchPrUrl } from './github.js';
 import { urlPath } from './public/tasks.js';
 import { debug } from './term.js';
-import { existsSync } from 'node:fs';
+import { existsSync, realpathSync } from 'node:fs';
 
 // Shorter than run()'s default: git here is local but for push and ls-remote,
 // and run() is also what turns a credential prompt into an error.
@@ -801,7 +801,10 @@ async function worktreeOn(cwd, p, list, repos) {
  *
  * A worktree this makes is not removed when the checkout then fails. A
  * second start may already be in it, waiting on the first's lock; and the
- * next run finds it by its directory and tries again.
+ * next run finds it by its directory and tries again. By the directory with
+ * its symlinks resolved, too, since that is how git lists it: a home or a
+ * PRCODER_WORKTREES reached through one (macOS's /var is /private/var) missed
+ * its own worktree, and refused it as something in the way.
  */
 export async function worktreeForPr(cwd, p, { dirFor, repos }) {
   const list = await worktrees(cwd);
@@ -810,7 +813,8 @@ export async function worktreeForPr(cwd, p, { dirFor, repos }) {
   if (on?.prunable) throw gone(on, `${what}'s branch, ${on.branch},`);
   if (on) return { path: on.path, made: false, said: `${what} is already checked out in ${on.path}, so starting there` };
   const dir = dirFor(list[0].path, p.isCrossRepository ? `pr-${p.number}` : p.headRefName);
-  if (list.some((w) => w.path === dir && !w.prunable)) return { path: dir, made: false, said: `starting in the worktree at ${dir}` };
+  const real = existsSync(dir) ? realpathSync(dir) : dir;
+  if (list.some((w) => (w.path === dir || w.path === real) && !w.prunable)) return { path: dir, made: false, said: `starting in the worktree at ${dir}` };
   if (existsSync(dir)) throw taken(dir, what);
   await run('git', ['worktree', 'add', '-q', '--detach', dir], { cwd, timeout: 120_000 });
   return { path: dir, made: true, said: `made a worktree for ${what} in ${dir}` };

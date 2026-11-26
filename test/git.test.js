@@ -382,6 +382,15 @@ test('a worktree for a pull request is the one on its branch, or one made at its
       // One whose directory was deleted still holds the branch: said, not pruned.
       await fs.rm(made, { recursive: true });
       await assert.rejects(worktreeForPr(work, own, opts), /^Error: #7's branch, topic, is checked out in a worktree whose directory is gone, .*`git worktree prune` forgets it/);
+      // Through a symlink, as a home or PRCODER_WORKTREES can be: git lists
+      // the resolved path, and the worktree is still found as the one made
+      // before rather than refused as in the way.
+      await fs.symlink(path.join(dir, 'made'), path.join(dir, 'linked'));
+      const viaLink = { ...opts, dirFor: (main, name) => path.join(dir, 'linked', name) };
+      const ten = { ...own, url: 'https://github.com/o/r/pull/10', number: 10, headRefName: 'ten' };
+      const linked = path.join(dir, 'linked', 'ten');
+      assert.equal((await worktreeForPr(work, ten, viaLink)).made, true);
+      assert.deepEqual(await worktreeForPr(work, ten, viaLink), { path: linked, made: false, said: `starting in the worktree at ${linked}` });
       // Something else at the directory is left alone.
       await fs.mkdir(path.join(dir, 'made', 'other'));
       await assert.rejects(worktreeForPr(work, { ...own, number: 8, headRefName: 'other' }, opts), /is in the way of a worktree for #8/);
