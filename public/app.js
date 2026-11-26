@@ -977,6 +977,16 @@ function paint(status) {
   // that fails leaves the last good name up rather than reverting to
   // "prcoder", which is why this is here and not in loadStatus's catch.
   document.title = pageTitle(status);
+  // What was under the old branch is not what is under this one. Cleared
+  // before anything is drawn, as the header and the panes below all draw from
+  // these answers: cleared after, the first paint on the new branch drew its
+  // stack mark from the old branch's, and an ask the old `asked` had already
+  // made was skipped. The asks this paint makes still carry the old branch's
+  // list; the fresh list loadPrs fetches below asks them all again.
+  if (switched) {
+    below.clear();
+    asked.clear();
+  }
   // `below` and `onBelow` for the switcher's stack mark, which draws the same
   // chain the Stack tab lists and so needs git's answers about the bare
   // branches in it, and the way to ask.
@@ -1026,10 +1036,7 @@ function paint(status) {
     drawn = null;
     renderNoPr(status, prs, { onCreate: createPr, onSwitch: switchPr, onBelow: loadBelow, below: [...below.values()], creating });
   }
-  // What was under the old branch is not what is under this one.
   if (switched) {
-    below.clear();
-    asked.clear();
     loadPrs('branch changed', { fresh: true });
   } else if (replaced) {
     loadPrs(status.pr ? `#${status.pr.number} is now ${status.pr.state}` : 'no PR on this branch now',
