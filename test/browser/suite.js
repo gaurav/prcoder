@@ -5744,7 +5744,11 @@ test('the stack mark asks git about a bare branch under its pull request, and dr
   const untold = await newPage({ prs: onBare, st });
   await untold.waitForSelector('#pr-switch[data-listed] .stack-mark');
   assert.deepEqual(await stackBars(untold), ['bare', 'here']);
-  assert.equal(untold.belowAsked.branch, 'merged-topic');
+  // `belowAsked` is set in the route handler, which runs in Node after the
+  // paint that drew the mark sent the ask, so the mark can be there first.
+  // The stub aborts, so nothing on the page changes to wait for: poll here.
+  for (let i = 0; i < 40 && !untold.belowAsked; i++) await untold.waitForTimeout(50);
+  assert.equal(untold.belowAsked?.branch, 'merged-topic', 'the header asked git about the bare branch');
   await untold.close();
 
   const told = await newPage({ prs: onBare, st, below: { branch: 'merged-topic', names: [], toDefault: true } });
