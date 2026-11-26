@@ -675,7 +675,7 @@ placeholder Claude Code records and nothing of its contents; a prompt that start
 command has the command in the accent colour; and at the end, on hover as on every row, ▶ types
 the prompt into the coding agent again, unsent, to edit and send -- the way back into the task a
 session died on -- ↓ copies it into Local, untagged, and ⧉ copies it to the clipboard, turning to
-✓ for a moment. ▶ or ↓ on a prompt that held a paste then says, in a sticky toast, that only the
+✓ for a moment. ▶ or ↓ on a prompt that held a paste then says, in a notice, that only the
 placeholder came with it and the text has to be pasted again before sending. The box above searches the
 prompts' text, leaving out a day without a match, and the tab's count is the prompts sent today,
 or the matches while searching. The file is read when the page opens, so the count is on the tab
