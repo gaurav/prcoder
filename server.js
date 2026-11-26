@@ -1615,21 +1615,34 @@ async function askToQuit() {
  *
  * A worktree this made is marked as prcoder's (markMade), which is what lets
  * a quit remove it without asking once nothing in it is unsaved.
+ *
+ * A branch needs no gh: when the facts cannot be read (offline, or gh
+ * failing) it is started all the same, from what git remembers, as a plain
+ * `prcoder` would be, and the facts are left for repoFacts to read later.
+ * Before, any gh failure ended the run, and worktreeFor's "as last fetched"
+ * could not be reached. A new branch comes from the default branch of the
+ * repository gh names, through the remote that names it (worktreeFor).
  */
 async function startInWorktree(target) {
   try {
-    const facts = await repoInfo(repo);
+    const facts = await repoInfo(repo).catch((e) => {
+      if (target.pr) throw e;
+      term.debug(`repository not read from GitHub, so the default branch is git's: ${e.message}`);
+      return null;
+    });
     const base = process.env.PRCODER_WORKTREES ? path.resolve(process.env.PRCODER_WORKTREES) : path.join(os.homedir(), '.prcoder', 'worktrees');
     const dirFor = (main, name) => worktreeDir(base, main, name);
     const p = target.pr ? await pullRequestFor(repo, target.pr, facts.repos) : null;
+    // Case-blind, as the repositories are everywhere else: gh's spelling and a remote URL's can differ.
+    const baseRemote = facts && Object.entries(facts.remotes).find(([r]) => r.toLowerCase() === facts.nameWithOwner.toLowerCase())?.[1];
     const found = p ? await worktreeForPr(repo, p, { dirFor, repos: facts.repos })
-      : await worktreeFor(repo, target.branch, { dirFor, defaultBranch: facts.defaultBranch });
+      : await worktreeFor(repo, target.branch, { dirFor, defaultBranch: facts?.defaultBranch, baseRemote: baseRemote ?? 'origin' });
     console.log(found.said);
     process.chdir(found.path);
     repo = process.cwd();
     top = await workTreeTop(repo);
     linked = await linkedWorktree(repo);
-    info = { ...facts, prefix: '' };
+    if (facts) info = { ...facts, prefix: '' };
     if (found.made) await markMade(top).catch((e) => term.debug(`worktree not marked as prcoder's: ${e.message}`));
     return p;
   } catch (e) {

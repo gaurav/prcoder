@@ -48,8 +48,12 @@ copy without reading `.gitignore` would find a second copy of the code. A direct
 that path which is not the worktree wanted is left alone, and prcoder stops and says so.
 
 **A branch** is checked out as this clone has it. One only origin has is fetched and tracked. One
-nobody has is made from origin's default branch, fetched first, tracking nothing; when origin
-cannot be reached, from what this clone last saw of it, and the line prcoder prints says which.
+nobody has is made from the default branch of the repository pull requests go to, fetched first
+from the remote that names it, tracking nothing. That is gh's default repository, so in a clone of
+a fork with the original as `upstream`, it is upstream's, not the fork's. When that remote cannot
+be reached, the branch comes from what this clone last saw of it, and the line prcoder prints says
+which. None of this needs gh: offline, the default branch is the one git remembers for origin
+(`origin/HEAD`), and with none remembered, the commit you are standing on.
 It is not made from the commit you are standing on: a second session is usually for other work,
 and a branch quietly built on whatever happened to be checked out is found out at the pull
 request. For a branch stacked on another, make it first (`git branch child parent`); then it is

@@ -631,6 +631,42 @@ test('--worktree starts in a worktree it makes, on the branch or pull request, a
   }
 });
 
+// `--worktree <branch>` with gh failing at everything, as offline: a branch
+// needs nothing from GitHub, so the start goes ahead where a plain `prcoder`
+// would. Before, the failed `gh repo view` ended the run with exit 2.
+test('--worktree starts on a branch when gh cannot be asked anything', { skip: process.platform === 'win32' && 'sh' }, async () => {
+  const fs = await import('node:fs/promises');
+  const os = await import('node:os');
+  const path = await import('node:path');
+  const { withGh } = await import('./stub-gh.js');
+  const dir = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'prcoder-wtoffline-')));
+  const main = path.join(dir, 'main');
+  const base = path.join(dir, 'worktrees');
+  const git = (args, cwd = main) => execSync(`git -c user.name=t -c user.email=t@prcoder.invalid -c commit.gpgsign=false ${args}`,
+    { cwd, env: gitless(), encoding: 'utf8' }).trim();
+  try {
+    await fs.mkdir(main);
+    git('init -q -b main');
+    git('commit -q --allow-empty -m x');
+    git('branch topic');
+    await withGh(() => 'echo "error connecting to api.github.com" >&2; exit 1', async () => {
+      for (const branch of ['topic', 'brand-new']) {
+        const wt = worktreeDir(base, main, branch);
+        const s = await serve(main, { agent: '/usr/bin/false', args: ['--worktree', branch], env: { PRCODER_WORKTREES: base } });
+        try {
+          assert.equal((await fetch(`http://${s.base}/api/whoami`).then((r) => r.json())).top, wt);
+          assert.equal(git('symbolic-ref --short HEAD', wt), branch);
+        } finally {
+          s.server.kill();
+          await s.exited;
+        }
+      }
+    });
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
+
 // A quit that removes a worktree waits for the agent to be gone first. This
 // agent, told to stop, writes a scratch directory, takes a second, and
 // cleans it up, as a real one tidying its own files does. It waits with

@@ -337,6 +337,27 @@ test('a worktree for a branch is the one it is checked out in, or a new one on i
       await run('remote', 'set-url', 'origin', path.join(dir, 'nowhere.git'));
       assert.match((await worktreeFor(work, 'offline', opts)).said, /a new branch from origin's main as last fetched$/);
       assert.equal(await out(at('offline'), 'rev-parse', 'HEAD'), theirs);
+      // With no word from gh, the default branch is git's memory of origin's
+      // HEAD; with none of that either, the commit this working copy is on.
+      const gitsOwn = { ...opts, defaultBranch: undefined };
+      await run('remote', 'set-head', 'origin', 'main');
+      assert.match((await worktreeFor(work, 'no-gh', gitsOwn)).said, /a new branch from origin's main as last fetched$/);
+      assert.equal(await out(at('no-gh'), 'rev-parse', 'HEAD'), theirs);
+      await run('remote', 'set-head', 'origin', '--delete');
+      assert.match((await worktreeFor(work, 'no-gh-or-head', gitsOwn)).said, /a new branch from the commit this working copy is on$/);
+      assert.equal(await out(at('no-gh-or-head'), 'rev-parse', 'HEAD'), await out(work, 'rev-parse', 'HEAD'));
+      // In a clone of a fork, origin is the fork and its main can be far
+      // behind: a new branch comes from the base repository's remote, here
+      // upstream, which has a commit origin's main lacks.
+      const upstream = path.join(dir, 'upstream.git');
+      await git('git', ['clone', '-q', '--bare', hub, upstream]);
+      await testGit(elsewhere, 'commit', '-q', '--allow-empty', '-m', 'three, only upstream has it');
+      await testGit(elsewhere, 'push', '-q', upstream, 'main');
+      const upstreams = await out(elsewhere, 'rev-parse', 'HEAD');
+      await run('remote', 'add', 'upstream', upstream);
+      assert.deepEqual(await worktreeFor(work, 'from-upstream', { ...opts, baseRemote: 'upstream' }), { path: at('from-upstream'), made: true,
+        said: `made a worktree in ${at('from-upstream')} on from-upstream, a new branch from upstream's main` });
+      assert.equal(await out(at('from-upstream'), 'rev-parse', 'HEAD'), upstreams);
     });
   } finally {
     await fs.rm(dir, { recursive: true, force: true });

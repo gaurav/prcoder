@@ -724,9 +724,9 @@ const taken = (dir, what) => new Error(`${dir} is in the way of a worktree for $
  *
  * A branch this clone has is checked out as it is; one only origin has
  * becomes a local branch tracking it, fetched first; one nobody has is made
- * from origin's default branch, fetched first too, tracking nothing -- or
- * from what this clone last saw of it when origin cannot be reached, which
- * the line says. Not from HEAD: a second session is usually for other work,
+ * from the base repository's default branch, fetched first too, tracking
+ * nothing -- or from what this clone last saw of it when it cannot be
+ * reached, which the line says. Not from HEAD: a second session is usually for other work,
  * and a branch quietly built on whatever this working copy happened to be on
  * is found out at the pull request. A stacked branch is made by hand first
  * (`git branch child parent`), and then is one this clone has.
@@ -735,8 +735,15 @@ const taken = (dir, what) => new Error(`${dir} is in the way of a worktree for $
  * passes `check-ref-format --branch` by turning into the branch it stands
  * for, which is not the one written. A directory already at the path is not
  * taken over, whatever it is.
+ *
+ * The base repository is the one pull requests go to, and `baseRemote` the
+ * remote that names it (repoInfo's `remotes`): not always origin, which in a
+ * clone of a fork is the fork, whose default branch can be far behind or
+ * absent. `defaultBranch` is gh's answer, and undefined when gh could not be
+ * asked; then it is git's memory of the remote's HEAD, and with none of that
+ * the commit this working copy is on, as for a remote with no such branch.
  */
-export async function worktreeFor(cwd, branch, { dirFor, defaultBranch }) {
+export async function worktreeFor(cwd, branch, { dirFor, defaultBranch, baseRemote = 'origin' }) {
   if (await text(['check-ref-format', '--branch', branch], cwd).catch(() => null) !== branch) {
     throw new Error(`${branch} is not a name a branch can have`);
   }
@@ -762,11 +769,13 @@ export async function worktreeFor(cwd, branch, { dirFor, defaultBranch }) {
     await add(['--track', '-b', branch, dir, `refs/remotes/origin/${branch}`]);
     return { path: dir, made: true, said: `made a worktree for ${branch} in ${dir}, from origin's ${branch}${there ? '' : ' as last fetched'}` };
   }
-  const fresh = await fetch(defaultBranch).then(() => true, () => false);
-  const base = await hasCommit(`refs/remotes/origin/${defaultBranch}`, cwd) ? `refs/remotes/origin/${defaultBranch}`
-    : await hasCommit(`refs/heads/${defaultBranch}`, cwd) ? `refs/heads/${defaultBranch}` : 'HEAD';
+  const def = defaultBranch ?? (await text(['symbolic-ref', '--quiet', '--short', `refs/remotes/${baseRemote}/HEAD`], cwd)
+    .catch(() => '')).slice(baseRemote.length + 1);
+  const theirs = `refs/remotes/${baseRemote}/${def}`;
+  const fresh = Boolean(def) && await git(['fetch', '-q', baseRemote, `+refs/heads/${def}:${theirs}`], cwd).then(() => true, () => false);
+  const base = !def ? 'HEAD' : await hasCommit(theirs, cwd) ? theirs : await hasCommit(`refs/heads/${def}`, cwd) ? `refs/heads/${def}` : 'HEAD';
   const from = base === 'HEAD' ? 'the commit this working copy is on'
-    : `${base.startsWith('refs/remotes/') ? "origin's " : ''}${defaultBranch}${fresh || !base.startsWith('refs/remotes/') ? '' : ' as last fetched'}`;
+    : `${base === theirs ? `${baseRemote}'s ` : ''}${def}${fresh || base !== theirs ? '' : ' as last fetched'}`;
   await add(['--no-track', '-b', branch, dir, base]);
   return { path: dir, made: true, said: `made a worktree in ${dir} on ${branch}, a new branch from ${from}` };
 }
