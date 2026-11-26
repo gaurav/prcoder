@@ -7,6 +7,11 @@ prompt history, so no screenshot carries the owner's real prompts), kill-on-exit
 `firefoxEnv()` and `launchBrowser()`, and every one
 of them fixes a bug that cost a run. `docs/Verifying.md` covers what each driver reaches.
 
+`tui-probe.mjs` is the exception, and not a driver: it runs the real agent, logged
+in, because the real agent's screen is what it checks, so nothing from
+`driver.mjs`'s stubbed environment belongs in it. Its header says what it may
+and may not do with that session.
+
 ## Launching browsers
 
 Launch with `launchBrowser()`, which picks the engine, falls back to Chromium,
