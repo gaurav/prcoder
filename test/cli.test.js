@@ -628,6 +628,60 @@ test('--worktree starts in a worktree it makes, on the branch or pull request, a
   }
 });
 
+// A quit that removes a worktree waits for the agent to be gone first. This
+// agent, told to stop, writes a scratch directory, takes a second, and
+// cleans it up, as a real one tidying its own files does. It waits with
+// `wait`, which a trapped signal interrupts at once; a foreground `sleep`
+// held the trap back until the removal was done, and the test passed without
+// the fix. Removed while it
+// was still at it, the unforced removal of a clean worktree was refused over
+// the scratch file, and the worktree that should have gone stayed.
+test('a quit removes its worktree only once the agent has exited', { skip: process.platform === 'win32' && 'sh' }, async () => {
+  const fs = await import('node:fs/promises');
+  const os = await import('node:os');
+  const path = await import('node:path');
+  const { withGh } = await import('./stub-gh.js');
+  const dir = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'prcoder-wtwait-')));
+  const main = path.join(dir, 'main');
+  const base = path.join(dir, 'worktrees');
+  const agent = path.join(dir, 'agent.sh');
+  const git = (args, cwd = main) => execSync(`git -c user.name=t -c user.email=t@prcoder.invalid -c commit.gpgsign=false ${args}`,
+    { cwd, env: gitless(), encoding: 'utf8' }).trim();
+  const exists = (p) => fs.access(p).then(() => true, () => false);
+  const gh = () => `case "$1 $2" in
+  "repo view") echo '{"defaultBranchRef":{"name":"main"},"nameWithOwner":"o/r","parent":null}';;
+  *) echo "gh $* was not expected" >&2; exit 9;; esac`;
+  try {
+    await fs.mkdir(main);
+    git('init -q -b main');
+    git('commit -q --allow-empty -m x');
+    await fs.writeFile(agent, '#!/bin/sh\ntrap \'kill $! 2>/dev/null; mkdir -p scratch; touch scratch/x; sleep 1; rm -rf scratch; exit 0\' HUP TERM\necho ready\nwhile :; do sleep 100 & wait $!; done\n', { mode: 0o755 });
+    await withGh(gh, async () => {
+      const wt = worktreeDir(base, main, 'topic');
+      const s = await serve(main, { agent, args: ['--worktree', 'topic'], env: { PRCODER_WORKTREES: base } });
+      try {
+        // A tab, so that there is an agent, and its first output, so that its trap is set.
+        await new Promise((resolve, reject) => {
+          const ws = new WebSocket(`ws://${s.base}/pty`);
+          ws.onmessage = (e) => String(e.data).includes('ready') && resolve();
+          ws.onerror = reject;
+        });
+        // Asked, since the tab is a risk; the answer is remove, and the
+        // removal is the unforced one, as the worktree was clean when asked.
+        const r = await fetch(`http://${s.base}/api/quit`, { method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ force: true, worktree: 'remove' }) });
+        assert.deepEqual(await r.json(), { quit: true, removed: wt });
+        assert.equal((await s.exited)[0], 0);
+      } finally {
+        s.server.kill();
+      }
+      assert.equal(await exists(wt), false, 'removed, once the agent had cleaned up and gone');
+    });
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
+
 // A start that checks out is refused while another prcoder runs in the same
 // working copy -- found by the top level, not the directory, since one in a
 // subdirectory moves the same files under the other's agent. Before, `prcoder

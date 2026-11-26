@@ -1482,12 +1482,20 @@ function quit({ remove = null } = {}) {
   if (quitting) return;
   quitting = true;
   const told = tellTabs(2000);
+  // A removal waits for the agents to be gone, five seconds at most: one
+  // still writing as it shuts down made the unforced removal of a clean
+  // worktree fail over its new file, or wrote into one being deleted. Their
+  // exits are listened for before the kill, which can be quicker than that.
+  const stopped = remove && Promise.race([
+    Promise.all([...ptys].map((pty) => new Promise((r) => pty.onExit(r)))),
+    new Promise((r) => setTimeout(r, 5000)),
+  ]);
   for (const pty of ptys) pty.kill();
   wss.close();
   server.close();
   const written = () => new Promise((r) => process.stdout.write('', r));
   setTimeout(() => process.exit(0), remove ? 125_000 : 2000);
-  Promise.all([told, written()])
+  Promise.all([told, written(), stopped])
     .then(() => remove && removeHere(remove).then(written))
     .then(() => process.exit(0));
 }
