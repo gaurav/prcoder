@@ -118,15 +118,15 @@ for (const pane of ['pr', 'queue']) {
   await page.locator(`#${pane}`).screenshot({ path: path.join(out, `${pane}.png`) });
 }
 // The last prompt sent, as the Claude pane says it on connecting -- from the
-// fixture claudeConfig wrote, not the owner's history. Sticky, so dismissed
-// here rather than left over the queue for the run.
-const lastPrompt = page.locator('#toast:not([hidden])');
-console.log('last:   ', (await lastPrompt.count()) ? await lastPrompt.innerText() : '(no toast)',
+// fixture claudeConfig wrote, not the owner's history. A notice that waits,
+// so dismissed here rather than left over the panes for the run.
+const lastPrompt = page.locator('#notices > li[data-kind="last-prompt"]');
+console.log('last:   ', (await lastPrompt.count()) ? await lastPrompt.locator('.text').innerText() : '(no notice)',
   '\n  (want "Last prompt, 2 hours ago (Today hh:mm): Fix the two findings, then run the browser suite…", no button:'
   + ' the 50-minute-old prompt was sent in data/wt-1, so it is not this pane\'s)');
 if (await lastPrompt.count()) {
-  await lastPrompt.screenshot({ path: path.join(out, 'toast-last-prompt.png') });
-  await lastPrompt.click();
+  await lastPrompt.screenshot({ path: path.join(out, 'notice-last-prompt.png') });
+  await lastPrompt.locator('button').click();
 }
 
 // The gutters, which are only ever right or wrong on screen. Each drag moves
@@ -352,8 +352,7 @@ console.log('  rows:  ', (await page.$$eval('#queue-body .item.pull', (ls) => ls
 '\n  (want each open pull request with what it is built on, its size, merge word, author and ages, the one on screen marked here)');
 // The whole list first, as it is used: the coding agent folded (Alt+G) so the
 // queue has the height, every row closed, and the Issues tab's ↓ toast
-// dismissed -- it is sticky, and it sat over the first row in every shot
-// until 2026-10-20. Then the terminal back, for the rest of the run.
+// dismissed -- it sat over the first row in every shot until 2026-10-20. Then the terminal back, for the rest of the run.
 const upToast = page.locator('#toast:not([hidden])');
 if (await upToast.count()) await upToast.click();
 await page.keyboard.press('Alt+KeyG');
@@ -836,9 +835,9 @@ console.log('wrap:    ', `${await page.locator('#pr').evaluate((e) => Math.round
 // sessionStorage survives it, so ws.onopen decides the session was restarted
 // and calls toast() for itself -- which is what says the plain path still
 // works. Four seconds and it is gone, hence the screenshot before anything
-// else. The sticky one has no read-only trigger (switching PRs would check out
-// a branch in this repo), so it calls toast() itself, through the same module
-// instance the page loaded -- as test/browser/suite.js does.
+// else. A notice that waits has no read-only trigger (switching PRs would
+// check out a branch in this repo), so this calls notice() itself, through the
+// same module instance the page loaded -- as test/browser/suite.js does.
 const toastText = () => page.evaluate(() => {
   const el = document.getElementById('toast');
   return el.hidden ? null : el.textContent;
@@ -848,15 +847,27 @@ await page.locator('#toast').screenshot({ path: path.join(out, 'toast.png') }).c
 await page.waitForTimeout(4500);
 console.log('faded:  ', JSON.stringify(await toastText()), '  (want null -- the 4s timeout)');
 
-await page.evaluate(async () => (await import('/ui.js')).toast('Switched to add-retries (#123). Claude still'
-  + " has the old branch's files in mind — tell it to re-read anything it had open.", false, true));
+// The reload put the last-prompt notice up again, beside its toast, and it
+// is still up: the list starts empty here, or the two below are not the only
+// lines in it and every locator after them finds one too many. Each line is
+// then reached by its kind, never by position, for the same reason.
+const noticeText = () => page.locator('#notices > li .text').allTextContents();
+const line = (kind) => page.locator(`#notices > li[data-kind="${kind}"]`);
+console.log('before: ', JSON.stringify(await noticeText()), '  (want the last prompt again, from the reload)');
+while (await page.locator('#notices > li').count()) await page.locator('#notices > li > button').first().click();
+await page.evaluate(async () => {
+  const { notice } = await import('/ui.js');
+  notice("Switched to add-retries (#123). Claude still has the old branch's files in mind — tell it to re-read anything it had open.", { kind: 'switched' });
+  notice('Popup blocked — the compare page is at', { bad: true, link: { href: 'https://example.com/compare', text: 'https://example.com/compare' }, kind: 'popup' });
+});
 await page.waitForTimeout(100);
-await page.locator('#toast').screenshot({ path: path.join(out, 'toast-sticky.png') });
-await page.screenshot({ path: path.join(out, 'full-toast.png') });   // and what it sits over
-await page.waitForTimeout(4500);   // past the 4s a plain toast would have died at
-console.log('sticky: ', JSON.stringify(await toastText()), '  (want it still up)');
-await page.locator('#toast').click();
-console.log('clicked:', JSON.stringify(await toastText()), '  (want null)');
+await page.locator('#notices').screenshot({ path: path.join(out, 'notices.png') });
+await page.screenshot({ path: path.join(out, 'full-notices.png') });   // and the panes it pushes down
+await page.waitForTimeout(4500);   // past the 4s a toast dies at
+console.log('notices:', JSON.stringify(await noticeText()), '  (want the switch and the popup, and nothing else)');
+await line('switched').locator('button').click();
+await line('popup').locator('input').click();
+console.log('cleared:', JSON.stringify(await noticeText()), '  (want [])');
 
 // The caret check needs a row on the Local tab to click into, and this repo's
 // queue is legitimately empty the moment the last item has been finished or

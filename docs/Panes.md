@@ -377,22 +377,33 @@ permission prompts still appear, and typing while Claude is mid-turn queues the 
 always has. Links Claude prints are clickable. The tab's favicon is a red octagon while Claude is
 working and a green square when it is idle, read from the timing of the PTY's output (Design.md says why only the
 timing). A tab the browser unloaded comes back with a new session, since the old one died with the
-socket; the tab says so in a toast that links to Ports.md, where keeping tab unloaders off prcoder
+socket; the tab says so in a notice that links to Ports.md, where keeping tab unloaders off prcoder
 is covered. Only Chrome says for certain that it unloaded a tab. Elsewhere, going Back to the tab or
-duplicating it looks the same, so the toast names those too rather than blaming the browser. A
+duplicating it looks the same, so the notice names those too rather than blaming the browser. A
 deliberate reload gets a shorter toast without the link.
 
+A toast and a notice are two things. A toast reports something that has happened: it sits over the
+foot of the window and goes after four seconds, eight for an error, or on a click. A notice is
+something that stays true until you have dealt with it -- the session is new, the branch was
+switched under the agent, a popup was blocked -- and it is a line in a list across the top of the
+right-hand panes, which is not there while it is empty. Each line has a box on its left and a ✕ on
+its right, and either takes it away; from the keyboard, the focus moves to the same control on the
+next line (the line before, for the last), and to the terminal once the list is empty (to its ▼,
+while it is folded). Any number can be up at once, and a second notice about the same thing replaces
+the first, taking over its focus if it had it. The list pushes the panes down rather than covering
+them, and it never takes the coding agent below its 120px: a queue dragged to its limit gives up the
+room instead, and so does a diff at its cap, which is half the column less the list.
+
 When the agent connects -- the page opened, or **Start coding agent** pressed in the bar below --
-a sticky toast says the last prompt sent from this working copy and when, `Last prompt, 2 hours
+a notice says the last prompt sent from this working copy and when, `Last prompt, 2 hours
 ago (Today 21:14): …`, the first 140 characters of it, for the session that died mid-task. It
 skips `/exit`, `/quit`, `/clear` and `/resume`, which end or leave a session rather than say what it
 was doing, and a prompt sent in a worktree under `data/`, which was another pull request's. The
 next Enter in the terminal takes it down, since by then it has been read. It is drawn from the
 same record as the queue's History tab, which has the rest and, on each row, the ▶ that types a
-prompt back in; the notice itself has no button, since the text it shows is cut. It is put up only
-when nothing else is in the toast's one slot: after a reload the reload's own notice is already
-there, and [#180](https://github.com/gaurav/prcoder/issues/180) is the list of notices that would
-hold both.
+prompt back in; the notice itself has no button, since the text it shows is cut. It is up
+together with whatever the reconnect said: a deliberate reload's toast, or the notice that a
+restored, revisited or duplicated tab gets.
 
 When Claude exits, a bar under its last output offers to start it again, optionally with a
 different model or effort, or to quit prcoder. Left to right: **Quit prcoder**, outlined in red
@@ -664,7 +675,7 @@ placeholder Claude Code records and nothing of its contents; a prompt that start
 command has the command in the accent colour; and at the end, on hover as on every row, ▶ types
 the prompt into the coding agent again, unsent, to edit and send -- the way back into the task a
 session died on -- ↓ copies it into Local, untagged, and ⧉ copies it to the clipboard, turning to
-✓ for a moment. ▶ or ↓ on a prompt that held a paste then says, in a sticky toast, that only the
+✓ for a moment. ▶ or ↓ on a prompt that held a paste then says, in a notice, that only the
 placeholder came with it and the text has to be pasted again before sending. The box above searches the
 prompts' text, leaving out a day without a match, and the tab's count is the prompts sent today,
 or the matches while searching. The file is read when the page opens, so the count is on the tab

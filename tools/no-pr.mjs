@@ -100,8 +100,8 @@ console.log('clicked:', JSON.stringify(took?.slice(0, 40)));
 console.log('landed: ', git(['branch', '--show-current']).stdout.trim(),
   '|', await page.$eval('#pr-head .meta', (e) => e.textContent.trim()),
   ' (want that PR\'s head branch checked out, and its head shown)');
-console.log('toast:  ', await page.$eval('#toast', (e) => e.textContent).catch(() => '(none)'),
-  ' (want the sticky notice that Claude has the old branch in mind)');
+console.log('notice: ', await page.$eval('#notices > li[data-kind="switched"] .text', (e) => e.textContent).catch(() => '(none)'),
+  ' (want the notice that Claude has the old branch in mind)');
 await page.locator('#pr').screenshot({ path: path.join(shots, 'no-pr-clicked.png') });
 
 await browser.close();

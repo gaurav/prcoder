@@ -132,40 +132,100 @@ export const debug = (...args) => {
 };
 
 /**
- * A line over the panes: the app's one notification surface.
+ * A line over the panes, for something that has already happened: it goes on
+ * its own, after four seconds, or eight for an error, and on a click before
+ * that, which the ✕ its CSS adds says. One slot, so a later toast replaces
+ * whatever is up.
  *
- * `sticky` is for a notice that stays true until you act on it, rather than one
- * that reports something already finished -- it waits to be clicked instead of
- * timing out. Every toast is click-to-dismiss, and says so with the ✕ its CSS
- * adds; a sticky one also has a border of its own.
- *
- * `link` is `{ href, text }` for a link out. A button form (`{ text, label,
- * onclick }`) was here for the last-prompt notice's ▶ and went with it: a
- * toast is for reading, and the thing to act on is a row. The element comes
- * back, for a caller that needs to know later whether its toast is still
- * the one up (the Claude pane's last-prompt notice marks `dataset.kind`,
- * which every toast clears).
+ * A notice that waits for you is not a toast: see notice(). The two shared
+ * this slot until 2026-11-09, with a `sticky` flag, and a waiting notice was
+ * then replaced by the next toast (#22), sat over the queue's last rows (#23)
+ * and could not be up beside another (#180).
  */
 let toastTimer;
-export function toast(msg, bad = false, sticky = false, link = null) {
+export function toast(msg, bad = false) {
   const el = document.getElementById('toast');
-  // textContent, never innerHTML: msg is often a server error. A link is the
-  // one thing a message can carry past that, so it is a separate argument.
+  // textContent, never innerHTML: msg is often a server error.
   el.textContent = msg;
-  delete el.dataset.kind;
-  if (link) {
-    el.append(' ', Object.assign(document.createElement('a'),
-      { href: link.href, textContent: link.text, target: '_blank', rel: 'noopener' }));
-  }
-  el.className = `${bad ? 'bad' : ''} ${sticky ? 'sticky' : ''}`.trim();
+  el.className = bad ? 'bad' : '';
   el.hidden = false;
-  // One slot, so a later toast replaces whatever is up -- including a sticky
-  // one, which is the other way it goes away.
   el.onclick = () => { el.hidden = true; };
   clearTimeout(toastTimer);
-  if (!sticky) toastTimer = setTimeout(() => { el.hidden = true; }, bad ? 8000 : 4000);
-  return el;
+  toastTimer = setTimeout(() => { el.hidden = true; }, bad ? 8000 : 4000);
 }
+
+/**
+ * A line in the list over the right-hand panes, for something that stays true
+ * until you have dealt with it. It stays until it is dismissed, and any number
+ * can be up at once.
+ *
+ * The box on the left and the ✕ on the right both take the line away. #180
+ * asks whether "done, noted" and "go away" are two things; nothing here yet
+ * does anything different for one than the other, so they are one.
+ *
+ * `link` is `{ href, text }` for a link out; the message itself is
+ * textContent, since it is often something a server said. `kind` names what
+ * the notice is about: a second one of a kind replaces the first, so a repeat
+ * (two switches, two reloads) is one line, and dismissNotice(kind) is how the
+ * page takes one down itself. No button for an action yet -- the first notice
+ * that needs one adds it.
+ */
+export function notice(msg, { bad = false, link = null, kind = null } = {}) {
+  // Not dismissNotice(kind): drop() moves a focus it finds on the old line to
+  // another line or into the terminal, so a switch made from the keyboard sent
+  // the next key to the agent. The new line is the old one's successor, so the
+  // focus goes to the same control on it.
+  const at = document.activeElement;
+  const old = kind ? [...document.querySelectorAll('#notices > li')].filter((l) => l.dataset.kind === kind) : [];
+  const held = old.some((l) => l.contains(at)) ? control(at) : null;
+  for (const l of old) l.remove();
+  const line = h('li', { className: bad ? 'bad' : '', dataset: kind ? { kind } : {} });
+  const gone = () => drop(line);
+  const box = h('input', { type: 'checkbox', title: 'noted — dismiss this notice', ariaLabel: 'noted — dismiss this notice' });
+  box.onchange = gone;
+  line.append(box,
+    h('span', { className: 'text' }, msg, link ? ' ' : null, link ? ext(link.href, link.text) : null),
+    btn('✕', gone, { title: 'dismiss this notice', ariaLabel: 'dismiss this notice' }));
+  document.getElementById('notices').append(line);
+  if (held) line.querySelector(held).focus();
+  return line;
+}
+export const dismissNotice = (kind) => {
+  for (const line of document.querySelectorAll('#notices > li')) if (line.dataset.kind === kind) drop(line);
+};
+
+/**
+ * Takes a notice's line away without taking the keyboard's focus with it. A
+ * line is mostly dismissed from its own box or ✕, which has the focus as it
+ * goes, and a removed element hands the focus to <body>, so the next Tab
+ * started again from the top of the page. It goes to the same control on the
+ * next line (the previous one, for the last), so a list can be cleared from the
+ * keyboard one key at a time, and with no line left, to the terminal, where
+ * the loop the notices interrupt goes on. The terminal by its xterm textarea,
+ * since `term` is app.js's and app.js imports this file, or by its ▼ while it
+ * is folded.
+ */
+function drop(line) {
+  const at = document.activeElement;
+  const next = line.nextElementSibling ?? line.previousElementSibling;
+  line.remove();
+  if (!line.contains(at)) return;
+  (next?.querySelector(control(at)) ?? terminal())?.focus();
+}
+
+/** Which of a line's two controls `at` is, as a selector for the same one on another line. */
+const control = (at) => (at.matches('input') ? ':scope > input' : ':scope > button');
+
+/**
+ * Where the focus goes when it has nowhere left in the list. A folded terminal
+ * hides its textarea with the rest of #term-host, and focus() on an element
+ * that is not rendered does nothing, so the focus still fell to <body>; its
+ * header's ▼ is the terminal's one control left on screen.
+ */
+const terminal = () => {
+  const area = document.querySelector('#term .xterm-helper-textarea');
+  return area?.checkVisibility() ? area : document.getElementById('term-fold');
+};
 
 /**
  * localStorage, best effort. A browser can refuse the store outright -- Safari's

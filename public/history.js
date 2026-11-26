@@ -7,7 +7,7 @@
 // Imported by queue.js, which test/queue-pane.test.js loads in Node, so
 // nothing at module scope touches the DOM (public/CLAUDE.md).
 
-import { h, btn, api, toast, kept, fold, actions } from './ui.js';
+import { h, btn, api, toast, notice, kept, fold, actions } from './ui.js';
 import { byDay, dayKey, timeLabel, commandOf, hasPaste, historyMatches, age } from './items.js';
 
 export const LABEL = 'History';
@@ -221,10 +221,11 @@ function row(p) {
 }
 
 // After ▶ or ↓ on a prompt that held a paste, in place of what they would
-// have said: sticky, since it is about the prompt now waiting in the terminal
-// or the queue, until it is dealt with.
-const pasteMissing = (done) => toast(`${done}, but that prompt held a paste and the history keeps only its placeholder: `
-  + 'paste the text again in its place before sending.', false, true);
+// have said: a notice, since it is about the prompt now waiting in the
+// terminal or the queue, until it is dealt with. One line however many rows
+// it is said for.
+const pasteMissing = (done) => notice(`${done}, but that prompt held a paste and the history keeps only its placeholder: `
+  + 'paste the text again in its place before sending.', { kind: 'paste-missing' });
 
 // As the diff header's ⧉ (app.js): a ✓ for a moment to say it went, and a
 // toast when the browser refused the clipboard.
