@@ -42,13 +42,18 @@ body {
    even when both row gutters are pushed as far as they go.
 
    The queue's maximum is whatever leaves the terminal 120px -- the floor the
-   queue has itself -- once the diff has taken its share (--queue-max). It was
-   40% of the window until 2026-11-09, from when the queue was a short list of
-   your own lines; the PRs and Issues tabs are listings that want the height,
-   and folding the terminal already handed the queue the whole column, so the
-   cap only stopped a drag from doing what a fold did. In a window too short
+   queue has itself -- once the diff and the notices list have taken their
+   share (--queue-max). It was 40% of the window until 2026-11-09, from when
+   the queue was a short list of your own lines; the PRs and Issues tabs are
+   listings that want the height, and folding the terminal already handed the
+   queue the whole column, so the cap only stopped a drag from doing what a
+   fold did. In a window too short
    for both floors clamp() lets the queue's minimum win, as it always has. The
-   diff keeps its 50%: that is what bounds the sum.
+   diff keeps its 50% less the notices list: that is what bounds the sum. Half
+   of all of <main>, list included, left a queue at its floor nothing to give,
+   so a full list came out of the terminal -- 80px of a 600px window. Less the
+   whole list, the terminal keeps 120px down to the same 484px <main> it did
+   before there was a list.
 
    The defaults for the PR and queue panes are pixels, not percentages. The PR
    pane holds prose set to a fixed measure and the queue holds rows of a fixed
@@ -69,10 +74,13 @@ main {
      grew with every pane that learned to fold. */
   /* The diff's dragged size apart from its row, because --queue-max subtracts
      it and the folds rewrite the row to `auto` and `1fr`, which calc() cannot. */
-  --diff-size: clamp(140px, var(--h-diff, 40%), 50%);
+  --diff-size: clamp(140px, var(--h-diff, 40%), calc(50% - var(--notices-h, 0px)));
   --r-diff: var(--diff-size);
   --r-term: 1fr;
-  --queue-max: calc(100% - 121px);   /* the floor, and the 1px line over the queue */
+  /* The floor, the 1px line over the queue, and the notices list over all of
+     it, whose height panes.js keeps in --notices-h: 100% here is <main>, and
+     the list takes its share of that before the terminal sees any. */
+  --queue-max: calc(100% - var(--notices-h, 0px) - 121px);
   --r-queue: clamp(120px, var(--h-queue, 227px), var(--queue-max));
   /* The first row is the notices list, which is `display: none` while empty,
      so `auto` is then nothing. */
@@ -95,9 +103,9 @@ main.diff-open {
     "pr gpr gqueue"
     "pr gpr queue";
 }
-main.diff-open { --queue-max: calc(100% - 122px - var(--diff-size)); }   /* two lines now */
+main.diff-open { --queue-max: calc(100% - var(--notices-h, 0px) - 122px - var(--diff-size)); }   /* two lines now */
 /* Folded, the diff is its bar: 40px is that and the line under it, rounded up. */
-main.diff-open.diff-off { --queue-max: calc(100% - 160px); }
+main.diff-open.diff-off { --queue-max: calc(100% - var(--notices-h, 0px) - 160px); }
 #diff { grid-area: diff; }
 #diff[hidden] { display: none; }
 /* A pane folded to its header row (folds.js): its body goes, `auto` is then
@@ -189,10 +197,16 @@ main.diff-open:not(.term-off, .diff-off) #gut-diff { display: block; }
    fourth pixel of the row gutters' ten. focus-visible, because a gutter you
    have just dragged should not keep it. */
 .gut:focus { outline: none; }
-.gut.col:is(:hover, :active, :focus-visible)::after {
+/* .dragging, not :active: panes.js's pointerdown calls preventDefault(), which
+   in Firefox can keep :active from being set. panes.js holds the class from
+   pointerdown until the capture is lost. Today :hover alone holds through a
+   drag past the gutter's clamp in both engines, because the gutter has the
+   pointer captured (the browser suite's grip test, 2026-11-23); the class
+   keeps the line lit without leaning on that. */
+.gut.col:is(:hover, .dragging, :focus-visible)::after {
   background: linear-gradient(var(--accent), var(--accent)) center / 3px 100% no-repeat;
 }
-.gut.row:is(:hover, :active, :focus-visible)::after {
+.gut.row:is(:hover, .dragging, :focus-visible)::after {
   background: linear-gradient(var(--accent), var(--accent)) 0 4px / 100% 3px no-repeat;
 }
 
@@ -408,7 +422,7 @@ a { color: var(--accent); }
    prcoder windows open, which repository this one is in is the first question,
    and a faint outline did not answer it at a glance. So the fill is now strong
    enough to be a filled shape, and the name -- the half that says which
-   checkout -- is bold and `--fg` on it, with the owner left `--accent`. It
+   checkout -- is bold and `--fg` on it, with the owner a paler `--accent`. It
    still stops short of `.primary`'s solid accent with dark text, so the pull
    request stays the one button in the row, and of the `.badge`s' uppercase. A
    brighter grey ring was the other candidate, and it read as one more `.tab`.
@@ -502,7 +516,10 @@ a { color: var(--accent); }
   border-color: var(--accent);
   background: color-mix(in srgb, var(--accent) 34%, transparent);
 }
-.pr-repo .owner { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The owner is the accent pulled 60% toward --fg. Plain --accent on the 24%
+   fill was about 4.2:1, and 3.4:1 on hover -- under 4.5:1 for 12px text, and
+   on the half that is clipped first. This is about 6:1, and 4.9:1 on hover. */
+.pr-repo .owner { color: color-mix(in srgb, var(--accent) 40%, var(--fg)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pr-repo .name { color: var(--fg); font-weight: 600; flex: none; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* Serif, like the description under it: the title is the first sentence of the
@@ -1253,6 +1270,9 @@ button.picker[hidden] { display: none; }
 }
 .pane > header button.where:hover { color: var(--accent); border-color: var(--accent); }
 .pane > header button.where.top { color: var(--accent); border-color: var(--accent); }
+/* The selection button sits dimmed until the terminal has a selection, so
+   "nothing to add" reads at a glance; disabled, it takes no hover colour. */
+.pane > header button.where:disabled { color: var(--dim); border-color: var(--line); cursor: default; }
 
 /* The dot carries the state; the text next to it says what to do about it.
    The PR pane's is about the branch and the remote. */
@@ -1305,9 +1325,11 @@ button.picker[hidden] { display: none; }
    line arrives or goes, which is why only a notice that waits comes here.
    --warn down the left edge is "still waiting", as it is everywhere, and
    --fail for one that is an error. The height is capped at about four lines
-   and scrolls past that: --queue-max leaves the terminal a floor measured
-   without this list, and an unbounded one would push the column past the
-   window. */
+   and scrolls past that, so the list never takes more than that from the
+   panes. --queue-max subtracts what it does take (--notices-h), or a queue
+   dragged to its limit kept its height and the terminal paid for the list,
+   down to less than its own header; so does the diff's cap (--diff-size), for
+   a queue already at its floor. */
 #notices {
   grid-area: notices; margin: 0; padding: 0; list-style: none;
   max-height: 7.5em; overflow-y: auto;

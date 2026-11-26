@@ -1,5 +1,5 @@
 import { h, btn, ext, api, toast, pref, setPref, tabBtn, writeThrough, fold, kept, mark, fraction, actions } from './ui.js';
-import { TABS, refLabel, refClass, forClaude, rankMilestones, issueMatches, pullMatches, sortPulls, rootsInOrder, pullWord, sizeChip, age, dueLabel, isNew, PULL_SORTS } from './items.js';
+import { TABS, refLabel, refClass, forClaude, rankMilestones, issueMatches, pullMatches, sortPulls, rootsInOrder, pullWord, sizeChip, age, dueLabel, isNew, PULL_SORTS, PULLS_FRESH_FOR } from './items.js';
 import { refs, resolveRef, blocks } from './tasks.js';
 import { blockNode, inline, stackUnder, stackOrder } from './pr.js';
 import { LABEL as HISTORY_LABEL, historyList, historyCount, loadHistory, initHistory } from './history.js';
@@ -38,8 +38,8 @@ export function setItems(next, prOnScreen = null) {
   // caret: its text is kept and put back, but the caret and a composition
   // mid-word are not. Safe to hold on by the same argument as the text above
   // -- focus leaves it with the next click anywhere else -- where a tab is not.
-  // So is a row's milestone select and Move (groupsInUse), and the Pull
-  // requests tab's order and grouping selects, which a repaint would close
+  // So is a row's milestone select and Move (groupsInUse), and the PRs
+  // tab's order and grouping selects, which a repaint would close
   // mid-choice. Not the rest of the row's ways: a pull request's has Switch,
   // and focus left on it must not keep the checkout's poll from landing.
   if (saving || document.activeElement?.closest?.('#queue-body .text[contenteditable], #queue-search, #queue-pull-search, #queue-body .move-to, #queue-body .pull-controls select')) return;
@@ -48,16 +48,22 @@ export function setItems(next, prOnScreen = null) {
   // PR #N tab without changing the list, so it has to count as news too.
   const source = (p) => (p ? JSON.stringify([p.number, p.body, p.issues]) : '');
   const samePr = source(prOnScreen) === source(pr);
+  // A different pull request is a different checklist: its tab starts at the top.
+  if (prOnScreen?.url !== pr?.url) scrolled.pr = 0;
+  pr = prOnScreen;
   // The mentions' titles and states come with the listing, looked up for the
   // pull request on screen when it was asked for (askedFor). A different one,
   // or a description that mentions something new -- or the first poll's,
   // after a visit to the tab before it -- needs them asked for again while a
   // tab that draws them is up, and until they land a mention not looked up
-  // reads `…` (mentionRow).
-  if ((tab === 'issues' || tab === 'pr') && asks(prOnScreen) !== askedFor) loadIssues(true);
-  // A different pull request is a different checklist: its tab starts at the top.
-  if (prOnScreen?.url !== pr?.url) scrolled.pr = 0;
-  pr = prOnScreen;
+  // reads `…` (mentionRow). After `pr` is the new one, since fetchIssues
+  // records what it asks about from `pr`: asked before, it recorded the pull
+  // request just left, and the next poll read all five pages again.
+  // Not after a failure with no listing to keep: the poll comes every minute
+  // and on every return to the browser tab, and each read up to five pages
+  // and toasted the same error again. That waits for a visit or ⟳, as the
+  // page-open read's failure does.
+  if (drawsIssues() && !issuesFailed && listingStale()) loadIssues(true);
   // Most polls bring the list already on screen, and a rebuild for nothing
   // costs every row and listener. `items` is kept, not swapped for the equal
   // copy: the rows on screen hold its objects, and a tick on a row whose item
@@ -86,7 +92,10 @@ let listed = new Map();
 // the mentions reads again when the one on screen asks something else.
 let askedFor = null;
 const asks = (p) => JSON.stringify([p?.url ?? null, mentioned(p).map((i) => i.number)]);
-const listingStale = () => !listing || askedFor !== asks(pr);
+// No listing is stale too, unless a read is out to bring one: a read out
+// already asked about this pull request, and a poll that took no listing for a
+// reason to ask again queued a second read of every page behind it.
+const listingStale = () => askedFor !== asks(pr) || (!listing && !issuesLoading);
 // The Issues tab's own state, kept across the repaint every poll causes and
 // not across a reload, like the file groups' folds: the search, which groups
 // are closed, which rows are open, and which groups a listing has had, so a
@@ -107,6 +116,9 @@ let pullsLoading = null;
 let pullsStale = false;
 // A visit to the tab arrived while a read was out, and is owed its age check.
 let pullsVisit = false;
+// Why there is no listing at all, as the Issues tab's issuesFailed: the tab
+// says it, and its count reads `?`, rather than `…` as if still reading.
+let pullsFailed = null;
 let pullQuery = '';
 const pullsSeen = new Set();
 // Its order and grouping, remembered as the add-to arrow is (below).
@@ -114,8 +126,6 @@ const PULL_SORT_KEY = 'prcoder:pull-sort';
 const PULL_GROUP_KEY = 'prcoder:pull-group';
 let pullSort = 'smallest';
 let pullGroup = 'milestone';
-// A listing younger than this is not read again on a visit to the tab; ⟳ always reads.
-const PULLS_FRESH_FOR = 60_000;
 // How long after the page's first status the issues are read for the Issues
 // tab's count (primeIssues): past the page-load `gh pr list` and a clone's
 // first pull request read, so the one GitHub call that is up to five pages
@@ -166,6 +176,7 @@ export async function initQueue(d) {
   // browser, so the module stays importable by a node test that has no
   // localStorage to touch.
   addTo = readAddTo();
+  sizes = new ResizeObserver(() => { if (owedScroll) placeScroll(document.getElementById('queue-list'), owedScroll.top, owedScroll); });
   pullSort = PULL_SORTS[pref(PULL_SORT_KEY)] ? pref(PULL_SORT_KEY) : 'smallest';
   pullGroup = ['none', 'stack'].includes(pref(PULL_GROUP_KEY)) ? pref(PULL_GROUP_KEY) : 'milestone';
   document.getElementById('queue-where').onclick = () => setAddTo(addTo === 'bottom' ? 'top' : 'bottom');
@@ -247,8 +258,19 @@ export function stripFor(list, active, sources = []) {
   return { strip, tab: strip.includes(active) ? active : 'local' };
 }
 
-/** The PR description's checklist, in the order a tick counts it. */
-const prTasks = () => (pr ? blocks(pr.body).filter((b) => b.kind === 'task') : []);
+/**
+ * The PR description's checklist, in the order a tick counts it. Kept per
+ * body: render(), every paintCounts after a listing read, and prParts all
+ * ask, several times a repaint, and each parsed the whole of a description
+ * an agent may have written at length. A tick (or a poll) brings a new body
+ * string, which misses the cache by itself.
+ */
+const prTasks = () => {
+  if (!pr) return [];
+  if (!tasksOf || tasksOf.body !== pr.body) tasksOf = { body: pr.body, tasks: blocks(pr.body).filter((b) => b.kind === 'task') };
+  return tasksOf.tasks;
+};
+let tasksOf = null;
 
 /**
  * The PR #N tab's count: what the pull request still points at that is open
@@ -288,7 +310,7 @@ const matching = () => {
 let matched = { listing: null, query: null, issues: [] };
 
 /** The PRs tab's count, on the same rule as the Issues tab's. */
-const pullCount = () => (!pullsListing ? '…' : pullQuery.trim() ? matchingPulls().length : pullsListing.total);
+const pullCount = () => (!pullsListing ? (pullsFailed ? '?' : '…') : pullQuery.trim() ? matchingPulls().length : pullsListing.total);
 
 /** The listed pull requests the tab's search lets through, by the state word each row shows. */
 const matchingPulls = () => (pullsListing?.pulls ?? []).filter((p) => pullMatches(p, pullQuery, pullWord(p, underOf(p)).word));
@@ -298,6 +320,29 @@ const matchingPulls = () => (pullsListing?.pulls ?? []).filter((p) => pullMatche
 // land you at the top of Local, nor a switch to Issues at the offset you had
 // on the PRs tab. As the pull request pane's (renderPrTab in pr.js).
 const scrolled = {};
+// The offset a tab was drawn wanting and could not have yet, because what it
+// drew was shorter than when it was left: `top` is the offset, `at` where the
+// clamp left it. Kept until the content grows tall enough (`sizes`, which
+// watches the tab's content) or the user scrolls. Defensive: no tab draws
+// short and fills in later with an offset saved as of 2026-11-17 -- each draws
+// from what it has on hand -- but one that did would open near its top, and
+// the clamp's own scroll event would overwrite the offset for good.
+// `heard` is that event: only the first one at `at` is the clamp's. Firefox
+// can deliver a scroll away and back as one late event that reads `at` again,
+// and matched on position alone, that ignored the user, kept the old offset,
+// and the list jumped to it when the content grew.
+let owedScroll = null;
+let sizes = null;
+function placeScroll(list, top, was = null) {
+  // Assigning forces layout, so this lands against the content as it is now.
+  list.scrollTop = top;
+  const at = list.scrollTop;
+  // Placed again where it already was -- the observer's first callback, which
+  // comes on observe() whether or not anything grew -- the list did not move
+  // and no event is coming, so one already heard stays heard.
+  const heard = !!was?.heard && Math.abs(at - was.at) < 1;
+  owedScroll = at < top - 1 ? { top, at, heard } : null;
+}
 
 function render() {
   const head = document.getElementById('queue-head');
@@ -305,7 +350,15 @@ function render() {
   // Recorded as it happens, not read before the replace: queueTab sets `tab`
   // to the tab being switched to before this runs, so a read here would file
   // the outgoing tab's offset under the incoming one (pr.js has the same note).
-  list.onscroll = () => { scrolled[tab] = list.scrollTop; };
+  list.onscroll = () => {
+    // The clamp's own scroll event, which is not the user moving.
+    if (owedScroll && !owedScroll.heard && Math.abs(list.scrollTop - owedScroll.at) < 1) {
+      owedScroll.heard = true;
+      return;
+    }
+    owedScroll = null;
+    scrolled[tab] = list.scrollTop;
+  };
   // PRs and Issues are always there -- a repository has both whatever is
   // checked out -- and PR #N only with a pull request on screen (sourcesFor).
   const { strip, tab: active } = stripFor(items, tab, sourcesFor(pr, historyOn));
@@ -339,8 +392,9 @@ function render() {
           : tab === 'history' ? historyList()
             : h('ul', { className: 'items' }, ...shown.map((i, n) => row(i, shown[n - 1], shown[n + 1]))),
   );
-  // Assigning forces layout, so this lands against the new content.
-  list.scrollTop = scrolled[tab] ?? 0;
+  placeScroll(list, scrolled[tab] ?? 0);
+  sizes?.disconnect();
+  sizes?.observe(list.firstElementChild);
   staleBreakdown();
 }
 
@@ -464,10 +518,14 @@ function loadIssues(again = false) {
     paintAfterRead();
     if (!issuesStale) return;
     issuesStale = false;
-    if (tab === 'issues') loadIssues();
+    // Whatever tab shows, as loadPulls does: the read that landed was asked
+    // for before a write or a switch, and a visit to PR #N reads only when
+    // listingStale(), which a Move does not make it. Held to the Issues tab,
+    // a Move on PR #N while a read was out kept the row's old milestone.
+    loadIssues();
   });
   // And now, so the line says `updating…` while it is.
-  if (listing && (tab === 'issues' || tab === 'pr')) paintGroups();
+  if (listing && drawsIssues()) paintGroups();
 }
 
 /**
@@ -477,7 +535,7 @@ function loadIssues(again = false) {
  * under a query being typed; drawn whole otherwise.
  */
 function paintAfterRead() {
-  if (tab !== 'issues' && tab !== 'pr') return paintCounts();
+  if (!drawsIssues()) return paintCounts();
   if (document.querySelector('#queue-body :is(.issue-groups, .pr-parts)')) paintIssues(); else render();
 }
 let issuesLoading = null;
@@ -520,7 +578,7 @@ async function fetchIssues() {
   } catch (e) {
     // The toast is for a read someone is waiting on; a read behind another
     // tab (primeIssues) leaves `?` on the strip and keeps quiet.
-    if (tab === 'issues' || tab === 'pr') toast(e.message, true);
+    if (drawsIssues()) toast(e.message, true);
     if (!listing) issuesFailed = e.message;
   }
 }
@@ -554,18 +612,20 @@ const pullBtn = (text, issue = null, kind = null, repo = null) => btn('↓', () 
  * Copied into your queue, and left where it was: a checkbox in the description
  * is the PR's record and an issue is the project's, so pulling an item is taking
  * it on, not taking it away. Something already on Local is not added twice.
+ * Whether it was added, for a caller with more to say once it has been.
  */
 async function pull(text, issue = null, kind = null, repo = null) {
   if (items.some((i) => TABS.local(i) && i.text === text)) {
     toast('already in your queue');
-    return;
+    return false;
   }
   const item = { text, done: false, issue, repo, kind, deleted: false };
   if (addTo === 'top') items.unshift(item); else items.push(item);
   // A refusal has already taken it back out.
-  if (!await save()) return;
+  if (!await save()) return false;
   toast(`added to your queue: ${text}`);
   flashLocal();
+  return true;
 }
 
 /**
@@ -673,6 +733,14 @@ let groupsOwed = false;
 // What each tab that draws from the Issues listing paints its groups into,
 // and with what: the Issues tab its milestone groups, the PR #N tab its parts.
 const GROUPS = { issues: ['.issue-groups', issueGroups], pr: ['.pr-parts', prParts] };
+/**
+ * Whether the tab showing draws from the Issues listing, so a read of it is
+ * one someone is looking at: what its painting, its toasts and its re-reads
+ * ask. Read from GROUPS, so a new tab that draws the listing is one entry
+ * there and not a check to find in every caller -- written out by hand, the
+ * stale re-read was the copy that missed the PR #N tab.
+ */
+const drawsIssues = () => tab in GROUPS;
 const drawGroups = () => {
   groupsOwed = false;
   const [host, groups] = GROUPS[tab] ?? [];
@@ -690,10 +758,7 @@ const groupsList = (className, groups) => {
   list.addEventListener('focusout', () => setTimeout(payGroups));
   return list;
 };
-const payGroups = () => {
-  // The PR #N tab's rows move through the Issues listing's MOVES.
-  if (groupsOwed) (tab === 'pr' ? MOVES.issues : MOVES[tab])?.paint();
-};
+const payGroups = () => { if (groupsOwed) MOVES[tab]?.paint(); };
 
 /**
  * The groups of whichever tab draws from the Issues listing, and both tabs'
@@ -966,9 +1031,11 @@ function moveControl(name, number, current, ariaLabel) {
     await kind.settled();
     // The repaint took the focus with it, and the row may have gone to a folded
     // group: the keyboard follows it there, unless it has since gone elsewhere.
-    // A list with no groups (one of the PRs tab's) has only the row.
+    // A list with no groups (one of the PRs tab's) has only the row. On the
+    // tab showing a row of this kind: an issue's Move is on the PR #N tab too
+    // (MOVES.pr), where `tab !== name` dropped the focus on the floor.
     const now = kind.row(number);
-    if (tab !== name || !now || (document.activeElement && document.activeElement !== document.body)) return;
+    if (MOVES[tab] !== kind || !now || (document.activeElement && document.activeElement !== document.body)) return;
     const to = from && kind.group(now.milestone, from);
     if (to && !kind.searching() && closedGroups.delete(to)) kind.draw();
     document.querySelector(`#queue-body ${to ? `[data-group="${to}"]` : ''} select.milestone[data-move="${number}"]`)?.focus();
@@ -980,7 +1047,7 @@ function moveControl(name, number, current, ariaLabel) {
 /**
  * A group's summary as somewhere to drop a row: lit while one is over it, and
  * the drop is `mover(number, milestone)`. Only a grip's drag of `type` counts --
- * ISSUE on the Issues tab, PULL on Pull requests -- so a link or a text selection dragged across the pane is not a row, nor is a row from the
+ * ISSUE on the Issues tab, PULL on the PRs tab -- so a link or a text selection dragged across the pane is not a row, nor is a row from the
  * other tab.
  */
 function dropTarget(summary, milestone, type = ISSUE, mover = move) {
@@ -1008,8 +1075,9 @@ function mentionRow(i) {
   const found = mentions?.get(i.number);
   const repo = mentionRepo(i);
   const own = listedAs(i);
-  // Dragged only on the Issues tab, where a milestone's line is a drop target.
-  if (own) return issueRow(own, { drag: tab === 'issues' });
+  // Never dragged: mentions are drawn only on the PR #N tab (prParts), which
+  // has no milestone lines to drop on. Move in the opened row is the way.
+  if (own) return issueRow(own, { drag: false });
   const title = found?.title;
   const open = found?.state === 'OPEN';
   // Not in the lookup is not looked up yet: every mention it was asked
@@ -1137,10 +1205,10 @@ const MOVES = {
     draw: () => drawGroups(),
     read: () => loadIssues(true),
     settled: async () => { while (issuesLoading) await issuesLoading; },
-    // The PR #N tab's mentions are drawn wherever a row's milestone says, so
-    // a row moved from there is still in that group; from a milestone's
+    // The PR #N tab's parts -- Mentions, Closes -- hold a row whatever its
+    // milestone, so a row moved from one is still there; from a milestone's
     // group on the Issues tab, it has gone.
-    group: (milestone, from) => (from === 'mentioned' ? from : `m:${milestone ?? NONE}`),
+    group: (milestone, from) => (tab === 'pr' ? from : `m:${milestone ?? NONE}`),
     searching: () => query.trim(),
   },
   pulls: {
@@ -1155,6 +1223,9 @@ const MOVES = {
     searching: () => pullQuery.trim(),
   },
 };
+// The PR #N tab's rows are the Issues listing's, and move through its entry:
+// MOVES[tab] is how a painter or a Move finds the kind the tab showing draws.
+MOVES.pr = MOVES.issues;
 
 /**
  * A row onto a milestone, or off one with null, on a drop or Move: the one write
@@ -1231,9 +1302,18 @@ async function readPulls(force, visit) {
   pullsReading = true;
   try {
     if (!pullsListing) {
+      // A try after a failure says it is reading again.
+      if (pullsFailed) { pullsFailed = null; paintPulls(); }
       // With nothing to open from, the server reads GitHub itself, and a
-      // listing it answers is as fresh as the read below would be.
-      try { pullsListing = await api('/api/pulls', { fresh: false }); } catch (e) { return toast(e.message, true); }
+      // listing it answers is as fresh as the read below would be. A failure
+      // is toasted only on the tab, as fetchIssues' is: the page-open read
+      // is behind another tab, and leaves `?` on the strip and keeps quiet
+      // until a visit, whose own read says why.
+      try { pullsListing = await api('/api/pulls', { fresh: false }); } catch (e) {
+        pullsFailed = e.message;
+        if (tab === 'pulls') toast(e.message, true);
+        return;
+      }
       paintPulls();
     }
     if (force || (visit && Date.now() - pullsListing.read >= PULLS_FRESH_FOR)) {
@@ -1295,6 +1375,10 @@ function pullList() {
 }
 
 function pullGroups() {
+  if (!pullsListing && pullsFailed) {
+    return [h('p', { className: 'empty' }, `Could not read the repository's pull requests: ${pullsFailed} `,
+      btn('try again', () => loadPulls(), { title: 'ask GitHub for the pull requests again' }))];
+  }
   if (!pullsListing) return [h('p', { className: 'empty' }, 'Reading the repository\'s pull requests…')];
   const searching = !!pullQuery.trim();
   const rows = sortPulls(matchingPulls(), pullSort);

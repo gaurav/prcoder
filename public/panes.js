@@ -23,7 +23,20 @@ const save = () => setPref(KEY, main.style.cssText);
 // The right-hand column starts under the notices list (ui.js) while it has a
 // line in it, so a height measured from the top is measured from there: from
 // <main>'s own top, the diff came out too tall by the list's height.
-const lead = () => document.getElementById('notices').offsetHeight;
+const notices = document.getElementById('notices');
+// Unrounded: the list's cap is 7.5em, 97.5px at its 13px, and offsetHeight's
+// 98 left the terminal half a pixel over its floor and the queue that short.
+const lead = () => notices.getBoundingClientRect().height;
+
+// The list's height again, for the stylesheet: --queue-max takes it off what
+// the queue may have, or a queue dragged to its limit kept its height and the
+// terminal paid for the list. On <html>, not <main>, because <main>'s inline
+// style is the saved layout and this is not something anyone chose. Border
+// box, so the line under the list counts; the observer also fires as the list
+// goes to and from `display: none`.
+const leadVar = () => document.documentElement.style.setProperty('--notices-h', `${lead()}px`);
+leadVar();
+new ResizeObserver(leadVar).observe(notices, { box: 'border-box' });
 
 /** Pointer position as a distance from the edge of <main> the pane grows from. */
 const px = (r, from, e) => ({
@@ -58,10 +71,13 @@ for (const g of document.querySelectorAll('.gut')) {
   // What a screen reader can say about a line that has no text: how far along
   // <main> it sits. The clamp() bounds are a percentage and two pixel values in
   // the stylesheet, so the honest pair to publish is 0 and 100 of the container
-  // and let valuenow be the position within it.
+  // and let valuenow be the position within it. For a line measured from the
+  // top, the container is what is under the notices list, as it is in at():
+  // over all of <main> the number could not reach 100 and moved with the list.
   const report = () => {
     const r = main.getBoundingClientRect();
-    g.setAttribute('aria-valuenow', String(Math.round((at(r, from, g) / r[along]) * 100)));
+    const span = from === 'top' ? r.height - lead() : r[along];
+    g.setAttribute('aria-valuenow', String(Math.round((at(r, from, g) / span) * 100)));
   };
   reports.push(report);
 
@@ -72,9 +88,13 @@ for (const g of document.querySelectorAll('.gut')) {
     const move = (m) => main.style.setProperty(name, `${Math.round(px(r, from, m))}px`);
     g.setPointerCapture(e.pointerId);
     g.addEventListener('pointermove', move);
+    // What keeps the line lit for the whole drag (style.css, .gut says why
+    // :active and :hover are not trusted with it).
+    g.classList.add('dragging');
     // Fires for a cancelled drag as well as a released one, so the move
     // listener is never left attached to a gutter nobody is holding.
     g.addEventListener('lostpointercapture', () => {
+      g.classList.remove('dragging');
       g.removeEventListener('pointermove', move);
       save();
     }, { once: true });
@@ -119,8 +139,13 @@ for (const g of document.querySelectorAll('.gut')) {
 // the number where the page load put it. A gutter moves when <main>'s custom
 // properties change (every drag, key and reset writes one), when its grid
 // template changes (the diff pane opening), or when the window does -- and any
-// of those can move the other gutters too, so all of them report.
+// of those can move the other gutters too, so all of them report. The notices
+// list is a fourth, which changes nothing on <main>: a row gutter's number is
+// measured from under the list or from the bottom, so the list moving the
+// column leaves it alone, but the list comes off --queue-max, and a queue at
+// its limit gives up the list's height when a line comes up.
 const reportAll = () => reports.forEach((report) => report());
 reportAll();
 new MutationObserver(reportAll).observe(main, { attributeFilter: ['style', 'class'] });
 new ResizeObserver(reportAll).observe(main);
+new ResizeObserver(reportAll).observe(notices, { box: 'border-box' });
